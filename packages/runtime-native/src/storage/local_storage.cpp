@@ -116,8 +116,12 @@ static bool parseJsonObject(const std::string& json,
         pos++;  // skip opening quote
         std::string value = parseJsonString(json, pos);
 
-        data[key] = value;
-        order.push_back(key);
+        // A repeated key collapses to one entry whose order slot is the first
+        // occurrence — matching both JSON object semantics and the JS-side Map
+        // the storagePolyfill exposes, so keys().size() always equals length().
+        const bool inserted = data.emplace(key, value).second;
+        if (!inserted) data[key] = value;  // last duplicate wins
+        if (inserted) order.push_back(key);
 
         skipWhitespace(json, pos);
         if (pos < json.size() && json[pos] == ',') {

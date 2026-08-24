@@ -1663,6 +1663,21 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-wgpu-null-handle-test EXCLUDE_FROM_ALL
         tests/wgpu_null_handle_test.cpp)
     target_link_libraries(threenative-wgpu-null-handle-test PRIVATE mystral-runtime)
+
+    # localStorage is the persistence contract behind the JS storagePolyfill;
+    # this proves the file-backed backend without a display or engine. The
+    # header is internal to src/, so only this test gets that include dir.
+    add_executable(threenative-local-storage-test EXCLUDE_FROM_ALL
+        tests/local_storage_test.cpp)
+    target_include_directories(threenative-local-storage-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(threenative-local-storage-test PRIVATE mystral-runtime)
+
+    # Same lane for the embedded-bundle VFS: synthesizes real container files
+    # and proves the loader accepts the documented format and rejects damage.
+    add_executable(threenative-embedded-bundle-test EXCLUDE_FROM_ALL
+        tests/embedded_bundle_test.cpp)
+    target_link_libraries(threenative-embedded-bundle-test PRIVATE mystral-runtime)
     # The negative control calls the real WebGPU C API with a NULL handle, so it needs the same
     # backend headers the bindings use. mystral-runtime links these PRIVATE.
     if(TARGET dawn::webgpu)
