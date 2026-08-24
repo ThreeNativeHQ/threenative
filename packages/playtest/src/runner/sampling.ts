@@ -481,6 +481,32 @@ export async function boundedTeardownStep(
   }
 }
 
+/**
+ * Await a resource that is still being created, but never longer than `timeoutMs`. Returns the
+ * value when it arrives and `undefined` when it fails or runs out of time.
+ *
+ * Teardown needs this because a signal can land while the resource is mid-construction: the
+ * variable holding it is still unassigned, so closing "whatever we have" closes nothing and the
+ * process exits over the top of a live child. Waiting for the in-flight value first is what makes
+ * the close reach it.
+ */
+export async function settledTeardownValue<T>(
+  pending: Promise<T> | undefined,
+  timeoutMs: number,
+): Promise<T | undefined> {
+  if (pending === undefined) return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TEARDOWN_TIMED_OUT>((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout(TEARDOWN_TIMED_OUT), timeoutMs);
+  });
+  try {
+    const settled = await Promise.race([pending.catch(() => undefined), timeout]);
+    return settled === TEARDOWN_TIMED_OUT ? undefined : settled;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export function isPageNavigatedRace(error: unknown): boolean {
   return error instanceof Error && PAGE_NAVIGATED_PATTERN.test(error.message);
 }
