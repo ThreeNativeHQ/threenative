@@ -53,15 +53,24 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // fragment now has to name the marker, its five phases and the `frameBudget: false` override
   // — a convention missing from the templates' AGENTS.md does not exist. Measured worst case was
   // platformer at 2981 against 2960. See docs/verification/prd-214-2026-08-23.md.
-  defaultMaxWords: 2682,
+  //
+  // And a uniform +34 on 2026-08-23 (PRD-213): the `performance-default` fragment gained a
+  // three-line mobile-memory pointer. It is the smallest form that survives — the table, the
+  // arithmetic and the fix all live in `agent-docs/mobile-memory-budget.md`, so only the hook is
+  // charged. It buys the one number a cold agent cannot derive and pays 48 MiB the first time it
+  // is read: a game shipped one 3072x1536 equirect on both `scene.background` and
+  // `scene.environment`, which costs an extra 1536x2048 rgba16float pair on a Pixel 8, and no
+  // amount of reading the code tells you that. Measured before/after per template in
+  // docs/verification/instruction-budgets-2026-08-23.md.
+  defaultMaxWords: 2716,
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
-    platformer: 2982,
+    platformer: 3016,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
-    minimal: 3435,
+    minimal: 3469,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
-    starter: 3797,
+    starter: 3831,
   },
 };
 

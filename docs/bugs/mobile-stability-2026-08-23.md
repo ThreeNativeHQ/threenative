@@ -27,7 +27,7 @@ the physical device — no emulator, no simulator, no desktop substitute.
 | [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | open |
 | [6](#bug-6) | Published install cannot build for Android | high | `packages/runtime-native` | **gated** `8df8e6b2` — clean-room gate green offline; real release waits on PRD-078 |
 | [7](#bug-7) | `catalog:` specifiers leak into the published tarball | high | publishing | **fixed** `439b9fd7` — tarball specifier census in `publish:check` |
-| [8](#bug-8) | 393 MB of GPU resources requested, 849 MB held | medium | game + driver | open |
+| [8](#bug-8) | 393 MB of GPU resources requested, 828 MB held | medium | game + driver | open, **attributed** — a ~480 MiB floor, not a 2.11x multiplier |
 | [9](#bug-9) | Render loop keeps drawing with the screen off | medium | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
 | [10](#bug-10) | Preflight claims no libwebp; the runtime has it | low | `packages/runtime-native` | **fixed** `01ec0658` — capability derived from the build; device proof open |
 | [11](#bug-11) | Runtime could not report its own GPU memory | low | `packages/runtime-native` | **fixed** `d6e21511` |
@@ -371,7 +371,27 @@ hand-build a replacement package.
 <a id="bug-8"></a>
 ## Bug 8 — 393 MB of GPU resources requested, 849 MB held by the driver
 
-**Severity:** medium (contributes to bug 4, not to bug 3). **Status:** open.
+**Severity:** medium (contributes to bug 4, not to bug 3). **Status:** open, attributed —
+PRD-213, evidence `docs/verification/prd-213-2026-08-23.md`.
+
+### Attributed, 2026-08-23 (physical Pixel 8)
+
+Three corrections to what is written below, all measured, none estimated:
+
+1. **The table mixes units.** `TN_GPU_TEXTURES` prints MiB; the `GL mtrack` figure was kB/1000.
+   In consistent MiB it is 393 requested against 828 held — a **2.11x** amplification with a
+   **435 MiB** excess, not 456 MB.
+2. **It is a floor, not a multiplier.** `GL mtrack` was already 480 MiB at the first presented
+   frame, before a single asset texture existed, and grew by only 348 MiB across the whole asset
+   load against a 393 MiB request — **0.885x**. The driver does not amplify what the game asks
+   for. Budget a fixed ~500 MiB floor plus roughly your own bytes.
+3. **It is not a `meminfo` artefact.** `/proc/<pid>/status` `RssFile` minus the sum of file-backed
+   `Rss` across `/proc/<pid>/smaps` is 853,816 kB against `GL mtrack`'s 847,764 kB — 0.7 % apart.
+   Two independent kernel instruments agree the memory is physically resident.
+
+70.9 MiB of the gap is named exactly (the surface BufferQueue, `EGL mtrack`, invisible to the
+engine counter because `wgpuSurfaceGetCurrentTexture` never passes `createTexture`). The
+remaining floor's component is still open.
 
 ### Measurements
 
