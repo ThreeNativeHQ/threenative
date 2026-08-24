@@ -16,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverKitManifests, templateRoot } from "../packages/create-threenative/src/index.js";
 import {
+  type IMcpRequest,
   type IMcpServerConfig,
   type IMcpSurface,
   assertMcpToolSurface,
@@ -284,6 +285,11 @@ async function assertSculptResources(
   }
 }
 
+const NOOP_MCP_VALIDATOR = async (): Promise<void> => undefined;
+const MCP_VALIDATORS: Readonly<Record<string, (request: IMcpRequest) => Promise<void>>> = {
+  "threenative-sculpt": assertSculptResources,
+};
+
 export async function assertMcpServers(target: string): Promise<void> {
   const configPath = path.join(target, ".mcp.json");
   const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
@@ -315,7 +321,7 @@ export async function assertMcpServers(target: string): Promise<void> {
       },
       await readMcpSurface(path.join(REPO_ROOT, "packages/create-threenative", file)),
       target,
-      name === "threenative-sculpt" ? assertSculptResources : undefined,
+      MCP_VALIDATORS[name] ?? NOOP_MCP_VALIDATOR,
     );
   }
 }

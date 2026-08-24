@@ -236,8 +236,56 @@ input.on("line", (line) => {
           { args: [server], command: process.execPath },
           { tools: ["sculpt_plan"], version: "test" },
           root,
+          async (request) => {
+            const listed = await request("resources/list");
+            expect(listed).toEqual({ resources: [{ uri: "grimoire://safe" }] });
+            const read = await request("resources/read", { uri: "grimoire://safe" });
+            expect(read).toEqual({
+              contents: [{ text: "Use broad shapes and a restrained palette." }],
+            });
+          },
         ),
       ).resolves.toBeUndefined();
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("fails closed when a sculpt resource validator observes no resources", async () => {
+    const root = await makeTempDir("threenative-golden-path-mcp-resource-");
+    try {
+      const server = path.join(root, "server.mjs");
+      await writeFile(
+        server,
+        `import { createInterface } from "node:readline";
+const input = createInterface({ input: process.stdin });
+input.on("line", (line) => {
+  const request = JSON.parse(line);
+  if (request.id === undefined) return;
+  const result = request.method === "tools/list"
+    ? { tools: [{ name: "sculpt_plan" }] }
+    : request.method === "resources/list"
+      ? { resources: [] }
+      : { protocolVersion: "2025-06-18", capabilities: {} };
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) + "\\n");
+});
+`,
+      );
+      await expect(
+        probeMcpServer(
+          "threenative-sculpt",
+          { args: [server], command: process.execPath },
+          { tools: ["sculpt_plan"], version: "test" },
+          root,
+          async (request) => {
+            const listed = await request("resources/list");
+            const resources = (listed as { resources?: unknown }).resources;
+            if (!Array.isArray(resources) || resources.length === 0) {
+              throw new Error("threenative-sculpt listed no technique resources.");
+            }
+          },
+        ),
+      ).rejects.toThrow(/listed no technique resources/u);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

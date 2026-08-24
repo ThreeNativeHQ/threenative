@@ -32,6 +32,31 @@ Each declared control was made red temporarily, then restored:
 2. Diverging the watch manifest filename caused the changed-input test to fail because the old hashed output remained unchanged.
 3. Restoring one inline split-string caused the material census command to exit 1 at `packages/core/src/assets.ts:436`.
 
+## Repair round 1 — shared MCP client contract
+
+The shared `probeMcpServer` client now requires an after-initialize validator. The production
+server map supplies `assertSculptResources` for `threenative-sculpt` and an explicit no-op for
+the asset server. The existing sculpt validator still rejects missing, empty, and unsafe
+resources.
+
+The omitted-validator negative control was made red by temporarily restoring the reviewed bug
+(optional callback invocation with no contract guard):
+
+```text
+FAIL scripts/__tests__/verify-golden-path.spec.ts > golden path matrix > fails closed when a sculpt probe omits its resource validator
+AssertionError: promise resolved "undefined" instead of rejecting
+```
+
+After restoring the required callback and guard, the same focused suite was green:
+
+```text
+Command: pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts
+Result: 1 test file passed, 13 tests passed
+```
+
+The committed empty-resource negative control also passes by rejecting with
+`threenative-sculpt listed no technique resources.`.
+
 ## Verification commands
 
 - `pnpm exec vitest run` — 198 files passed, 1,884 tests passed.

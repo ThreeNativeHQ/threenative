@@ -102,7 +102,7 @@ export async function probeMcpServer(
   server: IMcpServerConfig,
   surface: IMcpSurface,
   cwd: string,
-  afterInitialize?: (request: IMcpRequest) => Promise<void>,
+  afterInitialize: (request: IMcpRequest) => Promise<void>,
 ): Promise<void> {
   const child = spawn(server.command, [...server.args], {
     cwd,
@@ -173,7 +173,12 @@ export async function probeMcpServer(
     );
     const listed = await request("tools/list");
     assertMcpToolSurface(serverName, surface.tools, listed);
-    await afterInitialize?.(request);
+    if (typeof afterInitialize !== "function") {
+      throw new Error(
+        `TN_GOLDEN_PATH_MCP_CONTRACT_INVALID: ${serverName} requires an after-initialize validator.`,
+      );
+    }
+    await afterInitialize(request);
     process.stdout.write(
       `${serverName} ok: ${surface.tools.length} tools from ${surface.version}\n`,
     );
