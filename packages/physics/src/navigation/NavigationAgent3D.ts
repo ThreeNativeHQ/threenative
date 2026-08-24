@@ -226,7 +226,7 @@ export class NavigationAgent3D {
       toNavigationVector(target, this.#targetRecord),
     );
     const path = result.success ? result.path : [];
-    const final = start.polyRef === end.polyRef ? end.point : path.at(-1);
+    const final = path.at(-1);
     return {
       path,
       reachable:

@@ -45,13 +45,17 @@ describe("rapier plugin", () => {
 
   it("should route sceneExit and dispose through one ordered teardown", () => {
     const source = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
-    const surface = source.match(/const teardownRegistries = \{\n([\s\S]*?)\n {2}\} as const;/);
-    if (surface === null) throw new Error("Physics teardown registry surface is missing.");
-    const registryBlock = surface[1];
-    if (registryBlock === undefined) throw new Error("Physics teardown registry list is missing.");
-    const registryNames = [...registryBlock.matchAll(/^\s+(\w+),$/gm)].map(([, name]) => name);
+    const registryStart = source.indexOf("  const bodies = new Set");
+    const registryEnd = source.indexOf("  let debugSeries", registryStart);
+    if (registryStart < 0 || registryEnd < 0)
+      throw new Error("Physics teardown registry declarations are missing.");
+    const registryDeclarations = source.slice(registryStart, registryEnd);
+    const registryNames = [
+      ...registryDeclarations.matchAll(/^\s+(?:const|let)\s+(\w+)\s*=\s*new\s+(?:Map|Set)\b/gm),
+    ].map(([, name]) => name);
     const releaseStart = source.indexOf("function releaseRegistries");
     const releaseEnd = source.indexOf("\n  function teardown", releaseStart);
+    if (releaseStart < 0 || releaseEnd < 0) throw new Error("Physics teardown routine is missing.");
     const releaseSource = source.slice(releaseStart, releaseEnd);
     const clearedRegistryNames = [
       ...releaseSource.matchAll(/^\s+teardownRegistries\.(\w+),$/gm),

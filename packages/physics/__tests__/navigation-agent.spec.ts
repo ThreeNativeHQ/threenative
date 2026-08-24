@@ -104,6 +104,46 @@ describe("NavigationAgent3D", () => {
     }
   });
 
+  it("should reject same-polygon empty or mismatched planner paths across tolerances", () => {
+    for (const [label, path] of [
+      ["empty", []],
+      ["mismatched", [{ x: 2, y: 0, z: 0 }]],
+    ] as const) {
+      for (const tolerance of [0.05, 0.1, 0.25, 0.5, 1]) {
+        const navigation = {
+          agents: new Set(),
+          obstacles: new Set(),
+          query: {
+            computePath: () => ({ path, success: true }),
+            findClosestPoint: (position: { x: number; y: number; z: number }) => ({
+              point: position,
+              polyRef: 1,
+              success: true,
+            }),
+          },
+          regions: new Set([{ enabled: true }]),
+        } as unknown as NonNullable<IPhysicsContext["navigation"]>;
+        const object = new Object3D();
+        object.position.set(1, 0, 0);
+        const agent = new NavigationAgent3D({
+          avoidanceEnabled: false,
+          navigation,
+          object,
+          targetDesiredDistance: tolerance,
+        });
+
+        agent.setTargetPosition(new Vector3(0, 0, 0));
+        const reachable = agent.isTargetReachable();
+        if (path.length > 0) object.position.copy(agent.getFinalPosition());
+        agent.advance();
+
+        expect(reachable, `${label} path tolerance=${tolerance}`).toBe(false);
+        expect(agent.isNavigationFinished(), `${label} path tolerance=${tolerance}`).toBe(false);
+        agent.dispose();
+      }
+    }
+  });
+
   it("should route around a blocker instead of through it", async () => {
     const { ctx } = await setup();
     new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });

@@ -11,6 +11,14 @@ import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 const TARGET = new Vector3(0, 0.75, 0);
 const SPEED = 3.4;
 
+function targetDesiredDistance(): number {
+  const raw = new URLSearchParams(globalThis.location.search).get("targetDesiredDistance");
+  const value = raw === null ? 0.5 : Number(raw);
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error("Navigation probe targetDesiredDistance must be finite and positive.");
+  return value;
+}
+
 export interface INavigationState extends Record<string, unknown> {
   distanceToTarget: number;
 }
@@ -21,10 +29,12 @@ class Navigator {
   readonly mesh: Mesh;
   readonly #agent: NavigationAgent3D;
   readonly #body: CharacterBody3D;
+  readonly #targetDesiredDistance: number;
   readonly #direction = new Vector3();
   readonly #next = new Vector3();
 
   constructor(ctx: NavigationCtx, navigation: NonNullable<IPhysicsContext["navigation"]>) {
+    this.#targetDesiredDistance = targetDesiredDistance();
     this.mesh = new Mesh(
       new BoxGeometry(0.7, 1.4, 0.7),
       new MeshBasicMaterial({ color: 0xffc857 }),
@@ -42,7 +52,7 @@ class Navigator {
       maxSpeed: SPEED,
       navigation,
       object: this.mesh,
-      targetDesiredDistance: 0.5,
+      targetDesiredDistance: this.#targetDesiredDistance,
     });
     this.#agent.setTargetPosition(TARGET);
   }
@@ -62,6 +72,7 @@ class Navigator {
       position: this.mesh.position.toArray(),
       targetDistance: this.mesh.position.distanceTo(TARGET),
       targetReachable: this.#agent.isTargetReachable(),
+      targetDesiredDistance: this.#targetDesiredDistance,
     };
   }
 

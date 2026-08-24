@@ -221,10 +221,69 @@ final target distance=0.006768826545260287, zero console/network/runtime errors.
 
 | Command | Result |
 |---|---|
-| `pnpm typecheck` | PASS after `pnpm build` generated local package declarations; all workspace typechecks completed. |
-| `pnpm lint` | PASS; Biome reported 290 cognitive-complexity warnings and no errors. |
+| `pnpm typecheck` | PASS; all workspace typechecks completed, including the example probe URL input. |
+| `pnpm lint` | PASS; Biome reported 290 existing cognitive-complexity warnings and no errors. |
 | `pnpm -r --filter '!@threenative/playtest' --workspace-concurrency=1 --if-present run test` | PASS; all 15 selected workspace projects completed, including native parity. |
 | `pnpm exec vitest run` | 197 files passed, 1,891/1,892 tests passed; one unrelated 5-second capability-docs test timed out under the full concurrent load. The file rerun at 15 seconds passed 7/7. |
-| `pnpm test` | BLOCKED by the existing playtest orphan-cleanup probe: it found Chromium children after its 5-second timeout and exited 1 before the unit phase. No lane assertion failed. |
+| `pnpm test` | PASS; 198 files and 1,893 tests passed, including the playtest orphan-cleanup guard and native parity. |
 
-The final focused lane suite after all mutation reverts was **PASS — 4 files, 79 tests**.
+The final focused lane suite after all mutation reverts was **PASS — 4 files, 80 tests**.
+
+## Repair round 2 — planner path and structural teardown coverage
+
+The navigation planner now uses `result.path.at(-1)` for both same-polygon and cross-polygon
+targets. An empty or mismatched planner path therefore cannot report reachable while movement
+rejects that path; the target tolerance remains the only reachability parameter.
+
+Negative control — added same-polygon planner results with an empty path and with a path ending
+away from the target, across tolerances `0.05, 0.1, 0.25, 0.5, 1`:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+FAIL: should reject same-polygon empty or mismatched planner paths across tolerances
+empty path tolerance=0.05: expected true to be false
+Tests 1 failed | 15 passed (16)
+```
+
+The planner-path fix was then restored and the new test passed.
+
+The teardown structural proof now scans the lifecycle registry declaration block for every
+declared `new Map`/`new Set` and requires each name in the shared `releaseRegistries()` clear
+routine. It no longer derives its expected set from the manually maintained
+`teardownRegistries` object.
+
+Negative control — declared `scratchRegistry` beside the teardown-owned registries without adding
+it to the shared teardown routine:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/plugin.spec.ts --reporter=dot
+FAIL: should route sceneExit and dispose through one ordered teardown
+expected [ 'areaMembershipBuffers', …(5) ] to include 'scratchRegistry'
+Tests 1 failed | 12 passed (13)
+```
+
+The scratch registry was reverted immediately.
+
+Restored focused proof:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/plugin.spec.ts packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+PASS — 2 files, 29 tests.
+
+pnpm exec vitest run packages/core/__tests__/input.spec.ts packages/core/__tests__/replay.spec.ts packages/physics/__tests__/plugin.spec.ts packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+PASS — 4 files, 80 tests.
+```
+
+The browser probe accepts `targetDesiredDistance` through its navigation URL and reports the
+applied value. The reachable ⇒ finishes playtest passed on browser WebGPU for every value in the
+tolerance sweep `0.05, 0.1, 0.25, 0.5, 1`; each run observed `targetReachable=true` and then
+`navigationFinished=true`, with zero console, network, or runtime errors. The command was:
+
+```sh
+for tolerance in 0.05 0.1 0.25 0.5 1; do
+  node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/navigation.playtest.json \
+    --url "http://127.0.0.1:5180/?navigation&targetDesiredDistance=$tolerance" \
+    --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort" \
+    --browser-recipe webgpu --headed
+done
+```
