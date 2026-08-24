@@ -420,3 +420,105 @@ exit 1
 
 No live certificate handshake is claimed. QuickJS native execution, Android, and iOS remain
 unverified.
+
+## Resume repair 3 — pending timer transition (2026-08-24)
+
+The repair removes the unreachable engine-first fallback after the scheduler-first request. The
+pending branch is now the single consume transition; skipping it leaves the timer globals absent.
+The contract mutation models that state change, and the native executable schedules its timeout
+and interval before its first `Runtime::pollEvents()` call. Its `evalScript()` failure path is the
+negative control when the pending consume is skipped.
+
+### Red controls
+
+The corrected contract mutation was run against the pre-repair source. It changed the pending
+branch to a no-op and asserted the resulting state was still pending; the current source went red
+because the redundant fallback was still present:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/timer-contract.test.mjs --reporter=dot
+exit 1
+FAIL  tests/timer-contract.test.mjs > scheduler-first timer installation consumes its pending state exactly once
+AssertionError: the scheduler-first transition must not fall through to a second installation path
+Test Files  1 failed (1)
+Tests       1 failed | 9 passed (10)
+```
+
+The behavior-changing native mutation skipped the pending `setupTimers()` call. The target still
+built, but the executable failed at the first script evaluation instead of reaching the completion
+sentinel:
+
+```text
+$ cmake --build packages/runtime-native/build/tn-linux \
+    --target threenative-timer-delivery-test --parallel 4
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-timer-delivery-test
+[V8] timer_delivery_test.js:6: ReferenceError: setTimeout is not defined
+could not schedule native timer contract
+exit 1
+```
+
+### Green controls
+
+After removing the fallback and preserving the pending consume:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webtransport/peer-verification-contract.test.mjs \
+    tests/webgpu-bindings-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  3 passed (3)
+Tests       21 passed (21)
+exit 0
+
+$ cmake --build packages/runtime-native/build/tn-linux \
+    --target threenative-bindings-creation-test threenative-timer-delivery-test --parallel 4
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-bindings-creation-test
+native WebGPU creation bindings passed
+exit 0
+
+$ ./packages/runtime-native/build/tn-linux/threenative-timer-delivery-test
+[Mystral] process.exit(42) called
+native timer delivery contract passed
+exit 0
+```
+
+Native and repository gates also passed:
+
+```text
+$ pnpm native:build
+[1/1] Linking CXX executable mystral
+exit 0
+
+$ SDL_AUDIODRIVER=dummy pnpm --filter @threenative/runtime-native native:verify:desktop
+desktop audio decodeAudioData Promise proof passed on V8
+desktop core gate passed: 300 frames, 1280x720
+desktop physics actuation bindings proof passed
+desktop physics playtest proof passed: 14 assertions
+desktop physics query proof passed
+exit 0
+
+$ pnpm typecheck
+exit 0
+
+$ pnpm lint
+exit 0
+291 pre-existing warnings; no failure
+
+$ pnpm budgets
+exit 0
+
+$ pnpm test
+Test Files  198 passed (198)
+Tests       1883 passed (1883)
+suite temporary directory count unchanged: 0
+exit 0
+```
+
+The desktop V8/Dawn host is verified, including the nonblank screenshot at
+`packages/runtime-native/artifacts/desktop-core-2026-08-24.png`. Live WebTransport remains
+unverified because the echo-server fixture is absent; the live certificate handshake was not
+claimed. QuickJS native execution, Android, and iOS remain unverified.

@@ -1,6 +1,8 @@
 // The native timer host must deliver timeout and interval callbacks through Runtime::pollEvents.
-// This executable intentionally schedules work before the first poll and then polls repeatedly,
-// proving that a pending timeout survives the bootstrap boundary and fires exactly once.
+// Runtime::create completes the scheduler-first bootstrap before returning. This executable has
+// no event poll between creation and evalScript(), so the timeout and interval are the first work
+// handed to Runtime::pollEvents(). If the pending installation consume is skipped, evalScript()
+// fails because setTimeout is absent instead of allowing a false-positive completion.
 
 #include "mystral/runtime.h"
 

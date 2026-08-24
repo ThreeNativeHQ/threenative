@@ -461,10 +461,6 @@ public:
         // Set up setTimeout/setInterval
         if (timerInstallationPending_) {
             setupTimers();
-        } else if (!timerInstallationInstalled_) {
-            // Preserve the engine-first path for callers that have not requested the
-            // scheduler before engine creation.
-            setupTimers();
         }
 
         // Set up performance API

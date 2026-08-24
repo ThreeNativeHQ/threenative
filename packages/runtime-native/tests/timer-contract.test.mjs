@@ -45,11 +45,34 @@ function assertTimerInstallationOrderContract(runtime) {
   assert.match(setup, /timerInstallationPending_ = false;\s*timerInstallationInstalled_ = true;/u);
   assert.match(
     initialize.slice(engineCreation),
-    /if \(timerInstallationPending_\) \{\s*setupTimers\(\);\s*\} else if \(!timerInstallationInstalled_\) \{[\s\S]*?setupTimers\(\);\s*\}/u,
-    "engine creation must consume a pending timer installation and retain the engine-first path",
+    /if \(timerInstallationPending_\) \{\s*setupTimers\(\);\s*\}/u,
+    "engine creation must consume a pending timer installation",
+  );
+  assert.doesNotMatch(
+    initialize.slice(engineCreation),
+    /else if \(!timerInstallationInstalled_\)/u,
+    "the scheduler-first transition must not fall through to a second installation path",
   );
   assert.match(runtime, /bool timerInstallationPending_ = false;/u);
   assert.match(runtime, /bool timerInstallationInstalled_ = false;/u);
+}
+
+function simulatePendingInstallation(runtime) {
+  const initializeStart = runtime.indexOf("bool initializeJSAndBindings()");
+  const initializeEnd = runtime.indexOf("\n    void shutdown()", initializeStart);
+  const initialize = runtime.slice(initializeStart, initializeEnd);
+  const engineCreation = initialize.indexOf("jsEngine_ = js::createEngine();");
+  const afterEngine = initialize.slice(engineCreation);
+  const pendingBranch = afterEngine.match(
+    /if \(timerInstallationPending_\) \{([\s\S]*?)\n\s*\}/u,
+  );
+  assert.ok(pendingBranch, "the production transition must branch on pending installation");
+
+  // The scheduler-first call has already set pending=true and installed=false. The pending
+  // branch is therefore the only branch that can consume this transition; an else-if fallback
+  // is not reachable when pending is true.
+  const consumesPending = /\bsetupTimers\(\);/u.test(pendingBranch[1]);
+  return { installed: consumesPending, pending: !consumesPending };
 }
 
 function assertTimerExecutableFailsClosed(source) {
@@ -75,20 +98,25 @@ test("native timers have one real runtime owner and no engine-level stubs", () =
   assert.doesNotThrow(() => assertTimerContract(v8, quickjs, runtime));
 });
 
-test("timer installation delivers identically in engine-first and scheduler-first order", () => {
+test("scheduler-first timer installation consumes its pending state exactly once", () => {
   const runtime = read("src/runtime.cpp");
   assert.doesNotThrow(() => assertTimerInstallationOrderContract(runtime));
+  assert.deepEqual(simulatePendingInstallation(runtime), { installed: true, pending: false });
 });
 
-test("timer contract rejects removing the production pending-state consume", () => {
+test("timer contract rejects skipping the production pending-state consume", () => {
   const source = read("src/runtime.cpp");
-  const withoutPendingConsume = source.replace(
-    /if \(timerInstallationPending_\) \{\s*setupTimers\(\);\s*\} else if \(!timerInstallationInstalled_\) \{[\s\S]*?setupTimers\(\);\s*\}/u,
-    "if (!timerInstallationInstalled_) { setupTimers(); }",
+  const skippedPendingConsume = source.replace(
+    /if \(timerInstallationPending_\) \{\s*setupTimers\(\);\s*\}/u,
+    "if (timerInstallationPending_) {\n            // pending consume skipped by mutation\n        }",
   );
 
+  assert.deepEqual(simulatePendingInstallation(skippedPendingConsume), {
+    installed: false,
+    pending: true,
+  });
   assert.throws(
-    () => assertTimerInstallationOrderContract(withoutPendingConsume),
+    () => assertTimerInstallationOrderContract(skippedPendingConsume),
     /pending timer installation/u,
   );
 });
@@ -160,5 +188,17 @@ test("the pending-timeout proof is wired to the native timer delivery executable
     read("CMakeLists.txt"),
     /add_executable\(threenative-timer-delivery-test EXCLUDE_FROM_ALL\s*tests\/timer_delivery_test\.cpp\)/u,
   );
-  assert.match(read("tests/timer_delivery_test.cpp"), /native timer delivery contract passed/u);
+  const source = read("tests/timer_delivery_test.cpp");
+  assert.match(source, /native timer delivery contract passed/u);
+  const runtimeCreation = source.indexOf("auto runtime = mystral::Runtime::create(config);");
+  const schedule = source.indexOf("runtime->evalScript(kScript", runtimeCreation);
+  const firstPoll = source.indexOf("runtime->pollEvents()", schedule);
+  assert.ok(runtimeCreation >= 0, "the executable must create the runtime");
+  assert.ok(schedule > runtimeCreation, "the executable must schedule work after creation");
+  assert.ok(firstPoll > schedule, "the executable must schedule work before its first event poll");
+  assert.match(
+    source,
+    /if \(!runtime->evalScript\(kScript, "timer_delivery_test\.js"\)\) \{[\s\S]*?return 1;/u,
+    "the executable must fail closed when timer installation prevents scheduling",
+  );
 });
