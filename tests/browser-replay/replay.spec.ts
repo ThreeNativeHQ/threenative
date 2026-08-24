@@ -142,6 +142,7 @@ function runReplayScenario(
       "--browser-recipe",
       "webgpu",
       ...nestedBrowserMode,
+      ...(process.env.CI === "true" ? ["--allow-software"] : []),
       "--timeout",
       "120000",
     ];
