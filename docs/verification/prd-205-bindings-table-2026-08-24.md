@@ -132,3 +132,92 @@ for those harness races.
 Current touched-source line counts from `wc -l` are 630 for the table/API subtotal, 9434 for the
 runtime integration subtotal, and 416 for the native reentrancy proof. No net-negative claim is
 made against an unrelated or stale PRD baseline.
+
+## Independent follow-up repair
+
+Baseline: `89714a5ec4ab661c019f71fe35a9ef357481090c`
+
+A fresh review found three remaining lifecycle/transaction gaps. The follow-up closes them without
+changing the checked-in trace fixtures:
+
+1. Binding-table writes retain every expected installed descriptor, then verify the complete table
+   only after all writes. Verification runs forward and reverse because proxy descriptor/prototype
+   traps are observable. Every post-preflight failure rolls back every snapshotted row, then verifies
+   the complete original snapshot; an unstable or mismatched final state remains a reported failure.
+2. QuickJS now owns `lastException_` through one replace helper and one clear helper. Replacement
+   releases the previous owned value, teardown clears the final value before context release, and
+   the helpers do not free `JS_UNDEFINED` or `JS_NULL`.
+3. JSC records the callback-map keys created by each engine and erases only those keys before that
+   engine releases its context. Existing exception protection and cached `Reflect.set` behavior are
+   retained.
+
+### Follow-up red/green evidence
+
+The focused source contracts were added before production changes. The baseline was red in exactly
+the three new contracts:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs
+    exit 1; Test Files 1 failed, 1 passed; Tests 3 failed, 23 passed
+    failures: whole-table write/rollback verification; QuickJS exception ownership;
+    JSC per-engine callback ownership
+
+The executable two-row control was also red on the baseline. Its second proxy row returned success
+after deleting the first row that had already passed the old immediate check:
+
+    cmake --build --preset tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    build: exit 0
+    executable: exit 1
+    whole-table binding proof failed: a later row deleted an earlier verified row without failing
+
+The repaired source contracts and trace contract are green:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs
+    exit 0; Test Files 2 passed; Tests 26 passed
+
+The native control now also covers rollback-order corruption, consecutive unconsumed QuickJS
+exceptions, QuickJS teardown with an outstanding exception, engine recreation, and a surviving
+engine callback after two other engines are destroyed. Both configured Linux engines passed on the
+NVIDIA GeForce RTX 2080 Vulkan adapter:
+
+    cmake --build --preset tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 0; native WebGPU bindings reentrancy passed
+
+    cmake --build build/tn-linux-quickjs \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel \
+      && ./build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test
+    exit 0; native WebGPU bindings reentrancy passed
+
+JSC remains unavailable as a runtime on this Linux host. Its updated Objective-C++ source passed
+the existing syntax-only compatibility-stub check:
+
+    clang++ -fsyntax-only -x objective-c++ -std=c++17 -D__APPLE__ -DMYSTRAL_JS_JSC \
+      -I/tmp/tn-prd205-jsc-stub -I/usr/include/webkitgtk-4.1 \
+      -Ipackages/runtime-native/include packages/runtime-native/src/js/jsc_engine.mm
+    exit 0
+
+### Follow-up gates and limits
+
+    pnpm --filter @threenative/runtime-native test
+    exit 0; Test Files 57 passed; Tests 397 passed, 33 skipped; physics parity 28 JS tests and
+    2 Rust tests passed; publint passed
+
+    pnpm typecheck
+    exit 0; Scope 16 of 17 workspace projects
+
+    pnpm lint
+    exit 0; Biome checked 1113 files; 381 warnings, no errors
+
+    pnpm test
+    exit 0; Test Files 197 passed, 1 skipped; Tests 1880 passed, 3 skipped
+
+    git diff --check
+    exit 0; no whitespace errors
+
+This follow-up did not execute JSC on Apple hardware, Android, iOS, browser-reference/pixel
+conformance, or the full desktop 300-frame verification. It makes no new claim for those lanes.

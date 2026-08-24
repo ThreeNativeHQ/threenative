@@ -1,6 +1,7 @@
 #include "mystral/webgpu/registration_table.h"
 
 #include <cstring>
+#include <functional>
 #include <string>
 #include <utility>
 
@@ -75,6 +76,99 @@ void appendRollbackFailure(
     const std::string& reason) {
     if (!failures.empty()) failures += "; ";
     failures += snapshot.name + ": " + reason;
+}
+
+using PropertyMatcher = std::function<bool(size_t, const js::JSPropertyInfo&)>;
+
+bool verifyWholeTablePass(
+    js::Engine* engine,
+    const std::vector<PropertySnapshot>& snapshots,
+    bool reverse,
+    const char* stateName,
+    const PropertyMatcher& matches,
+    std::string& failures) {
+    for (size_t offset = 0; offset < snapshots.size(); ++offset) {
+        const size_t index = reverse ? snapshots.size() - offset - 1 : offset;
+        const auto& snapshot = snapshots[index];
+        js::JSPropertyInfo actual;
+        const bool inspected = engine->getPropertyInfo(
+            snapshot.destination, snapshot.name.c_str(), actual);
+        const std::string inspectionException = engine->hasException()
+            ? engine->getException()
+            : "";
+        const bool stateMatches = inspected && inspectionException.empty() &&
+            matches(index, actual);
+        engine->releasePropertyInfo(actual);
+
+        if (!inspected) {
+            appendRollbackFailure(
+                failures,
+                snapshot,
+                inspectionException.empty()
+                    ? std::string(stateName) + " inspection failed"
+                    : std::string(stateName) + " inspection threw: " +
+                          inspectionException);
+        } else if (!inspectionException.empty()) {
+            appendRollbackFailure(
+                failures,
+                snapshot,
+                std::string(stateName) + " inspection left an exception: " +
+                    inspectionException);
+        } else if (!stateMatches) {
+            appendRollbackFailure(
+                failures, snapshot, std::string(stateName) + " did not match");
+        }
+    }
+    return failures.empty();
+}
+
+bool verifyStableWholeTable(
+    js::Engine* engine,
+    const std::vector<PropertySnapshot>& snapshots,
+    const char* stateName,
+    const PropertyMatcher& matches,
+    std::string& failures) {
+    // Descriptor/prototype proxy traps are observable. Verify in both directions so a later
+    // observation that corrupts an already checked row is seen by the reverse pass. If either
+    // complete pass differs, the table cannot be shown stable and the transaction fails closed.
+    return verifyWholeTablePass(
+               engine, snapshots, false, stateName, matches, failures) &&
+           verifyWholeTablePass(
+               engine, snapshots, true, stateName, matches, failures);
+}
+
+bool verifyInstalledTable(
+    js::Engine* engine,
+    const std::vector<PropertySnapshot>& snapshots,
+    const std::vector<ExpectedInstalledProperty>& expectedInstalled,
+    std::string& failures) {
+    if (expectedInstalled.size() != snapshots.size()) {
+        failures = "installed descriptor set was incomplete";
+        return false;
+    }
+    return verifyStableWholeTable(
+        engine,
+        snapshots,
+        "installed state",
+        [&](size_t index, const js::JSPropertyInfo& actual) {
+            return installedPropertyMatches(
+                engine, actual, expectedInstalled[index]);
+        },
+        failures);
+}
+
+bool verifySnapshotTable(
+    js::Engine* engine,
+    const std::vector<PropertySnapshot>& snapshots,
+    std::string& failures) {
+    return verifyStableWholeTable(
+        engine,
+        snapshots,
+        "rollback final snapshot",
+        [&](size_t index, const js::JSPropertyInfo& actual) {
+            return propertyStateMatches(engine, actual, snapshots[index].property);
+        },
+        failures);
 }
 
 js::JSValueHandle fail(js::Engine* engine, const char* message) {
@@ -214,9 +308,9 @@ bool installBindingTable(
         snapshots.push_back(std::move(snapshot));
     }
 
-    auto rollback = [&](size_t count) {
+    auto rollback = [&]() {
         std::string failures;
-        for (size_t remaining = count; remaining > 0; --remaining) {
+        for (size_t remaining = snapshots.size(); remaining > 0; --remaining) {
             const auto& snapshot = snapshots[remaining - 1];
             bool operationSucceeded = false;
             if (snapshot.property.kind == js::JSPropertyKind::Data &&
@@ -233,16 +327,6 @@ bool installBindingTable(
                 ? engine->getException()
                 : "";
 
-            js::JSPropertyInfo restoredProperty;
-            const bool inspected = engine->getPropertyInfo(
-                snapshot.destination, snapshot.name.c_str(), restoredProperty);
-            const std::string inspectionException = engine->hasException()
-                ? engine->getException()
-                : "";
-            const bool stateMatches = inspected &&
-                propertyStateMatches(engine, restoredProperty, snapshot.property);
-            engine->releasePropertyInfo(restoredProperty);
-
             if (!operationSucceeded) {
                 appendRollbackFailure(failures, snapshot, "rollback operation returned false");
             }
@@ -250,20 +334,29 @@ bool installBindingTable(
                 appendRollbackFailure(
                     failures, snapshot, "rollback operation threw: " + operationException);
             }
-            if (!inspected) {
-                appendRollbackFailure(
-                    failures,
-                    snapshot,
-                    inspectionException.empty()
-                        ? "rollback state inspection failed"
-                        : "rollback state inspection threw: " + inspectionException);
-            } else if (!stateMatches) {
-                appendRollbackFailure(failures, snapshot, "rollback state did not match snapshot");
-            }
         }
         return failures;
     };
 
+    auto rollbackAndFail = [&](std::string exception) {
+        const std::string rollbackFailures = rollback();
+        std::string finalSnapshotFailures;
+        verifySnapshotTable(engine, snapshots, finalSnapshotFailures);
+        releaseSnapshots();
+        if (!rollbackFailures.empty()) {
+            exception += "; binding-table rollback operations failed: " + rollbackFailures;
+        }
+        if (!finalSnapshotFailures.empty()) {
+            exception += "; binding-table rollback was incomplete: " +
+                         finalSnapshotFailures;
+        }
+        if (exception.empty()) exception = "WebGPU binding property installation failed";
+        engine->throwException(exception.c_str());
+        return false;
+    };
+
+    std::vector<ExpectedInstalledProperty> expectedInstalled;
+    expectedInstalled.reserve(table.registrations.size());
     for (size_t index = 0; index < table.registrations.size(); ++index) {
         const auto& registration = table.registrations[index];
         const auto destination = destinations[index];
@@ -276,42 +369,30 @@ bool installBindingTable(
             });
         const bool functionCreated = function.ptr != nullptr;
         const bool pendingException = engine->hasException();
-        bool propertyWriteAttempted = false;
-        bool propertyWritten = false;
-        if (functionCreated && !pendingException) {
-            propertyWriteAttempted = true;
-            propertyWritten = engine->setProperty(destination, registration.name, function);
-            if (propertyWritten) {
-                // The engine operation must leave an own data binding. A proxy setter can return
-                // true without creating one, and inherited lookup must not make that look like a
-                // successful installation. Accessors are not invoked, but proxy descriptor and
-                // getPrototypeOf traps are observable and may have side effects.
-                js::JSPropertyInfo installed;
-                const auto expected = expectedInstalledProperty(
-                    snapshots[index].property, function);
-                propertyWritten = engine->getPropertyInfo(
-                    destination, registration.name, installed) &&
-                    installedPropertyMatches(engine, installed, expected);
-                engine->releasePropertyInfo(installed);
-                if (!propertyWritten && !engine->hasException()) {
-                    fail(engine, "WebGPU binding property installation did not create an own binding");
-                }
-            }
+        if (!functionCreated || pendingException) {
+            std::string exception = engine->hasException()
+                ? engine->getException()
+                : "WebGPU binding function creation failed";
+            return rollbackAndFail(std::move(exception));
         }
-        if (!functionCreated || pendingException || !propertyWritten) {
+
+        expectedInstalled.push_back(expectedInstalledProperty(
+            snapshots[index].property, function));
+        const bool propertyWritten = engine->setProperty(
+            destination, registration.name, function);
+        if (!propertyWritten || engine->hasException()) {
             std::string exception = engine->hasException()
                 ? engine->getException()
                 : "WebGPU binding property installation failed";
-            const size_t rollbackCount = index + (propertyWriteAttempted ? 1 : 0);
-            const std::string rollbackFailures = rollback(rollbackCount);
-            releaseSnapshots();
-            if (!rollbackFailures.empty()) {
-                exception += "; binding-table rollback was incomplete: " + rollbackFailures;
-            }
-            if (exception.empty()) exception = "WebGPU binding property installation failed";
-            engine->throwException(exception.c_str());
-            return false;
+            return rollbackAndFail(std::move(exception));
         }
+    }
+
+    std::string installedFailures;
+    if (!verifyInstalledTable(
+            engine, snapshots, expectedInstalled, installedFailures)) {
+        return rollbackAndFail(
+            "WebGPU binding whole-table verification failed: " + installedFailures);
     }
     releaseSnapshots();
     return true;

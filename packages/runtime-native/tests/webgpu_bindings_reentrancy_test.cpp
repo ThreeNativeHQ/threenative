@@ -170,6 +170,101 @@ bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
            !engine->hasProperty(objectDestination, "nonObjectFailure");
 }
 
+bool checkWholeTableVerification(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(
+        runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    const auto failed = [](const char* message) {
+        std::cerr << "whole-table binding proof failed: " << message << std::endl;
+        return false;
+    };
+    struct FrameTrackingGuard {
+        mystral::js::Engine* engine;
+        ~FrameTrackingGuard() { engine->resumeFrameTracking(); }
+    } frameTrackingGuard{engine};
+    engine->suspendFrameTracking();
+
+    if (!runtime.evalScript(R"JS((() => {
+        globalThis.__tnCrossRowFirst = { first: "first-original" };
+        globalThis.__tnCrossRowSecondTarget = {};
+        globalThis.__tnCrossRowSecondProxy = new Proxy(__tnCrossRowSecondTarget, {
+            set(target, property, value) {
+                Reflect.set(target, property, value);
+                delete __tnCrossRowFirst.first;
+                return true;
+            },
+        });
+
+        globalThis.__tnRollbackOrderFirstTarget = { first: "rollback-first-original" };
+        globalThis.__tnRollbackOrderSecondTarget = {};
+        globalThis.__tnRollbackOrderFirstProxy = new Proxy(__tnRollbackOrderFirstTarget, {
+            set(target, property, value) {
+                Reflect.set(target, property, value);
+                if (typeof value !== "function") {
+                    __tnRollbackOrderSecondTarget.second = "rollback-order-corruption";
+                }
+                return true;
+            },
+        });
+        globalThis.__tnRollbackOrderSecondProxy = new Proxy(__tnRollbackOrderSecondTarget, {
+            set(target, property, value) {
+                Reflect.set(target, property, value);
+                throw new Error("controlled cross-row rollback failure");
+            },
+        });
+    })())JS", "webgpu-binding-whole-table-setup.js")) {
+        return failed("setup");
+    }
+
+    const auto first = engine->getGlobalProperty("__tnCrossRowFirst");
+    const auto second = engine->getGlobalProperty("__tnCrossRowSecondProxy");
+    const auto table = mystral::webgpu::bindingTable({
+        {"TestSurface", "first", 0, nullptr, &tableProbe, first},
+        {"TestSurface", "second", 0, nullptr, &tableProbe, second},
+    });
+    if (!table.valid || mystral::webgpu::installBindingTable(engine, state, table) ||
+        !engine->hasException()) {
+        return failed("a later row deleted an earlier verified row without failing");
+    }
+    engine->getException();
+    if (!runtime.evalScript(R"JS((() => {
+        const firstDescriptor = Object.getOwnPropertyDescriptor(__tnCrossRowFirst, "first");
+        if (firstDescriptor === undefined || firstDescriptor.value !== "first-original") {
+            throw new Error("the earlier row snapshot was not restored");
+        }
+        if (Object.prototype.hasOwnProperty.call(__tnCrossRowSecondTarget, "second")) {
+            throw new Error("the later row survived rollback");
+        }
+    })())JS", "webgpu-binding-whole-table-check.js")) {
+        return failed("whole-table rollback state");
+    }
+
+    const auto rollbackFirst = engine->getGlobalProperty("__tnRollbackOrderFirstProxy");
+    const auto rollbackSecond = engine->getGlobalProperty("__tnRollbackOrderSecondProxy");
+    const auto rollbackOrderTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "first", 0, nullptr, &tableProbe, rollbackFirst},
+        {"TestSurface", "second", 0, nullptr, &tableProbe, rollbackSecond},
+    });
+    if (!rollbackOrderTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, rollbackOrderTable) ||
+        !engine->hasException()) {
+        return failed("cross-row rollback corruption was not rejected");
+    }
+    const auto rollbackMessage = engine->getException();
+    if (rollbackMessage.find("binding-table rollback was incomplete") == std::string::npos ||
+        !runtime.evalScript(R"JS((() => {
+            if (__tnRollbackOrderFirstTarget.first !== "rollback-first-original") {
+                throw new Error("the first rollback snapshot was not restored");
+            }
+            if (__tnRollbackOrderSecondTarget.second !== "rollback-order-corruption") {
+                throw new Error("the rollback-order corruption control did not survive");
+            }
+        })())JS", "webgpu-binding-rollback-order-check.js")) {
+        return failed("whole-table final rollback verification");
+    }
+    return true;
+}
+
 bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -652,6 +747,64 @@ bool queueQuickJSTeardownProbe(mystral::Runtime& runtime) {
            teardownProbeCalls == 0;
 }
 
+bool checkQuickJSExceptionReplacement(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(
+        runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
+
+    if (engine->evalWithResult(
+            "const =",
+            "quickjs-first-unconsumed.js").ptr != nullptr ||
+        !engine->hasException()) {
+        std::cerr << "QuickJS did not retain the first exception" << std::endl;
+        return false;
+    }
+    if (engine->evalScriptWithResult(
+            "throw new Error('quickjs-second-unconsumed')",
+            "quickjs-second-unconsumed.js").ptr != nullptr ||
+        !engine->hasException()) {
+        std::cerr << "QuickJS did not replace the first exception" << std::endl;
+        return false;
+    }
+    const auto secondMessage = engine->getException();
+    if (secondMessage.find("quickjs-second-unconsumed") == std::string::npos) {
+        std::cerr << "QuickJS returned the wrong replacement exception" << std::endl;
+        return false;
+    }
+
+    const auto thrower = engine->evalScriptWithResult(
+        "(() => { throw new Error('quickjs-call-unconsumed'); })",
+        "quickjs-call-unconsumed-setup.js");
+    if (!thrower.ptr) return false;
+    engine->protect(thrower);
+    engine->throwException("quickjs-prior-unconsumed");
+    const auto callResult = engine->call(thrower, {}, {});
+    engine->unprotect(thrower);
+    if (callResult.ptr != nullptr || !engine->hasException() ||
+        engine->getException().find("quickjs-call-unconsumed") == std::string::npos) {
+        std::cerr << "QuickJS call did not replace an unconsumed exception" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool leaveQuickJSOutstandingException(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(
+        runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
+
+    if (engine->evalWithResult(
+            "const =",
+            "quickjs-outstanding-at-teardown.js").ptr != nullptr ||
+        !engine->hasException()) {
+        std::cerr << "QuickJS teardown exception was not left outstanding" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     const size_t protectedBefore = state->protectedHandles.size();
@@ -757,6 +910,7 @@ int main() {
 
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
     if (!checkAtomicRollbackAndDestinationValidation(*first)) return 1;
+    if (!checkWholeTableVerification(*first)) return 1;
     if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;
     if (!checkDynamicCanvasOwnership(*first)) return 1;
     if (!checkBindingProtectionOwnership(*first)) return 1;
@@ -778,7 +932,11 @@ int main() {
         return 1;
     }
 
-    if (!queueQuickJSTeardownProbe(*first)) return 1;
+    if (!checkQuickJSExceptionReplacement(*first) ||
+        !queueQuickJSTeardownProbe(*first) ||
+        !leaveQuickJSOutstandingException(*first)) {
+        return 1;
+    }
 
     first.reset();
     if (teardownProbeCalls != 0) {
@@ -791,6 +949,25 @@ int main() {
             "if (typeof __tnEngineLocalCanvasContext.measureText('x').width !== 'number') "
             "throw new Error('second engine Canvas2D callback lost its owning engine');",
             "webgpu-bindings-reentrancy-after-first-destroy.js")) {
+        return 1;
+    }
+
+    auto replacement = mystral::Runtime::create(config);
+    if (!replacement || !replacement->getWebGPUBindingsState() ||
+        !createEngineLocalCanvasContext(
+            *replacement, "webgpu-binding-replacement-canvas.js") ||
+        !runProbe(*replacement, "replacement") ||
+        !replacement->evalScript(
+            "__tnEngineLocalCanvasContext.fillRect(0, 0, 1, 1);",
+            "webgpu-binding-replacement-callback.js")) {
+        return 1;
+    }
+    replacement.reset();
+    if (!second->evalScript(
+            "__tnEngineLocalCanvasContext.fillRect(0, 0, 1, 1); "
+            "if (__tnReentrancyMarker !== 'second') "
+            "throw new Error('surviving engine callback changed after replacement teardown');",
+            "webgpu-bindings-reentrancy-after-replacement-destroy.js")) {
         return 1;
     }
 

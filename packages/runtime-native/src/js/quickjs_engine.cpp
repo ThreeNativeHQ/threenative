@@ -154,6 +154,8 @@ public:
     ~QuickJSEngine() override {
         std::cout << "[QuickJS] Destroying engine..." << std::endl;
 
+        if (context_) clearLastException();
+
         if (context_ && runtime_) {
             // Runtime-owned native binding state is already gone at this point. Do not execute
             // queued jobs here; JS_FreeRuntime discards them with the remaining JS graph.
@@ -256,7 +258,7 @@ public:
         if (JS_IsException(result)) {
             JSValue exception = JS_GetException(context_);
             reportException(exception);
-            lastException_ = exception;
+            replaceLastException(exception);
             JS_FreeValue(context_, result);
             return {nullptr, context_};
         }
@@ -318,7 +320,7 @@ public:
         if (JS_IsException(result)) {
             JSValue exception = JS_GetException(context_);
             reportException(exception);
-            lastException_ = exception;
+            replaceLastException(exception);
             JS_FreeValue(context_, result);
             return {nullptr, context_};
         }
@@ -755,7 +757,7 @@ public:
         if (JS_IsException(result)) {
             JSValue exception = JS_GetException(context_);
             reportException(exception);
-            lastException_ = exception;
+            replaceLastException(exception);
             return {nullptr, context_};
         }
 
@@ -805,17 +807,13 @@ public:
         std::string result = str ? str : "";
         if (str) JS_FreeCString(context_, str);
 
-        JS_FreeValue(context_, lastException_);
-        lastException_ = JS_UNDEFINED;
+        clearLastException();
         return result;
     }
 
     void throwException(const char* message) override {
-        if (!JS_IsNull(lastException_) && !JS_IsUndefined(lastException_)) {
-            JS_FreeValue(context_, lastException_);
-        }
         JS_ThrowInternalError(context_, "%s", message);
-        lastException_ = JS_GetException(context_);
+        replaceLastException(JS_GetException(context_));
     }
 
     // ========================================================================
@@ -845,6 +843,18 @@ public:
     }
 
 private:
+    void clearLastException() {
+        if (!JS_IsNull(lastException_) && !JS_IsUndefined(lastException_)) {
+            JS_FreeValue(context_, lastException_);
+        }
+        lastException_ = JS_UNDEFINED;
+    }
+
+    void replaceLastException(JSValue exception) {
+        clearLastException();
+        lastException_ = exception;
+    }
+
     void setupGlobals() {
         JSValue global = JS_GetGlobalObject(context_);
 
@@ -895,8 +905,7 @@ private:
     bool capturePendingException() {
         JSValue exception = JS_GetException(context_);
         reportException(exception);
-        if (!JS_IsUndefined(lastException_)) JS_FreeValue(context_, lastException_);
-        lastException_ = exception;
+        replaceLastException(exception);
         return false;
     }
 

@@ -279,12 +279,12 @@ test("binding-table installation is object-only and rolls back failed writes", (
   assert.match(engine, /virtual bool hasProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(engine, /virtual bool deleteProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(implementation, /!engine->isObject\(destination\)/u);
-  assert.match(implementation, /propertyWriteAttempted[\s\S]*?engine->setProperty\(/u);
+  assert.match(implementation, /expectedInstalled\.push_back[\s\S]*?engine->setProperty\(/u);
   assert.match(implementation, /getPropertyInfo\(/u);
   assert.match(implementation, /JSPropertyKind::Accessor/u);
   assert.match(implementation, /cannot replace a non-writable property/u);
   assert.match(implementation, /deleteProperty\(/u);
-  assert.match(implementation, /rollback[^;]*state/u);
+  assert.match(implementation, /rollback final snapshot/u);
   assert.match(implementation, /actual\.enumerable == expected\.enumerable/u);
   assert.match(implementation, /actual\.configurable == expected\.configurable/u);
   assert.match(implementation, /expectedInstalledProperty/u);
@@ -306,6 +306,30 @@ test("binding-table installation is object-only and rolls back failed writes", (
     assert.doesNotMatch(source, /JSValueIsStrictEqual\(context_, stored/u);
   }
 
+});
+
+test("binding-table verification covers the whole table after writes and rollback", () => {
+  const implementation = read("src/webgpu/registration_table.cpp");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+  const writeLoop = blockBetween(
+    implementation,
+    "for (size_t index = 0; index < table.registrations.size(); ++index)",
+    "releaseSnapshots();\n    return true;",
+  );
+
+  assert.match(implementation, /std::vector<ExpectedInstalledProperty> expectedInstalled/u);
+  assert.match(implementation, /verifyInstalledTable/u);
+  assert.match(implementation, /verifySnapshotTable/u);
+  assert.match(implementation, /rollback[\s\S]*verifySnapshotTable/u);
+  assert.doesNotMatch(writeLoop, /installedPropertyMatches/u);
+  assert.match(
+    nativeControl,
+    /__tnCrossRowSecondProxy[\s\S]*delete __tnCrossRowFirst\.first[\s\S]*whole-table rollback state/u,
+  );
+  assert.match(
+    nativeControl,
+    /controlled cross-row rollback failure[\s\S]*binding-table rollback was incomplete[\s\S]*whole-table final rollback verification/u,
+  );
 });
 
 test("descriptor traversal and ordinary reads preserve proxy exception semantics", () => {
@@ -368,6 +392,74 @@ test("QuickJS teardown discards jobs that capture runtime-owned binding state", 
   assert.doesNotMatch(destructor, /JS_ExecutePendingJob/u);
   assert.match(nativeControl, /Promise\.resolve\(\)\.then\(\(\) => value\(\)\)/u);
   assert.match(nativeControl, /queued QuickJS callback executed during runtime teardown/u);
+});
+
+test("QuickJS centrally replaces and clears owned exception values", () => {
+  const quickjs = read("src/js/quickjs_engine.cpp");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+  const destructor = blockBetween(
+    quickjs,
+    "~QuickJSEngine() override",
+    "EngineType getType() const override",
+  );
+
+  assert.match(
+    quickjs,
+    /void clearLastException\(\)[\s\S]*JS_IsNull\(lastException_\)[\s\S]*JS_IsUndefined\(lastException_\)[\s\S]*JS_FreeValue/u,
+  );
+  assert.match(
+    quickjs,
+    /void replaceLastException\(JSValue exception\)[\s\S]*clearLastException\(\)[\s\S]*lastException_ = exception/u,
+  );
+  assert.equal(
+    quickjs.match(/lastException_\s*=/gu)?.length,
+    3,
+    "only clear, replace, and the member initializer may assign lastException_",
+  );
+  assert.match(destructor, /clearLastException\(\)[\s\S]*JS_FreeContext/u);
+  for (const directReplacement of [
+    blockBetween(quickjs, "JSValueHandle evalWithResult", "bool evalScript("),
+    blockBetween(quickjs, "JSValueHandle evalScriptWithResult", "// ========================================================================\n    // Global Object Access"),
+    blockBetween(quickjs, "JSValueHandle call(", "// ========================================================================\n    // Memory Management"),
+  ]) {
+    assert.match(directReplacement, /replaceLastException\(exception\)/u);
+    assert.doesNotMatch(directReplacement, /lastException_ = exception/u);
+  }
+  assert.match(
+    nativeControl,
+    /quickjs-first-unconsumed[\s\S]*quickjs-second-unconsumed[\s\S]*quickjs-call-unconsumed[\s\S]*quickjs-outstanding-at-teardown/u,
+  );
+});
+
+test("JSC erases only callback keys owned by the engine being destroyed", () => {
+  const jsc = read("src/js/jsc_engine.mm");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+  const destructor = blockBetween(
+    jsc,
+    "~JSCEngine() override",
+    "EngineType getType() const override",
+  );
+  const newFunction = blockBetween(
+    jsc,
+    "JSValueHandle newFunction",
+    "// ========================================================================\n    // Value Conversion",
+  );
+
+  assert.match(jsc, /std::unordered_set<void\*> nativeFunctionKeys_/u);
+  assert.match(newFunction, /nativeFunctionKeys_\.insert\(callbackKey\)/u);
+  assert.match(destructor, /for \(const auto callbackKey : nativeFunctionKeys_\)[\s\S]*g_nativeFunctions\.erase\(callbackKey\)/u);
+  assert.doesNotMatch(destructor, /g_nativeFunctions\.clear/u);
+  assert.ok(
+    destructor.indexOf("g_nativeFunctions.erase(callbackKey)") <
+      destructor.indexOf("JSGlobalContextRelease(context_)"),
+    "JSC callback entries must be erased before context release",
+  );
+  assert.match(jsc, /replaceLastException\([\s\S]*JSValueProtect/u);
+  assert.match(jsc, /reflectSet_[\s\S]*JSObjectCallAsFunction/u);
+  assert.match(
+    nativeControl,
+    /Runtime::create\(config\)[\s\S]*replacement\.reset\(\)[\s\S]*surviving engine callback changed after replacement teardown/u,
+  );
 });
 
 test("dynamic canvas getContext captures its native id instead of the mutable row", () => {

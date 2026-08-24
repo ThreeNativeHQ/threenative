@@ -10,6 +10,7 @@
 #include <sstream>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 
 #if defined(MYSTRAL_JS_JSC) && defined(__APPLE__)
@@ -49,6 +50,10 @@ public:
         std::cout << "[JSC] Destroying engine..." << std::endl;
 
         if (context_) {
+            for (const auto callbackKey : nativeFunctionKeys_) {
+                g_nativeFunctions.erase(callbackKey);
+            }
+            nativeFunctionKeys_.clear();
             clearLastException();
             if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
             if (reflectHas_) JSValueUnprotect(context_, reflectHas_);
@@ -362,8 +367,12 @@ public:
         // Use a static map with the function object pointer as key
         JSObjectRef funcObj = JSObjectMakeFunctionWithCallback(context_, nameStr, &nativeCallback);
 
-        // Store the native function with the object pointer as key
-        g_nativeFunctions[(void*)funcObj] = fn;
+        // Store the native function with the object pointer as key. The process-global callback
+        // trampoline cannot capture this engine, so retain explicit per-engine ownership for
+        // teardown instead of leaving callbacks that capture a released context behind.
+        void* callbackKey = (void*)funcObj;
+        g_nativeFunctions[callbackKey] = fn;
+        nativeFunctionKeys_.insert(callbackKey);
 
         JSStringRelease(nameStr);
         return {(void*)funcObj, context_};
@@ -917,6 +926,7 @@ private:
     JSObjectRef reflectSet_ = nullptr;
     JSObjectRef reflectGetPrototypeOf_ = nullptr;
     JSValueRef lastException_ = nullptr;
+    std::unordered_set<void*> nativeFunctionKeys_;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
     std::chrono::high_resolution_clock::time_point startTime_;
 };
