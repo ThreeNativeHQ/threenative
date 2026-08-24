@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import * as ts from "typescript";
 import { describe, expect, test } from "vitest";
 import { evaluateRichPlaytestAssertions } from "../src/assertion-evaluators.js";
 import { MOVEMENT_EVIDENCE_KINDS, MOVEMENT_EVALUATORS } from "../src/evaluators/movement-evidence.js";
@@ -27,16 +28,61 @@ function evaluate(assert_: IPlaytestScenario["assert"], extra: object = {}) {
     scenario: { assert: assert_, name: "c", schemaVersion: 1, steps: [{ release: true, waitTicks: 1 }] } as never,
   });
 }
+
+const TRIVIALITY_GUARD_OWNER = "triviality-guard.ts";
+
+function referencesAllowTrivial(node: ts.Node): boolean {
+  if (ts.isIdentifier(node)) return node.text === "allowTrivial";
+  if (ts.isPropertyAccessExpression(node)) {
+    return node.name.text === "allowTrivial" || referencesAllowTrivial(node.expression);
+  }
+  if (ts.isElementAccessExpression(node)) {
+    const property = node.argumentExpression;
+    return (property !== undefined && ts.isStringLiteralLike(property) && property.text === "allowTrivial")
+      || referencesAllowTrivial(node.expression);
+  }
+  if (ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node) || ts.isAsExpression(node)) {
+    return referencesAllowTrivial(node.expression);
+  }
+  return false;
+}
+
+function findTrivialityPredicates(source: string, path: string): number {
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let count = 0;
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeOfExpression(node) && referencesAllowTrivial(node.expression)) count += 1;
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return count;
+}
+
+function scanInlineTrivialityPredicates(files: Array<{ path: string; source: string }>) {
+  return files
+    .filter(({ path }) => path !== TRIVIALITY_GUARD_OWNER)
+    .map(({ path, source }) => ({ count: findTrivialityPredicates(source, path), path }))
+    .filter(({ count }) => count > 0);
+}
+
 describe("evaluator semantics (characterization)", () => {
   test("the guard has one definition and movement kinds have one dispatch entry", async () => {
     const root = new URL("../src/", import.meta.url);
-    const pattern = /typeof\s+[A-Za-z0-9_.]*allowTrivial\s*(?:===|!==)\s*"string"/gu;
     const matches = (await Promise.all((await readdir(root, { recursive: true }))
       .filter((path) => path.endsWith(".ts"))
-      .map(async (path) => ({ count: [...(await readFile(new URL(path, root), "utf8")).matchAll(pattern)].length, path }))))
+      .map(async (path) => ({ path, source: await readFile(new URL(path, root), "utf8") }))))
+      .map(({ path, source }) => ({ count: findTrivialityPredicates(source, path), path }))
       .filter(({ count }) => count > 0);
     expect(matches).toEqual([{ count: 1, path: "triviality-guard.ts" }]);
     expect(Object.keys(MOVEMENT_EVALUATORS).sort()).toEqual([...MOVEMENT_EVIDENCE_KINDS].sort());
+  });
+  test.each([
+    `const duplicate = (assertion: { allowTrivial?: unknown }) => typeof assertion.allowTrivial === 'string';`,
+    "const duplicate = (assertion: { allowTrivial?: unknown }) => typeof assertion.allowTrivial !== `string`;",
+    `const duplicate = (assertion: { allowTrivial?: unknown }) =>
+      typeof (assertion?.["allowTrivial"]) === "string";`,
+  ])("rejects equivalent inline predicates regardless of quote, operator, or format: %s", (source) => {
+    expect(scanInlineTrivialityPredicates([{ path: "duplicate.ts", source }])).toEqual([{ count: 1, path: "duplicate.ts" }]);
   });
   test("pre/post serialized verdicts match for every in-repo scenario", async () => {
     const golden = JSON.parse(await readFile(new URL("./fixtures/prd-200-verdicts.json", import.meta.url), "utf8"));

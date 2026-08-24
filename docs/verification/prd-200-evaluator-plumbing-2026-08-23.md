@@ -109,3 +109,36 @@ projections for fulfilled and empty evidence cases.
 - `pnpm quality` — exit 0; 68 findings (11 new, 9 grew, 48 inherited, 0 waived).
 - `pnpm test:playtest` — exit 0; all four browser scenarios passed with
   `pass: true`, NVIDIA WebGPU adapter evidence, and no assertion failures.
+
+## Repair round 2 — syntax-independent uniqueness guard (2026-08-23)
+
+- Replaced the quote/operator/format-sensitive regular expression in
+  `packages/playtest/__tests__/evaluator-semantics.spec.ts` with a TypeScript AST
+  walk. It identifies every `typeof` expression whose operand is an
+  `allowTrivial` identifier, property access, or string-keyed element access,
+  including parenthesized, non-null, `as`, and optional-chain forms. The only
+  allowed source path remains `triviality-guard.ts`.
+- The negative-control variants all matched and therefore went red when scanned
+  as an out-of-owner source: single-quoted `===`, backtick `!==`, and a
+  formatted optional/bracket access. A temporary duplicate in
+  `evaluators/movement-events.ts` produced the real gate failure:
+
+  ```text
+  AssertionError: expected [ { count: 1, path: "triviality-guard.ts" },
+    { count: 1, path: "evaluators/movement-events.ts" } ] to deeply equal
+    [ { count: 1, path: "triviality-guard.ts" } ]
+  ```
+
+  The mutation was removed before the green runs.
+- Green focused run:
+
+  ```text
+  $ pnpm exec vitest run packages/playtest/__tests__/evaluator-semantics.spec.ts packages/playtest/__tests__/runner-orchestration.spec.ts packages/playtest/__tests__/runner.spec.ts packages/playtest/__tests__/scenario.spec.ts packages/playtest/__tests__/setup-reporting.spec.ts
+  Test Files 5 passed (5)
+  Tests 126 passed (126)
+  PRD-200 verdict parity: 512 scenarios; diff: empty
+  ```
+
+- `pnpm test:playtest` reran successfully: all four browser scenarios passed
+  with `pass: true`, NVIDIA WebGPU adapter evidence, and no assertion failures.
+  Its package build and publint checks also passed.
