@@ -635,10 +635,12 @@ export async function writeScaffoldScript(
   template: string,
   cliSource: string,
   packageArgs: readonly string[],
+  options: { readonly ignoreInstallScripts?: boolean } = {},
 ): Promise<string> {
   const script = path.join(directory, "scaffold.sh");
   const target = '"${1:-game}"';
   const invocation = [
+    ...(options.ignoreInstallScripts ? ["npm_config_ignore_scripts=true"] : []),
     "pnpm",
     "dlx",
     "--silent",
@@ -662,6 +664,7 @@ export async function scaffold(
   target: string,
   sources: PackageSources,
   templatesRoot: string,
+  options: { readonly ignoreInstallScripts?: boolean } = {},
 ): Promise<void> {
   const templateManifest = await readManifest(path.join(templatesRoot, template, PACKAGE_FILE));
   const declared = declaredDependencies(templateManifest);
@@ -677,7 +680,7 @@ export async function scaffold(
   }
   const directory = path.dirname(target);
   const project = path.basename(target);
-  await writeScaffoldScript(directory, template, cliSource, packageArgs);
+  await writeScaffoldScript(directory, template, cliSource, packageArgs, options);
   assertTemplateDependencies(template, templateManifest, sources);
   process.stdout.write(`golden-path ${template}: ./scaffold.sh ${project}\n`);
   await runCommand("scaffold", "./scaffold.sh", [project], directory);
@@ -875,7 +878,9 @@ export async function verifyPackedMutationControl(
 
     const alternateSources = { ...sources, "create-threenative": mutatedTarball };
     const target = path.join(root, "mutated-project");
-    await scaffold(template, target, alternateSources, templateRoot());
+    await scaffold(template, target, alternateSources, templateRoot(), {
+      ignoreInstallScripts: true,
+    });
     const generatedManifest = path.join(target, PACKAGE_FILE);
     const generated = await readManifest(generatedManifest);
     if (declaredDependencies(generated).has("vite")) {
@@ -887,7 +892,14 @@ export async function verifyPackedMutationControl(
       `golden-path alternate: generated manifest '${generatedManifest}' contains the removed vite dependency from '${mutatedTarball}'\n`,
     );
 
-    await runCommand("install", "pnpm", ["install", "--reporter", "append-only"], target);
+    // The mutation-control assertion only checks that the packed template lost `vite`. Running
+    // package install hooks here would make this proof depend on optional native release assets.
+    await runCommand(
+      "install",
+      "pnpm",
+      ["install", "--ignore-scripts", "--reporter", "append-only"],
+      target,
+    );
     const port = await freePort();
     let failed = false;
     try {
