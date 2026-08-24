@@ -133,6 +133,33 @@ describe("createReactOverlay", () => {
     overlay.dispose();
   });
 
+  it("moves keyed host nodes instead of duplicating them when a list reorders", () => {
+    const canvasLayer = layer();
+    const overlay = createReactOverlay({ canvasLayer });
+    const row = (keys: readonly string[]) =>
+      createElement(
+        VIEW_ELEMENT,
+        { style: { direction: "row" } },
+        ...keys.map((key) =>
+          createElement(VIEW_ELEMENT, {
+            key,
+            style: { background: key === "a" ? "#ff0000" : "#00ff00", height: 8, width: 20 },
+          }),
+        ),
+      );
+
+    overlay.render(row(["a", "b"]));
+    const firstCommit = [...(canvasLayer.scene.children[0]?.children ?? [])];
+    expect(firstCommit).toHaveLength(2);
+
+    overlay.render(row(["b", "a"]));
+    const secondCommit = canvasLayer.scene.children[0]?.children ?? [];
+    expect(secondCommit).toHaveLength(2);
+    expect(secondCommit[0]).toBe(firstCommit[1]);
+    expect(secondCommit[1]).toBe(firstCommit[0]);
+    overlay.dispose();
+  });
+
   it("paints a container background before its children even when the container has zIndex", () => {
     const canvasLayer = layer();
     const overlay = createReactOverlay({ canvasLayer });

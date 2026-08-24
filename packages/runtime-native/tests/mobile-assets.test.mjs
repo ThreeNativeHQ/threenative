@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, test } from 'vitest';
 
 import { stageAndroidAssets } from '../scripts/package-android.mjs';
+import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
 const roots = [];
 
@@ -21,13 +22,14 @@ test('Android staging replaces stale game assets with every public file', () => 
   mkdirSync(join(assets, 'textures'), { recursive: true });
   mkdirSync(join(assets, 'models'), { recursive: true });
   mkdirSync(destination, { recursive: true });
+  const model = minimalGlb();
   writeFileSync(join(assets, 'textures', 'x.png'), 'texture');
-  writeFileSync(join(assets, 'models', 'level.glb'), 'model');
+  writeFileSync(join(assets, 'models', 'level.glb'), model);
   writeFileSync(join(destination, 'stale.bin'), 'stale');
 
   assert.deepEqual(stageAndroidAssets(assets, destination), ['models/level.glb', 'textures/x.png']);
   assert.equal(readFileSync(join(destination, 'textures', 'x.png'), 'utf8'), 'texture');
-  assert.equal(readFileSync(join(destination, 'models', 'level.glb'), 'utf8'), 'model');
+  assert.deepEqual(readFileSync(join(destination, 'models', 'level.glb')), model);
   assert.equal(existsSync(join(destination, 'stale.bin')), false);
 });
 

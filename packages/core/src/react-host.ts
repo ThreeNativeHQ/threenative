@@ -148,7 +148,9 @@ function syncObject(node: IHostNode, parent: Group, order: { value: number }): v
       mesh.renderOrder = renderOrder;
       mesh.scale.set(Math.max(node.box.width, 0), Math.max(node.box.height, 0), 1);
       mesh.position.set(node.box.x + node.box.width / 2, -(node.box.y + node.box.height / 2), 0);
-      if (mesh.parent !== parent) parent.add(mesh);
+      // Object3D.add removes and re-appends an existing child, which keeps Three's draw order in
+      // step with React's keyed sibling order after a move.
+      parent.add(mesh);
     }
   } else {
     syncText(node, parent, renderOrder);
@@ -223,7 +225,7 @@ function syncText(node: IHostNode, parent: Group, renderOrder: number): void {
   }
   mesh.count = runs.length;
   mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.parent !== parent) parent.add(mesh);
+  parent.add(mesh);
 }
 
 function disposeObject(node: IHostNode): void {
@@ -343,12 +345,17 @@ const config = {
 
 function attach(parent: IHostNode, child: AnyNode): void {
   if (!isHost(child)) child.parent = parent;
+  const existing = parent.nodes.indexOf(child);
+  if (existing >= 0) parent.nodes.splice(existing, 1);
   parent.nodes.push(child);
   reconcileChildren(parent);
 }
 
 function insert(parent: IHostNode, child: AnyNode, before: AnyNode): void {
+  if (child === before) return;
   if (!isHost(child)) child.parent = parent;
+  const existing = parent.nodes.indexOf(child);
+  if (existing >= 0) parent.nodes.splice(existing, 1);
   const at = parent.nodes.indexOf(before);
   parent.nodes.splice(at < 0 ? parent.nodes.length : at, 0, child);
   reconcileChildren(parent);
