@@ -140,35 +140,80 @@ charter assumed embedding a browser meant *shipping* one, and the measurement ab
 platform already provides it for free at the composition layer.
 
 **PRD-216's renderer is not deleted by this.** It stays as the no-WebView path — for desktop until
-that story is settled, for any target where a WebView is unavailable, and because a game that wants
+any target where a WebView is unavailable, and because a game that wants
 zero extra processes should still have the option. What changes is which one a template defaults to.
 
-## Open questions that must be answered before Phase 2
+## Two mechanisms, one UI
 
-1. **Desktop.** Android has `WebView`, iOS has `WKWebView`. Desktop is SDL and has neither; the
-   options are CEF (large), a system webview binding (`webview_deno`-style, small but thin), or
-   leaving desktop on the PRD-216 renderer and accepting that desktop looks different. Desktop is
-   currently the *cheapest* native target and this would make it the most expensive. **Unresolved,
-   and it is the reason this PRD is not simply "replace the quad renderer".**
-2. **Does desktop native ship to players, or is it a dev/test target?** The answer changes (1) from
-   blocking to cosmetic. Asked, not yet answered.
-3. Asset loading inside the WebView — bundled `file://`, or served from an in-process origin so
+Desktop **ships to players** (owner, 2026-08-24), so it is not a dev target that can be left
+behind, and it cannot use the mobile mechanism. On Android the WebView is a sibling layer the
+system compositor blends for free — that is precisely why it measured at zero. Desktop has no
+equivalent: SDL owns the window, and there is no transparent child surface to stack over a GL
+context without fighting the window manager on three platforms.
+
+So desktop gets its own solution, and the right one is **offscreen rendering**: the browser paints
+into a pixel buffer, the host uploads it as a texture, and the engine composites it in its own
+frame like any other quad. This is how shipped games have done HTML UI on desktop for years. It
+also *simplifies* the input story rather than complicating it — there is no hit-testing against a
+foreign view, because the host already knows the UI is a texture and forwards pointer and key
+events explicitly. That is exactly the "clicks go through, communicate through events" model.
+
+| Target | Mechanism | Engine | Why |
+| --- | --- | --- | --- |
+| Android | Transparent `WebView` sibling layer | Chromium | Hardware overlay; measured free |
+| iOS | Transparent `WKWebView` sibling layer | WebKit | Same shape as Android |
+| Desktop | **Offscreen render to texture, composited by the host** | Chromium via CEF | No transparent child surface exists; OSR is the standard game answer |
+
+### On "identical", honestly
+
+Android is Chromium and iOS is WebKit, so strict pixel identity across *all* targets is not
+achievable by any design that uses system engines — that difference is the one every web app
+already ships with daily. The workable bar is acceptance criterion 1: a blind observer cannot tell
+two captures apart. Using CEF on desktop means desktop matches Android exactly, and iOS is the one
+that differs, in the same ways Safari already differs from Chrome.
+
+### What desktop costs, and the alternative that was rejected
+
+CEF is a large distribution: on the order of 150–250 MB of binaries per platform. That is the price
+of Chromium, and it is the honest cost of this row. Its licence is BSD-3, compatible with this
+repository's MIT.
+
+The small alternative — binding each OS's system webview (WebView2 on Windows, WKWebView on macOS,
+WebKitGTK on Linux) through an MIT C++ wrapper such as `webview/webview` or `saucer` — is roughly a
+1 MB dependency instead of 200 MB. It is rejected as the default for two reasons: those libraries
+create their own top-level window rather than rendering offscreen into someone else's frame, and
+Linux would be WebKitGTK, which puts a third engine into a project whose entire goal here is that
+the UI looks the same. Worth revisiting only if CEF's size proves unacceptable, and then as an
+explicit downgrade with the difference documented.
+
+## Open questions
+
+1. **OSR cost on desktop is unmeasured, and it is not free the way the Android overlay was.** CEF
+   OSR pays a CPU paint plus a texture upload per changed frame. A HUD is mostly static, so
+   dirty-rect updates should keep it cheap, but "should" is not a number. Phase 3 opens with the
+   same kind of A/B this PRD opened with, against `pnpm native:verify:desktop`.
+2. Asset loading inside the WebView — bundled `file://`, or served from an in-process origin so
    `fetch` and module imports behave as on web.
+3. Whether the two mechanisms can share one bridge implementation, or whether overlay-mode and
+   texture-mode need separate input paths. They should share; prove it in Phase 3 rather than
+   assuming it in Phase 1.
 
 ## Phases
 
-**Phase 0 — prove the input model.** Touch on a non-interactive region reaches the SDL surface and
-moves the player; touch on an interactive island is consumed by the WebView and does not. An event
-bridge carries UI intent to the game (`restart`, `pause`) and published state back. Red: a scenario
-that drives a pointer at the game surface through the overlay and asserts the player moved, failing
-today because there is no overlay to pass through.
+**Phase 0 — prove the input model on Android.** Touch on a non-interactive region reaches the SDL
+surface and moves the player; touch on an interactive island is consumed by the WebView and does
+not. An event bridge carries UI intent to the game (`restart`, `pause`) and published state back.
+Red: a scenario that drives a pointer at the game surface through the overlay and asserts the
+player moved, failing today because there is no overlay to pass through.
 
-**Phase 1 — Android.** Ship the overlay behind a config flag, amend §6b, keep the quad renderer as
-the default until Phase 3. A generated game runs its real `src/ui/` on a phone.
+**Phase 1 — Android.** Ship the overlay behind a config flag and amend §6b. A generated game runs
+its real `src/ui/` on a phone.
 
 **Phase 2 — iOS.** Same contract on `WKWebView`.
 
-**Phase 3 — desktop, or an explicit decision not to.** Resolve open question 1 with the answer to 2.
+**Phase 3 — desktop, via CEF offscreen rendering.** Required, not optional: desktop ships to
+players. Opens with the OSR cost measurement in open question 1. Shares the Phase 0 event bridge;
+input is forwarded explicitly rather than hit-tested.
 
 **Phase 4 — templates default to it**, and `NativeHud.tsx` leaves the starter.
 
