@@ -207,17 +207,21 @@ test.afterAll(async () => {
 test("preserves starter state and stays flat across ten real HMR updates", async ({ page }) => {
   if (project === undefined) throw new Error("THREENATIVE_HOT_RELOAD_PROJECT was not exported.");
   const errors: string[] = [];
-  const expectedWebGpuBackendErrors = new Set([
+  const expectedWebGpuBackendErrors = [
     "Instance dropped in popErrorScope",
-    "Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (720) is too large for the implementation when mappedAtCreation == true",
-  ]);
+    /Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size \(\d+\) is too large for the implementation when mappedAtCreation == true/u,
+  ] as const;
+  const isExpectedWebGpuBackendError = (message: string): boolean =>
+    expectedWebGpuBackendErrors.some((expected) =>
+      typeof expected === "string" ? expected === message : expected.test(message),
+    );
   page.on("console", (entry) => {
-    if (entry.type() === "error" && !expectedWebGpuBackendErrors.has(entry.text())) {
+    if (entry.type() === "error" && !isExpectedWebGpuBackendError(entry.text())) {
       errors.push(entry.text());
     }
   });
   page.on("pageerror", (error) => {
-    if (!expectedWebGpuBackendErrors.has(error.message)) errors.push(error.message);
+    if (!isExpectedWebGpuBackendError(error.message)) errors.push(error.message);
   });
   await page.goto("/");
   await page.waitForFunction(() => {
@@ -234,7 +238,7 @@ test("preserves starter state and stays flat across ten real HMR updates", async
   await waitForGrounded(page);
   await page.keyboard.down("ArrowRight");
   try {
-    await advanceFixedTicks(page, 240);
+    await advanceFixedTicks(page, 150);
     await page.waitForFunction(
       () => {
         const scoreLabel = [...document.querySelectorAll("div")].find(

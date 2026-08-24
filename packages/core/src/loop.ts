@@ -145,42 +145,56 @@ export class FixedStepLoop {
     this.#accumulator = 0;
   }
 
-  stepFrame(now: number): number {
-    const budget = this.#budget;
-    budget?.beginFrame(now, this.#now());
-    let updates = 0;
+  #advanceSimulation(now: number): number {
     if (this.#held) {
       // The whole accumulate-and-update block is skipped rather than just the callback: `#tick`
       // advances inside that loop, and a held frame that moved the tick would break the
       // determinism contract every playtest hold depends on. The clock still moves forward so
       // the hold banks no time.
       this.#lastTime = Math.max(this.#lastTime ?? now, now);
-    } else {
-      const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
-      this.#lastTime = Math.max(this.#lastTime ?? now, now);
-      this.#accumulator += elapsed;
-      while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
-        this.#onUpdate(this.step);
-        this.#tick += 1;
-        this.#accumulator -= this.step;
-        updates += 1;
-      }
-      if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
+      return 0;
     }
-    budget?.markSimulationEnd(this.#now(), updates);
+    const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
+    this.#lastTime = Math.max(this.#lastTime ?? now, now);
+    this.#accumulator += elapsed;
+    let updates = 0;
+    while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
+      this.#onUpdate(this.step);
+      this.#tick += 1;
+      this.#accumulator -= this.step;
+      updates += 1;
+    }
+    if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
+    return updates;
+  }
+
+  #recordFrameTiming(now: number): number | undefined {
+    if (!Number.isFinite(now)) return undefined;
+    const frameMs = this.#lastRenderTime === undefined ? undefined : now - this.#lastRenderTime;
+    if (frameMs !== undefined && frameMs > 0) this.#fps += (1_000 / frameMs - this.#fps) * 0.1;
+    this.#lastRenderTime = now;
+    return frameMs;
+  }
+
+  stepFrame(now: number): number {
+    const budget = this.#budget;
+    budget?.beginFrame(now, this.#now());
+    let updates = 0;
     let frameMs: number | undefined;
-    if (Number.isFinite(now)) {
-      if (this.#lastRenderTime !== undefined) {
-        frameMs = now - this.#lastRenderTime;
-        if (frameMs > 0) this.#fps += (1_000 / frameMs - this.#fps) * 0.1;
-      }
-      this.#lastRenderTime = now;
+    let metrics: IRenderPerformanceMetrics | undefined;
+    let phases: IFramePhaseSample | undefined;
+    try {
+      updates = this.#advanceSimulation(now);
+      budget?.markSimulationEnd(this.#now(), updates);
+      frameMs = this.#recordFrameTiming(now);
+      // onRender does the rendering itself; only its metrics return value is optional.
+      metrics = this.#onRender();
+    } finally {
+      // A renderer can throw before it returns (for example, when SwiftShader rejects a buffer).
+      // Close the budget before propagating that error so later frames report the real failure
+      // instead of flooding the console with beginFrame calls against a poisoned budget.
+      phases = budget?.endFrame(this.#now());
     }
-    // onRender does the rendering itself; only its metrics return value is optional.
-    const metrics = this.#onRender();
-    // Closing the frame is what tags a hitch and rolls the report window, so it happens on every
-    // frame including the ones no sample series collects.
-    const phases = budget?.endFrame(this.#now());
     if (this.#collectMetrics && frameMs !== undefined && frameMs > 0) {
       const sample: IRenderPerformanceSample = {
         frameMs,
