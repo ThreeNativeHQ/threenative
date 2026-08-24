@@ -1,6 +1,6 @@
 # Mobile is not shippable: no UI, 18 fps, intermittent SIGSEGV, and a build lane nobody can run
 
-**Status:** open — 4 of 11 fixed and committed, 1 gated on a release, 1 diagnosed to the wrong layer and corrected,
+**Status:** open — 4 of 12 fixed and committed, 1 gated on a release, 1 diagnosed to the wrong layer and corrected,
 8 recorded with evidence and not yet fixed
 **Severity:** blocker — a game built with this framework has no user interface on Android, runs at
 30% of the display's refresh rate, and its Android build cannot be produced from a clean install of
@@ -31,6 +31,7 @@ the physical device — no emulator, no simulator, no desktop substitute.
 | [9](#bug-9) | Render loop keeps drawing with the screen off | medium | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
 | [10](#bug-10) | Preflight claims no libwebp; the runtime has it | low | `packages/runtime-native` | **fixed** `01ec0658` — capability derived from the build; device proof open |
 | [11](#bug-11) | Runtime could not report its own GPU memory | low | `packages/runtime-native` | **fixed** `d6e21511` |
+| [12](#bug-12) | Every surface resize permanently costs ~64 MiB | **high** | driver / `packages/runtime-native` | open, measured |
 
 **Not a bug:** landscape orientation. `android:screenOrientation=0` is in the manifest and a live
 screencap is 2400×1080 landscape with the scene correct. My first capture was black and portrait
@@ -517,3 +518,61 @@ Every number in bug 8 comes from this instrumentation. Package suite after the c
 - `dumpsys SurfaceFlinger --timestats -enable` / `-dump` is an fps source independent of the engine.
 - Temporary instrumentation lives in `sandbox/fps-framework/src/gpuMemoryProbe.ts`, registered in
   `src/game.ts`. **Delete both when this closes.**
+
+---
+
+## Bug 12 — every surface resize permanently costs ~64 MiB {#bug-12}
+
+**Severity:** high. **Status:** open, measured. **Found:** 2026-08-23 by PRD-213, out of PRD-214's
+resolution sweep — neither lane was looking for it.
+
+Filed as its own numbered item rather than folded into bug 4 or bug 8. It is a *defect*, not an
+attribution result, and its fix layer is different from either.
+
+### The measurement
+
+From the committed sweep (`docs/verification/prd-213-piggyback-resolution-gl-mtrack.txt`,
+physical Pixel 8, one process, `dumpsys meminfo` `GL mtrack`):
+
+| transition | `GL mtrack` delta |
+| --- | --- |
+| full → 50% | **+65,732 kB**, in one one-second sample |
+| 50% → 25% | −408 kB — nothing |
+| 25% → full | **+66,212 kB**, in one one-second sample |
+
+None of it comes back.
+
+**The middle row is the control that makes the other two readable.** This is not "any resize costs
+64 MiB": two transitions cost ~64 MiB each and one costs nothing. Plateaus between transitions are
+flat to 0.5 MB, and a separate fixed-resolution run held a ±0.5 MB band over 60 s. So **at a fixed
+resolution, memory is bounded. It is resizing that is not.**
+
+### Why it matters more than it looks
+
+A phone resizes on **rotation** and on entering or leaving **multi-window**. Rotate a few times and
+several hundred MiB are gone, permanently, from a process already at 1.4 GiB VmRSS on a device that
+begins killing apps under 2 GiB.
+
+That is bug 4's memory-pressure hypothesis arrived at from a completely different direction, by a
+lane that was not investigating crashes.
+
+### Hypothesis, explicitly not a finding
+
+The signature fits `gpu-alloc` pooling freed blocks rather than returning them to Vulkan, and the
+steps being a whisker over exactly 64 MiB is the coincidence a power-of-two chunk allocator
+produces. Unproven.
+
+### The instrument cannot see this, which is its own defect
+
+`g_textureBytesLive` / `g_bufferBytesLive` in `packages/runtime-native/src/webgpu/bindings.cpp` are
+never decremented despite the name, and the recorders are wired to one of four texture creation
+sites and one of five buffer sites. They would report **nothing at all** for a 64 MiB resize step.
+Repairing them needs red-green, `pnpm census` and a native build; PRD-213 filed it with file:line
+rather than fixing it blind.
+
+### What would settle it
+
+Rotate the device N times with `GL mtrack` sampled per rotation, on a build whose counters have
+been repaired. Three cold launches at three fixed resolutions would separately turn "the floor is a
+fixed arena" from consistent-with into proven — those are different questions and want different
+runs.
