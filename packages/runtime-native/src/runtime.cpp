@@ -568,19 +568,28 @@ public:
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
         // Clean up libuv timers before shutting down the event loop
         for (auto& [id, ctx] : uvTimers_) {
-            if (ctx && !ctx->cancelled) {
-                uv_timer_stop(&ctx->handle);
-                if (jsEngine_) {
-                    jsEngine_->unprotect(ctx->callback);
+            if (ctx) {
+                if (!ctx->cancelled) {
+                    ctx->cancelled = true;
+                    uv_timer_stop(&ctx->handle);
+                    if (jsEngine_) {
+                        jsEngine_->unprotect(ctx->callback);
+                    }
                 }
-                uv_close(reinterpret_cast<uv_handle_t*>(&ctx->handle), nullptr);
+                if (!uv_is_closing(reinterpret_cast<uv_handle_t*>(&ctx->handle))) {
+                    uv_close(reinterpret_cast<uv_handle_t*>(&ctx->handle), onTimerClose);
+                }
             }
         }
-        uvTimers_.clear();
 #endif
 
         // Shutdown libuv event loop (waits for pending handles to close)
         async::EventLoop::instance().shutdown();
+
+#ifdef MYSTRAL_USE_LIBUV_TIMERS
+        // onTimerClose removes contexts only after libuv has finished with their handles.
+        uvTimers_.clear();
+#endif
 
         // Unprotect all RAF callbacks before clearing
         if (jsEngine_) {

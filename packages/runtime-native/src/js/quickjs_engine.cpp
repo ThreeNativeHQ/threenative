@@ -766,12 +766,6 @@ private:
             JS_NewCFunction(context_, js_performance_now, "now", 0));
         JS_SetPropertyStr(context_, global, "performance", performance);
 
-        // setTimeout/clearTimeout (basic)
-        JS_SetPropertyStr(context_, global, "setTimeout",
-            JS_NewCFunction(context_, js_set_timeout, "setTimeout", 2));
-        JS_SetPropertyStr(context_, global, "clearTimeout",
-            JS_NewCFunction(context_, js_clear_timeout, "clearTimeout", 1));
-
         JS_FreeValue(context_, global);
     }
 
@@ -881,16 +875,6 @@ private:
         auto now = std::chrono::high_resolution_clock::now();
         double ms = std::chrono::duration<double, std::milli>(now - engineInstance_->startTime_).count();
         return JS_NewFloat64(ctx, ms);
-    }
-
-    static JSValue js_set_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-        // TODO: Proper timer implementation with event loop integration
-        static int nextId = 1;
-        return JS_NewInt32(ctx, nextId++);
-    }
-
-    static JSValue js_clear_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-        return JS_UNDEFINED;
     }
 
     JSRuntime* runtime_ = nullptr;

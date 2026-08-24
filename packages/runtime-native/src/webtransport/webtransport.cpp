@@ -95,6 +95,12 @@ constexpr uint64_t SETTINGS_WT_MAX_SESSIONS = 0xc671706a;                  // dr
 
 constexpr size_t MAX_DATAGRAM_SIZE = 1350;
 constexpr size_t STREAM_READ_CHUNK = 64 * 1024;
+constexpr const char* kInsecurePeerVerificationEnv = "MYSTRAL_WEBTRANSPORT_INSECURE";
+
+bool isTruthyEnvironmentValue(const char* value) {
+    if (!value) return false;
+    return std::string(value) == "1" || std::string(value) == "true" || std::string(value) == "TRUE";
+}
 
 // ---------------------------------------------------------------------------
 // Varint helpers (QUIC variable-length integer encoding, RFC 9000 §16)
@@ -787,7 +793,14 @@ uint32_t connectSession(const std::string& url) {
     quiche_config_set_initial_max_streams_bidi(s->config, 100);
     quiche_config_set_initial_max_streams_uni(s->config, 100);
     quiche_config_set_disable_active_migration(s->config, true);
-    quiche_config_verify_peer(s->config, false);  // TODO: serverCertificateHashes
+    const bool allowInsecurePeerVerification =
+        isTruthyEnvironmentValue(std::getenv(kInsecurePeerVerificationEnv));
+    if (allowInsecurePeerVerification) {
+        std::cerr << "[WebTransport] WARNING: TLS peer verification disabled by "
+                  << kInsecurePeerVerificationEnv << "=1 (development only)" << std::endl;
+    }
+    // Certificate hashes are not implemented yet, so verification remains the secure default.
+    quiche_config_verify_peer(s->config, !allowInsecurePeerVerification);
     // Disable GREASE: quiche would otherwise open an extra unidirectional stream
     // with a reserved type and then close it. That stream consumes the first WT
     // unidirectional stream id, so reusing it later fails (the id is "collected").

@@ -504,6 +504,8 @@ ENVIRONMENT:
     MYSTRAL_HEADLESS=1        Run in headless mode (hidden window)
     MYSTRAL_DEBUG=1           Enable verbose debug logging
     MYSTRAL_BUNDLE=<path>     Load external bundle file (overrides auto-detection)
+    MYSTRAL_WEBTRANSPORT_INSECURE=1
+                              Development-only override for invalid WebTransport certificates
 
 )" << std::endl;
 }

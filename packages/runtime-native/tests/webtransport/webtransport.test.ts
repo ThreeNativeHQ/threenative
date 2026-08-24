@@ -82,15 +82,28 @@ async function startServer(): Promise<boolean> {
   });
 }
 
-// Runs a JS script under the mystral runtime (headless) and returns stdout.
-async function runScript(name: string, source: string): Promise<string> {
+type ScriptOptions = { allowInsecurePeerVerification?: boolean };
+
+// Runs a JS script under the mystral runtime (headless) and returns combined output.
+async function runScript(name: string, source: string, options: ScriptOptions = {}): Promise<string> {
   if (!existsSync(TEST_DIR)) mkdirSync(TEST_DIR, { recursive: true });
   const path = join(TEST_DIR, name);
   writeFileSync(path, source);
-  const { stdout } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
+  const env = { ...process.env };
+  if (options.allowInsecurePeerVerification) {
+    env.MYSTRAL_WEBTRANSPORT_INSECURE = "1";
+  } else {
+    delete env.MYSTRAL_WEBTRANSPORT_INSECURE;
+  }
+  const { stdout, stderr } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
+    env,
     timeoutMs: 30_000,
   });
-  return stdout;
+  return `${stdout}\n${stderr}`;
+}
+
+async function runTrustedScript(name: string, source: string): Promise<string> {
+  return runScript(name, source, { allowInsecurePeerVerification: true });
 }
 
 function requireWebTransport(skip: (note?: string) => never): void {
@@ -121,6 +134,41 @@ describe("WebTransport API", () => {
     }
   });
 
+  it("rejects the echo server certificate without the development override", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runScript(
+      "wt-untrusted-default.js",
+      `async function main() {
+        const wt = new WebTransport('${SERVER_URL}');
+        try { await wt.ready; console.log('FAIL: accepted'); }
+        catch (e) { console.log('PASS: rejected ' + e.message); }
+        process.exit(0);
+      }
+      main();`,
+    );
+    expect(out).toContain("PASS: rejected");
+    expect(out).not.toContain("TLS peer verification disabled");
+  });
+
+  it("accepts the echo server certificate only with the explicit development override", async ({
+    skip,
+  }) => {
+    requireWebTransport(skip);
+    const out = await runScript(
+      "wt-untrusted-override.js",
+      `async function main() {
+        const wt = new WebTransport('${SERVER_URL}');
+        try { await wt.ready; console.log('PASS: ready'); }
+        catch (e) { console.log('FAIL: ' + e.message); }
+        process.exit(0);
+      }
+      main();`,
+      { allowInsecurePeerVerification: true },
+    );
+    expect(out).toContain("PASS: ready");
+    expect(out).toContain("MYSTRAL_WEBTRANSPORT_INSECURE=1");
+  });
+
   afterAll(() => {
     serverProc?.kill();
     rmSync(TEST_DIR, { recursive: true, force: true });
@@ -128,7 +176,7 @@ describe("WebTransport API", () => {
 
   it("connects and the ready promise fulfills", async ({ skip }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-ready.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');
@@ -143,7 +191,7 @@ describe("WebTransport API", () => {
 
   it("echoes a datagram", async ({ skip }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-datagram.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');
@@ -166,7 +214,7 @@ describe("WebTransport API", () => {
 
   it("echoes a bidirectional stream", async ({ skip }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-bidi.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');
@@ -193,7 +241,7 @@ describe("WebTransport API", () => {
 
   it("echoes a unidirectional stream", async ({ skip }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-uni.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');
@@ -227,7 +275,7 @@ describe("WebTransport API", () => {
     skip,
   }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-globals.js",
       `async function main() {
         const names = ['ReadableStream','WritableStream','TransformStream','TextEncoderStream','TextDecoderStream'];
@@ -249,7 +297,7 @@ describe("WebTransport API", () => {
 
   it("reads datagrams via async iteration (for await...of)", async ({ skip }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-dgram-iter.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');
@@ -268,7 +316,7 @@ describe("WebTransport API", () => {
 
   it("sends datagrams via datagrams.createWritable()", async ({ skip }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-dgram-createwritable.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');
@@ -290,7 +338,7 @@ describe("WebTransport API", () => {
     skip,
   }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-uni-pipe.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');
@@ -316,7 +364,7 @@ describe("WebTransport API", () => {
     skip,
   }) => {
     requireWebTransport(skip);
-    const out = await runScript(
+    const out = await runTrustedScript(
       "wt-bidi-pipe.js",
       `async function main() {
         const wt = new WebTransport('${SERVER_URL}');

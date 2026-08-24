@@ -4494,7 +4494,16 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             }
 #endif
 
+                            if (samplerDesc.lodMinClamp > samplerDesc.lodMaxClamp) {
+                                g_engine->throwException("Failed to create sampler");
+                                return g_engine->newUndefined();
+                            }
+
                             WGPUSampler sampler = wgpuDeviceCreateSampler(g_device, &samplerDesc);
+                            if (!sampler) {
+                                g_engine->throwException("Failed to create sampler");
+                                return g_engine->newUndefined();
+                            }
 
                             auto jsSampler = g_engine->newObject();
                             g_engine->setPrivateData(jsSampler, sampler);
@@ -4647,6 +4656,10 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             auto descriptor = args[0];
                             auto layoutHandle = g_engine->getProperty(descriptor, "layout");
                             WGPUBindGroupLayout layout = (WGPUBindGroupLayout)g_engine->getPrivateData(layoutHandle);
+                            if (!layout) {
+                                g_engine->throwException("Failed to create bind group");
+                                return g_engine->newUndefined();
+                            }
 
                             auto entries = g_engine->getProperty(descriptor, "entries");
                             auto lengthProp = g_engine->getProperty(entries, "length");
@@ -4731,6 +4744,10 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             bgDesc.entries = bindGroupEntries.data();
 
                             WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(g_device, &bgDesc);
+                            if (!bindGroup) {
+                                g_engine->throwException("Failed to create bind group");
+                                return g_engine->newUndefined();
+                            }
 
                             // Release auto-created texture views — Dawn holds its own
                             // internal references through the bind group

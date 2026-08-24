@@ -1133,19 +1133,6 @@ private:
         performance->Set(context, v8::String::NewFromUtf8(isolate_, "now").ToLocalChecked(), nowFn).Check();
         context->Global()->Set(context, v8::String::NewFromUtf8(isolate_, "performance").ToLocalChecked(), performance).Check();
 
-        // setTimeout / clearTimeout (basic stubs)
-        v8::Local<v8::Function> setTimeoutFn = v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
-            static int nextId = 1;
-            info.GetReturnValue().Set(nextId++);
-        })->GetFunction(context).ToLocalChecked();
-
-        v8::Local<v8::Function> clearTimeoutFn = v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
-            // No-op for now
-        })->GetFunction(context).ToLocalChecked();
-
-        context->Global()->Set(context, v8::String::NewFromUtf8(isolate_, "setTimeout").ToLocalChecked(), setTimeoutFn).Check();
-        context->Global()->Set(context, v8::String::NewFromUtf8(isolate_, "clearTimeout").ToLocalChecked(), clearTimeoutFn).Check();
-
         // Intl stub (V8 was built without ICU, so Intl is not available)
         // Libraries like PixiJS check for Intl?.Segmenter and fall back gracefully
         v8::Local<v8::Object> intl = v8::Object::New(isolate_);
