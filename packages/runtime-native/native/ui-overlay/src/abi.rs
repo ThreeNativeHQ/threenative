@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::ffi::{c_char, c_int, c_ulong, CStr, CString};
 use std::sync::{Arc, Mutex};
 
+use wry::http::{header, Response};
 use wry::{WebView, WebViewBuilder, WebViewBuilderExtUnix};
 
 use crate::argb::{self, ArgbContainer, Placement};
@@ -35,16 +36,17 @@ thread_local! {
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_attach(
     parent: c_ulong,
-    url: *const c_char,
+    ui_root: *const c_char,
     width: u32,
     height: u32,
 ) -> c_int {
-    if url.is_null() {
+    if ui_root.is_null() {
         return -5;
     }
-    let Ok(url) = (unsafe { CStr::from_ptr(url) }).to_str() else {
+    let Ok(ui_root) = (unsafe { CStr::from_ptr(ui_root) }).to_str() else {
         return -5;
     };
+    let ui_root = std::path::PathBuf::from(ui_root);
     if gtk::init().is_err() {
         return -1;
     }
@@ -60,7 +62,33 @@ pub extern "C" fn tn_ui_overlay_attach(
     let sink = inbound.clone();
     let built = WebViewBuilder::new()
         .with_transparent(true)
-        .with_url(url)
+        // A custom protocol, not `file://` — the desktop counterpart of Android's
+        // `WebViewAssetLoader`. It gives the page a real origin, so `fetch`, module imports and
+        // same-origin rules behave exactly as they do on the web build. That equivalence is the
+        // point of the whole PRD, and `file://` is where it quietly stops being true.
+        .with_custom_protocol("threenative".into(), move |_id, request| {
+            let path = request.uri().path().trim_start_matches('/');
+            let relative = if path.is_empty() { "index.html" } else { path };
+            // Refuse to leave the staged UI directory. The page is local, but it is still the
+            // least trusted thing in the process.
+            let target = ui_root.join(relative);
+            let inside = target
+                .canonicalize()
+                .ok()
+                .zip(ui_root.canonicalize().ok())
+                .is_some_and(|(file, root)| file.starts_with(root));
+            match (inside, std::fs::read(&target)) {
+                (true, Ok(body)) => Response::builder()
+                    .header(header::CONTENT_TYPE, content_type(relative))
+                    .body(std::borrow::Cow::Owned(body))
+                    .unwrap_or_else(|_| Response::new(std::borrow::Cow::Borrowed(&b""[..]))),
+                _ => Response::builder()
+                    .status(404)
+                    .body(std::borrow::Cow::Borrowed(&b"not found"[..]))
+                    .unwrap_or_else(|_| Response::new(std::borrow::Cow::Borrowed(&b""[..]))),
+            }
+        })
+        .with_url("threenative://localhost/index.html")
         .with_ipc_handler(move |request| {
             if let Ok(mut queue) = sink.lock() {
                 queue.push(request.body().to_string());
@@ -120,6 +148,25 @@ pub extern "C" fn tn_ui_overlay_post(frame: *const c_char) -> c_int {
             -4
         }
     })
+}
+
+/// Enough of a MIME table for a built UI bundle. A wrong type here is a stylesheet the page
+/// silently ignores, so the common ones are named rather than defaulted.
+fn content_type(path: &str) -> &'static str {
+    match path.rsplit_once('.').map(|(_, ext)| ext) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json") => "application/json; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("woff2") => "font/woff2",
+        Some("woff") => "font/woff",
+        Some("ttf") => "font/ttf",
+        _ => "application/octet-stream",
+    }
 }
 
 /// A JSON string literal holding `frame`, so a quote or a newline in the payload cannot end it.

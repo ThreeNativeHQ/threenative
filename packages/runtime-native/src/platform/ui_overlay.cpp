@@ -2,7 +2,25 @@
 
 #include <atomic>
 #include <deque>
+#include <iostream>
 #include <mutex>
+
+#include <cstdio>
+
+#if TN_ENABLE_UI_OVERLAY
+extern "C" {
+int tn_ui_overlay_attach(unsigned long parent, const char* url, uint32_t width, uint32_t height);
+void tn_ui_overlay_pump();
+int tn_ui_overlay_post(const char* frame);
+char* tn_ui_overlay_take();
+void tn_ui_overlay_free(char* frame);
+int tn_ui_overlay_set_bounds(int32_t x, int32_t y, uint32_t width, uint32_t height);
+int tn_ui_overlay_set_hit_regions(const float* regions, uint32_t count);
+void tn_ui_overlay_detach();
+}
+#include "mystral/platform/window.h"
+#include <SDL3/SDL.h>
+#endif
 
 #if defined(__ANDROID__)
 #include <SDL3/SDL.h>
@@ -54,7 +72,99 @@ void setUiOverlayAttached(bool attached) {
     g_attached.store(attached, std::memory_order_relaxed);
 }
 
+#if TN_ENABLE_UI_OVERLAY
+namespace {
+
+/** The reason an attach failed, in the words a reader can act on. */
+const char* attachFailure(int code) {
+    switch (code) {
+        case -1: return "no display, or GTK could not start";
+        case -2: return "no compositing manager is running, so nothing would blend the overlay";
+        case -3: return "the transparent container could not be created";
+        case -4: return "the web view could not be built";
+        default: return "invalid argument";
+    }
+}
+
+}  // namespace
+
+bool attachDesktopUiOverlay(const std::string& uiRoot) {
+    auto* window = mystral::platform::getSDLWindow();
+    if (window == nullptr) return false;
+    const auto properties = SDL_GetWindowProperties(window);
+    // X11 only, and deliberately so: this is the surface `wry` accepts on Linux, and a Wayland
+    // session reaches it through XWayland. Say which rather than failing as "unsupported".
+    const auto parent = static_cast<unsigned long>(
+        SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    if (parent == 0) {
+        std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"the game window is not an X11 "
+                     "window; run SDL under X11 (SDL_VIDEODRIVER=x11)\"}"
+                  << std::endl;
+        return false;
+    }
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSizeInPixels(window, &width, &height);
+    const int code = tn_ui_overlay_attach(parent, uiRoot.c_str(), static_cast<uint32_t>(width),
+                                          static_cast<uint32_t>(height));
+    const bool attached = code == 0;
+    setUiOverlayAttached(attached);
+    if (attached) {
+        std::cout << "TN_UI_OVERLAY:{\"attached\":true}" << std::endl;
+    } else {
+        std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"" << attachFailure(code)
+                  << "\"}" << std::endl;
+    }
+    return attached;
+}
+
+void pumpUiOverlay() {
+    if (!uiOverlayAttached()) return;
+    tn_ui_overlay_pump();
+    // The page's frames arrive on this thread through the pump, so draining here keeps the whole
+    // desktop path single-threaded and the queue below is only ever touched from one side.
+    while (char* frame = tn_ui_overlay_take()) {
+        queueUiMessage(std::string(frame));
+        tn_ui_overlay_free(frame);
+    }
+    auto* window = mystral::platform::getSDLWindow();
+    if (window == nullptr) return;
+    // Follow the game window. An overlay is a separate window on X11, so a move or a resize that
+    // nobody mirrored leaves the UI beside the game instead of over it.
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowPosition(window, &x, &y);
+    SDL_GetWindowSizeInPixels(window, &width, &height);
+    tn_ui_overlay_set_bounds(x, y, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+}
+
+void setUiHitRegions(const std::vector<float>& regions) {
+    if (!uiOverlayAttached()) return;
+    tn_ui_overlay_set_hit_regions(regions.empty() ? nullptr : regions.data(),
+                                  static_cast<uint32_t>(regions.size() / 4));
+}
+
+void detachDesktopUiOverlay() {
+    if (!uiOverlayAttached()) return;
+    tn_ui_overlay_detach();
+    setUiOverlayAttached(false);
+}
+#else
+bool attachDesktopUiOverlay(const std::string& uiRoot) {
+    (void)uiRoot;
+    return false;
+}
+void pumpUiOverlay() {}
+void setUiHitRegions(const std::vector<float>& regions) { (void)regions; }
+void detachDesktopUiOverlay() {}
+#endif
+
 bool postUiMessage(const std::string& frame) {
+#if TN_ENABLE_UI_OVERLAY
+    if (uiOverlayAttached()) return tn_ui_overlay_post(frame.c_str()) == 0;
+#endif
 #if defined(__ANDROID__)
     if (!uiOverlayAttached()) return false;
     auto* environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());

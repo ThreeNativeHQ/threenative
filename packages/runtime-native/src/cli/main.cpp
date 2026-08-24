@@ -11,6 +11,7 @@
  */
 
 #include "mystral/runtime.h"
+#include "mystral/platform/ui_overlay.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include "mystral/js/module_resolver.h"
 #include "mystral/js/ts_transpiler.h"
@@ -559,6 +560,9 @@ struct CLIOptions {
     // Verbose logging
     bool debug = false;  // Enable verbose WebGPU/shader logging
 
+    // The built UI bundle to render over the game surface, or empty for the native renderer.
+    std::string uiRoot;
+
     // Bake options
     int bakeResolution = 2048;   // Max lightmap atlas size
     int bakeSamples = 64;        // Rays per texel
@@ -585,6 +589,9 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
     if (width > 0) opts.width = static_cast<int>(width);
     if (height > 0) opts.height = static_cast<int>(height);
     opts.resizable = extractJsonBool(config, "resizable", opts.resizable);
+    // `ui.renderer`. Anything but "web" is the native renderer, which ships no overlay at all —
+    // the same fail-closed reading the Android manifest metadata gets.
+    if (extractJsonString(config, "renderer") == "web") opts.uiRoot = "ui";
 }
 
 CLIOptions parseArgs(int argc, char* argv[]) {
@@ -609,6 +616,8 @@ CLIOptions parseArgs(int argc, char* argv[]) {
             opts.outputPath = argv[++i];
         } else if (arg == "--root" && i + 1 < argc) {
             opts.rootDir = argv[++i];
+        } else if (arg == "--ui" && i + 1 < argc) {
+            opts.uiRoot = argv[++i];
         } else if (arg == "--entry" && i + 1 < argc) {
             opts.scriptPath = argv[++i];
         } else if (arg == "--screenshot" && i + 1 < argc) {
@@ -1512,6 +1521,29 @@ int runScript(const CLIOptions& opts) {
     if (!runtime) {
         std::cerr << "Error: Failed to create runtime!" << std::endl;
         return 1;
+    }
+
+    // The UI layer, if the game asked for it. After the runtime exists because the overlay
+    // attaches to the window the runtime owns, and before the loop starts so the first frame the
+    // player sees already has its HUD.
+    //
+    // A game whose `ui.renderer` is `native` never reaches here and links no overlay at all.
+    if (!opts.uiRoot.empty()) {
+        std::filesystem::path uiRoot(opts.uiRoot);
+        if (uiRoot.is_relative()) {
+            // Next to the executable, which is where the packager stages it. Resolving against the
+            // working directory instead would work when launched from the game folder and fail
+            // from anywhere else, which is the worst kind of works-on-my-machine.
+            const char* base = SDL_GetBasePath();
+            if (base != nullptr) uiRoot = std::filesystem::path(base) / uiRoot;
+        }
+        std::error_code exists;
+        if (!std::filesystem::is_directory(uiRoot, exists)) {
+            std::cerr << "TN_UI_BUNDLE_MISSING: the web UI renderer was requested but "
+                      << uiRoot.string() << " is not a directory." << std::endl;
+            return 1;
+        }
+        mystral::platform::attachDesktopUiOverlay(uiRoot.string());
     }
 
     // Desktop playtests use the same native mailbox bridge as Android and iOS. The runner passes

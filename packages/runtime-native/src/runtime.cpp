@@ -1039,7 +1039,9 @@ public:
         // Process completed async Draco decode results
         processPendingDracoCallbacks();
 
-        // Deliver whatever the UI overlay posted since the last frame
+        // Give the desktop overlay its slice of the frame, then deliver whatever the UI posted.
+        // Android and iOS pump on their own UI threads; only desktop's lives inside this loop.
+        platform::pumpUiOverlay();
         drainUiMessages();
 
         // Process microtask queue for promises
@@ -3579,10 +3581,59 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
      * The host enqueues from its own UI thread; nothing here may run there. Same shape as the
      * lifecycle markers above, and for the same reason.
      */
+    /**
+     * Apply a `tn:hit-regions` frame, or report that it was not one.
+     *
+     * Parsed here rather than through the JS engine because it must work before any game script
+     * has connected its end of the bridge, and because the numbers go straight back out to the
+     * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
+     * every later click is decided against rectangles that no longer exist, so it is named.
+     */
+    bool applyUiHitRegions(const std::string& frame) {
+        if (frame.find("\"tn:hit-regions\"") == std::string::npos) return false;
+        // The registry emits each rectangle as x, y, width, height and nothing else lives in this
+        // frame, so reading the four keys in order is the whole parse. Named keys rather than
+        // "every number after a colon": a payload that grows a field would otherwise silently
+        // shift every rectangle by one.
+        static constexpr const char* kKeys[] = {"\"x\":", "\"y\":", "\"width\":", "\"height\":"};
+        std::vector<float> regions;
+        size_t cursor = 0;
+        while (true) {
+            float rectangle[4];
+            size_t next = cursor;
+            bool complete = true;
+            for (size_t index = 0; index < 4; ++index) {
+                const size_t found = frame.find(kKeys[index], next);
+                if (found == std::string::npos) {
+                    complete = false;
+                    break;
+                }
+                const size_t value = found + std::strlen(kKeys[index]);
+                char* end = nullptr;
+                rectangle[index] = std::strtof(frame.c_str() + value, &end);
+                if (end == frame.c_str() + value) {
+                    complete = false;
+                    break;
+                }
+                next = static_cast<size_t>(end - frame.c_str());
+            }
+            if (!complete) break;
+            regions.insert(regions.end(), std::begin(rectangle), std::end(rectangle));
+            cursor = next;
+        }
+        platform::setUiHitRegions(regions);
+        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << "}" << std::endl;
+        return true;
+    }
+
     void drainUiMessages() {
         if (!jsEngine_) return;
         std::string frame;
         while (platform::takeUiMessage(frame)) {
+            // Hit regions stop at the host: it owns the hit test, and forwarding them to the
+            // game would put a process hop in the input path for a reader that does not exist.
+            // Same rule as the Android host, which applies them in Java for the same reason.
+            if (applyUiHitRegions(frame)) continue;
             js::JSValueHandle receive = jsEngine_->getGlobalProperty("__tnUiGameReceive");
             if (!jsEngine_->isFunction(receive)) {
                 // The game has not connected its end yet. Dropping is correct and must be

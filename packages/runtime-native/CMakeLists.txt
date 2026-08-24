@@ -76,6 +76,10 @@ option(TN_ENABLE_NATIVE_GLTF "Enable deprecated native C++ GLTF path (must remai
 option(TN_ENABLE_DRACO "Enable native Draco decoder when dependencies exist" OFF)
 option(TN_ENABLE_DEBUG_SERVER "Enable debug-server control surface" OFF)
 option(TN_ENABLE_NATIVE_PHYSICS "Enable the ThreeNative native Rapier ABI" OFF)
+# The desktop UI layer: a transparent web view over the game surface, behind a C ABI.
+# Off by default and desktop-only — Android has its own host in Java, iOS has one in Swift, and a
+# game whose ui.renderer is "native" must link none of it.
+option(TN_ENABLE_UI_OVERLAY "Enable the ThreeNative desktop UI overlay" OFF)
 option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
@@ -97,6 +101,7 @@ add_compile_definitions(
     TN_ENABLE_NATIVE_GLTF=$<BOOL:${TN_ENABLE_NATIVE_GLTF}>
     TN_ENABLE_DEBUG_SERVER=$<BOOL:${TN_ENABLE_DEBUG_SERVER}>
     TN_ENABLE_NATIVE_PHYSICS=$<BOOL:${TN_ENABLE_NATIVE_PHYSICS}>
+    TN_ENABLE_UI_OVERLAY=$<BOOL:${TN_ENABLE_UI_OVERLAY}>
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
@@ -1204,6 +1209,24 @@ if(TN_ENABLE_NATIVE_PHYSICS)
     list(APPEND MYSTRAL_SOURCES src/physics/native_bindings.cpp)
 endif()
 
+if(TN_ENABLE_UI_OVERLAY)
+    if(NOT THREENATIVE_UI_OVERLAY_LIBRARY)
+        set(THREENATIVE_UI_OVERLAY_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/libthreenative_ui_overlay.a"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_UI_OVERLAY_LIBRARY}")
+        message(FATAL_ERROR
+            "UI overlay artifact is missing: ${THREENATIVE_UI_OVERLAY_LIBRARY}. "
+            "Run node scripts/build-native-ui-overlay.mjs, or supply -DTHREENATIVE_UI_OVERLAY_LIBRARY."
+        )
+    endif()
+    add_library(threenative-ui-overlay STATIC IMPORTED)
+    set_target_properties(threenative-ui-overlay PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_UI_OVERLAY_LIBRARY}"
+    )
+endif()
+
 # Canvas2D sources provide no-Skia stubs when MYSTRAL_HAS_SKIA is absent.
 # Keep them linked even when TN_ENABLE_CANVAS2D=OFF because WebGPU bindings expose
 # browser-shaped canvas methods that reference these symbols.
@@ -1300,6 +1323,17 @@ target_compile_definitions(mystral-runtime PUBLIC
     MYSTRAL_JS_ENGINE="${MYSTRAL_JS_ENGINE_NAME}"
     MYSTRAL_WEBGPU_BACKEND="${MYSTRAL_WEBGPU_NAME}"
 )
+
+if(TN_ENABLE_UI_OVERLAY)
+    target_link_libraries(mystral-runtime PRIVATE threenative-ui-overlay)
+    if(UNIX AND NOT APPLE)
+        # webkit2gtk and its GTK stack come from the system, the same way the game's SDL does.
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(TN_WEBKITGTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)
+        target_link_libraries(mystral-runtime PRIVATE PkgConfig::TN_WEBKITGTK)
+    endif()
+endif()
+
 
 if(TN_ENABLE_NATIVE_PHYSICS)
     target_link_libraries(mystral-runtime PRIVATE threenative-native-physics)
@@ -1614,6 +1648,41 @@ endif()
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     add_executable(mystral src/cli/main.cpp)
+    # SDL3's Linux tray loads GTK at run time and keeps two of its entry points in same-named
+    # globals — `g_object_ref` and `g_object_ref_sink`, as pointers in BSS. Statically linked, those
+    # common symbols satisfy the UI overlay's own references to the real GObject functions, and
+    # `gtk_init` then calls a null pointer. SDL globs its tray sources with no option to decline
+    # them and `third_party/` is reconstructed by `download-deps` rather than patched, so the two
+    # names are rewritten in the one object file that defines them, after SDL builds and before
+    # anything links against it. SDL's tray keeps working: it refers to them by the same names
+    # inside that object, and the rename moves both the definitions and the references together.
+    if(TN_ENABLE_UI_OVERLAY AND UNIX AND NOT APPLE)
+        find_program(TN_OBJCOPY NAMES objcopy llvm-objcopy)
+        if(NOT TN_OBJCOPY)
+            message(FATAL_ERROR
+                "objcopy is required to build the desktop UI overlay: SDL3's tray defines "
+                "g_object_ref and g_object_ref_sink as globals that would shadow GObject's."
+            )
+        endif()
+        # PRE_LINK on `mystral` rather than POST_BUILD on SDL: `add_custom_command(TARGET)` has to
+        # live in the directory that created the target, and SDL is added as a subdirectory. This
+        # also re-applies itself whenever SDL is rebuilt, which a one-shot patch would not.
+        # Made at configure time: a command's WORKING_DIRECTORY has to exist before the shell
+        # enters it, so creating it as the first step of that same command is too late.
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray")
+        add_custom_command(TARGET mystral PRE_LINK
+            COMMAND "${CMAKE_AR}" x "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
+            COMMAND "${TN_OBJCOPY}"
+                --redefine-sym g_object_ref=tn_sdl_tray_g_object_ref
+                --redefine-sym g_object_ref_sink=tn_sdl_tray_g_object_ref_sink
+                SDL_tray.c.o SDL_tray.c.o
+            COMMAND "${CMAKE_AR}" r "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray"
+            COMMENT "Renaming SDL3 tray's GObject globals so the UI overlay's GTK calls survive"
+            VERBATIM
+        )
+    endif()
+
     target_link_libraries(mystral PRIVATE mystral-runtime)
 
     # The desktop conformance lane's multitouch injector. It is a separate program rather than

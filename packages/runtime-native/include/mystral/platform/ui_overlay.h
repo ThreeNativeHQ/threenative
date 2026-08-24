@@ -12,7 +12,9 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace mystral {
 namespace platform {
@@ -44,6 +46,29 @@ bool uiOverlayAttached();
 
 /** Called by the platform host once its overlay is up, or has failed to come up. */
 void setUiOverlayAttached(bool attached);
+
+/**
+ * Bring up the desktop overlay over the game window, serving the built UI from `uiRoot`.
+ *
+ * The page is served over a custom protocol rather than `file://`, which is the desktop
+ * counterpart of Android's `WebViewAssetLoader`: a real origin, so `fetch`, module imports and
+ * same-origin rules behave as they do on the web build.
+ *
+ * Android and iOS attach from their own hosts, in Java and Swift, before the runtime starts; only
+ * desktop attaches from here, because only here does the runtime own the window. Returns false and
+ * logs a named reason when it cannot — no compositor, no GTK, no container — rather than leaving a
+ * game that asked for the web renderer with an opaque rectangle over its scene.
+ */
+bool attachDesktopUiOverlay(const std::string& uiRoot);
+
+/** Give the desktop overlay its slice of the frame. A no-op where nothing is attached. */
+void pumpUiOverlay();
+
+/** Publish the interactive rectangles, normalized to the viewport, as x, y, width, height. */
+void setUiHitRegions(const std::vector<float>& regions);
+
+/** Tear the desktop overlay down. Safe when nothing is attached. */
+void detachDesktopUiOverlay();
 
 }  // namespace platform
 }  // namespace mystral
