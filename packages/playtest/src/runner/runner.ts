@@ -4,7 +4,7 @@ import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildRep
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
 import { readCaptureProvenance, sampleHud, pairObservations, normalizedRuntimeDiagnostics } from "./sampling.js";
-import { accumulatedPathLength, entityPosition, failureReport, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart } from "./shared.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
   ManagedServerError,
@@ -84,8 +84,13 @@ export async function handlePlaytestSignal(
   exit: (code: number) => void = (code) => {
     process.exit(code);
   },
+  target = "browser",
+  writeMessage: (message: string) => void = (message) => {
+    process.stderr.write(`${message}\n`);
+  },
 ): Promise<void> {
   await teardown(true).catch(() => undefined);
+  writeMessage(interruptedPlaytestError(target).message);
   setExitCode(2);
   exit(2);
 }
@@ -182,7 +187,12 @@ export async function runStandalonePlaytest(
     if (stopManagedServerOnTeardown) await stopServer();
   };
   const handleSignal = (): void => {
-    void handlePlaytestSignal((stopManagedServerOnSignal) => teardown(stopManagedServerOnSignal));
+    void handlePlaytestSignal(
+      (stopManagedServerOnSignal) => teardown(stopManagedServerOnSignal),
+      undefined,
+      undefined,
+      activeConfig.target ?? "browser",
+    );
   };
   process.once("SIGINT", handleSignal);
   process.once("SIGTERM", handleSignal);

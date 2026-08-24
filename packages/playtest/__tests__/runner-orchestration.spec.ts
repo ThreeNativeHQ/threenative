@@ -45,6 +45,8 @@ describe("runner orchestration (characterization)", () => {
       },
       (code) => calls.push(`exitCode:${code}`),
       (code) => calls.push(`exit:${code}`),
+      "browser",
+      () => undefined,
     );
     expect(calls).toEqual(["teardown:true", "exitCode:2", "exit:2"]);
   });
@@ -57,6 +59,8 @@ describe("runner orchestration (characterization)", () => {
       },
       (code) => calls.push(code),
       (code) => calls.push(code),
+      "browser",
+      () => undefined,
     );
     expect(calls).toEqual([2, 2]);
   });

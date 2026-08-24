@@ -32,6 +32,7 @@ import {
   type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
+import { withTargetAbortSignal } from "./deviceSignal.js";
 import { buildReport, playtestStepDrivesMovement, writeObservationArtifacts } from "./runner.js";
 import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
 import {
@@ -48,6 +49,7 @@ import {
 import type { IStandalonePlaytestReport } from "./shared.js";
 
 export interface IAndroidPlaytestDependencies {
+  abortSignal?: AbortSignal;
   driver?: IAndroidDriver;
   transport?: IDevicePlaytestTransport;
 }
@@ -95,13 +97,14 @@ export async function runAndroidPlaytest(
     ...(config.device === undefined ? {} : { serial: config.device }),
   });
   const mailboxRoot = config.mailboxRoot ?? `/sdcard/Android/data/${android.packageName}/files`;
-  return runDevicePlaytest({ ...config, mailboxRoot }, {
+  return withTargetAbortSignal("android", (abortSignal) => runDevicePlaytest({ ...config, mailboxRoot }, {
+    abortSignal: abortSignal,
     driver,
     mailboxPaths: androidMailboxPaths(android.packageName, mailboxRoot),
     name: "android",
     processName: android.packageName,
     ...(dependencies.transport === undefined ? {} : { transport: dependencies.transport }),
-  });
+  }), dependencies.abortSignal);
 }
 
 export async function runDevicePlaytest(

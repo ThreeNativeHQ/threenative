@@ -20,6 +20,7 @@ import { runDesktopPlaytest } from "./desktopRunner.js";
 import { runIosPlaytest } from "./iosRunner.js";
 import { recordToScenario } from "./recording.js";
 import { runStandalonePlaytest, runStandalonePlaytests, type IStandalonePlaytestReport } from "./runner.js";
+import { safePart } from "./shared.js";
 
 export interface IRunnerDiagnostic {
   code: string;
@@ -243,10 +244,6 @@ async function runDevicePlaytests(
     }));
   }
   return reports;
-}
-
-function safePart(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/gu, "-");
 }
 
 async function recordToScenarioCommand(argv: readonly string[]): Promise<number> {

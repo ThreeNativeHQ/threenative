@@ -118,10 +118,15 @@ visibility assertion. The focused pre-aborted Android run still passed with the 
 pnpm test:playtest                                                  PASS
 ```
 
-The root `pnpm test` gate was attempted twice after lockfile install and a successful root build.
-Both attempts stopped in `packages/playtest/__tests__/orphan-cleanup.sh`, which observed six
-Chromium processes left by its own signal-teardown probe. The reported PIDs were gone immediately
-after each command exited; the independent playtest Vitest suite was green as recorded above.
+The earlier root `pnpm test` attempts stopped in `packages/playtest/__tests__/orphan-cleanup.sh`,
+which observed six Chromium processes left by its own signal-teardown probe. A later full root run
+passed after the lockfile/build work completed; the expected sandbox probes still printed their
+normal temporary-worktree diagnostics without failing their assertions:
+
+```text
+pnpm test                                                       PASS
+199 test files, 1,895 tests passed
+```
 
 ## Acceptance status
 
@@ -133,3 +138,77 @@ after each command exited; the independent playtest Vitest suite was green as re
   remains unverified because the selected emulator app failed before the abort exercise.
 - Sampling split: green; `sampling.ts` retains sampling/runtime-observation concerns only, with
   camera and server lifecycle in separate focused modules.
+
+## Review-round repair evidence
+
+The review-specific controls were added before implementation and run against the unchanged
+repair baseline. The focused suite reported 5 failures in 12 tests:
+
+```text
+pnpm exec vitest run packages/playtest/__tests__/runner-lanes.spec.ts
+5 failed | 7 passed
+- expected cli.ts not to contain `function safePart(`
+- expected Browser interruption message, received []
+- public Android runner resolved a failure report instead of rejecting with `Android playtest interrupted by signal.`
+- public iOS runner resolved a failure report instead of rejecting with `iOS playtest interrupted by signal.`
+```
+
+The lane contract was then run with an Android-only distance mutation, changing its report input
+to `(accumulatedPathLength(pathPositions) ?? 0) + 1`. The browser adapter stayed correct while the
+native adapter changed, so the contract failed:
+
+```text
+pnpm exec vitest run packages/playtest/__tests__/runner-lanes.spec.ts -t "browser and device lanes report"
+FAIL: expected 1.15 to be 0.15000000000000002
+```
+
+The mutation was reverted before the repair implementation. The repair now uses the actual browser
+runner and device runner report paths, imports CLI `safePart` from `shared.ts`, labels browser signal
+exits, and routes Android/iOS public entry points through a signal-aware device wrapper.
+
+## Review-round repair green evidence
+
+```text
+pnpm exec vitest run packages/playtest/__tests__/runner-lanes.spec.ts
+12 tests PASS
+
+pnpm exec vitest run packages/playtest/__tests__/runner-lanes.spec.ts \
+  packages/playtest/__tests__/setup-reporting.spec.ts \
+  packages/playtest/__tests__/runner-orchestration.spec.ts
+3 files, 27 tests PASS
+
+browser pathLength: 0.15000000000000002
+native pathLength: 0.15000000000000002
+```
+
+The lane suite's public abort tests cover the browser handler and Android/iOS entry points with
+target-labelled errors. Desktop remains covered by its existing signal tests. No live Android,
+iOS, or desktop-native run was claimed in this repair: the dated record above still documents the
+available emulator/native-lane failures and the resulting unverified status.
+
+## Final repair gate evidence
+
+The final focused run included the runner-lane repair, orchestration, and existing runner suites:
+
+```text
+pnpm exec vitest run packages/playtest/__tests__/runner-lanes.spec.ts \
+  packages/playtest/__tests__/runner-orchestration.spec.ts \
+  packages/playtest/__tests__/runner.spec.ts
+3 files, 74 tests PASS
+```
+
+The package and repository gates also passed:
+
+```text
+pnpm --filter @threenative/playtest build                         PASS
+pnpm --filter @threenative/playtest typecheck                    PASS
+pnpm typecheck                                                    PASS
+pnpm lint                                                         PASS (295 existing warnings)
+pnpm budgets                                                      PASS (existing LOC/census diagnostics)
+pnpm tsx scripts/count-loc.ts                                    PASS
+pnpm test                                                         PASS (199 files, 1,895 tests)
+pnpm test:playtest                                                 PASS (four browser scenarios)
+```
+
+The fresh browser scenario reported `pathLength: 9.725507065552236` and `pass: true`. Native
+Android, iOS, and desktop execution remains unverified; no native result is claimed here.
