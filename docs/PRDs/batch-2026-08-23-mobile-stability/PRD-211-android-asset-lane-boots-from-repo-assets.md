@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-211 — an Android APK builds and boots from the repository's own assets
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 2 landed `01ec0658` (capability derived from the build; device proof
+still open). Phases 1 and 3 (Ogg Vorbis decode, every packager gated) in progress.
 
 **Complexity:** +2 for multi-package changes (runtime-native + assets scripts), +1 vendored
 dependency addition, +2 new decode capability = **5 → MEDIUM mode**.

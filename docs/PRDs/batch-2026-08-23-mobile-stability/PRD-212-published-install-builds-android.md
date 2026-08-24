@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-212 — a published install builds for Android
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 landed `439b9fd7`, Phase 2 landed `8df8e6b2`. The only open item is
+the real-release milestone, which waits on PRD-196 Phase 2 and PRD-078.
 
 **Complexity:** +2 multi-package, +1 external API integration (npm registry, GitHub releases),
 +2 new gate system (tarball + release censuses) = **5 → MEDIUM mode**.

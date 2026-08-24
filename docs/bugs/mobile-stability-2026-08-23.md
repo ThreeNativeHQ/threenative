@@ -1,6 +1,6 @@
 # Mobile is not shippable: no UI, 18 fps, intermittent SIGSEGV, and a build lane nobody can run
 
-**Status:** open — 2 of 11 fixed and committed, 1 diagnosed to the wrong layer and corrected,
+**Status:** open — 4 of 11 fixed and committed, 1 gated on a release, 1 diagnosed to the wrong layer and corrected,
 8 recorded with evidence and not yet fixed
 **Severity:** blocker — a game built with this framework has no user interface on Android, runs at
 30% of the display's refresh rate, and its Android build cannot be produced from a clean install of
@@ -22,14 +22,14 @@ the physical device — no emulator, no simulator, no desktop substitute.
 | --- | --- | --- | --- | --- |
 | [1](#bug-1) | Health report kills any build using `EXT_texture_webp` | blocker | `packages/assets` | **fixed** `36831d96` |
 | [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | `packages/ui` + core | open, decided |
-| [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed |
+| [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed — **shadow refutation withdrawn**, see below |
 | [4](#bug-4) | Intermittent SIGSEGV, no tombstone | high | `packages/runtime-native` | open, hypothesis |
 | [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | open |
-| [6](#bug-6) | Published install cannot build for Android | high | `packages/runtime-native` | open |
-| [7](#bug-7) | `catalog:` specifiers leak into the published tarball | high | publishing | open |
+| [6](#bug-6) | Published install cannot build for Android | high | `packages/runtime-native` | **gated** `8df8e6b2` — clean-room gate green offline; real release waits on PRD-078 |
+| [7](#bug-7) | `catalog:` specifiers leak into the published tarball | high | publishing | **fixed** `439b9fd7` — tarball specifier census in `publish:check` |
 | [8](#bug-8) | 393 MB of GPU resources requested, 849 MB held | medium | game + driver | open |
 | [9](#bug-9) | Render loop keeps drawing with the screen off | medium | `packages/runtime-native` | open |
-| [10](#bug-10) | Preflight claims no libwebp; the runtime has it | low | `packages/runtime-native` | open |
+| [10](#bug-10) | Preflight claims no libwebp; the runtime has it | low | `packages/runtime-native` | **fixed** `01ec0658` — capability derived from the build; device proof open |
 | [11](#bug-11) | Runtime could not report its own GPU memory | low | `packages/runtime-native` | **fixed** `d6e21511` |
 
 **Not a bug:** landscape orientation. `android:screenOrientation=0` is in the manifest and a live
@@ -125,6 +125,16 @@ and `required`.
 ## Bug 3 — 18.3 fps, and 68% of the frame is JavaScript outside the renderer
 
 **Severity:** blocker. **Status:** open, diagnosed.
+
+> **Correction, 2026-08-23.** Any statement in this section that shadows were refuted as the lever
+> is **withdrawn**. The bundle the 20:18 measurement ran from
+> (`sandbox/fps-framework/.threenative/build/game.js`, mtime 20:13, shipped as
+> `dist-native/bayview-noshadow.apk`) disabled `shadowMap` and cleared `castShadow` on every light
+> *before the measurement window opened* — the `KILL_SHADOWS` constant was folded away as
+> always-true by the bundler — so the comparison was a shadows-off build against itself. No
+> pre-kill capture survives anywhere in the sandbox tree or `docs/`; `gpuMemoryProbe.ts` was
+> untracked, so there is no history to date one by. **Shadows are untested, not refuted.**
+> PRD-214 Phase 0 carries a shadows-ON baseline as R0 and shadows-off as R1.
 
 ### What happens
 
