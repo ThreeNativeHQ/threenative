@@ -85,10 +85,7 @@ describe("CI pipeline structure", () => {
     expect(boundaryCheck).toBeGreaterThan(exampleBuild);
 
     const bundleScan = build.slice(boundaryCheck);
-    expect(bundleScan).not.toContain("! rg -n 'DebugOverlay|__THREENATIVE__'");
-    expect(bundleScan).toMatch(
-      /if rg -n 'DebugOverlay\|__THREENATIVE__' examples\/abyss-framework\/dist; then[\s\S]*?exit 1[\s\S]*?else[\s\S]*?status=\$\?[\s\S]*?if \[ "\$status" -ne 1 \][\s\S]*?exit "\$status"/u,
-    );
+    expect(bundleScan).toContain("run: pnpm exec tsx scripts/check-core-boundary.ts");
   });
 
   it("keeps the repository-wide DebugOverlay CSS guard", async () => {

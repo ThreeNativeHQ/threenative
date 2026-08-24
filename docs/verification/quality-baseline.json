@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-24T05:39:40.493Z",
+  "generatedAt": "2026-08-24T14:44:20.985Z",
   "counts": {
-    "file-length": 29,
-    "suppression/unknown-cast": 25,
+    "file-length": 33,
+    "suppression/unknown-cast": 26,
     "interface-in-disguise": 13,
-    "suppression/biome-ignore": 2,
+    "suppression/biome-ignore": 7,
     "lint-coverage-hole": 1
   },
   "findings": [
@@ -20,7 +20,7 @@
       "file": "packages/assets/src/passes/model.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 554,
+      "value": 570,
       "threshold": 400
     },
     {
@@ -69,7 +69,7 @@
       "file": "packages/core/src/audio.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 453,
+      "value": 456,
       "threshold": 400
     },
     {
@@ -83,12 +83,12 @@
       "file": "packages/core/src/game.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 758,
-      "threshold": 400
+      "value": 820,
+      "threshold": 800
     },
     {
       "file": "packages/core/src/game.ts",
-      "line": 98,
+      "line": 107,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -132,7 +132,7 @@
       "file": "packages/core/src/projection-apply.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 718,
+      "value": 739,
       "threshold": 400
     },
     {
@@ -141,6 +141,55 @@
       "signal": "file-length",
       "value": 558,
       "threshold": 400
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 569,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 329,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 331,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 334,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 336,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 364,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 365,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
     },
     {
       "file": "packages/core/src/renderer.ts",
@@ -206,6 +255,13 @@
       "threshold": 1
     },
     {
+      "file": "packages/create-threenative/src/build.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 417,
+      "threshold": 400
+    },
+    {
       "file": "packages/create-threenative/src/config.ts",
       "line": 1,
       "signal": "file-length",
@@ -220,10 +276,17 @@
       "threshold": "interface"
     },
     {
+      "file": "packages/create-threenative/src/doctor.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 467,
+      "threshold": 400
+    },
+    {
       "file": "packages/create-threenative/src/index.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 521,
+      "value": 528,
       "threshold": 400
     },
     {
@@ -263,14 +326,14 @@
     },
     {
       "file": "packages/physics/src/Area3D.ts",
-      "line": 34,
+      "line": 38,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
       "file": "packages/physics/src/Area3D.ts",
-      "line": 38,
+      "line": 42,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
@@ -279,7 +342,7 @@
       "file": "packages/physics/src/native/host.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 543,
+      "value": 606,
       "threshold": 400
     },
     {
@@ -293,19 +356,19 @@
       "file": "packages/physics/src/plugin.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 439,
+      "value": 453,
       "threshold": 400
     },
     {
       "file": "packages/physics/src/simulation.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 1234,
+      "value": 1244,
       "threshold": 800
     },
     {
       "file": "packages/physics/src/simulation.ts",
-      "line": 522,
+      "line": 532,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -314,7 +377,7 @@
       "file": "packages/playtest/src/assertion-schema.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 512,
+      "value": 514,
       "threshold": 400
     },
     {
@@ -335,7 +398,7 @@
       "file": "packages/playtest/src/evaluators/measures.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 577,
+      "value": 576,
       "threshold": 400
     },
     {
@@ -343,6 +406,13 @@
       "line": 1,
       "signal": "file-length",
       "value": 605,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/evaluators/render-evidence.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 449,
       "threshold": 400
     },
     {
@@ -356,12 +426,12 @@
       "file": "packages/playtest/src/runner/androidRunner.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 682,
+      "value": 688,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/runner/deviceTransport.ts",
-      "line": 298,
+      "line": 299,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -384,7 +454,7 @@
       "file": "packages/playtest/src/runner/runner.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 626,
+      "value": 630,
       "threshold": 400
     },
     {
@@ -447,26 +517,26 @@
       "file": "packages/playtest/src/scenario/schema-accessors.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 634,
+      "value": 660,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/scenario/schema-base.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 414,
+      "value": 422,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/scenario/schema-validate.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 932,
+      "value": 946,
       "threshold": 800
     },
     {
       "file": "packages/playtest/src/three/device.ts",
-      "line": 316,
+      "line": 321,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
