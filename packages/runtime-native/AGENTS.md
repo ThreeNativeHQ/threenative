@@ -65,6 +65,16 @@ portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means Android or i
 WASM. Do not weaken these guards. Every packager stages `public/` beside the game bundle,
 and a missing runtime asset must reject game startup rather than fall back to the network.
 
+**Mobile has no compressed-asset decoders.** Android QuickJS and iOS JSC have no WASM engine,
+so three's Basis/zstd transcoder (`KTX2Loader`), its Meshopt decoder and Draco's wasm decoder
+cannot run there. `scripts/bundle.mjs` replaces all three with refusing stubs on the mobile
+targets only — desktop keeps the real ones — which is what keeps a game that ships no
+compressed asset out of `TN_NATIVE_WASM_ON_MOBILE`; their specifiers are static strings inside
+`await import(...)`, so a bundler inlines them whether the game uses them or not. A game whose
+compiled assets do need one is refused by `threenative build` before any bundle exists, with
+`TN_NATIVE_KTX2_UNSUPPORTED` or `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`. Making mobile decode
+either format is a native decoder question, not a bundler one.
+
 ## Package boundaries
 
 - `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked; a tracked file under

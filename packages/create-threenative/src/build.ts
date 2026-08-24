@@ -81,6 +81,82 @@ export async function assertNativeBundleCompatible(
   );
 }
 
+/** glTF extensions whose geometry only decodes through a WASM decoder. */
+const COMPRESSED_MODEL_EXTENSIONS: readonly string[] = [
+  "EXT_meshopt_compression",
+  "KHR_draco_mesh_compression",
+  "KHR_meshopt_compression",
+];
+
+function namedAssets(logicalPaths: readonly string[]): string {
+  const shown = logicalPaths.slice(0, 3).join(", ");
+  const rest = logicalPaths.length - 3;
+  return rest > 0 ? `${shown} and ${rest} more` : shown;
+}
+
+/**
+ * Refuses compiled assets a mobile native target cannot decode, at the first point the build
+ * knows about them — after the compile step, before a bundle or an APK exists.
+ *
+ * Android runs QuickJS and iOS runs JavaScriptCore without a WASM JIT, so neither has
+ * `WebAssembly`. Three's Basis/zstd transcoder, its Meshopt decoder and Draco's wasm decoder
+ * therefore cannot run there and are not in the mobile bundle at all (they are replaced in
+ * `runtime-native/scripts/bundle.mjs`, which is what keeps `TN_NATIVE_WASM_ON_MOBILE` green).
+ * A game that genuinely ships such an asset must hear that here rather than discover it as a
+ * missing texture on a phone.
+ */
+export async function assertNativeAssetsCompatible(
+  cwd: string,
+  target: BuildTarget,
+  config: IResolvedThreeNativeConfig,
+): Promise<void> {
+  if (target === "desktop" || target === "web") return;
+  const outputRoot = path.resolve(cwd, config.assets?.output ?? "public");
+  const manifestPath = path.join(outputRoot, "assets.manifest.json");
+  let raw: string;
+  try {
+    raw = await readFile(manifestPath, "utf8");
+  } catch {
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const entries = (parsed as { entries?: unknown }).entries;
+  if (typeof entries !== "object" || entries === null) {
+    throw new Error(`TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' has no 'entries' object.`);
+  }
+  const rows = Object.entries(entries as Record<string, unknown>).map(
+    ([logical, entry]) => [logical, (entry ?? {}) as Record<string, unknown>] as const,
+  );
+  const ktx2 = rows
+    .filter(([, entry]) => typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output))
+    .map(([logical]) => logical);
+  if (ktx2.length > 0) {
+    throw new Error(
+      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Set assets.textures to "none" so native builds ship the source textures, or keep the compressed textures on the web target.`,
+    );
+  }
+  const compressedModels = rows
+    .filter(([, entry]) =>
+      (Array.isArray(entry.extensions) ? (entry.extensions as unknown[]) : []).some(
+        (extension) =>
+          typeof extension === "string" && COMPRESSED_MODEL_EXTENSIONS.includes(extension),
+      ),
+    )
+    .map(([logical]) => logical);
+  if (compressedModels.length > 0) {
+    throw new Error(
+      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). The mobile native runtime has no WebAssembly and therefore no Meshopt or Draco decoder. Set assets.models to "none" so native builds ship uncompressed geometry, or keep the compressed models on the web target.`,
+    );
+  }
+}
+
 export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
   const config = await loadConfig(cwd);
   await compileAssets({ config: config.assets, cwd });
@@ -227,6 +303,7 @@ function installedRuntime(runtimeRoot: string): string {
 async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
   const config = await loadConfig(cwd);
   await compileAssets({ config: config.assets, cwd });
+  await assertNativeAssetsCompatible(cwd, target, config);
   const entry = await nativeEntry(cwd, config);
   const orientation = config.display.orientation;
   const configPath = await writePackagingConfig(cwd, config);
