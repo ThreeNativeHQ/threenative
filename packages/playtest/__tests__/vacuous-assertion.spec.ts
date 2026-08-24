@@ -60,6 +60,12 @@ test("a negative movement path length is rejected by the registry constraint", a
   expect(error.diagnostic.message).toMatch(/assert\.movement\.pathLength.*must be non-negative number/u);
 });
 
+test("a negative movement maximum distance is rejected by the registry constraint", async () => {
+  const error = await loadError({ movement: { maxDistance: -1 } });
+
+  expect(error.diagnostic.message).toMatch(/assert\.movement\.maxDistance.*must be non-negative number/u);
+});
+
 test("a stringified camera bound is rejected", async () => {
   const error = await loadError({ camera: { entity: "camera", follows: "player", within: "5" } });
 

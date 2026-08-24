@@ -191,6 +191,23 @@ describe("assertion registry completeness", () => {
     );
   });
 
+  it("rejects a require-when rule whose required field is not a non-empty string", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
+      entry.kind === "diagnostics"
+        ? {
+            ...entry,
+            rules: entry.rules?.map((rule, index) =>
+              rule.kind === "requireWhen" && index === 0 ? { ...rule, required: "runtimeReady" } : rule,
+            ),
+          }
+        : entry,
+    ) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: diagnostics.requireWhen required field 'runtimeReady' must reference a non-empty string constraint.",
+    );
+  });
+
   it("keeps public assertion field contracts in generated source", async () => {
     const schemaBase = await readFile(path.join(repoRoot, "packages/playtest/src/scenario/schema-base.ts"), "utf8");
     const generatedTypes = await readFile(path.join(repoRoot, "packages/playtest/src/scenario/generated-assertion-types.ts"), "utf8");

@@ -313,3 +313,186 @@ orphan processes remain: Chromium processes
 This was recorded as an environment failure, not a pass. The later full `pnpm test` run
 executed the same package test after its build and reported `no orphans`; the full suite
 then completed with the green result above.
+
+## Final review repair 2 — red evidence before implementation
+
+The two new controls were added before changing production registry code or generated
+artifacts, then run against handoff commit `34d8e4693791ef9c8ddb49261d7e2e9384317d2d`:
+
+- `packages/playtest/__tests__/vacuous-assertion.spec.ts` rejects a negative
+  `movement.maxDistance` at scenario load.
+- `packages/playtest/__tests__/assertion-registry.spec.ts` rejects a `requireWhen` rule
+  whose `required` field points at the boolean `runtimeReady` field.
+
+```text
+(node:1924870) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1924987) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/prd-204-assertion-validators-are-generated-from-the-registry
+
+ ❯ packages/playtest/__tests__/assertion-registry.spec.ts (13 tests | 1 failed) 57ms
+     ✓ declares a machine-readable constraint for every assertion field 2ms
+     ✓ keeps the committed validator artifact generated from the registry 25ms
+     ✓ includes a resource field added to the registry in generated validation 2ms
+     ✓ rejects a typo in an entry-level rule field reference 1ms
+     ✓ rejects a typo in a nested record-rule field reference 0ms
+     ✓ rejects an unknown required field on an excludeFields variant 0ms
+     ✓ rejects an unknown discriminator field 0ms
+     ✓ rejects a discriminator field declared only by another variant 0ms
+     ✓ rejects an out-of-range discriminator variant 0ms
+     ✓ rejects a no-consecutive-duplicates rule on a non-array field 0ms
+     ✓ rejects a require-when rule on a non-boolean field 0ms
+     × rejects a require-when rule whose required field is not a non-empty string 5ms
+     ✓ keeps public assertion field contracts in generated source 19ms
+ ❯ packages/playtest/__tests__/vacuous-assertion.spec.ts (21 tests | 1 failed) 101ms
+   ✓ a stringified movement threshold is rejected, not dropped into a green run 6ms
+   ✓ a null movement threshold is rejected rather than treated as absent 1ms
+   ✓ a negative movement path length is rejected by the registry constraint 1ms
+   × a negative movement maximum distance is rejected by the registry constraint 4ms
+   ✓ a stringified camera bound is rejected 1ms
+   ✓ a stringified diagnostics flag is rejected 1ms
+   ✓ an empty entity id is rejected instead of silently matching nothing 1ms
+   ✓ a console opt-out without a reason is rejected at load 1ms
+   ✓ a network opt-out without a reason is rejected at load 1ms
+   ✓ a wrong-typed field inside an array assertion names its index 1ms
+   ✓ every registry field declaring a scalar type is actually enforced 62ms
+   ✓ valid scalar values still parse unchanged 2ms
+   ✓ movement minTicks parses through the typed registry path 1ms
+   ✓ the boolean triviality opt-out is rejected instead of coerced 1ms
+   ✓ a triviality reason must contain prose, not only whitespace or one character 3ms
+   ✓ a reason-string triviality opt-out parses unchanged 1ms
+   ✓ the six held-value assertion kinds reject boolean and short triviality opt-outs 9ms
+   ✓ every registry entry carries rationale and the audit reclassifies the six held-value kinds 1ms
+   ✓ an empty signals array fails at load instead of asserting nothing 1ms
+   ✓ an empty resource anyOf array fails at load instead of asserting nothing 1ms
+   ✓ a resource anyOf alternative with only a path fails without a comparator 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/playtest/__tests__/assertion-registry.spec.ts > assertion registry completeness > rejects a require-when rule whose required field is not a non-empty string
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ packages/playtest/__tests__/assertion-registry.spec.ts:206:69
+    204|     ) as readonly IPlaytestAssertionSchemaEntry[];
+    205|
+    206|     expect(() => assertPlaytestAssertionRegistryComplete(registry)).to…
+       |                                                                     ^
+    207|       "Assertion registry is incomplete: diagnostics.requireWhen requi…
+    208|       );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/playtest/__tests__/vacuous-assertion.spec.ts > a negative movement maximum distance is rejected by the registry constraint
+AssertionError: expected undefined to be an instance of PlaytestScenarioError
+ ❯ loadError packages/playtest/__tests__/vacuous-assertion.spec.ts:40:18
+     38|     caught = error;
+     39|   }
+     40|   expect(caught).toBeInstanceOf(PlaytestScenarioError);
+       |                  ^
+     41|   return caught as PlaytestScenarioError;
+ ❯ packages/playtest/__tests__/vacuous-assertion.spec.ts:64:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 32 passed (34)
+   Start at  01:02:10
+   Duration  720ms (transform 553ms, setup 0ms, import 693ms, tests 158ms, environment 0ms)
+
+```
+
+The red is specific: the current validator accepts a negative finite `maxDistance`, and
+registry completeness checks only that `requireWhen.required` names an existing field.
+
+## Final review repair 2 — implementation and green evidence
+
+The smallest fix keeps the generator registry-derived:
+
+- `movement.maxDistance` now uses the existing `non-negative number` type expression.
+- `requireWhen.required` now must reference a string constraint with `nonEmpty: true`,
+  matching the generated validator's trimmed non-empty string check.
+- The generated validator and assertion reference were regenerated from the registry.
+
+The same focused command passed after the fix:
+
+```text
+(node:1940176) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1940222) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/prd-204-assertion-validators-are-generated-from-the-registry
+
+ ✓ packages/playtest/__tests__/assertion-registry.spec.ts (13 tests) 12ms
+ ✓ packages/playtest/__tests__/vacuous-assertion.spec.ts (21 tests) 82ms
+
+ Test Files  2 passed (2)
+      Tests  34 passed (34)
+   Start at  01:03:34
+   Duration  440ms (transform 325ms, setup 0ms, import 414ms, tests 94ms, environment 0ms)
+
+```
+
+## Final review repair 2 — gate evidence
+
+```text
+pnpm tsx scripts/generate-assertion-validators.ts --check
+assertion validators are current: 21 kinds
+
+pnpm tsx scripts/generate-assertion-reference.ts --check
+assertion reference is current: 21 kinds
+
+pnpm --filter @threenative/playtest build
+ESM Build success
+DTS Build success
+All good!
+
+pnpm --filter @threenative/playtest typecheck
+exit status 0
+
+pnpm exec biome check packages/playtest/src/assertion-schema.ts packages/playtest/src/scenario/generated-assertion-validators.ts packages/playtest/__tests__/assertion-registry.spec.ts packages/playtest/__tests__/vacuous-assertion.spec.ts
+exit status 0; Found 29 warnings.
+
+pnpm typecheck
+exit status 0; Scope: 16 of 17 workspace projects
+
+pnpm lint
+exit status 0; Found 312 warnings.
+
+pnpm budgets
+budgets ok: 8 framework packages, 8 example workspaces, 18376/15000 framework LOC,
+81491/100000 native runtime LOC, 12 PRD files, largest template 2404 LOC,
+no compiled texture manifests found
+
+pnpm quality
+quality report: 92 findings (35 new, 10 grew, 47 inherited, 0 waived); exit 0
+
+TN_TEST_TEMP_TAG=prd204-repair1 pnpm test
+Test Files  199 passed (199)
+Tests  1903 passed (1903)
+37 skipped
+suite temporary directory count unchanged: 0
+
+runtime-native parity
+Test Files  53 passed (53)
+Tests  350 passed | 37 skipped (387)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+pnpm test:playtest
+Scenarios completed: framework movement, framework camera, abyss-framework movement-axis,
+and navigation-routes-around-blocker; each report ended with `"pass": true`.
+WebGPU adapter evidence reported NVIDIA/Turing with `rendererKind: "webgpu"`.
+```
+
+The budget LOC trigger, native census drift notices, Biome warnings, lint warnings, and
+browser/X11 warnings were non-fatal existing diagnostics; no gate was treated as green
+from a skipped or missing observation.

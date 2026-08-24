@@ -406,7 +406,7 @@ const RAW_PLAYTEST_ASSERTION_REGISTRY: readonly IRawPlaytestAssertionSchemaEntry
       { description: "Maximum final pitch/roll tilt from world up, in degrees; yaw is ignored.", name: "maxTiltDegrees", type: "number in [0, 180]" },
       { description: "Minimum distance moved over the scenario.", name: "minDistance", type: "number" },
       { description: "Minimum fixed-step ticks between the observed before and after transforms.", name: "minTicks", type: "positive integer" },
-      { description: "Maximum distance allowed; use for blocked-movement proof.", name: "maxDistance", type: "number" },
+      { description: "Maximum distance allowed; use for blocked-movement proof.", name: "maxDistance", type: "non-negative number" },
       { description: "Minimum distance per frame.", name: "minVelocity", type: "number" },
       { description: "Minimum accumulated path length; use with minDistance to catch movement that cancels out.", name: "pathLength", type: "non-negative number" },
       { description: "Require the final facing to differ from another entity by at least minDegrees.", name: "notFacing", type: "{ entity: string, minDegrees: number }" },
@@ -882,6 +882,13 @@ export function assertPlaytestAssertionRegistryComplete(
       if (rule.kind === "requireWhen") {
         const expectedKind = rule.equals === null ? "json" : typeof rule.equals;
         checkFieldConstraint(rule.field, expectedKind, rule.kind);
+        const requiredConstraint = fields.get(rule.required);
+        if (
+          requiredConstraint !== undefined
+          && (requiredConstraint.kind !== "string" || requiredConstraint.nonEmpty !== true)
+        ) {
+          errors.push(`${path}.${rule.kind} required field '${rule.required}' must reference a non-empty string constraint`);
+        }
       } else if (rule.kind === "requireOneOfOrTrue") {
         for (const fieldName of rule.trueFields) checkFieldConstraint(fieldName, "boolean", rule.kind);
       }

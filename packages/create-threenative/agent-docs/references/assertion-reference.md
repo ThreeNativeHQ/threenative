@@ -146,7 +146,7 @@ Proves the subject moved, reached a minimum velocity, or changed rotation during
 | `maxTiltDegrees` | number in [0, 180] | no | `{"kind":"number","max":180,"min":0}` |
 | `minDistance` | number | no | `{"kind":"number"}` |
 | `minTicks` | positive integer | no | `{"integer":true,"kind":"number","min":1}` |
-| `maxDistance` | number | no | `{"kind":"number"}` |
+| `maxDistance` | non-negative number | no | `{"kind":"number","min":0}` |
 | `minVelocity` | number | no | `{"kind":"number"}` |
 | `pathLength` | non-negative number | no | `{"kind":"number","min":0}` |
 | `notFacing` | { entity: string, minDegrees: number } | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"entity","required":true,"type":"string"},{"constraints":{"kind":"number"},"description":"","name":"minDegrees","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
