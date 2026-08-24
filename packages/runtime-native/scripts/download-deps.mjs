@@ -230,6 +230,12 @@ const DEPS = {
     headers: [
       'stb_image.h',
       'stb_image_write.h',
+      // Ogg Vorbis decode for `decodeAudioData`. The runtime carried no Vorbis decoder at all —
+      // `decodeAudioFile` was one call to `SDL_LoadWAV_IO` — so every native target rejected the
+      // `.ogg` files the web half of the same source plays, and an APK built from a repository's
+      // own assets died at startup. `stb_vorbis.c` is the same vendored single-file precedent as
+      // stb_image and cgltf; `src/audio/vorbis_impl.c` is the one translation unit that compiles it.
+      'stb_vorbis.c',
     ],
   },
   cgltf: {
@@ -766,23 +772,25 @@ async function downloadDep(name) {
 
   // Special handling for stb (individual header downloads)
   if (name === 'stb' && dep.headers) {
-    if (existsSync(destDir)) {
-      console.log(`${name} already exists at ${destDir}`);
-      if (!process.argv.includes('--force')) {
-        console.log('Skipping (use --force to re-download)');
-        return true;
-      }
-      rmSync(destDir, { recursive: true });
-    }
-
+    // Per header, not per directory. Testing the directory meant that adding a header to the list
+    // above provisioned nothing on any checkout that already had the others: `stb_vorbis.c` was
+    // added for Ogg decode and every existing tree reported "already exists" and skipped it, so
+    // the build failed on a missing include with the download step reporting success.
+    if (process.argv.includes('--force') && existsSync(destDir)) rmSync(destDir, { recursive: true });
     mkdirSync(destDir, { recursive: true });
+    const missing = dep.headers.filter((header) => !existsSync(join(destDir, header)));
+    if (missing.length === 0) {
+      console.log(`${name} already exists at ${destDir}`);
+      console.log('Skipping (use --force to re-download)');
+      return true;
+    }
     try {
-      for (const header of dep.headers) {
+      for (const header of missing) {
         const url = `https://raw.githubusercontent.com/nothings/stb/master/${header}`;
         const destPath = join(destDir, header);
         await downloadFile(url, destPath);
       }
-      console.log(`Successfully installed ${name}`);
+      console.log(`Successfully installed ${name}: ${missing.join(', ')}`);
       return true;
     } catch (error) {
       console.error(`Failed to download ${name}:`, error.message);

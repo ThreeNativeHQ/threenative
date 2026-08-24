@@ -1,5 +1,5 @@
 /**
- * Refuse to build an APK whose assets the target cannot decode.
+ * Refuse to package a build whose assets the target cannot decode.
  *
  * ## Why this exists
  *
@@ -18,8 +18,15 @@
  *
  * It does not transcode. Transcoding needs `ffmpeg` and `gltf-transform` on the build host, which
  * the packager cannot assume it has, and silently rewriting a game's assets is a bigger promise
- * than refusing to package them. The message carries the exact command instead — the same one that
- * produced the working APK by hand.
+ * than refusing to package them. The message carries the exact command instead.
+ *
+ * It is also not the fix for a container the runtime *should* read. The first version of this file
+ * refused every Ogg Vorbis file and printed an ffmpeg line, and that advice was the bug wearing a
+ * hat: `.ogg` is what `create-threenative`'s workflow emits and what the browser half of the same
+ * source plays, so the answer was to teach the runtime Vorbis, not to teach every game a manual
+ * transcode step. It now decodes Ogg Vorbis (`src/audio/vorbis_impl.c`), and this file no longer
+ * has an opinion about it. What stays refused — MP3, AAC, FLAC, Opus — is refused because nothing
+ * native decodes it, on any target, and the message says so instead of blaming Android.
  *
  * `THREENATIVE_SKIP_ASSET_PREFLIGHT=1` turns the whole thing off, for the case where a runtime has
  * been built with decoders this file does not know about yet.
@@ -81,6 +88,68 @@ export function deriveAndroidWebpSupport(runtimeSource) {
 }
 
 /**
+ * Mirrors the non-Android, non-iOS branch of the same libwebp block: a prebuilt drop under
+ * `third_party/webp/libwebp-*` with both a library and headers, which is what CMake's
+ * `WEBP_LIBRARY AND WEBP_INCLUDE_DIR` requires before it defines `MYSTRAL_HAS_WEBP`.
+ */
+export function deriveDesktopWebpSupport(runtimeSource) {
+  if (!runtimeSource || !existsSync(join(runtimeSource, 'CMakeLists.txt'))) {
+    return {
+      supported: false,
+      reason:
+        `${runtimeSource || '(no runtime root)'} is not a runtime source checkout, and a prebuilt ` +
+        'desktop release does not declare which decoders it was built with',
+    };
+  }
+  const prebuiltRoot = join(runtimeSource, 'third_party', 'webp');
+  let candidates = [];
+  try {
+    candidates = readdirSync(prebuiltRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('libwebp-'))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    candidates = [];
+  }
+  const usable = candidates.find((name) => {
+    const root = join(prebuiltRoot, name);
+    if (!existsSync(join(root, 'include'))) return false;
+    return ['libwebp.a', 'webp.lib', 'libwebp.lib', 'libwebp.so', 'libwebp.dylib'].some((library) =>
+      existsSync(join(root, 'lib', library)),
+    );
+  });
+  if (usable !== undefined) {
+    return {
+      supported: true,
+      reason: `third_party/webp/${usable} carries a library and headers, so CMake defines MYSTRAL_HAS_WEBP`,
+    };
+  }
+  return {
+    supported: false,
+    reason:
+      'third_party/webp carries no libwebp-* prebuilt with both lib/ and include/, so CMake ' +
+      'warns "libwebp library or headers not found" and the runtime reports "WebP format ' +
+      'support: NO". Provision it with \'node scripts/download-deps.mjs --only webp\'',
+  };
+}
+
+/**
+ * iOS has no libwebp on any path, and that is a property of the build rather than of a directory:
+ * `CMakeLists.txt` excludes `IOS` from the prebuilt branch and the source branch is `ANDROID`-only.
+ * There is nothing to derive from the filesystem, so this states the exclusion and the three-leg
+ * sync test pins it against CMake — correcting the Android claim must not quietly make this one
+ * wrong in the other direction.
+ */
+export function deriveIosWebpSupport() {
+  return {
+    supported: false,
+    reason:
+      'CMakeLists.txt excludes IOS from the libwebp prebuilt branch and builds libwebp from ' +
+      'source for ANDROID only, so no iOS runtime carries a WebP decoder',
+  };
+}
+
+/**
  * Fail closed: a caller that names no capabilities gets the most restrictive runtime, not the most
  * permissive one. `stageAndroidAssets` derives the real set from the runtime it is about to pack.
  */
@@ -90,36 +159,71 @@ export const NO_DECODERS = Object.freeze({
 
 /** Extensions the runtime will hand to `decodeAudioData`. */
 const AUDIO_EXTENSIONS = new Set(['.ogg', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.opus']);
-/** Containers worth naming back to the caller, so the message says what the file *is*. */
-const AUDIO_SIGNATURES = [
-  { name: 'Ogg', match: (b) => b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53 },
-  { name: 'MP3 (ID3)', match: (b) => b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33 },
-  { name: 'MP3', match: (b) => b[0] === 0xff && (b[1] & 0xe0) === 0xe0 },
-  { name: 'FLAC', match: (b) => b[0] === 0x66 && b[1] === 0x4c && b[2] === 0x61 && b[3] === 0x43 },
-  { name: 'MP4/M4A', match: (b) => b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70 },
-];
+
+/**
+ * What `decodeAudioFile` implements, and therefore what every native target decodes.
+ *
+ * This is one decoder in one file (`src/audio/audio_context.cpp`), compiled into desktop, Android
+ * and iOS alike, so the answer does not vary by target the way libwebp does - there is no CMake
+ * option to derive it from. What can still go stale is *this list*, so
+ * `tests/audio-decode-ogg.test.mjs` fails when the containers named here and the containers
+ * `decodeAudioFile` sniffs stop agreeing.
+ */
+export const NATIVE_AUDIO_CONTAINERS = Object.freeze(['RIFF/WAVE', 'Ogg Vorbis']);
+
+/**
+ * What the file *is*, read from its bytes.
+ *
+ * Ogg is a container, not a codec: the same `.ogg` extension and the same `OggS` magic carry
+ * Vorbis, Opus and FLAC. The runtime decodes Vorbis and nothing else in that container, so a
+ * magic-number match alone would wave an Opus file straight through to a failure at game start.
+ * The codec identifier sits in the first page, after the 27-byte page header and its segment table.
+ */
+export function detectAudioContainer(bytes) {
+  const ascii = (offset, text) => {
+    if (bytes.length < offset + text.length) return false;
+    for (let index = 0; index < text.length; index += 1)
+      if (bytes[offset + index] !== text.charCodeAt(index)) return false;
+    return true;
+  };
+  if (ascii(0, 'RIFF') && ascii(8, 'WAVE')) return 'RIFF/WAVE';
+  if (ascii(0, 'OggS')) {
+    if (bytes[28] === 0x01 && ascii(29, 'vorbis')) return 'Ogg Vorbis';
+    if (ascii(28, 'OpusHead')) return 'Ogg Opus';
+    if (bytes[28] === 0x7f && ascii(29, 'FLAC')) return 'Ogg FLAC';
+    return 'Ogg (unknown codec)';
+  }
+  if (ascii(0, 'ID3')) return 'MP3 (ID3)';
+  if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) return 'MP3';
+  if (ascii(0, 'fLaC')) return 'FLAC';
+  if (ascii(4, 'ftyp')) return 'MP4/M4A';
+  return 'an unknown format';
+}
 
 const GLB_MAGIC = 0x46546c67; // "glTF"
 const GLB_CHUNK_JSON = 0x4e4f534a; // "JSON"
 
 /**
- * A file is decodable audio for this target only if it is genuinely RIFF/WAVE.
+ * A file is decodable audio only if its bytes are a container `decodeAudioFile` implements.
  *
  * The decoder sniffs the header rather than the extension, which is why the hand-rolled workaround
- * for this — transcoding to WAV *content* while keeping the `.ogg` filenames — worked at all. So
- * the check is on the bytes too: a `.wav` carrying Ogg fails, and an `.ogg` carrying WAV passes.
+ * for the missing Vorbis decoder — transcoding to WAV *content* while keeping the `.ogg`
+ * filenames — worked at all. So the check is on the bytes too: a `.wav` carrying Opus fails, and
+ * an `.ogg` carrying WAV passes.
+ *
+ * The refusal names no platform. Every native target shares this decoder, so "the android target
+ * rejects it" was never the truth even when Android was the only target anyone had run — the same
+ * file fails on desktop and on iOS, and saying otherwise sent people hunting an Android problem.
  */
 function audioProblem(relativePath, bytes) {
-  if (bytes.length >= 12) {
-    const riff = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
-    const wave = bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45;
-    if (riff && wave) return undefined;
-  }
-  const detected = AUDIO_SIGNATURES.find((entry) => entry.match(bytes))?.name ?? 'an unknown format';
+  const detected = detectAudioContainer(bytes);
+  if (NATIVE_AUDIO_CONTAINERS.includes(detected)) return undefined;
   return {
     file: relativePath,
-    reason: `is ${detected}; the android target's decoder accepts RIFF/WAVE only`,
-    fix: `ffmpeg -y -i "${relativePath}" -f wav -ar 44100 -ac 2 -c:a pcm_s16le "${relativePath}"`,
+    reason: `is ${detected}; no native target decodes this container (the runtime decodes ${NATIVE_AUDIO_CONTAINERS.join(' and ')})`,
+    // Ogg Vorbis rather than WAV: roughly a tenth of the size, what the web build already ships,
+    // and now decoded natively, so one file serves both halves of the same source.
+    fix: `ffmpeg -y -i "${relativePath}" -c:a libvorbis -ar 44100 "${relativePath.replace(/\.[^.]*$/u, '')}.ogg"`,
   };
 }
 
@@ -218,12 +322,12 @@ function listFiles(directory, relative = '') {
 }
 
 /**
- * Every asset in `directory` the android target cannot read, as a list of problems.
+ * Every asset in `directory` the named target cannot read, as a list of problems.
  *
  * Returns rather than throws, so a caller can warn instead of failing and so this is testable
  * without a filesystem full of broken fixtures.
  */
-export function findAndroidAssetProblems(directory, capabilities = NO_DECODERS) {
+export function findNativeAssetProblems(directory, capabilities = NO_DECODERS) {
   if (!directory) return [];
   let entries;
   try {
@@ -256,9 +360,9 @@ export function findAndroidAssetProblems(directory, capabilities = NO_DECODERS) 
 }
 
 /** The message a person reads when the build stops: what, why, and the command that fixes it. */
-export function formatAssetProblems(problems) {
+export function formatAssetProblems(problems, target = 'android') {
   const lines = [
-    `TN_NATIVE_ASSET_UNSUPPORTED: ${problems.length} asset${problems.length === 1 ? '' : 's'} cannot be decoded by the android target.`,
+    `TN_NATIVE_ASSET_UNSUPPORTED: ${problems.length} asset${problems.length === 1 ? '' : 's'} cannot be decoded by the ${target} target.`,
     '',
   ];
   for (const problem of problems) {
@@ -268,16 +372,36 @@ export function formatAssetProblems(problems) {
     lines.push('');
   }
   lines.push(
-    'Transcode into a staging copy of the asset directory and package that, so the web build keeps',
-    'shipping OGG and WebP. Set THREENATIVE_SKIP_ASSET_PREFLIGHT=1 to package anyway.',
+    'Convert into a staging copy of the asset directory and package that, so the web build keeps',
+    'shipping whatever it likes. Set THREENATIVE_SKIP_ASSET_PREFLIGHT=1 to package anyway.',
   );
   return lines.join('\n');
 }
 
-/** Throw unless every asset in `directory` is decodable, or the caller opted out by env. */
-export function assertAndroidAssetsDecodable(directory, capabilities = NO_DECODERS) {
+/**
+ * Throw unless every asset in `directory` is decodable by `target`, or the caller opted out by env.
+ *
+ * Every packager calls this. Only the Android one did, which is how `package-desktop.mjs` and
+ * `package-ios.mjs` shipped builds that failed at game start on assets the packager had already
+ * read and copied — the same class of black screen, reached by a different door. The capability
+ * set is the caller's, because it is the caller that knows which runtime it is about to pack.
+ */
+export function assertNativeAssetsDecodable(directory, { target, capabilities = NO_DECODERS } = {}) {
+  if (!target) throw new Error('assertNativeAssetsDecodable requires the target it is gating.');
   if (process.env.THREENATIVE_SKIP_ASSET_PREFLIGHT === '1') return [];
-  const problems = findAndroidAssetProblems(directory, capabilities);
-  if (problems.length > 0) throw new Error(formatAssetProblems(problems));
+  const problems = findNativeAssetProblems(directory, capabilities);
+  if (problems.length > 0) throw new Error(formatAssetProblems(problems, target));
   return problems;
+}
+
+/**
+ * The Android-shaped names the packager and the template gate already call, kept so a rename does
+ * not travel further than this change needs to. They are the same gate with the target filled in.
+ */
+export function findAndroidAssetProblems(directory, capabilities = NO_DECODERS) {
+  return findNativeAssetProblems(directory, capabilities);
+}
+
+export function assertAndroidAssetsDecodable(directory, capabilities = NO_DECODERS) {
+  return assertNativeAssetsDecodable(directory, { target: 'android', capabilities });
 }

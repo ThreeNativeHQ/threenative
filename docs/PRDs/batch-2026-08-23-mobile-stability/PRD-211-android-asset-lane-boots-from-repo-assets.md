@@ -4,8 +4,10 @@ prd_contract: v1
 
 # PRD-211 — an Android APK builds and boots from the repository's own assets
 
-**Status:** PARTIAL — Phase 2 landed `01ec0658` (capability derived from the build; device proof
-still open). Phases 1 and 3 (Ogg Vorbis decode, every packager gated) in progress.
+**Status:** PARTIAL — Phases 1, 2 and 3 landed and are desktop-executed; every remaining
+criterion needs a physical Pixel 8. Evidence:
+`docs/verification/prd-211-2026-08-23.md` (Phase 2),
+`docs/verification/prd-211-phase1-2026-08-23.md` (Phases 1 and 3).
 
 **Complexity:** +2 for multi-package changes (runtime-native + assets scripts), +1 vendored
 dependency addition, +2 new decode capability = **5 → MEDIUM mode**.
@@ -99,12 +101,13 @@ claims (#3).
 **Files (max 5):** `scripts/download-deps.mjs` (EDIT), `CMakeLists.txt` source list (EDIT),
 `src/audio/stb_impl.cpp` or sibling (EDIT), `src/audio/audio_context.cpp` (EDIT), spec (NEW).
 
-- [ ] Red first: unit/executable test feeding a genuine OggS fixture at HEAD →
+- [x] Red first: `tests/audio_decode_ogg_test.cpp` feeds `tests/fixtures/pickup.ogg` at HEAD;
       "could not decode" pasted.
-- [ ] Implement sniff-and-decode; corrupt/truncated Ogg fails loudly (negative case in same test).
-- [ ] Verify `targetSampleRate` handling while in the file — the parameter is currently accepted
-      but unused (`audio_context.cpp:577-633`); either honour it or file the latent pitch defect
-      explicitly rather than silently layering on top.
+- [x] Implement sniff-and-decode; truncated Ogg, corrupt Ogg and Ogg-carrying-Opus all fail loudly
+      (negative cases in the same test). Passed on V8 **and** QuickJS, the Android rollback engine.
+- [x] `targetSampleRate` **honoured**, not filed: `AudioBufferSourceNode::process` does no rate
+      conversion, so a buffer kept at its own rate played sharp. Every container is now resampled
+      to the context rate, pinned by a 22 050 Hz asset coming back 44 100 frames long.
 
 #### Phase 2: preflight tells the truth about the build it ships with
 
@@ -112,19 +115,24 @@ claims (#3).
 `tests/android-webp-provisioning.test.mjs` (EDIT — pin leg 3), `tests/android-asset-preflight.test.mjs`
 (EDIT — the `:106-113` webp-rejection assertion flips to derivation), evidence record (NEW).
 
-- [ ] Derive webp support from runtimeRoot facts mirroring the CMake glob; correct the reason
+- [x] Derive webp support from runtimeRoot facts mirroring the CMake glob; correct the reason
       strings; keep the iOS exclusion honest.
-- [ ] Red/green both arms in tests (current code fails both since rejection is hardcoded).
-- [ ] Device proof: repo-assets APK logs `WebP format support: YES` and textured models render.
+- [x] Red/green both arms in tests (current code fails both since rejection is hardcoded).
+- [ ] **Device proof, open:** repo-assets APK logs `WebP format support: YES` and textured models
+      render. Sequenced after Phase 1, which has now landed; one install proves this and the
+      Phase 3 boot together.
 
 #### Phase 3: every packager runs the same honest gate
 
 **Files (max 4):** `package-desktop.mjs`, `package-ios.mjs`, shared preflight invocation (EDITs),
 verification record (NEW).
 
-- [ ] Desktop/iOS stage steps invoke preflight with their own derived capability set.
-- [ ] End-to-end red-green: clean clone → `threenative build --target android` from repo assets →
-      boots with audio (the exact bug-5 repro goes green; paste logcat audio lines).
+- [x] Desktop/iOS stage steps invoke preflight with their own derived capability set
+      (`deriveDesktopWebpSupport`, `deriveIosWebpSupport`); both packagers previously ran none.
+      The audio refusal now reads "no native target decodes this container" and prints no ffmpeg
+      advice for Ogg Vorbis.
+- [ ] **End-to-end, open:** clean clone → `threenative build --target android` from repo assets →
+      boots with audio. Needs the physical Pixel 8; the device was leased to another lane.
 
 ## Verification Strategy
 

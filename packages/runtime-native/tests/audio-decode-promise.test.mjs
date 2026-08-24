@@ -47,7 +47,7 @@ test("the decodeAudioData Promise proof is built and run by a lane that needs no
     /add_executable\(threenative-audio-decode-promise-test EXCLUDE_FROM_ALL\s*tests\/audio_decode_promise_test\.cpp\)/u,
   );
   const verify = read("scripts/verify-desktop-audio.mjs");
-  assert.match(verify, /const target = "threenative-audio-decode-promise-test";/u);
+  assert.match(verify, /target: "threenative-audio-decode-promise-test",/u);
   assert.match(verify, /native decodeAudioData Promise contract passed/u);
   assert.match(
     JSON.parse(read("package.json")).scripts["native:verify:desktop"],

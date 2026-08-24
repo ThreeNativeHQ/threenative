@@ -83,6 +83,39 @@ its pre-existing unsupported-decode path. This row does not claim audio parity. 
 `starter-linux` workflow job rebuilds this same scaffold and retains its log, screenshot and
 JSON report.
 
+## Ogg Vorbis decode — 2026-08-23
+
+`decodeAudioFile` was one call to `SDL_LoadWAV_IO`, so RIFF/WAVE was the only container any
+native target could read. That is the "pre-existing unsupported-decode path" the starter row
+above records, and it is not Android-specific — desktop simply never noticed, because every
+audio proof here fed a WAV built inline. PRD-211 Phase 1 vendors `stb_vorbis.c` through
+`scripts/download-deps.mjs`, compiles it once in `src/audio/vorbis_impl.c`, and sniffs `OggS`
+ahead of SDL.
+
+```sh
+pnpm native:build
+node scripts/verify-desktop-audio.mjs           # V8, the shipping desktop preset
+node scripts/verify-desktop-audio.mjs --dual    # V8 + QuickJS, the Android rollback engine
+```
+
+- `threenative-audio-decode-ogg-test` decodes `tests/fixtures/pickup.ogg` — a genuine Ogg
+  Vorbis file from this repository, 8,820 frames of mono at 44,100 Hz — through the installed
+  `AudioContext.decodeAudioData`, and asserts audible PCM rather than a buffer of silence.
+- **Passed on V8 and on QuickJS.** JavaScriptCore is reported skipped, not passed: this build
+  carries no JSC, and a build carrying no engine at all fails rather than reporting a pass.
+- Negative controls in the same executable: a truncated Ogg and an `OggS` header over corrupt
+  bytes both reject with an `Error`, the same loud class an `SDL_LoadWAV_IO` failure produces.
+  An Ogg carrying Opus fails the same way — the container is not the codec, and this runtime
+  implements Vorbis only.
+- `targetSampleRate` was accepted by `decodeAudioFile` and never read, and
+  `AudioBufferSourceNode::process` does no rate conversion, so a buffer kept at its own rate
+  played at `bufferRate / contextRate` speed. It is now honoured for every container: a
+  22,050 Hz asset decoded on a 44,100 Hz context comes back 44,100 frames long instead of
+  22,050, proved in the same executable.
+- Not claimed: any device. The Android and iOS halves of this decoder are the same source file
+  and are compiled by the same lists, but no phone ran it.
+  `docs/verification/prd-211-phase1-2026-08-23.md` names what is still open.
+
 ## Stability contracts without a display — 2026-08-24 (PRD-210)
 
 `native:verify:desktop` gained a third proof ahead of the display-dependent ones:
@@ -112,4 +145,3 @@ All three passed on Linux x64, V8 13.1.201.22, Dawn, preset `tn-linux`. The desk
 V8 alone, so QuickJS and JavaScriptCore report `SKIP … not compiled into this build` — a skip, not
 a pass. Evidence and the open device rows:
 [`../../../docs/verification/prd-210-2026-08-23.md`](../../../docs/verification/prd-210-2026-08-23.md).
-

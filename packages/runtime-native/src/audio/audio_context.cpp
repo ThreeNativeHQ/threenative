@@ -8,6 +8,9 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
+#include <vector>
 
 namespace mystral {
 namespace audio {
@@ -636,8 +639,134 @@ void AudioContext::sdlAudioCallback(void* userdata, SDL_AudioStream* stream, int
 // Audio Decoding
 // ============================================================================
 
-std::shared_ptr<AudioBuffer> decodeAudioFile(const uint8_t* data, size_t length, float targetSampleRate) {
-    // Use SDL to load audio data
+// stb_vorbis, compiled exactly once in `src/audio/vorbis_impl.c`. Declared rather than included
+// for the same reason `stb_image` is declared in `src/webgpu/context.cpp`: the single-file library
+// is parsed by one translation unit and used by the others through its C entry points.
+extern "C" int stb_vorbis_decode_memory(const uint8_t* mem, int len, int* channels,
+                                        int* sample_rate, short** output);
+
+namespace {
+
+/**
+ * Linear resample of interleaved float frames.
+ *
+ * `AudioBufferSourceNode::process` advances the read head one buffer frame per output frame, with
+ * no rate conversion anywhere in the graph. So a buffer that keeps its own sample rate plays at
+ * `bufferRate / contextRate` speed — a 22 050 Hz asset an octave high and half as long, on a
+ * 44 100 Hz context. Web Audio says `decodeAudioData` resamples to the context rate, which is
+ * exactly what `decodeAudioFile`'s `targetSampleRate` parameter was for; it was accepted and never
+ * read. WAV hid it because the fixtures and most game audio already matched, and Vorbis will not:
+ * 48 000 Hz is the common Ogg rate and would play about 9% sharp.
+ */
+std::vector<float> resampleInterleaved(const std::vector<float>& source, int channels,
+                                       double sourceRate, double targetRate) {
+    if (channels <= 0 || sourceRate <= 0.0 || targetRate <= 0.0) return {};
+    const size_t sourceFrames = source.size() / static_cast<size_t>(channels);
+    if (sourceFrames == 0) return {};
+
+    const double ratio = targetRate / sourceRate;
+    size_t targetFrames = static_cast<size_t>(std::llround(static_cast<double>(sourceFrames) * ratio));
+    if (targetFrames == 0) targetFrames = 1;
+
+    std::vector<float> resampled(targetFrames * static_cast<size_t>(channels));
+    for (size_t frame = 0; frame < targetFrames; frame++) {
+        const double position = static_cast<double>(frame) / ratio;
+        size_t left = static_cast<size_t>(position);
+        if (left >= sourceFrames) left = sourceFrames - 1;
+        const size_t right = left + 1 < sourceFrames ? left + 1 : left;
+        const float blend = static_cast<float>(position - static_cast<double>(left));
+        for (int channel = 0; channel < channels; channel++) {
+            const float a = source[left * static_cast<size_t>(channels) + channel];
+            const float b = source[right * static_cast<size_t>(channels) + channel];
+            resampled[frame * static_cast<size_t>(channels) + channel] = a + (b - a) * blend;
+        }
+    }
+    return resampled;
+}
+
+/** Interleaved float PCM into an `AudioBuffer` at the context's rate. */
+std::shared_ptr<AudioBuffer> buildAudioBuffer(std::vector<float> interleaved, int numChannels,
+                                              float sourceRate, float targetSampleRate,
+                                              const char* container) {
+    if (numChannels <= 0 || interleaved.empty() || sourceRate <= 0.0f) {
+        std::cerr << "[Audio] " << container << " decoded to no usable audio" << std::endl;
+        return nullptr;
+    }
+    float rate = sourceRate;
+    if (targetSampleRate > 0.0f && std::fabs(targetSampleRate - sourceRate) > 0.5f) {
+        interleaved = resampleInterleaved(interleaved, numChannels, sourceRate, targetSampleRate);
+        if (interleaved.empty()) {
+            std::cerr << "[Audio] " << container << " could not be resampled from " << sourceRate
+                      << " Hz to " << targetSampleRate << " Hz" << std::endl;
+            return nullptr;
+        }
+        rate = targetSampleRate;
+    }
+
+    const size_t numSamples = interleaved.size();
+    const size_t numFrames = numSamples / static_cast<size_t>(numChannels);
+    auto buffer = std::make_shared<AudioBuffer>(rate, numChannels, numFrames);
+    buffer->setFromInterleaved(interleaved.data(), numSamples, numChannels);
+
+    std::cout << "[Audio] Decoded audio: " << numFrames << " frames, " << numChannels
+              << " channels, " << rate << " Hz (" << container;
+    if (std::fabs(rate - sourceRate) > 0.5f) std::cout << ", resampled from " << sourceRate << " Hz";
+    std::cout << ")" << std::endl;
+
+    return buffer;
+}
+
+/**
+ * Ogg Vorbis, through stb_vorbis.
+ *
+ * Fails closed on everything it cannot read, and that is deliberate: an Ogg container can also
+ * carry Opus or FLAC, which this decoder does not implement and must not pretend to. Every
+ * failure — truncated page, corrupt payload, a codec that is not Vorbis — returns nullptr, which
+ * reaches the game as the same rejected `decodeAudioData` a WAV failure produces. Handing back a
+ * buffer of silence instead would be worse than the black screen this fixes.
+ */
+std::shared_ptr<AudioBuffer> decodeOggVorbis(const uint8_t* data, size_t length,
+                                             float targetSampleRate) {
+    if (length > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        std::cerr << "[Audio] Ogg Vorbis payload is too large to decode: " << length << " bytes"
+                  << std::endl;
+        return nullptr;
+    }
+
+    int numChannels = 0;
+    int sourceRate = 0;
+    short* samples = nullptr;
+    const int frames =
+        stb_vorbis_decode_memory(data, static_cast<int>(length), &numChannels, &sourceRate, &samples);
+    if (frames < 0 || samples == nullptr) {
+        // stb_vorbis reports nothing but the -1; the container name is what makes the message
+        // actionable, since the caller only knows it handed over an `.ogg`.
+        std::cerr << "[Audio] Failed to load audio: not decodable Ogg Vorbis "
+                     "(truncated, corrupt, or an Ogg carrying a codec this runtime does not "
+                     "implement, such as Opus)"
+                  << std::endl;
+        if (samples != nullptr) std::free(samples);
+        return nullptr;
+    }
+    if (frames == 0 || numChannels <= 0 || sourceRate <= 0) {
+        std::cerr << "[Audio] Failed to load audio: Ogg Vorbis decoded to " << frames << " frames, "
+                  << numChannels << " channels, " << sourceRate << " Hz" << std::endl;
+        std::free(samples);
+        return nullptr;
+    }
+
+    const size_t numSamples = static_cast<size_t>(frames) * static_cast<size_t>(numChannels);
+    std::vector<float> floatData(numSamples);
+    for (size_t index = 0; index < numSamples; index++) floatData[index] = samples[index] / 32768.0f;
+    std::free(samples);
+
+    return buildAudioBuffer(std::move(floatData), numChannels, static_cast<float>(sourceRate),
+                            targetSampleRate, "Ogg Vorbis");
+}
+
+/** RIFF/WAVE, through SDL. The only container any native target could read before Ogg landed. */
+std::shared_ptr<AudioBuffer> decodeRiffWave(const uint8_t* data, size_t length,
+                                            float targetSampleRate) {
     SDL_IOStream* io = SDL_IOFromConstMem(data, length);
     if (!io) {
         std::cerr << "[Audio] Failed to create IO stream" << std::endl;
@@ -683,15 +812,28 @@ std::shared_ptr<AudioBuffer> decodeAudioFile(const uint8_t* data, size_t length,
 
     SDL_free(audioData);
 
-    // Create AudioBuffer
-    size_t numFrames = numSamples / numChannels;
-    auto buffer = std::make_shared<AudioBuffer>(static_cast<float>(spec.freq), numChannels, numFrames);
-    buffer->setFromInterleaved(floatData.data(), numSamples, numChannels);
+    return buildAudioBuffer(std::move(floatData), numChannels, static_cast<float>(spec.freq),
+                            targetSampleRate, "RIFF/WAVE");
+}
 
-    std::cout << "[Audio] Decoded audio: " << numFrames << " frames, "
-              << numChannels << " channels, " << spec.freq << " Hz" << std::endl;
+}  // namespace
 
-    return buffer;
+/**
+ * Decode by what the bytes are, never by what the file is called.
+ *
+ * The extension is not evidence: the hand workaround for the missing Vorbis decoder was to
+ * transcode to WAV *content* and keep the `.ogg` filenames, and it worked because this reads the
+ * header. `asset-preflight.mjs` sniffs the same twelve bytes for the same reason.
+ */
+std::shared_ptr<AudioBuffer> decodeAudioFile(const uint8_t* data, size_t length, float targetSampleRate) {
+    if (data == nullptr || length < 12) {
+        std::cerr << "[Audio] Failed to load audio: " << length << " bytes is too short to be any "
+                                                                   "audio container"
+                  << std::endl;
+        return nullptr;
+    }
+    if (std::memcmp(data, "OggS", 4) == 0) return decodeOggVorbis(data, length, targetSampleRate);
+    return decodeRiffWave(data, length, targetSampleRate);
 }
 
 }  // namespace audio

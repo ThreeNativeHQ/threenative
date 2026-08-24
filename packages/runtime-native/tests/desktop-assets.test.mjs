@@ -4,8 +4,18 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import { stageDesktopFiles } from '../scripts/package-desktop.mjs';
+
+const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
+/** An Ogg page carrying Opus: the magic number of a container the runtime reads, the codec of one it does not. */
+function opusBytes() {
+  const bytes = Buffer.alloc(64);
+  bytes.write('OggS', 0, 'ascii');
+  bytes.write('OpusHead', 28, 'ascii');
+  return bytes;
+}
 
 test('desktop public assets are staged at web-root paths', () => {
   const root = makeTempDirSync('threenative-desktop-assets-');
@@ -138,6 +148,47 @@ int main() {
     );
     execFileSync('g++', ['-std=c++17', source, '-o', binary], { stdio: 'pipe' });
     execFileSync(binary, { stdio: 'pipe' });
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test('desktop staging refuses audio no native target decodes, at package time', () => {
+  // Desktop ran no preflight at all: only `package-android.mjs` did. So the same file that failed
+  // an APK shipped in a desktop binary and failed at `decodeAudioData` after launch instead — the
+  // packager having already opened and copied the bytes on its way past.
+  const root = makeTempDirSync('threenative-desktop-audio-gate-');
+  try {
+    const bundle = join(root, 'bundle.js');
+    const assets = join(root, 'public');
+    mkdirSync(join(assets, 'audio'), { recursive: true });
+    writeFileSync(bundle, 'export default 1;');
+    writeFileSync(join(assets, 'audio', 'voice.ogg'), opusBytes());
+    assert.throws(
+      () => stageDesktopFiles(bundle, assets, join(root, 'staging'), undefined, runtimeRoot),
+      (error) => {
+        assert.match(error.message, /cannot be decoded by the desktop target/u);
+        assert.match(error.message, /is Ogg Opus; no native target decodes this container/u);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test('desktop staging packages a genuine Ogg Vorbis file, because the runtime decodes it', () => {
+  const root = makeTempDirSync('threenative-desktop-audio-pass-');
+  try {
+    const bundle = join(root, 'bundle.js');
+    const assets = join(root, 'public');
+    mkdirSync(join(assets, 'audio'), { recursive: true });
+    writeFileSync(bundle, 'export default 1;');
+    const fixture = readFileSync(join(runtimeRoot, 'tests', 'fixtures', 'pickup.ogg'));
+    writeFileSync(join(assets, 'audio', 'pickup.ogg'), fixture);
+    const staging = join(root, 'staging');
+    stageDesktopFiles(bundle, assets, staging, undefined, runtimeRoot);
+    assert.deepEqual(readFileSync(join(staging, 'audio', 'pickup.ogg')), fixture);
   } finally {
     rmSync(root, { force: true, recursive: true });
   }
