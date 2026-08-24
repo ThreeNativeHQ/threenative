@@ -143,6 +143,10 @@ export const DEFAULT_ANDROID_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, backgroundMode: 'pause' },
   window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
+  // `native` is PRD-216's CanvasLayer renderer: no WebView, no CSS, no second process. A game
+  // that never states a renderer therefore ships no overlay, which is what acceptance criterion 5
+  // asks for. Templates state `web` explicitly.
+  ui: { renderer: 'native' },
 };
 
 function configValue(value, orientation) {
@@ -151,7 +155,9 @@ function configValue(value, orientation) {
   const display = source.display && typeof source.display === 'object' ? source.display : {};
   const window = source.window && typeof source.window === 'object' ? source.window : {};
   const bootSplash = source.bootSplash && typeof source.bootSplash === 'object' ? source.bootSplash : {};
+  const ui = source.ui && typeof source.ui === 'object' ? source.ui : {};
   return {
+    ui: { ...DEFAULT_ANDROID_CONFIG.ui, ...ui },
     app: { ...DEFAULT_ANDROID_CONFIG.app, ...app },
     display: {
       ...DEFAULT_ANDROID_CONFIG.display,
@@ -326,6 +332,14 @@ export function renderAndroidManifest(source, orientation = 'landscape') {
     rendered,
     'TN_BACKGROUND_MODE',
     config.display.backgroundMode === 'continue' ? 'continue' : 'pause',
+  );
+  // `ui.renderer`. The activity reads this to decide whether to attach the WebView overlay at all,
+  // so a game that did not opt in ships no overlay and no extra process. Fail closed on a value
+  // nobody defined: anything but 'web' is the native renderer.
+  rendered = upsertApplicationMetadata(
+    rendered,
+    'TN_UI_RENDERER',
+    config.ui.renderer === 'web' ? 'web' : 'native',
   );
   rendered = upsertApplicationMetadata(rendered, 'TN_WINDOW_TITLE', '@string/window_title');
   rendered = upsertApplicationMetadata(rendered, 'TN_FULLSCREEN', String(config.display.fullscreen));
@@ -551,6 +565,47 @@ export function stageAndroidAssets(
   return files;
 }
 
+/**
+ * Stage the built UI bundle so `WebViewAssetLoader` can serve it from an HTTPS-like origin.
+ *
+ * Fail closed both ways. A game whose renderer is `web` and whose UI never built would install,
+ * launch and show a blank overlay over a working game — the most expensive shape of "it looks
+ * broken and the logs are clean". And a game whose renderer is `native` must ship no UI bundle
+ * at all, because acceptance criterion 5 is that opting out costs nothing.
+ */
+export function stageAndroidUi(ui, renderer, destination) {
+  rmSync(destination, { force: true, recursive: true });
+  if (renderer !== 'web') {
+    if (ui) {
+      throw new Error(
+        `TN_UI_BUNDLE_UNEXPECTED: a UI bundle was staged for a game whose ui.renderer is '${renderer}'. ` +
+          'The native renderer ships no WebView; remove the bundle or set ui.renderer to "web".',
+      );
+    }
+    return [];
+  }
+  if (!ui || !existsSync(ui)) {
+    throw new Error(
+      `TN_UI_BUNDLE_MISSING: ui.renderer is "web" but no built UI was found at ${ui ?? '(not provided)'}. ` +
+        'Build the UI before packaging, or set ui.renderer to "native".',
+    );
+  }
+  if (!statSync(ui).isDirectory()) throw new Error(`TN_UI_BUNDLE_MISSING: not a directory: ${ui}`);
+  const files = listFiles(ui);
+  if (!files.includes('index.html')) {
+    throw new Error(
+      `TN_UI_BUNDLE_MISSING: ${ui} has no index.html, which is the page the overlay loads.`,
+    );
+  }
+  mkdirSync(destination, { recursive: true });
+  for (const file of files) {
+    const output = join(destination, file);
+    mkdirSync(dirname(output), { recursive: true });
+    cpSync(join(ui, file), output);
+  }
+  return files;
+}
+
 export async function packageAndroid(
   bundle,
   requestedOutput,
@@ -620,6 +675,7 @@ export async function packageAndroid(
   mkdirSync(dirname(assetBundle), { recursive: true });
   copyFileSync(bundle, assetBundle);
   stageAndroidAssets(assets, join(generatedAssets, 'game'), packageRoot);
+  stageAndroidUi(options.ui, declared.ui.renderer === 'web' ? 'web' : 'native', join(generatedAssets, 'ui'));
   const restoreFiles = installAndroidFiles(declared, packageRoot);
   try {
     const command = process.platform === 'win32' ? gradlew : 'sh';
@@ -669,13 +725,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const assetsIndex = process.argv.indexOf('--assets');
   const orientationIndex = process.argv.indexOf('--orientation');
   const configIndex = process.argv.indexOf('--config');
+  const uiIndex = process.argv.indexOf('--ui');
   if (
     bundleIndex === -1 ||
     !process.argv[bundleIndex + 1] ||
     process.argv[bundleIndex + 1].startsWith('--')
   ) {
     console.error(
-      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--orientation landscape|portrait|sensor] [--config FILE]',
+      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE]',
     );
     process.exitCode = 1;
   } else if (
@@ -702,6 +759,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   ) {
     console.error('--config requires a value.');
     process.exitCode = 1;
+  } else if (uiIndex !== -1 && (!process.argv[uiIndex + 1] || process.argv[uiIndex + 1].startsWith('--'))) {
+    console.error('--ui requires a value.');
+    process.exitCode = 1;
   } else {
     try {
       const configPath = configIndex === -1 ? undefined : resolve(process.argv[configIndex + 1]);
@@ -711,6 +771,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         assetsIndex === -1 ? undefined : resolve(process.argv[assetsIndex + 1]),
         orientationIndex === -1 ? undefined : process.argv[orientationIndex + 1],
         readAndroidConfig(configPath),
+        uiIndex === -1 ? {} : { ui: resolve(process.argv[uiIndex + 1]) },
       );
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));

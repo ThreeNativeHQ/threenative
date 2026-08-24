@@ -82,6 +82,7 @@ describe("threenative build", () => {
       display: { fullscreen: true, keepScreenOn: false, orientation: "landscape" as const },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
+      ui: { renderer: "native" as const },
       window: { height: 720, resizable: true, title: "Brand Game", width: 1280 },
     };
 

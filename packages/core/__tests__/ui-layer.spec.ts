@@ -167,6 +167,7 @@ describe("the interactive-rect registry", () => {
   const bridge = (): ReturnType<typeof connectUiBridge> => ({
     end: "ui" as const,
     transport: "host" as const,
+    hasPeer: () => true,
     post: (message) => posted.push(message as { type: string; regions: unknown }),
     onMessage: () => () => undefined,
     close: () => undefined,

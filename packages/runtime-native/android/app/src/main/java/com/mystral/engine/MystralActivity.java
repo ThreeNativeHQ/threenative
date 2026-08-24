@@ -24,6 +24,9 @@ import org.libsdl.app.SDLActivity;
  */
 public class MystralActivity extends SDLActivity {
 
+    /** The transparent WebView the UI renders into, or null when this game ships no overlay. */
+    private TnUiOverlay uiOverlay;
+
     private Bundle applicationMetadata() {
         try {
             ApplicationInfo applicationInfo = getPackageManager().getApplicationInfo(
@@ -57,6 +60,39 @@ public class MystralActivity extends SDLActivity {
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
+        attachUiOverlay(metadata);
+    }
+
+    /**
+     * Attach the UI layer when the game asked for it.
+     *
+     * `TN_UI_RENDERER` is written by the packager from `ui.renderer` in the game's config, and
+     * "native" (the other value) means PRD-216's CanvasLayer renderer with no WebView and no
+     * second process — so a game that did not opt in ships no overlay at all.
+     *
+     * The attach is deliberately not wrapped in a try/catch. A game that asked for this
+     * renderer and cannot have it must fail at launch with the reason named; a swallowed
+     * exception here presents as a game with no HUD, which sends the reader to the UI code.
+     */
+    private void attachUiOverlay(Bundle metadata) {
+        String renderer = metadata == null ? "native" : metadata.getString("TN_UI_RENDERER", "native");
+        if (!"web".equals(renderer)) return;
+        uiOverlay = TnUiOverlay.attach(this);
+    }
+
+    /**
+     * Deliver one bridge frame to the UI layer. Called from the runtime over JNI, on the thread
+     * that owns JavaScript, so the post itself is handed to the UI thread that owns the view.
+     */
+    public void postUiOverlayMessage(final String frame) {
+        final TnUiOverlay overlay = uiOverlay;
+        if (overlay == null) return;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                overlay.postToPage(frame);
+            }
+        });
     }
 
     /**

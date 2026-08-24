@@ -51,6 +51,7 @@ export type {
   IThreeNativeTexturesConfig,
   ThreeNativeBackgroundMode,
   ThreeNativeOrientation,
+  ThreeNativeUiRenderer,
 } from "./config.js";
 /**
  * Create a deterministic random source for portable gameplay.

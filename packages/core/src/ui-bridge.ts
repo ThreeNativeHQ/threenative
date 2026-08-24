@@ -39,6 +39,15 @@ export interface IUiBridge {
   readonly end: UiBridgeEnd;
   /** `host` when a platform channel was found, `in-process` on the web target. */
   readonly transport: UiBridgeTransport;
+  /**
+   * Whether anything is listening on the other end.
+   *
+   * A game whose UI renderer is `native` has no peer and never will, and publishing state to
+   * nobody is a JSON serialisation of the whole store several times a second for no reader.
+   * Reported rather than assumed: on a host transport this asks the host, so it also answers
+   * "did the overlay actually come up" honestly.
+   */
+  hasPeer(): boolean;
   /** Send one message to the other end. Throws if it is not a typed JSON object. */
   post(message: IUiMessage): void;
   /** Listen for messages from the other end. Returns an unsubscribe function. */
@@ -200,6 +209,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
     return {
       end,
       transport: "in-process",
+      hasPeer: () => bus[peer].size > 0,
       post(message) {
         // The in-process peer shares this realm, so the frame is round-tripped through JSON
         // anyway: a game must not be able to hand the UI a live object on web and a copy on
@@ -232,6 +242,13 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
   return {
     end,
     transport: "host",
+    hasPeer() {
+      const attached = scope.__tnUiOverlayAttached;
+      // Only the game end can ask the host. The UI end is itself the peer the host attached,
+      // so if this code is running the overlay exists.
+      if (end === "ui") return true;
+      return typeof attached === "function" ? (attached as () => boolean)() === true : false;
+    },
     post(message) {
       const frame = assertSendable(message);
       if (closed) throw new Error("TN_UI_BRIDGE_CLOSED: post on a closed bridge.");
@@ -244,9 +261,9 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
     close() {
       closed = true;
       listeners.clear();
-      if (scope[inboundKey] === deliver) delete scope[inboundKey];
+      if (scope[inboundKey] === deliver) scope[inboundKey] = undefined;
       if (end === "ui" && injected !== undefined && typeof injected === "object") {
-        delete injected.onmessage;
+        injected.onmessage = undefined;
       }
     },
   };

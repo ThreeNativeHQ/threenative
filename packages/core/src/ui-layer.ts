@@ -19,6 +19,15 @@ export {
   type UiBridgeTransport,
 } from "./ui-bridge.js";
 export {
+  onUiIntent,
+  publishUiState,
+  sendUiIntent,
+  subscribeUiState,
+  type IPublishableStore,
+  type IUiStateMirror,
+  type IUiStatePublisher,
+} from "./ui-state.js";
+export {
   INTERACTIVE_ATTRIBUTE,
   publishHitRegions,
   type IHitRegion,

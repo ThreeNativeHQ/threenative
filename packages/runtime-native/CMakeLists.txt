@@ -1157,6 +1157,7 @@ set(MYSTRAL_SOURCES
     src/platform/input.cpp
     src/platform/crash_handlers.cpp
     src/platform/lifecycle.cpp
+    src/platform/ui_overlay.cpp
     src/utils/stb_impl.cpp
     src/http/http_client.cpp
     src/http/async_http_client.cpp

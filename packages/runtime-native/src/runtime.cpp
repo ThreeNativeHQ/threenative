@@ -2,6 +2,7 @@
 #include "mystral/platform/window.h"
 #include "mystral/platform/input.h"
 #include "mystral/platform/crash_policy.h"
+#include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
@@ -450,6 +451,9 @@ public:
 
         // Set up localStorage/sessionStorage (file-backed persistence)
         setupStorage();
+
+        // Set up the UI overlay bridge (`@threenative/core/ui-layer`'s game end)
+        setupUiBridge();
 
 #if TN_ENABLE_NATIVE_PHYSICS
         if (!physics::initializeNativePhysicsBindings(jsEngine_.get())) {
@@ -1034,6 +1038,9 @@ public:
 
         // Process completed async Draco decode results
         processPendingDracoCallbacks();
+
+        // Deliver whatever the UI overlay posted since the last frame
+        drainUiMessages();
 
         // Process microtask queue for promises
         processMicrotasks();
@@ -3539,6 +3546,58 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
      * Writes the markers the lifecycle watch queued, and reports the skipped timer firings
      * alongside the resume so a run says what the pause cost rather than leaving it to inference.
      */
+    /**
+     * The game end of the UI bridge.
+     *
+     * `@threenative/core/ui-layer` discovers its transport rather than being configured with
+     * one, and these two globals are the whole contract on this side: `__tnUiPost` carries a
+     * frame out to the overlay, and the runtime calls `__tnUiGameReceive` with each frame that
+     * came back. Their names are declared once, in `UI_BRIDGE_GLOBALS`; a host that spells one
+     * differently has no bridge at all, silently, which is why they are asserted by a test
+     * rather than kept in step by hand.
+     *
+     * `__tnUiPost` returns false when no overlay is attached — a `renderer: "native"` game, or
+     * a platform with no overlay yet. The UI layer reads that as "nobody is listening", which
+     * is honest; it is not an error and it is not silence.
+     */
+    void setupUiBridge() {
+        if (!jsEngine_) return;
+        jsEngine_->setGlobalProperty("__tnUiPost",
+            jsEngine_->newFunction("__tnUiPost", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.empty()) return jsEngine_->newBoolean(false);
+                return jsEngine_->newBoolean(platform::postUiMessage(jsEngine_->toString(args[0])));
+            }));
+        jsEngine_->setGlobalProperty("__tnUiOverlayAttached",
+            jsEngine_->newFunction("__tnUiOverlayAttached", [this](void*, const std::vector<js::JSValueHandle>&) {
+                return jsEngine_->newBoolean(platform::uiOverlayAttached());
+            }));
+    }
+
+    /**
+     * Deliver the frames the overlay queued, on the thread that owns JavaScript.
+     *
+     * The host enqueues from its own UI thread; nothing here may run there. Same shape as the
+     * lifecycle markers above, and for the same reason.
+     */
+    void drainUiMessages() {
+        if (!jsEngine_) return;
+        std::string frame;
+        while (platform::takeUiMessage(frame)) {
+            js::JSValueHandle receive = jsEngine_->getGlobalProperty("__tnUiGameReceive");
+            if (!jsEngine_->isFunction(receive)) {
+                // The game has not connected its end yet. Dropping is correct and must be
+                // visible: a UI whose intents vanish looks exactly like a dead button.
+                std::cout << "TN_UI_BRIDGE:{\"dropped\":\"no __tnUiGameReceive\"}" << std::endl;
+                continue;
+            }
+            jsEngine_->call(receive, jsEngine_->getGlobal(), {jsEngine_->newString(frame.c_str())});
+            if (jsEngine_->hasException()) {
+                std::cerr << "[Mystral] UI bridge frame threw: " << jsEngine_->getException()
+                          << std::endl;
+            }
+        }
+    }
+
     void drainLifecycleMarkers() {
         std::string marker;
         while (platform::takeLifecycleMarker(marker)) {

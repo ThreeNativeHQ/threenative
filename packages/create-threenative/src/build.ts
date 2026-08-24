@@ -157,6 +157,84 @@ export async function assertNativeAssetsCompatible(
   }
 }
 
+/** The one UI entry every target mounts. Convention, not configuration. */
+const UI_ENTRY = path.join("src", "ui", "main.tsx");
+
+/**
+ * Build `src/ui/` on its own, for the platform's web view to load.
+ *
+ * The page is UI only: no scene, no simulation, no render path. It is built through the
+ * project's own Vite config so the game's Tailwind, PostCSS, aliases and plugins apply exactly
+ * as they do on the web target — that equivalence is the whole point, and re-deriving the
+ * toolchain here would be a second build that drifts from the first.
+ *
+ * The generated entry lives under `.threenative/build/` and the Vite root stays the project, so
+ * `/src/ui/main.tsx` resolves the same way it does in `index.html`.
+ */
+export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): Promise<string> {
+  const output = path.join(cwd, ".threenative", "build", "ui");
+  const entry = path.join(cwd, UI_ENTRY);
+  try {
+    if (!(await stat(entry)).isFile()) throw new Error("not a file");
+  } catch {
+    throw new Error(
+      `TN_UI_ENTRY_MISSING: ui.renderer is "${config.ui.renderer}" but ${UI_ENTRY} does not exist. It is the entry every platform's web view loads; create it, or set ui.renderer to "native".`,
+    );
+  }
+  const buildRoot = path.join(cwd, ".threenative", "build");
+  await mkdir(buildRoot, { recursive: true });
+  const page = path.join(buildRoot, "ui.html");
+  // `viewport-fit=cover` so the UI can reach under a display cutout, and a transparent body so
+  // the game surface underneath is what shows through everywhere the UI does not draw.
+  await writeFile(
+    page,
+    [
+      "<!doctype html>",
+      '<html lang="en">',
+      "  <head>",
+      '    <meta charset="utf-8" />',
+      '    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />',
+      "    <style>html,body,#tn-ui{margin:0;height:100%;background:transparent}</style>",
+      "  </head>",
+      "  <body>",
+      '    <div id="tn-ui"></div>',
+      `    <script type="module" src="/${UI_ENTRY.split(path.sep).join("/")}"></script>`,
+      "  </body>",
+      "</html>",
+    ].join("\n"),
+  );
+  const driver = path.join(buildRoot, "build-ui.mjs");
+  await writeFile(driver, uiBuildDriver(cwd, page, output));
+  await run(process.execPath, [driver], cwd);
+  return output;
+}
+
+/**
+ * Vite's Node API rather than its CLI, because the CLI cannot point a build at an entry HTML
+ * outside the project's own `index.html` without a config file — and a hand-written config file
+ * would be a second copy of the game's, which is the drift this avoids.
+ */
+function uiBuildDriver(cwd: string, page: string, output: string): string {
+  const literal = (value: string): string => JSON.stringify(value);
+  return `${[
+    'import { build, loadConfigFromFile, mergeConfig } from "vite";',
+    "",
+    `const root = ${literal(cwd)};`,
+    `const loaded = await loadConfigFromFile({ command: "build", mode: "production" }, undefined, root);`,
+    "await build(",
+    "  mergeConfig(loaded?.config ?? {}, {",
+    "    root,",
+    '    base: "./",',
+    "    build: {",
+    `      outDir: ${literal(output)},`,
+    "      emptyOutDir: true,",
+    `      rollupOptions: { input: ${literal(page)} },`,
+    "    },",
+    "  }),",
+    ");",
+  ].join("\n")}\n`;
+}
+
 export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
   const config = await loadConfig(cwd);
   await compileAssets({ config: config.assets, cwd });
@@ -311,6 +389,9 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
   const bundle = await bundleNative(cwd, runtimeRoot, entry, target);
   await assertNativeBundleCompatible(bundle, target);
   const assets = path.join(cwd, "public");
+  // The UI is built only when the game asked for the web renderer, so a `native` game ships no
+  // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
+  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
   if (target === "ios") {
     const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
     await run(
@@ -342,6 +423,7 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        ...(ui === undefined ? [] : ["--ui", ui]),
         "--orientation",
         orientation,
         "--config",

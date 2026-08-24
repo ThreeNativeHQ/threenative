@@ -250,6 +250,12 @@ tasks.named("preBuild") {
 
 dependencies {
     if (usePrebuiltRuntime) implementation(files(sdl3Aar))
+    // `androidx.webkit` is what makes the UI layer's two open questions closed ones:
+    // `WebViewAssetLoader` serves the UI bundle from an HTTPS-like origin instead of `file://`,
+    // so `fetch` and module imports behave as they do on web, and `addWebMessageListener` gives
+    // the bridge an origin-scoped, `MessagePort`-shaped channel rather than
+    // `addJavascriptInterface` plus `evaluateJavascript` string-slinging.
+    implementation("androidx.webkit:webkit:1.12.1")
 }
 
 android {
