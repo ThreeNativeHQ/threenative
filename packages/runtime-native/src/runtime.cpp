@@ -1,6 +1,7 @@
 #include "mystral/runtime.h"
 #include "mystral/platform/window.h"
 #include "mystral/platform/input.h"
+#include "mystral/platform/crash_policy.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
@@ -154,56 +155,10 @@ static bool readAndroidAsset(const std::string& path, std::vector<uint8_t>& data
 }
 #endif
 
-// Android has no desktop crash dialog to suppress. Preserve the original signal
-// there so debuggerd can write a tombstone with the failing native frame.
-#ifdef __ANDROID__
-static bool g_suppressCrashDialog = false;
-#else
-static bool g_suppressCrashDialog = true;
-#endif
-
-// Signal handler to suppress crash dialog
-static void crashSignalHandler(int sig) {
-    if (g_suppressCrashDialog) {
-        // Print message to stderr but don't show crash dialog
-        const char* sigName = "UNKNOWN";
-        switch(sig) {
-            case SIGABRT: sigName = "SIGABRT"; break;
-            case SIGSEGV: sigName = "SIGSEGV"; break;
-#ifndef _WIN32
-            case SIGBUS: sigName = "SIGBUS"; break;
-            case SIGTRAP: sigName = "SIGTRAP"; break;
-#endif
-            case SIGILL: sigName = "SIGILL"; break;
-        }
-        // Use write() since it's async-signal-safe
-        MYSTRAL_WRITE(MYSTRAL_STDERR_FD, "[Mystral] Caught signal ", 24);
-        MYSTRAL_WRITE(MYSTRAL_STDERR_FD, sigName, strlen(sigName));
-        MYSTRAL_WRITE(MYSTRAL_STDERR_FD, ", exiting gracefully\n", 21);
-        _exit(1);
-    }
-    // Re-raise for crash dialog if enabled (MYSTRAL_SHOW_CRASH_DIALOG=1)
-    signal(sig, SIG_DFL);
-    raise(sig);
-}
-
-// Install all crash signal handlers
-static void installCrashHandlers() {
-    // Check if user wants to see crash dialogs
-    const char* showDialog = std::getenv("MYSTRAL_SHOW_CRASH_DIALOG");
-    if (showDialog && (showDialog[0] == '1' || showDialog[0] == 't' || showDialog[0] == 'T')) {
-        g_suppressCrashDialog = false;
-        return;
-    }
-
-    signal(SIGABRT, crashSignalHandler);
-    signal(SIGSEGV, crashSignalHandler);
-#ifndef _WIN32
-    signal(SIGBUS, crashSignalHandler);
-    signal(SIGTRAP, crashSignalHandler);
-#endif
-    signal(SIGILL, crashSignalHandler);
-}
+// The crash-signal decision moved to `platform/crash_handlers.cpp`, behind the pure policy in
+// `mystral/platform/crash_policy.h`. It used to live here as five bare `signal()` calls reached on
+// every platform, which on Android replaces the dispositions the zygote chained debuggerd into —
+// so every crash after startup exited SIGNALED status=11 with no tombstone.
 
 // Forward declaration for WebGPU bindings
 namespace webgpu {
@@ -262,6 +217,18 @@ public:
             std::cerr << "[Mystral] Failed to create window" << std::endl;
             return false;
         }
+
+        // Lifecycle first, before anything can be backgrounded. This has to be a watch and not a
+        // pump case: on Android SDL queues the background events and *then* blocks the pump, so a
+        // polled handler runs only after the app is already parked. Fail closed — a host that
+        // cannot observe backgrounding is the host that presented for 60 s with the screen off.
+        platform::setBackgroundMode(config_.backgroundMode);
+        if (!platform::installLifecycleWatch()) {
+            std::cerr << "[Mystral] Failed to install the lifecycle event watch" << std::endl;
+            return false;
+        }
+        std::cout << "[Mystral] Lifecycle watch installed; backgroundMode="
+                  << platform::backgroundModeName(config_.backgroundMode) << std::endl;
 
         // Get actual window size (may differ from requested, especially on mobile with 0x0 meaning fullscreen)
         platform::getWindowSize(&width_, &height_);
@@ -521,8 +488,9 @@ public:
         setupRayTracing();
 
         // Install crash handlers AFTER full initialization
-        // (Metal/WebGPU use signals during setup that we shouldn't intercept)
-        installCrashHandlers();
+        // (Metal/WebGPU use signals during setup that we shouldn't intercept).
+        // On Android this installs nothing, deliberately: debuggerd owns those dispositions.
+        platform::installCrashHandlers();
 
         // Initialize libuv event loop for async I/O (HTTP, file, timers)
         async::EventLoop::instance().init();
@@ -876,6 +844,28 @@ public:
                 running_ = false;
                 return false;
             }
+        }
+
+        // Drain the lifecycle markers the watch queued. The watch runs on SDL's sending thread —
+        // on Android, the thread that is about to park the pump — so it only enqueues; the text
+        // is written here, by the thread that owns stdio.
+        drainLifecycleMarkers();
+
+        if (platform::isTerminating()) {
+            std::cout << "[Mystral] Lifecycle terminal event; stopping the loop" << std::endl;
+            running_ = false;
+            return false;
+        }
+
+        if (!config_.noSdl && platform::isPaused()) {
+            // No JavaScript, no beginFrame, no rAF, no endDawnFrame, no present. Timer firings
+            // that came due are counted and dropped rather than replayed all at once on resume;
+            // `FixedStepLoop` clamps the elapsed time on the TypeScript side either way.
+            countAndDropDueTimers();
+            // Desktop does not block its pump the way Android does, so without this the paused
+            // loop would spin a core at full speed — a battery fix that costs battery.
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            return running_;
         }
 
         // Poll libuv event loop - process any ready I/O callbacks (non-blocking)
@@ -3406,6 +3396,55 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
 #endif
     }
 
+    /**
+     * Writes the markers the lifecycle watch queued, and reports the skipped timer firings
+     * alongside the resume so a run says what the pause cost rather than leaving it to inference.
+     */
+    void drainLifecycleMarkers() {
+        std::string marker;
+        while (platform::takeLifecycleMarker(marker)) {
+            std::cout << marker << std::endl;
+#if defined(__ANDROID__)
+            __android_log_print(ANDROID_LOG_INFO, MYSTRAL_LOG_TAG, "%s", marker.c_str());
+#endif
+        }
+        if (!platform::isPaused() && !countedPausedTimers_.empty()) {
+            const uint64_t skipped = platform::takeDroppedTimerFirings();
+            countedPausedTimers_.clear();
+            std::cout << "TN_LIFECYCLE:{\"event\":\"catchUp\",\"skippedTimerFirings\":" << skipped
+                      << "}" << std::endl;
+        }
+    }
+
+    /**
+     * Counts, once per pause, each timer that came due while the loop was parked.
+     *
+     * Nothing is replayed: the libuv loop is not run while paused, and an interval reschedules
+     * from `now`, so a ten-minute background costs at most one firing per timer rather than a
+     * flood. `FixedStepLoop` clamps the simulation side of the same gap
+     * (`packages/core/src/loop.ts`), which is asserted rather than rebuilt here.
+     */
+    void countAndDropDueTimers() {
+#ifdef MYSTRAL_USE_LIBUV_TIMERS
+        std::lock_guard<std::mutex> lock(timerMutex_);
+        // The queue cannot grow while paused, so counting it once is the whole answer.
+        if (countedPausedTimers_.count(0) == 0) {
+            countedPausedTimers_.insert(0);
+            for (size_t i = 0; i < pendingTimerCallbacks_.size(); i++)
+                platform::noteDroppedTimerFiring();
+        }
+#else
+        const auto now = std::chrono::high_resolution_clock::now();
+        for (const auto& timer : timerCallbacks_) {
+            if (timer.cancelled || now < timer.targetTime) continue;
+            if (countedPausedTimers_.insert(timer.id).second) platform::noteDroppedTimerFiring();
+        }
+        // A pause with no timers at all still has to leave a trace, or the resume marker cannot
+        // tell "nothing was skipped" from "nobody looked".
+        countedPausedTimers_.insert(0);
+#endif
+    }
+
     void executeTimerCallbacks() {
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
         // Process pending timer callbacks from libuv
@@ -3583,6 +3622,9 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
     std::vector<TimerCallback> timerCallbacks_;
 #endif
     std::unordered_set<int> cancelledTimerIds_;  // Track IDs cancelled during callback execution
+    // Timers already counted as skipped during the current pause; cleared on resume. Id 0 is the
+    // sentinel that says "this pause was observed", so a pause with no timers still reports.
+    std::unordered_set<int> countedPausedTimers_;
     int nextTimerId_ = 1;
 
     // Pending async file read callbacks (processed on main thread)

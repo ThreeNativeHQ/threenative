@@ -314,8 +314,19 @@ test.skipIf(
 });
 
 test('Android preserves native crash evidence and QuickJS reports each evaluation boundary', () => {
+  // The contract is unchanged — Android must not touch a disposition debuggerd owns — but the
+  // mechanism moved. It used to be five bare `signal()` calls in runtime.cpp guarded by an
+  // `#ifdef __ANDROID__`; it is now a policy value in `platform/crash_policy.h`, decided once and
+  // provable without crashing a process. Pin the policy, not the `#ifdef` it replaced.
   const runtime = read('src/runtime.cpp');
-  assert.match(runtime, /#ifdef __ANDROID__[\s\S]*g_suppressCrashDialog = false/, 'Android must preserve the original signal for debuggerd tombstones');
+  assert.match(runtime, /platform::installCrashHandlers\(\)/, 'the runtime must reach the crash-handler policy rather than calling signal() itself');
+  assert.doesNotMatch(runtime, /\bsignal\s*\(\s*SIG(SEGV|ABRT|BUS|TRAP|ILL)/, 'runtime.cpp must not install crash-signal handlers directly again');
+
+  const crashPolicy = read('include/mystral/platform/crash_policy.h');
+  assert.match(crashPolicy, /androidPlatform \? CrashHandlerPolicy::LeaveToPlatform/, 'Android must preserve the original signal for debuggerd tombstones');
+
+  const crashHandlers = read('src/platform/crash_handlers.cpp');
+  assert.match(crashHandlers, /LeaveToPlatform/, 'the applier must honour the Android policy');
 
   const quickjs = read('src/js/quickjs_engine.cpp');
   for (const marker of [

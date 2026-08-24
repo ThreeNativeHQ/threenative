@@ -22,13 +22,13 @@ the physical device — no emulator, no simulator, no desktop substitute.
 | --- | --- | --- | --- | --- |
 | [1](#bug-1) | Health report kills any build using `EXT_texture_webp` | blocker | `packages/assets` | **fixed** `36831d96` |
 | [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | `packages/ui` + core | open, decided |
-| [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed — **shadow refutation withdrawn**, see below |
-| [4](#bug-4) | Intermittent SIGSEGV, no tombstone | high | `packages/runtime-native` | open, hypothesis |
+| [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed — **shadows ARE a lever**, 46.15→35.20 ms; see below |
+| [4](#bug-4) | Intermittent SIGSEGV, no tombstone | high | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
 | [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | open |
 | [6](#bug-6) | Published install cannot build for Android | high | `packages/runtime-native` | **gated** `8df8e6b2` — clean-room gate green offline; real release waits on PRD-078 |
 | [7](#bug-7) | `catalog:` specifiers leak into the published tarball | high | publishing | **fixed** `439b9fd7` — tarball specifier census in `publish:check` |
 | [8](#bug-8) | 393 MB of GPU resources requested, 849 MB held | medium | game + driver | open |
-| [9](#bug-9) | Render loop keeps drawing with the screen off | medium | `packages/runtime-native` | open |
+| [9](#bug-9) | Render loop keeps drawing with the screen off | medium | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
 | [10](#bug-10) | Preflight claims no libwebp; the runtime has it | low | `packages/runtime-native` | **fixed** `01ec0658` — capability derived from the build; device proof open |
 | [11](#bug-11) | Runtime could not report its own GPU memory | low | `packages/runtime-native` | **fixed** `d6e21511` |
 
@@ -134,7 +134,19 @@ and `required`.
 > always-true by the bundler — so the comparison was a shadows-off build against itself. No
 > pre-kill capture survives anywhere in the sandbox tree or `docs/`; `gpuMemoryProbe.ts` was
 > untracked, so there is no history to date one by. **Shadows are untested, not refuted.**
-> PRD-214 Phase 0 carries a shadows-ON baseline as R0 and shadows-off as R1.
+> PRD-214 Phase 0 carried a shadows-ON baseline as R0 and shadows-off as R1.
+>
+> **Measured 2026-08-23, physical Pixel 8 (192.168.1.192:5555), 11 rungs from one build, 180
+> presented frames per window, one settle window discarded before each. Shadows ARE a lever.**
+>
+> | rung | fps | presented p50 (ms) | render p50 (ms) | render share | visible meshes |
+> | --- | --- | --- | --- | --- | --- |
+> | R0-baseline (shadows ON) | 16.89 | 58.96 | 46.15 | 0.785 | 492 |
+> | R1-shadows-off | 20.37 | 48.74 | 35.20 | 0.729 | 822 |
+>
+> Turning the shadow map off took `renderer.render()` p50 from **46.15 ms to 35.20 ms** — about
+> 11 ms — *while drawing more objects* (822 visible against 492). The original "refuted" reading
+> was an artefact of comparing a shadows-off build against itself.
 
 ### What happens
 
@@ -238,6 +250,19 @@ tombstone. Consistent with everything observed; **not demonstrated**.
 
 Audit unchecked allocation returns in the WebGPU bindings; reproduce under deliberate memory
 pressure.
+
+### Update, 2026-08-24 — PRD-210 Phases 1-2 landed
+
+The no-tombstone half was self-inflicted and is fixed: `runtime.cpp` installed `signal()` handlers
+for SIGSEGV/SIGABRT/SIGBUS/SIGTRAP/SIGILL on every platform, replacing the dispositions Android's
+zygote had chained debuggerd into, so any crash after startup exited `SIGNALED status=11` and wrote
+nothing. Android now installs no handler at all. The ranked unchecked wgpu handles throw to JS
+naming the operation instead of arming an FFI fault, with the raw SIGSEGV reproduced in a contained
+child process as the negative control.
+
+**The crash itself is still unnamed.** This makes the next one nameable; it did not catch this one.
+The device proofs — a symbolized tombstone in dropbox, and the relaunch-over-pressure cycles — are
+open and listed in [`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
 
 ---
 
@@ -387,6 +412,18 @@ equirect→cubemap conversion, not PMREM.
 `WINDOW_HIDDEN`, `WINDOW_MINIMIZED`, `FOCUS_LOST`, `DID_ENTER_BACKGROUND` or `WINDOW_DESTROYED`.
 
 Confirmed on device: frames kept presenting for the full 60 s the screen was off.
+
+### Update, 2026-08-24 — PRD-210 Phase 3 landed
+
+The host now installs an `SDL_AddEventWatch` — the only mechanism that can work, because SDL on
+Android queues the background events and then blocks the pump inside `Android_WaitLifecycleEvent`,
+so a polled handler runs only after the app is already parked. Backgrounding and minimize set a
+paused flag, suspend every live AudioContext through a new host-side registry, and emit
+`TN_LIFECYCLE` markers; `display.backgroundMode: "continue"` opts out of the pause without opting
+out of the markers. The transition table, the watch and the registry are proven by an executable
+that needs no display. **The battery claim is not proven**: "screen-off stops presenting within
+~1 s" needs the phone, and is open in
+[`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
 
 ---
 

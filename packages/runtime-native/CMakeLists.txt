@@ -1149,11 +1149,14 @@ set(MYSTRAL_SOURCES
     src/js/module_system.cpp
     src/js/ts_transpiler.cpp
     src/webgpu/bindings.cpp
+    src/webgpu/checked_handle.cpp
     src/webgpu/context.cpp
     src/canvas/canvas.cpp
     src/input/input_shim.cpp
     src/platform/window.cpp
     src/platform/input.cpp
+    src/platform/crash_handlers.cpp
+    src/platform/lifecycle.cpp
     src/utils/stb_impl.cpp
     src/http/http_client.cpp
     src/http/async_http_client.cpp
@@ -1642,6 +1645,25 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-shutdown-lifetime-test EXCLUDE_FROM_ALL
         tests/shutdown_lifetime_test.cpp)
     target_link_libraries(threenative-shutdown-lifetime-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-crash-handler-policy-test EXCLUDE_FROM_ALL
+        tests/crash_handler_policy_test.cpp)
+    target_link_libraries(threenative-crash-handler-policy-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-wgpu-null-handle-test EXCLUDE_FROM_ALL
+        tests/wgpu_null_handle_test.cpp)
+    target_link_libraries(threenative-wgpu-null-handle-test PRIVATE mystral-runtime)
+    # The negative control calls the real WebGPU C API with a NULL handle, so it needs the same
+    # backend headers the bindings use. mystral-runtime links these PRIVATE.
+    if(TARGET dawn::webgpu)
+        target_link_libraries(threenative-wgpu-null-handle-test PRIVATE dawn::webgpu)
+    elseif(TARGET wgpu::wgpu)
+        target_link_libraries(threenative-wgpu-null-handle-test PRIVATE wgpu::wgpu)
+    endif()
+
+    add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
+        tests/lifecycle_policy_test.cpp)
+    target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
 
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)

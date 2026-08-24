@@ -351,7 +351,47 @@ void AudioBufferSourceNode::process(float* output, size_t numFrames, int numChan
 // AudioContext
 // ============================================================================
 
+// The host-side registry of live contexts. A backgrounded app stops running JavaScript, so the
+// only code that could have called `suspend()` is the code that is no longer executing; the
+// lifecycle watch reaches these instead.
+namespace {
+std::mutex& contextRegistryMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+std::vector<AudioContext*>& contextRegistry() {
+    static std::vector<AudioContext*> contexts;
+    return contexts;
+}
+}  // namespace
+
+void suspendAllContexts() {
+    std::lock_guard<std::mutex> lock(contextRegistryMutex());
+    for (AudioContext* context : contextRegistry()) {
+        if (context == nullptr) continue;
+        context->suspendForHost();
+    }
+}
+
+void resumeAllContexts() {
+    std::lock_guard<std::mutex> lock(contextRegistryMutex());
+    for (AudioContext* context : contextRegistry()) {
+        // A context the game had deliberately suspended is not resumed by the host: only one that
+        // the host itself suspended. `Closed` stays closed.
+        if (context != nullptr && context->hostSuspended()) context->resumeForHost();
+    }
+}
+
+size_t liveContextCount() {
+    std::lock_guard<std::mutex> lock(contextRegistryMutex());
+    return contextRegistry().size();
+}
+
 AudioContext::AudioContext() {
+    {
+        std::lock_guard<std::mutex> lock(contextRegistryMutex());
+        contextRegistry().push_back(this);
+    }
     destination_ = std::make_unique<AudioDestinationNode>(this);
 
     // Initialize SDL audio
@@ -384,6 +424,11 @@ AudioContext::AudioContext() {
 }
 
 AudioContext::~AudioContext() {
+    {
+        std::lock_guard<std::mutex> lock(contextRegistryMutex());
+        auto& contexts = contextRegistry();
+        contexts.erase(std::remove(contexts.begin(), contexts.end(), this), contexts.end());
+    }
     close();
 }
 
@@ -468,6 +513,23 @@ void AudioContext::suspend() {
         SDL_PauseAudioStreamDevice(audioStream_);
     }
     state_ = State::Suspended;
+}
+
+void AudioContext::suspendForHost() {
+    if (state_ == State::Closed) return;
+    // A context the game already suspended stays the game's business; the host does not claim it,
+    // and so will not resume it later.
+    if (state_ == State::Suspended) return;
+    suspend();
+    hostSuspended_ = true;
+    std::cout << "[Audio] AudioContext suspended by the host lifecycle" << std::endl;
+}
+
+void AudioContext::resumeForHost() {
+    if (!hostSuspended_) return;
+    hostSuspended_ = false;
+    if (state_ == State::Closed) return;
+    resume();
 }
 
 void AudioContext::close() {

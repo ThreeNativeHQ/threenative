@@ -58,6 +58,33 @@ describe("FixedStepLoop", () => {
     expect(updates).toBe(5);
   });
 
+  it("should absorb a backgrounded app's time jump without a burst of updates", () => {
+    // The native host pauses the loop when the player leaves and resumes it when they return
+    // (PRD-210). Resuming hands `stepFrame` a `now` that is minutes ahead, and a phone whose
+    // clock was adjusted while the app was parked can hand it one that moved backwards. Both are
+    // already handled here — the elapsed clamp and the maxSteps budget — so the host asserts this
+    // rather than building its own catch-up.
+    const steps: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (step) => steps.push(step) });
+
+    loop.stepFrame(0);
+    const afterTenMinutes = loop.stepFrame(600_000);
+    expect(afterTenMinutes).toBe(5);
+    expect(steps).toHaveLength(5);
+    expect(steps.every((step) => step > 0)).toBe(true);
+
+    // A clock that went backwards must produce no update at all, never a negative one...
+    steps.length = 0;
+    expect(loop.stepFrame(500_000)).toBe(0);
+    expect(steps).toHaveLength(0);
+
+    // ...and must not poison the frames after it. Without the clamp the accumulator goes 100 s
+    // negative and the game stops simulating for a hundred seconds while still rendering, which
+    // reads as a freeze with no error anywhere.
+    for (let frame = 1; frame <= 4; frame++) loop.stepFrame(600_000 + (frame * 1_000) / 60);
+    expect(steps.length).toBeGreaterThan(0);
+  });
+
   it("should expose a finite render FPS that decays after a stall", () => {
     const loop = new FixedStepLoop({ onUpdate: () => undefined });
     loop.stepFrame(0);

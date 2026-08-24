@@ -4,7 +4,10 @@ prd_contract: v1
 
 # PRD-210 — the native host survives backgrounding, memory pressure, and its own crashes
 
-**Status:** NOT STARTED
+**Status:** PHASES 1-4 LANDED, DEVICE PROOFS OPEN — 2026-08-24. Every change and every
+display-free proof is in [`../../verification/prd-210-2026-08-23.md`](../../verification/prd-210-2026-08-23.md),
+which also lists, criterion by criterion, what still needs the physical Pixel 8. The device was
+leased to the PRD-214 lane throughout that session, so nothing below claims Android.
 
 **Complexity:** +2 for 6–10 files, +2 for complex state logic (lifecycle state machine, signal
 handling), +2 for multi-platform behaviour change = **6 → MEDIUM mode**, checkpoint after every

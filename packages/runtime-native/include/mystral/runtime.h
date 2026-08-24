@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mystral/platform/lifecycle.h"
+
 #include <memory>
 #include <string>
 #include <functional>
@@ -21,6 +23,9 @@ struct RuntimeConfig {
     bool noSdl = false;  // Run without SDL (headless GPU mode, no window)
     bool watch = false;  // Watch mode: reload script on file changes
     bool debug = false;  // Enable verbose debug logging
+    // `display.backgroundMode`. Default pauses the loop off-screen; "continue" is the named
+    // override, and it turns pausing off without turning the lifecycle markers off.
+    platform::BackgroundMode backgroundMode = platform::BackgroundMode::Pause;
 };
 
 /**

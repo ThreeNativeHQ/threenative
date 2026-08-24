@@ -245,6 +245,15 @@ public:
     void suspend();
     void close();
 
+    /**
+     * Suspend/resume driven by the host's application lifecycle rather than by the game.
+     * Tracked separately so that resuming from the background never un-suspends a context the
+     * game itself had chosen to suspend.
+     */
+    void suspendForHost();
+    void resumeForHost();
+    bool hostSuspended() const { return hostSuspended_; }
+
     // Internal: register/unregister active source nodes
     void registerSource(AudioBufferSourceNode* source);
     void unregisterSource(AudioBufferSourceNode* source);
@@ -255,6 +264,7 @@ private:
     static void sdlAudioCallback(void* userdata, SDL_AudioStream* stream, int additionalAmount, int totalAmount);
 
     State state_ = State::Suspended;
+    bool hostSuspended_ = false;
     float sampleRate_ = 44100.0f;
     uint64_t startTime_ = 0;
     std::atomic<uint64_t> sampleCount_{0};
@@ -280,6 +290,19 @@ private:
     SDL_AudioStream* audioStream_ = nullptr;
     std::atomic<bool> shuttingDown_{false};
 };
+
+/**
+ * Every live AudioContext, so the host can suspend them when the app is backgrounded.
+ *
+ * `suspend()` and `resume()` existed but were reachable only from JavaScript, and a backgrounded
+ * app's JavaScript is exactly what stops running — so nothing ever called them and audio kept
+ * playing with the screen off. Each context registers itself on construction.
+ */
+void suspendAllContexts();
+void resumeAllContexts();
+
+/** How many contexts are registered. For proofs, and for the resume marker. */
+size_t liveContextCount();
 
 /**
  * Decode audio file data (WAV, MP3, OGG, etc.)

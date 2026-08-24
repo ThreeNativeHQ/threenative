@@ -82,3 +82,34 @@ The starter's OGG pickup playback was not exercised by this visual gate; the hos
 its pre-existing unsupported-decode path. This row does not claim audio parity. The new
 `starter-linux` workflow job rebuilds this same scaffold and retains its log, screenshot and
 JSON report.
+
+## Stability contracts without a display — 2026-08-24 (PRD-210)
+
+`native:verify:desktop` gained a third proof ahead of the display-dependent ones:
+
+```sh
+node scripts/verify-desktop-stability.mjs
+```
+
+It builds and runs three executables that link the real runtime and open no window, no GPU and
+no audio device beyond SDL's dummy driver:
+
+- `threenative-crash-handler-policy-test` — stands a `sigaction`/`SA_SIGINFO` handler in for
+  debuggerd, applies each crash policy, and reads the disposition back. The Android policy must
+  leave the stand-in in place; the desktop policy must replace it, which is the negative control
+  and is exactly what every platform used to do.
+- `threenative-wgpu-null-handle-test` — forks a child that hands a NULL encoder to the real
+  `wgpuCommandEncoderBeginRenderPass`, reports the signal that killed it, then proves the checked
+  path throws to JavaScript naming the operation. Ran on Linux x64 against Dawn: the child died
+  with `Segmentation fault (signal 11)`; the checked path threw
+  `TN_WGPU_NULL_HANDLE: device.createCommandEncoder returned no handle (label=frame)`.
+- `threenative-lifecycle-policy-test` — drives the SDL lifecycle transition table, the paused
+  flag, the `TN_LIFECYCLE` markers, the `display.backgroundMode` override and the host-side
+  AudioContext registry, and pushes a real event through SDL so the watch is exercised on SDL's
+  own send path.
+
+All three passed on Linux x64, V8 13.1.201.22, Dawn, preset `tn-linux`. The desktop preset carries
+V8 alone, so QuickJS and JavaScriptCore report `SKIP … not compiled into this build` — a skip, not
+a pass. Evidence and the open device rows:
+[`../../../docs/verification/prd-210-2026-08-23.md`](../../../docs/verification/prd-210-2026-08-23.md).
+

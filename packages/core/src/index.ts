@@ -49,6 +49,7 @@ export type {
   IThreeNativeConfig,
   IThreeNativeIconVariants,
   IThreeNativeTexturesConfig,
+  ThreeNativeBackgroundMode,
   ThreeNativeOrientation,
 } from "./config.js";
 /**

@@ -1494,6 +1494,20 @@ int runScript(const CLIOptions& opts) {
     config.vsync = opts.vsync;
     config.debug = debugMode;
 
+    // `display.backgroundMode` on desktop. Android carries it as manifest metadata; there is no
+    // manifest here, so the environment is the seam. Unrecognized values keep the default and say
+    // so rather than being guessed at.
+    const char* backgroundModeEnv = std::getenv("THREENATIVE_BACKGROUND_MODE");
+    if (backgroundModeEnv != nullptr && backgroundModeEnv[0] != '\0') {
+        mystral::platform::BackgroundMode mode = mystral::platform::BackgroundMode::Pause;
+        if (mystral::platform::parseBackgroundMode(backgroundModeEnv, mode)) {
+            config.backgroundMode = mode;
+        } else {
+            std::cerr << "[Mystral] Unrecognized THREENATIVE_BACKGROUND_MODE '"
+                      << backgroundModeEnv << "'; keeping 'pause'" << std::endl;
+        }
+    }
+
     auto runtime = mystral::Runtime::create(config);
     if (!runtime) {
         std::cerr << "Error: Failed to create runtime!" << std::endl;

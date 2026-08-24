@@ -141,7 +141,7 @@ function androidPaths(root = runtimeRoot) {
 
 export const DEFAULT_ANDROID_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
-  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false },
+  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, backgroundMode: 'pause' },
   window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
 };
 
@@ -319,6 +319,14 @@ export function renderAndroidManifest(source, orientation = 'landscape') {
     );
   }
   rendered = upsertApplicationMetadata(rendered, 'TN_KEEP_SCREEN_ON', String(config.display.keepScreenOn));
+  // `display.backgroundMode`. Carried as metadata beside the others so the activity can hand it to
+  // the native host, which decides whether the render loop parks when the player leaves. Fail
+  // closed on a value nobody defined: an unrecognized mode ships as 'pause'.
+  rendered = upsertApplicationMetadata(
+    rendered,
+    'TN_BACKGROUND_MODE',
+    config.display.backgroundMode === 'continue' ? 'continue' : 'pause',
+  );
   rendered = upsertApplicationMetadata(rendered, 'TN_WINDOW_TITLE', '@string/window_title');
   rendered = upsertApplicationMetadata(rendered, 'TN_FULLSCREEN', String(config.display.fullscreen));
   // Also carried as metadata, not only as `android:screenOrientation`: the activity re-requests it

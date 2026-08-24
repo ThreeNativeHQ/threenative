@@ -1,5 +1,8 @@
 export type ThreeNativeOrientation = "landscape" | "portrait" | "sensor";
 
+/** What the native host does with the render loop while the app is off-screen. */
+export type ThreeNativeBackgroundMode = "continue" | "pause";
+
 export interface IThreeNativeIconVariants {
   readonly android?: {
     readonly foreground?: string;
@@ -47,6 +50,16 @@ export interface IThreeNativeConfig {
     readonly orientation?: ThreeNativeOrientation;
     readonly fullscreen?: boolean;
     readonly keepScreenOn?: boolean;
+    /**
+     * What the native host does when the player leaves the app — presses the power button,
+     * switches away, minimizes the window. `"pause"` (the default) stops running frames and
+     * suspends audio until the app comes back; `"continue"` keeps rendering off-screen, which a
+     * server-shaped or split-screen game may genuinely want.
+     *
+     * Turning the pause off does not turn the reporting off: `TN_LIFECYCLE` markers are emitted
+     * either way and name the mode that executed.
+     */
+    readonly backgroundMode?: ThreeNativeBackgroundMode;
   };
   readonly window?: {
     readonly title?: string;

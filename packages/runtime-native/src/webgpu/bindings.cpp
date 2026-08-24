@@ -20,6 +20,7 @@
 
 #include "mystral/js/engine.h"
 #include "mystral/cold_start.h"
+#include "mystral/webgpu/checked_handle.h"
 #include <iostream>
 #include <vector>
 #include <unordered_map>
@@ -1358,6 +1359,8 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             viewDesc.aspect = WGPUTextureAspect_All;
 
                             WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
+                            if (!requireHandle(g_engine, view, "texture.createView"))
+                                return g_engine->newUndefined();
 
                             g_currentTextureView = view;
                             g_currentViewSourceTexture = texture;  // Track which texture the view was created from
@@ -1674,6 +1677,8 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                         viewDesc.aspect = WGPUTextureAspect_All;
 
                                         WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
+                                        if (!requireHandle(g_engine, view, "offscreenTexture.createView"))
+                                            return g_engine->newUndefined();
                                         g_currentTextureView = view;
                                         g_currentViewSourceTexture = texture;  // Track which texture the view was created from
                                         if (g_verboseLogging) std::cout << "[Canvas] Offscreen createView: texture=" << (void*)texture
@@ -1834,14 +1839,17 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             auto lengthProp = g_engine->getProperty(cmdBuffersArray, "length");
                             int length = (int)g_engine->toNumber(lengthProp);
 
-                            // Collect command buffers
+                            // Collect command buffers. A NULL entry used to be dropped silently, which
+                            // turns "the GPU never got this frame's work" into a rendering mystery
+                            // instead of an error, and leaves the caller believing it submitted.
                             std::vector<WGPUCommandBuffer> cmdBuffers;
                             for (int i = 0; i < length; i++) {
                                 auto cmdBufferHandle = g_engine->getPropertyIndex(cmdBuffersArray, i);
                                 WGPUCommandBuffer cmdBuffer = (WGPUCommandBuffer)g_engine->getPrivateData(cmdBufferHandle);
-                                if (cmdBuffer) {
-                                    cmdBuffers.push_back(cmdBuffer);
-                                }
+                                if (!requireHandle(g_engine, cmdBuffer, "queue.submit",
+                                                   "commandBuffers[" + std::to_string(i) + "]"))
+                                    return g_engine->newUndefined();
+                                cmdBuffers.push_back(cmdBuffer);
                             }
 
                             // Submit user command buffers first
@@ -2679,6 +2687,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             setupShaderModuleWGSL(&shaderDesc, &wgslDesc, code.c_str());
 
                             WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(g_device, &shaderDesc);
+                            if (!requireHandle(g_engine, shaderModule, "device.createShaderModule",
+                                               "wgslBytes=" + std::to_string(code.size())))
+                                return g_engine->newUndefined();
 
                             auto jsShader = g_engine->newObject();
                             g_engine->setPrivateData(jsShader, shaderModule);
@@ -3286,6 +3297,8 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                         g_engine->newFunction("createCommandEncoder", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
                             WGPUCommandEncoderDescriptor desc = {};
                             WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(g_device, &desc);
+                            if (!requireHandle(g_engine, encoder, "device.createCommandEncoder"))
+                                return g_engine->newUndefined();
 
                             // Store in global for use by beginRenderPass
                             // Note: Multiple encoders are supported via per-encoder render pass tracking
@@ -3451,6 +3464,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
 
                                     // Begin render pass on the captured encoder (not the global)
                                     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoderToUse, &renderPassDesc);
+                                    if (!requireHandle(g_engine, renderPass, "commandEncoder.beginRenderPass",
+                                                       "colorAttachments=" + std::to_string(numAttachments)))
+                                        return g_engine->newUndefined();
 
                                     // Store in per-encoder map (fixes issue with multiple encoders)
                                     g_encoderRenderPassMap[encoderToUse] = renderPass;
@@ -3807,6 +3823,8 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
 
                                     WGPUComputePassDescriptor computePassDesc = {};
                                     g_jsComputePass = wgpuCommandEncoderBeginComputePass(g_jsCommandEncoder, &computePassDesc);
+                                    if (!requireHandle(g_engine, g_jsComputePass, "commandEncoder.beginComputePass"))
+                                        return g_engine->newUndefined();
 
                                     auto jsComputePass = g_engine->newObject();
 
@@ -4141,6 +4159,11 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                         if (g_jsCommandEncoder == encoderToFinish) {
                                             g_jsCommandEncoder = nullptr;
                                         }
+
+                                        // The encoder was checked; the command buffer it returns was not, and a
+                                        // NULL one reaches queue.submit(), which reads it inside wgpu-native.
+                                        if (!requireHandle(g_engine, cmdBuffer, "commandEncoder.finish"))
+                                            return g_engine->newUndefined();
 
                                         if (g_verboseLogging) std::cout << "[WebGPU] Command encoder finished, buffer: " << cmdBuffer << std::endl;
                                     }
@@ -4627,6 +4650,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             layoutDesc.entries = layoutEntries.data();
 
                             WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(g_device, &layoutDesc);
+                            if (!requireHandle(g_engine, layout, "device.createBindGroupLayout",
+                                               "entries=" + std::to_string(entryCount)))
+                                return g_engine->newUndefined();
 
                             auto jsLayout = g_engine->newObject();
                             g_engine->setPrivateData(jsLayout, layout);
@@ -4709,6 +4735,11 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                                             WGPUTexture tex = (WGPUTexture)resourcePtr;
                                             WGPUTextureViewDescriptor viewDesc = {};
                                             WGPUTextureView view = wgpuTextureCreateView(tex, &viewDesc);
+                                            if (!requireHandle(g_engine, view, "device.createBindGroup/autoTextureView",
+                                                               "binding=" + std::to_string(bgEntry.binding))) {
+                                                for (auto v : autoCreatedViews) wgpuTextureViewRelease(v);
+                                                return g_engine->newUndefined();
+                                            }
 
                                             autoCreatedViews.push_back(view);
                                             bgEntry.textureView = view;
@@ -4737,6 +4768,10 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             for (auto v : autoCreatedViews) {
                                 wgpuTextureViewRelease(v);
                             }
+
+                            if (!requireHandle(g_engine, bindGroup, "device.createBindGroup",
+                                               "entries=" + std::to_string(bindGroupEntries.size())))
+                                return g_engine->newUndefined();
 
                             auto jsBindGroup = g_engine->newObject();
                             g_engine->setPrivateData(jsBindGroup, bindGroup);
@@ -4776,6 +4811,9 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             layoutDesc.bindGroupLayouts = layouts.data();
 
                             WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(g_device, &layoutDesc);
+                            if (!requireHandle(g_engine, pipelineLayout, "device.createPipelineLayout",
+                                               "bindGroupLayouts=" + std::to_string(layouts.size())))
+                                return g_engine->newUndefined();
 
                             auto jsLayout = g_engine->newObject();
                             g_engine->setPrivateData(jsLayout, pipelineLayout);
@@ -4889,6 +4927,8 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             }
 
                             WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
+                            if (!requireHandle(g_engine, view, "device.createTextureView"))
+                                return g_engine->newUndefined();
 
                             auto jsView = g_engine->newObject();
                             g_engine->setPrivateData(jsView, view);
@@ -5900,6 +5940,11 @@ void compositeCanvas2DToWebGPU() {
         texDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
 
         g_canvas2DTexture = wgpuDeviceCreateTexture(g_device, &texDesc);
+        // Host-side path: there is no JS frame to throw into, so skip the composite rather than
+        // write pixels through a NULL texture. The next frame retries.
+        if (!requireHandleHostSide(g_canvas2DTexture, "canvas2D.createTexture",
+                                   std::to_string(width) + "x" + std::to_string(height)))
+            return;
         g_canvas2DTextureWidth = width;
         g_canvas2DTextureHeight = height;
     }
@@ -6086,10 +6131,17 @@ void compositeCanvas2DToWebGPU() {
     surfaceViewDesc.baseArrayLayer = 0;
     surfaceViewDesc.arrayLayerCount = 1;
     WGPUTextureView surfaceView = wgpuTextureCreateView(surfaceTexture.texture, &surfaceViewDesc);
+    // A surface whose window was released underneath us hands back NULL here. Compositing on
+    // through it is the "present into a released window" fault this pass exists to remove.
+    if (!requireHandleHostSide(surfaceView, "canvas2DComposite.surfaceView")) return;
 
     // Create command encoder and render pass
     WGPUCommandEncoderDescriptor encDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(g_device, &encDesc);
+    if (!requireHandleHostSide(encoder, "canvas2DComposite.createCommandEncoder")) {
+        wgpuTextureViewRelease(surfaceView);
+        return;
+    }
 
     WGPURenderPassColorAttachment colorAttachment = {};
     colorAttachment.view = surfaceView;
@@ -6105,6 +6157,11 @@ void compositeCanvas2DToWebGPU() {
     renderPassDesc.colorAttachments = &colorAttachment;
 
     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+    if (!requireHandleHostSide(renderPass, "canvas2DComposite.beginRenderPass")) {
+        wgpuCommandEncoderRelease(encoder);
+        wgpuTextureViewRelease(surfaceView);
+        return;
+    }
     wgpuRenderPassEncoderSetPipeline(renderPass, g_canvas2DPipeline);
     wgpuRenderPassEncoderSetBindGroup(renderPass, 0, g_canvas2DBindGroup, 0, nullptr);
     wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
@@ -6149,6 +6206,11 @@ void compositeCanvas2DToWebGPU() {
 
     WGPUCommandBufferDescriptor cmdDesc = {};
     WGPUCommandBuffer cmdBuffer = wgpuCommandEncoderFinish(encoder, &cmdDesc);
+    if (!requireHandleHostSide(cmdBuffer, "canvas2DComposite.finish")) {
+        wgpuCommandEncoderRelease(encoder);
+        wgpuTextureViewRelease(surfaceView);
+        return;
+    }
     wgpuQueueSubmit(g_queue, 1, &cmdBuffer);
 
     wgpuCommandBufferRelease(cmdBuffer);
@@ -6232,6 +6294,7 @@ static void captureFrameScreenshot() {
         // Create encoder to copy texture to buffer
         WGPUCommandEncoderDescriptor encDesc = {};
         WGPUCommandEncoder copyEncoder = wgpuDeviceCreateCommandEncoder(g_device, &encDesc);
+        if (!requireHandleHostSide(copyEncoder, "screenshot.createCommandEncoder")) return;
 
         WGPUImageCopyTexture_Compat srcCopy = {};
         srcCopy.texture = screenshotTexture;
@@ -6253,6 +6316,10 @@ static void captureFrameScreenshot() {
 
         WGPUCommandBufferDescriptor cmdDesc = {};
         WGPUCommandBuffer copyCmd = wgpuCommandEncoderFinish(copyEncoder, &cmdDesc);
+        if (!requireHandleHostSide(copyCmd, "screenshot.finish")) {
+            wgpuCommandEncoderRelease(copyEncoder);
+            return;
+        }
         wgpuQueueSubmit(g_queue, 1, &copyCmd);
 
         wgpuCommandBufferRelease(copyCmd);
