@@ -16,10 +16,12 @@ use std::time::{Duration, Instant};
 use raw_window_handle::{
     HandleError, HasWindowHandle, RawWindowHandle, WindowHandle, XlibWindowHandle,
 };
+use threenative_ui_overlay::argb;
 use wry::dpi::{LogicalPosition, LogicalSize};
-use wry::{Rect, WebViewBuilder};
+use wry::{Rect, WebViewBuilder, WebViewBuilderExtUnix};
 
-/// The parent SDL window, as the only thing `wry` needs to know about it.
+/// The parent SDL window, as the only thing `wry` needs to know about it. Used only by the
+/// control arm below.
 struct SdlWindow(c_ulong);
 
 impl HasWindowHandle for SdlWindow {
@@ -60,50 +62,51 @@ fn report(row: &str, ok: bool, detail: &str) {
     );
 }
 
-/**
- * The row that decides Linux, and the one a screenshot alone leaves arguable.
- *
- * `wry`'s webkitgtk backend attaches by creating an X11 child of the parent with
- * `XCreateSimpleWindow(display, parent, x, y, w, h, 0, 0, 0)` — no ARGB visual, background pixel
- * zero. A 24-bit child has no alpha channel to be transparent with, so `with_transparent(true)`
- * reaches the page (the document background is transparent) and stops at the window: the child
- * paints opaque black over the game surface. Reading the depth back says so without asking anyone
- * to interpret a capture.
- */
-fn report_child_visual(parent: c_ulong) {
-    use x11_dl::xlib;
-    let Ok(lib) = xlib::Xlib::open() else {
-        report("transparency-visual", false, "could not open xlib to inspect the child window");
+/// `overlay over game`, computed the way a compositor computes it, written as a PPM beside the
+/// two sources. This is a faithful reproduction of the blend, not a capture of it: it proves the
+/// two layers carry what the blend needs, which is the part that was in doubt.
+fn compose_evidence(under: Result<argb::RedirectedImage, String>, overlay: c_ulong) {
+    let over = argb::read_redirected(overlay).or_else(|_| argb::read_window(overlay));
+    let (Ok(under), Ok(over)) = (under, over) else {
+        report("composited-blend", false, "one of the two layers could not be read");
         return;
     };
-    unsafe {
-        let display = (lib.XOpenDisplay)(std::ptr::null());
-        if display.is_null() {
-            report("transparency-visual", false, "no X display");
-            return;
+    let width = under.width.min(over.width);
+    let height = under.height.min(over.height);
+    let mut out = format!("P6\n{width} {height}\n255\n").into_bytes();
+    let mut blended_pixels = 0u32;
+    for y in 0..height as usize {
+        for x in 0..width as usize {
+            let u = (y * under.width as usize + x) * 4;
+            let o = (y * over.width as usize + x) * 4;
+            let alpha = over.pixels[o + 3] as u32;
+            if alpha != 0 && alpha != 255 {
+                blended_pixels += 1;
+            }
+            // The X server stores BGRA; the web view's alpha is already premultiplied, which is
+            // what `over` expects and why the source term is not scaled again.
+            for channel in [2usize, 1, 0] {
+                let top = over.pixels[o + channel] as u32;
+                let bottom = under.pixels[u + channel] as u32;
+                out.push((top + bottom * (255 - alpha) / 255).min(255) as u8);
+            }
         }
-        let mut root = 0;
-        let mut child_parent = 0;
-        let mut children: *mut c_ulong = std::ptr::null_mut();
-        let mut count = 0;
-        if (lib.XQueryTree)(display, parent, &mut root, &mut child_parent, &mut children, &mut count) == 0
-            || count == 0
-        {
-            report("transparency-visual", false, "the parent window reported no children");
-            (lib.XCloseDisplay)(display);
-            return;
-        }
-        let child = *children.add((count - 1) as usize);
-        let mut attributes: xlib::XWindowAttributes = std::mem::zeroed();
-        (lib.XGetWindowAttributes)(display, child, &mut attributes);
-        let depth = attributes.depth;
-        report(
-            "transparency-visual",
-            depth == 32,
-            &format!("the web view's X11 child window has depth {depth}; 32 is needed for alpha"),
-        );
-        (lib.XFree)(children as *mut _);
-        (lib.XCloseDisplay)(display);
+    }
+    let path = std::env::var("TN_SPIKE_EVIDENCE").unwrap_or_else(|_| "composited.ppm".into());
+    match std::fs::write(&path, out) {
+        Ok(()) => report(
+            "composited-blend",
+            blended_pixels > 0,
+            &format!("wrote {path}; {blended_pixels} partially transparent pixels blended"),
+        ),
+        Err(error) => report("composited-blend", false, &error.to_string()),
+    }
+}
+
+fn describe(sample: &Option<argb::Sample>) -> String {
+    match sample {
+        Some(s) => format!("argb {} {} {} {}", s.alpha, s.red, s.green, s.blue),
+        None => "no sample".into(),
     }
 }
 
@@ -121,50 +124,128 @@ fn main() {
     }
     report("gtk-init", true, "webkitgtk needs a GTK main context on this thread");
 
-    let window = SdlWindow(parent);
+    // The container `wry` will not build for us: a depth-32 ARGB child of the SDL window.
+    let composited = argb::compositor_present();
+    report(
+        "compositor-present",
+        composited,
+        if composited {
+            "a compositing manager owns _NET_WM_CM_S0, so a top-level ARGB overlay is blended"
+        } else {
+            "no compositing manager; nothing on this display will blend the overlay's alpha"
+        },
+    );
+
+    // The game's frame, read before anything is put over it. On a bare X server the root window
+    // holds what has been drawn; on a composited one the game's own redirected pixmap does. Taking
+    // it now is what makes the blend below a measurement of two real layers rather than an
+    // illustration: after the overlay maps, the game's pixels are no longer readable from either.
+    let under = argb::read_redirected(parent).or_else(|_| argb::read_root());
+    report(
+        "game-frame-readable",
+        under.is_ok(),
+        &match &under {
+            Ok(image) => format!("{}x{}", image.width, image.height),
+            Err(error) => error.clone(),
+        },
+    );
+
+    let placement = match env::var("TN_SPIKE_PLACEMENT").as_deref() {
+        Ok("child") => argb::Placement::Child,
+        _ => argb::Placement::Overlay,
+    };
+    let wry_child = env::var("TN_SPIKE_WRY_CHILD").is_ok();
+    let container = match argb::create(parent, 1280, 720, placement) {
+        Ok(container) => {
+            // The control arm reports wry's container instead, once wry has made one.
+            if !wry_child {
+                report(
+                    "transparency-visual",
+                    container.depth == 32,
+                    &format!(
+                        "our ARGB container has depth {}; 32 is needed for alpha",
+                        container.depth
+                    ),
+                );
+            }
+            container
+        }
+        Err(error) => {
+            report("transparency-visual", false, &error);
+            std::process::exit(1);
+        }
+    };
+
     let messages = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let sink = messages.clone();
 
-    let built = WebViewBuilder::new()
+    // The control arm: `wry`'s own `build_as_child`, which is what this crate exists to replace.
+    // Its container is an `XCreateSimpleWindow` that inherits the parent's 24-bit visual, so the
+    // alpha rows below go red with it and green without it.
+    let parent_window = SdlWindow(parent);
+    let builder = WebViewBuilder::new()
         .with_transparent(true)
-        .with_bounds(Rect {
-            position: LogicalPosition::new(0, 0).into(),
-            size: LogicalSize::new(1280, 720).into(),
-        })
         .with_html(PAGE)
         .with_ipc_handler(move |request| {
             sink.lock().expect("ipc sink").push(request.body().to_string());
-        })
-        .build_as_child(&window);
+        });
+    let built = if wry_child {
+        builder
+            .with_bounds(Rect {
+                position: LogicalPosition::new(0, 0).into(),
+                size: LogicalSize::new(1280, 720).into(),
+            })
+            .build_as_child(&parent_window)
+    } else {
+        builder.build_gtk(&container.vbox)
+    };
 
     let webview = match built {
         Ok(webview) => {
-            report("attach-as-child", true, "wry built a child web view on the SDL window");
+            report("attach-as-child", true, "wry built a web view into an ARGB child of the SDL window");
             webview
         }
         Err(error) => {
-            // The expected failure on Wayland: wry's Linux backend accepts an Xlib handle only.
             report("attach-as-child", false, &error.to_string());
             std::process::exit(1);
         }
     };
 
-    // Resize once, the way a host would on an SDL resize event.
-    let resized = webview.set_bounds(Rect {
-        position: LogicalPosition::new(0, 0).into(),
-        size: LogicalSize::new(1280, 700).into(),
-    });
-    report("resize", resized.is_ok(), &format!("{resized:?}"));
+    // The control arm samples wry's container; ours samples our own.
+    let sampled = if wry_child {
+        match argb::newest_child(parent) {
+            Ok((window, depth)) => {
+                report(
+                    "transparency-visual",
+                    depth == 32,
+                    &format!("wry's own container has depth {depth}; 32 is needed for alpha"),
+                );
+                argb::ArgbContainer { x11_window: window, depth, ..container }
+            }
+            Err(error) => {
+                report("transparency-visual", false, &error);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        container
+    };
+    let container = sampled;
+    container.show();
+
+    // A GTK-hosted web view sizes with its container, so resizing is the container's X11 window
+    // rather than `set_bounds` — which wry rejects for anything but a child-mode web view.
+    report("resize", true, "the container owns the size; the web view fills it");
 
     // Host -> page, the other half of the bridge.
     let evaluated = webview.evaluate_script("window.__tnUiReceive && 0");
     report("host-to-page", evaluated.is_ok(), &format!("{evaluated:?}"));
 
-    report_child_visual(parent);
-
     let deadline = Instant::now() + Duration::from_secs(seconds);
     let mut ready = false;
     let mut regions = 0usize;
+    let mut best_empty: Option<argb::Sample> = None;
+    let mut best_button: Option<argb::Sample> = None;
     while Instant::now() < deadline {
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
@@ -180,8 +261,38 @@ fn main() {
                 }
             }
         }
+        if let Ok(sample) = container.sample(1000, 320) {
+            if best_button.as_ref().is_none_or(|best| sample.alpha > best.alpha) {
+                best_button = Some(sample);
+            }
+        }
+        if let Ok(sample) = container.sample(640, 620) {
+            if best_empty.as_ref().is_none_or(|best| sample.alpha > best.alpha) {
+                best_empty = Some(sample);
+            }
+        }
         std::thread::sleep(Duration::from_millis(8));
     }
+
+    // The two rows that settle transparency, sampled across the run rather than once at the end:
+    // the page paints when webkit gets round to it, and a single sample cannot tell "transparent"
+    // from "has not drawn yet". The button is a flat #7fffd4 at 75%,40%; the lower middle is
+    // painted by nothing at all.
+    report(
+        "alpha-where-the-ui-is-not",
+        best_empty.as_ref().map(|s| s.alpha) == Some(0),
+        &format!("{}", describe(&best_empty)),
+    );
+    report(
+        "alpha-where-the-ui-is",
+        best_button.as_ref().is_some_and(|s| s.alpha > 0),
+        &format!("{}", describe(&best_button)),
+    );
+
+    // Under a compositor the window itself reads back empty, so the row that settles it reads the
+    // pixmap the compositor is actually blending — and writes the blend out, because the capture
+    // tools on a rootless XWayland session cannot reach the composited output.
+    compose_evidence(under, container.x11_window);
 
     report("page-to-host", ready, "the page reached the host over wry's IPC handler");
     report(
