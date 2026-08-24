@@ -14,7 +14,7 @@
 #if TN_ENABLE_UI_OVERLAY
 extern "C" {
 int tn_ui_overlay_attach(unsigned long parent, const char* url, uint32_t width, uint32_t height);
-void tn_ui_overlay_pump();
+int tn_ui_overlay_pump();
 int tn_ui_overlay_post(const char* frame);
 char* tn_ui_overlay_take();
 void tn_ui_overlay_free(char* frame);
@@ -124,24 +124,21 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
 
 void pumpUiOverlay() {
     if (!uiOverlayAttached()) return;
-    tn_ui_overlay_pump();
+    // The overlay follows the game window from the X server's own events — move, resize, restack,
+    // map, unmap — so nothing here pushes SDL's rectangle at it. A game window that has gone away
+    // reports back once, and the overlay comes down with it rather than outliving its game.
+    if (tn_ui_overlay_pump() != 0) {
+        std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"the game window went away\"}"
+                  << std::endl;
+        detachDesktopUiOverlay();
+        return;
+    }
     // The page's frames arrive on this thread through the pump, so draining here keeps the whole
     // desktop path single-threaded and the queue below is only ever touched from one side.
     while (char* frame = tn_ui_overlay_take()) {
         queueUiMessage(std::string(frame));
         tn_ui_overlay_free(frame);
     }
-    auto* window = mystral::platform::getSDLWindow();
-    if (window == nullptr) return;
-    // Follow the game window. An overlay is a separate window on X11, so a move or a resize that
-    // nobody mirrored leaves the UI beside the game instead of over it.
-    int x = 0;
-    int y = 0;
-    int width = 0;
-    int height = 0;
-    SDL_GetWindowPosition(window, &x, &y);
-    SDL_GetWindowSizeInPixels(window, &width, &height);
-    tn_ui_overlay_set_bounds(x, y, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 }
 
 void setUiHitRegions(const std::vector<float>& regions) {

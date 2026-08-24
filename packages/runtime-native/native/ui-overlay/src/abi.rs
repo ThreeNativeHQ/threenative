@@ -109,17 +109,27 @@ pub extern "C" fn tn_ui_overlay_attach(
     0
 }
 
-/// Give GTK and WebKit their slice of the frame. Called once per frame by the host.
+/// Give GTK and WebKit their slice of the frame, and follow the game window.
+///
+/// Called once per frame by the host. Returns 0 while the overlay is healthy and -1 once the game
+/// window has gone away, which is the host's signal to detach.
+///
+/// Following happens here rather than in the host because the events that matter — move, resize,
+/// restack, map, unmap — come from the X server, not from SDL. The host used to push SDL's
+/// rectangle every frame instead, which cost an X round trip per frame, lagged a resize by a
+/// frame, and knew nothing about stacking or minimising at all.
 #[no_mangle]
-pub extern "C" fn tn_ui_overlay_pump() {
+pub extern "C" fn tn_ui_overlay_pump() -> c_int {
     OVERLAY.with(|slot| {
-        if slot.borrow().is_none() {
-            return;
-        }
+        let borrowed = slot.borrow();
+        let Some(overlay) = borrowed.as_ref() else {
+            return 0;
+        };
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
         }
-    });
+        if overlay.container.follow_parent() { 0 } else { -1 }
+    })
 }
 
 /// Send one JSON frame to the page. Returns 0 when delivered.

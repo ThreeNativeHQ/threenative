@@ -974,6 +974,15 @@ public:
             return false;
         }
 
+        // The desktop overlay's slice of the frame, taken BEFORE the pause check.
+        //
+        // The overlay is a sibling window: it follows the game window's moves, resizes, restacks
+        // and — the reason this sits here — its unmapping. A minimised game parks this loop, so a
+        // pump placed after the check would never see the unmap, and the HUD would stay on screen
+        // over the desktop with its game gone. Android and iOS pump on their own UI threads and
+        // need none of this.
+        platform::pumpUiOverlay();
+
         if (!config_.noSdl && platform::isPaused()) {
             // No JavaScript, no beginFrame, no rAF, no endDawnFrame, no present. Timer firings
             // that came due are counted and dropped rather than replayed all at once on resume;
@@ -1039,9 +1048,7 @@ public:
         // Process completed async Draco decode results
         processPendingDracoCallbacks();
 
-        // Give the desktop overlay its slice of the frame, then deliver whatever the UI posted.
-        // Android and iOS pump on their own UI threads; only desktop's lives inside this loop.
-        platform::pumpUiOverlay();
+        // Deliver whatever the UI posted since the last frame.
         drainUiMessages();
 
         // Process microtask queue for promises

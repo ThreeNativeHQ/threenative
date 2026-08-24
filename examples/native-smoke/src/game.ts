@@ -339,6 +339,11 @@ class NativeSmoke extends Scene<ISmokeState> {
     let pointerDowns = 0;
     runtimeCanvas.addEventListener?.("pointerdown", () => {
       pointerDowns += 1;
+      // Logged, not just counted, because the overlay's negative case — a press outside every
+      // interactive island must reach the GAME — has no other observable on desktop: the page's
+      // console does not reach the host's stdout, so a scenario that only watched the UI side
+      // would pass whether the press fell through or vanished.
+      console.info(`TN_SMOKE_POINTER_DOWN:${pointerDowns}`);
     });
     return (frameCtx: ICtx<ISmokeState>, dt: number) => {
       cube.rotation.x += dt * 0.5;
@@ -409,6 +414,11 @@ const game: ReturnType<typeof defineGame<ISmokeState>> = defineGame<ISmokeState>
  */
 game.ui.onIntent((intent, payload) => {
   const state = game.state.getState();
+  // Every intent, counted — because the state it sets is not. `slide` is set rather than
+  // toggled, so a harness that watched for the page's reaction saw the first press of a run and
+  // read every later one as "the press never arrived": a permanently green first case and three
+  // false reds behind it, which is worse than no observation at all.
+  console.info(`TN_SMOKE_UI_INTENT:${JSON.stringify({ intent, uiIntents: state.uiIntents + 1 })}`);
   game.state.set({
     lastUiIntent: intent,
     uiIntents: state.uiIntents + 1,

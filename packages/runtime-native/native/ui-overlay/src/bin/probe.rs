@@ -212,7 +212,7 @@ fn main() {
     };
 
     // The control arm samples wry's container; ours samples our own.
-    let sampled = if wry_child {
+    let sampled_window = if wry_child {
         match argb::newest_child(parent) {
             Ok((window, depth)) => {
                 report(
@@ -220,7 +220,7 @@ fn main() {
                     depth == 32,
                     &format!("wry's own container has depth {depth}; 32 is needed for alpha"),
                 );
-                argb::ArgbContainer { x11_window: window, depth, ..container }
+                window
             }
             Err(error) => {
                 report("transparency-visual", false, &error);
@@ -228,9 +228,8 @@ fn main() {
             }
         }
     } else {
-        container
+        container.x11_window
     };
-    let container = sampled;
     container.show();
 
     // A GTK-hosted web view sizes with its container, so resizing is the container's X11 window
@@ -261,12 +260,12 @@ fn main() {
                 }
             }
         }
-        if let Ok(sample) = container.sample(1000, 320) {
+        if let Ok(sample) = container.sample_window(sampled_window, 1000, 320) {
             if best_button.as_ref().is_none_or(|best| sample.alpha > best.alpha) {
                 best_button = Some(sample);
             }
         }
-        if let Ok(sample) = container.sample(640, 620) {
+        if let Ok(sample) = container.sample_window(sampled_window, 640, 620) {
             if best_empty.as_ref().is_none_or(|best| sample.alpha > best.alpha) {
                 best_empty = Some(sample);
             }
