@@ -45,16 +45,32 @@ describe("rapier plugin", () => {
 
   it("should route sceneExit and dispose through one ordered teardown", () => {
     const source = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
+    const surface = source.match(/const teardownRegistries = \{\n([\s\S]*?)\n {2}\} as const;/);
+    if (surface === null) throw new Error("Physics teardown registry surface is missing.");
+    const registryBlock = surface[1];
+    if (registryBlock === undefined) throw new Error("Physics teardown registry list is missing.");
+    const registryNames = [...registryBlock.matchAll(/^\s+(\w+),$/gm)].map(([, name]) => name);
+    const releaseStart = source.indexOf("function releaseRegistries");
+    const releaseEnd = source.indexOf("\n  function teardown", releaseStart);
+    const releaseSource = source.slice(releaseStart, releaseEnd);
+    const clearedRegistryNames = [
+      ...releaseSource.matchAll(/^\s+teardownRegistries\.(\w+),$/gm),
+    ].map(([, name]) => name);
+
+    expect(registryNames.length).toBeGreaterThan(0);
+    for (const registryName of registryNames) expect(clearedRegistryNames).toContain(registryName);
 
     expect(source.match(/function teardown/g)).toHaveLength(1);
     expect(source.match(/teardown\("sceneExit"/g)).toHaveLength(1);
     expect(source.match(/teardown\("dispose"/g)).toHaveLength(1);
     expect(
-      source.match(/for \(const area of \[\.\.\.areas\.values\(\)\]\) area\.dispose\(\)/g),
+      source.match(
+        /for \(const area of \[\.\.\.teardownRegistries\.areas\.values\(\)\]\) area\.dispose\(\)/g,
+      ),
     ).toHaveLength(1);
-    expect(source.match(/for \(const body of \[\.\.\.bodies\]\) body\.dispose\(\)/g)).toHaveLength(
-      1,
-    );
+    expect(
+      source.match(/for \(const body of \[\.\.\.teardownRegistries\.bodies\]\) body\.dispose\(\)/g),
+    ).toHaveLength(1);
   });
 
   it("should register the actual Rapier runtime version", async () => {

@@ -122,6 +122,14 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   );
   let events: Uint32Array<ArrayBufferLike> = new Uint32Array(64);
   const activeContacts = new Map<string, readonly [number, number]>();
+  const teardownRegistries = {
+    activeContacts,
+    areaMembershipBuffers,
+    areas,
+    bodies,
+    bodiesById,
+    kinematicMotions,
+  } as const;
   let debugSeries: IPhysicsDebugSample[] = [];
   let unregisterObservations: (() => void) | undefined;
 
@@ -158,14 +166,17 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   }
 
   function releaseRegistries(): void {
-    for (const area of [...areas.values()]) area.dispose();
-    for (const body of [...bodies]) body.dispose();
-    areaMembershipBuffers.clear();
-    areas.clear();
-    bodies.clear();
-    bodiesById.clear();
-    kinematicMotions.clear();
-    activeContacts.clear();
+    for (const area of [...teardownRegistries.areas.values()]) area.dispose();
+    for (const body of [...teardownRegistries.bodies]) body.dispose();
+    for (const registry of [
+      teardownRegistries.areaMembershipBuffers,
+      teardownRegistries.areas,
+      teardownRegistries.bodies,
+      teardownRegistries.bodiesById,
+      teardownRegistries.kinematicMotions,
+      teardownRegistries.activeContacts,
+    ])
+      registry.clear();
     debugSeries = [];
   }
 

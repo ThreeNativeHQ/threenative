@@ -172,6 +172,51 @@ Error: packages/runtime-native/build/tn-linux does not exist; run pnpm native:bu
 
 No `pnpm native:build` was started for this lane; the required native host build was absent.
 
+The browser probe exposes one authored `targetDesiredDistance` value (`0.5`), so the tolerance
+sweep remains unit-only and is **unverified in the browser**. Adding a sweep input to this probe
+was outside the repair scope.
+
+## Repair round 1 — teardown registry coverage
+
+The teardown proof now derives registry names from the private `teardownRegistries` registration
+surface and requires every name to appear in `releaseRegistries()`. The runtime disposal order
+for areas and bodies is unchanged; all six clearable registries are now named through that same
+surface.
+
+Negative control — added `scratchRegistry` to `teardownRegistries` without adding it to
+`releaseRegistries()`:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/plugin.spec.ts --reporter=dot
+FAIL: should route sceneExit and dispose through one ordered teardown
+expected cleared registry names to include scratchRegistry
+Tests 1 failed | 12 passed (13)
+```
+
+The mutation was reverted immediately. Restored focused proof:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/plugin.spec.ts --reporter=dot
+PASS — 1 file, 13 tests.
+```
+
+Repair verification:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/plugin.spec.ts packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+PASS — 2 files, 28 tests.
+
+pnpm --filter @threenative/physics typecheck
+PASS
+
+pnpm exec biome check packages/physics/src/plugin.ts packages/physics/__tests__/plugin.spec.ts
+PASS — 2 pre-existing cognitive-complexity warnings, no errors.
+
+node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/navigation.playtest.json --url 'http://127.0.0.1:5180/?navigation' --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort" --browser-recipe webgpu --headed
+PASS — targetReachable=true, navigationFinished=true, pathLength=9.623701493015632,
+final target distance=0.006768826545260287, zero console/network/runtime errors.
+```
+
 ## Repository gates
 
 | Command | Result |
