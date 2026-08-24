@@ -296,6 +296,9 @@ const NATIVE_RUNTIME_WALK_EXCLUSIONS = new Set([
   "target",
 ]);
 
+/** Generated census numbers may trail a source edit briefly, but a large retype is a gate failure. */
+export const NATIVE_CENSUS_DRIFT_TOLERANCE = 5;
+
 function isNativeRuntimeSource(candidate: string): boolean {
   return (
     !GENERATED_ANDROID_BUNDLE_FILES.some((generated) => candidate.endsWith(generated)) &&
@@ -455,6 +458,7 @@ export async function enforceBudgets(root: string): Promise<BudgetReport> {
     ...budgetErrors(report),
     ...(await capabilityManifestErrors(root)),
     ...(await nativeCensusErrors(root)),
+    ...(await nativeCensusDrift(root)),
   ];
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return report;
@@ -579,8 +583,8 @@ function parseNativeCensusTable(record: string): {
 }
 
 /**
- * Reported, never fatal: the generated Lines column can trail the tree between a native edit and
- * the next `pnpm census`, and that lag must be loud without blocking on retyped arithmetic.
+ * A small edit can trail the tree until `pnpm census`; beyond the bounded tolerance the record is
+ * no longer trustworthy and budgets fails with the measured area and regeneration command.
  */
 export async function nativeCensusDrift(root: string): Promise<string[]> {
   const recordPath = path.join(root, "docs", "verification", "native-runtime-census-2026-08-16.md");
@@ -598,9 +602,9 @@ export async function nativeCensusDrift(root: string): Promise<string[]> {
   const drift: string[] = [];
   for (const row of parsed.rows) {
     const measured = measurement.areas.get(row.area);
-    if (measured !== undefined && measured !== row.lines) {
+    if (measured !== undefined && Math.abs(measured - row.lines) > NATIVE_CENSUS_DRIFT_TOLERANCE) {
       drift.push(
-        `native census drift: ${row.area} recorded ${row.lines.toLocaleString("en-US")}, measured ${measured.toLocaleString("en-US")} — run \`pnpm census\` to regenerate the Lines column`,
+        `native census drift: ${row.area} recorded ${row.lines.toLocaleString("en-US")}, measured ${measured.toLocaleString("en-US")} (difference exceeds tolerance ${NATIVE_CENSUS_DRIFT_TOLERANCE}) — run \`pnpm census\` to regenerate the Lines column`,
       );
     }
   }

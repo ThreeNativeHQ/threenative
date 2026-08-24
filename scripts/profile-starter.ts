@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { createProject } from "../packages/create-threenative/src/index.js";
 import { packageLocalFramework } from "./visual-gate.js";
+import { workspacePackageArchives } from "./workspace-packages.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_PORT = 5310;
@@ -104,14 +105,7 @@ export function parseArgs(args: readonly string[]): ProfileArgs {
 
 async function packageSourcesFrom(directory: string): Promise<Record<string, string>> {
   const files = await readdir(directory);
-  const packages = [
-    ["@threenative/core", "threenative-core-"],
-    ["@threenative/physics", "threenative-physics-"],
-    ["@threenative/playtest", "threenative-playtest-"],
-    ["@threenative/runtime-native", "threenative-runtime-native-"],
-    ["@threenative/ui", "threenative-ui-"],
-    ["create-threenative", "create-threenative-"],
-  ] as const;
+  const packages = workspacePackageArchives(path.join(REPO_ROOT, "packages"));
   return Object.fromEntries(
     packages.map(([name, prefix]) => {
       const archive = files.find((file) => file.startsWith(prefix));

@@ -1,17 +1,80 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-23T01:18:58.556Z",
+  "generatedAt": "2026-08-24T05:39:40.493Z",
   "counts": {
-    "interface-in-disguise": 12,
-    "file-length": 23,
-    "suppression/unknown-cast": 21,
+    "file-length": 29,
+    "suppression/unknown-cast": 25,
+    "interface-in-disguise": 13,
     "suppression/biome-ignore": 2,
     "lint-coverage-hole": 1
   },
   "findings": [
     {
+      "file": "packages/assets/src/compile.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 783,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/passes/model.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 554,
+      "threshold": 400
+    },
+    {
       "file": "packages/core/src/assets.ts",
-      "line": 23,
+      "line": 1,
+      "signal": "file-length",
+      "value": 502,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 107,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 110,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 229,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 243,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 361,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/audio.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 453,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/audio.ts",
+      "line": 79,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
@@ -20,7 +83,7 @@
       "file": "packages/core/src/game.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 755,
+      "value": 758,
       "threshold": 400
     },
     {
@@ -48,7 +111,7 @@
       "file": "packages/core/src/input.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 471,
+      "value": 510,
       "threshold": 400
     },
     {
@@ -69,7 +132,14 @@
       "file": "packages/core/src/projection-apply.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 672,
+      "value": 718,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/projection-plan.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 558,
       "threshold": 400
     },
     {
@@ -130,7 +200,7 @@
     },
     {
       "file": "packages/core/src/viewport.ts",
-      "line": 181,
+      "line": 184,
       "signal": "suppression/biome-ignore",
       "value": "biome-ignore",
       "threshold": 1
@@ -139,12 +209,12 @@
       "file": "packages/create-threenative/src/config.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 881,
+      "value": 1107,
       "threshold": 800
     },
     {
       "file": "packages/create-threenative/src/config.ts",
-      "line": 50,
+      "line": 93,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
@@ -153,7 +223,7 @@
       "file": "packages/create-threenative/src/index.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 515,
+      "value": 521,
       "threshold": 400
     },
     {
@@ -209,26 +279,33 @@
       "file": "packages/physics/src/native/host.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 531,
+      "value": 543,
+      "threshold": 400
+    },
+    {
+      "file": "packages/physics/src/navigation/NavigationAgent3D.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 452,
       "threshold": 400
     },
     {
       "file": "packages/physics/src/plugin.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 418,
+      "value": 439,
       "threshold": 400
     },
     {
       "file": "packages/physics/src/simulation.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 1191,
+      "value": 1234,
       "threshold": 800
     },
     {
       "file": "packages/physics/src/simulation.ts",
-      "line": 516,
+      "line": 522,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10

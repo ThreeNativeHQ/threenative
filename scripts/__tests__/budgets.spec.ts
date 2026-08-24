@@ -331,12 +331,11 @@ describe("budget gate", () => {
     );
   });
 
-  it("should not fail on census line drift, and should report it as drift instead", async () => {
+  it("should allow census line drift within the recorded tolerance", async () => {
     const root = await fixtureRoot();
     await nativeFixture(root);
     // The table judges both areas and stays internally consistent; only its numbers trail the
-    // tree once runtime.cpp grows. That lag is a report, not a red gate: the judgement the
-    // census exists to force is per area, not per line.
+    // tree once runtime.cpp grows. The bounded tolerance leaves a short regeneration window.
     await writeNativeCensus(
       root,
       [
@@ -348,9 +347,28 @@ describe("budget gate", () => {
     await writeFile(path.join(root, "packages", "runtime-native", "runtime.cpp"), "owned\nmore\n");
 
     await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 4 });
-    const drift = await nativeCensusDrift(root);
-    expect(drift.join("\n")).toContain("runtime.cpp recorded 1, measured 3");
-    expect(drift.join("\n")).toContain("run `pnpm census`");
+    expect(await nativeCensusDrift(root)).toEqual([]);
+  });
+
+  it("fails budgets when census line drift exceeds the recorded tolerance", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    await writeNativeCensus(
+      root,
+      [
+        ["`runtime.cpp`", 1],
+        ["Root `CMakeLists.txt`", 1],
+      ],
+      2,
+    );
+    await writeFile(
+      path.join(root, "packages", "runtime-native", "runtime.cpp"),
+      "owned\nmore\nmore\nmore\nmore\nmore\nmore\n",
+    );
+
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      /native census drift: runtime\.cpp recorded 1, measured 8.*exceeds tolerance/u,
+    );
   });
 
   it("should pass fixtures that carry no census record at all", async () => {

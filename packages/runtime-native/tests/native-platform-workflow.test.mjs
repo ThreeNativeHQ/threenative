@@ -31,6 +31,11 @@ test('desktop platform lanes build and retain executable evidence', () => {
   expect(workflow.indexOf('pnpm tsx scripts/workspace-packages.ts build')).toBeLessThan(
     workflow.indexOf('pnpm --filter threenative-native-smoke build'),
   );
+  expect(workflow.indexOf('pnpm --filter @threenative/playtest build')).toBeLessThan(
+    workflow.indexOf('pnpm --filter @threenative/core build'),
+  );
+  expect(workflow).toContain('scripts/workspace-packages.ts --archives');
+  expect(workflow).toContain('pnpm --filter "$package_name" --if-present run build');
   for (const source of [workflow, releaseWorkflow]) {
     expect(source).toContain('libcurl4-openssl-dev');
     expect(source).toContain('libfontconfig1-dev');

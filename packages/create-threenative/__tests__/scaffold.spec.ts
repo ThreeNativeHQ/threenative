@@ -705,6 +705,16 @@ describe("create-threenative", () => {
     });
   });
 
+  it("should accept a local package added to the workspace without a CLI map edit", () => {
+    expect(
+      parseArgs(["my-game", "--no-install", "--new-package-package", "/tmp/new-package.tgz"]),
+    ).toEqual({
+      install: false,
+      packageSources: { "@threenative/new-package": "/tmp/new-package.tgz" },
+      target: "my-game",
+    });
+  });
+
   it("should accept a local engine MCP package for offline scaffold tests", () => {
     expect(
       parseArgs(["my-game", "--no-install", "--engine-mcp-package", "/tmp/engine-mcp.tgz"]),
@@ -723,6 +733,25 @@ describe("create-threenative", () => {
         target: "my-game",
       },
     );
+  });
+  it("maps scoped workspace packages with colliding names to distinct source flags", () => {
+    expect(
+      parseArgs([
+        "my-game",
+        "--no-install",
+        "--threenative-cli-package",
+        "/tmp/scoped-cli.tgz",
+        "--threenative-engine-mcp-package",
+        "/tmp/scoped-engine-mcp.tgz",
+      ]),
+    ).toEqual({
+      install: false,
+      packageSources: {
+        "@threenative/cli": "/tmp/scoped-cli.tgz",
+        "@threenative/engine-mcp": "/tmp/scoped-engine-mcp.tgz",
+      },
+      target: "my-game",
+    });
   });
 
   it("should keep a local native runtime optional", async () => {

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "shims": [
+    { "name": "AbortController", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "AbortSignal", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "Blob", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "console", "evidence": "packages/runtime-native/src/js/v8_engine.cpp and packages/runtime-native/src/js/quickjs_engine.cpp" },
+    { "name": "Event", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "Headers", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "HTMLCanvasElement", "evidence": "packages/runtime-native/src/webgpu/bindings.cpp" },
+    { "name": "KeyboardEvent", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "OffscreenCanvas", "evidence": "packages/runtime-native/src/webgpu/bindings.cpp" },
+    { "name": "PointerEvent", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "ReadableStream", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "Request", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "Response", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "TextDecoder", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "TextDecoderStream", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "TextEncoder", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "TextEncoderStream", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "TouchEvent", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "TransformStream", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "URL", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "URLSearchParams", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "Worker", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "WritableStream", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "cancelAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "clearInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "clearTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "createImageBitmap", "evidence": "packages/runtime-native/src/webgpu/bindings.cpp" },
+    { "name": "document", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "fetch", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "localStorage", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "navigator", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "performance", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "requestAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "self", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "sessionStorage", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "setInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "setTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "window", "evidence": "packages/runtime-native/src/runtime.cpp" }
+  ],
+  "allowlist": [
+    {
+      "name": "HTMLElement",
+      "reason": "Framework uses HTMLElement only as a DOM-compatible TypeScript annotation; native mounting receives the host's compatibility object."
+    },
+    {
+      "name": "Image",
+      "reason": "Asset loading probes Image as an optional browser decoder and falls back to the native createImageBitmap path when it is absent."
+    },
+    {
+      "name": "ResizeObserver",
+      "reason": "The renderer probes this optional browser API and falls back to the native window resize event when the host does not install it."
+    }
+  ]
+}

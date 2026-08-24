@@ -74,6 +74,32 @@ jobs:
             --target android --device emulator-5554
             --reference artifacts/conformance/web
             --out artifacts/conformance/android
+      - name: Verify captured parity ledger
+        if: always()
+        run: |
+          node --input-type=module - <<'NODE'
+          import { readFile, writeFile } from "node:fs/promises";
+
+          const reportPath = "packages/runtime-native/artifacts/conformance/android/report.json";
+          const report = JSON.parse(await readFile(reportPath, "utf8"));
+          const summary = report.summary;
+          for (const key of ["pass", "fail", "blocked"]) {
+            if (!Number.isInteger(summary?.[key])) throw new Error(`Missing integer summary.${key}`);
+          }
+          const exit = summary.fail > 0 ? 1 : summary.blocked > 0 ? 2 : 0;
+          const ledger = [
+            "# PRD-215 Android parity ledger",
+            "",
+            "## Target results",
+            "",
+            "| Target | Command | Pass | Fail | Blocked | Exit | Outcome |",
+            "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+            `| Android emulator | \`node packages/runtime-native/conformance/run-conformance.mjs --target android --reference artifacts/conformance/web --out artifacts/conformance/android\` | ${summary.pass} | ${summary.fail} | ${summary.blocked} | ${exit} | captured report |`,
+            "",
+          ].join("\n");
+          await writeFile(`${process.env.RUNNER_TEMP}/prd-215-parity-ledger.md`, ledger);
+          NODE
+          pnpm parity:ledger "$RUNNER_TEMP/prd-215-parity-ledger.md"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -105,7 +131,12 @@ jobs:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
       - name: Build native-smoke workspace dependencies
-        run: pnpm tsx scripts/workspace-packages.ts build
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r package_name _; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" --if-present run build
+          done < <(pnpm tsx scripts/workspace-packages.ts --archives)
       - run: pnpm --filter threenative-native-smoke build
       - name: Install Windows HTTP build dependencies
         if: runner.os == 'Windows'
@@ -158,24 +189,32 @@ jobs:
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
       - name: Build and pack the scaffold dependencies
         run: |
-          pnpm tsx scripts/workspace-packages.ts build
           pnpm --filter @threenative/runtime-native native:build
-          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/threenative-packages"
+          mkdir -p "$RUNNER_TEMP/threenative-packages"
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" --if-present run build
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Build and verify the scaffolded starter
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
-          assets=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-assets-*.tgz' -print -quit)
-          core=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
-          physics=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
-          playtest=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
-          engine_mcp=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
-          ui=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
-          runtime=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
-          cli=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
+          package_args=()
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
+            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
+            case "$package_name" in
+              create-threenative) package_flag="--cli-package" ;;
+              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
+              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
+              *) echo "unsupported workspace package $package_name"; exit 1 ;;
+            esac
+            package_args+=("$package_flag" "$archive")
+          done < "$RUNNER_TEMP/threenative-package-specs"
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            --assets-package "$assets" --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
-            --engine-mcp-package "$engine_mcp" \
-            --ui-package "$ui" --runtime-native-package "$runtime" --cli-package "$cli"
+            "${package_args[@]}"
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
             pnpm --dir "$target" test:native
@@ -201,7 +240,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build iOS proof workspace dependencies
-        run: pnpm tsx scripts/workspace-packages.ts build
+        run: |
+          while IFS=$'\t' read -r package_name _; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" --if-present run build
+          done < <(pnpm tsx scripts/workspace-packages.ts --archives)
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
       - name: Archive the scenario-verified unsigned simulator host
@@ -217,19 +260,28 @@ jobs:
       - name: Pack and install the exact consumer packages without lifecycle compilation
         run: |
           mkdir -p "$RUNNER_TEMP/ios-packages"
-          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/ios-packages"
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" --if-present run build
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/ios-packages"
+          done < "$RUNNER_TEMP/threenative-package-specs"
           target="$RUNNER_TEMP/threenative-ios-consumer"
-          assets=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-assets-*.tgz' -print -quit)
-          core=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-core-*.tgz' -print -quit)
-          physics=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-physics-*.tgz' -print -quit)
-          playtest=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-playtest-*.tgz' -print -quit)
-          engine_mcp=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
-          runtime=$(find "$RUNNER_TEMP/ios-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
-          cli=$(find "$RUNNER_TEMP/ios-packages" -name 'create-threenative-*.tgz' -print -quit)
+          package_args=()
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            archive=$(find "$RUNNER_TEMP/ios-packages" -name "${archive_prefix}*.tgz" -print -quit)
+            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
+            case "$package_name" in
+              create-threenative) package_flag="--cli-package" ;;
+              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
+              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
+              *) echo "unsupported workspace package $package_name"; exit 1 ;;
+            esac
+            package_args+=("$package_flag" "$archive")
+          done < "$RUNNER_TEMP/threenative-package-specs"
           node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
-            --assets-package "$assets" --core-package "$core" --physics-package "$physics" --playtest-package "$playtest" \
-            --engine-mcp-package "$engine_mcp" \
-            --runtime-native-package "$runtime" --cli-package "$cli"
+            "${package_args[@]}"
           cp examples/native-smoke/src/physics.ts "$target/src/game.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \

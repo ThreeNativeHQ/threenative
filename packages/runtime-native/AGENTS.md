@@ -58,6 +58,11 @@ TypeScript package.
 When you add a shim, say so in the owning gate doc so the other half of the repo can rely on
 it. When you remove or narrow one, grep `packages/*/src` first.
 
+The machine-readable inventory is [`shim-manifest.json`](./shim-manifest.json). It records each
+global installed by the native host and every deliberate allowlist exception with its reason;
+`pnpm budgets` runs the checker against `packages/{core,ui,playtest}/src` so this manifest is the
+enforced contract, not a second prose-only list.
+
 Native bundles enter through the project's declared `threenative.nativeEntry` (default
 `src/game.ts`), which must default-export the game. `TN_NATIVE_ENTRY_MISSING` and
 `TN_NATIVE_ENTRY_NO_DEFAULT` are entry-contract failures; `TN_NATIVE_WEB_ONLY_UI` means the

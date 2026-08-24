@@ -87,127 +87,34 @@ jobs:
       - name: Pack local framework packages
         run: |
           mkdir -p "$RUNNER_TEMP/threenative-packages"
-          pnpm tsx scripts/workspace-packages.ts pack "$RUNNER_TEMP/threenative-packages"
+          pnpm tsx scripts/workspace-packages.ts build
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Generate starter scaffold
         run: |
           target="$RUNNER_TEMP/threenative-starter"
-          core_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
-          assets_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-assets-*.tgz' -print -quit)
-          physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
-          playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
-          ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
-          engine_mcp_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
-          runtime_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
-          cli_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
+          package_args=()
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
+            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
+            case "$package_name" in
+              create-threenative) package_flag="--cli-package" ;;
+              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
+              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
+              *) echo "unsupported workspace package $package_name"; exit 1 ;;
+            esac
+            package_args+=("$package_flag" "$archive")
+          done < "$RUNNER_TEMP/threenative-package-specs"
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            --core-package "$core_package" --assets-package "$assets_package" --physics-package "$physics_package" \
-            --playtest-package "$playtest_package" --ui-package "$ui_package" \
-            --engine-mcp-package "$engine_mcp_package" \
-            --runtime-native-package "$runtime_package" --cli-package "$cli_package"
+            "${package_args[@]}"
           pnpm --dir "$target" install
-          MCP_TARGET="$target" node --input-type=module - <<'NODE'
-          import { spawn } from "node:child_process";
-          import { readFile } from "node:fs/promises";
-
-          const target = process.env.MCP_TARGET;
-          const { mcpServers } = JSON.parse(await readFile(`${target}/.mcp.json`, "utf8"));
-          const surfaces = [
-            ["threenative-assets", "asset-mcp-tools.json"],
-            ["threenative-sculpt", "sculpt-mcp-tools.json"],
-          ];
-
-          async function probe(serverName, surfaceFile) {
-            const surface = JSON.parse(
-              await readFile(`packages/create-threenative/${surfaceFile}`, "utf8"),
-            );
-            const server = mcpServers[serverName];
-            if (!server) throw new Error(`Generated project is missing MCP server ${serverName}`);
-            const child = spawn(server.command, server.args, {
-              cwd: target,
-              stdio: ["pipe", "pipe", "inherit"],
-            });
-            let buffer = "";
-            let nextId = 1;
-            const pending = new Map();
-            child.stdout.on("data", (chunk) => {
-              buffer += chunk.toString();
-              const lines = buffer.split("\n");
-              buffer = lines.pop() ?? "";
-              for (const line of lines) {
-                if (!line.trim().startsWith("{")) continue;
-                let message;
-                try {
-                  message = JSON.parse(line);
-                } catch {
-                  continue;
-                }
-                const waiter = pending.get(message.id);
-                if (waiter) {
-                  pending.delete(message.id);
-                  clearTimeout(waiter.timer);
-                  message.error ? waiter.reject(new Error(JSON.stringify(message.error))) : waiter.resolve(message.result);
-                }
-              }
-            });
-            const exited = new Promise((_, reject) => {
-              child.once("error", reject);
-              child.once("exit", (code) => reject(new Error(`${serverName} exited early (${code})`)));
-            });
-            const request = (method, params = {}) => {
-              const id = nextId++;
-              const response = new Promise((resolve, reject) => {
-                const timer = setTimeout(() => {
-                  pending.delete(id);
-                  reject(new Error(`${serverName} ${method} timed out; saw ${buffer.slice(0, 500)}`));
-                }, 30_000);
-                pending.set(id, { resolve, reject, timer });
-              });
-              child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-              return Promise.race([response, exited]);
-            };
-            try {
-              await request("initialize", {
-                protocolVersion: "2025-06-18",
-                capabilities: {},
-                clientInfo: { name: "scaffold-smoke", version: "0" },
-              });
-              child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-              const listed = await request("tools/list");
-              const names = listed.tools.map((tool) => tool.name).sort();
-              const expected = [...surface.tools].sort();
-              if (JSON.stringify(names) !== JSON.stringify(expected)) {
-                throw new Error(
-                  `${serverName} surface drifted.\nexpected ${expected.length}: ${expected.join(", ")}\nactual ${names.length}: ${names.join(", ")}`,
-                );
-              }
-              if (serverName === "threenative-sculpt") {
-                const listedResources = await request("resources/list");
-                if (!listedResources.resources?.length)
-                  throw new Error("Sculpt MCP listed no technique resources");
-                for (const resource of listedResources.resources) {
-                  const read = await request("resources/read", { uri: resource.uri });
-                  const text = read.contents?.map((content) => content.text ?? "").join("\n") ?? "";
-                  const concreteBlock = /```(?:glsl|wgsl|(?:java|type)script|[jt]s)\b[\s\S]*?(?:ShaderMaterial|onBeforeCompile|diffuseColor|gl_FragColor|new\s+Mesh(?:Standard|Physical|Phong|Basic|Lambert|Toon)Material)/u;
-                  if (concreteBlock.test(text))
-                    throw new Error(`Sculpt grimoire resource owns the look: ${resource.uri}`);
-                }
-              }
-              console.log(`${serverName} ok: ${names.length} tools from ${surface.version}`);
-            } finally {
-              child.kill();
-            }
-          }
-
-          for (const [serverName, surfaceFile] of surfaces) await probe(serverName, surfaceFile);
-          NODE
+          # MCP surface validation is centralized in verify-golden-path.ts below.
           pnpm exec playwright install --with-deps chromium
           pnpm --dir "$target" test
-          # `pnpm --dir "$target" test` above boots this project and asserts its portable HUD
-          # reported a live glyph count, so the HUD proof is an observation, not this check.
-          test -f "$target/src/render/lighting.ts"
-          test -f "$target/src/render/hud.ts"
-          ! grep -R "@threenative/" "$target/src/render"
-          ! grep -R "catalog:" "$target/package.json"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
@@ -236,18 +143,21 @@ jobs:
       - name: Generate platformer scaffold
         run: |
           target="$RUNNER_TEMP/threenative-platformer"
-          core_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-core-*.tgz' -print -quit)
-          assets_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-assets-*.tgz' -print -quit)
-          physics_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-physics-*.tgz' -print -quit)
-          playtest_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-playtest-*.tgz' -print -quit)
-          engine_mcp_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-engine-mcp-*.tgz' -print -quit)
-          ui_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-ui-*.tgz' -print -quit)
-          runtime_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'threenative-runtime-native-*.tgz' -print -quit)
-          cli_package=$(find "$RUNNER_TEMP/threenative-packages" -name 'create-threenative-*.tgz' -print -quit)
+          package_args=()
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
+            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
+            case "$package_name" in
+              create-threenative) package_flag="--cli-package" ;;
+              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
+              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
+              *) echo "unsupported workspace package $package_name"; exit 1 ;;
+            esac
+            package_args+=("$package_flag" "$archive")
+          done < "$RUNNER_TEMP/threenative-package-specs"
           node packages/create-threenative/dist/index.js "$target" --template platformer --no-install \
-            --core-package "$core_package" --assets-package "$assets_package" --physics-package "$physics_package" \
-            --playtest-package "$playtest_package" --engine-mcp-package "$engine_mcp_package" --ui-package "$ui_package" \
-            --runtime-native-package "$runtime_package" --cli-package "$cli_package"
+            "${package_args[@]}"
           pnpm --dir "$target" install
           pnpm exec playwright install chromium
           sh scripts/xvfb.sh pnpm --dir "$target" test
@@ -306,19 +216,7 @@ jobs:
       - run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
-        run: |
-          test "$(wc -l < packages/core/src/entities.ts)" -lt 80
-          ! rg -n '\b(archetype|createQuery|defineComponent|System|Component)\b' packages/core/src
-          if rg -n 'DebugOverlay|__THREENATIVE__' examples/abyss-framework/dist; then
-            echo 'Generated abyss-framework bundle contains forbidden debug symbols.' >&2
-            exit 1
-          else
-            status=$?
-            if [ "$status" -ne 1 ]; then
-              echo "Could not inspect the abyss-framework bundle (rg exit $status)." >&2
-              exit "$status"
-            fi
-          fi
+        run: pnpm exec tsx scripts/check-core-boundary.ts
 
   budgets:
     needs: build

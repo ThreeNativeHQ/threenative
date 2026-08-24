@@ -20,19 +20,7 @@ export interface IKitManifest {
 
 export interface IScaffoldOptions {
   install?: boolean;
-  packageSources?: Partial<
-    Record<
-      | "@threenative/assets"
-      | "@threenative/core"
-      | "@threenative/physics"
-      | "@threenative/playtest"
-      | "@threenative/runtime-native"
-      | "@threenative/ui"
-      | "create-threenative"
-      | "threenative-engine-mcp",
-      string
-    >
-  >;
+  packageSources?: Partial<Record<string, string>>;
   target: string;
   template?: ScaffoldTemplate;
 }
@@ -447,6 +435,27 @@ function readFlag(argv: readonly string[], name: string): string | undefined {
   return index === -1 ? undefined : argv[index + 1];
 }
 
+const PACKAGE_SOURCE_FLAG = /^--([a-z0-9-]+)-package$/u;
+const SCOPED_PACKAGE_FLAG_PREFIX = "threenative-";
+
+function packageNameFromFlag(flag: string): string | undefined {
+  const match = flag.match(PACKAGE_SOURCE_FLAG);
+  if (match === null) return undefined;
+  const suffix = match[1];
+  if (suffix === undefined) return undefined;
+  // Legacy aliases are retained for the two existing unscoped workspace packages. Scoped package
+  // flags use the namespaced spelling generated from the actual package name, so a scoped package
+  // can never overwrite one of those unscoped aliases.
+  if (suffix.startsWith(SCOPED_PACKAGE_FLAG_PREFIX)) {
+    const scopedSuffix = suffix.slice(SCOPED_PACKAGE_FLAG_PREFIX.length);
+    return scopedSuffix.length === 0 ? undefined : `@threenative/${scopedSuffix}`;
+  }
+  if (suffix === "runtime") return undefined;
+  if (suffix === "cli") return "create-threenative";
+  if (suffix === "engine-mcp") return "threenative-engine-mcp";
+  return `@threenative/${suffix}`;
+}
+
 export function parseArgs(argv: readonly string[]): IScaffoldOptions {
   const target = argv.find(
     (value, index) => !value.startsWith("-") && (index === 0 || !argv[index - 1]?.startsWith("--")),
@@ -456,18 +465,10 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
   const template = readFlag(argv, "--template") as ScaffoldTemplate | undefined;
   if (template !== undefined) kitManifest(template);
   const packageSources: Record<string, string> = {};
-  for (const [name, flag] of [
-    ["@threenative/core", "--core-package"],
-    ["@threenative/assets", "--assets-package"],
-    ["@threenative/physics", "--physics-package"],
-    ["@threenative/playtest", "--playtest-package"],
-    ["@threenative/runtime-native", "--runtime-native-package"],
-    ["@threenative/ui", "--ui-package"],
-    ["threenative-engine-mcp", "--engine-mcp-package"],
-    ["create-threenative", "--cli-package"],
-  ] as const) {
-    const source = readFlag(argv, flag);
-    if (source !== undefined) packageSources[name] = source;
+  for (const flag of argv) {
+    const name = packageNameFromFlag(flag);
+    const source = name === undefined ? undefined : readFlag(argv, flag);
+    if (name !== undefined && source !== undefined) packageSources[name] = source;
   }
   const shortRuntimeSource = readFlag(argv, "--runtime-package");
   if (shortRuntimeSource !== undefined) {

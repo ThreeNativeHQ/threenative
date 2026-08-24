@@ -26,7 +26,7 @@
     "gate:doctor": "tsx scripts/gate-cli.ts doctor",
     "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
-    "budgets": "tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts && tsx scripts/generate-ctx-surface-table.ts --check && tsx scripts/generate-capability-reference.ts --check  && tsx scripts/detect-capability-duplicates.ts examples --strict",
+    "budgets": "tsx scripts/workspace-packages.ts && tsx scripts/check-version-pins.ts && tsx scripts/check-native-shims.ts && tsx scripts/check-core-boundary.ts && tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts && tsx scripts/generate-ctx-surface-table.ts --check && tsx scripts/generate-capability-reference.ts --check  && tsx scripts/detect-capability-duplicates.ts examples --strict",
     "census": "tsx scripts/generate-native-census.ts",
     "publish:check": "tsx scripts/check-publish-state.ts",
     "release": "tsx scripts/release.ts",

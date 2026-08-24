@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverKitManifests, templateRoot } from "../packages/create-threenative/src/index.js";
+import { workspacePackageSourceFlag } from "./workspace-packages.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_FILE = "package.json";
@@ -599,15 +600,6 @@ export async function packWorkspace(staging: string, build = true): Promise<Pack
   return sources;
 }
 
-function packageFlag(name: string): string {
-  if (name === "create-threenative") return "--cli-package";
-  if (name === "threenative-engine-mcp") return "--engine-mcp-package";
-  if (name.startsWith("@threenative/")) {
-    return `--${name.slice("@threenative/".length)}-package`;
-  }
-  throw new Error(`TN_GOLDEN_PATH_PACKAGE_UNSUPPORTED: cannot pass ${name} to create-threenative.`);
-}
-
 function declaredDependencies(manifest: IPackageManifest): Set<string> {
   return new Set([
     ...Object.keys(manifest.dependencies ?? {}),
@@ -677,7 +669,7 @@ export async function scaffold(
   for (const dependency of declared) {
     const source = sources[dependency];
     if (source === undefined) continue;
-    packageArgs.push(packageFlag(dependency), source);
+    packageArgs.push(workspacePackageSourceFlag(dependency), source);
   }
   const cliSource = sources["create-threenative"];
   if (cliSource === undefined) {
