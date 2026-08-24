@@ -1,3 +1,5 @@
+import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
+
 export interface IFixedStepLoopOptions {
   readonly step?: number;
   readonly maxSteps?: number;
@@ -7,6 +9,14 @@ export interface IFixedStepLoopOptions {
   readonly onRender?: () => undefined | IRenderPerformanceMetrics;
   readonly requestFrame?: (callback: (time: number) => void) => number;
   readonly cancelFrame?: (handle: number) => void;
+  /**
+   * Per-frame cost attribution. The loop is the only place that knows where the simulation phase
+   * ends and the render phase begins, so it is the only honest place to measure them; a game
+   * wrapping `requestAnimationFrame` from outside has to guess that boundary.
+   */
+  readonly budget?: FrameBudget;
+  /** Monotonic clock for phase boundaries. Defaults to `performance.now`. */
+  readonly now?: () => number;
 }
 
 export interface IRenderPerformanceMetrics {
@@ -16,6 +26,8 @@ export interface IRenderPerformanceMetrics {
 
 export interface IRenderPerformanceSample extends IRenderPerformanceMetrics {
   readonly frameMs: number;
+  /** Where this frame's milliseconds went. Present whenever a frame budget is installed. */
+  readonly phases?: IFramePhaseSample;
 }
 
 const MAX_RENDER_PERFORMANCE_SAMPLES = 1_024;
@@ -36,6 +48,8 @@ export class FixedStepLoop {
   #lastRenderTime: number | undefined;
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
   #frameCallback: (time: number) => void;
+  #budget: FrameBudget | undefined;
+  #now: () => number;
   // Sample collection is opt-in because nothing outside a diagnostics consumer reads the series:
   // collecting unconditionally spent allocations on every rendered frame of every game.
   #collectMetrics: boolean;
@@ -58,6 +72,8 @@ export class FixedStepLoop {
     }
     this.maxSteps = maxSteps;
     this.#collectMetrics = options.collectMetrics ?? false;
+    this.#budget = options.budget;
+    this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
     this.#onUpdate = options.onUpdate;
     this.#onRender = options.onRender ?? (() => undefined);
     this.#requestFrame =
@@ -84,6 +100,10 @@ export class FixedStepLoop {
   runtimeDiagnosticsSeries(): readonly IRenderPerformanceSample[] {
     return this.#renderPerformanceSamples.map((sample) => ({ ...sample }));
   }
+  /** The frame budget this loop feeds, when one is installed. */
+  get budget(): FrameBudget | undefined {
+    return this.#budget;
+  }
   /** Turns sample collection on for the rest of the run; a diagnostics consumer asking for the series is the only caller. */
   setCollectMetrics(enabled: boolean): void {
     this.#collectMetrics = enabled;
@@ -108,6 +128,8 @@ export class FixedStepLoop {
   }
 
   stepFrame(now: number): number {
+    const budget = this.#budget;
+    budget?.beginFrame(now, this.#now());
     const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
     this.#lastTime = Math.max(this.#lastTime ?? now, now);
     this.#accumulator += elapsed;
@@ -119,6 +141,7 @@ export class FixedStepLoop {
       updates += 1;
     }
     if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
+    budget?.markSimulationEnd(this.#now(), updates);
     let frameMs: number | undefined;
     if (Number.isFinite(now)) {
       if (this.#lastRenderTime !== undefined) {
@@ -129,12 +152,16 @@ export class FixedStepLoop {
     }
     // onRender does the rendering itself; only its metrics return value is optional.
     const metrics = this.#onRender();
+    // Closing the frame is what tags a hitch and rolls the report window, so it happens on every
+    // frame including the ones no sample series collects.
+    const phases = budget?.endFrame(this.#now());
     if (this.#collectMetrics && frameMs !== undefined && frameMs > 0) {
       const sample: IRenderPerformanceSample = {
         frameMs,
         ...(metrics === undefined || metrics.drawCalls === undefined
           ? {}
           : { drawCalls: metrics.drawCalls }),
+        ...(phases === undefined ? {} : { phases }),
         ...(metrics === undefined || metrics.triangles === undefined
           ? {}
           : { triangles: metrics.triangles }),

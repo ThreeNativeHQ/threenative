@@ -212,7 +212,10 @@ describe("playtest plugin", () => {
       await game.start();
       callbacks.shift()?.(0);
       callbacks.shift()?.(16);
-      expect((await bridge().sample({})).runtimeDiagnosticsSeries).toEqual([
+      const series = (await bridge().sample({})).runtimeDiagnosticsSeries ?? [];
+      // The frame budget is on by default, so each sample also carries its phase split.
+      expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
+      expect(series.map(({ phases: _phases, ...sample }) => sample)).toEqual([
         { drawCalls: 7, frameMs: 16, triangles: 42 },
       ]);
     } finally {

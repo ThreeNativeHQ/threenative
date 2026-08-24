@@ -16,7 +16,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
+
+const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 export const DEFAULT_DESKTOP_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
@@ -91,12 +95,25 @@ export function packageDesktop(options) {
   return output;
 }
 
-export function stageDesktopFiles(bundle, assets, staging, config = undefined) {
+export function stageDesktopFiles(
+  bundle,
+  assets,
+  staging,
+  config = undefined,
+  runtimeSource = runtimeRoot,
+) {
   mkdirSync(staging, { recursive: true });
   if (assets && existsSync(assets)) {
     if (!statSync(assets).isDirectory()) {
       throw new Error(`Desktop assets path is not a directory: ${assets}`);
     }
+    // Desktop ran no preflight at all, so an asset the runtime cannot decode reached the same
+    // rejected `decodeAudioData` that black-screened an APK — with the packager having already
+    // read the bytes on its way past. Same gate, desktop's own derived capabilities.
+    assertNativeAssetsDecodable(assets, {
+      target: 'desktop',
+      capabilities: { webp: deriveDesktopWebpSupport(runtimeSource) },
+    });
     for (const entry of readdirSync(assets)) {
       if (entry === '.threenative') {
         throw new Error('TN_NATIVE_ASSET_RESERVED_PATH: public/.threenative is reserved.');

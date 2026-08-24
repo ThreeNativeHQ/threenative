@@ -302,3 +302,46 @@ test('simulator verification builds only the arm64 architecture carried by the h
   assert.match(verifier, /-DCMAKE_OSX_ARCHITECTURES=arm64/);
   assert.match(verifier, /result\.stdout[\s\S]*result\.stderr/);
 });
+
+test('iOS staging runs the same gate, with iOS capabilities rather than Android ones', () => {
+  // `CMakeLists.txt` excludes IOS from every libwebp branch, so a WebP texture that packages for
+  // Android has to be refused here. Correcting the Android WebP claim must not quietly make the
+  // iOS one wrong in the other direction.
+  const root = makeTempDirSync('threenative-ios-asset-gate-');
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const bundle = join(root, 'game.js');
+  const assets = join(root, 'public');
+  mkdirSync(templateApp, { recursive: true });
+  mkdirSync(assets, { recursive: true });
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+
+  const glb = (json) => {
+    const chunk = Buffer.from(JSON.stringify(json), 'utf8');
+    const padded = Buffer.concat([chunk, Buffer.alloc((4 - (chunk.length % 4)) % 4, 0x20)]);
+    const header = Buffer.alloc(12);
+    header.write('glTF', 0, 'ascii');
+    header.writeUInt32LE(2, 4);
+    header.writeUInt32LE(12 + 8 + padded.length, 8);
+    const chunkHeader = Buffer.alloc(8);
+    chunkHeader.writeUInt32LE(padded.length, 0);
+    chunkHeader.write('JSON', 4, 'ascii');
+    return Buffer.concat([header, chunkHeader, padded]);
+  };
+  writeFileSync(
+    join(assets, 'enemy.glb'),
+    glb({ asset: { version: '2.0' }, images: [{ mimeType: 'image/webp' }] }),
+  );
+  assert.throws(
+    () =>
+      stageIosSimulatorApp({ assets, bundle, output: join(root, 'game.app'), templateApp }),
+    (error) => {
+      assert.match(error.message, /cannot be decoded by the ios target/u);
+      assert.match(error.message, /excludes IOS/u);
+      return true;
+    },
+  );
+});

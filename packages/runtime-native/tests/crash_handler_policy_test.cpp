@@ -138,6 +138,25 @@ int main() {
           "the live resolver is the same pure decision, read from the real environment");
     check(g_standInInvocations == 0, "no signal was raised while proving this");
 
+    // 4. The deliberate-crash trigger fails closed on everything that is not a frame count, so a
+    //    stray or malformed value can never fault a shipped game.
+    check(mystral::platform::deliberateCrashAfterFrames("120") == 120,
+          "a frame count is read as a frame count");
+    check(mystral::platform::deliberateCrashAfterFrames(nullptr) == 0,
+          "an unset deliberate-crash setting never crashes");
+    check(mystral::platform::deliberateCrashAfterFrames("") == 0,
+          "an empty deliberate-crash setting never crashes");
+    check(mystral::platform::deliberateCrashAfterFrames("true") == 0,
+          "a non-numeric deliberate-crash setting never crashes");
+    check(mystral::platform::deliberateCrashAfterFrames("12x") == 0,
+          "a partly numeric deliberate-crash setting never crashes");
+    check(mystral::platform::deliberateCrashAfterFrames("-5") == 0,
+          "a negative deliberate-crash setting never crashes");
+    check(mystral::platform::deliberateCrashAfterFrames("0") == 0,
+          "zero frames never crashes");
+    check(mystral::platform::deliberateCrashFrameCount() == 0,
+          "nothing in this environment asked for a crash");
+
     if (!failures.empty()) {
         std::cerr << "native crash-handler policy contract failed:\n";
         for (const std::string& failure : failures) std::cerr << "  - " << failure << '\n';

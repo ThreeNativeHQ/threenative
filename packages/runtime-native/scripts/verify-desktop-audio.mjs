@@ -15,8 +15,25 @@ import { fileURLToPath } from "node:url";
 
 const runtimeRoot = join(fileURLToPath(new URL("..", import.meta.url)));
 const windows = process.platform === "win32";
-const target = "threenative-audio-decode-promise-test";
-const passLine = "native decodeAudioData Promise contract passed";
+
+// Both audio contracts a game depends on before its first frame, in one display-free lane.
+//
+// The Promise proof came first, for a `decodeAudioData` that returned a non-Promise. The Ogg
+// proof came second, for a `decodeAudioData` that could not decode the container the templates
+// and the default asset pipeline emit — a WAV-only decoder that made every native target reject
+// the `.ogg` files the browser half of the same source plays.
+const proofs = [
+  {
+    target: "threenative-audio-decode-promise-test",
+    passLine: "native decodeAudioData Promise contract passed",
+    label: "decodeAudioData Promise",
+  },
+  {
+    target: "threenative-audio-decode-ogg-test",
+    passLine: "native Ogg Vorbis decode contract passed",
+    label: "Ogg Vorbis decode",
+  },
+];
 
 function buildPreset() {
   return process.platform === "darwin"
@@ -97,18 +114,34 @@ export function verifyDesktopAudio({ dual = false } = {}) {
   if (!existsSync(buildDir))
     throw new Error(`${buildDir} does not exist; run pnpm native:build`);
   mkdirSync(join(runtimeRoot, "artifacts"), { recursive: true });
-  run(cmake, ["--build", buildDir, "--target", target, "--parallel"], 1_800_000);
-  const executable = join(buildDir, windows ? `${target}.exe` : target);
-  const log = run(executable, [], 120_000);
-  if (!log.includes(passLine))
-    throw new Error(`the decodeAudioData Promise proof did not report a pass:\n${log}`);
-  return log;
+  // Every proof runs, and every proof's output is returned. Stopping at the first failure would
+  // hide the second contract behind the first one's repair.
+  const logs = [];
+  const failures = [];
+  for (const proof of proofs) {
+    run(cmake, ["--build", buildDir, "--target", proof.target, "--parallel"], 1_800_000);
+    const executable = join(buildDir, windows ? `${proof.target}.exe` : proof.target);
+    let log;
+    try {
+      log = run(executable, [], 120_000);
+    } catch (error) {
+      failures.push(`the ${proof.label} proof failed:\n${error.message}`);
+      continue;
+    }
+    logs.push(log);
+    if (!log.includes(proof.passLine))
+      failures.push(`the ${proof.label} proof did not report a pass:\n${log}`);
+  }
+  if (failures.length > 0) throw new Error(failures.join("\n\n"));
+  return logs.join("\n");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const dual = process.argv.includes("--dual");
   const log = verifyDesktopAudio({ dual });
-  // Name the engines that actually ran; a skipped engine is not a result.
-  const proven = log.match(new RegExp(`${passLine} on (.*)`, "u"))?.[1] ?? "an unnamed engine";
-  console.info(`desktop audio decodeAudioData Promise proof passed on ${proven}`);
+  for (const proof of proofs) {
+    // Name the engines that actually ran; a skipped engine is not a result.
+    const proven = log.match(new RegExp(`${proof.passLine} on (.*)`, "u"))?.[1] ?? "an unnamed engine";
+    console.info(`desktop audio ${proof.label} proof passed on ${proven}`);
+  }
 }

@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { assertNativeAssetsDecodable, deriveIosWebpSupport } from './asset-preflight.mjs';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
@@ -385,6 +386,13 @@ export function stageIosSimulatorApp({
     if (!statSync(assets).isDirectory()) {
       throw new Error(`iOS assets path is not a directory: ${assets}`);
     }
+    // iOS ran no preflight at all. Its capability set is not Android's: `CMakeLists.txt` excludes
+    // IOS from every libwebp branch, so a WebP texture that packages for Android must still be
+    // refused here, while the audio answer is the same on every native target.
+    assertNativeAssetsDecodable(assets, {
+      target: 'ios',
+      capabilities: { webp: deriveIosWebpSupport() },
+    });
     assetFiles = listFiles(assets);
     for (const file of assetFiles) {
       const staged = join(game, file);

@@ -1,6 +1,6 @@
 # Mobile is not shippable: no UI, 18 fps, intermittent SIGSEGV, and a build lane nobody can run
 
-**Status:** open — 4 of 11 fixed and committed, 1 gated on a release, 1 diagnosed to the wrong layer and corrected,
+**Status:** open — 4 of 12 fixed and committed, 1 gated on a release, 1 diagnosed to the wrong layer and corrected,
 8 recorded with evidence and not yet fixed
 **Severity:** blocker — a game built with this framework has no user interface on Android, runs at
 30% of the display's refresh rate, and its Android build cannot be produced from a clean install of
@@ -21,16 +21,17 @@ the physical device — no emulator, no simulator, no desktop substitute.
 | # | Bug | Severity | Layer | Status |
 | --- | --- | --- | --- | --- |
 | [1](#bug-1) | Health report kills any build using `EXT_texture_webp` | blocker | `packages/assets` | **fixed** `36831d96` |
-| [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | `packages/ui` + core | open, decided |
+| [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | templates (**regression**, `0aaacc12` + `acabc39d`) | open, **cause found** |
 | [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed — **shadows ARE a lever**, 46.15→35.20 ms; see below |
 | [4](#bug-4) | Intermittent SIGSEGV, no tombstone | high | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
 | [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | open |
 | [6](#bug-6) | Published install cannot build for Android | high | `packages/runtime-native` | **gated** `8df8e6b2` — clean-room gate green offline; real release waits on PRD-078 |
 | [7](#bug-7) | `catalog:` specifiers leak into the published tarball | high | publishing | **fixed** `439b9fd7` — tarball specifier census in `publish:check` |
-| [8](#bug-8) | 393 MB of GPU resources requested, 849 MB held | medium | game + driver | open |
+| [8](#bug-8) | 393 MB of GPU resources requested, 828 MB held | medium | game + driver | open, **attributed** — a ~480 MiB floor, not a 2.11x multiplier |
 | [9](#bug-9) | Render loop keeps drawing with the screen off | medium | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
 | [10](#bug-10) | Preflight claims no libwebp; the runtime has it | low | `packages/runtime-native` | **fixed** `01ec0658` — capability derived from the build; device proof open |
 | [11](#bug-11) | Runtime could not report its own GPU memory | low | `packages/runtime-native` | **fixed** `d6e21511` |
+| [12](#bug-12) | Every surface resize permanently costs ~64 MiB | **high** | driver / `packages/runtime-native` | open, measured |
 
 **Not a bug:** landscape orientation. `android:screenOrientation=0` is in the manifest and a live
 screencap is 2400×1080 landscape with the scene correct. My first capture was black and portrait
@@ -42,6 +43,40 @@ because I took it before the surface had presented.
 ## Bug 1 — the asset health report kills any build using `EXT_texture_webp`
 
 **Severity:** blocker. **Status:** fixed, `36831d96`.
+
+### The convention this establishes
+
+Stated by the owner on 2026-08-23, and binding beyond the fix:
+
+> **UI / HUD / etc should be available on all platforms, always, and we should have tests that
+> prevent this from happening again.**
+
+That is a convention in the root AGENTS.md sense — it ships **on by default**, working and
+discoverable before any game asks, with a named override on the same object, and **turning it off
+must not turn its measurement off**. It is not a per-template HUD check.
+
+The gate it requires has two axes, and neither may be a hand-written list:
+
+| Axis | Derived from |
+| --- | --- |
+| every template | `readdir` of `templates/` — a template with no UI is a **failure**, not an absence |
+| every platform that template claims | the template's own config — browser, desktop native, Android today |
+
+The cell that matters is **(template x platform) → UI observed on screen**. A template that
+supports a platform and has no UI proof on it is red. iOS is named **unproven** rather than
+omitted: there is no physical lane on this machine, and claiming a platform that did not execute is
+exactly what this batch's acceptance forbids.
+
+**A source-presence check is not sufficient, and this bug proves it twice.** The HUD deletion would
+have been caught by one. The web-mobile defect would not: `platformer` has `touch-controls.ts` on
+disk, wired, 175 lines — and `isNative() && isMobile() && isTouchscreenAvailable()` means it never
+appears in a mobile browser. Source present, feature absent, on a platform nobody had looked at.
+So each cell needs a runtime half wherever a lane exists.
+
+Where a browser lane stands in for a native one, that substitution must be stated. It is legitimate
+for camera-parented geometry — PRD-209 measured `pixelMismatchRatio` 0 against the browser
+reference on all three native lanes — but the record must say which cells were executed and which
+were inferred from that equivalence.
 
 ### What happens
 
@@ -103,7 +138,90 @@ createRoot occurrences: 0
 
 ### Root cause
 
-Structural, not a regression. `threenative.config.ts` sets `nativeEntry: "src/game.ts"`. Every UI
+**CORRECTED 2026-08-23: this IS a regression.** The original entry below called it "structural, not
+a regression". That was wrong, and the owner's recollection that it used to work was right.
+
+Every template shipped a working, camera-parented, native-capable geometry HUD, and `starter`
+shipped a native loading screen. They were deleted on **2026-08-15**:
+
+| Commit | Deleted |
+| --- | --- |
+| `0aaacc12` "land the production-readiness batch (PRD-110 to PRD-116)" | `starter/src/render/hud.ts` (53 lines, `InstancedMesh` glyphs, `camera.add(root)`), plus `render/loading.ts`, `render/particles.ts`, `pick.ts` and `scenes/Boot.ts` |
+| `acabc39d` "rounds 9 and 10 — the framework loses the visual column, and **the templates are below their own floor**" | `src/render/hud.ts` from `defense`, `platformer`, `racing` and `shooter` |
+
+**Scope: every template except `minimal` has no native HUD today.** Five lost one to those two
+commits; `action-rpg` postdates both and never had one.
+
+Both were reached from the **portable scene**, which is exactly what the native entry runs.
+`starter/src/scenes/Play.ts` before the deletion:
+
+```
+:8   import { createHud } from "../render/hud.js";
+:10  import { createLoadingScreen } from "../render/loading.js";
+:63  const loading = createLoadingScreen(ctx);
+:71  createHud(ctx.camera as PerspectiveCamera, "SCORE", "ITEMS"),
+```
+
+The React `Hud.tsx` **already existed alongside it**. Web got React, native got geometry, and the
+two coexisted by design. The deletion removed the native half and left only the half that cannot
+run on a phone.
+
+**Correction to this correction (same day): the loading screen is NOT missing.** An earlier draft
+of this entry listed `loading.ts` as deleted and unrecovered. It was deleted at `0aaacc12` and then
+re-added twice, at `97a6ea8b` and `930569b3`; today's version is ~10 KB, exists in **all six**
+templates, and is already called from the portable scene (`starter/src/scenes/Play.ts:98`,
+`:192`). It draws through `ctx.canvasLayer` — an `OrthographicCamera` and `Scene` rendered by
+`renderer.renderOverlay` (`packages/core/src/game.ts:600-602`) — with no DOM on that path, so the
+backdrop, track and progress fill **already render on native today**.
+
+The real gap is narrower and worth stating exactly: the only *textual* part, `statusMesh()` at
+`loading.ts:84`, is a `CanvasTexture` over `document.createElement("canvas")` that bails on
+`typeof document === "undefined"`, and it is `showStatus: false` by default anyway. **An Android
+player gets a progress bar with no percentage.** Drawing that readout with the same bitmap-glyph
+mechanism as the HUD also removes the last `CanvasTexture` from the template render path.
+
+**A second platform has the same defect, unnoticed.** `platformer` does ship touch controls —
+`src/render/touch-controls.ts` (175 lines) and `touch-layout.ts` (63), an anchored thumbstick wired
+at `Level.ts:56`. Its gate is `isNative() && isMobile() && isTouchscreenAvailable()`, so the
+controls **never appear in a mobile browser**: a phone on the web target has had the same "no way
+to move" as the phone on Android. The investigation only ever looked at Android, so nobody saw it.
+No other template has any touch input.
+
+So the deeper defect is not the missing HUD. **The gate did not fail to notice — the same commit
+deleted the feature and the gate's coverage of it, together.**
+
+`packages/create-threenative/__tests__/template.spec.ts:25` holds the guard's coverage as a
+hand-edited constant:
+
+```ts
+const geometryHudTemplates = ["minimal"] as const;
+```
+
+`acabc39d` — the commit that deleted `hud.ts` from `defense`, `platformer`, `racing` and
+`shooter` — contains exactly this hunk:
+
+```diff
+-const geometryHudTemplates = ["minimal", "platformer"] as const;
++const geometryHudTemplates = ["minimal"] as const;
+```
+
+The HUD assertions were never bypassed or weakened. They were simply pointed at a shorter list, in
+the same change that removed what they would have caught, and the suite stayed green. `pnpm
+budgets` then reported the result as a template-LOC improvement, so the deletion **scored as a
+win**.
+
+That is the class of defect worth fixing, not the missing glyphs: **a gate whose own coverage is a
+hand-maintained enumeration protects nothing, because deleting a feature and deleting it from the
+list are the same size of edit and neither is loud.** The list must be derived from what exists —
+every template gets asserted, and a template without a HUD is a failure rather than an absence.
+This repository has been bitten by the identical shape before: five parallel package enumerations
+where `@threenative/assets` landed in only one, redding two gates. The templates were scored
+"below their own floor" on LOC, and the lines that went were the ones that made the game usable on
+a phone. Any fix that restores the HUD without adding that gate will be undone by the next
+tidy-up round.
+
+What follows was the original, incorrect analysis, kept because the mechanism it describes is
+still accurate for the React layer: `threenative.config.ts` sets `nativeEntry: "src/game.ts"`. Every UI
 piece — `Hud`, `DebugOverlay`, `GameCanvas`, `Minimap`, `TouchOverlay` — mounts from `src/main.ts`
 via React DOM, which the native host never executes. The loading readout is `Hud.tsx:243`.
 
@@ -279,6 +397,14 @@ naming the operation instead of arming an FFI fault, with the raw SIGSEGV reprod
 child process as the negative control.
 
 **The crash itself is still unnamed.** This makes the next one nameable; it did not catch this one.
+
+**Proven on the physical Pixel 8, 2026-08-23 22:04.** Same binary, same deliberate post-startup
+fault, one variable. With the handlers left to the platform: a new symbolized `data_app_native_crash`
+tombstone naming `crashDeliberately() -> pollEvents() -> run() -> SDL_main`, recorded by exit-info
+as `reason=5 (APP CRASH(NATIVE)) status=11`. With the pre-fix handlers reinstated
+(`debug.threenative.prefix_handlers=1`): no dropbox entry at all, and exit-info reads
+`reason=2 (SIGNALED) subreason=0 (UNKNOWN) status=11` — the 2026-08-23 signature, character for
+character. Evidence: [`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
 The device proofs — a symbolized tombstone in dropbox, and the relaunch-over-pressure cycles — are
 open and listed in [`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
 
@@ -371,7 +497,27 @@ hand-build a replacement package.
 <a id="bug-8"></a>
 ## Bug 8 — 393 MB of GPU resources requested, 849 MB held by the driver
 
-**Severity:** medium (contributes to bug 4, not to bug 3). **Status:** open.
+**Severity:** medium (contributes to bug 4, not to bug 3). **Status:** open, attributed —
+PRD-213, evidence `docs/verification/prd-213-2026-08-23.md`.
+
+### Attributed, 2026-08-23 (physical Pixel 8)
+
+Three corrections to what is written below, all measured, none estimated:
+
+1. **The table mixes units.** `TN_GPU_TEXTURES` prints MiB; the `GL mtrack` figure was kB/1000.
+   In consistent MiB it is 393 requested against 828 held — a **2.11x** amplification with a
+   **435 MiB** excess, not 456 MB.
+2. **It is a floor, not a multiplier.** `GL mtrack` was already 480 MiB at the first presented
+   frame, before a single asset texture existed, and grew by only 348 MiB across the whole asset
+   load against a 393 MiB request — **0.885x**. The driver does not amplify what the game asks
+   for. Budget a fixed ~500 MiB floor plus roughly your own bytes.
+3. **It is not a `meminfo` artefact.** `/proc/<pid>/status` `RssFile` minus the sum of file-backed
+   `Rss` across `/proc/<pid>/smaps` is 853,816 kB against `GL mtrack`'s 847,764 kB — 0.7 % apart.
+   Two independent kernel instruments agree the memory is physically resident.
+
+70.9 MiB of the gap is named exactly (the surface BufferQueue, `EGL mtrack`, invisible to the
+engine counter because `wgpuSurfaceGetCurrentTexture` never passes `createTexture`). The
+remaining floor's component is still open.
 
 ### Measurements
 
@@ -439,9 +585,19 @@ so a polled handler runs only after the app is already parked. Backgrounding and
 paused flag, suspend every live AudioContext through a new host-side registry, and emit
 `TN_LIFECYCLE` markers; `display.backgroundMode: "continue"` opts out of the pause without opting
 out of the markers. The transition table, the watch and the registry are proven by an executable
-that needs no display. **The battery claim is not proven**: "screen-off stops presenting within
-~1 s" needs the phone, and is open in
-[`../verification/prd-210-2026-08-23.md`](../verification/prd-210-2026-08-23.md).
+that needs no display.
+
+**On the physical Pixel 8, 2026-08-23 22:06:** screen-off stops presenting. One further 60-frame
+tick is emitted and then presenting halts, against this bug's recorded baseline of a full 60 s of
+continued presenting. Two caveats, both recorded rather than smoothed over: tick granularity is 60
+frames, so the "~1 s" bound is consistent with the data rather than measured by it; and no
+`TN_LIFECYCLE` marker is observable *while* paused — every marker arrives in one burst on resume,
+because the thread that writes them is parked inside SDL's `Android_WaitLifecycleEvent`.
+
+**And resume is now broken**, which is worse than what this bug reported: the loop restarts but
+presents nothing, and the player sees black. Filed separately as
+[`./resume-presents-nothing-2026-08-23.md`](./resume-presents-nothing-2026-08-23.md). This item is
+not closed.
 
 ---
 
@@ -497,3 +653,61 @@ Every number in bug 8 comes from this instrumentation. Package suite after the c
 - `dumpsys SurfaceFlinger --timestats -enable` / `-dump` is an fps source independent of the engine.
 - Temporary instrumentation lives in `sandbox/fps-framework/src/gpuMemoryProbe.ts`, registered in
   `src/game.ts`. **Delete both when this closes.**
+
+---
+
+## Bug 12 — every surface resize permanently costs ~64 MiB {#bug-12}
+
+**Severity:** high. **Status:** open, measured. **Found:** 2026-08-23 by PRD-213, out of PRD-214's
+resolution sweep — neither lane was looking for it.
+
+Filed as its own numbered item rather than folded into bug 4 or bug 8. It is a *defect*, not an
+attribution result, and its fix layer is different from either.
+
+### The measurement
+
+From the committed sweep (`docs/verification/prd-213-piggyback-resolution-gl-mtrack.txt`,
+physical Pixel 8, one process, `dumpsys meminfo` `GL mtrack`):
+
+| transition | `GL mtrack` delta |
+| --- | --- |
+| full → 50% | **+65,732 kB**, in one one-second sample |
+| 50% → 25% | −408 kB — nothing |
+| 25% → full | **+66,212 kB**, in one one-second sample |
+
+None of it comes back.
+
+**The middle row is the control that makes the other two readable.** This is not "any resize costs
+64 MiB": two transitions cost ~64 MiB each and one costs nothing. Plateaus between transitions are
+flat to 0.5 MB, and a separate fixed-resolution run held a ±0.5 MB band over 60 s. So **at a fixed
+resolution, memory is bounded. It is resizing that is not.**
+
+### Why it matters more than it looks
+
+A phone resizes on **rotation** and on entering or leaving **multi-window**. Rotate a few times and
+several hundred MiB are gone, permanently, from a process already at 1.4 GiB VmRSS on a device that
+begins killing apps under 2 GiB.
+
+That is bug 4's memory-pressure hypothesis arrived at from a completely different direction, by a
+lane that was not investigating crashes.
+
+### Hypothesis, explicitly not a finding
+
+The signature fits `gpu-alloc` pooling freed blocks rather than returning them to Vulkan, and the
+steps being a whisker over exactly 64 MiB is the coincidence a power-of-two chunk allocator
+produces. Unproven.
+
+### The instrument cannot see this, which is its own defect
+
+`g_textureBytesLive` / `g_bufferBytesLive` in `packages/runtime-native/src/webgpu/bindings.cpp` are
+never decremented despite the name, and the recorders are wired to one of four texture creation
+sites and one of five buffer sites. They would report **nothing at all** for a 64 MiB resize step.
+Repairing them needs red-green, `pnpm census` and a native build; PRD-213 filed it with file:line
+rather than fixing it blind.
+
+### What would settle it
+
+Rotate the device N times with `GL mtrack` sampled per rotation, on a build whose counters have
+been repaired. Three cold launches at three fixed resolutions would separately turn "the floor is a
+fixed arena" from consistent-with into proven — those are different questions and want different
+runs.

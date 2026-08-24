@@ -23,7 +23,24 @@
 namespace mystral {
 namespace platform {
 
-/** `display.backgroundMode`. Default `Pause`; `Continue` is the named override. */
+/**
+ * `display.backgroundMode`.
+ *
+ * **Default is `Continue` as of 2026-08-23, and that is a deliberate retreat.** `Pause` is what
+ * this feature is for and it will be the default again, but pausing exposed a worse defect than
+ * the one it fixed: Android destroys the `ANativeWindow` on background and the `WGPUSurface` still
+ * points at it, so resume restarts the loop and presents nothing — `frames` run away at ~600/s
+ * while `presents` stays frozen and the screen is uniformly black. Measured on a physical Pixel 8,
+ * 2026-08-23; see `docs/bugs/resume-presents-nothing-2026-08-23.md`.
+ *
+ * Bug 9 — the loop drawing with the screen off — was a battery cost no player ever saw. A black
+ * screen after any phone call, notification or screen timeout is one every player sees, in the
+ * mode they did not choose. Between an unsurfaced cost and a visible break, ship the unsurfaced
+ * one until the surface is revalidated on resume.
+ *
+ * Nothing else retreats: the watch, the markers and the paused flag are all still live and still
+ * measured under `Continue`, so turning the convention off has not turned its measurement off.
+ */
 enum class BackgroundMode { Pause, Continue };
 
 /** What a given SDL event means for the loop. */

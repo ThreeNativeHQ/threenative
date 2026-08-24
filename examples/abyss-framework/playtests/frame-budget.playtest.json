@@ -1,0 +1,16 @@
+{
+  "name": "abyss-framework-frame-budget",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": false },
+  "steps": [{ "waitTicks": 60 }],
+  "assert": {
+    "performance": {
+      "minFps": 24,
+      "maxPhaseMsP95": { "render": 30 }
+    }
+  }
+}

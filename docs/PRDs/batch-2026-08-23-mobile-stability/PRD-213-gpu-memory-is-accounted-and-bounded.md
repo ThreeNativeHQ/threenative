@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-213 — GPU memory is bounded at the source and the driver gap is measured, not guessed
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 attribution executed on a physical Pixel 8 and Phase 3 landed;
+Phase 2's game-side sky split landed but its device before/after is queued behind the PRD-214
+device lease. Evidence: `docs/verification/prd-213-2026-08-23.md`.
 
 **Complexity:** +2 for multi-package changes (sandbox game + assets/build pipeline guidance),
 +2 investigation system = **4 → MEDIUM mode**. Investigation-first: Phase 1 is measurement with
@@ -98,27 +100,44 @@ driver multiple → policy/guidance bounds both halves → next run's table show
 **Files (max 4):** probe extension in sandbox `gpuMemoryProbe.ts` if finer buckets needed (EDIT),
 attribution script/note (NEW), evidence record (NEW), this file (EDIT).
 
-- [ ] Steady-state walk of buckets vs meminfo samples on device; one rung on wgpu v24.0.3.1 as
-      differential; paste the table. Thermal/battery quirks honoured (≤31.5 °C, WAKEUP cadence).
-- [ ] Deliverable is a named holder of the extra ~456 MB, or a demonstrated categorisation
-      artefact with arithmetic — never a shrug.
+- [x] Steady-state walk of buckets vs meminfo samples on device — executed on the physical
+      Pixel 8 at 29.9 °C, 53 % battery, discharging over Wi-Fi ADB. Table in the record §3.
+- [ ] One rung on wgpu v24.0.3.1 as differential — **not executed**; needs an Android dependency
+      rebuild and install, and the device is leased to PRD-214.
+- [x] Deliverable is a named holder, or a demonstrated categorisation artefact with arithmetic.
+      Delivered as: the artefact hypothesis is **refuted** (`RssFile` minus `smaps` file `Rss`
+      agrees with `GL mtrack` to 0.7 %, record §2), and the excess is proved to be a **~480 MiB
+      floor rather than a 2.11x multiplier** — the driver grew by 0.885x of what the game
+      requested across the whole asset load (record §3). 70.9 MiB of it is named exactly as the
+      surface BufferQueue (record §4). The floor's own component is still unnamed and is the one
+      open thread, queued as a `GL mtrack` reading at each rung of PRD-214's resolution sweep.
 
 #### Phase 2: act on what attribution named
 
 **Files (max 5):** determined by Phase 1 — runtime release policy OR docs-only honesty record,
 plus the two certain items regardless:
 
-- [ ] Game-side sky split executed in the sandbox tree with before/after marker tables pasted.
-- [ ] public/ texture route through compression decided by the two questions; if it lands,
-      negative control per row 2.
+- [x] Game-side sky split executed in the sandbox tree. `bayview-sky-ibl.jpg` (1024x512) now
+      feeds `scene.environment` while `scene.background` keeps the full 3072x1536 equirect.
+      **Before** table is measured on the physical Pixel 8; **after** is a prediction until
+      PRD-214's APK — which carries the split — reports its `TN_GPU_TEXTURES` line. The
+      mechanism is measured in the desktop-Chrome lane: the PMREM pair steps 48 → 12 MiB, and
+      the browser reproduces the device's `1536x2048 rgba16float` x2 = 48 MiB bucket exactly.
+- [ ] public/ texture route through compression — **not decided here.** Attribution says it is
+      no longer the lever it looked like: the driver does not amplify game textures, so ~146 MiB
+      of uncompressed `public/` textures cost ~146 MiB, not ~316 MiB. It remains worth doing for
+      its own sake and stays open for a later pass with its negative control per row 2.
 
 #### Phase 3: the ceiling is documented where users read it
 
 **Files (max 3):** doctor/health-report note or template AGENTS section naming realistic texture
 budgets per target (EDIT), verification record (NEW).
 
-- [ ] A cold agent scaffolding a game can read "a 393 MB request becomes ~850 MB resident on a
-      Mali-class phone" with the measured table — before choosing 3072×1536 skies.
+- [x] Landed in `packages/create-threenative/agent-docs/performance-default.md`, the shared
+      fragment all seven template `AGENTS.md` files already include, so one edit reaches every
+      scaffolded game. It carries the measured Pixel 8 table, the "budget a ~500 MiB floor plus
+      what you ask for, not a multiplier" framing that the attribution corrected, and the PMREM
+      step table including the trap that 3072 and 2048 cost exactly the same.
 
 ## Verification Strategy
 
@@ -129,11 +148,14 @@ emulator.
 
 ## Acceptance Criteria
 
-- [ ] The extra ~456 MB has a named owner (component, mechanism, arithmetic) in the verification
-      record — or a proven measurement-artefact explanation with the same rigour.
+- [~] The extra memory has a named owner, or a proven measurement-artefact explanation with the
+      same rigour. **Partly**: the artefact explanation is refuted with arithmetic, the shape is
+      proved (floor, not multiplier), 70.9 MiB is named exactly — the floor's component is not.
+      Note the figure is **435 MiB**, not 456: the bug doc's table mixed `kB/1000` with MiB.
 - [ ] Bayview's requested GPU total drops by the sky-split amount, shown in TN_GPU_ markers.
-- [ ] The realistic per-target memory guidance exists where a cold agent reads it.
-- [ ] Nothing here claims FPS credit — that lever was ruled out by measurement (bug doc §3).
+      Split landed, device marker queued behind the lease.
+- [x] The realistic per-target memory guidance exists where a cold agent reads it.
+- [x] Nothing here claims FPS credit — no frame-rate claim appears in the record.
 
 ## Out of scope
 

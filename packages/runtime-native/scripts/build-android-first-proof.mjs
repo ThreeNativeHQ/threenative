@@ -173,6 +173,12 @@ export function buildAndroidFirstProof() {
   }
   const metadata = {
     schemaVersion: 1,
+    // Two builders write to this one path. `build-android-conformance.mjs` stamps
+    // `threenative-android-conformance`; this is the other one, and the provenance gate in
+    // tests/runtime-next-contract.test.mjs keys on the difference. Without a kind here, any
+    // `--target android` conformance run left an artifact that the gate then checked against
+    // native-smoke's SHA and failed — a red in `pnpm test` pointing at entirely the wrong thing.
+    kind: 'threenative-android-first-proof',
     entry: EXAMPLE_ENTRY,
     publicApiPackage: '@threenative/core',
     playtestBridge: PLAYTEST_BRIDGE,

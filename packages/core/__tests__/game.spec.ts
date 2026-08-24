@@ -11,6 +11,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
+import type { IRenderPerformanceSample } from "../src/loop.js";
 import { type ICtx, Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
@@ -121,9 +122,7 @@ describe("IGame", () => {
     const canvas = testCanvas();
     const draws: unknown[] = [];
     const renderInfo = { drawCalls: 0, triangles: 0 };
-    let diagnostics:
-      | (() => readonly { drawCalls?: number; frameMs: number; triangles?: number }[])
-      | undefined;
+    let diagnostics: (() => readonly IRenderPerformanceSample[]) | undefined;
     let frame: ((time: number) => void) | undefined;
     let renderHooks = 0;
     class LayerScene extends Scene {
@@ -199,7 +198,11 @@ describe("IGame", () => {
       frame(64);
       expect(draws).toEqual([ctx.scene]);
       expect(renderHooks).toBe(2);
-      expect(diagnostics?.()).toEqual([
+      const series = diagnostics?.() ?? [];
+      // The frame budget ships on by default, so every sample carries its phase split; the
+      // render-metric fields below are what this test is about.
+      expect(series.every((sample) => sample.phases !== undefined)).toBe(true);
+      expect(series.map(({ phases: _phases, ...sample }) => sample)).toEqual([
         { drawCalls: 1, frameMs: 16, triangles: 2 },
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 3, frameMs: 16, triangles: 30 },

@@ -35,7 +35,9 @@ const requiredSharedFragments = [
   "playtest-fail-closed",
   "performance-default",
 ] as const;
-const performanceBoundPattern = /"performance":\s*\{\s*"maxFrameMsP95":\s*33\s*\}/u;
+// The frame-time ceiling stays mandatory; PRD-214 added an fps floor and per-phase ceilings
+// beside it, so the pattern bounds the opening of the object rather than its whole shape.
+const performanceBoundPattern = /"performance":\s*\{\s*"maxFrameMsP95":\s*33\s*[,}]/u;
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
 

@@ -1166,6 +1166,7 @@ set(MYSTRAL_SOURCES
     src/fs/file_watcher.cpp
     src/audio/audio_context.cpp
     src/audio/audio_bindings.cpp
+    src/audio/vorbis_impl.c
     src/vfs/embedded_bundle.cpp
     src/storage/local_storage.cpp
     src/async/event_loop.cpp
@@ -1629,6 +1630,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-audio-decode-promise-test EXCLUDE_FROM_ALL
         tests/audio_decode_promise_test.cpp)
     target_link_libraries(threenative-audio-decode-promise-test PRIVATE mystral-runtime)
+
+    # The Ogg proof runs on a genuine Ogg Vorbis file rather than on bytes the test writes: an
+    # "OggS" header a test assembles proves nothing about a decoder. The path is compiled in so
+    # the executable needs no working directory to find it.
+    add_executable(threenative-audio-decode-ogg-test EXCLUDE_FROM_ALL
+        tests/audio_decode_ogg_test.cpp)
+    target_link_libraries(threenative-audio-decode-ogg-test PRIVATE mystral-runtime)
+    target_compile_definitions(threenative-audio-decode-ogg-test PRIVATE
+        THREENATIVE_OGG_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pickup.ogg")
 
     add_executable(threenative-physics-actuation-bindings-test EXCLUDE_FROM_ALL
         tests/physics_actuation_bindings_test.cpp)

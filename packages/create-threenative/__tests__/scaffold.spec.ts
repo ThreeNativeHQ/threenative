@@ -210,6 +210,7 @@ describe("create-threenative", () => {
         "debug-surface.md",
         "finding-assets.md",
         "gameplay-recipes.md",
+        "mobile-memory-budget.md",
         "sculpt-from-a-reference.md",
         "visual-baseline.md",
       ]);

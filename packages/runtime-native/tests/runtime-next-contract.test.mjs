@@ -288,8 +288,33 @@ test('desktop playtests inject the shared mailbox before game evaluation and ser
 
 const generatedAndroidBundle = 'android/app/build/generated/threenative/assets/scripts/main.js';
 const generatedAndroidMeta = `${generatedAndroidBundle}.meta.json`;
+
+/**
+ * Two builders write to that one path. This gate is about the first-proof bundle
+ * (`build-android-first-proof.mjs`); `build-android-conformance.mjs` stamps
+ * `threenative-android-conformance` and carries no native-smoke provenance at all. Guarding on
+ * existence alone meant any `--target android` conformance run poisoned `pnpm test` with a SHA
+ * mismatch against native-smoke — a red pointing at entirely the wrong thing, which is exactly
+ * how repair rounds get spent on the wrong layer.
+ *
+ * A *different* known kind is not this gate's subject, so it is skipped. A missing or
+ * unrecognised kind still runs the assertions: an artifact this cannot identify must not
+ * silently stop being checked.
+ */
+function generatedAndroidBundleIsForeign() {
+  if (!existsSync(join(root, generatedAndroidMeta))) return false;
+  try {
+    const kind = JSON.parse(read(generatedAndroidMeta)).kind;
+    return typeof kind === 'string' && kind !== 'threenative-android-first-proof';
+  } catch {
+    return false;
+  }
+}
+
 test.skipIf(
-  !existsSync(join(root, generatedAndroidBundle)) || !existsSync(join(root, generatedAndroidMeta)),
+  !existsSync(join(root, generatedAndroidBundle)) ||
+    !existsSync(join(root, generatedAndroidMeta)) ||
+    generatedAndroidBundleIsForeign(),
 )('generated Android bundle provenance [requires the generated Android first-proof artifacts]', async () => {
   const smoke = read('../../examples/native-smoke/src/game.ts');
   const crypto = await import('node:crypto');

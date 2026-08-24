@@ -118,7 +118,17 @@ test("dry run validates and bundles implemented rows without a browser or native
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}, 60_000);
+  // This bundles every registry row twice, once per target, so its cost tracks the registry's
+  // size rather than anything constant. At a 60 s budget it measured 56.8 s standalone on an idle
+  // machine — a 5% margin — and it went red in three separate agent lanes on the same day, each of
+  // which spent time proving the red was not theirs. A budget that close to the work is a coin
+  // flip reported as a defect.
+  //
+  // Being generous costs nothing here, because the wall clock never guarded coverage in the first
+  // place: `report.summary.validated === implemented` above is what fails when rows stop being
+  // bundled, and it fails on the count no matter how fast or slow the run was. The timeout is a
+  // hang detector and only ever was one, so 240 s is the right size for it.
+}, 240_000);
 
 test("project mode resolves the configured native entry and dry-bundles only that project", () => {
   const dir = makeTempDirSync("threenative-parity-project-");
