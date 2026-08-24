@@ -442,13 +442,21 @@ export function validateResourcePathAlternative(
   };
 }
 
-export function validateViewport(value: unknown): IPlaytestViewport {
-  if (!isRecord(value)) {
+export function validateViewport(value: unknown, scenarioPath = "scenario"): IPlaytestViewport {
+  if (value === undefined) {
     return { height: 720, width: 1280 };
   }
-  const width = positiveInteger(value.width);
-  const height = positiveInteger(value.height);
-  return width === undefined || height === undefined ? { height: 720, width: 1280 } : { height, width };
+  const record = requireRecord(value, scenarioPath, "viewport");
+  rejectUnknownKeys(record, ["height", "width"], scenarioPath, "viewport");
+  const width = positiveInteger(record.width);
+  if (width === undefined) {
+    throw invalidScenario(scenarioPath, `'viewport.width' must be a positive integer, received ${describeValue(record.width)}.`);
+  }
+  const height = positiveInteger(record.height);
+  if (height === undefined) {
+    throw invalidScenario(scenarioPath, `'viewport.height' must be a positive integer, received ${describeValue(record.height)}.`);
+  }
+  return { height, width };
 }
 
 
@@ -631,4 +639,3 @@ export function validateNestedAssertionKeys(
     );
   }
 }
-

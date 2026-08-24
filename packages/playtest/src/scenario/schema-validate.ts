@@ -68,7 +68,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     steps,
     ...(typeof value.subject === "string" ? { subject: value.subject } : {}),
     target,
-    viewport: validateViewport(value.viewport),
+    viewport: validateViewport(value.viewport, scenarioPath),
     warmupFrames: positiveInteger(value.warmupFrames) ?? 0,
   };
 }
@@ -80,18 +80,42 @@ export function validateArtifacts(value: Record<string, unknown>, scenarioPath: 
 
 export function validateParityConfig(value: Record<string, unknown>, scenarioPath: string): IPlaytestParityConfig {
   rejectUnknownKeys(value, ["animation", "axisDelta", "compare", "contacts", "movementDistance", "resources", "targets"], scenarioPath, "parity");
-  if (isRecord(value.compare)) {
-    rejectUnknownKeys(value.compare, ["animation", "axisDelta", "contacts", "movementDistance", "resources"], scenarioPath, "parity.compare");
+  const animation = value.animation === undefined
+    ? undefined
+    : requireArray(value, "animation", scenarioPath, "parity").map((item, index) => validateParityAnimation(item, scenarioPath, `parity.animation[${index}]`));
+  const resources = value.resources === undefined
+    ? undefined
+    : validateParityResourceIds(value.resources, scenarioPath, "parity.resources");
+  const targets = value.targets === undefined
+    ? undefined
+    : validateParityTargets(value.targets, scenarioPath, "parity.targets");
+  let compareValue = value;
+  let comparePath = "parity";
+  if (value.compare !== undefined) {
+    compareValue = requireRecord(value.compare, scenarioPath, "parity.compare");
+    rejectUnknownKeys(compareValue, ["animation", "axisDelta", "contacts", "movementDistance", "resources"], scenarioPath, "parity.compare");
+    comparePath = "parity.compare";
   }
+  const compare = validateParityCompare(compareValue, scenarioPath, comparePath);
   return {
-    ...(Array.isArray(value.animation) ? { animation: value.animation.map(validateParityAnimation).filter((item): item is NonNullable<IPlaytestParityConfig["animation"]>[number] => item !== undefined) } : {}),
-    ...(isRecord(value.compare) ? validateParityCompare(value.compare) : validateParityCompare(value)),
-    ...(Array.isArray(value.resources) ? { resources: value.resources.filter((item): item is string => typeof item === "string") } : {}),
-    ...(Array.isArray(value.targets) ? { targets: value.targets.filter((item): item is PlaytestTarget => item === "web" || item === "desktop" || item === "bevy") } : {}),
+    ...(animation === undefined ? {} : { animation }),
+    ...compare,
+    ...(resources === undefined ? {} : { resources }),
+    ...(targets === undefined ? {} : { targets }),
   };
 }
 
-export function validateParityCompare(value: Record<string, unknown>): Omit<IPlaytestParityConfig, "targets"> {
+export function validateParityCompare(
+  value: Record<string, unknown>,
+  scenarioPath = "scenario",
+  objectPath = "parity",
+): Omit<IPlaytestParityConfig, "targets"> {
+  const animation = value.animation === undefined
+    ? undefined
+    : requireArray(value, "animation", scenarioPath, objectPath).map((item, index) => validateParityAnimation(item, scenarioPath, `${objectPath}.animation[${index}]`));
+  const resources = value.resources === undefined
+    ? undefined
+    : validateParityResourceIds(value.resources, scenarioPath, `${objectPath}.resources`);
   const movementDistance = isRecord(value.movementDistance) && typeof value.movementDistance.maxDelta === "number" && Number.isFinite(value.movementDistance.maxDelta)
     ? { maxDelta: value.movementDistance.maxDelta }
     : undefined;
@@ -105,22 +129,49 @@ export function validateParityCompare(value: Record<string, unknown>): Omit<IPla
     : undefined;
   return {
     ...(axisDelta !== undefined && Object.keys(axisDelta).length > 0 ? { axisDelta } : {}),
-    ...(Array.isArray(value.animation) ? { animation: value.animation.map(validateParityAnimation).filter((item): item is NonNullable<IPlaytestParityConfig["animation"]>[number] => item !== undefined) } : {}),
+    ...(animation === undefined ? {} : { animation }),
     ...(contacts === undefined ? {} : { contacts }),
     ...(movementDistance === undefined ? {} : { movementDistance }),
-    ...(Array.isArray(value.resources) ? { resources: value.resources.filter((item): item is string => typeof item === "string") } : {}),
+    ...(resources === undefined ? {} : { resources }),
   };
 }
 
-export function validateParityAnimation(value: unknown): NonNullable<IPlaytestParityConfig["animation"]>[number] | undefined {
-  if (!isRecord(value) || typeof value.entity !== "string") {
-    return undefined;
-  }
+export function validateParityAnimation(
+  value: unknown,
+  scenarioPath = "scenario",
+  objectPath = "parity.animation",
+): NonNullable<IPlaytestParityConfig["animation"]>[number] {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["clip", "entity", "requiredOn"], scenarioPath, objectPath);
   return {
-    ...(typeof value.clip === "string" ? { clip: value.clip } : {}),
-    entity: value.entity,
-    ...(Array.isArray(value.requiredOn) ? { requiredOn: value.requiredOn.filter((item): item is PlaytestTarget => item === "web" || item === "desktop" || item === "bevy") } : {}),
+    ...present("clip", optionalString(record, "clip", scenarioPath, objectPath)),
+    entity: requireString(record, "entity", scenarioPath, objectPath),
+    ...present("requiredOn", optionalTargetArray(record, "requiredOn", scenarioPath, objectPath)),
   };
+}
+
+function validateParityResourceIds(value: unknown, scenarioPath: string, objectPath: string): string[] {
+  if (!Array.isArray(value)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must be an array of resource ids, received ${describeValue(value)}.`);
+  }
+  return value.map((resource, index) => {
+    if (typeof resource !== "string" || resource.trim() === "") {
+      throw invalidScenario(scenarioPath, `'${objectPath}[${index}]' must be a non-empty resource id string, received ${describeValue(resource)}.`);
+    }
+    return resource;
+  });
+}
+
+function validateParityTargets(value: unknown, scenarioPath: string, objectPath: string): PlaytestTarget[] {
+  if (!Array.isArray(value)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must be an array of targets, received ${describeValue(value)}.`);
+  }
+  return value.map((target, index) => {
+    if (target !== "web" && target !== "desktop" && target !== "bevy") {
+      throw invalidScenario(scenarioPath, `'${objectPath}[${index}]' must be one of web, desktop, bevy; received ${describeValue(target)}.`);
+    }
+    return target;
+  });
 }
 
 export function validateSetup(value: Record<string, unknown>, scenarioPath: string, subject?: string): IPlaytestScenarioSetup {
@@ -943,4 +994,3 @@ export function validateOccludedAssertion(value: unknown, scenarioPath: string, 
     ...present("target", optionalString(record, "target", scenarioPath, objectPath)),
   };
 }
-
