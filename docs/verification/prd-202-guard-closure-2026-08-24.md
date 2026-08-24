@@ -9,25 +9,34 @@ new platform-execution claim.
 
 ## Red-first control against the old guard
 
-The new control used a synthetic `synthetic-runner.ts` containing both a `const` arrow duplicate
-and a `let` arrow duplicate. The old selected-file, function-declaration-only guard saw only
-`shared.ts`:
+The new control used a synthetic `synthetic-runner.ts` containing a `const` arrow duplicate, a
+`const` function-expression duplicate, and a `let` arrow duplicate. The old guard recognized the
+declaration and arrow initializer but missed the function-expression initializer:
 
 ```text
 $ pnpm exec vitest run packages/playtest/__tests__/runner-lanes.spec.ts -t "runner helper guard detects an arrow duplicate in a new runner file"
 
 ❯ packages/playtest/__tests__/runner-lanes.spec.ts (13 tests | 1 failed | 12 skipped)
 × runner helper guard detects an arrow duplicate in a new runner file
-AssertionError: expected [ 'shared.ts' ] to deeply equal [ 'shared.ts', 'synthetic-runner.ts' ]
+AssertionError: expected [ …(2) ] to deeply equal [ …(2) ]
+
+- Expected
++ Received
+
+  [
+-   "safePart: shared.ts, synthetic-runner.ts, synthetic-runner.ts",
++   "safePart: shared.ts, synthetic-runner.ts",
+    "setupRequest: shared.ts, synthetic-runner.ts",
+  ]
 ```
 
 ## Repair
 
 The guard now discovers every direct `.ts` file under `packages/playtest/src/runner/`, parses
-function declarations and `const`/`let` arrow-function assignments with the TypeScript AST, and
-requires each intended shared helper to have exactly one implementation. Its failure text includes
-the helper name and all implementation filenames. The synthetic control also includes an import,
-ordinary call, and comment so those references are not counted.
+function declarations and `const`/`let` arrow- or function-expression assignments with the
+TypeScript AST, and requires each intended shared helper to have exactly one implementation. Its
+failure text includes the helper name and all implementation filenames. The synthetic control also
+includes an import, ordinary call, and comment so those references are not counted.
 
 ## Green evidence
 
@@ -57,7 +66,7 @@ Tests       1,896 passed (1,896)
 
 $ pnpm exec vitest run packages/playtest/__tests__/runner-lanes.spec.ts -t "runner helper guard detects an arrow duplicate in a new runner file"
 Test Files  1 passed (1)
-Tests       1 passed (1)
+Tests       1 passed | 12 skipped (13)
 
 $ git diff --check
 exit 0

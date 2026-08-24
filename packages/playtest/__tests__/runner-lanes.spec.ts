@@ -65,7 +65,7 @@ async function runnerHelperImplementations(directory: string): Promise<Map<Share
         ts.isVariableDeclaration(node)
         && ts.isIdentifier(node.name)
         && node.initializer !== undefined
-        && ts.isArrowFunction(node.initializer)
+        && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
         && ts.isVariableDeclarationList(node.parent)
         && (node.parent.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)) !== 0
       ) {
@@ -129,12 +129,13 @@ test("runner helper guard detects an arrow duplicate in a new runner file", asyn
     'importedSafePart("ordinary call");',
     "// function safePart() {}",
     'const safePart = () => "duplicate";',
+    "const safePart = function () {};",
     "let setupRequest = () => ({});",
   ].join("\n"));
 
   const implementations = await runnerHelperImplementations(syntheticDirectory);
   expect(runnerHelperViolations(implementations)).toEqual([
-    "safePart: shared.ts, synthetic-runner.ts",
+    "safePart: shared.ts, synthetic-runner.ts, synthetic-runner.ts",
     "setupRequest: shared.ts, synthetic-runner.ts",
   ]);
 });
