@@ -93,6 +93,11 @@ async function readManifest(url: string): Promise<IAssetManifest | undefined> {
   }
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`Failed to load asset manifest '${url}': ${response.status}.`);
+  // SPA dev servers commonly return the app shell with status 200 for an unknown asset path.
+  // That response is the same as a missing manifest, not a malformed manifest supplied by the
+  // asset pipeline.
+  if (response.headers.get("content-type")?.toLowerCase().includes("text/html") === true)
+    return undefined;
   let parsed: unknown;
   try {
     parsed = await response.json();

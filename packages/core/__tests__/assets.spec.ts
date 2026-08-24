@@ -205,6 +205,28 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(requests).toEqual(["/assets/rock.png"]);
   });
 
+  it("should treat an SPA fallback page as an absent manifest", async () => {
+    const fetchAsset = vi.fn(
+      async () =>
+        new Response("<!doctype html><html><body>app</body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchAsset);
+    const requests: string[] = [];
+    const assets = createAssetLoader({
+      basePath: "/assets",
+      model: async (url) => {
+        requests.push(url);
+        return { url };
+      },
+    });
+
+    await expect(assets.model("rock.png")).resolves.toEqual({ url: "/assets/rock.png" });
+    expect(fetchAsset).toHaveBeenCalledWith("/assets/assets.manifest.json");
+    expect(requests).toEqual(["/assets/rock.png"]);
+  });
+
   it("should throw when the manifest is present but the path is absent", async () => {
     vi.stubGlobal(
       "fetch",
