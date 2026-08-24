@@ -7,12 +7,7 @@
 
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  requireFiles,
-  runCommand,
-  runtimeBinary,
-  runtimeRoot,
-} from "../runtime-test-utils.js";
+import { requireFiles, runCommand, runtimeBinary, runtimeRoot } from "../runtime-test-utils.js";
 
 const EXAMPLES_DIR = join(runtimeRoot, "examples");
 

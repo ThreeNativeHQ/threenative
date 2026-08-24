@@ -37,8 +37,8 @@ test('native canvas listener removal is executable and preserves callback identi
   assert.match(runtime, /listener\.useCapture == useCapture[\s\S]*?jsEngine_->isSameValue\(listener\.callback, callback\)/u);
   assert.match(runtime, /it->useCapture != useCapture[\s\S]*?jsEngine_->isSameValue\(it->callback, callback\)/u);
   assert.match(runtime, /jsEngine_->unprotect\(it->callback\);\s*listeners\.erase\(it\);/u);
-  assert.match(bindings, /const auto remove = g_engine->getProperty\(mainCanvas, "removeEventListener"\);/u);
-  assert.match(bindings, /return g_engine->call\(remove, mainCanvas, args\);/u);
+  assert.match(bindings, /const auto remove = state->engine->getProperty\(mainCanvas, "removeEventListener"\);/u);
+  assert.match(bindings, /return state->engine->call\(remove, mainCanvas, args\);/u);
   assert.match(engine, /virtual bool isSameValue\(JSValueHandle left, JSValueHandle right\) = 0;/u);
 
   assertOrdered(

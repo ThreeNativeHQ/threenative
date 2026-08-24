@@ -15,12 +15,7 @@
 import { existsSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  requireFiles,
-  runCommand,
-  runtimeBinary,
-  runtimeRoot,
-} from "../runtime-test-utils.js";
+import { requireFiles, runCommand, runtimeBinary, runtimeRoot } from "../runtime-test-utils.js";
 
 const EXAMPLES_DIR = join(runtimeRoot, "examples");
 const OUTPUT_DIR = "/tmp";
@@ -29,8 +24,8 @@ const OUTPUT_DIR = "/tmp";
 async function runExample(
   scriptPath: string,
   outputName: string,
-  frames: number = 120,
-  timeout: number = 60000
+  frames = 120,
+  timeout = 60000,
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
   const outputPath = join(OUTPUT_DIR, outputName);
 

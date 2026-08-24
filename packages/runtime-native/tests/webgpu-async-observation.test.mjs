@@ -9,18 +9,18 @@ const source = readFileSync(
 );
 
 function assertAsyncObservationContract(candidate) {
-  assert.match(candidate, /wgpuDevicePushErrorScope\(g_device, filter\)/u);
-  assert.match(candidate, /wgpuDevicePopErrorScope\(g_device, callbackInfo\)/u);
-  assert.match(candidate, /wgpuDevicePopErrorScope\(g_device, onErrorScopePopped, data\)/u);
-  assert.match(candidate, /wgpuQueueOnSubmittedWorkDone\(g_queue, callbackInfo\)/u);
-  assert.match(candidate, /wgpuQueueOnSubmittedWorkDone\(g_queue, onQueueWorkDone, data\)/u);
-  assert.match(candidate, /wgpuDevicePoll\(g_device, false, nullptr\)/u);
-  assert.match(candidate, /wgpuInstanceProcessEvents\(g_instance\)[\s\S]*wgpuDeviceTick\(g_device\)/u);
-  assert.match(candidate, /WGPUErrorType_NoError[\s\S]*resolvedPromise\("null"/u);
+  assert.match(candidate, /wgpuDevicePushErrorScope\(state->device, filter\)/u);
+  assert.match(candidate, /wgpuDevicePopErrorScope\(state->device, callbackInfo\)/u);
+  assert.match(candidate, /wgpuDevicePopErrorScope\(state->device, onErrorScopePopped, data\)/u);
+  assert.match(candidate, /wgpuQueueOnSubmittedWorkDone\(state->queue, callbackInfo\)/u);
+  assert.match(candidate, /wgpuQueueOnSubmittedWorkDone\(state->queue, onQueueWorkDone, data\)/u);
+  assert.match(candidate, /wgpuDevicePoll\(state->device, false, nullptr\)/u);
+  assert.match(candidate, /wgpuInstanceProcessEvents\(state->instance\)[\s\S]*wgpuDeviceTick\(state->device\)/u);
+  assert.match(candidate, /WGPUErrorType_NoError[\s\S]*resolvedPromise\(state, "null"/u);
   assert.match(candidate, /gpuErrorName\(errorType\)[\s\S]*jsStringLiteral\(errorMessage\)/u);
   assert.match(candidate, /status != WGPUQueueWorkDoneStatus_Success/u);
   assert.match(candidate, /callbackReferences\{2\}[\s\S]*releaseCallbackData/u);
-  assert.match(candidate, /if \(!waitForWebGpuCallback\(data->completed\)\) \{[\s\S]*releaseCallbackData\(data\)/u);
+  assert.match(candidate, /if \(!waitForWebGpuCallback\(state, data->completed\)\) \{[\s\S]*releaseCallbackData\(data\)/u);
   assert.ok(
     (candidate.match(/releaseCallbackData\(data\);/gu) ?? []).length >= 10,
     "caller and callback must each release ownership on every completion path",
@@ -38,20 +38,20 @@ test("WebGPU async bindings observe native scopes and submitted work on every AP
 
 test("WebGPU async contract tests fail when an observation path regresses to a no-op", () => {
   const noErrorScope = source.replace(
-    "wgpuDevicePushErrorScope(g_device, filter);",
-    "return g_engine->newUndefined();",
+    "wgpuDevicePushErrorScope(state->device, filter);",
+    "return state->engine->newUndefined();",
   );
   assert.throws(() => assertAsyncObservationContract(noErrorScope));
 
   const noQueueWait = source.replace(
-    "wgpuQueueOnSubmittedWorkDone(g_queue, callbackInfo)",
-    "wgpuQueueOnSubmittedWorkDone_REMOVED(g_queue, callbackInfo)",
+    "wgpuQueueOnSubmittedWorkDone(state->queue, callbackInfo)",
+    "wgpuQueueOnSubmittedWorkDone_REMOVED(state->queue, callbackInfo)",
   );
   assert.throws(() => assertAsyncObservationContract(noQueueWait));
 
   const fakePromise = source.replace(
-    "return resolvedPromise(\"undefined\", \"onSubmittedWorkDone-success\");",
-    "return g_engine->evalWithResult(\"Promise.resolve()\", \"fake\");",
+    "return resolvedPromise(state, \"undefined\", \"onSubmittedWorkDone-success\");",
+    "return state->engine->evalWithResult(\"Promise.resolve()\", \"fake\");",
   );
   assert.throws(() => assertAsyncObservationContract(fakePromise));
 

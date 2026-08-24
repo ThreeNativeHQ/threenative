@@ -52,12 +52,12 @@ test("RuntimeConfig vsync selects and preserves a supported presentation mode", 
   assert.match(context, /capabilities\.presentModes\[i\] == WGPUPresentMode_Mailbox/u);
   assert.match(context, /Uncapped presentation requested but unsupported; refusing FIFO fallback/u);
   assert.match(context, /configureSurface\(width, height, vsync_\)/u);
-  assert.match(bindings, /config\.presentMode = g_presentMode/u);
+  assert.match(bindings, /config\.presentMode = state->presentMode/u);
 });
 
 test("native profiling reports and resets exactly the six render-pass commands per submit", () => {
   const marker = bindings.match(
-    /TN_ANDROID_JS_NATIVE:\{[\s\S]*?g_androidJsNativeProfile = \{\};/u,
+    /TN_ANDROID_JS_NATIVE:\{[\s\S]*?state->androidJsNativeProfile = \{\};/u,
   )?.[0] ?? "";
   for (const field of [
     "engine",
@@ -75,13 +75,13 @@ test("native profiling reports and resets exactly the six render-pass commands p
   ]) {
     assert.ok(marker.includes(`\\\"${field}\\\"`), `profile marker must contain ${field}`);
   }
-  assert.match(bindings, /g_androidJsNativeProfile = \{\};/u);
+  assert.match(bindings, /state->androidJsNativeProfile = \{\};/u);
   assert.equal(
-    (bindings.match(/endProfiledBinding\(ProfiledRenderCommand::/gu) ?? []).length,
+    (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
     6,
     "exactly six render-pass wrappers must be timed",
   );
-  assert.ok(bindings.includes('\\"engine\\":\\"" << g_engine->getName()'));
+  assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
 });
 
 test("busy-loop negative control stays inside timed bindings", () => {

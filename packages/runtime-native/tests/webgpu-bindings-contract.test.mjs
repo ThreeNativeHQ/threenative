@@ -18,23 +18,23 @@ function blockBetween(source, startMarker, endMarker) {
 function assertCreationChecks(candidate) {
   const sampler = blockBetween(
     candidate,
-    'g_engine->newFunction("createSampler"',
+    '"createSampler",',
     '// device.createBindGroupLayout(descriptor)',
   );
   const bindGroup = blockBetween(
     candidate,
-    'g_engine->newFunction("createBindGroup"',
+    '"createBindGroup",',
     '// device.createPipelineLayout(descriptor)',
   );
 
   assert.match(
     sampler,
-    /WGPUSampler sampler = wgpuDeviceCreateSampler\(g_device, &samplerDesc\);[\s\S]*?if \(!sampler\) \{[\s\S]*?g_engine->throwException\("Failed to create sampler"\);[\s\S]*?return g_engine->newUndefined\(\);/u,
+    /WGPUSampler sampler = wgpuDeviceCreateSampler\(state->device, &samplerDesc\);[\s\S]*?if \(!sampler\) \{[\s\S]*?state->engine->throwException\("Failed to create sampler"\);[\s\S]*?return state->engine->newUndefined\(\);/u,
     "createSampler must throw immediately when the native handle is null",
   );
   assert.match(
     bindGroup,
-    /WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(g_device, &bgDesc\);[\s\S]*?if \(!bindGroup\) \{[\s\S]*?g_engine->throwException\("Failed to create bind group"\);[\s\S]*?return g_engine->newUndefined\(\);/u,
+    /WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(state->device, &bgDesc\);[\s\S]*?if \(!bindGroup\) \{[\s\S]*?state->engine->throwException\("Failed to create bind group"\);[\s\S]*?return state->engine->newUndefined\(\);/u,
     "createBindGroup must throw immediately when the native handle is null",
   );
 }
@@ -42,7 +42,7 @@ function assertCreationChecks(candidate) {
 function assertBindGroupViewOwnership(candidate) {
   const bindGroup = blockBetween(
     candidate,
-    'g_engine->newFunction("createBindGroup"',
+    '"createBindGroup",',
     '// device.createPipelineLayout(descriptor)',
   );
 
@@ -54,9 +54,9 @@ function assertBindGroupViewOwnership(candidate) {
 
   const failureStart = bindGroup.indexOf("if (!bindGroup) {");
   const failureRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureStart);
-  const failureReturn = bindGroup.indexOf("return g_engine->newUndefined();", failureStart);
+  const failureReturn = bindGroup.indexOf("return state->engine->newUndefined();", failureStart);
   const successRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureRelease + 1);
-  const wrapperCreation = bindGroup.indexOf("auto jsBindGroup = g_engine->newObject();");
+  const wrapperCreation = bindGroup.indexOf("auto jsBindGroup = state->engine->newObject();");
 
   assert.ok(failureStart >= 0, "createBindGroup must check the native handle");
   assert.ok(failureRelease > failureStart, "the failure path must release every created view");
@@ -68,13 +68,13 @@ function assertBindGroupViewOwnership(candidate) {
 function assertNullResourceValidation(candidate) {
   const bindGroup = blockBetween(
     candidate,
-    'g_engine->newFunction("createBindGroup"',
+    '"createBindGroup",',
     '// device.createPipelineLayout(descriptor)',
   );
 
   assert.ok(
     bindGroup.includes(
-      'if (g_engine->isUndefined(resource) || g_engine->isNull(resource)) {',
+      'if (state->engine->isUndefined(resource) || state->engine->isNull(resource)) {',
     ),
     "a valid layout must not accept a null or undefined resource",
   );
@@ -124,7 +124,7 @@ test("resource validation contract rejects restoring the warning path", () => {
   );
   const bindGroup = blockBetween(
     warningPath,
-    'g_engine->newFunction("createBindGroup"',
+    '"createBindGroup",',
     '// device.createPipelineLayout(descriptor)',
   );
 
@@ -150,11 +150,11 @@ test("bind-group ownership contract rejects removing failure-path view cleanup",
 test("creation contract rejects deletion of either null-handle check", () => {
   const source = read("src/webgpu/bindings.cpp");
   const withoutSamplerCheck = source.replace(
-    /(WGPUSampler sampler = wgpuDeviceCreateSampler\(g_device, &samplerDesc\);)\n\s*if \(!sampler\) \{[\s\S]*?g_engine->throwException\("Failed to create sampler"\);[\s\S]*?return g_engine->newUndefined\(\);\n\s*\}/u,
+    /(WGPUSampler sampler = wgpuDeviceCreateSampler\(state->device, &samplerDesc\);)\n\s*if \(!sampler\) \{[\s\S]*?state->engine->throwException\("Failed to create sampler"\);[\s\S]*?return state->engine->newUndefined\(\);\n\s*\}/u,
     "$1",
   );
   const withoutBindGroupCheck = source.replace(
-    /(WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(g_device, &bgDesc\);)\n\s*if \(!bindGroup\) \{[\s\S]*?g_engine->throwException\("Failed to create bind group"\);[\s\S]*?return g_engine->newUndefined\(\);\n\s*\}/u,
+    /(WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(state->device, &bgDesc\);)\n\s*if \(!bindGroup\) \{[\s\S]*?state->engine->throwException\("Failed to create bind group"\);[\s\S]*?return state->engine->newUndefined\(\);\n\s*\}/u,
     "$1",
   );
 
@@ -168,4 +168,65 @@ test("the native null-handle proof is wired as a display-free bindings executabl
     /add_executable\(threenative-bindings-creation-test EXCLUDE_FROM_ALL\s*tests\/bindings_creation_test\.cpp\)/u,
   );
   assert.match(read("tests/bindings_creation_test.cpp"), /native WebGPU creation bindings passed/u);
+});
+
+function assertCanvasRegistrationTable(candidate) {
+  assert.match(
+    candidate,
+    /const BindingRegistration registrations\[\] = \{[\s\S]*\{"GPUCanvasContext", "configure"[\s\S]*\{"GPUCanvasContext", "unconfigure"[\s\S]*\{"GPUCanvasContext", "getCurrentTexture"/u,
+    "canvas context API surface must be represented by one registration table",
+  );
+  assert.match(candidate, /installBindingTable\(\s*state->engine,\s*state,\s*canvasContext/u);
+}
+
+test("canvas context registration is table-driven and deletion is a red mutation", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  const table = read("src/webgpu/registration_table.cpp");
+  assert.match(table, /for \(size_t index = 0; index < count; \+\+index\)/u);
+  assert.match(table, /\[engine, state, registration\]/u);
+  assert.match(table, /bool requireArguments\(/u);
+  assert.doesNotThrow(() => assertCanvasRegistrationTable(bindings));
+
+  const withoutGetCurrentTexture = bindings.replace(
+    /\s*\{"GPUCanvasContext", "getCurrentTexture", 0, nullptr,[\s\S]*?\n\s*\}\},/u,
+    "",
+  );
+  assert.throws(() => assertCanvasRegistrationTable(withoutGetCurrentTexture));
+});
+
+test("all direct WebGPU registrations use the shared table dispatcher", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  assert.doesNotMatch(bindings, /(?:state->engine|engine)->newFunction\(/u);
+  assert.doesNotMatch(
+    bindings,
+    /(?:state->engine|engine)->setProperty\([\s\S]*?(?:state->engine|engine)->newFunction\(/u,
+  );
+  assert.ok(
+    (bindings.match(/installBinding\(/gu) ?? []).length >= 80,
+    "the migrated WebGPU surface must contain the full registration family",
+  );
+  assert.match(bindings, /installGlobalBinding\(/u);
+});
+
+test("windowed and offscreen wrappers share factories", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  const factories = read("src/webgpu/wrapper_factories.cpp");
+  assert.equal((bindings.match(/createTextureWrapper\(/gu) ?? []).length, 2);
+  assert.match(bindings, /createPipelineWrapper\(state, pipeline, pipelineId, true\)/u);
+  assert.match(bindings, /createPipelineWrapper\(state, pipeline, pipelineId, false\)/u);
+  assert.match(factories, /createTextureWrapper\(/u);
+  assert.match(factories, /createPipelineWrapper\(/u);
+
+  const withoutFactory = bindings.replaceAll("createTextureWrapper(", "createWindowTextureWrapper(");
+  assert.throws(() => assert.match(withoutFactory, /createTextureWrapper\(/u));
+});
+
+test("owned WebGPU binding state is wired to the executable reentrancy proof", () => {
+  const cmake = read("CMakeLists.txt");
+  const state = read("src/webgpu/bindings_state.h");
+  const source = read("tests/webgpu_bindings_reentrancy_test.cpp");
+  assert.match(cmake, /threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL[\s\S]*webgpu_bindings_reentrancy_test\.cpp/u);
+  assert.match(state, /struct BindingsState \{/u);
+  assert.match(source, /createBindingsState\(\)[\s\S]*createBindingsState\(\)/u);
+  assert.match(source, /native WebGPU bindings reentrancy passed/u);
 });

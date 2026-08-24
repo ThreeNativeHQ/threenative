@@ -1149,6 +1149,8 @@ set(MYSTRAL_SOURCES
     src/js/module_system.cpp
     src/js/ts_transpiler.cpp
     src/webgpu/bindings.cpp
+    src/webgpu/registration_table.cpp
+    src/webgpu/wrapper_factories.cpp
     src/webgpu/context.cpp
     src/canvas/canvas.cpp
     src/input/input_shim.cpp
@@ -1656,6 +1658,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(threenative-timer-engine-first-test PRIVATE
         TN_TIMER_ENGINE_FIRST_TEST)
     target_link_libraries(threenative-timer-engine-first-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL
+        tests/webgpu_bindings_reentrancy_test.cpp)
+    target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE mystral-runtime)
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        get_target_property(WGPU_TEST_INCLUDES wgpu::wgpu INTERFACE_INCLUDE_DIRECTORIES)
+        target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
+            ${WGPU_TEST_INCLUDES})
+    endif()
 
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)

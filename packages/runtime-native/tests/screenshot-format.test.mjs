@@ -13,7 +13,7 @@ const bindingsSource = readFileSync(
 );
 
 function assertScreenshotFormatContract(context, bindings) {
-  assert.match(bindings, /getScreenshotFormat\(\)[\s\S]*g_surfaceFormat/u);
+  assert.match(bindings, /getScreenshotFormat\(BindingsState\* state\)[\s\S]*state->surfaceFormat/u);
   assert.match(context, /WGPUTextureFormat_BGRA8UnormSrgb/u);
   assert.match(context, /WGPUTextureFormat_RGBA8UnormSrgb/u);
   assert.match(context, /output\[0\] = bgra \? pixel\[2\] : pixel\[0\]/u);

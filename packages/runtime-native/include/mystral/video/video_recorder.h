@@ -126,7 +126,8 @@ public:
     static std::unique_ptr<VideoRecorder> create(
         WGPUDevice device = nullptr,
         WGPUQueue queue = nullptr,
-        WGPUInstance instance = nullptr
+        WGPUInstance instance = nullptr,
+        void* bindingsState = nullptr
     );
 
     /**

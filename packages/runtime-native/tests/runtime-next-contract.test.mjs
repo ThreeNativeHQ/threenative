@@ -385,7 +385,7 @@ test('WebGPU wrappers remain valid across framework render frames', () => {
   const bindings = read('src/webgpu/bindings.cpp');
   assert.match(bindings, /BYTES_PER_ELEMENT[\s\S]*alignedWriteSize/,
     'GPUQueue.writeBuffer must translate TypedArray element units and align native writes');
-  assert.match(bindings, /g_currentSurfaceTextureId[\s\S]*wgpuTextureRelease\(g_currentTexture\)/,
+  assert.match(bindings, /state->currentSurfaceTextureId[\s\S]*wgpuTextureRelease\(state->currentTexture\)/,
     'presented surface textures must be removed from the registry and released');
   assert.match(bindings,
     /singleWgslEntryPoint[\s\S]*_tnVertexEntryPoint[\s\S]*omitted vertex entryPoint requires exactly one @vertex function/,

@@ -23,7 +23,7 @@
  * test lane reports them as explicitly skipped until those requirements exist.
  */
 
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -90,7 +90,11 @@ async function startServer(): Promise<boolean> {
 type ScriptOptions = { allowInsecurePeerVerification?: boolean };
 
 // Runs a JS script under the mystral runtime (headless) and returns combined output.
-async function runScript(name: string, source: string, options: ScriptOptions = {}): Promise<string> {
+async function runScript(
+  name: string,
+  source: string,
+  options: ScriptOptions = {},
+): Promise<string> {
   if (!existsSync(TEST_DIR)) mkdirSync(TEST_DIR, { recursive: true });
   const path = join(TEST_DIR, name);
   writeFileSync(path, source);
@@ -98,7 +102,7 @@ async function runScript(name: string, source: string, options: ScriptOptions = 
   if (options.allowInsecurePeerVerification) {
     env.MYSTRAL_WEBTRANSPORT_INSECURE = "1";
   } else {
-    delete env.MYSTRAL_WEBTRANSPORT_INSECURE;
+    Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_INSECURE");
   }
   const { stdout, stderr } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
     env,
@@ -119,7 +123,9 @@ describe("WebTransport API", () => {
   beforeAll(async () => {
     if (unavailableReason) {
       if (REQUIRE_LIVE_FIXTURE) {
-        throw new Error(`WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`);
+        throw new Error(
+          `WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`,
+        );
       }
       return;
     }
@@ -142,7 +148,9 @@ describe("WebTransport API", () => {
     if (!started) {
       unavailableReason ??= "requires a WebTransport echo server that reaches LISTENING";
       if (REQUIRE_LIVE_FIXTURE) {
-        throw new Error(`WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`);
+        throw new Error(
+          `WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`,
+        );
       }
     }
   });

@@ -8,12 +8,7 @@
 import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import {
-  requireFiles,
-  runCommand,
-  runtimeBinary,
-  runtimeRoot,
-} from "../runtime-test-utils.js";
+import { requireFiles, runCommand, runtimeBinary, runtimeRoot } from "../runtime-test-utils.js";
 
 const EXAMPLES_DIR = join(runtimeRoot, "examples");
 const OUTPUT_DIR = join(runtimeRoot, ".test-output");
@@ -137,8 +132,5 @@ describe("Screenshot Capture", () => {
     expect(stats.size).toBeGreaterThan(1000);
   }, 30000);
 
-  it.skip(
-    "should capture texture test screenshot [requires sampler/texture bind-group fix]",
-    () => {},
-  );
+  it.skip("should capture texture test screenshot [requires sampler/texture bind-group fix]", () => {});
 });

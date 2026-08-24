@@ -17,6 +17,7 @@
 
 #include "mystral/video/video_recorder.h"
 #include "mystral/video/async_capture.h"
+#include "mystral/webgpu/bindings.h"
 #include <webgpu/webgpu.h>
 #include "mystral/webgpu_compat.h"
 #include <chrono>
@@ -39,12 +40,6 @@
 #endif
 
 #if MYSTRAL_GPU_READBACK_RECORDER_AVAILABLE
-
-// Forward declaration of video capture callback registration from WebGPU bindings
-namespace mystral { namespace webgpu {
-    extern void setVideoCaptureCallback(void (*callback)(void* texture, uint32_t width, uint32_t height, void* userData), void* userData);
-    extern void clearVideoCaptureCallback();
-}}
 
 namespace mystral {
 
@@ -154,8 +149,8 @@ namespace video {
  */
 class GPUReadbackRecorder : public VideoRecorder {
 public:
-    GPUReadbackRecorder(WGPUDevice device, WGPUQueue queue, WGPUInstance instance)
-        : device_(device), queue_(queue), instance_(instance) {}
+    GPUReadbackRecorder(WGPUDevice device, WGPUQueue queue, WGPUInstance instance, void* bindingsState)
+        : device_(device), queue_(queue), instance_(instance), bindingsState_(bindingsState) {}
 
     // Static callback that forwards to the recorder instance
     static void videoCaptureCallback(void* texture, uint32_t width, uint32_t height, void* userData) {
@@ -420,7 +415,10 @@ public:
         });
 
         // Register video capture callback to receive frames during present
-        webgpu::setVideoCaptureCallback(&GPUReadbackRecorder::videoCaptureCallback, this);
+        webgpu::setVideoCaptureCallback(
+            static_cast<webgpu::BindingsState*>(bindingsState_),
+            &GPUReadbackRecorder::videoCaptureCallback,
+            this);
 
         std::cout << "[GPUReadbackRecorder] Started recording to " << webpPath_ << std::endl;
         return true;
@@ -436,7 +434,7 @@ public:
         }
 
         // Unregister video capture callback first
-        webgpu::clearVideoCaptureCallback();
+        webgpu::clearVideoCaptureCallback(static_cast<webgpu::BindingsState*>(bindingsState_));
 
         recording_ = false;
 
@@ -665,6 +663,7 @@ private:
     WGPUDevice device_ = nullptr;
     WGPUQueue queue_ = nullptr;
     WGPUInstance instance_ = nullptr;
+    void* bindingsState_ = nullptr;
 
     // Configuration
     VideoRecorderConfig config_;
@@ -702,8 +701,8 @@ private:
 
 // Factory function to create GPU readback recorder (used by video_recorder.cpp)
 std::unique_ptr<VideoRecorder> createGPUReadbackRecorder(
-    WGPUDevice device, WGPUQueue queue, WGPUInstance instance) {
-    return std::make_unique<GPUReadbackRecorder>(device, queue, instance);
+    WGPUDevice device, WGPUQueue queue, WGPUInstance instance, void* bindingsState) {
+    return std::make_unique<GPUReadbackRecorder>(device, queue, instance, bindingsState);
 }
 
 }  // namespace video
@@ -717,10 +716,11 @@ namespace mystral {
 namespace video {
 
 std::unique_ptr<VideoRecorder> createGPUReadbackRecorder(
-    WGPUDevice device, WGPUQueue queue, WGPUInstance instance) {
+    WGPUDevice device, WGPUQueue queue, WGPUInstance instance, void* bindingsState) {
     (void)device;
     (void)queue;
     (void)instance;
+    (void)bindingsState;
     // Return nullptr - caller will fall back to native capture or disable recording
     return nullptr;
 }

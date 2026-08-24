@@ -2,6 +2,7 @@
 #include "mystral/platform/window.h"
 #include "mystral/platform/input.h"
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu/bindings.h"
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
 #include "mystral/http/http_client.h"
@@ -79,11 +80,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
-
-// External functions from bindings.cpp for async video capture
-namespace mystral { namespace webgpu {
-    extern void* getCurrentSurfaceTexture();
-}}
 
 // Platform-specific includes for crash handler
 #ifdef _WIN32
@@ -206,13 +202,6 @@ static void installCrashHandlers() {
 }
 
 // Forward declaration for WebGPU bindings
-namespace webgpu {
-    bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug = false, void* wgpuAdapter = nullptr);
-    void setOffscreenTexture(void* texture, void* textureView);
-    void beginDawnFrame();
-    void endDawnFrame();
-}
-
 /**
  * Runtime implementation
  */
@@ -513,14 +502,18 @@ public:
         // Set up WebGPU bindings in JS
         // For no-SDL mode, pass nullptr for surface (offscreen rendering uses texture directly)
         WGPUSurface surface = config_.noSdl ? nullptr : webgpu_->getSurface();
-        if (!webgpu::initBindings(jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter())) {
+        bindingsState_ = webgpu::createBindingsState();
+        if (!webgpu::initBindings(bindingsState_, jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter())) {
             std::cerr << "[Mystral] Failed to initialize WebGPU bindings" << std::endl;
+            webgpu::destroyBindingsState(bindingsState_);
+            bindingsState_ = nullptr;
             return false;
         }
+        webgpu_->setBindingsState(bindingsState_);
 
         // In no-SDL mode, set the offscreen texture for headless rendering
         if (config_.noSdl) {
-            webgpu::setOffscreenTexture(
+            webgpu::setOffscreenTexture(bindingsState_,
                 webgpu_->getOffscreenTexture(),
                 webgpu_->getOffscreenTextureView()
             );
@@ -634,6 +627,11 @@ public:
             jsEngine_->gc();  // Run twice for good measure
         }
 
+        if (bindingsState_) {
+            if (webgpu_) webgpu_->setBindingsState(nullptr);
+            webgpu::destroyBindingsState(bindingsState_);
+            bindingsState_ = nullptr;
+        }
         jsEngine_.reset();    // Release JS engine
         webgpu_.reset();      // Release WebGPU resources
         if (!config_.noSdl) {
@@ -939,14 +937,14 @@ public:
 
         // Begin frame — enables per-frame allocation tracking
         jsEngine_->beginFrame();
-        webgpu::beginDawnFrame();
+        webgpu::beginDawnFrame(bindingsState_);
 
         // Execute requestAnimationFrame callbacks (renders a frame)
         executeAnimationFrameCallbacks();
 
         // Free non-protected handles, per-frame native allocations, and Dawn resources
         jsEngine_->clearFrameHandles();
-        webgpu::endDawnFrame();
+        webgpu::endDawnFrame(bindingsState_);
 
         // Desktop screenshot requests are serviced by the host after the frame has presented. This
         // is file polling only; the game does not receive a per-frame JS/C++ callback.
@@ -1026,7 +1024,7 @@ public:
     void* getCurrentTexture() override {
         // Return the current surface texture for async capture
         // This is set during getCurrentTextureView() in bindings
-        return webgpu::getCurrentSurfaceTexture();
+        return webgpu::getCurrentSurfaceTexture(bindingsState_);
     }
 
     void* getSDLWindow() override {
@@ -1058,6 +1056,14 @@ public:
             return false;
         }
         return webgpu_->captureFrame(outData, outWidth, outHeight);
+    }
+
+    uint64_t getPresentCount() const override {
+        return webgpu::presentCount(bindingsState_);
+    }
+
+    void* getWebGPUBindingsState() const override {
+        return bindingsState_;
     }
 
 private:
@@ -3562,6 +3568,7 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
     int height_;
 
     std::unique_ptr<webgpu::Context> webgpu_;
+    webgpu::BindingsState* bindingsState_ = nullptr;
     std::unique_ptr<js::Engine> jsEngine_;
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
     storage::LocalStorage localStorage_;

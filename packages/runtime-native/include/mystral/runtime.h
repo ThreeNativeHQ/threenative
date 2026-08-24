@@ -189,6 +189,13 @@ public:
      */
     virtual bool captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, uint32_t& outHeight) = 0;
 
+    /**
+     * Return the number of frames presented by this runtime's WebGPU binding state.
+     */
+    virtual uint64_t getPresentCount() const = 0;
+
+    virtual void* getWebGPUBindingsState() const = 0;
+
 protected:
     Runtime() = default;
 };

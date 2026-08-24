@@ -19,12 +19,18 @@ function assertPresentationBridge(source) {
     /WGPUTextureUsage_RenderAttachment[\s\S]*WGPUTextureUsage_TextureBinding[\s\S]*WGPUTextureUsage_CopySrc/u,
   );
   assert.match(source, /fn srgbToLinear\(value: vec3f\)/u);
-  assert.match(source, /colorTarget\.format = g_nativeSurfaceFormat/u);
-  assert.match(source, /presentLinearTextureToSrgbSurface\(g_currentTextureView\)/u);
+  assert.match(source, /colorTarget\.format = state->nativeSurfaceFormat/u);
+  assert.match(source, /presentLinearTextureToSrgbSurface\(state, state->currentTextureView\)/u);
   assert.ok(
-    (source.match(/configuredFormat != linearSurfaceFormat\(g_nativeSurfaceFormat\)/gu) ?? [])
-      .length >= 2,
-    "main and offscreen canvas configuration must both fail closed on a mismatched format",
+    (source.match(/configuredFormat != linearSurfaceFormat\(state->nativeSurfaceFormat\)/gu) ?? [])
+      .length >= 1,
+    "the shared canvas configuration must fail closed on a mismatched format",
+  );
+  assert.equal(
+    (source.match(/installCanvasContextBindings\(state, canvasContext(?:, (?:false|true))?\)/gu) ?? [])
+      .length,
+    2,
+    "main and offscreen canvases must share the table-driven context bindings",
   );
 }
 

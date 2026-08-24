@@ -396,9 +396,6 @@ static bool extractJsonBool(const std::string& json, const std::string& key, boo
 #include <unistd.h>   // POSIX: _exit(), getpid()
 #include <signal.h>   // POSIX: kill(), SIGKILL
 
-// Defined in src/webgpu/bindings.cpp. Reported after a screenshot run so the desktop gate can
-// assert one present per frame -- the invariant the canvas-layer overlay pass depends on.
-namespace mystral { namespace webgpu { uint64_t presentCount(); } }
 #endif
 
 void printVersion() {
@@ -1563,7 +1560,7 @@ int runScript(const CLIOptions& opts) {
                 // composite onto the world instead of taking a swapchain image of its own. The
                 // host used to present inside every queue.submit, so a frame that rendered an
                 // overlay presented twice and only the first reached the display.
-                std::cout << "TN_PRESENTS:" << mystral::webgpu::presentCount() << std::endl;
+                std::cout << "TN_PRESENTS:" << runtime->getPresentCount() << std::endl;
             } else {
                 std::cerr << "Error: Failed to save screenshot!" << std::endl;
             }
@@ -1625,7 +1622,8 @@ int runScript(const CLIOptions& opts) {
             recorder = mystral::video::VideoRecorder::create(
                 static_cast<WGPUDevice>(runtime->getWGPUDevice()),
                 static_cast<WGPUQueue>(runtime->getWGPUQueue()),
-                static_cast<WGPUInstance>(runtime->getWGPUInstance())
+                static_cast<WGPUInstance>(runtime->getWGPUInstance()),
+                runtime->getWebGPUBindingsState()
             );
         }
 
