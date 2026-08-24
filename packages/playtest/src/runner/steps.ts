@@ -1,8 +1,6 @@
-import { length } from "./sampling.js";
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
-import { join, resolve } from "node:path";
+import { entityPosition } from "./shared.js";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { PNG } from "pngjs";
 import {
   evaluateRichPlaytestAssertions,
@@ -10,22 +8,12 @@ import {
   playtestDiagnostic,
   playtestStepHoldTicks,
   playtestStepWaitTicks,
-  resolveDiagnosticsPolicy,
-  type IPlaytestArtifactRequest,
   type IPlaytestAssertionResult,
-  type IPlaytestCaptureProvenance,
-  type IPlaytestDiagnosticsPolicy,
-  type IPlaytestDiagnostic,
-  type IPlaytestFramebufferCoverageObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestObservations,
-  type IPlaytestPathAssertion,
-  type IPlaytestProtocolDiagnostic,
-  type IPlaytestReport,
   type IPlaytestSampleRequest,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
-  type IPlaytestSetupRecord,
   type IPlaytestSetupRequest,
   type IPlaytestTrivialityOptOut,
   type PlaytestVec3,
@@ -40,7 +28,6 @@ import {
   resolveBrowserArguments,
   softwareAdapterName,
 } from "./browser.js";
-import type { IStandalonePlaytestConfig } from "./config.js";
 import {
   provideDisplay,
   runNeedsPixels,
@@ -59,12 +46,14 @@ import {
   startFramebufferCoverageProbe,
 } from "./framebufferCoverage.js";
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
-import { entityPosition, subtract, isAnonymousMovementScenario } from "./sampling.js";
 import { aimAngles, yawPitchToQuaternion } from "../scenario/orientation.js";
-import { failedDiagnosticsAssertion, STOPPED_LOOP_ERROR, MAX_FIXED_STEP_STARTUP_RETRIES } from "./runner.js";
-import type { IStandalonePlaytestReport, IRunStepSamples } from "./runner.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
+import {
+  MAX_FIXED_STEP_STARTUP_RETRIES,
+  STOPPED_LOOP_ERROR,
+  requestedSetupRecords,
+  setupRequest,
+} from "./shared.js";
+import type { IRunStepSamples } from "./shared.js";
 export function collectTrivialityOptOuts(assertions: readonly IPlaytestAssertionResult[]): IPlaytestTrivialityOptOut[] {
   return assertions.flatMap(({ details, id }) => {
     if (details?.trivialityOptOut !== true) return [];
@@ -182,101 +171,6 @@ export function regionMetrics(
     }
   }
   return { darkPixelRatio: dark / pixels, nonblankPixelRatio: nonblank / pixels };
-}
-
-export function failureReport(config: IStandalonePlaytestConfig, scenario: IPlaytestScenario, diagnostic: IPlaytestProtocolDiagnostic): IStandalonePlaytestReport {
-  const diagnosticsPolicy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
-  return {
-    artifactDirectory: config.artifactDirectory,
-    assertionResults: [failedDiagnosticsAssertion(diagnosticsPolicy)],
-    debugColliders: false,
-    diagnostics: [{ ...diagnostic, suggestion: diagnostic.fix.instruction }],
-    diagnosticsPolicy,
-    distance: 0,
-    entity: scenario.subject ?? "",
-    expectMoved: false,
-    frames: 0,
-    input: "",
-    movementThreshold: 0,
-    pass: false,
-    runtime: "web",
-    scenario: scenario.name,
-    // A failed run still names what it was asked to place, with nothing applied — an
-    // overridden spawn must be visible in the report even when the run never got green.
-    ...(scenario.setup === undefined ? {} : { setup: { applied: [], requested: requestedSetupRecords(scenario) } }),
-    target: scenario.target,
-    trivialityOptOutCount: 0,
-    trivialityOptOuts: [],
-    url: config.url,
-  } as IStandalonePlaytestReport;
-}
-
-// Every key here is optional in the scenario, and the payload crosses assertJsonSafe
-// on the way to the page. An explicit `undefined` is not JSON-safe, so spreading a
-// partially-specified transform verbatim aborted the whole run before it started.
-// Absent keys must stay absent.
-export function setupRequest(scenario: IPlaytestScenario): IPlaytestSetupRequest {
-  return {
-    ...(scenario.setup?.entities === undefined
-      ? {}
-      : {
-          entities: scenario.setup.entities.map(({ entity, position, rotation, scale }) => ({
-            entity,
-            transform: {
-              ...(position === undefined ? {} : { position }),
-              ...(rotation === undefined ? {} : { rotation }),
-              ...(scale === undefined ? {} : { scale }),
-            },
-          })),
-        }),
-    ...(scenario.setup?.resources === undefined
-      ? {}
-      : {
-          resources: scenario.setup.resources.map(({ id, path, value }) => ({
-            id,
-            ...(path === undefined ? {} : { path }),
-            value: value as never,
-          })),
-        }),
-  };
-}
-
-/**
- * Every override the scenario asks for, named by kind and entity. This is the honest-
- * reporting ledger: it rides into the run report as `requested`, next to `applied`.
- */
-export function requestedSetupRecords(scenario: IPlaytestScenario): IPlaytestSetupRecord[] {
-  const setup = scenario.setup;
-  if (setup === undefined) return [];
-  const asJson = (value: unknown): IPlaytestSetupRecord["value"] => value as IPlaytestSetupRecord["value"];
-  return [
-    ...(setup.spawn === undefined
-      ? []
-      : [{ entity: scenario.subject, kind: "spawn" as const, value: asJson(setup.spawn) }]),
-    ...(setup.aim === undefined
-      ? []
-      : [{ entity: scenario.subject, kind: "aim" as const, value: asJson(setup.aim) }]),
-    ...(setup.entities ?? []).map(({ entity, position, rotation, scale }) => ({
-      entity,
-      kind: "entities" as const,
-      value: asJson({
-        ...(position === undefined ? {} : { position }),
-        ...(rotation === undefined ? {} : { rotation }),
-        ...(scale === undefined ? {} : { scale }),
-      }),
-    })),
-    ...(setup.place ?? []).map(({ at, entity, facing, frozen, lookAt }) => ({
-      entity,
-      kind: "place" as const,
-      value: asJson({
-        at,
-        ...(facing === undefined ? {} : { facing }),
-        ...(frozen === undefined ? {} : { frozen }),
-        ...(lookAt === undefined ? {} : { lookAt }),
-      }),
-    })),
-    ...(setup.resources ?? []).map(({ id, value }) => ({ entity: id, kind: "resources" as const, value: asJson(value) })),
-  ];
 }
 
 function pointToTuple(point: { x: number; y: number; z: number }): PlaytestVec3 {
@@ -661,14 +555,6 @@ export async function samplePathPosition(
   if (position !== undefined) positions.push(position);
 }
 
-export function accumulatedPathLength(positions: readonly PlaytestVec3[]): number | undefined {
-  if (positions.length < 2) return undefined;
-  return positions.slice(1).reduce(
-    (total, position, index) => total + length(subtract(position, positions[index] ?? position)),
-    0,
-  );
-}
-
 export async function waitFrames(page: Page, frames: number): Promise<void> {
   if (frames <= 0) return;
   await page.evaluate((count) => new Promise<void>((resolveFrame) => {
@@ -684,27 +570,3 @@ export async function waitFrames(page: Page, frames: number): Promise<void> {
     schedule(next);
   }), frames);
 }
-
-export function observedEntityIds(scenario: IPlaytestScenario): string[] | undefined {
-  if (isAnonymousMovementScenario(scenario)) return undefined;
-  const ids = [...new Set([
-    scenario.subject,
-    scenario.assert?.movement?.entity,
-    scenario.assert?.camera?.entity,
-    scenario.assert?.camera?.follows,
-    ...(scenario.assert?.visibility ?? []).map(({ entity }) => entity),
-  ].filter((value): value is string => value !== undefined))];
-  return ids.length > 0
-    ? ids
-    : scenario.assert?.movement === undefined
-      ? []
-      : undefined;
-}
-
-export function observedResourceIds(scenario: IPlaytestScenario): string[] {
-  return [...new Set([
-    ...(scenario.assert?.resources ?? []).map(({ id }) => id),
-    ...(scenario.setup?.resources ?? []).map(({ id }) => id),
-  ])];
-}
-

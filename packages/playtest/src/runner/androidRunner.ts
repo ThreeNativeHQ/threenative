@@ -6,13 +6,10 @@ import {
   playtestDiagnostic,
   playtestStepHoldTicks,
   playtestStepWaitTicks,
-  resolveDiagnosticsPolicy,
-  type IPlaytestDiagnostic,
   type IPlaytestFramebufferCoverageObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestScenario,
-  type IPlaytestSetupRequest,
   type PlaytestVec3,
 } from "../index.js";
 import {
@@ -35,8 +32,20 @@ import {
   type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
-import { buildReport, failedDiagnosticsAssertion, playtestStepDrivesMovement, writeObservationArtifacts, type IStandalonePlaytestReport } from "./runner.js";
+import { buildReport, playtestStepDrivesMovement, writeObservationArtifacts } from "./runner.js";
 import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
+import {
+  accumulatedPathLength,
+  appendPosition,
+  failureReport,
+  observedEntityIds,
+  observedResourceIds,
+  safePart,
+  setupRequest,
+  targetLabel,
+  throwIfAborted,
+} from "./shared.js";
+import type { IStandalonePlaytestReport } from "./shared.js";
 
 export interface IAndroidPlaytestDependencies {
   driver?: IAndroidDriver;
@@ -431,12 +440,6 @@ async function runDevicePlaytestInternal(
   }
 }
 
-async function throwIfAborted(target: IDevicePlaytestTarget): Promise<void> {
-  if (!target.abortSignal?.aborted) return;
-  await target.abortCleanup?.();
-  throw new Error("Desktop playtest interrupted by signal.");
-}
-
 function cleanupFailure(errors: readonly unknown[]): Error {
   if (errors.length === 1) {
     const error = errors[0];
@@ -552,119 +555,6 @@ function unsupportedDiagnostic(
     `${targetLabel(target)} ${target === "desktop" ? "desktop" : "device"} target does not support ${subject}.`,
     fix,
   );
-}
-
-function failureReport(
-  config: IStandalonePlaytestConfig,
-  scenario: IPlaytestScenario,
-  diagnostic: IPlaytestProtocolDiagnostic,
-  target: "android" | "desktop" | "ios",
-): IStandalonePlaytestReport {
-  const item: IPlaytestDiagnostic = { ...diagnostic, suggestion: diagnostic.fix.instruction };
-  const diagnosticsPolicy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
-  return {
-    artifactDirectory: config.artifactDirectory,
-    assertionResults: [failedDiagnosticsAssertion(diagnosticsPolicy)],
-    diagnostics: [item],
-    diagnosticsPolicy,
-    distance: 0,
-    entity: scenario.subject ?? "",
-    expectMoved: false,
-    frames: 0,
-    pass: false,
-    runtime: "native",
-    scenario: scenario.name,
-    target,
-    trivialityOptOutCount: 0,
-    trivialityOptOuts: [],
-    url: target === "desktop"
-      ? config.desktop?.executable ?? "desktop"
-      : config.endpoint ?? "http://127.0.0.1:41777/playtest",
-  } as IStandalonePlaytestReport;
-}
-
-function targetLabel(target: "android" | "desktop" | "ios"): string {
-  if (target === "android") return "Android";
-  if (target === "ios") return "iOS";
-  return "Desktop";
-}
-
-function setupRequest(scenario: IPlaytestScenario): IPlaytestSetupRequest {
-  return {
-    ...(scenario.setup?.entities === undefined
-      ? {}
-      : {
-          entities: scenario.setup.entities.map(({ entity, position, rotation, scale }) => ({
-            entity,
-            transform: {
-              ...(position === undefined ? {} : { position }),
-              ...(rotation === undefined ? {} : { rotation }),
-              ...(scale === undefined ? {} : { scale }),
-            },
-          })),
-        }),
-    ...(scenario.setup?.resources === undefined
-      ? {}
-      : {
-          resources: scenario.setup.resources.map(({ id, path, value }) => ({
-            id,
-            ...(path === undefined ? {} : { path }),
-            value: value as never,
-          })),
-        }),
-  };
-}
-
-function observedEntityIds(scenario: IPlaytestScenario): string[] | undefined {
-  if (
-    scenario.assert?.movement !== undefined
-    && scenario.assert.movement.entity === undefined
-    && scenario.subject === undefined
-  ) return undefined;
-  const ids = [...new Set([
-    scenario.subject,
-    scenario.assert?.movement?.entity,
-    scenario.assert?.camera?.entity,
-    scenario.assert?.camera?.follows,
-    ...(scenario.assert?.visibility ?? []).map(({ entity }) => entity),
-  ].filter((value): value is string => value !== undefined))];
-  return ids.length > 0
-    ? ids
-    : scenario.assert?.movement === undefined
-      ? []
-      : undefined;
-}
-
-function observedResourceIds(scenario: IPlaytestScenario): string[] {
-  return [...new Set([
-    ...(scenario.assert?.resources ?? []).map(({ id }) => id),
-    ...(scenario.setup?.resources ?? []).map(({ id }) => id),
-  ])];
-}
-
-function appendPosition(
-  positions: PlaytestVec3[],
-  snapshot: IPlaytestObservationSnapshot,
-  entity: string | undefined,
-): void {
-  const position = snapshot.entities?.find(({ id }) => id === entity)?.transform?.position;
-  if (position !== undefined) positions.push(position);
-}
-
-function accumulatedPathLength(positions: readonly PlaytestVec3[]): number | undefined {
-  if (positions.length < 2) return undefined;
-  return positions.slice(1).reduce((total, position, index) => {
-    const before = positions[index] ?? position;
-    return total + Math.hypot(
-      position[0] - before[0],
-      position[1] - before[1],
-      position[2] - before[2],
-    );
-  }, 0);
-}
-
-function safePart(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
 function unreadableCoverageObservation(error: unknown): IPlaytestFramebufferCoverageObservation {
