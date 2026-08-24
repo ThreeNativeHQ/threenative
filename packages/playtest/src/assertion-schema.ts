@@ -83,6 +83,13 @@ export interface IPlaytestAssertionSchemaField {
   type: string;
 }
 
+export interface IPlaytestAssertionSchemaVariant {
+  excludeFields?: readonly string[];
+  fields?: readonly string[];
+  requiredFields?: readonly string[];
+  rules?: readonly IPlaytestAssertionSchemaRule[];
+}
+
 export interface IPlaytestAssertionSchemaEntry {
   cardinality: "array" | "object";
   description: string;
@@ -98,7 +105,8 @@ export interface IPlaytestAssertionSchemaEntry {
   supportedOn: readonly PlaytestTarget[];
   triviality: "not-applicable" | "reject-initial-value";
   trivialityRationale: string;
-  validation?: IPlaytestAssertionSchemaConstraint;
+  variants?: readonly IPlaytestAssertionSchemaVariant[];
+  discriminator?: { field: string; presentVariant: number };
 }
 
 interface IRawPlaytestAssertionSchemaField extends Omit<IPlaytestAssertionSchemaField, "constraints"> {
@@ -237,59 +245,6 @@ function normalizeAssertionEntry(entry: IRawPlaytestAssertionSchemaEntry): IPlay
       ...field,
       constraints: field.constraints ?? parseTypeExpression(field.type),
     })),
-  };
-}
-
-function resourceValidation(): IPlaytestAssertionSchemaConstraint {
-  const pathAlternative = rawField(
-    "alternative",
-    "object",
-    {
-      fields: [
-        rawField("path", "string", { kind: "string", nonEmpty: true }, true),
-        rawField("equals", "json", { kind: "json" }),
-        rawField("gte", "number", { kind: "number" }),
-        rawField("lte", "number", { kind: "number" }),
-        rawField("textIncludes", "string", { kind: "string", nonEmpty: true }),
-        rawField("changed", "boolean", { kind: "boolean" }),
-      ],
-      kind: "record",
-      rules: [
-        {
-          fields: ["equals", "gte", "lte", "textIncludes", "changed"],
-          kind: "requireOneOf",
-          message: "must declare equals, gte, lte, textIncludes, or changed.",
-        },
-      ],
-      unknownKeys: "reject",
-    },
-  );
-  const normalFields = [
-    rawField("id", "string", { kind: "string", nonEmpty: true }, true),
-    rawField("path", "string", { kind: "string", nonEmpty: true }),
-    rawField("equals", "json", { kind: "json" }),
-    rawField("gte", "number", { kind: "number" }),
-    rawField("lte", "number", { kind: "number" }),
-    rawField("textIncludes", "string", { kind: "string", nonEmpty: true }),
-    rawField("changed", "boolean", { kind: "boolean" }),
-    rawField("throughoutSteps", "boolean", { kind: "boolean" }),
-    rawField("atSteps", "Array<{ label: string, equals?: json, textIncludes?: string }>", parseTypeExpression("Array<{ label: string, equals?: json, textIncludes?: string }>")),
-    rawField("allowTrivial", "triviality reason", { kind: "string", minNonWhitespace: 20 }),
-  ];
-  return {
-    discriminator: { field: "anyOf", presentVariant: 0 },
-    kind: "union",
-    variants: [
-      {
-        fields: [
-          rawField("id", "string", { kind: "string", nonEmpty: true }, true),
-          rawField("anyOf", "Array<object>", { items: pathAlternative.constraints, kind: "array", minItems: 1 }, true),
-        ],
-        kind: "record",
-        unknownKeys: "reject",
-      },
-      { fields: normalFields, kind: "record", unknownKeys: "reject" },
-    ],
   };
 }
 
@@ -450,6 +405,7 @@ const RAW_PLAYTEST_ASSERTION_REGISTRY: readonly IRawPlaytestAssertionSchemaEntry
       { description: "Minimum signed resolved character.move displacement on a specific axis, for example { axis: '+y', min: 0.2 }.", name: "minResolvedAxisDelta", type: "{ axis: string, min: number }" },
       { description: "Maximum final pitch/roll tilt from world up, in degrees; yaw is ignored.", name: "maxTiltDegrees", type: "number in [0, 180]" },
       { description: "Minimum distance moved over the scenario.", name: "minDistance", type: "number" },
+      { description: "Minimum fixed-step ticks between the observed before and after transforms.", name: "minTicks", type: "positive integer" },
       { description: "Maximum distance allowed; use for blocked-movement proof.", name: "maxDistance", type: "number" },
       { description: "Minimum distance per frame.", name: "minVelocity", type: "number" },
       { description: "Minimum accumulated path length; use with minDistance to catch movement that cancels out.", name: "pathLength", type: "number" },
@@ -540,7 +496,14 @@ const RAW_PLAYTEST_ASSERTION_REGISTRY: readonly IRawPlaytestAssertionSchemaEntry
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "reject-initial-value",
     trivialityRationale: "A resource comparator can pass on its initial snapshot, so initial satisfaction must be rejected unless a written held-invariant reason is recorded.",
-    validation: resourceValidation(),
+    discriminator: { field: "anyOf", presentVariant: 0 },
+    variants: [
+      { fields: ["id", "anyOf"], requiredFields: ["id", "anyOf"] },
+      {
+        excludeFields: ["anyOf"],
+        requiredFields: ["id"],
+      },
+    ],
   },
   {
     description: "Proves the final count of entities carrying a bounded runtime tag.",
@@ -874,7 +837,24 @@ export function assertPlaytestAssertionRegistryComplete(
       fields.add(field.name);
       checkConstraint(field.constraints, `${entry.kind}.${field.name}`, errors);
     }
-    if (entry.validation !== undefined) checkConstraint(entry.validation, `${entry.kind}.validation`, errors);
+    for (const variant of entry.variants ?? []) {
+      if (variant.fields === undefined && variant.excludeFields === undefined) {
+        errors.push(`${entry.kind} has a variant without fields or excludeFields`);
+      }
+      if (variant.fields !== undefined && variant.excludeFields !== undefined) {
+        errors.push(`${entry.kind} has a variant with both fields and excludeFields`);
+      }
+      for (const fieldName of variant.fields ?? []) {
+        if (!fields.has(fieldName)) errors.push(`${entry.kind}.${fieldName} is not declared in the registry fields`);
+      }
+      for (const fieldName of variant.excludeFields ?? []) {
+        if (!fields.has(fieldName)) errors.push(`${entry.kind}.${fieldName} is not declared in the registry fields`);
+      }
+      for (const fieldName of variant.requiredFields ?? []) {
+        const included = variant.fields?.includes(fieldName) ?? !variant.excludeFields?.includes(fieldName);
+        if (!included) errors.push(`${entry.kind}.${fieldName} is required by a variant that does not include it`);
+      }
+    }
   }
   if (errors.length > 0) {
     throw new Error(`Assertion registry is incomplete: ${errors.join(", ")}.`);

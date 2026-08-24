@@ -128,6 +128,12 @@ test("valid scalar values still parse unchanged", async () => {
   expect(scenario.assert.camera).toEqual({ entity: "camera", follows: "player", targetInViewport: true, within: 5 });
 });
 
+test("movement minTicks parses through the typed registry path", async () => {
+  const scenario = await load({ movement: { minTicks: 2 } }) as { assert: { movement: { minTicks?: number } } };
+
+  expect(scenario.assert.movement.minTicks).toBe(2);
+});
+
 test("the boolean triviality opt-out is rejected instead of coerced", async () => {
   const error = await loadError({
     resources: [{ allowTrivial: true, equals: 0, id: "state", path: "spent" }],

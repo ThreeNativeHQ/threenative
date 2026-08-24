@@ -51,6 +51,27 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
       });
     }
   }
+  if (scenarioAssertions.movement?.minTicks !== undefined) {
+    const beforeTick = input.report.before?.tick;
+    const afterTick = input.report.after?.tick;
+    const ticks = beforeTick === undefined || afterTick === undefined ? undefined : afterTick - beforeTick;
+    const pass = ticks !== undefined && ticks >= scenarioAssertions.movement.minTicks;
+    assertions.push({
+      details: { minimum: scenarioAssertions.movement.minTicks, ticks: ticks ?? null },
+      id: "movement.ticks",
+      pass,
+    });
+    if (!pass) {
+      diagnostics.push({
+        code: "TN_PLAYTEST_TICKS_ASSERTION_FAILED",
+        message: ticks === undefined
+          ? `Entity '${scenarioAssertions.movement.entity ?? input.report.entity}' did not expose before and after fixed-step ticks.`
+          : `Entity '${scenarioAssertions.movement.entity ?? input.report.entity}' was observed for ${ticks} ticks, below required ${scenarioAssertions.movement.minTicks}.`,
+        severity: "error",
+        suggestion: "Use a fixed-step bridge and hold the scenario long enough to produce the declared tick interval.",
+      });
+    }
+  }
   if (scenarioAssertions.movement?.maxDistance !== undefined) {
     // `distance` falls back to 0 when the entity is absent from the snapshot, so
     // an unobserved entity looked exactly like a stationary one. This is the

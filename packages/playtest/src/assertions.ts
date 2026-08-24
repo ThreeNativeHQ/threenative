@@ -21,6 +21,7 @@ export type {
   IPlaytestAssertionSchemaField,
   IPlaytestAssertionSchemaPrimitive,
   IPlaytestAssertionSchemaRule,
+  IPlaytestAssertionSchemaVariant,
   IPlaytestSetupSchemaEntry,
 } from "./assertion-schema.js";
 export { evaluateRichPlaytestAssertions, overlayNodeObservationKey } from "./assertion-evaluators.js";

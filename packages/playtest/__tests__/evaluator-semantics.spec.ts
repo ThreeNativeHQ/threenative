@@ -28,6 +28,18 @@ function evaluate(assert_: IPlaytestScenario["assert"], extra: object = {}) {
 }
 
 describe("evaluator semantics (characterization)", () => {
+  test("movement minTicks evaluates the observed fixed-step interval", () => {
+    const result = evaluate(
+      { movement: { entity: "player", minTicks: 3 } } as never,
+      {
+        before: { position: [0, 0, 0], tick: 4 },
+        after: { position: [0, 0, 0], tick: 7 },
+      },
+    );
+
+    expect(result.assertions).toContainEqual(expect.objectContaining({ id: "movement.ticks", pass: true }));
+  });
+
   test("movement pins its verdict id and minimum-distance details", () => {
     const result = evaluate(
       { movement: { entity: "player", minDistance: 1 } } as never,

@@ -619,6 +619,16 @@ export const GENERATED_ASSERTION_SCHEMAS: readonly IGeneratedEntry[] = [
         },
         {
           "constraints": {
+            "integer": true,
+            "min": 1,
+            "kind": "number"
+          },
+          "name": "minTicks",
+          "required": false,
+          "type": "positive integer"
+        },
+        {
+          "constraints": {
             "kind": "number"
           },
           "name": "maxDistance",
@@ -955,7 +965,6 @@ export const GENERATED_ASSERTION_SCHEMAS: readonly IGeneratedEntry[] = [
             },
             {
               "constraints": {
-                "minItems": 1,
                 "items": {
                   "fields": [
                     {
@@ -1009,19 +1018,6 @@ export const GENERATED_ASSERTION_SCHEMAS: readonly IGeneratedEntry[] = [
                       "type": "boolean"
                     }
                   ],
-                  "rules": [
-                    {
-                      "fields": [
-                        "equals",
-                        "gte",
-                        "lte",
-                        "textIncludes",
-                        "changed"
-                      ],
-                      "kind": "requireOneOf",
-                      "message": "must declare equals, gte, lte, textIncludes, or changed."
-                    }
-                  ],
                   "unknownKeys": "reject",
                   "kind": "record"
                 },
@@ -1029,7 +1025,7 @@ export const GENERATED_ASSERTION_SCHEMAS: readonly IGeneratedEntry[] = [
               },
               "name": "anyOf",
               "required": true,
-              "type": "Array<object>"
+              "type": "Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }>"
             }
           ],
           "unknownKeys": "reject",

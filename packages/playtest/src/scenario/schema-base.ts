@@ -74,6 +74,7 @@ export interface IPlaytestMovementAssertion {
   };
   maxTiltDegrees?: number;
   minDistance?: number;
+  minTicks?: number;
   minVelocity?: number;
   maxDistance?: number;
   pathLength?: number;

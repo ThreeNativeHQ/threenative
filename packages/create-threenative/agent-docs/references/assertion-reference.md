@@ -145,6 +145,7 @@ Proves the subject moved, reached a minimum velocity, or changed rotation during
 | `minResolvedAxisDelta` | { axis: string, min: number } | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"axis","required":true,"type":"string"},{"constraints":{"kind":"number"},"description":"","name":"min","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
 | `maxTiltDegrees` | number in [0, 180] | no | `{"kind":"number","max":180,"min":0}` |
 | `minDistance` | number | no | `{"kind":"number"}` |
+| `minTicks` | positive integer | no | `{"integer":true,"kind":"number","min":1}` |
 | `maxDistance` | number | no | `{"kind":"number"}` |
 | `minVelocity` | number | no | `{"kind":"number"}` |
 | `pathLength` | number | no | `{"kind":"number"}` |

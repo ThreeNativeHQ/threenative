@@ -57,34 +57,59 @@ and the misspelled native-smoke assertion scenario.
 - Docs mutation: mutating one constraint in an in-memory registry rendered a different
   reference (`docs_changed=true`). The committed reference check is exact.
 
-## Friction proof
+## Review round 1 repair — red evidence
 
-Temporary field `movement.minTicks` was added to the registry and one registry test. The
-generator, playtest build, reference generator, and 3-test registry spec passed. Manual touch
-list:
+The read-only review's two defects were reproduced before the repair:
+
+1. Registry-only resource field proof was red because the generator ignored the supplied registry
+   and kept using the root `entry.validation` override:
+
+   ```text
+   FAIL assertion-registry.spec.ts > includes a resource field added to the registry in generated validation
+   expected generated output to contain `"name": "registryOnlyField"`
+   ```
+
+2. `movement.minTicks` was red in both the load and evaluator paths. Before the repair, the
+   generated validator rejected the field, and the unchecked evaluator cast produced no field
+   result:
+
+   ```text
+   Playtest scenario 'scenario.json' is invalid: Unknown key 'minTicks' at assert.movement.minTicks.
+   expected assertions to contain { id: "movement.ticks", pass: true }
+   received { id: "assert.movement", pass: false, details: { reason: "registered-without-evaluator" } }
+   ```
+
+## Review round 1 repair — green evidence
+
+Resource variants now select fields from the registry's one field list. The generator derives
+variant constraints and requiredness from those fields; `entry.validation` and the duplicated
+`resourceValidation()` source are gone. A synthetic field added only to a cloned registry now
+appears in generated validation, while the existing `resources` acceptance behavior remains
+unchanged.
+
+`movement.minTicks` is now a typed `IPlaytestMovementAssertion` field, is declared as a registry
+field, and evaluates `after.tick - before.tick` as `movement.ticks`. The test covers load,
+generation, and a passing evaluator result, so the field changes an assertion result rather than
+only being accepted by a cast.
+
+The repaired focused suite passed exactly 94 tests across 7 files:
 
 ```text
-packages/playtest/src/assertion-schema.ts
-packages/playtest/__tests__/assertion-registry.spec.ts
+Test Files  7 passed (7)
+Tests  94 passed (94)
 ```
-
-The generated validator and assertion reference changed automatically; no validator body or
-documentation row was hand-edited. The temporary field, generated output, and docs were then
-restored and both `--check` commands passed.
 
 ## Gates
 
-- Focused assertion/schema/doc suite: 6 files, 94 tests passed.
+- `pnpm tsx scripts/generate-assertion-validators.ts --check`: passed; `21 kinds` current.
+- `pnpm tsx scripts/generate-assertion-reference.ts --check`: passed; `21 kinds` current.
 - `pnpm typecheck`: passed for all workspace projects.
-- `pnpm lint`: exit 0; repository reports 309 warnings, and the changed-file check is also
-  exit 0 with warnings only.
-- `pnpm build`: passed, including `assertion validators are current: 21 kinds` and
-  `assertion reference is current: 21 kinds`.
-- `TN_TEST_TEMP_TAG=prd204 pnpm test`: 199 test files and 1,886 tests passed; temporary
-  directory baseline unchanged. The untagged package command was blocked by shared `/tmp`
-  churn (`before 125, after 126`); the documented tag override passed
-  `TN_TEST_TEMP_TAG=prd204 pnpm --filter @threenative/playtest test` with `no orphans` and
-  `publint --strict` green.
+- `pnpm build`: passed, including both generator checks; package builds and `publint` passed.
+- `TN_TEST_TEMP_TAG=prd204 pnpm --filter @threenative/playtest test`: passed with `no orphans`
+  and `publint --strict` green.
+- Changed-file Biome check: exit 0 with 29 existing complexity/style warnings and no errors.
+- `pnpm lint`: repository-wide exit 1 from existing cognitive-complexity diagnostics in unrelated
+  files (310 warnings; the changed-file check is separate and is recorded below).
 
 ## Real playtest
 
@@ -110,4 +135,20 @@ packages/playtest/src/scenario/schema-validate.ts
 scripts/generate-assertion-reference.ts
 scripts/generate-assertion-validators.ts
 docs/verification/prd-204-generated-validators-2026-08-23.md
+```
+
+## Review round 1 files changed
+
+```text
+docs/verification/prd-204-generated-validators-2026-08-23.md
+packages/create-threenative/agent-docs/references/assertion-reference.md
+packages/playtest/__tests__/assertion-registry.spec.ts
+packages/playtest/__tests__/evaluator-semantics.spec.ts
+packages/playtest/__tests__/vacuous-assertion.spec.ts
+packages/playtest/src/assertion-schema.ts
+packages/playtest/src/assertions.ts
+packages/playtest/src/evaluators/movement-evidence.ts
+packages/playtest/src/scenario/generated-assertion-validators.ts
+packages/playtest/src/scenario/schema-base.ts
+scripts/generate-assertion-validators.ts
 ```
