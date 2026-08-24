@@ -1,0 +1,87 @@
+{
+  "pass": false,
+  "target": "android",
+  "frames": 20,
+  "scenario": "react-hud-shot",
+  "runtime": "native",
+  "assertionResults": [
+    {
+      "details": {
+        "after": -1.2000045776367188,
+        "before": -2,
+        "expected": {
+          "changed": true
+        },
+        "id": "state",
+        "path": "playerX",
+        "trivial": false
+      },
+      "id": "resource.state.playerX",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": true,
+        "before": true,
+        "component": "mounted",
+        "entity": "native-ui",
+        "expected": {
+          "component": "mounted",
+          "entity": "native-ui",
+          "allowTrivial": "The native-only plugin registers this observation only after React mounts into the CanvasLayer.",
+          "equals": true
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.native-ui.mounted.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 11,
+        "before": 11,
+        "component": "objectCount",
+        "entity": "native-ui",
+        "expected": {
+          "component": "objectCount",
+          "entity": "native-ui",
+          "allowTrivial": "At least one drawable object exists only after the shared HUD component commits through the native renderer.",
+          "gte": 1
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.native-ui.objectCount.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 362,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true
+        },
+        "runtimeDiagnostics": 362
+      },
+      "id": "diagnostics",
+      "pass": false
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_CONSOLE_ERROR",
+      "message": "362 browser console error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+    },
+    {
+      "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      "message": "362 runtime diagnostic error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+    }
+  ]
+}
