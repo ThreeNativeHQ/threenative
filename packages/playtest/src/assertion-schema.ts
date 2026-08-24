@@ -863,6 +863,16 @@ export function assertPlaytestAssertionRegistryComplete(
     } else if (constraint.kind === "tuple") {
       constraint.items.forEach((item, index) => checkConstraint(item, `${path}[${index}]`, errors));
     } else if (constraint.kind === "union") {
+      if (constraint.discriminator !== undefined) {
+        const { field, presentVariant } = constraint.discriminator;
+        if (!Number.isInteger(presentVariant) || presentVariant < 0 || presentVariant >= constraint.variants.length) {
+          errors.push(`${path}.discriminator.presentVariant ${presentVariant} is out of range for ${constraint.variants.length} variants`);
+        }
+        const variantFields = new Set(
+          constraint.variants.flatMap((variant) => variant.kind === "record" ? variant.fields.map((item) => item.name) : []),
+        );
+        if (!variantFields.has(field)) errors.push(`${path}.discriminator.${field} is not declared in the registry fields`);
+      }
       constraint.variants.forEach((variant, index) => checkConstraint(variant, `${path}|${index}`, errors));
     } else if (constraint.kind === "record") {
       for (const field of constraint.fields) {
@@ -897,6 +907,10 @@ export function assertPlaytestAssertionRegistryComplete(
         if (!fields.has(fieldName)) errors.push(`${entry.kind}.${fieldName} is not declared in the registry fields`);
       }
       for (const fieldName of variant.requiredFields ?? []) {
+        if (!fields.has(fieldName)) {
+          errors.push(`${entry.kind}.${fieldName} is not declared in the registry fields`);
+          continue;
+        }
         const included = variant.fields?.includes(fieldName) ?? !variant.excludeFields?.includes(fieldName);
         if (!included) errors.push(`${entry.kind}.${fieldName} is required by a variant that does not include it`);
       }
@@ -904,6 +918,13 @@ export function assertPlaytestAssertionRegistryComplete(
         variant.fields ?? entry.fields.map((field) => field.name).filter((name) => !variant.excludeFields?.includes(name)),
       );
       checkRuleReferences(variantFields, variant.rules, `${entry.kind}.variant`, errors);
+    }
+    if (entry.discriminator !== undefined) {
+      const { field, presentVariant } = entry.discriminator;
+      if (!Number.isInteger(presentVariant) || presentVariant < 0 || presentVariant >= (entry.variants?.length ?? 0)) {
+        errors.push(`${entry.kind}.discriminator.presentVariant ${presentVariant} is out of range for ${entry.variants?.length ?? 0} variants`);
+      }
+      if (!fields.has(field)) errors.push(`${entry.kind}.discriminator.${field} is not declared in the registry fields`);
     }
   }
   if (errors.length > 0) {

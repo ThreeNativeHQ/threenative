@@ -140,6 +140,68 @@ Tests  124 passed (124)
 The golden matrix remained unchanged: 105 scenarios, 103 accepted, 2 rejected, and
 `semanticDifferences: []`.
 
+## Review round 3 repair — red evidence
+
+The latest review defects were reproduced before editing with the new registry tests:
+
+```text
+Test Files  1 failed (1)
+Tests  4 failed | 5 passed (9)
+```
+
+The four red controls were an unknown `requiredFields` entry on an `excludeFields` variant,
+a misspelled discriminator field, an out-of-range discriminator variant index, and the missing
+generated public assertion-type artifact.
+
+## Review round 3 repair — green evidence
+
+Assertion public field contracts now come from the generated
+`packages/playtest/src/scenario/generated-assertion-types.ts` artifact. `schema-base.ts` only
+imports and re-exports those names, preserving the existing public type exports while removing
+handwritten assertion-field ownership. The registry-only synthetic field test now checks both
+generated type output and generated validator output; the existing `movement.minTicks` typed
+load/evaluator proof remains green.
+
+Registry completeness now rejects unknown `requiredFields` entries before variant generation and
+validates discriminator field names and variant indexes with named registry errors. The focused
+registry/fail-closed/evaluator/load suite passed:
+
+```text
+Test Files  8 passed (8)
+Tests  117 passed (117)
+```
+
+The exact new red/green controls are in
+`packages/playtest/__tests__/assertion-registry.spec.ts`.
+
+## Review round 3 gates
+
+- `pnpm --filter @threenative/playtest build`: passed; DTS and `publint` passed.
+- `pnpm typecheck`: passed for all workspace projects.
+- Changed-file Biome check: exit 0 with 30 existing complexity/style warnings and no errors.
+- `TN_TEST_TEMP_TAG=prd204 pnpm --filter @threenative/playtest test`: passed; no orphans and strict `publint` passed.
+- `TN_TEST_TEMP_TAG=prd204 pnpm test`: passed; `199` test files and `1,897` tests passed, with the suite temporary directory count unchanged at `0`.
+- `pnpm budgets`: passed; framework LOC review trigger and existing census-drift notices were reported.
+- Root `pnpm lint`: exit 1 from 4 existing complexity errors outside the changed files and 312 warnings; no changed-file lint errors.
+
+## Review round 3 real playtest
+
+`pnpm test:playtest` passed all four real WebGPU scenarios on the NVIDIA/Turing adapter:
+`framework-movement`, `framework-camera`, `movement-axis`, and `navigation`. Navigation passed
+`pathLength`, `reachesPosition`, and `visibility`.
+
+## Review round 3 files changed
+
+```text
+docs/verification/prd-204-generated-validators-2026-08-23.md
+packages/playtest/__tests__/assertion-registry.spec.ts
+packages/playtest/src/assertion-schema.ts
+packages/playtest/src/scenario/generated-assertion-types.ts
+packages/playtest/src/scenario/generated-assertion-validators.ts
+packages/playtest/src/scenario/schema-base.ts
+scripts/generate-assertion-validators.ts
+```
+
 ## Gates
 
 - `pnpm tsx scripts/generate-assertion-validators.ts --check`: passed; `21 kinds` current.

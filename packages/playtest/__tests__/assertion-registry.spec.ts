@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { IPlaytestAssertionSchemaEntry } from "../src/assertions.js";
 import { assertPlaytestAssertionRegistryComplete, PLAYTEST_ASSERTION_REGISTRY } from "../src/assertions.js";
-import { renderGeneratedAssertionValidators } from "../../../scripts/generate-assertion-validators.js";
+import { renderGeneratedAssertionTypes, renderGeneratedAssertionValidators } from "../../../scripts/generate-assertion-validators.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const generatedValidatorPath = path.join(repoRoot, "packages/playtest/src/scenario/generated-assertion-validators.ts");
@@ -43,8 +43,12 @@ describe("assertion registry completeness", () => {
     const render = renderGeneratedAssertionValidators as unknown as (
       registry: readonly IPlaytestAssertionSchemaEntry[],
     ) => string;
+    const renderTypes = renderGeneratedAssertionTypes as unknown as (
+      registry: readonly IPlaytestAssertionSchemaEntry[],
+    ) => string;
 
     expect(render(registry)).toContain('"name": "registryOnlyField"');
+    expect(renderTypes(registry)).toContain("registryOnlyField?: string");
   });
 
   it("rejects a typo in an entry-level rule field reference", () => {
@@ -96,6 +100,57 @@ describe("assertion registry completeness", () => {
     expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
       "Assertion registry is incomplete: resources.anyOf[].ltee is not declared in the registry fields.",
     );
+  });
+
+  it("rejects an unknown required field on an excludeFields variant", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
+      entry.kind === "resources"
+        ? {
+            ...entry,
+            variants: entry.variants?.map((variant) =>
+              variant.excludeFields === undefined
+                ? variant
+                : { ...variant, requiredFields: ["idd"] },
+            ),
+          }
+        : entry,
+    ) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: resources.idd is not declared in the registry fields.",
+    );
+  });
+
+  it("rejects an unknown discriminator field", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
+      entry.kind === "resources"
+        ? { ...entry, discriminator: { field: "anyOfTypo", presentVariant: 0 } }
+        : entry,
+    ) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: resources.discriminator.anyOfTypo is not declared in the registry fields.",
+    );
+  });
+
+  it("rejects an out-of-range discriminator variant", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
+      entry.kind === "resources"
+        ? { ...entry, discriminator: { field: "anyOf", presentVariant: 2 } }
+        : entry,
+    ) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: resources.discriminator.presentVariant 2 is out of range for 2 variants.",
+    );
+  });
+
+  it("keeps public assertion field contracts in generated source", async () => {
+    const schemaBase = await readFile(path.join(repoRoot, "packages/playtest/src/scenario/schema-base.ts"), "utf8");
+    const generatedTypes = await readFile(path.join(repoRoot, "packages/playtest/src/scenario/generated-assertion-types.ts"), "utf8");
+
+    expect(schemaBase).not.toContain("export interface IPlaytestMovementAssertion");
+    expect(generatedTypes).toContain("minTicks?: number");
   });
 
 });

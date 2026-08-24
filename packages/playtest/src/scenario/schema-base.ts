@@ -1,8 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
-
 export const NUMERIC_COMPARISON_KEYS = ["gte", "lte"] as const;
 export const MIN_TRIVIALITY_REASON_LENGTH = 20;
 
@@ -59,265 +57,79 @@ export interface IPlaytestStep {
 /** Where an aimAt step points: a world xz position or another registered entity. */
 export type IPlaytestAimTarget = { entity: string } | { x: number; z: number };
 
-export interface IPlaytestMovementAssertion {
-  axis?: string;
-  closesDistanceToPosition?: { position: [number, number, number]; min: number };
-  entity?: string;
-  facesMovementWithinDegrees?: number;
-  minAxisDelta?: {
-    axis: string;
-    min: number;
-  };
-  minResolvedAxisDelta?: {
-    axis: string;
-    min: number;
-  };
-  maxTiltDegrees?: number;
-  minDistance?: number;
-  minTicks?: number;
-  minVelocity?: number;
-  maxDistance?: number;
-  pathLength?: number;
-  notFacing?: { entity: string; minDegrees: number };
-  notFacingPosition?: { position: [number, number, number]; minDegrees: number };
-  reachesPositionWithin?: {
-    atStep?: string;
-    position: [number, number, number];
-    maxDistance: number;
-  };
-  rotationChanged?: boolean;
-}
+import type {
+  IPlaytestAerodynamicsAssertion,
+  IPlaytestAnimationAssertion,
+  IPlaytestCameraAssertion,
+  IPlaytestComponentAssertion,
+  IPlaytestComponentsAssertion,
+  IPlaytestContactAssertion,
+  IPlaytestContactsAssertion,
+  IPlaytestDiagnosticsAssertion,
+  IPlaytestFramebufferCoverageAssertion,
+  IPlaytestHudAssertion,
+  IPlaytestMovementAssertion,
+  IPlaytestOccludedAssertion,
+  IPlaytestOverlayNodeAssertion,
+  IPlaytestOverlayNodesAssertion,
+  IPlaytestPathAssertion,
+  IPlaytestPerformanceAssertion,
+  IPlaytestReachabilityAssertion,
+  IPlaytestResourceAnyOfAssertion,
+  IPlaytestResourceAssertion,
+  IPlaytestResourcePathAlternative,
+  IPlaytestResourcePathAssertion,
+  IPlaytestResourcesAssertion,
+  IPlaytestScenarioAssertions,
+  IPlaytestSettledAssertion,
+  IPlaytestSignalAssertion,
+  IPlaytestSignalsAssertion,
+  IPlaytestStateAssertion,
+  IPlaytestStatesAssertion,
+  IPlaytestTagCountAssertion,
+  IPlaytestTagsAssertion,
+  IPlaytestVisibilityAssertion,
+  IPlaytestVisualAssertion,
+  IPlaytestWorldAssertion,
+  IPlaytestWorldRuntimeAssertion,
+} from "./generated-assertion-types.js";
 
-export interface IPlaytestCameraAssertion {
-  entity?: string;
-  follows?: string;
-  targetInViewport?: boolean;
-  within?: number;
-}
-
-export interface IPlaytestPathAssertion {
-  atSteps?: Array<{
-    equals?: unknown;
-    label: string;
-    textIncludes?: string;
-  }>;
-  changed?: boolean;
-  equals?: unknown;
-  gte?: number;
-  id: string;
-  lte?: number;
-  allowTrivial?: string;
-  path?: string;
-  textIncludes?: string;
-  throughoutSteps?: boolean;
-}
-
-export interface IPlaytestResourcePathAlternative {
-  changed?: boolean;
-  equals?: unknown;
-  gte?: number;
-  lte?: number;
-  path: string;
-  textIncludes?: string;
-}
-
-export interface IPlaytestResourcePathAssertion extends IPlaytestPathAssertion {
-  anyOf?: never;
-}
-
-export interface IPlaytestResourceAnyOfAssertion {
-  anyOf: IPlaytestResourcePathAlternative[];
-  atSteps?: never;
-  changed?: never;
-  equals?: never;
-  gte?: never;
-  id: string;
-  lte?: never;
-  allowTrivial?: never;
-  path?: never;
-  textIncludes?: never;
-  throughoutSteps?: never;
-}
-
-export type IPlaytestResourceAssertion =
-  | IPlaytestResourceAnyOfAssertion
-  | IPlaytestResourcePathAssertion;
-
-export interface IPlaytestComponentAssertion extends Omit<IPlaytestPathAssertion, "id" | "textIncludes" | "throughoutSteps"> {
-  component: string;
-  entity: string;
-}
-
-export interface IPlaytestContactAssertion {
-  atStep?: string;
-  entity?: string;
-  kind?: string;
-  maxCount?: number;
-  minCount?: number;
-  requiredOn?: PlaytestTarget[];
-  with?: string;
-}
-
-export interface IPlaytestSignalAssertion {
-  atStep?: string;
-  entity?: string;
-  maxCount?: number;
-  minCount?: number;
-  name: string;
-}
-
-export interface IPlaytestSettledAssertion {
-  atStep?: string;
-  allowTrivial?: string;
-  compareToStep?: string;
-  entity?: string;
-  minBodies?: number;
-  minMeanPoseDistance?: number;
-  requiredOn?: PlaytestTarget[];
-}
-
-export interface IPlaytestOccludedAssertion {
-  allowTrivial?: string;
-  entity?: string;
-  target?: string;
-}
-
-export interface IPlaytestOverlayNodeAssertion {
-  attribute?: string;
-  equals?: unknown;
-  overlayId: string;
-  selector: string;
-  textIncludes?: string;
-  visible?: boolean;
-}
-
-export interface IPlaytestAnimationAssertion {
-  advancedFrames?: number;
-  allowTrivial?: string;
-  clip?: string;
-  entered?: boolean;
-  entity?: string;
-  finished?: boolean;
-}
-
-export interface IPlaytestTagCountAssertion {
-  allowTrivial?: string;
-  count?: number;
-  gte?: number;
-  lte?: number;
-  tag: string;
-}
-
-export interface IPlaytestStateAssertion {
-  allowTrivial?: string;
-  entity?: string;
-  equals: string;
-}
-
-export interface IPlaytestVisibilityAssertion {
-  allowTrivial?: string;
-  entity?: string;
-  maxOffscreenRatio?: number;
-  minProjectedPixels?: number;
-  present?: boolean;
-}
-
-export interface IPlaytestDiagnosticsAssertion {
-  noConsoleErrors?: boolean;
-  noNetworkErrors?: boolean;
-  noRuntimeDiagnostics?: boolean;
-  consoleErrorsOptOutReason?: string;
-  networkErrorsOptOutReason?: string;
-  runtimeDiagnosticsOptOutReason?: string;
-  runtimeReady?: boolean;
-}
-
-export interface IPlaytestPerformanceAssertion {
-  maxDrawCalls?: number;
-  maxFrameMsP95?: number;
-  maxTriangles?: number;
-}
-
-export interface IPlaytestFramebufferCoverageAssertion {
-  backdrop: [number, number, number];
-  grid?: {
-    columns: number;
-    rows: number;
-  };
-  tolerance: number;
-  window: {
-    endStep: string;
-    startStep: string;
-  };
-}
-
-export interface IPlaytestVisualAssertion {
-  entityVisible?: { entity: string; minProjectedPixels: number; throughoutFrames?: boolean };
-  frameDiff?: { baselineImage?: string; maxChangedPixelRatio?: number; minChangedPixelRatio?: number };
-  region?: { height: number; maxLuminance?: number; minDarkPixelRatio?: number; minNonblankPixelRatio?: number; width: number; x: number; y: number };
-}
-
-export interface IPlaytestAerodynamicsAssertion {
-  controls?: Array<{
-    minAbs?: number;
-    sign: "negative" | "positive";
-    surface: string;
-  }>;
-  entity: string;
-  minForceSamples?: number;
-  torques?: Array<{
-    axis: "x" | "y" | "z";
-    label: string;
-    minAbs?: number;
-    relativeToLabel?: string;
-    sign: "negative" | "positive";
-  }>;
-}
-
-export interface IPlaytestReachabilityAssertion {
-  artifact: string;
-  entities: string[];
-  /** Loaded from artifact by loadPlaytestScenario; not authored in scenario JSON. */
-  envelope?: { fallDistanceToGround: number; forwardReach: number; maxRise: number };
-}
-
-export interface IPlaytestWorldRuntimeAssertion {
-  agent: string;
-  core: string;
-  portable?: boolean;
-  randomState: number;
-  rapier: string | null;
-  step: number;
-}
-
-export interface IPlaytestWorldAssertion {
-  runtime?: IPlaytestWorldRuntimeAssertion;
-  seed: number | null;
-}
-
-export interface IPlaytestScenarioAssertions {
-  aerodynamics?: IPlaytestAerodynamicsAssertion[];
-  animation?: IPlaytestAnimationAssertion[];
-  camera?: IPlaytestCameraAssertion;
-  components?: IPlaytestComponentAssertion[];
-  contacts?: IPlaytestContactAssertion[];
-  diagnostics?: IPlaytestDiagnosticsAssertion;
-  framebufferCoverage?: IPlaytestFramebufferCoverageAssertion;
-  hud?: IPlaytestPathAssertion[];
-  movement?: IPlaytestMovementAssertion;
-  occluded?: IPlaytestOccludedAssertion[];
-  overlayNodes?: IPlaytestOverlayNodeAssertion[];
-  performance?: IPlaytestPerformanceAssertion;
-  reachability?: IPlaytestReachabilityAssertion;
-  resources?: IPlaytestResourceAssertion[];
-  settled?: IPlaytestSettledAssertion[];
-  signals?: IPlaytestSignalAssertion[];
-  states?: IPlaytestStateAssertion[];
-  tags?: IPlaytestTagCountAssertion[];
-  visibility?: IPlaytestVisibilityAssertion[];
-  visual?: IPlaytestVisualAssertion[];
-  world?: IPlaytestWorldAssertion;
-}
+export type {
+  IPlaytestAerodynamicsAssertion,
+  IPlaytestAnimationAssertion,
+  IPlaytestCameraAssertion,
+  IPlaytestComponentAssertion,
+  IPlaytestComponentsAssertion,
+  IPlaytestContactAssertion,
+  IPlaytestContactsAssertion,
+  IPlaytestDiagnosticsAssertion,
+  IPlaytestFramebufferCoverageAssertion,
+  IPlaytestHudAssertion,
+  IPlaytestMovementAssertion,
+  IPlaytestOccludedAssertion,
+  IPlaytestOverlayNodeAssertion,
+  IPlaytestOverlayNodesAssertion,
+  IPlaytestPathAssertion,
+  IPlaytestPerformanceAssertion,
+  IPlaytestReachabilityAssertion,
+  IPlaytestResourceAnyOfAssertion,
+  IPlaytestResourceAssertion,
+  IPlaytestResourcePathAlternative,
+  IPlaytestResourcePathAssertion,
+  IPlaytestResourcesAssertion,
+  IPlaytestScenarioAssertions,
+  IPlaytestSettledAssertion,
+  IPlaytestSignalAssertion,
+  IPlaytestSignalsAssertion,
+  IPlaytestStateAssertion,
+  IPlaytestStatesAssertion,
+  IPlaytestTagCountAssertion,
+  IPlaytestTagsAssertion,
+  IPlaytestVisibilityAssertion,
+  IPlaytestVisualAssertion,
+  IPlaytestWorldAssertion,
+  IPlaytestWorldRuntimeAssertion,
+};
 
 export interface IPlaytestParityConfig {
   animation?: Array<{ clip?: string; entity: string; requiredOn?: PlaytestTarget[] }>;
