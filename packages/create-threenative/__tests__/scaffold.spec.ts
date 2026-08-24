@@ -11,11 +11,13 @@ import {
   discoverKitManifests,
   discoverTemplateNames,
   parseArgs,
+  scaffoldCompletionMessage,
 } from "../src/index.js";
 
 const run = promisify(execFile);
 
 const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
+const KIT_FIXTURE_ROOT = path.resolve("packages/create-threenative/__tests__/fixtures/kits");
 const ASSET_MCP = "threenative-asset-mcp";
 const SCULPT_MCP = "threenative-sculpt-mcp";
 const ENGINE_MCP = "threenative-engine-mcp";
@@ -187,6 +189,43 @@ describe("create-threenative", () => {
         `${manifest.name.padEnd(width)}  ${manifest.title}: ${manifest.blurb}`,
       );
     }
+  });
+
+  it("derives the scaffold completion message from every discovered kit", async () => {
+    const root = await makeTempDir("threenative-message-manifests-");
+    try {
+      const templates = path.join(root, "templates");
+      await cp(TEMPLATE_ROOT, templates, { recursive: true });
+      await cp(path.join(KIT_FIXTURE_ROOT, "scratch"), path.join(templates, "scratch"), {
+        recursive: true,
+      });
+      const manifests = discoverKitManifests(templates);
+
+      expect(scaffoldCompletionMessage(manifests)).toBe(
+        `Templates: ${manifests
+          .map(({ name }) => (name === "starter" ? `${name} (default)` : name))
+          .join(", ")}. Choose with --template <name>.\n`,
+      );
+      expect(scaffoldCompletionMessage(manifests)).toContain("scratch");
+      const source = await readFile(
+        path.resolve("packages/create-threenative/src/index.ts"),
+        "utf8",
+      );
+      expect(source).toContain("scaffoldCompletionMessage(discoverKitManifests())");
+      expect(source).not.toContain("Templates: minimal (smallest)");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps package flags and template substitution single-sourced", async () => {
+    const source = await readFile(path.resolve("packages/create-threenative/src/index.ts"), "utf8");
+    expect(source.match(/const PACKAGE_SOURCE_FLAGS =/gu)).toHaveLength(1);
+    expect(source.match(/for \(const \[name, flag\] of PACKAGE_SOURCE_FLAGS\)/gu)).toHaveLength(1);
+    expect(source).not.toContain("for (const [name, flag] of [");
+    expect(source.match(/function substituteTemplateVariables\(/gu)).toHaveLength(1);
+    expect(source.match(/substituteTemplateVariables\(/gu)).toHaveLength(3);
+    expect(source.match(/replaceAll\(placeholder, value\)/gu)).toHaveLength(1);
   });
 
   // P2-2: the bounded instructions name long recipes by their shipped path. This is the

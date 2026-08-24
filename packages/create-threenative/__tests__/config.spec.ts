@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -7,6 +7,10 @@ import { loadConfig } from "../src/config.js";
 const roots: string[] = [];
 const VALID_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXUlEQVR4AaXBQRHEAAgEwclWHGDivIBckIWG3Hf/dD/frz9MdOK2BhedOHEkjsTRG524rcFFJ25rcOJIHImjd2tw0YnbGlx04sSROBJHb3TitgYXnbitwYkjcSSO/o/fGRJxtqYFAAAAAElFTkSuQmCC",
+  "base64",
+);
+const TRNS_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAAnRSTlMAAHaTzTgAAAAQSURBVHicY2AYBaNgFMAAAAMQAAE/LCvsAAAAAElFTkSuQmCC",
   "base64",
 );
 
@@ -52,6 +56,34 @@ async function expectActionableFailure(
 }
 
 describe("threenative.config.ts", () => {
+  it("re-exports the core-owned texture config type", async () => {
+    const createSource = await readFile(
+      path.resolve("packages/create-threenative/src/config.ts"),
+      "utf8",
+    );
+    const coreSource = await readFile(path.resolve("packages/core/src/config.ts"), "utf8");
+    expect(createSource).toMatch(
+      /export type \{[^}]*IThreeNativeTexturesConfig[^}]*\} from "@threenative\/core";/su,
+    );
+    expect(createSource).toContain('import { parsePng } from "@threenative/assets";');
+    expect(createSource).not.toMatch(/export interface IThreeNativeTexturesConfig/u);
+    expect(createSource).not.toMatch(/const PNG_SIGNATURE =/u);
+    expect(coreSource.match(/export interface IThreeNativeTexturesConfig/gu)).toHaveLength(1);
+  });
+
+  it("accepts tRNS PNG alpha through the shared parser", async () => {
+    const root = await project();
+    await writeFile(path.join(root, "foreground.png"), TRNS_PNG);
+    await config(
+      root,
+      'export default { app: { icons: { android: { foreground: "foreground.png" } } } };',
+    );
+
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      app: { icons: { android: { foreground: "foreground.png" } } },
+    });
+  });
+
   it("parses every group and applies defaults for omitted fields", async () => {
     const root = await project("studio-fox");
     await writeFile(path.join(root, "icon.png"), VALID_PNG);
