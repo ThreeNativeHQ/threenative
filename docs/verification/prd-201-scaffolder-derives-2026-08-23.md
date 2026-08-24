@@ -50,6 +50,80 @@ FAIL ... keeps package flags and template substitution single-sourced
 AssertionError: expected [ Array(2) ] to have a length of 3 but got 2
 ```
 
+### Acceptance criterion — scaffold byte preservation
+
+The byte-preservation criterion was exercised as a negative control against the shared scaffold/template substitution path.
+
+Mutation: temporarily changed `substituteTemplateVariables` in `packages/create-threenative/src/index.ts` from:
+
+```ts
+rendered = rendered.replaceAll(placeholder, value);
+```
+
+to:
+
+```ts
+rendered = rendered.replaceAll(placeholder, `${value}-prd201-byte-mutation`);
+```
+
+The clean baseline was compared with a fresh mutated scaffold for each existing kit using `diff -qr`.
+The exact red result was:
+
+```text
+--- action-rpg ---
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/action-rpg/AGENTS.md and /tmp/prd201-byte-smoke-29lTMn/mutated/action-rpg/AGENTS.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/action-rpg/CLAUDE.md and /tmp/prd201-byte-smoke-29lTMn/mutated/action-rpg/CLAUDE.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/action-rpg/index.html and /tmp/prd201-byte-smoke-29lTMn/mutated/action-rpg/index.html differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/action-rpg/package.json and /tmp/prd201-byte-smoke-29lTMn/mutated/action-rpg/package.json differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/action-rpg/threenative.config.ts and /tmp/prd201-byte-smoke-29lTMn/mutated/action-rpg/threenative.config.ts differ
+DIFF_EXIT=1
+--- defense ---
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/defense/AGENTS.md and /tmp/prd201-byte-smoke-29lTMn/mutated/defense/AGENTS.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/defense/CLAUDE.md and /tmp/prd201-byte-smoke-29lTMn/mutated/defense/CLAUDE.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/defense/index.html and /tmp/prd201-byte-smoke-29lTMn/mutated/defense/index.html differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/defense/package.json and /tmp/prd201-byte-smoke-29lTMn/mutated/defense/package.json differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/defense/threenative.config.ts and /tmp/prd201-byte-smoke-29lTMn/mutated/defense/threenative.config.ts differ
+DIFF_EXIT=1
+--- minimal ---
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/minimal/AGENTS.md and /tmp/prd201-byte-smoke-29lTMn/mutated/minimal/AGENTS.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/minimal/CLAUDE.md and /tmp/prd201-byte-smoke-29lTMn/mutated/minimal/CLAUDE.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/minimal/index.html and /tmp/prd201-byte-smoke-29lTMn/mutated/minimal/index.html differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/minimal/package.json and /tmp/prd201-byte-smoke-29lTMn/mutated/minimal/package.json differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/minimal/threenative.config.ts and /tmp/prd201-byte-smoke-29lTMn/mutated/minimal/threenative.config.ts differ
+DIFF_EXIT=1
+--- platformer ---
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/platformer/AGENTS.md and /tmp/prd201-byte-smoke-29lTMn/mutated/platformer/AGENTS.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/platformer/CLAUDE.md and /tmp/prd201-byte-smoke-29lTMn/mutated/platformer/CLAUDE.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/platformer/index.html and /tmp/prd201-byte-smoke-29lTMn/mutated/platformer/index.html differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/platformer/package.json and /tmp/prd201-byte-smoke-29lTMn/mutated/platformer/package.json differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/platformer/threenative.config.ts and /tmp/prd201-byte-smoke-29lTMn/mutated/platformer/threenative.config.ts differ
+DIFF_EXIT=1
+--- racing ---
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/racing/AGENTS.md and /tmp/prd201-byte-smoke-29lTMn/mutated/racing/AGENTS.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/racing/CLAUDE.md and /tmp/prd201-byte-smoke-29lTMn/mutated/racing/CLAUDE.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/racing/index.html and /tmp/prd201-byte-smoke-29lTMn/mutated/racing/index.html differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/racing/package.json and /tmp/prd201-byte-smoke-29lTMn/mutated/racing/package.json differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/racing/threenative.config.ts and /tmp/prd201-byte-smoke-29lTMn/mutated/racing/threenative.config.ts differ
+DIFF_EXIT=1
+--- shooter ---
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/shooter/AGENTS.md and /tmp/prd201-byte-smoke-29lTMn/mutated/shooter/AGENTS.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/shooter/CLAUDE.md and /tmp/prd201-byte-smoke-29lTMn/mutated/shooter/CLAUDE.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/shooter/index.html and /tmp/prd201-byte-smoke-29lTMn/mutated/shooter/index.html differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/shooter/package.json and /tmp/prd201-byte-smoke-29lTMn/mutated/shooter/package.json differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/shooter/threenative.config.ts and /tmp/prd201-byte-smoke-29lTMn/mutated/shooter/threenative.config.ts differ
+DIFF_EXIT=1
+--- starter ---
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/starter/AGENTS.md and /tmp/prd201-byte-smoke-29lTMn/mutated/starter/AGENTS.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/starter/CLAUDE.md and /tmp/prd201-byte-smoke-29lTMn/mutated/starter/CLAUDE.md differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/starter/index.html and /tmp/prd201-byte-smoke-29lTMn/mutated/starter/index.html differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/starter/package.json and /tmp/prd201-byte-smoke-29lTMn/mutated/starter/package.json differ
+Files /tmp/prd201-byte-smoke-29lTMn/baseline/starter/threenative.config.ts and /tmp/prd201-byte-smoke-29lTMn/mutated/starter/threenative.config.ts differ
+DIFF_EXIT=1
+BYTE_DIFF=red for 7 kits
+```
+
+All seven kits therefore rejected the byte-changing substitution mutation. The representative byte change was `"name": "starter"` to `"name": "starter-prd201-byte-mutation"` in `package.json`.
+
 ### Phase 3 — owned type and parser
 
 The pre-fix source had independent declarations and three PNG signature homes:
@@ -83,7 +157,7 @@ ConfigFailure: TN_CONFIG_BRAND_ANDROID_FOREGROUND_ALPHA_INVALID
 MUTATION_EXIT=1
 ```
 
-All mutations were restored immediately after their red result.
+All mutations, including the byte-smoke substitution mutation, were restored immediately after their red result.
 
 ## Green evidence
 
@@ -99,6 +173,12 @@ All mutations were restored immediately after their red result.
 
 - Byte smoke diff — two fresh scaffold runs for all seven kits produced `BYTE_DIFF=clean for 7
   kits`; `git diff --quiet -- packages/create-threenative/templates` also passed.
+- Post-restoration byte smoke — a fresh seven-kit run after restoring the helper produced:
+
+  ```text
+  BYTE_DIFF=clean for 7 kits
+  TEMPLATE_SOURCE_DIFF=clean
+  ```
 - Duplicate proof — one core `IThreeNativeTexturesConfig` declaration, one
   `PNG_SIGNATURE` definition, one substitution loop, and one `replaceAll(placeholder, value)`
   remain in source.
