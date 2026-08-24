@@ -5,6 +5,7 @@ import { afterEach, test } from 'vitest';
 
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { renderAndroidManifest, stageAndroidUi } from '../scripts/package-android.mjs';
+import { stageDesktopUi } from '../scripts/package-desktop.mjs';
 
 const androidManifest = readFileSync(
   new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url),
@@ -78,4 +79,26 @@ test('a web-renderer game stages its page and every asset beside it', () => {
   assert.deepEqual(stageAndroidUi(ui, 'web', destination), ['assets/hud.css', 'index.html']);
   assert.equal(existsSync(join(destination, 'index.html')), true);
   assert.equal(readFileSync(join(destination, 'assets', 'hud.css'), 'utf8'), '.hud{color:#fff}');
+});
+
+// Desktop stages the UI beside the executable rather than inside it: the overlay's web view reads
+// its page from a real path, which is what gives it a real origin the way WebViewAssetLoader does
+// on Android. Same two refusals as Android, because the same two mistakes are possible.
+test('desktop stages a web-renderer UI and refuses both mismatches', () => {
+  const root = temp('threenative-ui-desktop-');
+  const ui = join(root, 'ui');
+  mkdirSync(join(ui, 'assets'), { recursive: true });
+  writeFileSync(join(ui, 'index.html'), '<!doctype html><div id="tn-ui"></div>');
+  writeFileSync(join(ui, 'assets', 'hud.css'), '.hud{color:#fff}');
+
+  const staged = join(root, 'out');
+  assert.deepEqual(stageDesktopUi(ui, 'web', staged).sort(), ['assets', 'index.html']);
+  assert.equal(existsSync(join(staged, 'assets', 'hud.css')), true);
+
+  const none = join(root, 'none');
+  assert.deepEqual(stageDesktopUi(undefined, 'native', none), []);
+  assert.equal(existsSync(none), false);
+
+  assert.throws(() => stageDesktopUi(undefined, 'web', join(root, 'a')), /TN_UI_BUNDLE_MISSING/u);
+  assert.throws(() => stageDesktopUi(ui, 'native', join(root, 'b')), /TN_UI_BUNDLE_UNEXPECTED/u);
 });

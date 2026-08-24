@@ -589,9 +589,10 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
     if (width > 0) opts.width = static_cast<int>(width);
     if (height > 0) opts.height = static_cast<int>(height);
     opts.resizable = extractJsonBool(config, "resizable", opts.resizable);
-    // `ui.renderer`. Anything but "web" is the native renderer, which ships no overlay at all —
-    // the same fail-closed reading the Android manifest metadata gets.
-    if (extractJsonString(config, "renderer") == "web") opts.uiRoot = "ui";
+    // `ui.renderer`, flattened by the packager to `uiRenderer` because `renderer` already means
+    // the WebGPU preference here. Anything but "web" is the native renderer, which ships no
+    // overlay at all — the same fail-closed reading the Android manifest metadata gets.
+    if (extractJsonString(config, "uiRenderer") == "web") opts.uiRoot = "ui";
 }
 
 CLIOptions parseArgs(int argc, char* argv[]) {

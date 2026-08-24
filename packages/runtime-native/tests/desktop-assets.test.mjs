@@ -69,13 +69,23 @@ test('desktop staging embeds the resolved window contract for the native host', 
 
     stageDesktopFiles(bundle, undefined, staging, config);
 
+    // `uiRenderer` is flattened out of `ui.renderer` by the packager because `renderer` already
+    // means the WebGPU preference at the top level, and the host reads this file with a scanner
+    // that would find the wrong one. A game that states nothing gets the native renderer.
     assert.deepEqual(
       JSON.parse(readFileSync(join(staging, '.threenative', 'config.json'), 'utf8')),
-      config,
+      { ...config, uiRenderer: 'native' },
+    );
+    const web = join(root, 'staging-web');
+    stageDesktopFiles(bundle, undefined, web, { ...config, ui: { renderer: 'web' } });
+    assert.equal(
+      JSON.parse(readFileSync(join(web, '.threenative', 'config.json'), 'utf8')).uiRenderer,
+      'web',
     );
     const host = readFileSync(new URL('../src/cli/main.cpp', import.meta.url), 'utf8');
     assert.match(host, /readEmbeddedFile\("\.threenative\/config\.json"/u);
     assert.match(host, /extractJsonString\(config, "title"\)/u);
+    assert.match(host, /extractJsonString\(config, "uiRenderer"\)/u);
     assert.match(host, /extractJsonNumber\(config, "width"/u);
     assert.match(host, /extractJsonNumber\(config, "height"/u);
     assert.match(host, /extractJsonBool\(config, "resizable"/u);

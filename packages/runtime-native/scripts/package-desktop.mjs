@@ -42,8 +42,8 @@ export function parseArgs(args) {
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!['--assets', '--bundle', '--config', '--output', '--runtime'].includes(flag) || !value) {
-      throw new Error('Usage: package-desktop.mjs --bundle FILE --runtime FILE --output FILE [--assets DIR] [--config FILE]');
+    if (!['--assets', '--bundle', '--config', '--output', '--runtime', '--ui'].includes(flag) || !value) {
+      throw new Error('Usage: package-desktop.mjs --bundle FILE --runtime FILE --output FILE [--assets DIR] [--ui DIR] [--config FILE]');
     }
     options[flag.slice(2)] = resolve(value);
   }
@@ -73,6 +73,16 @@ export function packageDesktop(options) {
       staging,
       options.config === undefined ? undefined : readConfig(options.config),
     );
+    // The UI bundle sits beside the executable rather than inside it. Desktop compiles to one
+    // file, but the overlay's web view reads its page from a real path — that is what gives it a
+    // real origin, the way `WebViewAssetLoader` does on Android, and it is the difference between
+    // `fetch` behaving as it does on web and not. A game with the native UI renderer ships neither
+    // the directory nor an overlay.
+    stageDesktopUi(
+      options.ui,
+      options.config === undefined ? 'native' : readConfig(options.config).ui?.renderer ?? 'native',
+      join(dirname(output), 'ui'),
+    );
     const args = [
       'compile',
       stagedEntry,
@@ -93,6 +103,41 @@ export function packageDesktop(options) {
   if (process.platform !== 'win32') chmodSync(output, 0o755);
   console.log(`ThreeNative desktop artifact: ${output}`);
   return output;
+}
+
+/**
+ * Stage the built UI bundle beside the desktop executable.
+ *
+ * Fails closed both ways, for the same reasons the Android packager does: a `web` game with no
+ * built UI would install, launch and show nothing over a working game, and a `native` game must
+ * ship no bundle at all.
+ */
+export function stageDesktopUi(ui, renderer, destination) {
+  rmSync(destination, { force: true, recursive: true });
+  if (renderer !== 'web') {
+    if (ui) {
+      throw new Error(
+        `TN_UI_BUNDLE_UNEXPECTED: a UI bundle was staged for a game whose ui.renderer is '${renderer}'. ` +
+          'The native renderer ships no web view; remove the bundle or set ui.renderer to "web".',
+      );
+    }
+    return [];
+  }
+  if (!ui || !existsSync(ui)) {
+    throw new Error(
+      `TN_UI_BUNDLE_MISSING: ui.renderer is "web" but no built UI was found at ${ui ?? '(not provided)'}. ` +
+        'Build the UI before packaging, or set ui.renderer to "native".',
+    );
+  }
+  if (!statSync(ui).isDirectory()) throw new Error(`TN_UI_BUNDLE_MISSING: not a directory: ${ui}`);
+  if (!existsSync(join(ui, 'index.html'))) {
+    throw new Error(
+      `TN_UI_BUNDLE_MISSING: ${ui} has no index.html, which is the page the overlay loads.`,
+    );
+  }
+  mkdirSync(destination, { recursive: true });
+  cpSync(ui, destination, { recursive: true });
+  return readdirSync(destination);
 }
 
 export function stageDesktopFiles(
@@ -127,6 +172,10 @@ export function stageDesktopFiles(
   if (config !== undefined) {
     const icon = config.app?.icon ?? config.app?.icons?.android?.foreground;
     const packaged = { ...config, app: { ...(config.app ?? {}) } };
+    // Flattened deliberately. The embedded config is read by a small scanner in the C++ host, and
+    // `renderer` already exists at the top level as the WebGPU preference — a nested lookup for a
+    // second `renderer` would find the wrong one. Anything but "web" is the native renderer.
+    packaged.uiRenderer = config.ui?.renderer === 'web' ? 'web' : 'native';
     if (icon !== undefined) {
       if (!existsSync(icon) || !statSync(icon).isFile()) {
         throw new Error(`TN_CONFIG_BRAND_DESKTOP_MISSING: app icon does not exist: ${icon}`);
