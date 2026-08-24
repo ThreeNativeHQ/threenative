@@ -4,8 +4,14 @@ prd_contract: v1
 
 # PRD-217 — one UI layer that looks identical on every platform, via a WebView
 
-**Status:** PROPOSED 2026-08-24. The load-bearing risk has been measured on a physical Pixel 8 and
-came back clean; see "Spike" below. Nothing is implemented.
+**Status:** PARTIAL 2026-08-24. Phases 0, 1, 2, 3A and 4 are implemented and committed; 3B was not
+needed. Five of the eight acceptance criteria pass with evidence, and three did not run —
+`docs/verification/prd-217-acceptance-2026-08-24.md` names which and why. It stays out of `done/`
+until criteria 1, 3 and 7 have a Pixel 8 and a desktop frame-rate measurement behind them.
+
+Per-phase records: `prd-217-phase-0-2026-08-24.md` (Android, green on a `--target android`
+playtest), `prd-217-phase-2-2026-08-24.md` (iOS, written and stated unproven),
+`prd-217-phase-3a-2026-08-24.md` (desktop, the transparency blocker found and fixed).
 
 **Revised 2026-08-24** after external architecture review. Three things changed materially, and all
 three make the PRD cheaper: desktop no longer assumes CEF (a native child WebView is tried first),
