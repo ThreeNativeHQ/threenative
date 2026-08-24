@@ -2,7 +2,12 @@ import { type FSWatcher, watch } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ASSET_MANIFEST_NAME, DEFAULT_ASSET_SOURCE, messageOf } from "./asset-utils.js";
+import {
+  ASSET_MANIFEST_NAME,
+  DEFAULT_ASSET_OUTPUT,
+  DEFAULT_ASSET_SOURCE,
+  messageOf,
+} from "./asset-utils.js";
 import {
   type IAssetCompileOptions,
   type IBasisTranscoder,
@@ -60,12 +65,11 @@ interface ICompiledEntry {
   readonly output: string;
 }
 
-const DEFAULT_OUTPUT = "public";
 const DEFAULT_DEBOUNCE_MS = 100;
 
 function resolveWatchLayout(cwd: string, options: IAssetWatchOptions): IWatchLayout {
   const source = options.source ?? options.config?.source ?? DEFAULT_ASSET_SOURCE;
-  const output = options.output ?? options.config?.output ?? DEFAULT_OUTPUT;
+  const output = options.output ?? options.config?.output ?? DEFAULT_ASSET_OUTPUT;
   const sourceRoot = path.resolve(cwd, source);
   const outputRoot = path.resolve(cwd, output);
   return { manifestPath: path.join(outputRoot, ASSET_MANIFEST_NAME), outputRoot, sourceRoot };

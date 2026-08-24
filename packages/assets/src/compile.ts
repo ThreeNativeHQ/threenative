@@ -11,7 +11,12 @@ import {
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { ASSET_MANIFEST_NAME, DEFAULT_ASSET_SOURCE, messageOf } from "./asset-utils.js";
+import {
+  ASSET_MANIFEST_NAME,
+  DEFAULT_ASSET_OUTPUT,
+  DEFAULT_ASSET_SOURCE,
+  messageOf,
+} from "./asset-utils.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { modelPass } from "./passes/model.js";
@@ -144,7 +149,6 @@ interface IDirectoryScan {
   readonly subdirectories: string[];
 }
 
-const DEFAULT_OUTPUT = "public";
 const BASIS_DIRECTORY = "basis";
 /**
  * Baked into every output hash so a future change to how passes behave invalidates previously
@@ -364,7 +368,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     }
   }
   const source = options.source ?? config.source ?? DEFAULT_ASSET_SOURCE;
-  const output = options.output ?? config.output ?? DEFAULT_OUTPUT;
+  const output = options.output ?? config.output ?? DEFAULT_ASSET_OUTPUT;
   const sourceRoot = path.resolve(cwd, nonEmptyString(source, "assets.source"));
   const outputRoot = path.resolve(cwd, nonEmptyString(output, "assets.output"));
   const nested =

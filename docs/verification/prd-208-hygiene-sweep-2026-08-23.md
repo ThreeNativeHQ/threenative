@@ -16,6 +16,23 @@ Branch: `linchpin/prd-208-tier-four-hygiene-sweep`
 - Asset manifest/source constants and `messageOf` now have one owner in `packages/assets/src/asset-utils.ts`. Gesture events have one owner in `packages/core/src/audio.ts:63`. Navigation validation/vector conversion have one owner in `packages/physics/src/navigation/navigation-utils.ts`.
 - Script `isRecord` and `freePort` have one owner in `scripts/utils.ts`. The native workload's broader object-only check was left unchanged because it intentionally accepts arrays.
 - The three private renderer property-key idioms use `packages/core/src/three-private.ts:5`; the final inline split-string census returned no output. No new package export was added.
+- Required single-owner definition greps (one definition per named symbol) returned:
+
+  ```text
+  $ rg -n '^const GESTURE_EVENTS = ' packages/core/src/audio.ts
+  packages/core/src/audio.ts:63:const GESTURE_EVENTS = ["keydown", "pointerdown", "touchstart"] as const;
+  $ rg -n '^(export const (ASSET_MANIFEST_NAME|DEFAULT_ASSET_OUTPUT|DEFAULT_ASSET_SOURCE)|export function messageOf)' packages/assets/src/asset-utils.ts
+  packages/assets/src/asset-utils.ts:1:export const ASSET_MANIFEST_NAME = "assets.manifest.json";
+  packages/assets/src/asset-utils.ts:2:export const DEFAULT_ASSET_OUTPUT = "public";
+  packages/assets/src/asset-utils.ts:3:export const DEFAULT_ASSET_SOURCE = "assets";
+  packages/assets/src/asset-utils.ts:4:export function messageOf(error: unknown): string {
+  $ rg -n '^export function (finitePositive|toNavigationVector)\b' packages/physics/src/navigation/navigation-utils.ts
+  packages/physics/src/navigation/navigation-utils.ts:4:export function finitePositive(owner: string, name: string, value: number): number {
+  packages/physics/src/navigation/navigation-utils.ts:10:export function toNavigationVector(
+  $ rg -n '^export (async )?function (isRecord|freePort)\b' scripts/utils.ts
+  scripts/utils.ts:3:export function isRecord(value: unknown): value is Record<string, unknown> {
+  scripts/utils.ts:7:export async function freePort(invalidMessage = "TN_GOLDEN_PATH_PORT_INVALID"): Promise<number> {
+  ```
 - Final zero-result censuses:
 
   ```sh
@@ -31,6 +48,15 @@ Each declared control was made red temporarily, then restored:
 1. Reverting the hidden-overlay lifecycle caused `does not poll while closed` to fail with `actually been called 10 times` after one second of fake time.
 2. Diverging the watch manifest filename caused the changed-input test to fail because the old hashed output remained unchanged.
 3. Restoring one inline split-string caused the material census command to exit 1 at `packages/core/src/assets.ts:436`.
+4. The source-derived asset ownership control was red before the fix:
+
+   ```text
+   Command: pnpm exec vitest run packages/assets/__tests__/hygiene.spec.ts --reporter=verbose
+   Result: 1 test failed — expected ["asset-utils"], received ["compile", "watch"]
+   ```
+
+   After moving `DEFAULT_ASSET_OUTPUT` to `asset-utils.ts` and importing it from both callers, the
+   same control was green: 1 test file passed, 1 test passed.
 
 ## Repair round 1 — shared MCP client contract
 
@@ -111,10 +137,22 @@ No templates or render sources were changed, so no visual change was expected.
 - `pnpm test:playtest` — passed: 4 scenario reports, all with `"pass": true`.
 - `pnpm test:templates` — passed: action-rpg, defense, minimal, platformer, racing, shooter, and starter scaffolded playtests.
 
+## Repair round 3 gate rerun
+
+- Focused golden-path plus asset tests — passed: 9 files, 72 tests.
+- `pnpm typecheck` — passed across 16 workspace projects.
+- `pnpm lint` — passed with 291 existing complexity warnings and no errors.
+- `pnpm budgets` — passed; existing framework LOC review-trigger and native-census drift notices were reported.
+- `pnpm quality` — passed; 70 non-fatal findings were reported.
+- `pnpm test` — passed: 199 test files and 1,886 tests; no orphan processes.
+- `pnpm test:playtest` — passed: 4 browser/WebGPU scenario reports, all with `"pass": true`.
+- `pnpm test:templates` — passed: action-rpg, defense, minimal, platformer, racing, shooter, and starter scaffolded playtests.
+- No native target is claimed by this build-time hygiene lane.
+
 ## Acceptance result
 
 - Deleted APIs had zero callers.
 - Consolidated symbols have one owner and no twin literals at the audited sites.
 - All exact stale anchors are gone and their refactor history was checked.
 - A closed `DebugOverlay` performs zero polls, with a regression test that turns red on revert.
-- The code diff is net negative: 79 added and 328 deleted tracked lines, plus 233 lines in new helpers/client files, for a net decrease of 16 lines. No public package API was added.
+- The final production range is 304 additions and 308 deletions, a net decrease of 4 lines. No public package API was added.
