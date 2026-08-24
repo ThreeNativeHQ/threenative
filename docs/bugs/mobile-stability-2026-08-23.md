@@ -21,7 +21,7 @@ the physical device — no emulator, no simulator, no desktop substitute.
 | # | Bug | Severity | Layer | Status |
 | --- | --- | --- | --- | --- |
 | [1](#bug-1) | Health report kills any build using `EXT_texture_webp` | blocker | `packages/assets` | **fixed** `36831d96` |
-| [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | `packages/ui` + core | open, decided |
+| [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | templates (**regression**, `0aaacc12` + `acabc39d`) | open, **cause found** |
 | [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed — **shadows ARE a lever**, 46.15→35.20 ms; see below |
 | [4](#bug-4) | Intermittent SIGSEGV, no tombstone | high | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
 | [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | open |
@@ -104,7 +104,40 @@ createRoot occurrences: 0
 
 ### Root cause
 
-Structural, not a regression. `threenative.config.ts` sets `nativeEntry: "src/game.ts"`. Every UI
+**CORRECTED 2026-08-23: this IS a regression.** The original entry below called it "structural, not
+a regression". That was wrong, and the owner's recollection that it used to work was right.
+
+Every template shipped a working, camera-parented, native-capable geometry HUD, and `starter`
+shipped a native loading screen. They were deleted on **2026-08-15**:
+
+| Commit | Deleted |
+| --- | --- |
+| `0aaacc12` "land the production-readiness batch (PRD-110 to PRD-116)" | `starter/src/render/hud.ts` (53 lines, `InstancedMesh` glyphs, `camera.add(root)`), `starter/src/render/loading.ts` (113 lines, `createLoadingScreen` with its own `OrthographicCamera`), `starter/src/render/particles.ts` (62 lines) |
+| `acabc39d` "rounds 9 and 10 — the framework loses the visual column, and **the templates are below their own floor**" | `src/render/hud.ts` from `defense`, `platformer`, `racing` and `shooter` |
+
+Both were reached from the **portable scene**, which is exactly what the native entry runs.
+`starter/src/scenes/Play.ts` before the deletion:
+
+```
+:8   import { createHud } from "../render/hud.js";
+:10  import { createLoadingScreen } from "../render/loading.js";
+:63  const loading = createLoadingScreen(ctx);
+:71  createHud(ctx.camera as PerspectiveCamera, "SCORE", "ITEMS"),
+```
+
+The React `Hud.tsx` **already existed alongside it**. Web got React, native got geometry, and the
+two coexisted by design. The deletion removed the native half and left only the half that cannot
+run on a phone.
+
+So the deeper defect is not the missing HUD. **A line-count reduction round deleted the user
+interface from five templates and no gate noticed for eight days**, because nothing in this
+repository asserts that a template renders UI on a native target. The templates were scored
+"below their own floor" on LOC, and the lines that went were the ones that made the game usable on
+a phone. Any fix that restores the HUD without adding that gate will be undone by the next
+tidy-up round.
+
+What follows was the original, incorrect analysis, kept because the mechanism it describes is
+still accurate for the React layer: `threenative.config.ts` sets `nativeEntry: "src/game.ts"`. Every UI
 piece — `Hud`, `DebugOverlay`, `GameCanvas`, `Minimap`, `TouchOverlay` — mounts from `src/main.ts`
 via React DOM, which the native host never executes. The loading readout is `Hud.tsx:243`.
 
