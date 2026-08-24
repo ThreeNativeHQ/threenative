@@ -616,6 +616,10 @@ public:
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
         JSValue* objVal = (JSValue*)obj.ptr;
         JSValue result = JS_GetPropertyStr(context_, *objVal, name);
+        if (JS_IsException(result)) {
+            capturePendingException();
+            return newUndefined();
+        }
         JSValue* stored = new JSValue(result);
         return {stored, context_};
     }
@@ -671,6 +675,15 @@ public:
         JS_FreeAtom(context_, atom);
         info = {};
         return true;
+    }
+
+    void releasePropertyInfo(JSPropertyInfo& info) override {
+        if (info.kind == JSPropertyKind::Data && info.value.ptr) {
+            auto* value = static_cast<JSValue*>(info.value.ptr);
+            JS_FreeValue(context_, *value);
+            delete value;
+        }
+        info = {};
     }
 
     bool hasProperty(JSValueHandle obj, const char* name) override {
@@ -739,9 +752,8 @@ public:
     // ========================================================================
 
     void protect(JSValueHandle value) override {
-        JSValue* val = (JSValue*)value.ptr;
-        JS_DupValue(context_, *val);
-        // Mark this handle as protected so nativeCallback won't clean it up
+        // The handle already owns one QuickJS reference. Mark it so nativeCallback retains that
+        // ownership; unprotect() releases the same reference and deletes the wrapper exactly once.
         protectedHandles_.insert(value.ptr);
     }
 
@@ -780,7 +792,11 @@ public:
     }
 
     void throwException(const char* message) override {
-        lastException_ = JS_ThrowInternalError(context_, "%s", message);
+        if (!JS_IsNull(lastException_) && !JS_IsUndefined(lastException_)) {
+            JS_FreeValue(context_, lastException_);
+        }
+        JS_ThrowInternalError(context_, "%s", message);
+        lastException_ = JS_GetException(context_);
     }
 
     // ========================================================================

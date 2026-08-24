@@ -273,6 +273,7 @@ test("binding-table installation is object-only and rolls back failed writes", (
     engine,
     /virtual bool getPropertyInfo\(JSValueHandle obj, const char\* name, JSPropertyInfo& info\) = 0;/u,
   );
+  assert.match(engine, /virtual void releasePropertyInfo\(JSPropertyInfo& info\) = 0;/u);
   assert.match(engine, /virtual bool hasProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(engine, /virtual bool deleteProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(implementation, /!engine->isObject\(destination\)/u);
@@ -281,6 +282,8 @@ test("binding-table installation is object-only and rolls back failed writes", (
   assert.match(implementation, /JSPropertyKind::Accessor/u);
   assert.match(implementation, /cannot replace a non-writable property/u);
   assert.match(implementation, /deleteProperty\(/u);
+  assert.match(implementation, /rollback[^;]*state/u);
+  assert.match(implementation, /releasePropertyInfo\(/u);
   assert.match(implementation, /getException\(\)/u);
   assert.doesNotMatch(implementation, /getProperty\(it->destination/u);
 
@@ -291,12 +294,43 @@ test("binding-table installation is object-only and rolls back failed writes", (
   ]) {
     const source = read(implementationPath);
     assert.match(source, /bool getPropertyInfo\(JSValueHandle obj, const char\* name, JSPropertyInfo& info\) override/u);
+    assert.match(source, /void releasePropertyInfo\(JSPropertyInfo& info\) override/u);
     assert.match(source, /bool hasProperty\(JSValueHandle obj, const char\* name\) override/u);
     assert.match(source, /bool deleteProperty\(JSValueHandle obj, const char\* name\) override/u);
     assert.doesNotMatch(source, /JavaScript property assignment did not create a property/u);
     assert.doesNotMatch(source, /JSValueIsStrictEqual\(context_, stored/u);
   }
 
+});
+
+test("descriptor traversal and ordinary reads preserve proxy exception semantics", () => {
+  const engine = read("include/mystral/js/engine.h");
+  const v8 = read("src/js/v8_engine.cpp");
+  const quickjs = read("src/js/quickjs_engine.cpp");
+  const jsc = read("src/js/jsc_engine.mm");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(engine, /Proxy descriptor and getPrototypeOf traps may run/u);
+  assert.match(v8, /reflectGetPrototypeOf_/u);
+  assert.doesNotMatch(v8, /current->GetPrototype\(\)/u);
+  assert.match(jsc, /reflectGetPrototypeOf_/u);
+  assert.doesNotMatch(jsc, /JSObjectGetPrototype\(context_, current\)/u);
+  assert.match(quickjs, /JS_IsException\(result\)[\s\S]*capturePendingException\(\)/u);
+  assert.match(
+    nativeControl,
+    /getPrototypeOf\(\)[\s\S]*controlled getPrototypeOf failure[\s\S]*getProperty\(revoked/u,
+  );
+});
+
+test("descriptor snapshot ownership is explicit for V8, QuickJS, and JSC", () => {
+  const v8 = read("src/js/v8_engine.cpp");
+  const quickjs = read("src/js/quickjs_engine.cpp");
+  const jsc = read("src/js/jsc_engine.mm");
+
+  assert.match(v8, /void releasePropertyInfo\([\s\S]*frameHandles_\.erase/u);
+  assert.match(quickjs, /void releasePropertyInfo\([\s\S]*JS_FreeValue/u);
+  assert.match(jsc, /info\.value\s*=\s*\{\(void\*\)value, context_\};[\s\S]*JSValueProtect/u);
+  assert.match(jsc, /void releasePropertyInfo\([\s\S]*JSValueUnprotect/u);
 });
 
 test("dynamic canvas getContext captures its native id instead of the mutable row", () => {
@@ -555,14 +589,27 @@ test("owned WebGPU binding state is wired to the executable reentrancy proof", (
   );
   assert.match(state, /struct BindingsState \{/u);
   assert.match(state, /std::vector<js::JSValueHandle> protectedHandles;/u);
+  assert.match(state, /std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;/u);
   assert.match(bindings, /for \(auto it = state->protectedHandles\.rbegin\(\)/u);
   assert.match(bindings, /engine->unprotect\(\*it\)/u);
+  assert.match(bindings, /state->canvas2DContexts\.clear\(\)/u);
+  assert.match(bindings, /createOwnedCanvas2DContext\(/u);
+  assert.doesNotMatch(bindings, /canvas::createCanvas2DContext\(state->engine/u);
   assert.match(source, /protectedHandles\.size\(\)/u);
   assert.match(state, /std::vector<std::unique_ptr<WGPUBlendState>> blendStates;/u);
   assert.doesNotMatch(state, /static\s+std::vector<.*blendStates/u);
   assert.doesNotMatch(bindings, /static\s+std::vector<.*blendStates/u);
   assert.doesNotMatch(read("src/js/v8_engine.cpp"), /g_protectedHandles/u);
-  assert.doesNotMatch(read("src/js/quickjs_engine.cpp"), /g_protectedHandles/u);
+  const quickjs = read("src/js/quickjs_engine.cpp");
+  assert.doesNotMatch(quickjs, /g_protectedHandles/u);
+  assert.doesNotMatch(
+    blockBetween(quickjs, "void protect(JSValueHandle value)", "void unprotect(JSValueHandle value)"),
+    /JS_DupValue/u,
+  );
+  const canvas2d = read("src/canvas/canvas2d_bindings.cpp");
+  assert.doesNotMatch(canvas2d, /g_canvas2dContexts|g_jsEngine/u);
+  assert.doesNotMatch(canvas2d, /engine->protect\(jsCtx\)/u);
+  assert.match(source, /__tnEngineLocalCanvasContext\.fillRect/u);
   assert.doesNotMatch(context, /static\s+WGPUFeatureName\s+requiredFeatures/u);
   assert.match(source, /Runtime::create\(config\)[\s\S]*Runtime::create\(config\)/u);
   assert.match(source, /getWebGPUBindingsState\(\)[\s\S]*getWebGPUBindingsState\(\)/u);

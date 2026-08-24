@@ -81,6 +81,7 @@ struct BindingsState {
     WGPUInstance instance = nullptr;
     js::Engine* engine = nullptr;
     std::vector<js::JSValueHandle> protectedHandles;
+    std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;
 
     WGPUTexture offscreenTexture = nullptr;
     WGPUTextureView offscreenTextureView = nullptr;
@@ -161,6 +162,7 @@ struct BindingsState {
     bool verboseLogging = false;
     js::Engine* engine = nullptr;
     std::vector<js::JSValueHandle> protectedHandles;
+    std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;
 };
 
 #endif

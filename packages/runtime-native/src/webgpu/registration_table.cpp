@@ -13,9 +13,28 @@ namespace {
 struct PropertySnapshot {
     BindingDestination destination;
     std::string name;
-    bool hadOwnDataProperty = false;
-    js::JSValueHandle value;
+    js::JSPropertyInfo property;
 };
+
+bool propertyStateMatches(
+    js::Engine* engine,
+    const js::JSPropertyInfo& actual,
+    const js::JSPropertyInfo& expected) {
+    if (actual.kind != expected.kind) return false;
+    if (actual.kind == js::JSPropertyKind::Missing) return true;
+    if (actual.own != expected.own) return false;
+    if (actual.kind == js::JSPropertyKind::Accessor) return true;
+    return actual.writable == expected.writable &&
+           engine->isSameValue(actual.value, expected.value);
+}
+
+void appendRollbackFailure(
+    std::string& failures,
+    const PropertySnapshot& snapshot,
+    const std::string& reason) {
+    if (!failures.empty()) failures += "; ";
+    failures += snapshot.name + ": " + reason;
+}
 
 js::JSValueHandle fail(js::Engine* engine, const char* message) {
     engine->throwException(message);
@@ -120,6 +139,12 @@ bool installBindingTable(
 
     std::vector<PropertySnapshot> snapshots;
     snapshots.reserve(table.registrations.size());
+    auto releaseSnapshots = [&]() {
+        for (auto& snapshot : snapshots) {
+            engine->releasePropertyInfo(snapshot.property);
+        }
+        snapshots.clear();
+    };
     for (size_t index = 0; index < table.registrations.size(); ++index) {
         const auto& registration = table.registrations[index];
         PropertySnapshot snapshot;
@@ -127,39 +152,75 @@ bool installBindingTable(
         snapshot.name = registration.name;
         js::JSPropertyInfo property;
         if (!engine->getPropertyInfo(snapshot.destination, snapshot.name.c_str(), property)) {
+            engine->releasePropertyInfo(property);
+            releaseSnapshots();
             if (!engine->hasException()) fail(engine, "WebGPU binding property inspection failed");
             return false;
         }
         if (property.kind == js::JSPropertyKind::Accessor) {
+            engine->releasePropertyInfo(property);
+            releaseSnapshots();
             fail(engine, "WebGPU binding table does not support accessor properties");
             return false;
         }
         if (property.kind == js::JSPropertyKind::Data && !property.writable) {
+            engine->releasePropertyInfo(property);
+            releaseSnapshots();
             fail(engine, "WebGPU binding table cannot replace a non-writable property");
             return false;
         }
-        if (property.kind == js::JSPropertyKind::Data) {
-            snapshot.hadOwnDataProperty = property.own;
-            snapshot.value = property.value;
-        }
+        snapshot.property = property;
         snapshots.push_back(std::move(snapshot));
     }
 
     auto rollback = [&](size_t count) {
-        bool rollbackSucceeded = true;
-        for (auto it = snapshots.rbegin() + (snapshots.size() - count);
-             it != snapshots.rend();
-             ++it) {
-            bool restored = false;
-            if (it->hadOwnDataProperty) {
-                restored = engine->setProperty(it->destination, it->name.c_str(), it->value);
+        std::string failures;
+        for (size_t remaining = count; remaining > 0; --remaining) {
+            const auto& snapshot = snapshots[remaining - 1];
+            bool operationSucceeded = false;
+            if (snapshot.property.kind == js::JSPropertyKind::Data &&
+                snapshot.property.own) {
+                operationSucceeded = engine->setProperty(
+                    snapshot.destination,
+                    snapshot.name.c_str(),
+                    snapshot.property.value);
             } else {
-                restored = engine->deleteProperty(it->destination, it->name.c_str());
+                operationSucceeded = engine->deleteProperty(
+                    snapshot.destination, snapshot.name.c_str());
             }
-            if (engine->hasException()) engine->getException();
-            rollbackSucceeded = rollbackSucceeded && restored;
+            const std::string operationException = engine->hasException()
+                ? engine->getException()
+                : "";
+
+            js::JSPropertyInfo restoredProperty;
+            const bool inspected = engine->getPropertyInfo(
+                snapshot.destination, snapshot.name.c_str(), restoredProperty);
+            const std::string inspectionException = engine->hasException()
+                ? engine->getException()
+                : "";
+            const bool stateMatches = inspected &&
+                propertyStateMatches(engine, restoredProperty, snapshot.property);
+            engine->releasePropertyInfo(restoredProperty);
+
+            if (!operationSucceeded) {
+                appendRollbackFailure(failures, snapshot, "rollback operation returned false");
+            }
+            if (!operationException.empty()) {
+                appendRollbackFailure(
+                    failures, snapshot, "rollback operation threw: " + operationException);
+            }
+            if (!inspected) {
+                appendRollbackFailure(
+                    failures,
+                    snapshot,
+                    inspectionException.empty()
+                        ? "rollback state inspection failed"
+                        : "rollback state inspection threw: " + inspectionException);
+            } else if (!stateMatches) {
+                appendRollbackFailure(failures, snapshot, "rollback state did not match snapshot");
+            }
         }
-        return rollbackSucceeded;
+        return failures;
     };
 
     for (size_t index = 0; index < table.registrations.size(); ++index) {
@@ -182,12 +243,14 @@ bool installBindingTable(
             if (propertyWritten) {
                 // The engine operation must leave an own data binding. A proxy setter can return
                 // true without creating one, and inherited lookup must not make that look like a
-                // successful installation. Descriptor inspection does not invoke a getter/setter.
+                // successful installation. Accessors are not invoked, but proxy descriptor and
+                // getPrototypeOf traps are observable and may have side effects.
                 js::JSPropertyInfo installed;
                 propertyWritten = engine->getPropertyInfo(
                     destination, registration.name, installed) &&
                     installed.kind == js::JSPropertyKind::Data && installed.own &&
                     engine->isSameValue(installed.value, function);
+                engine->releasePropertyInfo(installed);
                 if (!propertyWritten && !engine->hasException()) {
                     fail(engine, "WebGPU binding property installation did not create an own binding");
                 }
@@ -198,15 +261,17 @@ bool installBindingTable(
                 ? engine->getException()
                 : "WebGPU binding property installation failed";
             const size_t rollbackCount = index + (propertyWriteAttempted ? 1 : 0);
-            const bool rollbackSucceeded = rollback(rollbackCount);
-            if (!rollbackSucceeded) {
-                exception += "; binding-table rollback was incomplete";
+            const std::string rollbackFailures = rollback(rollbackCount);
+            releaseSnapshots();
+            if (!rollbackFailures.empty()) {
+                exception += "; binding-table rollback was incomplete: " + rollbackFailures;
             }
             if (exception.empty()) exception = "WebGPU binding property installation failed";
             engine->throwException(exception.c_str());
             return false;
         }
     }
+    releaseSnapshots();
     return true;
 }
 

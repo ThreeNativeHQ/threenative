@@ -65,7 +65,11 @@
 // Forward declaration for Canvas2D bindings
 namespace mystral {
 namespace canvas {
-    js::JSValueHandle createCanvas2DContext(js::Engine* engine, int width, int height);
+    js::JSValueHandle createCanvas2DContext(
+        js::Engine* engine,
+        int width,
+        int height,
+        std::vector<std::unique_ptr<Canvas2DContext>>& ownedContexts);
 }
 }
 
@@ -110,7 +114,9 @@ void destroyBindingsState(BindingsState* state) {
         }
         state->protectedHandles.clear();
     }
+    state->canvas2DContexts.clear();
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+    state->mainCanvas2DContext = nullptr;
     if (state->canvas2DBindGroup) wgpuBindGroupRelease(state->canvas2DBindGroup);
     if (state->canvas2DPipeline) wgpuRenderPipelineRelease(state->canvas2DPipeline);
     if (state->canvas2DSampler) wgpuSamplerRelease(state->canvas2DSampler);
@@ -136,6 +142,16 @@ static void protectBindingHandle(BindingsState* state, js::JSValueHandle value) 
     if (!state || !state->engine || !value.ptr) return;
     state->engine->protect(value);
     state->protectedHandles.push_back(value);
+}
+
+static js::JSValueHandle createOwnedCanvas2DContext(
+    BindingsState* state,
+    int width,
+    int height) {
+    auto context = canvas::createCanvas2DContext(
+        state->engine, width, height, state->canvas2DContexts);
+    protectBindingHandle(state, context);
+    return context;
 }
 
 static std::string singleWgslEntryPoint(const std::string& code, const char* stage) {
@@ -1175,7 +1191,7 @@ static js::JSValueHandle tnWebgpuHandler87(BindingsState* state, BindingDestinat
             state->engine->setProperty(canvasWrapper, "width", state->engine->newNumber(width));
             state->engine->setProperty(canvasWrapper, "height", state->engine->newNumber(height));
             // Create the 2D context
-            auto ctx2d = canvas::createCanvas2DContext(state->engine, width, height);
+            auto ctx2d = createOwnedCanvas2DContext(state, width, height);
             state->engine->setProperty(canvasWrapper, "_context", ctx2d);
             // getContext('2d') returns the pre-created context
             installBindingTable(state->engine, state, bindingTable({
@@ -1221,9 +1237,8 @@ static js::JSValueHandle tnWebgpuHandler86(BindingsState* state, BindingDestinat
             }
             // Create Canvas 2D context with current dimensions
             if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
-            canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
+            canvas->context2d = createOwnedCanvas2DContext(state, canvas->width, canvas->height);
             canvas->hasContext2d = true;
-            protectBindingHandle(state, canvas->context2d);
             return canvas->context2d;
 }
 #if TN_ENABLE_NATIVE_GLTF
@@ -4642,9 +4657,9 @@ static js::JSValueHandle getOffscreenCanvasContext(
                         }
                         // Create Canvas 2D context
                         if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
-                        canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
+                        canvas->context2d = createOwnedCanvas2DContext(
+                            state, canvas->width, canvas->height);
                         canvas->hasContext2d = true;
-                        protectBindingHandle(state, canvas->context2d);
                         return canvas->context2d;
                     }
                     if (contextType == "webgpu") {
@@ -4841,7 +4856,8 @@ static js::JSValueHandle tnWebgpuHandler03(BindingsState* state, BindingDestinat
             // Handle Canvas 2D context
             if (contextType == "2d") {
                 if (state->verboseLogging) std::cout << "[Canvas] Creating 2D context (" << state->canvasWidth << "x" << state->canvasHeight << ")" << std::endl;
-                auto ctx2d = canvas::createCanvas2DContext(state->engine, state->canvasWidth, state->canvasHeight);
+                auto ctx2d = createOwnedCanvas2DContext(
+                    state, state->canvasWidth, state->canvasHeight);
                 // Set reference back to canvas
                 auto canvas = state->engine->getGlobalProperty("canvas");
                 state->engine->setProperty(ctx2d, "canvas", canvas);

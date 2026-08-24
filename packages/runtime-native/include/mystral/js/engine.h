@@ -32,8 +32,9 @@ enum class JSPropertyKind {
 };
 
 /**
- * A side-effect-free property description resolved from an object through its prototype chain.
- * The value is populated only for data properties; accessors are deliberately never invoked.
+ * A property description resolved from an object through its prototype chain without invoking
+ * accessors. Proxy descriptor and getPrototypeOf traps may run and may have side effects. A data
+ * value is an owned snapshot that remains valid until releasePropertyInfo() is called.
  */
 struct JSPropertyInfo {
     JSPropertyKind kind = JSPropertyKind::Missing;
@@ -230,8 +231,13 @@ public:
 
     virtual bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) = 0;
     virtual JSValueHandle getProperty(JSValueHandle obj, const char* name) = 0;
-    /** Inspect the first descriptor in the object/prototype chain without invoking accessors. */
+    /**
+     * Inspect the first descriptor in the object/prototype chain without invoking accessors.
+     * Proxy descriptor and getPrototypeOf traps are observable and exceptions are latched.
+     */
     virtual bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) = 0;
+    /** Release the owned data snapshot populated by getPropertyInfo(). */
+    virtual void releasePropertyInfo(JSPropertyInfo& info) = 0;
     /** Check whether a property is present on an object or its prototype chain. */
     virtual bool hasProperty(JSValueHandle obj, const char* name) = 0;
     /** Delete a property, returning false for a non-configurable property or exception. */

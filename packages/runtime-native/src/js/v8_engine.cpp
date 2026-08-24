@@ -123,6 +123,7 @@ public:
         // Set up globals
         {
             v8::Context::Scope context_scope(context);
+            cacheIntrinsics(context);
             setupGlobals();
         }
 
@@ -148,6 +149,7 @@ public:
             entry.second.Reset();
         }
         moduleCache_.clear();
+        reflectGetPrototypeOf_.Reset();
         privateKey_.Reset();
         context_.Reset();
         isolate_->Dispose();
@@ -763,8 +765,15 @@ public:
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
 
+        v8::TryCatch try_catch(isolate_);
         v8::Local<v8::Value> result;
-        objLocal->Get(context, v8::String::NewFromUtf8(isolate_, name).ToLocalChecked()).ToLocal(&result);
+        if (!objLocal->Get(
+                context,
+                v8::String::NewFromUtf8(isolate_, name).ToLocalChecked())
+                 .ToLocal(&result)) {
+            reportException(try_catch);
+            result = v8::Undefined(isolate_);
+        }
 
         v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
         frameHandles_.insert(persistent);
@@ -832,14 +841,38 @@ public:
                 return true;
             }
 
-            const auto prototype = current->GetPrototype();
-            if (prototype.IsEmpty() || !prototype->IsObject()) break;
+            if (reflectGetPrototypeOf_.IsEmpty()) {
+                throwException("V8 Reflect.getPrototypeOf intrinsic is unavailable");
+                return false;
+            }
+            v8::Local<v8::Function> getPrototypeOf =
+                reflectGetPrototypeOf_.Get(isolate_);
+            v8::Local<v8::Value> args[] = {current};
+            v8::Local<v8::Value> prototype;
+            if (!getPrototypeOf->Call(
+                    context, v8::Undefined(isolate_), 1, args)
+                     .ToLocal(&prototype)) {
+                reportException(try_catch);
+                return false;
+            }
+            if (!prototype->IsObject()) break;
             current = prototype.As<v8::Object>();
             own = false;
         }
 
         info = {};
         return true;
+    }
+
+    void releasePropertyInfo(JSPropertyInfo& info) override {
+        if (info.kind == JSPropertyKind::Data && info.value.ptr) {
+            auto* persistent =
+                static_cast<v8::Persistent<v8::Value>*>(info.value.ptr);
+            frameHandles_.erase(persistent);
+            persistent->Reset();
+            delete persistent;
+        }
+        info = {};
     }
 
     bool hasProperty(JSValueHandle obj, const char* name) override {
@@ -1109,6 +1142,28 @@ public:
     }
 
 private:
+    void cacheIntrinsics(v8::Local<v8::Context> context) {
+        v8::Local<v8::Value> reflectValue;
+        if (!context->Global()
+                 ->Get(
+                     context,
+                     v8::String::NewFromUtf8(isolate_, "Reflect").ToLocalChecked())
+                 .ToLocal(&reflectValue) ||
+            !reflectValue->IsObject()) {
+            return;
+        }
+        v8::Local<v8::Value> getPrototypeOf;
+        if (!reflectValue.As<v8::Object>()
+                 ->Get(
+                     context,
+                     v8::String::NewFromUtf8(isolate_, "getPrototypeOf").ToLocalChecked())
+                 .ToLocal(&getPrototypeOf) ||
+            !getPrototypeOf->IsFunction()) {
+            return;
+        }
+        reflectGetPrototypeOf_.Reset(isolate_, getPrototypeOf.As<v8::Function>());
+    }
+
     static std::string toStdString(v8::Isolate* isolate, v8::Local<v8::Value> value) {
         v8::String::Utf8Value utf8(isolate, value);
         if (*utf8) {
@@ -1359,6 +1414,7 @@ private:
     v8::Isolate* isolate_ = nullptr;
     v8::ArrayBuffer::Allocator* allocator_ = nullptr;
     v8::Global<v8::Context> context_;
+    v8::Global<v8::Function> reflectGetPrototypeOf_;
     v8::Global<v8::Private> privateKey_;  // Cached private key to avoid string allocation per call
     std::string lastException_;
     std::chrono::high_resolution_clock::time_point startTime_;

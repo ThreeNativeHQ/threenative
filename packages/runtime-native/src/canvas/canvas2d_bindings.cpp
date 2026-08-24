@@ -8,16 +8,9 @@
 #include "mystral/canvas/canvas2d.h"
 #include "mystral/js/engine.h"
 #include <iostream>
-#include <unordered_map>
 
 namespace mystral {
 namespace canvas {
-
-// Global storage for Canvas2D contexts (prevents them from being destroyed)
-static std::unordered_map<void*, std::unique_ptr<Canvas2DContext>> g_canvas2dContexts;
-
-// Store reference to JS engine for callbacks
-static js::Engine* g_jsEngine = nullptr;
 
 /**
  * Create a CanvasRenderingContext2D JS object that wraps a native Canvas2DContext
@@ -28,8 +21,6 @@ static js::Engine* g_jsEngine = nullptr;
  * created canvas to work.
  */
 js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ctx) {
-    g_jsEngine = engine;
-
     auto jsCtx = engine->newObject();
 
     // Store the native context pointer
@@ -52,77 +43,77 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
     // fillStyle
     engine->setProperty(jsCtx, "fillStyle", engine->newString("#000000"));
     engine->setProperty(jsCtx, "_setFillStyle",
-        engine->newFunction("_setFillStyle", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("_setFillStyle", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && !args.empty()) {
-                capturedCtx->setFillStyle(g_jsEngine->toString(args[0]));
+                capturedCtx->setFillStyle(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // strokeStyle
     engine->setProperty(jsCtx, "strokeStyle", engine->newString("#000000"));
     engine->setProperty(jsCtx, "_setStrokeStyle",
-        engine->newFunction("_setStrokeStyle", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("_setStrokeStyle", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && !args.empty()) {
-                capturedCtx->setStrokeStyle(g_jsEngine->toString(args[0]));
+                capturedCtx->setStrokeStyle(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // lineWidth
     engine->setProperty(jsCtx, "lineWidth", engine->newNumber(1.0));
     engine->setProperty(jsCtx, "_setLineWidth",
-        engine->newFunction("_setLineWidth", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("_setLineWidth", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && !args.empty()) {
-                capturedCtx->setLineWidth(static_cast<float>(g_jsEngine->toNumber(args[0])));
+                capturedCtx->setLineWidth(static_cast<float>(engine->toNumber(args[0])));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // globalAlpha
     engine->setProperty(jsCtx, "globalAlpha", engine->newNumber(1.0));
     engine->setProperty(jsCtx, "_setGlobalAlpha",
-        engine->newFunction("_setGlobalAlpha", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("_setGlobalAlpha", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && !args.empty()) {
-                capturedCtx->setGlobalAlpha(static_cast<float>(g_jsEngine->toNumber(args[0])));
+                capturedCtx->setGlobalAlpha(static_cast<float>(engine->toNumber(args[0])));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // font
     engine->setProperty(jsCtx, "font", engine->newString("10px sans-serif"));
     engine->setProperty(jsCtx, "_setFont",
-        engine->newFunction("_setFont", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("_setFont", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && !args.empty()) {
-                capturedCtx->setFont(g_jsEngine->toString(args[0]));
+                capturedCtx->setFont(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // textAlign
     engine->setProperty(jsCtx, "textAlign", engine->newString("start"));
     engine->setProperty(jsCtx, "_setTextAlign",
-        engine->newFunction("_setTextAlign", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("_setTextAlign", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && !args.empty()) {
-                capturedCtx->setTextAlign(g_jsEngine->toString(args[0]));
+                capturedCtx->setTextAlign(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // textBaseline
     engine->setProperty(jsCtx, "textBaseline", engine->newString("alphabetic"));
     engine->setProperty(jsCtx, "_setTextBaseline",
-        engine->newFunction("_setTextBaseline", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("_setTextBaseline", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && !args.empty()) {
-                capturedCtx->setTextBaseline(g_jsEngine->toString(args[0]));
+                capturedCtx->setTextBaseline(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
@@ -132,63 +123,63 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
 
     // save()
     engine->setProperty(jsCtx, "save",
-        engine->newFunction("save", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("save", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx) capturedCtx->save();
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // restore()
     engine->setProperty(jsCtx, "restore",
-        engine->newFunction("restore", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("restore", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx) capturedCtx->restore();
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // fillText(text, x, y)
     engine->setProperty(jsCtx, "fillText",
-        engine->newFunction("fillText", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("fillText", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 3) {
-                std::string text = g_jsEngine->toString(args[0]);
-                float x = static_cast<float>(g_jsEngine->toNumber(args[1]));
-                float y = static_cast<float>(g_jsEngine->toNumber(args[2]));
+                std::string text = engine->toString(args[0]);
+                float x = static_cast<float>(engine->toNumber(args[1]));
+                float y = static_cast<float>(engine->toNumber(args[2]));
                 capturedCtx->fillText(text, x, y);
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // strokeText(text, x, y)
     engine->setProperty(jsCtx, "strokeText",
-        engine->newFunction("strokeText", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("strokeText", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 3) {
-                std::string text = g_jsEngine->toString(args[0]);
-                float x = static_cast<float>(g_jsEngine->toNumber(args[1]));
-                float y = static_cast<float>(g_jsEngine->toNumber(args[2]));
+                std::string text = engine->toString(args[0]);
+                float x = static_cast<float>(engine->toNumber(args[1]));
+                float y = static_cast<float>(engine->toNumber(args[2]));
                 capturedCtx->strokeText(text, x, y);
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // measureText(text) -> { width }
     engine->setProperty(jsCtx, "measureText",
-        engine->newFunction("measureText", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
-            auto result = g_jsEngine->newObject();
+        engine->newFunction("measureText", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+            auto result = engine->newObject();
             if (capturedCtx && !args.empty()) {
-                std::string text = g_jsEngine->toString(args[0]);
+                std::string text = engine->toString(args[0]);
                 TextMetrics metrics = capturedCtx->measureText(text);
 
-                g_jsEngine->setProperty(result, "width", g_jsEngine->newNumber(metrics.width));
-                g_jsEngine->setProperty(result, "actualBoundingBoxLeft", g_jsEngine->newNumber(metrics.actualBoundingBoxLeft));
-                g_jsEngine->setProperty(result, "actualBoundingBoxRight", g_jsEngine->newNumber(metrics.actualBoundingBoxRight));
-                g_jsEngine->setProperty(result, "actualBoundingBoxAscent", g_jsEngine->newNumber(metrics.actualBoundingBoxAscent));
-                g_jsEngine->setProperty(result, "actualBoundingBoxDescent", g_jsEngine->newNumber(metrics.actualBoundingBoxDescent));
-                g_jsEngine->setProperty(result, "fontBoundingBoxAscent", g_jsEngine->newNumber(metrics.fontBoundingBoxAscent));
-                g_jsEngine->setProperty(result, "fontBoundingBoxDescent", g_jsEngine->newNumber(metrics.fontBoundingBoxDescent));
+                engine->setProperty(result, "width", engine->newNumber(metrics.width));
+                engine->setProperty(result, "actualBoundingBoxLeft", engine->newNumber(metrics.actualBoundingBoxLeft));
+                engine->setProperty(result, "actualBoundingBoxRight", engine->newNumber(metrics.actualBoundingBoxRight));
+                engine->setProperty(result, "actualBoundingBoxAscent", engine->newNumber(metrics.actualBoundingBoxAscent));
+                engine->setProperty(result, "actualBoundingBoxDescent", engine->newNumber(metrics.actualBoundingBoxDescent));
+                engine->setProperty(result, "fontBoundingBoxAscent", engine->newNumber(metrics.fontBoundingBoxAscent));
+                engine->setProperty(result, "fontBoundingBoxDescent", engine->newNumber(metrics.fontBoundingBoxDescent));
             } else {
-                g_jsEngine->setProperty(result, "width", g_jsEngine->newNumber(0));
+                engine->setProperty(result, "width", engine->newNumber(0));
             }
             return result;
         })
@@ -196,176 +187,176 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
 
     // fillRect(x, y, width, height)
     engine->setProperty(jsCtx, "fillRect",
-        engine->newFunction("fillRect", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("fillRect", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 4) {
                 capturedCtx->fillRect(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // strokeRect(x, y, width, height)
     engine->setProperty(jsCtx, "strokeRect",
-        engine->newFunction("strokeRect", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("strokeRect", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 4) {
                 capturedCtx->strokeRect(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // clearRect(x, y, width, height)
     engine->setProperty(jsCtx, "clearRect",
-        engine->newFunction("clearRect", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("clearRect", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 4) {
                 capturedCtx->clearRect(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // beginPath()
     engine->setProperty(jsCtx, "beginPath",
-        engine->newFunction("beginPath", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("beginPath", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx) capturedCtx->beginPath();
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // closePath()
     engine->setProperty(jsCtx, "closePath",
-        engine->newFunction("closePath", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("closePath", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx) capturedCtx->closePath();
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // moveTo(x, y)
     engine->setProperty(jsCtx, "moveTo",
-        engine->newFunction("moveTo", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("moveTo", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 2) {
                 capturedCtx->moveTo(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // lineTo(x, y)
     engine->setProperty(jsCtx, "lineTo",
-        engine->newFunction("lineTo", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("lineTo", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 2) {
                 capturedCtx->lineTo(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // quadraticCurveTo(cpx, cpy, x, y)
     engine->setProperty(jsCtx, "quadraticCurveTo",
-        engine->newFunction("quadraticCurveTo", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("quadraticCurveTo", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 4) {
                 capturedCtx->quadraticCurveTo(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y)
     engine->setProperty(jsCtx, "bezierCurveTo",
-        engine->newFunction("bezierCurveTo", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("bezierCurveTo", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 6) {
                 capturedCtx->bezierCurveTo(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3])),
-                    static_cast<float>(g_jsEngine->toNumber(args[4])),
-                    static_cast<float>(g_jsEngine->toNumber(args[5]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3])),
+                    static_cast<float>(engine->toNumber(args[4])),
+                    static_cast<float>(engine->toNumber(args[5]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // arc(x, y, radius, startAngle, endAngle, counterclockwise)
     engine->setProperty(jsCtx, "arc",
-        engine->newFunction("arc", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("arc", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 5) {
-                bool ccw = args.size() > 5 ? g_jsEngine->toBoolean(args[5]) : false;
+                bool ccw = args.size() > 5 ? engine->toBoolean(args[5]) : false;
                 capturedCtx->arc(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3])),
-                    static_cast<float>(g_jsEngine->toNumber(args[4])),
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3])),
+                    static_cast<float>(engine->toNumber(args[4])),
                     ccw
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // fill()
     engine->setProperty(jsCtx, "fill",
-        engine->newFunction("fill", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("fill", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx) capturedCtx->fill();
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // stroke()
     engine->setProperty(jsCtx, "stroke",
-        engine->newFunction("stroke", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("stroke", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx) capturedCtx->stroke();
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // getImageData(x, y, width, height) -> ImageData
     engine->setProperty(jsCtx, "getImageData",
-        engine->newFunction("getImageData", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
-            auto result = g_jsEngine->newObject();
+        engine->newFunction("getImageData", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+            auto result = engine->newObject();
             if (capturedCtx && args.size() >= 4) {
-                int x = static_cast<int>(g_jsEngine->toNumber(args[0]));
-                int y = static_cast<int>(g_jsEngine->toNumber(args[1]));
-                int w = static_cast<int>(g_jsEngine->toNumber(args[2]));
-                int h = static_cast<int>(g_jsEngine->toNumber(args[3]));
+                int x = static_cast<int>(engine->toNumber(args[0]));
+                int y = static_cast<int>(engine->toNumber(args[1]));
+                int w = static_cast<int>(engine->toNumber(args[2]));
+                int h = static_cast<int>(engine->toNumber(args[3]));
 
                 ImageData imgData = capturedCtx->getImageData(x, y, w, h);
 
-                g_jsEngine->setProperty(result, "width", g_jsEngine->newNumber(imgData.width));
-                g_jsEngine->setProperty(result, "height", g_jsEngine->newNumber(imgData.height));
+                engine->setProperty(result, "width", engine->newNumber(imgData.width));
+                engine->setProperty(result, "height", engine->newNumber(imgData.height));
 
                 // Create Uint8Array for data (ImageData.data is Uint8ClampedArray in browsers)
                 // Using Uint8Array allows direct indexing with []
-                auto dataArray = g_jsEngine->createUint8Array(imgData.data.data(), imgData.data.size());
-                g_jsEngine->setProperty(result, "data", dataArray);
+                auto dataArray = engine->createUint8Array(imgData.data.data(), imgData.data.size());
+                engine->setProperty(result, "data", dataArray);
             }
             return result;
         })
@@ -373,20 +364,20 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
 
     // putImageData(imageData, x, y)
     engine->setProperty(jsCtx, "putImageData",
-        engine->newFunction("putImageData", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("putImageData", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 3) {
                 auto imageDataObj = args[0];
-                int x = static_cast<int>(g_jsEngine->toNumber(args[1]));
-                int y = static_cast<int>(g_jsEngine->toNumber(args[2]));
+                int x = static_cast<int>(engine->toNumber(args[1]));
+                int y = static_cast<int>(engine->toNumber(args[2]));
 
                 // Extract ImageData properties
-                int width = static_cast<int>(g_jsEngine->toNumber(g_jsEngine->getProperty(imageDataObj, "width")));
-                int height = static_cast<int>(g_jsEngine->toNumber(g_jsEngine->getProperty(imageDataObj, "height")));
-                auto dataHandle = g_jsEngine->getProperty(imageDataObj, "data");
+                int width = static_cast<int>(engine->toNumber(engine->getProperty(imageDataObj, "width")));
+                int height = static_cast<int>(engine->toNumber(engine->getProperty(imageDataObj, "height")));
+                auto dataHandle = engine->getProperty(imageDataObj, "data");
 
                 // Get the data array
                 size_t dataSize = 0;
-                void* dataPtr = g_jsEngine->getArrayBufferData(dataHandle, &dataSize);
+                void* dataPtr = engine->getArrayBufferData(dataHandle, &dataSize);
 
                 if (dataPtr && dataSize > 0) {
                     ImageData imgData;
@@ -397,26 +388,26 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
                     capturedCtx->putImageData(imgData, x, y);
                 }
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // createImageData(width, height) -> ImageData
     engine->setProperty(jsCtx, "createImageData",
-        engine->newFunction("createImageData", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
-            auto result = g_jsEngine->newObject();
+        engine->newFunction("createImageData", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+            auto result = engine->newObject();
             if (args.size() >= 2) {
-                int width = static_cast<int>(g_jsEngine->toNumber(args[0]));
-                int height = static_cast<int>(g_jsEngine->toNumber(args[1]));
+                int width = static_cast<int>(engine->toNumber(args[0]));
+                int height = static_cast<int>(engine->toNumber(args[1]));
 
-                g_jsEngine->setProperty(result, "width", g_jsEngine->newNumber(width));
-                g_jsEngine->setProperty(result, "height", g_jsEngine->newNumber(height));
+                engine->setProperty(result, "width", engine->newNumber(width));
+                engine->setProperty(result, "height", engine->newNumber(height));
 
                 // Create Uint8Array filled with zeros (transparent black)
                 size_t dataSize = width * height * 4;
                 std::vector<uint8_t> data(dataSize, 0);
-                auto dataArray = g_jsEngine->createUint8Array(data.data(), data.size());
-                g_jsEngine->setProperty(result, "data", dataArray);
+                auto dataArray = engine->createUint8Array(data.data(), data.size());
+                engine->setProperty(result, "data", dataArray);
             }
             return result;
         })
@@ -427,18 +418,18 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
     //           drawImage(image, dx, dy, dWidth, dHeight)
     //           drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
     engine->setProperty(jsCtx, "drawImage",
-        engine->newFunction("drawImage", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("drawImage", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (!capturedCtx || args.empty()) {
-                return g_jsEngine->newUndefined();
+                return engine->newUndefined();
             }
 
             auto imageArg = args[0];
 
             // Check if it's a canvas element (has getContext method and _context2d)
-            auto context2d = g_jsEngine->getProperty(imageArg, "_context2d");
-            if (!g_jsEngine->isUndefined(context2d) && !g_jsEngine->isNull(context2d)) {
+            auto context2d = engine->getProperty(imageArg, "_context2d");
+            if (!engine->isUndefined(context2d) && !engine->isNull(context2d)) {
                 // It's a canvas element, get its Canvas2DContext
-                Canvas2DContext* sourceCtx = static_cast<Canvas2DContext*>(g_jsEngine->getPrivateData(context2d));
+                Canvas2DContext* sourceCtx = static_cast<Canvas2DContext*>(engine->getPrivateData(context2d));
                 if (sourceCtx) {
                     // Get source canvas dimensions
                     int srcWidth = sourceCtx->getWidth();
@@ -449,24 +440,24 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
 
                     if (args.size() == 3) {
                         // drawImage(image, dx, dy)
-                        int dx = static_cast<int>(g_jsEngine->toNumber(args[1]));
-                        int dy = static_cast<int>(g_jsEngine->toNumber(args[2]));
+                        int dx = static_cast<int>(engine->toNumber(args[1]));
+                        int dy = static_cast<int>(engine->toNumber(args[2]));
                         capturedCtx->putImageData(srcData, dx, dy);
                     } else if (args.size() == 5) {
                         // drawImage(image, dx, dy, dWidth, dHeight) - scaled
                         // For now, just use putImageData without scaling
                         // TODO: Implement scaling
-                        int dx = static_cast<int>(g_jsEngine->toNumber(args[1]));
-                        int dy = static_cast<int>(g_jsEngine->toNumber(args[2]));
+                        int dx = static_cast<int>(engine->toNumber(args[1]));
+                        int dy = static_cast<int>(engine->toNumber(args[2]));
                         capturedCtx->putImageData(srcData, dx, dy);
                     } else if (args.size() >= 9) {
                         // drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
-                        int sx = static_cast<int>(g_jsEngine->toNumber(args[1]));
-                        int sy = static_cast<int>(g_jsEngine->toNumber(args[2]));
-                        int sWidth = static_cast<int>(g_jsEngine->toNumber(args[3]));
-                        int sHeight = static_cast<int>(g_jsEngine->toNumber(args[4]));
-                        int dx = static_cast<int>(g_jsEngine->toNumber(args[5]));
-                        int dy = static_cast<int>(g_jsEngine->toNumber(args[6]));
+                        int sx = static_cast<int>(engine->toNumber(args[1]));
+                        int sy = static_cast<int>(engine->toNumber(args[2]));
+                        int sWidth = static_cast<int>(engine->toNumber(args[3]));
+                        int sHeight = static_cast<int>(engine->toNumber(args[4]));
+                        int dx = static_cast<int>(engine->toNumber(args[5]));
+                        int dy = static_cast<int>(engine->toNumber(args[6]));
                         // dWidth and dHeight for scaling (ignored for now)
 
                         // Get sub-region of source
@@ -477,7 +468,7 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
             }
             // TODO: Support HTMLImageElement and ImageBitmap
 
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
@@ -485,81 +476,81 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
 
     // scale(x, y)
     engine->setProperty(jsCtx, "scale",
-        engine->newFunction("scale", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("scale", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 2) {
                 capturedCtx->scale(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // rotate(angle)
     engine->setProperty(jsCtx, "rotate",
-        engine->newFunction("rotate", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("rotate", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 1) {
-                capturedCtx->rotate(static_cast<float>(g_jsEngine->toNumber(args[0])));
+                capturedCtx->rotate(static_cast<float>(engine->toNumber(args[0])));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // translate(x, y)
     engine->setProperty(jsCtx, "translate",
-        engine->newFunction("translate", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("translate", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 2) {
                 capturedCtx->translate(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // setTransform(a, b, c, d, e, f)
     engine->setProperty(jsCtx, "setTransform",
-        engine->newFunction("setTransform", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("setTransform", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 6) {
                 capturedCtx->setTransform(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3])),
-                    static_cast<float>(g_jsEngine->toNumber(args[4])),
-                    static_cast<float>(g_jsEngine->toNumber(args[5]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3])),
+                    static_cast<float>(engine->toNumber(args[4])),
+                    static_cast<float>(engine->toNumber(args[5]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // transform(a, b, c, d, e, f)
     engine->setProperty(jsCtx, "transform",
-        engine->newFunction("transform", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("transform", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx && args.size() >= 6) {
                 capturedCtx->transform(
-                    static_cast<float>(g_jsEngine->toNumber(args[0])),
-                    static_cast<float>(g_jsEngine->toNumber(args[1])),
-                    static_cast<float>(g_jsEngine->toNumber(args[2])),
-                    static_cast<float>(g_jsEngine->toNumber(args[3])),
-                    static_cast<float>(g_jsEngine->toNumber(args[4])),
-                    static_cast<float>(g_jsEngine->toNumber(args[5]))
+                    static_cast<float>(engine->toNumber(args[0])),
+                    static_cast<float>(engine->toNumber(args[1])),
+                    static_cast<float>(engine->toNumber(args[2])),
+                    static_cast<float>(engine->toNumber(args[3])),
+                    static_cast<float>(engine->toNumber(args[4])),
+                    static_cast<float>(engine->toNumber(args[5]))
                 );
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     // resetTransform()
     engine->setProperty(jsCtx, "resetTransform",
-        engine->newFunction("resetTransform", [capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("resetTransform", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
             if (capturedCtx) {
                 capturedCtx->resetTransform();
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
@@ -579,7 +570,11 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
  * @param height Canvas height
  * @return JS object representing the CanvasRenderingContext2D
  */
-js::JSValueHandle createCanvas2DContext(js::Engine* engine, int width, int height) {
+js::JSValueHandle createCanvas2DContext(
+    js::Engine* engine,
+    int width,
+    int height,
+    std::vector<std::unique_ptr<Canvas2DContext>>& ownedContexts) {
     // Create native context
     auto nativeCtx = std::make_unique<Canvas2DContext>(width, height);
     Canvas2DContext* ctxPtr = nativeCtx.get();
@@ -587,74 +582,70 @@ js::JSValueHandle createCanvas2DContext(js::Engine* engine, int width, int heigh
     // Create JS bindings (methods capture ctxPtr in their closures)
     auto jsCtx = createCanvas2DJSObject(engine, ctxPtr);
 
-    // Store the native context to prevent deletion
-    g_canvas2dContexts[ctxPtr] = std::move(nativeCtx);
-
-    // Protect the JS object from garbage collection
-    engine->protect(jsCtx);
-
+    // Transfer native lifetime to the WebGPU binding state that owns the JS handle.
+    ownedContexts.push_back(std::move(nativeCtx));
     // Add native setter methods that capture the context pointer
     // These are called by the property interceptors below
     engine->setProperty(jsCtx, "__nativeSetFillStyle",
-        engine->newFunction("__nativeSetFillStyle", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("__nativeSetFillStyle", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {
-                ctxPtr->setFillStyle(g_jsEngine->toString(args[0]));
+                ctxPtr->setFillStyle(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     engine->setProperty(jsCtx, "__nativeSetStrokeStyle",
-        engine->newFunction("__nativeSetStrokeStyle", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("__nativeSetStrokeStyle", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {
-                ctxPtr->setStrokeStyle(g_jsEngine->toString(args[0]));
+                ctxPtr->setStrokeStyle(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     engine->setProperty(jsCtx, "__nativeSetLineWidth",
-        engine->newFunction("__nativeSetLineWidth", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("__nativeSetLineWidth", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {
-                ctxPtr->setLineWidth(static_cast<float>(g_jsEngine->toNumber(args[0])));
+                ctxPtr->setLineWidth(static_cast<float>(engine->toNumber(args[0])));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     engine->setProperty(jsCtx, "__nativeSetGlobalAlpha",
-        engine->newFunction("__nativeSetGlobalAlpha", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("__nativeSetGlobalAlpha", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {
-                ctxPtr->setGlobalAlpha(static_cast<float>(g_jsEngine->toNumber(args[0])));
+                ctxPtr->setGlobalAlpha(static_cast<float>(engine->toNumber(args[0])));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     engine->setProperty(jsCtx, "__nativeSetFont",
-        engine->newFunction("__nativeSetFont", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("__nativeSetFont", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {
-                ctxPtr->setFont(g_jsEngine->toString(args[0]));
+                ctxPtr->setFont(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     engine->setProperty(jsCtx, "__nativeSetTextAlign",
-        engine->newFunction("__nativeSetTextAlign", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("__nativeSetTextAlign", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {
-                ctxPtr->setTextAlign(g_jsEngine->toString(args[0]));
+                ctxPtr->setTextAlign(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
     engine->setProperty(jsCtx, "__nativeSetTextBaseline",
-        engine->newFunction("__nativeSetTextBaseline", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
+        engine->newFunction("__nativeSetTextBaseline", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {
-                ctxPtr->setTextBaseline(g_jsEngine->toString(args[0]));
+                ctxPtr->setTextBaseline(engine->toString(args[0]));
             }
-            return g_jsEngine->newUndefined();
+            return engine->newUndefined();
         })
     );
 
