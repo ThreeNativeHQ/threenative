@@ -10,6 +10,7 @@ import {
   sealedProofHash,
 } from "./make-sandbox.js";
 import { type SweepMeasurement, measureSandbox } from "./measure-sandbox.js";
+import { isRecord } from "./utils.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const SOURCE_EXTENSIONS = new Set([".css", ".js", ".jsx", ".mjs", ".ts", ".tsx"]);
@@ -97,10 +98,6 @@ function isDirectory(directory: string): boolean {
 
 function isFile(file: string): boolean {
   return fs.existsSync(file) && fs.statSync(file).isFile();
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isStoredProofAssertion(value: unknown): value is StoredProofAssertion {

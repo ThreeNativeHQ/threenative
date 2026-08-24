@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { ASSET_MANIFEST_NAME, DEFAULT_ASSET_SOURCE, messageOf } from "./asset-utils.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { modelPass } from "./passes/model.js";
@@ -143,8 +144,6 @@ interface IDirectoryScan {
   readonly subdirectories: string[];
 }
 
-const MANIFEST_NAME = "assets.manifest.json";
-const DEFAULT_SOURCE = "assets";
 const DEFAULT_OUTPUT = "public";
 const BASIS_DIRECTORY = "basis";
 /**
@@ -178,10 +177,6 @@ function nonEmptyString(value: unknown, label: string): string {
     throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be a non-empty string.`);
   }
   return value;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 const TARGET_KEYS: readonly string[] = ["maxMaterials", "maxTriangles", "maxTextureDimension"];
@@ -368,7 +363,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.${key} is not recognised.`);
     }
   }
-  const source = options.source ?? config.source ?? DEFAULT_SOURCE;
+  const source = options.source ?? config.source ?? DEFAULT_ASSET_SOURCE;
   const output = options.output ?? config.output ?? DEFAULT_OUTPUT;
   const sourceRoot = path.resolve(cwd, nonEmptyString(source, "assets.source"));
   const outputRoot = path.resolve(cwd, nonEmptyString(output, "assets.output"));
@@ -654,7 +649,7 @@ export async function compileAssets(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const layout = resolveLayout(cwd, options);
   if (!(await hasSourceDirectory(layout.sourceRoot))) return { skipped: 0, written: 0 };
-  const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
+  const manifestPath = path.join(layout.outputRoot, ASSET_MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
   const passNames = layout.passes.map((pass) => pass.name);
   const passConfiguration = JSON.stringify({

@@ -1,6 +1,5 @@
 import { isRecord, jsonEqual, runtimeDiagnosticsSnapshot } from '../assertion-report.js';
 import { assertionNotEvaluatedDiagnostic, overlayNodeObservationKey, projectedPixelsForEntity } from './helpers.js';
-// Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
 
 export function emitEvidenceFamilies(ctx: IEvaluationContext): void {

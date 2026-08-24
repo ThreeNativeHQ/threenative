@@ -59,12 +59,10 @@ import {
   startFramebufferCoverageProbe,
 } from "./framebufferCoverage.js";
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 import { entityPosition, subtract, isAnonymousMovementScenario } from "./sampling.js";
 import { aimAngles, yawPitchToQuaternion } from "../scenario/orientation.js";
 import { failedDiagnosticsAssertion, STOPPED_LOOP_ERROR, MAX_FIXED_STEP_STARTUP_RETRIES } from "./runner.js";
 import type { IStandalonePlaytestReport, IRunStepSamples } from "./runner.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 export function collectTrivialityOptOuts(assertions: readonly IPlaytestAssertionResult[]): IPlaytestTrivialityOptOut[] {
   return assertions.flatMap(({ details, id }) => {
     if (details?.trivialityOptOut !== true) return [];
@@ -707,4 +705,3 @@ export function observedResourceIds(scenario: IPlaytestScenario): string[] {
     ...(scenario.setup?.resources ?? []).map(({ id }) => id),
   ])];
 }
-

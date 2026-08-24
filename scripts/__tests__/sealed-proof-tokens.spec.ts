@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { sealedProofFiles } from "../make-sandbox.js";
+import { isRecord } from "../utils.js";
 
 /**
  * PRD-113: a sealed proof must observe behaviour, not test whether the builder guessed a word.
@@ -42,10 +43,6 @@ interface IStringPin {
 interface IPinGroup {
   readonly path: string;
   readonly alternatives: readonly (IStringPin | undefined)[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringPin(record: Record<string, unknown>): IStringPin | undefined {

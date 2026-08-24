@@ -2,6 +2,7 @@ import { NavMesh, NavMeshQuery } from "recast-navigation";
 import { generateSoloNavMesh } from "recast-navigation/generators";
 import { type BufferGeometry, type Object3D, Vector3 } from "three";
 import type { INavigationContext } from "./index.js";
+import { finitePositive } from "./navigation-utils.js";
 
 export interface INavigationRegion3DOptions {
   readonly navigation: INavigationContext;
@@ -26,12 +27,6 @@ const DEFAULTS = {
 interface IGeometryData {
   readonly indices: number[];
   readonly positions: number[];
-}
-
-function finitePositive(name: string, value: number): number {
-  if (!Number.isFinite(value) || value <= 0)
-    throw new Error(`NavigationRegion3D ${name} must be finite and positive.`);
-  return value;
 }
 
 function finiteNonNegative(name: string, value: number): number {
@@ -109,8 +104,13 @@ export class NavigationRegion3D {
     if (this.navigation.agents.size > 0 || this.navigation.obstacles.size > 0)
       throw new Error("NavigationRegion3D cannot bake while navigation agents or obstacles exist.");
 
-    const cellSize = finitePositive("cellSize", this.#options.cellSize ?? DEFAULTS.cellSize);
+    const cellSize = finitePositive(
+      "NavigationRegion3D",
+      "cellSize",
+      this.#options.cellSize ?? DEFAULTS.cellSize,
+    );
     const cellHeight = finitePositive(
+      "NavigationRegion3D",
       "cellHeight",
       this.#options.cellHeight ?? DEFAULTS.cellHeight,
     );
@@ -119,6 +119,7 @@ export class NavigationRegion3D {
       this.#options.agentRadius ?? DEFAULTS.agentRadius,
     );
     const agentHeight = finitePositive(
+      "NavigationRegion3D",
       "agentHeight",
       this.#options.agentHeight ?? DEFAULTS.agentHeight,
     );

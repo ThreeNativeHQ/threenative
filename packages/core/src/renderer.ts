@@ -1,5 +1,6 @@
 import type { Camera, Object3D, WebGLRenderer } from "three";
 import { RenderPipeline } from "three/webgpu";
+import { privateSurfaceKey } from "./three-private.js";
 
 export type RendererKind = "webgpu" | "webgl2";
 
@@ -55,7 +56,10 @@ export function prewarm(object: Object3D | readonly Object3D[]): void {
     prewarmedRoots.add(root);
     root.traverse((child: Object3D) => {
       const mesh = child as WarmableMesh;
-      const surfaceValue = mesh["mat" + "erial"] as WarmableSurface | WarmableSurface[] | undefined;
+      const surfaceValue = mesh[privateSurfaceKey] as
+        | WarmableSurface
+        | WarmableSurface[]
+        | undefined;
       if (mesh.isMesh !== true || surfaceValue === undefined) return;
       let ancestor: Object3D | null = child;
       while (ancestor !== null) {
@@ -66,7 +70,7 @@ export function prewarm(object: Object3D | readonly Object3D[]): void {
       const warmedSurface = Array.isArray(surfaceValue)
         ? surfaceValue.map((surface) => warmSurface(surface, warmedSurfaces))
         : warmSurface(surfaceValue, warmedSurfaces);
-      mesh["mat" + "erial"] = warmedSurface;
+      mesh[privateSurfaceKey] = warmedSurface;
       const surfaces = Array.isArray(warmedSurface) ? warmedSurface : [warmedSurface];
       for (const surface of surfaces) {
         surface.transparent = true;

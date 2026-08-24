@@ -1,6 +1,7 @@
-import { Crowd, type CrowdAgent, type Vector3 as NavigationVector3 } from "recast-navigation";
-import type { Object3D, Vector3 } from "three";
+import { Crowd, type CrowdAgent } from "recast-navigation";
+import type { Object3D } from "three";
 import type { INavigationContext } from "./index.js";
+import { finitePositive, toNavigationVector } from "./navigation-utils.js";
 
 export interface INavigationObstacle3DOptions {
   readonly navigation: INavigationContext;
@@ -12,16 +13,6 @@ export interface INavigationObstacle3DOptions {
 
 const MAX_CROWD_AGENTS = 64;
 const MAX_CROWD_AGENT_RADIUS = 2;
-
-function finitePositive(name: string, value: number): number {
-  if (!Number.isFinite(value) || value <= 0)
-    throw new Error(`NavigationObstacle3D ${name} must be finite and positive.`);
-  return value;
-}
-
-function toNavigationVector(value: Pick<Vector3, "x" | "y" | "z">): NavigationVector3 {
-  return { x: value.x, y: value.y, z: value.z };
-}
 
 function crowdFor(navigation: INavigationContext, radius: number): Crowd {
   if (navigation.crowd !== undefined) return navigation.crowd;
@@ -47,8 +38,8 @@ export class NavigationObstacle3D {
       throw new Error("NavigationObstacle3D requires a navigation context.");
     this.navigation = options.navigation;
     this.object = options.object;
-    this.radius = finitePositive("radius", options.radius ?? 0.5);
-    this.height = finitePositive("height", options.height ?? 1.4);
+    this.radius = finitePositive("NavigationObstacle3D", "radius", options.radius ?? 0.5);
+    this.height = finitePositive("NavigationObstacle3D", "height", options.height ?? 1.4);
     this.#avoidanceEnabled = options.avoidanceEnabled ?? true;
     this.navigation.obstacles.add(this);
     if (this.#avoidanceEnabled) this.#enableAvoidance();

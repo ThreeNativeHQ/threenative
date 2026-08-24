@@ -2,7 +2,6 @@ import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytes
 import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
 import { renderedEntity } from "./measures.js";
-// Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertion-schema.js";
 import {
   type IPlaytestAssertionResult,
@@ -381,7 +380,6 @@ export function minimumResolvedDistance(
     ? undefined
     : Math.min(...positions.map((position) => vectorDistance(position, target)));
 }
-
 
 
 

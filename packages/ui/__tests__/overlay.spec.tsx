@@ -41,10 +41,8 @@ describe("DebugOverlay", () => {
     act(() => {
       renderer = create(<DebugOverlay />);
     });
-    act(() => {
-      controls.toggle();
-      vi.advanceTimersByTime(100);
-    });
+    act(() => controls.toggle());
+    act(() => vi.advanceTimersByTime(100));
 
     expect(renderer.root.findAllByType("tbody")[0]?.findAllByType("tr")).toHaveLength(4);
     const overlay = renderer.root.findByProps({ "data-threenative-debug-overlay": "true" });
@@ -61,12 +59,24 @@ describe("DebugOverlay", () => {
     act(() => {
       renderer = create(<DebugOverlay />);
     });
-    act(() => {
-      controls.toggle();
-      vi.advanceTimersByTime(1_000);
-    });
+    act(() => controls.toggle());
+    act(() => vi.advanceTimersByTime(1_000));
 
     expect(snapshot.mock.calls.length).toBeLessThanOrEqual(11);
+    act(() => renderer.unmount());
+  });
+
+  it("does not poll while closed", () => {
+    vi.useFakeTimers();
+    const snapshot = vi.fn(() => ({ player: { hull: 100 } }));
+    installDevWindow(snapshot);
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(<DebugOverlay />);
+    });
+    act(() => vi.advanceTimersByTime(1_000));
+
+    expect(snapshot).not.toHaveBeenCalled();
     act(() => renderer.unmount());
   });
 
@@ -78,10 +88,8 @@ describe("DebugOverlay", () => {
     act(() => {
       renderer = create(<DebugOverlay />);
     });
-    act(() => {
-      controls.toggle();
-      vi.advanceTimersByTime(100);
-    });
+    act(() => controls.toggle());
+    act(() => vi.advanceTimersByTime(100));
 
     expect(renderer.root.findAllByType("tbody")[0]?.findAllByType("tr")).toHaveLength(0);
     act(() => renderer.unmount());

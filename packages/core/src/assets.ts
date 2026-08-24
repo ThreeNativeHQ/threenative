@@ -1,4 +1,5 @@
 import { type AudioLoader, Object3D, Texture, type TextureLoader } from "three";
+import { privateSurfaceKey } from "./three-private.js";
 
 export interface IAssetLoaderOptions {
   readonly basePath?: string;
@@ -432,7 +433,7 @@ function disposeModel(value: unknown, disposed: IResourceDisposalSets): void {
     root.traverse((object) => {
       const renderable = object as Object3D & { geometry?: unknown; [key: string]: unknown };
       disposeResource(renderable.geometry, disposed.geometries);
-      disposeSurface(renderable["ma" + "terial"], disposed);
+      disposeSurface(renderable[privateSurfaceKey], disposed);
     });
   }
 }

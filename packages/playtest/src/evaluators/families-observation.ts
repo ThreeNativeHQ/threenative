@@ -3,7 +3,6 @@ import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
 import { physicsDebugContactEvidence } from "./measures.js";
 import type { IContactEvidence } from "./measures.js";
-// Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertion-schema.js";
 import {
   type IPlaytestAssertionResult,
@@ -400,4 +399,3 @@ export function runtimeAnimationObservations(value: unknown): Record<string, unk
   const gameplay = gameplayObservations(value);
   return isRecord(gameplay?.animation) ? gameplay.animation : undefined;
 }
-

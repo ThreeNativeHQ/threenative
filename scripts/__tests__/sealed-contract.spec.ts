@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { sealedProofFiles } from "../make-sandbox";
+import { isRecord } from "../utils.js";
 
 const GENRES = [
   "physics-puzzle",
@@ -29,10 +30,6 @@ interface IContractAuditRow {
 const ENTITY_FIELDS = new Set(["entity", "follows", "with"]);
 const RESOURCE_ASSERTION_PATH = /^(?:assert|setup)\.resources(?:\[\d+\])(?:\.anyOf\[\d+\])?$/;
 const RESOURCE_ID_ARRAY_PATH = /^parity(?:\.compare)?\.resources$/;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function childPath(parent: string, key: string | number): string {
   if (typeof key === "number") return `${parent}[${key}]`;

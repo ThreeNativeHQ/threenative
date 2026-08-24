@@ -1,5 +1,6 @@
 import { type Document, type GLTF, ImageUtils, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { messageOf } from "./asset-utils.js";
 import { type AssetKind, type IAssetTargets, classify } from "./compile.js";
 
 export type AssetFindingGrade = "fail" | "ok" | "warn";
@@ -60,10 +61,6 @@ const UNKNOWN_LICENSE = "unknown";
 const MODE_TRIANGLES = 4;
 const MODE_TRIANGLE_STRIPS = 5;
 const MODE_TRIANGLE_FANS = 6;
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function isPowerOfTwo(value: number): boolean {
   return value > 0 && (value & (value - 1)) === 0;

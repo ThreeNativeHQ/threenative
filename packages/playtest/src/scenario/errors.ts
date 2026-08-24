@@ -1,4 +1,3 @@
-// Extracted verbatim from scenario.ts (PRD-182 Phase 3); do not edit semantics here.
 import type { IPlaytestScenarioDiagnostic } from "./schema-base.js";
 
 export class PlaytestScenarioError extends Error {

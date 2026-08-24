@@ -58,12 +58,10 @@ import {
   startFramebufferCoverageProbe,
 } from "./framebufferCoverage.js";
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 import { componentObservations, buildObservations, collectTrivialityOptOuts } from "./steps.js";
 import { isAnonymousMovementScenario, observedMovementSample, entityPosition, entityRotation, subtract, resourceObservations, normalizedRuntimeDiagnostics, cameraReport, evaluateCamera } from "./sampling.js";
 import type { RunnerConsoleEntry } from "./runner.js";
 import type { IStandalonePlaytestReport, ILabeledPlaytestSample, IMovementSampleInterval } from "./runner.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 
 export function preflightDisplay(
   config: Pick<IStandalonePlaytestConfig, "headless">,
@@ -317,4 +315,3 @@ export function buildReport(
     url: config.url,
   };
 }
-

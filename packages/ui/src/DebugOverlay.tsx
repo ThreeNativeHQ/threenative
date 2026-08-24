@@ -27,12 +27,16 @@ export function DebugOverlay() {
       if (event.key === "`") setOpen((visible) => !visible);
     };
     hostWindow.addEventListener("keydown", toggle);
-    const timer = hostWindow.setInterval(() => setSnapshot(readSnapshot()), 100);
     return () => {
       hostWindow.removeEventListener("keydown", toggle);
-      hostWindow.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isDev || typeof window === "undefined" || !open) return undefined;
+    const timer = window.setInterval(() => setSnapshot(readSnapshot()), 100);
+    return () => window.clearInterval(timer);
+  }, [open]);
 
   if (!isDev || !open) return null;
   const rows = Object.entries(snapshot).flatMap(([entity, fields]) =>

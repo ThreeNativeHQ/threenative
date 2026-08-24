@@ -1,5 +1,4 @@
 import { readPath, jsonEqual, trivialAssertionDiagnostic, componentAssertionDiagnostic, axisIndex } from '../assertion-report.js';
-// Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
 import { hasFinalComponentExpectation, rejectsTrivialAssertion, componentValueChecks, aerodynamicForceSampleCount, aerodynamicControlValues, aerodynamicTorqueAtLabel, evaluatePathAssertion, evaluateTagCountAssertion, evaluateStateAssertion } from "./helpers.js";
 

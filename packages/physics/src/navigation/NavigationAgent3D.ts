@@ -1,6 +1,7 @@
 import { Crowd, type CrowdAgent, type Vector3 as NavigationVector3, Raw } from "recast-navigation";
 import { type Object3D, Vector3 } from "three";
 import type { INavigationContext } from "./index.js";
+import { finitePositive, toNavigationVector } from "./navigation-utils.js";
 
 export type NavigationAgentEvent = "targetReached" | "navigationFinished" | "pathChanged";
 export type NavigationAgentHandler = () => void;
@@ -20,24 +21,8 @@ const MAX_CROWD_AGENTS = 64;
 const MAX_CROWD_AGENT_RADIUS = 2;
 type NavigationArray = [number, number, number];
 
-function finitePositive(name: string, value: number): number {
-  if (!Number.isFinite(value) || value <= 0)
-    throw new Error(`NavigationAgent3D ${name} must be finite and positive.`);
-  return value;
-}
-
 function finitePositionComponents(x: number, y: number, z: number): boolean {
   return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z);
-}
-
-function toNavigationVector(
-  value: Pick<Vector3, "x" | "y" | "z">,
-  target: NavigationVector3,
-): NavigationVector3 {
-  target.x = value.x;
-  target.y = value.y;
-  target.z = value.z;
-  return target;
 }
 
 function toNavigationArray(
@@ -125,14 +110,16 @@ export class NavigationAgent3D {
       throw new Error("NavigationAgent3D requires a baked navigation region.");
     this.navigation = options.navigation;
     this.object = options.object;
-    this.radius = finitePositive("radius", options.radius ?? 0.35);
-    this.height = finitePositive("height", options.height ?? 1.4);
-    this.maxSpeed = finitePositive("maxSpeed", options.maxSpeed ?? 4);
+    this.radius = finitePositive("NavigationAgent3D", "radius", options.radius ?? 0.35);
+    this.height = finitePositive("NavigationAgent3D", "height", options.height ?? 1.4);
+    this.maxSpeed = finitePositive("NavigationAgent3D", "maxSpeed", options.maxSpeed ?? 4);
     this.pathDesiredDistance = finitePositive(
+      "NavigationAgent3D",
       "pathDesiredDistance",
       options.pathDesiredDistance ?? 0.35,
     );
     this.targetDesiredDistance = finitePositive(
+      "NavigationAgent3D",
       "targetDesiredDistance",
       options.targetDesiredDistance ?? 0.45,
     );

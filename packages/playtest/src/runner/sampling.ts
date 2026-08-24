@@ -57,9 +57,7 @@ import {
   startFramebufferCoverageProbe,
 } from "./framebufferCoverage.js";
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 import type { IMovementSampleInterval, RunnerConsoleEntry } from "./runner.js";
-// Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAssertion[]): Promise<Record<string, unknown>> {
   if (assertions.length === 0) return {};
   return page.evaluate((requestedAssertions) => Object.fromEntries(requestedAssertions.flatMap(({ id, path }) => {
@@ -646,4 +644,3 @@ export function managedServerError(message: string, url: string, timeoutMs: numb
     "Run the server command directly, fix its first error, then rerun the same playtest command.",
   ));
 }
-

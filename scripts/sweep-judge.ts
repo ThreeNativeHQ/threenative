@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { assertFrameShowsSomething } from "./capture-guard.js";
 import { hasArmIdentifier } from "./score-blind.js";
+import { isRecord } from "./utils.js";
 
 export interface PolishScore {
   readonly behavior: number;
@@ -49,10 +50,6 @@ function readJson(file: string): unknown {
   } catch (error) {
     throw new Error(`TN_JUDGE_INVALID_JSON: ${file}: ${String(error)}`);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function nonEmptyString(value: unknown): value is string {

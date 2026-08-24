@@ -60,6 +60,7 @@ export interface IAudioRuntimeSnapshot {
 const buses = new Set<AudioBus>();
 
 const DEFAULT_MAX_VOICES = 48;
+const GESTURE_EVENTS = ["keydown", "pointerdown", "touchstart"] as const;
 /** Above 20 kHz a low-pass is inaudible, so this doubles as "no filter". */
 const OPEN_LOWPASS_HZ = 20_000;
 
@@ -121,7 +122,7 @@ export class AudioBus {
     this.#gesture = () => {
       void this.unlock().catch(() => undefined);
     };
-    for (const event of ["keydown", "pointerdown", "touchstart"] as const) {
+    for (const event of GESTURE_EVENTS) {
       this.#gestureTarget?.addEventListener(event, this.#gesture);
     }
     buses.add(this);
@@ -146,10 +147,6 @@ export class AudioBus {
   setCamera(camera: Object3D): void {
     this.#camera = camera;
     camera.add(this.listener);
-  }
-
-  reparent(camera: Object3D): void {
-    this.setCamera(camera);
   }
 
   async unlock(): Promise<void> {
@@ -240,7 +237,7 @@ export class AudioBus {
     this.#freeFlat = [];
     this.#freePositional = [];
     this.listener.removeFromParent();
-    for (const event of ["keydown", "pointerdown", "touchstart"] as const) {
+    for (const event of GESTURE_EVENTS) {
       if (this.#gesture !== undefined)
         this.#gestureTarget?.removeEventListener(event, this.#gesture);
     }

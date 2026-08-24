@@ -1,4 +1,4 @@
-import type { Camera, Material, Matrix4, Object3D, Scene } from "three";
+import type { Material, Matrix4, Object3D, Scene } from "three";
 
 import { ProjectionMirror } from "./projection-apply.js";
 import {
@@ -330,5 +330,3 @@ export class SceneRenderProjection {
     this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
   }
 }
-
-export type ProjectionCamera = Camera;

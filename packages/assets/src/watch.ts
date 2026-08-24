@@ -2,6 +2,7 @@ import { type FSWatcher, watch } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { ASSET_MANIFEST_NAME, DEFAULT_ASSET_SOURCE, messageOf } from "./asset-utils.js";
 import {
   type IAssetCompileOptions,
   type IBasisTranscoder,
@@ -59,23 +60,15 @@ interface ICompiledEntry {
   readonly output: string;
 }
 
-// Mirrors compile.ts, whose resolver is internal; its validation (unknown keys, overlapping
-// directories) runs through every compileAssets call below, so only resolution is repeated here.
-const MANIFEST_NAME = "assets.manifest.json";
-const DEFAULT_SOURCE = "assets";
 const DEFAULT_OUTPUT = "public";
 const DEFAULT_DEBOUNCE_MS = 100;
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function resolveWatchLayout(cwd: string, options: IAssetWatchOptions): IWatchLayout {
-  const source = options.source ?? options.config?.source ?? DEFAULT_SOURCE;
+  const source = options.source ?? options.config?.source ?? DEFAULT_ASSET_SOURCE;
   const output = options.output ?? options.config?.output ?? DEFAULT_OUTPUT;
   const sourceRoot = path.resolve(cwd, source);
   const outputRoot = path.resolve(cwd, output);
-  return { manifestPath: path.join(outputRoot, MANIFEST_NAME), outputRoot, sourceRoot };
+  return { manifestPath: path.join(outputRoot, ASSET_MANIFEST_NAME), outputRoot, sourceRoot };
 }
 
 function readManifest(manifestPath: string): Promise<IManifestFile> {
@@ -139,7 +132,7 @@ async function recompileOne(
 ): Promise<ICompiledEntry> {
   const scratch = await mkdtemp(path.join(tmpdir(), "threenative-watch-"));
   try {
-    const stagedInput = path.join(scratch, DEFAULT_SOURCE, logical);
+    const stagedInput = path.join(scratch, DEFAULT_ASSET_SOURCE, logical);
     await mkdir(path.dirname(stagedInput), { recursive: true });
     await writeFile(stagedInput, await readFile(path.join(layout.sourceRoot, logical)));
     // The scratch directory has no node_modules of its own; the resolved options carry the
@@ -149,13 +142,13 @@ async function recompileOne(
     await compileAssets({
       cwd: scratch,
       output: "out",
-      source: DEFAULT_SOURCE,
+      source: DEFAULT_ASSET_SOURCE,
       ...(compileOptions.config === undefined ? {} : { config: compileOptions.config }),
       ...(compileOptions.passes === undefined ? {} : { passes: compileOptions.passes }),
       ...(compileOptions.transcoder === undefined ? {} : { transcoder: compileOptions.transcoder }),
     });
     const scratchManifest = JSON.parse(
-      await readFile(path.join(scratch, "out", MANIFEST_NAME), "utf8"),
+      await readFile(path.join(scratch, "out", ASSET_MANIFEST_NAME), "utf8"),
     ) as { entries: Record<string, ICompiledEntry | undefined> };
     const entry = scratchManifest.entries[logical];
     if (entry === undefined || entry.output === undefined) {

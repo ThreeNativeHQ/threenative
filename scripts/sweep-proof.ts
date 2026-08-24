@@ -10,6 +10,7 @@ import {
   sealedProofFiles,
   sealedProofHash,
 } from "./make-sandbox.js";
+import { isRecord } from "./utils.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const RUNNER = path.join(REPO, "packages", "playtest", "dist", "runner", "cli.js");
@@ -211,10 +212,6 @@ function prepareProject(source: string, archive: boolean): { project: string; cl
     fs.rmSync(project, { recursive: true, force: true });
     throw error;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isAssertionResult(value: unknown): boolean {
