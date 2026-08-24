@@ -44,6 +44,40 @@ because I took it before the surface had presented.
 
 **Severity:** blocker. **Status:** fixed, `36831d96`.
 
+### The convention this establishes
+
+Stated by the owner on 2026-08-23, and binding beyond the fix:
+
+> **UI / HUD / etc should be available on all platforms, always, and we should have tests that
+> prevent this from happening again.**
+
+That is a convention in the root AGENTS.md sense — it ships **on by default**, working and
+discoverable before any game asks, with a named override on the same object, and **turning it off
+must not turn its measurement off**. It is not a per-template HUD check.
+
+The gate it requires has two axes, and neither may be a hand-written list:
+
+| Axis | Derived from |
+| --- | --- |
+| every template | `readdir` of `templates/` — a template with no UI is a **failure**, not an absence |
+| every platform that template claims | the template's own config — browser, desktop native, Android today |
+
+The cell that matters is **(template x platform) → UI observed on screen**. A template that
+supports a platform and has no UI proof on it is red. iOS is named **unproven** rather than
+omitted: there is no physical lane on this machine, and claiming a platform that did not execute is
+exactly what this batch's acceptance forbids.
+
+**A source-presence check is not sufficient, and this bug proves it twice.** The HUD deletion would
+have been caught by one. The web-mobile defect would not: `platformer` has `touch-controls.ts` on
+disk, wired, 175 lines — and `isNative() && isMobile() && isTouchscreenAvailable()` means it never
+appears in a mobile browser. Source present, feature absent, on a platform nobody had looked at.
+So each cell needs a runtime half wherever a lane exists.
+
+Where a browser lane stands in for a native one, that substitution must be stated. It is legitimate
+for camera-parented geometry — PRD-209 measured `pixelMismatchRatio` 0 against the browser
+reference on all three native lanes — but the record must say which cells were executed and which
+were inferred from that equivalence.
+
 ### What happens
 
 `threenative build --target android` on a game whose model is an ordinary webp GLB compresses every

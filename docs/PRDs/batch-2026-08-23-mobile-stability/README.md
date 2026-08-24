@@ -61,6 +61,19 @@ The "not a bug" items (landscape orientation) are likewise absent.
   evidence and consumer, not the fix site (exception: 213's sky split is genuinely game-side).
 - iOS claims stay out of every acceptance criterion until a physical lane exists (210, 214).
 
+## Convention established mid-batch (2026-08-23)
+
+**UI is available on every platform, always.** Stated by the owner after bug 2 turned out to be a
+regression rather than a structural gap. It binds like any other convention: on by default,
+discoverable in the templates' `AGENTS.md`, with a named override on the same object, and turning
+it off does not turn its measurement off.
+
+The gate is a derived **(template x platform)** matrix — every template from `readdir`, every
+platform from the template's own config — where the cell is *UI observed on screen*, not *UI
+present in source*. A hand-written coverage list is forbidden: `acabc39d` deleted four templates'
+HUDs and narrowed the guard's own `geometryHudTemplates` array in the same commit, and the suite
+stayed green for eight days while `pnpm budgets` scored the deletion as a template-LOC win.
+
 ## Batch acceptance
 
 - [ ] Every PRD has a dated record in `docs/verification/` with observed red controls pasted.
@@ -71,3 +84,5 @@ The "not a bug" items (landscape orientation) are likewise absent.
       and its registration) is deleted by whichever PRD supersedes it (214).
 - [ ] The bug doc's status column is updated as each numbered item lands, and the batch moves
       whole to `docs/PRDs/done/` only when all six complete.
+- [ ] The (template x platform) UI matrix exists, derives both axes, and names every cell it could
+      not execute — including iOS, which has no lane on this machine.
