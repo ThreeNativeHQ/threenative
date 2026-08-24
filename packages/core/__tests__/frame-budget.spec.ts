@@ -249,4 +249,21 @@ describe("FixedStepLoop with a frame budget", () => {
       true,
     );
   });
+
+  it("closes the budget when rendering throws", () => {
+    const budget = new FrameBudget({ report: () => undefined });
+    let renderCalls = 0;
+    const loop = new FixedStepLoop({
+      budget,
+      onUpdate: () => undefined,
+      onRender: () => {
+        renderCalls += 1;
+        if (renderCalls === 1) throw new Error("renderer failed");
+        return undefined;
+      },
+    });
+
+    expect(() => loop.stepFrame(0)).toThrow("renderer failed");
+    expect(() => loop.stepFrame(16)).not.toThrow();
+  });
 });
