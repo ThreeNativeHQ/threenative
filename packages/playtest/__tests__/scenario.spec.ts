@@ -1,5 +1,5 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 
@@ -703,6 +703,10 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
   ]);
   expect(empty.diagnostics.every(({ severity }) => severity === "error"), "RED observed: diagnostic severity changed").toBe(true);
+  const golden = JSON.parse(await readFile(new URL("./fixtures/movement-evidence-golden.json", import.meta.url), "utf8")) as { fulfilled: unknown; empty: unknown };
+  const projectMovement = (result: typeof fulfilled) => ({ assertions: result.assertions.filter(({ id }) => /^(?:movement|visibility|contact|settled|occluded|animation)\./u.test(id)).map(({ id, pass }) => ({ id, pass })), diagnostics: result.diagnostics.filter(({ code }) => /^TN_PLAYTEST_(?:VISIBILITY|CONTACT|PHYSICS|OCCLUSION|ANIMATION)_/u.test(code)).map(({ code }) => ({ code })) });
+  expect(JSON.stringify(projectMovement(fulfilled))).toBe(JSON.stringify(golden.fulfilled));
+  expect(JSON.stringify(projectMovement(empty))).toBe(JSON.stringify(golden.empty));
 });
 
 /**

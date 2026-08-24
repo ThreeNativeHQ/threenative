@@ -3,6 +3,7 @@ import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
 import { physicsDebugContactEvidence } from "./measures.js";
 import type { IContactEvidence } from "./measures.js";
+import { evaluateTrivialityGuard, guardedAssertion } from "../triviality-guard.js";
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertion-schema.js";
 import {
@@ -49,34 +50,27 @@ export function evaluateTagCountAssertion(
     && (assertion.count === undefined || initialCount === assertion.count)
     && (assertion.gte === undefined || initialCount >= assertion.gte)
     && (assertion.lte === undefined || initialCount <= assertion.lte);
-  const trivial = comparisonPass && initialPass;
-  const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
-  const result = {
-    details: {
-      count: count ?? null,
-      expected: assertion,
-      initialCount: initialCount ?? null,
-      initialPass,
-      tag: assertion.tag,
-      trivial,
-      ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
-    },
-    id: `tags.${assertion.tag}`,
-    pass,
-  };
-  return pass
+  const guard = evaluateTrivialityGuard(comparisonPass, comparisonPass && initialPass, assertion.allowTrivial);
+  const result = guardedAssertion(guard, `tags.${assertion.tag}`, {
+    count: count ?? null,
+    expected: assertion,
+    initialCount: initialCount ?? null,
+    initialPass,
+    tag: assertion.tag,
+  });
+  return guard.pass
     ? { assertion: result }
     : {
         assertion: result,
         diagnostic: {
-          code: trivial && typeof assertion.allowTrivial !== "string"
+          code: guard.trivial && !guard.trivialityOptOut
             ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
             : "TN_PLAYTEST_TAG_COUNT_ASSERTION_FAILED",
-          message: trivial && typeof assertion.allowTrivial !== "string"
+          message: guard.trivial && !guard.trivialityOptOut
             ? `Assertion 'tags.${assertion.tag}' was already satisfied before the scenario ran.`
             : `Tag '${assertion.tag}' count ${count === undefined ? "was unavailable" : count} did not satisfy the expected count.`,
           severity: "error",
-          suggestion: trivial && typeof assertion.allowTrivial !== "string"
+          suggestion: guard.trivial && !guard.trivialityOptOut
             ? "Drive the asserted tag count from a different initial count, or provide allowTrivial with the reason the count is intentionally held."
             : "Ensure the runtime entity tags are authored and inspect runtimeObservations.gameplay.tags in the playtest artifact.",
         },
@@ -121,10 +115,11 @@ export function evaluateStateAssertion(
   const initialPass = assertion.entity === undefined
     ? Object.values(initialStateMap ?? {}).some((state) => state === assertion.equals)
     : initialStateMap?.[assertion.entity] === assertion.equals;
-  const trivial = comparisonPass && initialPass;
-  const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
-  const result = {
-    details: {
+  const guard = evaluateTrivialityGuard(comparisonPass, comparisonPass && initialPass, assertion.allowTrivial);
+  const result = guardedAssertion(
+    guard,
+    assertion.entity === undefined ? `states.${index}` : `states.${assertion.entity}`,
+    {
       candidates: candidates.map(([entity, state]) => ({ entity, state })),
       entity: selectedEntity ?? "anonymous",
       expected: assertion,
@@ -132,29 +127,25 @@ export function evaluateStateAssertion(
       initialPass,
       observed: observed ?? null,
       terminal: { contactObserved: terminal.contactObserved, historyComplete: terminal.historyComplete, preExisting: selectedPreExisting, step: terminal.step },
-      trivial,
-      ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
     },
-    id: assertion.entity === undefined ? `states.${index}` : `states.${assertion.entity}`,
-    pass,
-  };
-  return pass
+  );
+  return guard.pass
     ? { assertion: result }
     : {
         assertion: result,
         diagnostic: {
-          code: trivial && typeof assertion.allowTrivial !== "string"
+          code: guard.trivial && !guard.trivialityOptOut
             ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
             : observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
             ? "TN_PLAYTEST_STATE_ORDERING_FAILED"
             : "TN_PLAYTEST_STATE_ASSERTION_FAILED",
-          message: trivial && typeof assertion.allowTrivial !== "string"
+          message: guard.trivial && !guard.trivialityOptOut
             ? `Assertion '${result.id}' was already satisfied before the scenario ran.`
             : observed === assertion.equals && (!terminal.contactObserved || !terminal.historyComplete || selectedPreExisting)
             ? `Terminal state '${assertion.equals}' was not observed after retained contact evidence at '${terminal.step ?? "an unavailable step"}'.`
             : `Entity '${selectedEntity ?? "anonymous"}' state ${observed === undefined ? "was unavailable" : `'${observed}'`} did not equal '${assertion.equals}'.`,
           severity: "error",
-          suggestion: trivial && typeof assertion.allowTrivial !== "string"
+          suggestion: guard.trivial && !guard.trivialityOptOut
             ? "Drive the asserted state from a different initial state, or provide allowTrivial with the reason the state is intentionally held."
             : "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact.",
         },
@@ -400,4 +391,3 @@ export function runtimeAnimationObservations(value: unknown): Record<string, unk
   const gameplay = gameplayObservations(value);
   return isRecord(gameplay?.animation) ? gameplay.animation : undefined;
 }
-

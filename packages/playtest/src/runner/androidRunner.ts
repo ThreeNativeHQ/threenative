@@ -359,23 +359,18 @@ async function runDevicePlaytestInternal(
       ), target.name);
     }
     const consoleEntries = await target.driver.captureConsole();
-    const report = buildReport(
+    const report = buildReport({
+      afterSnapshot: after,
+      beforeSnapshot: before,
       config,
-      scenario,
-      before,
-      after,
       consoleEntries,
-      [],
-      accumulatedPathLength(pathPositions),
-      {},
-      true,
-      undefined,
-      labeledSamples,
       framebufferCoverage,
-      undefined,
-      undefined,
+      labeledSamples,
       movementSamples,
-    );
+      networkEntries: [],
+      pathLength: accumulatedPathLength(pathPositions),
+      scenario,
+    });
     // Same artifacts as the browser target: a diagnostic that names console.json must find it
     // there whichever target produced the run.
     await writeObservationArtifacts(config.artifactDirectory, scenario.artifacts, {

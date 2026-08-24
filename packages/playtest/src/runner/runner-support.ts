@@ -148,24 +148,43 @@ export function addPreflightDiagnostic(
   return diagnostic === undefined ? report : { ...report, diagnostics: [diagnostic, ...report.diagnostics] };
 }
 
-export function buildReport(
-  config: IStandalonePlaytestConfig,
-  scenario: IPlaytestScenario,
-  beforeSnapshot: IPlaytestObservationSnapshot | undefined,
-  afterSnapshot: IPlaytestObservationSnapshot | undefined,
-  consoleEntries: RunnerConsoleEntry[],
-  networkEntries: Array<{ method: string; url: string }>,
-  pathLength: number | undefined = undefined,
-  hud: Record<string, { after?: unknown; before?: unknown }> = {},
+export interface IBuildReportOptions {
+  capture?: IPlaytestCaptureProvenance;
+  captureFailure?: { code: "TN_CAPTURE_BLANK"; label: string; reason: string };
+  config: IStandalonePlaytestConfig;
+  consoleEntries: RunnerConsoleEntry[];
+  afterSnapshot?: IPlaytestObservationSnapshot;
+  beforeSnapshot?: IPlaytestObservationSnapshot;
+  framebufferCoverage?: IPlaytestFramebufferCoverageObservation;
+  hud?: Record<string, { after?: unknown; before?: unknown }>;
+  labeledSamples?: readonly ILabeledPlaytestSample[];
+  movementSamples?: readonly IMovementSampleInterval[];
+  networkEntries: Array<{ method: string; url: string }>;
+  pathLength?: number;
+  runtimeReady?: boolean;
+  scenario: IPlaytestScenario;
+  setup?: IPlaytestSetupApplication;
+  visual?: IPlaytestObservations["visual"];
+}
+
+export function buildReport({
+  capture,
+  captureFailure,
+  config,
+  consoleEntries,
+  afterSnapshot,
+  beforeSnapshot,
+  framebufferCoverage,
+  hud = {},
+  labeledSamples = [],
+  movementSamples = [],
+  networkEntries,
+  pathLength,
   runtimeReady = true,
-  visual: IPlaytestObservations["visual"] = undefined,
-  labeledSamples: readonly ILabeledPlaytestSample[] = [],
-  framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined = undefined,
-  capture: IPlaytestCaptureProvenance | undefined = undefined,
-  captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined = undefined,
-  movementSamples: readonly IMovementSampleInterval[] = [],
-  setup: IPlaytestSetupApplication | undefined = undefined,
-): IStandalonePlaytestReport {
+  scenario,
+  setup,
+  visual,
+}: IBuildReportOptions): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
     : undefined;
@@ -317,4 +336,3 @@ export function buildReport(
     url: config.url,
   };
 }
-

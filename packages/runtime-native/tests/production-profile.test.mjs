@@ -302,8 +302,8 @@ test('generated production workload runs through the playtest validator and keep
   const playtest = await import(new URL('../../playtest/dist/index.js', import.meta.url).href);
   const runner = await import(new URL('../../playtest/dist/runner/index.js', import.meta.url).href);
   const scenario = await playtest.loadPlaytestScenario(project, paths.workloadPath);
-  const report = runner.buildReport(
-    {
+  const report = runner.buildReport({
+    config: {
       artifactDirectory: project,
       headless: true,
       projectPath: project,
@@ -312,15 +312,10 @@ test('generated production workload runs through the playtest validator and keep
       trace: false,
       url: 'http://127.0.0.1:41777',
     },
+    consoleEntries: [],
+    networkEntries: [],
     scenario,
-    undefined,
-    undefined,
-    [],
-    [],
-    undefined,
-    {},
-    true,
-  );
+  });
   assert.equal(report.diagnostics.some(({ code }) => code === 'TN_PLAYTEST_SCENARIO_INVALID'), false);
   assert.equal(report.pass, true);
 

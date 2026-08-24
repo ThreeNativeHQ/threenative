@@ -1056,7 +1056,7 @@ const report = await runStandalonePlaytest(options);
 `function` — Execute scenario steps, assertions, and evidence capture.
 
 ```ts
-export function buildReport( config: IStandalonePlaytestConfig, scenario: IPlaytestScenario, beforeSnapshot: IPlaytestObservationSnapshot | undefined, afterSnapshot: IPlaytestObservationSnapshot | undefined, consoleEntries: RunnerConsoleEntry[], networkEntries: Array< { … }
+export function buildReport( { … }
 ```
 
 - **Use when:** run a complete browser or device playtest · capture diagnostics and screenshots from a managed server

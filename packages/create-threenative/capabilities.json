@@ -1116,7 +1116,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export function buildReport( config: IStandalonePlaytestConfig, scenario: IPlaytestScenario, beforeSnapshot: IPlaytestObservationSnapshot | undefined, afterSnapshot: IPlaytestObservationSnapshot | undefined, consoleEntries: RunnerConsoleEntry[], networkEntries: Array< { … }",
+      "signature": "export function buildReport( { … }",
       "situations": [
         "run a complete browser or device playtest",
         "capture diagnostics and screenshots from a managed server"

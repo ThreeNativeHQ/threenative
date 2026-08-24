@@ -12,7 +12,7 @@ import type {
   IPlaytestScenario,
   IPlaytestSetupRequest,
 } from "../src/index.js";
-import type { PlaytestVec3 } from "../src/report.js";
+import type { IPlaytestSetupApplication, PlaytestVec3 } from "../src/report.js";
 
 const baseScenario = {
   name: "setup-reporting",
@@ -110,7 +110,8 @@ describe("honest reporting in the run report", () => {
     artifactDirectory: "/tmp/artifacts",
     headless: false,
     url: "http://127.0.0.1:5173",
-  } as Parameters<typeof buildReport>[0];
+  } as Parameters<typeof failureReport>[0];
+  const buildSetupReport = (scenario: IPlaytestScenario, options: { pathLength?: number; setup?: IPlaytestSetupApplication } = {}) => buildReport({ ...options, config, consoleEntries: [], networkEntries: [], scenario });
 
   test("failureReport carries the requested overrides with nothing applied and the named reason", () => {
     const scenario = scenarioWith({ spawn: { x: 1, z: 2 } });
@@ -131,7 +132,7 @@ describe("honest reporting in the run report", () => {
       applied: [{ entity: "player", kind: "spawn" as const, value: { x: 1, y: 0, z: 2 } }],
       requested: [{ entity: "player", kind: "spawn" as const, value: { x: 1, y: 0, z: 2 } }],
     };
-    const report = buildReport(config, baseScenario as unknown as IPlaytestScenario, undefined, undefined, [], [], 0, {}, true, undefined, [], undefined, undefined, undefined, [], receipt);
+    const report = buildSetupReport(baseScenario as unknown as IPlaytestScenario, { pathLength: 0, setup: receipt });
     expect(report.setup).toEqual(receipt);
   });
 
@@ -142,7 +143,7 @@ describe("honest reporting in the run report", () => {
       ...baseScenario,
       steps: [{ press: ["KeyW"], holdFrames: 10, waitFrames: 5 }, { waitFrames: 7 }],
     } as unknown as IPlaytestScenario;
-    const report = buildReport(config, scenario, undefined, undefined, [], []);
+    const report = buildSetupReport(scenario);
     expect(report.frames).toBe(22);
   });
 });

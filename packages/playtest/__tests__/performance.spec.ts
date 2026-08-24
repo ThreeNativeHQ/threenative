@@ -66,6 +66,8 @@ function report(series: unknown[]) {
   };
 }
 
+const buildPerformanceReport = (scenario: IPlaytestScenario, afterSnapshot: IPlaytestObservationSnapshot) => buildReport({ afterSnapshot, config: CONFIG, consoleEntries: [], networkEntries: [], scenario });
+
 interface TestRenderer {
   readonly domElement: HTMLCanvasElement;
   readonly info: { render: { calls?: number; triangles?: number } };
@@ -206,7 +208,7 @@ test("performance bounds pass against observed frame cost and renderer counts", 
 test("the permanent regressed-scene control drives the render loop and turns red", async () => {
   const loaded = await scenario({ maxDrawCalls: DECLARED_MAX_DRAW_CALLS, maxTriangles: DECLARED_MAX_TRIANGLES });
   const snapshot = await renderControl(REGRESSED_MESH_COUNT, true);
-  const result = buildReport(CONFIG, loaded, undefined, snapshot, [], []);
+  const result = buildPerformanceReport(loaded, snapshot);
 
   expect(snapshot.runtimeDiagnosticsSeries).toEqual([
     { drawCalls: REGRESSED_MESH_COUNT, frameMs: 16, triangles: REGRESSED_MESH_COUNT * 12 },
@@ -223,7 +225,7 @@ test("the permanent regressed-scene control drives the render loop and turns red
 test("the permanent regressed-scene control fails closed when renderer counts disappear", async () => {
   const loaded = await scenario({ maxDrawCalls: DECLARED_MAX_DRAW_CALLS, maxTriangles: DECLARED_MAX_TRIANGLES });
   const snapshot = await renderControl(REGRESSED_MESH_COUNT, false);
-  const result = buildReport(CONFIG, loaded, undefined, snapshot, [], []);
+  const result = buildPerformanceReport(loaded, snapshot);
 
   expect(snapshot.runtimeDiagnosticsSeries).toEqual([
     { frameMs: 16 },

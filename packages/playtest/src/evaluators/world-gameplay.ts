@@ -2,6 +2,7 @@ import { readPath, jsonEqual, trivialAssertionDiagnostic, componentAssertionDiag
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
 import { hasFinalComponentExpectation, rejectsTrivialAssertion, componentValueChecks, aerodynamicForceSampleCount, aerodynamicControlValues, aerodynamicTorqueAtLabel, evaluatePathAssertion, evaluateTagCountAssertion, evaluateStateAssertion } from "./helpers.js";
+import { evaluateTrivialityGuard, guardedAssertion } from "../triviality-guard.js";
 
 export function emitWorldGameplay(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
@@ -29,21 +30,15 @@ export function emitWorldGameplay(ctx: IEvaluationContext): void {
         && valueChecks.length > 0
         && before !== undefined
         && componentValueChecks(assertion, before).every(Boolean);
-      const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || typeof assertion.allowTrivial === "string");
-      assertions.push({
-        details: {
-          after,
-          before,
-          component: assertion.component,
-          entity: assertion.entity,
-          expected: assertion,
-          trivial,
-          ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
-        },
-        id: `component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}`,
-        pass,
-      });
-      if (!pass) diagnostics.push(trivial && typeof assertion.allowTrivial !== "string"
+      const guard = evaluateTrivialityGuard(checks.length > 0 && checks.every(Boolean), trivial, assertion.allowTrivial);
+      assertions.push(guardedAssertion(guard, `component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}`, {
+        after,
+        before,
+        component: assertion.component,
+        entity: assertion.entity,
+        expected: assertion,
+      }));
+      if (!guard.pass) diagnostics.push(guard.trivial && !guard.trivialityOptOut
         ? trivialAssertionDiagnostic(`component.${assertion.entity}.${assertion.component}.${assertion.path ?? "value"}`, assertion.path, before, input.scenario.sourcePath)
         : componentAssertionDiagnostic(assertion, before, after));
     }

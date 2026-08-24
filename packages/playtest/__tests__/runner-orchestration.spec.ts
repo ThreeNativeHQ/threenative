@@ -62,14 +62,12 @@ describe("runner orchestration (characterization)", () => {
   });
 
   test("buildReport on an empty scenario pins the assembled field set", () => {
-    const report = buildReport(
-      { url: "http://127.0.0.1:5173" } as never,
-      SCENARIO,
-      undefined,
-      undefined,
-      [],
-      [],
-    );
+    const report = buildReport({
+      config: { url: "http://127.0.0.1:5173" } as never,
+      consoleEntries: [],
+      networkEntries: [],
+      scenario: SCENARIO,
+    });
     // Captured verbatim from the unsplit module: buildReport evaluates inline, so an empty
     // scenario already carries assertionResults and the no-assertions diagnostic.
     expect(report).toEqual({

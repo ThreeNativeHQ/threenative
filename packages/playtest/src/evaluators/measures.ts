@@ -31,6 +31,7 @@ import {
   trivialAssertionDiagnostic,
   vectorDistance,
 } from "../assertion-report.js";
+import { evaluateTrivialityGuard, guardedAssertion } from "../triviality-guard.js";
 
 export function horizontalRadius(
   transform: { halfExtents?: Vec3; scale?: Vec3 } | undefined,
@@ -231,25 +232,19 @@ export function evaluatePathAssertion(
     const observed = before !== undefined || after !== undefined;
     checks.push(observed && (assertion.changed ? !jsonEqual(before, after) : jsonEqual(before, after)));
   }
-  const pass = checks.length > 0 && checks.every(Boolean) && (!trivial || typeof assertion.allowTrivial === "string");
-  const result = {
-    details: {
-      after,
-      before,
-      expected: expectedPathAssertion(assertion),
-      id: assertion.id,
-      path: assertion.path,
-      trivial,
-      ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
-    },
-    id: `${kind}.${assertion.id}${assertion.path === undefined ? "" : `.${assertion.path}`}`,
-    pass,
-  };
-  return pass
+  const guard = evaluateTrivialityGuard(checks.length > 0 && checks.every(Boolean), trivial, assertion.allowTrivial);
+  const result = guardedAssertion(guard, `${kind}.${assertion.id}${assertion.path === undefined ? "" : `.${assertion.path}`}`, {
+    after,
+    before,
+    expected: expectedPathAssertion(assertion),
+    id: assertion.id,
+    path: assertion.path,
+  });
+  return guard.pass
     ? { assertion: result }
     : {
         assertion: result,
-        diagnostic: trivial && typeof assertion.allowTrivial !== "string"
+        diagnostic: guard.trivial && !guard.trivialityOptOut
           ? trivialAssertionDiagnostic(`${kind}.${assertion.id}`, assertion.path, before, context.scenarioSourcePath)
           : pathAssertionDiagnostic(kind, assertion, before, after, context),
       };
@@ -509,24 +504,13 @@ export function evaluateVisibilityAssertion(
       && (minProjectedPixels === undefined || (initialProjectedPixels ?? 0) >= minProjectedPixels)
       && (maxOffscreenRatio === undefined || (initialOffscreenRatio ?? 1) <= maxOffscreenRatio);
   const guarded = (comparisonPass: boolean, details: Record<string, unknown>, failure: IPlaytestDiagnostic) => {
-    const trivial = comparisonPass && initialPass;
-    const pass = comparisonPass && (!trivial || typeof assertion.allowTrivial === "string");
-    const result = {
-      details: {
-        ...details,
-        expected: assertion,
-        initialPass,
-        trivial,
-        ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
-      },
-      id: `visibility.${entity}`,
-      pass,
-    };
-    return pass
+    const guard = evaluateTrivialityGuard(comparisonPass, comparisonPass && initialPass, assertion.allowTrivial);
+    const result = guardedAssertion(guard, `visibility.${entity}`, { ...details, expected: assertion, initialPass });
+    return guard.pass
       ? { assertion: result }
       : {
         assertion: result,
-        diagnostic: trivial && typeof assertion.allowTrivial !== "string"
+        diagnostic: guard.trivial && !guard.trivialityOptOut
           ? trivialAssertionDiagnostic(result.id, undefined, true, undefined)
           : failure,
       };
@@ -573,5 +557,3 @@ export function evaluateVisibilityAssertion(
     suggestion: "Check camera framing, clipping range, entity scale, and viewport-specific layout.",
   });
 }
-
-

@@ -1,6 +1,8 @@
+import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 
 import { evaluateRichPlaytestAssertions } from "../src/assertion-evaluators.js";
+import { MOVEMENT_EVIDENCE_KINDS, MOVEMENT_EVALUATORS } from "../src/evaluators/movement-evidence.js";
 import type { IPlaytestScenario } from "../src/scenario.js";
 
 // PRD-182 Phase 1 characterization net: these tests pin CURRENT semantics of
@@ -28,6 +30,17 @@ function evaluate(assert_: IPlaytestScenario["assert"], extra: object = {}) {
 }
 
 describe("evaluator semantics (characterization)", () => {
+  test("the guard has one definition and movement kinds have one dispatch entry", async () => {
+    const root = new URL("../src/", import.meta.url);
+    const pattern = /typeof\s+[A-Za-z0-9_.]*allowTrivial\s*(?:===|!==)\s*"string"/gu;
+    const matches = (await Promise.all((await readdir(root, { recursive: true }))
+      .filter((path) => path.endsWith(".ts"))
+      .map(async (path) => ({ count: [...(await readFile(new URL(path, root), "utf8")).matchAll(pattern)].length, path }))))
+      .filter(({ count }) => count > 0);
+    expect(matches).toEqual([{ count: 1, path: "triviality-guard.ts" }]);
+    expect(Object.keys(MOVEMENT_EVALUATORS).sort()).toEqual([...MOVEMENT_EVIDENCE_KINDS].sort());
+  });
+
   test("movement pins its verdict id and minimum-distance details", () => {
     const result = evaluate(
       { movement: { entity: "player", minDistance: 1 } } as never,

@@ -512,24 +512,24 @@ export async function runStandalonePlaytest(
     if (activeConfig.trace) {
       await context.tracing.stop({ path: join(activeConfig.artifactDirectory, "trace.zip") });
     }
-    const report = buildReport(
-      browserConfig,
-      scenario,
-      beforeSnapshot,
+    const report = buildReport({
       afterSnapshot,
-      consoleEntries,
-      networkEntries,
-      accumulatedPathLength(pathPositions),
-      pairObservations(beforeHud, afterHud),
-      runtimeReady,
-      visual,
-      labeledSamples,
-      framebufferCoverage,
-      captureProvenance,
+      beforeSnapshot,
+      capture: captureProvenance,
       captureFailure,
+      config: browserConfig,
+      consoleEntries,
+      framebufferCoverage,
+      hud: pairObservations(beforeHud, afterHud),
+      labeledSamples,
       movementSamples,
-      setupApplication,
-    );
+      networkEntries,
+      pathLength: accumulatedPathLength(pathPositions),
+      runtimeReady,
+      scenario,
+      setup: setupApplication,
+      visual,
+    });
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
       network: networkEntries,
