@@ -598,7 +598,7 @@ export function View(props: IViewProps): ReactNode { … }
 export function connectUiBridge(options: IConnectOptions): IUiBridge { … }
 ```
 
-- **Use when:** write a UI that talks to the game on web and on a phone alike · send a message from a HUD rendered over the game surface
+- **Use when:** write a UI that talks to the game on web and on a phone alike · send a message from a HUD rendered over the game surface · connect game code to a platform-owned UI realm · share one UI bridge implementation across web, Android, iOS, and desktop
 - **Constraints:** the transport is discovered, never configured; no game names the web view
 
 ```ts
@@ -613,7 +613,7 @@ const bridge = connectUiBridge({ end: "ui" });
 export function onUiIntent( bridge: IUiBridge, listener: (intent: string, payload: unknown) => void, ): () => void { … }
 ```
 
-- **Use when:** restart or pause a game from a button in its HUD
+- **Use when:** restart or pause a game from a button in its HUD · handle a HUD button action in game code · route native and web UI commands through one listener
 - **Constraints:** prefer game.ui.onIntent, which connects the bridge for you
 
 ```ts
@@ -628,7 +628,7 @@ onUiIntent(bridge, (intent) => { if (intent === "restart") game.goto("Play"); })
 export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry { … }
 ```
 
-- **Use when:** let a touch on empty HUD space reach the game instead of the UI · make a HUD button receive taps on a phone
+- **Use when:** let a touch on empty HUD space reach the game instead of the UI · make a HUD button receive taps on a phone · give native input hosts the rectangles claimed by UI controls · keep touch hit testing aligned with a moving web or native HUD
 - **Constraints:** mark controls with data-tn-interactive; pointer-events is not the mechanism
 
 ```ts
@@ -643,7 +643,7 @@ publishHitRegions({ bridge });
 export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }
 ```
 
-- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop
+- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop · publish game state to a HUD in another realm · keep a web and native UI mirror on the same throttled state stream
 - **Constraints:** publishes at the store's throttled cadence, and not at all with no UI listening
 
 ```ts
@@ -658,7 +658,7 @@ publishUiState(bridge, game.state);
 export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void { … }
 ```
 
-- **Use when:** wire a Restart button in a HUD to the running game · pause a game from a menu drawn over its surface
+- **Use when:** wire a Restart button in a HUD to the running game · pause a game from a menu drawn over its surface · send a button or menu action from a UI HUD to game code · keep UI input portable across web and native hosts
 - **Constraints:** one-way; the game decides what each name means and may ignore one
 
 ```ts
@@ -673,7 +673,7 @@ sendUiIntent(bridge, "restart");
 export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … }
 ```
 
-- **Use when:** read game state from a HUD that runs in the platform's web view
+- **Use when:** read game state from a HUD that runs in the platform's web view · read published game state from a UI HUD · subscribe a web or native UI to the game's mirrored state
 - **Constraints:** returns undefined until the game publishes its first state
 
 ```ts

@@ -632,7 +632,9 @@
       "signature": "export function connectUiBridge(options: IConnectOptions): IUiBridge { … }",
       "situations": [
         "write a UI that talks to the game on web and on a phone alike",
-        "send a message from a HUD rendered over the game surface"
+        "send a message from a HUD rendered over the game surface",
+        "connect game code to a platform-owned UI realm",
+        "share one UI bridge implementation across web, Android, iOS, and desktop"
       ],
       "summary": "Open the message channel between a game and its UI, whatever host is underneath.",
       "supersedes": [],
@@ -646,7 +648,11 @@
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function onUiIntent( bridge: IUiBridge, listener: (intent: string, payload: unknown) => void, ): () => void { … }",
-      "situations": ["restart or pause a game from a button in its HUD"],
+      "situations": [
+        "restart or pause a game from a button in its HUD",
+        "handle a HUD button action in game code",
+        "route native and web UI commands through one listener"
+      ],
       "summary": "Handle the actions a UI sends back to the game.",
       "supersedes": [],
       "symbol": "onUiIntent"
@@ -663,7 +669,9 @@
       "signature": "export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry { … }",
       "situations": [
         "let a touch on empty HUD space reach the game instead of the UI",
-        "make a HUD button receive taps on a phone"
+        "make a HUD button receive taps on a phone",
+        "give native input hosts the rectangles claimed by UI controls",
+        "keep touch hit testing aligned with a moving web or native HUD"
       ],
       "summary": "Tell the native input host where a UI's touchable controls are.",
       "supersedes": [],
@@ -681,7 +689,9 @@
       "signature": "export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }",
       "situations": [
         "show score or health in a UI rendered over the game surface",
-        "keep a HUD in step with the game without re-rendering on the loop"
+        "keep a HUD in step with the game without re-rendering on the loop",
+        "publish game state to a HUD in another realm",
+        "keep a web and native UI mirror on the same throttled state stream"
       ],
       "summary": "Publish the game's state so a UI in another process can mirror it.",
       "supersedes": [],
@@ -697,7 +707,9 @@
       "signature": "export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void { … }",
       "situations": [
         "wire a Restart button in a HUD to the running game",
-        "pause a game from a menu drawn over its surface"
+        "pause a game from a menu drawn over its surface",
+        "send a button or menu action from a UI HUD to game code",
+        "keep UI input portable across web and native hosts"
       ],
       "summary": "Send a player action from the UI back to the game.",
       "supersedes": [],
@@ -711,7 +723,11 @@
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … }",
-      "situations": ["read game state from a HUD that runs in the platform's web view"],
+      "situations": [
+        "read game state from a HUD that runs in the platform's web view",
+        "read published game state from a UI HUD",
+        "subscribe a web or native UI to the game's mirrored state"
+      ],
       "summary": "Mirror the game's published state on the UI side.",
       "supersedes": [],
       "symbol": "subscribeUiState"
