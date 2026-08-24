@@ -96,7 +96,7 @@ test("every registry field declaring a scalar type is actually enforced", async 
   // Guards the fix itself: the check is registry-driven, so a new assertion kind
   // inherits it. This fails if someone adds a scalar field the checker skips.
   const scalarTypes = new Set([
-    "boolean", "non-empty string", "non-negative integer", "number",
+    "boolean", "non-empty string", "non-negative integer", "non-negative number", "number",
     "number in [0, 180]", "positive integer", "positive number", "string", "triviality reason",
   ]);
   const wrongValue = (type: string): unknown => (type.includes("string") ? 42 : "not-a-number");

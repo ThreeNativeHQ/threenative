@@ -10,13 +10,17 @@
  * (`scenario.ts`, `report.ts`, the public entry) keep working without edits.
  */
 export {
+  assertPlaytestAssertionRegistryComplete,
   PLAYTEST_ASSERTION_REGISTRY,
   PLAYTEST_SETUP_REGISTRY,
   requiredPlaytestCapabilities,
 } from "./assertion-schema.js";
 export type {
+  IPlaytestAssertionSchemaConstraint,
   IPlaytestAssertionSchemaEntry,
   IPlaytestAssertionSchemaField,
+  IPlaytestAssertionSchemaPrimitive,
+  IPlaytestAssertionSchemaRule,
   IPlaytestSetupSchemaEntry,
 } from "./assertion-schema.js";
 export { evaluateRichPlaytestAssertions, overlayNodeObservationKey } from "./assertion-evaluators.js";

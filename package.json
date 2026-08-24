@@ -10,7 +10,7 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "build": "tsx scripts/build-capability-manifest.ts && tsx scripts/generate-ctx-surface-table.ts && tsx scripts/generate-capability-reference.ts && pnpm -r --if-present run build",
+    "build": "tsx scripts/build-capability-manifest.ts && tsx scripts/generate-ctx-surface-table.ts && tsx scripts/generate-capability-reference.ts && pnpm -r --if-present run build && tsx scripts/generate-assertion-validators.ts --check && tsx scripts/generate-assertion-reference.ts --check",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "bash scripts/run-test-suite.sh",
     "test:browser": "pnpm --filter @threenative/playtest build && playwright test --config=playwright.config.ts",
@@ -21,6 +21,8 @@
     "lint": "biome check .",
     "quality": "tsx scripts/check-quality.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
+    "generate:assertion-validators": "tsx scripts/generate-assertion-validators.ts",
+    "generate:assertion-reference": "pnpm --filter @threenative/playtest build && tsx scripts/generate-assertion-reference.ts",
     "gate:status": "tsx scripts/gate-cli.ts status",
     "gate:resume": "tsx scripts/gate-cli.ts resume",
     "gate:doctor": "tsx scripts/gate-cli.ts doctor",

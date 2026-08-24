@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../src/assertions.js";
 import { PLAYTEST_ROOT_KEYS, PLAYTEST_STEP_KEYS } from "../src/scenario.js";
+import { renderAssertionReference } from "../../../scripts/generate-assertion-reference.js";
 
 /**
  * The documentation-drift gate (report §4.3): documentation that teaches scenario
@@ -157,5 +158,15 @@ describe("playtest documentation drift", () => {
       unmentioned,
       `assertion kinds absent from every teaching doc: ${unmentioned.join(", ")}`,
     ).toEqual([]);
+  });
+
+  it("keeps the committed reference generated from the registry", async () => {
+    const reference = (await teachingDocuments()).find(({ path: documentPath }) =>
+      documentPath.endsWith("agent-docs/references/assertion-reference.md"),
+    );
+    expect(reference).toBeDefined();
+    expect(reference?.content, "assertion reference is stale; run the reference generator").toBe(
+      renderAssertionReference(PLAYTEST_ASSERTION_REGISTRY),
+    );
   });
 });

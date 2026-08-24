@@ -1,7 +1,82 @@
 import type { IPlaytestScenario, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 
+export type IPlaytestAssertionSchemaPrimitive = string | number | boolean | null;
+
+export type IPlaytestAssertionSchemaRule =
+  | {
+      fields: readonly string[];
+      kind: "requireOneOf";
+      message?: string;
+    }
+  | {
+      equals: IPlaytestAssertionSchemaPrimitive;
+      field: string;
+      kind: "requireWhen";
+      message?: string;
+      required: string;
+    }
+  | {
+      field: string;
+      kind: "nonEmptyArray";
+      message?: string;
+    }
+  | {
+      field: string;
+      kind: "noConsecutiveDuplicates";
+      message?: string;
+    }
+  | {
+      fields: readonly string[];
+      kind: "requireOneOfOrTrue";
+      message?: string;
+      trueFields: readonly string[];
+    };
+
+export type IPlaytestAssertionSchemaConstraint =
+  | { kind: "boolean" }
+  | {
+      integer?: boolean;
+      kind: "number";
+      max?: number;
+      min?: number;
+      minExclusive?: boolean;
+    }
+  | {
+      format?: "project-relative-png";
+      kind: "string";
+      minNonWhitespace?: number;
+      nonEmpty?: boolean;
+    }
+  | { kind: "json" }
+  | {
+      items: IPlaytestAssertionSchemaConstraint;
+      kind: "array";
+      maxItems?: number;
+      minItems?: number;
+    }
+  | {
+      items: readonly IPlaytestAssertionSchemaConstraint[];
+      kind: "tuple";
+    }
+  | {
+      fields: readonly IPlaytestAssertionSchemaField[];
+      kind: "record";
+      rules?: readonly IPlaytestAssertionSchemaRule[];
+      unknownKeys?: "allow" | "reject";
+    }
+  | {
+      kind: "literal";
+      values: readonly IPlaytestAssertionSchemaPrimitive[];
+    }
+  | {
+      discriminator?: { field: string; presentVariant: number };
+      kind: "union";
+      variants: readonly IPlaytestAssertionSchemaConstraint[];
+    };
+
 export interface IPlaytestAssertionSchemaField {
+  constraints: IPlaytestAssertionSchemaConstraint;
   description: string;
   name: string;
   required?: boolean;
@@ -12,17 +87,233 @@ export interface IPlaytestAssertionSchemaEntry {
   cardinality: "array" | "object";
   description: string;
   example: unknown;
-  fields: IPlaytestAssertionSchemaField[];
+  fields: readonly IPlaytestAssertionSchemaField[];
   kind: keyof NonNullable<IPlaytestScenario["assert"]>;
+  minItems?: number;
+  minItemsMessage?: string;
   observationPath: string;
   requiredCapabilities: readonly PlaytestCapability[];
   resultIdPrefix: string;
+  rules?: readonly IPlaytestAssertionSchemaRule[];
   supportedOn: readonly PlaytestTarget[];
   triviality: "not-applicable" | "reject-initial-value";
   trivialityRationale: string;
+  validation?: IPlaytestAssertionSchemaConstraint;
 }
 
-export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] = [
+interface IRawPlaytestAssertionSchemaField extends Omit<IPlaytestAssertionSchemaField, "constraints"> {
+  constraints?: IPlaytestAssertionSchemaConstraint;
+}
+
+interface IRawPlaytestAssertionSchemaEntry extends Omit<IPlaytestAssertionSchemaEntry, "fields"> {
+  fields: readonly IRawPlaytestAssertionSchemaField[];
+}
+
+function splitTypeExpression(value: string, separator = ","): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let angle = 0;
+  let bracket = 0;
+  let brace = 0;
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote !== undefined) {
+      if (character === quote && value[index - 1] !== "\\") quote = undefined;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "<" && value[index + 1] !== "=") angle += 1;
+    if (character === ">" && value[index - 1] !== "=") angle -= 1;
+    if (character === "[") bracket += 1;
+    if (character === "]") bracket -= 1;
+    if (character === "{") brace += 1;
+    if (character === "}") brace -= 1;
+    if (character === separator && angle === 0 && bracket === 0 && brace === 0) {
+      parts.push(value.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  const final = value.slice(start).trim();
+  if (final.length > 0) parts.push(final);
+  return parts;
+}
+
+function findTypeDelimiter(value: string, delimiter: string): number {
+  let angle = 0;
+  let bracket = 0;
+  let brace = 0;
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote !== undefined) {
+      if (character === quote && value[index - 1] !== "\\") quote = undefined;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "<" && value[index + 1] !== "=") angle += 1;
+    if (character === ">" && value[index - 1] !== "=") angle -= 1;
+    if (character === "[") bracket += 1;
+    if (character === "]") bracket -= 1;
+    if (character === "{") brace += 1;
+    if (character === "}") brace -= 1;
+    if (character === delimiter && angle === 0 && bracket === 0 && brace === 0) return index;
+  }
+  return -1;
+}
+
+function rawField(
+  name: string,
+  type: string,
+  constraints: IPlaytestAssertionSchemaConstraint,
+  required = false,
+): IPlaytestAssertionSchemaField {
+  return { constraints, description: "", name, required, type };
+}
+
+function parseTypeExpression(type: string): IPlaytestAssertionSchemaConstraint {
+  const normalized = type.trim();
+  if (normalized === "boolean") return { kind: "boolean" };
+  if (normalized === "json") return { kind: "json" };
+  if (normalized === "non-empty string") return { kind: "string", nonEmpty: true };
+  if (normalized === "triviality reason") return { kind: "string", minNonWhitespace: 20 };
+  if (normalized === "project-relative PNG") {
+    return { format: "project-relative-png", kind: "string", nonEmpty: true };
+  }
+  if (normalized === "string") return { kind: "string", nonEmpty: true };
+  if (normalized === "number") return { kind: "number" };
+  if (normalized === "non-negative number") return { kind: "number", min: 0 };
+  if (normalized === "positive number") return { kind: "number", min: 0, minExclusive: true };
+  if (normalized === "positive integer") return { integer: true, kind: "number", min: 1 };
+  if (normalized === "non-negative integer") return { integer: true, kind: "number", min: 0 };
+  if (normalized === "number in [0, 180]") return { kind: "number", max: 180, min: 0 };
+  const boundedInteger = /^integer ([-+]?\d+)\.\.([-+]?\d+)$/u.exec(normalized);
+  if (boundedInteger !== null) {
+    return { integer: true, kind: "number", max: Number(boundedInteger[2]), min: Number(boundedInteger[1]) };
+  }
+  const boundedPositiveInteger = /^positive integer <= (\d+)$/u.exec(normalized);
+  if (boundedPositiveInteger !== null) {
+    return { integer: true, kind: "number", max: Number(boundedPositiveInteger[1]), min: 1 };
+  }
+  if (normalized === "object") return { fields: [], kind: "record", unknownKeys: "allow" };
+
+  const minimumArray = /^(.*)\[\] \(minimum (\d+)\)$/u.exec(normalized);
+  if (minimumArray !== null) {
+    return { items: parseTypeExpression(minimumArray[1] ?? ""), kind: "array", minItems: Number(minimumArray[2]) };
+  }
+  if (normalized.startsWith("Array<") && normalized.endsWith(">")) {
+    return { items: parseTypeExpression(normalized.slice(6, -1)), kind: "array" };
+  }
+  if (normalized.startsWith("[") && normalized.endsWith("]")) {
+    return { items: splitTypeExpression(normalized.slice(1, -1)).map(parseTypeExpression), kind: "tuple" };
+  }
+  if (normalized.startsWith("{") && normalized.endsWith("}")) {
+    const fields = splitTypeExpression(normalized.slice(1, -1)).map((property) => {
+      const delimiter = findTypeDelimiter(property, ":");
+      if (delimiter < 1) throw new Error(`Assertion registry type '${type}' has a malformed object field.`);
+      const nameToken = property.slice(0, delimiter).trim();
+      const name = nameToken.endsWith("?") ? nameToken.slice(0, -1) : nameToken;
+      return rawField(name, property.slice(delimiter + 1).trim(), parseTypeExpression(property.slice(delimiter + 1)), !nameToken.endsWith("?"));
+    });
+    return { fields, kind: "record", unknownKeys: "reject" };
+  }
+  const literalTerms = splitTypeExpression(normalized, "|").map((term) => term.trim());
+  if (literalTerms.length > 1 && literalTerms.every((term) => /^['"].*['"]$/u.test(term))) {
+    return { kind: "literal", values: literalTerms.map((term) => term.slice(1, -1)) };
+  }
+  throw new Error(`Assertion registry field type '${type}' has no machine-readable constraint.`);
+}
+
+function normalizeAssertionEntry(entry: IRawPlaytestAssertionSchemaEntry): IPlaytestAssertionSchemaEntry {
+  return {
+    ...entry,
+    fields: entry.fields.map((field) => ({
+      ...field,
+      constraints: field.constraints ?? parseTypeExpression(field.type),
+    })),
+  };
+}
+
+function resourceValidation(): IPlaytestAssertionSchemaConstraint {
+  const pathAlternative = rawField(
+    "alternative",
+    "object",
+    {
+      fields: [
+        rawField("path", "string", { kind: "string", nonEmpty: true }, true),
+        rawField("equals", "json", { kind: "json" }),
+        rawField("gte", "number", { kind: "number" }),
+        rawField("lte", "number", { kind: "number" }),
+        rawField("textIncludes", "string", { kind: "string", nonEmpty: true }),
+        rawField("changed", "boolean", { kind: "boolean" }),
+      ],
+      kind: "record",
+      rules: [
+        {
+          fields: ["equals", "gte", "lte", "textIncludes", "changed"],
+          kind: "requireOneOf",
+          message: "must declare equals, gte, lte, textIncludes, or changed.",
+        },
+      ],
+      unknownKeys: "reject",
+    },
+  );
+  const normalFields = [
+    rawField("id", "string", { kind: "string", nonEmpty: true }, true),
+    rawField("path", "string", { kind: "string", nonEmpty: true }),
+    rawField("equals", "json", { kind: "json" }),
+    rawField("gte", "number", { kind: "number" }),
+    rawField("lte", "number", { kind: "number" }),
+    rawField("textIncludes", "string", { kind: "string", nonEmpty: true }),
+    rawField("changed", "boolean", { kind: "boolean" }),
+    rawField("throughoutSteps", "boolean", { kind: "boolean" }),
+    rawField("atSteps", "Array<{ label: string, equals?: json, textIncludes?: string }>", parseTypeExpression("Array<{ label: string, equals?: json, textIncludes?: string }>")),
+    rawField("allowTrivial", "triviality reason", { kind: "string", minNonWhitespace: 20 }),
+  ];
+  return {
+    discriminator: { field: "anyOf", presentVariant: 0 },
+    kind: "union",
+    variants: [
+      {
+        fields: [
+          rawField("id", "string", { kind: "string", nonEmpty: true }, true),
+          rawField("anyOf", "Array<object>", { items: pathAlternative.constraints, kind: "array", minItems: 1 }, true),
+        ],
+        kind: "record",
+        unknownKeys: "reject",
+      },
+      { fields: normalFields, kind: "record", unknownKeys: "reject" },
+    ],
+  };
+}
+
+function worldRuntimeValidation(): IPlaytestAssertionSchemaConstraint {
+  return {
+    fields: [
+      rawField("agent", "string", { kind: "string", nonEmpty: true }, true),
+      rawField("core", "string", { kind: "string", nonEmpty: true }, true),
+      rawField("portable", "boolean", { kind: "boolean" }),
+      rawField("randomState", "integer", { integer: true, kind: "number" }, true),
+      rawField(
+        "rapier",
+        "string | null",
+        { kind: "union", variants: [{ kind: "string", nonEmpty: true }, { kind: "literal", values: [null] }] },
+        true,
+      ),
+      rawField("step", "positive number", { kind: "number", min: 0, minExclusive: true }, true),
+    ],
+    kind: "record",
+    unknownKeys: "reject",
+  };
+}
+
+const RAW_PLAYTEST_ASSERTION_REGISTRY: readonly IRawPlaytestAssertionSchemaEntry[] = [
   {
     description: "Samples the framebuffer on every render frame inside a labeled loading window and requires every coarse-grid RGB sample to match the declared backdrop.",
     example: {
@@ -57,6 +348,13 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "object",
     kind: "reachability",
+    rules: [
+      {
+        field: "entities",
+        kind: "noConsecutiveDuplicates",
+        message: "Assertion 'assert.reachability.entities' must not repeat a consecutive entity id.",
+      },
+    ],
     observationPath: "entityTransforms",
     requiredCapabilities: ["entity.observe"],
     resultIdPrefix: "reachability.",
@@ -70,8 +368,42 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     fields: [
       { description: "Aerodynamic entity id.", name: "entity", required: true, type: "string" },
       { description: "Minimum physics-debug samples containing finite aerodynamic force vectors.", name: "minForceSamples", type: "positive integer" },
-      { description: "Signed surface values required in physics.aerodynamics.setInputs calls.", name: "controls", type: "Array<{ surface: string, sign: 'negative' | 'positive', minAbs?: number }>" },
-      { description: "Signed net aerodynamic torque, optionally relative to another labeled step.", name: "torques", type: "Array<{ label: string, relativeToLabel?: string, axis: 'x' | 'y' | 'z', sign: 'negative' | 'positive', minAbs?: number }>" },
+      {
+        constraints: {
+          items: {
+            fields: [
+              rawField("surface", "string", { kind: "string", nonEmpty: true }, true),
+              rawField("sign", "'negative' | 'positive'", { kind: "literal", values: ["negative", "positive"] }, true),
+              rawField("minAbs", "number", { kind: "number", min: 0 }),
+            ],
+            kind: "record",
+            unknownKeys: "reject",
+          },
+          kind: "array",
+        },
+        description: "Signed surface values required in physics.aerodynamics.setInputs calls.",
+        name: "controls",
+        type: "Array<{ surface: string, sign: 'negative' | 'positive', minAbs?: number }>",
+      },
+      {
+        constraints: {
+          items: {
+            fields: [
+              rawField("label", "string", { kind: "string", nonEmpty: true }, true),
+              rawField("relativeToLabel", "string", { kind: "string", nonEmpty: true }),
+              rawField("axis", "'x' | 'y' | 'z'", { kind: "literal", values: ["x", "y", "z"] }, true),
+              rawField("sign", "'negative' | 'positive'", { kind: "literal", values: ["negative", "positive"] }, true),
+              rawField("minAbs", "number", { kind: "number", min: 0 }),
+            ],
+            kind: "record",
+            unknownKeys: "reject",
+          },
+          kind: "array",
+        },
+        description: "Signed net aerodynamic torque, optionally relative to another labeled step.",
+        name: "torques",
+        type: "Array<{ label: string, relativeToLabel?: string, axis: 'x' | 'y' | 'z', sign: 'negative' | 'positive', minAbs?: number }>",
+      },
     ],
     cardinality: "array",
     kind: "aerodynamics",
@@ -92,6 +424,13 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "visual",
+    rules: [
+      {
+        fields: ["entityVisible", "frameDiff", "region"],
+        kind: "requireOneOf",
+        message: "must declare 'entityVisible', 'frameDiff', or 'region'; an empty visual assertion evaluates nothing.",
+      },
+    ],
     observationPath: "visual",
     requiredCapabilities: ["browser.screenshot"],
     resultIdPrefix: "visual.",
@@ -139,6 +478,14 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "object",
     kind: "camera",
+    rules: [
+      {
+        fields: ["within"],
+        kind: "requireOneOfOrTrue",
+        message: "must declare 'within' or 'targetInViewport: true'; a camera assertion with neither passes without consulting any observation.",
+        trueFields: ["targetInViewport"],
+      },
+    ],
     observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["camera.observe", "entity.observe"],
     resultIdPrefix: "camera",
@@ -193,6 +540,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     supportedOn: ["web", "desktop", "bevy"],
     triviality: "reject-initial-value",
     trivialityRationale: "A resource comparator can pass on its initial snapshot, so initial satisfaction must be rejected unless a written held-invariant reason is recorded.",
+    validation: resourceValidation(),
   },
   {
     description: "Proves the final count of entities carrying a bounded runtime tag.",
@@ -206,6 +554,13 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "tags",
+    rules: [
+      {
+        fields: ["count", "gte", "lte"],
+        kind: "requireOneOf",
+        message: "must declare 'count', 'gte', or 'lte'; a tag assertion with none passes on a count of zero.",
+      },
+    ],
     observationPath: "runtimeObservations",
     requiredCapabilities: ["runtime.tags"],
     resultIdPrefix: "tags.",
@@ -225,6 +580,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "array",
     kind: "signals",
+    minItems: 1,
+    minItemsMessage: "must contain at least one signal assertion.",
     observationPath: "signals",
     requiredCapabilities: ["runtime.events"],
     resultIdPrefix: "signal.",
@@ -305,6 +662,29 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     ],
     cardinality: "object",
     kind: "diagnostics",
+    rules: [
+      {
+        equals: false,
+        field: "noConsoleErrors",
+        kind: "requireWhen",
+        message: "may be false only when 'consoleErrorsOptOutReason' explains the bounded exception.",
+        required: "consoleErrorsOptOutReason",
+      },
+      {
+        equals: false,
+        field: "noNetworkErrors",
+        kind: "requireWhen",
+        message: "may be false only when 'networkErrorsOptOutReason' explains the bounded exception.",
+        required: "networkErrorsOptOutReason",
+      },
+      {
+        equals: false,
+        field: "noRuntimeDiagnostics",
+        kind: "requireWhen",
+        message: "may be false only when 'runtimeDiagnosticsOptOutReason' explains the bounded exception.",
+        required: "runtimeDiagnosticsOptOutReason",
+      },
+    ],
     observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["browser.console", "browser.network", "runtime.diagnostics"],
     resultIdPrefix: "diagnostics",
@@ -316,9 +696,9 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     description: "Proves a live render sample exists and optionally bounds frame time, draw calls, and triangles.",
     example: { performance: { maxDrawCalls: 100, maxFrameMsP95: 33, maxTriangles: 10_000 } },
     fields: [
-      { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds.", name: "maxFrameMsP95", type: "number" },
-      { description: "Maximum observed renderer draw-call count.", name: "maxDrawCalls", type: "number" },
-      { description: "Maximum observed renderer triangle count.", name: "maxTriangles", type: "number" },
+      { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds.", name: "maxFrameMsP95", type: "non-negative number" },
+      { description: "Maximum observed renderer draw-call count.", name: "maxDrawCalls", type: "non-negative number" },
+      { description: "Maximum observed renderer triangle count.", name: "maxTriangles", type: "non-negative number" },
     ],
     cardinality: "object",
     kind: "performance",
@@ -352,8 +732,19 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     description: "Proves runtime world metadata exposed by the application bridge.",
     example: { world: { seed: 90210 } },
     fields: [
-      { description: "Expected configured deterministic seed, or null when unseeded.", name: "seed", required: true, type: "json" },
-      { description: "Expected deterministic replay runtime fingerprint.", name: "runtime", type: "object" },
+      {
+        constraints: { kind: "union", variants: [{ kind: "number" }, { kind: "literal", values: [null] }] },
+        description: "Expected configured deterministic seed, or null when unseeded.",
+        name: "seed",
+        required: true,
+        type: "json",
+      },
+      {
+        constraints: worldRuntimeValidation(),
+        description: "Expected deterministic replay runtime fingerprint.",
+        name: "runtime",
+        type: "object",
+      },
     ],
     cardinality: "object",
     kind: "world",
@@ -444,6 +835,53 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "A clip can already be playing at the first sample; an entered assertion must prove a transition or document why the clip is held.",
   },
 ] as const;
+
+export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] =
+  RAW_PLAYTEST_ASSERTION_REGISTRY.map(normalizeAssertionEntry);
+
+export function assertPlaytestAssertionRegistryComplete(
+  registry: readonly IPlaytestAssertionSchemaEntry[] = PLAYTEST_ASSERTION_REGISTRY,
+): void {
+  const checkConstraint = (
+    constraint: IPlaytestAssertionSchemaConstraint | undefined,
+    path: string,
+    errors: string[],
+  ): void => {
+    if (constraint === undefined) {
+      errors.push(`${path} has no constraints`);
+      return;
+    }
+    if (constraint.kind === "array") {
+      checkConstraint(constraint.items, `${path}[]`, errors);
+    } else if (constraint.kind === "tuple") {
+      constraint.items.forEach((item, index) => checkConstraint(item, `${path}[${index}]`, errors));
+    } else if (constraint.kind === "union") {
+      constraint.variants.forEach((variant, index) => checkConstraint(variant, `${path}|${index}`, errors));
+    } else if (constraint.kind === "record") {
+      for (const field of constraint.fields) {
+        checkConstraint(field.constraints, `${path}.${field.name}`, errors);
+      }
+    }
+  };
+  const errors: string[] = [];
+  const kinds = new Set<string>();
+  for (const entry of registry) {
+    if (kinds.has(entry.kind)) errors.push(`duplicate assertion kind '${entry.kind}'`);
+    kinds.add(entry.kind);
+    const fields = new Set<string>();
+    for (const field of entry.fields) {
+      if (fields.has(field.name)) errors.push(`${entry.kind}.${field.name} is declared more than once`);
+      fields.add(field.name);
+      checkConstraint(field.constraints, `${entry.kind}.${field.name}`, errors);
+    }
+    if (entry.validation !== undefined) checkConstraint(entry.validation, `${entry.kind}.validation`, errors);
+  }
+  if (errors.length > 0) {
+    throw new Error(`Assertion registry is incomplete: ${errors.join(", ")}.`);
+  }
+}
+
+assertPlaytestAssertionRegistryComplete();
 
 export interface IPlaytestSetupSchemaEntry {
   description: string;

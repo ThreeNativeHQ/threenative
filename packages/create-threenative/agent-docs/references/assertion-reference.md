@@ -14,12 +14,12 @@ Samples the framebuffer on every render frame inside a labeled loading window an
 
 - **Supported on:** web, desktop, bevy · **Requires:** browser.screenshot
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `backdrop` | [integer 0..255, integer 0..255, integer 0..255] | yes |
-| `grid` | { columns: positive integer <= 256, rows: positive integer <= 256 } | no |
-| `tolerance` | integer 0..255 | yes |
-| `window` | { startStep: string, endStep: string } | yes |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `backdrop` | [integer 0..255, integer 0..255, integer 0..255] | yes | `{"items":[{"integer":true,"kind":"number","max":255,"min":0},{"integer":true,"kind":"number","max":255,"min":0},{"integer":true,"kind":"number","max":255,"min":0}],"kind":"tuple"}` |
+| `grid` | { columns: positive integer <= 256, rows: positive integer <= 256 } | no | `{"fields":[{"constraints":{"integer":true,"kind":"number","max":256,"min":1},"description":"","name":"columns","required":true,"type":"positive integer <= 256"},{"constraints":{"integer":true,"kind":"number","max":256,"min":1},"description":"","name":"rows","required":true,"type":"positive integer <= 256"}],"kind":"record","unknownKeys":"reject"}` |
+| `tolerance` | integer 0..255 | yes | `{"integer":true,"kind":"number","max":255,"min":0}` |
+| `window` | { startStep: string, endStep: string } | yes | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"startStep","required":true,"type":"string"},{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"endStep","required":true,"type":"string"}],"kind":"record","unknownKeys":"reject"}` |
 
 
 ```json
@@ -49,10 +49,10 @@ Checks every consecutive platform against a measured static movement-envelope fi
 
 - **Supported on:** web, desktop, bevy · **Requires:** entity.observe
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `artifact` | string | yes |
-| `entities` | string[] (minimum 2) | yes |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `artifact` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `entities` | string[] (minimum 2) | yes | `{"items":{"kind":"string","nonEmpty":true},"kind":"array","minItems":2}` |
 
 
 ```json
@@ -73,12 +73,12 @@ Proves aerodynamic force telemetry and signed control-surface delivery for a fli
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.fixedStep, runtime.physics
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | yes |
-| `minForceSamples` | positive integer | no |
-| `controls` | Array<{ surface: string, sign: 'negative' | 'positive', minAbs?: number }> | no |
-| `torques` | Array<{ label: string, relativeToLabel?: string, axis: 'x' | 'y' | 'z', sign: 'negative' | 'positive', minAbs?: number }> | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `minForceSamples` | positive integer | no | `{"integer":true,"kind":"number","min":1}` |
+| `controls` | Array<{ surface: string, sign: 'negative' | 'positive', minAbs?: number }> | no | `{"items":{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"surface","required":true,"type":"string"},{"constraints":{"kind":"literal","values":["negative","positive"]},"description":"","name":"sign","required":true,"type":"'negative' | 'positive'"},{"constraints":{"kind":"number","min":0},"description":"","name":"minAbs","required":false,"type":"number"}],"kind":"record","unknownKeys":"reject"},"kind":"array"}` |
+| `torques` | Array<{ label: string, relativeToLabel?: string, axis: 'x' | 'y' | 'z', sign: 'negative' | 'positive', minAbs?: number }> | no | `{"items":{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"label","required":true,"type":"string"},{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"relativeToLabel","required":false,"type":"string"},{"constraints":{"kind":"literal","values":["x","y","z"]},"description":"","name":"axis","required":true,"type":"'x' | 'y' | 'z'"},{"constraints":{"kind":"literal","values":["negative","positive"]},"description":"","name":"sign","required":true,"type":"'negative' | 'positive'"},{"constraints":{"kind":"number","min":0},"description":"","name":"minAbs","required":false,"type":"number"}],"kind":"record","unknownKeys":"reject"},"kind":"array"}` |
 
 
 ```json
@@ -104,11 +104,11 @@ Proves screenshot change, populated regions, and sustained projected entity visi
 
 - **Supported on:** web · **Requires:** browser.screenshot
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `frameDiff` | { baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number } | no |
-| `region` | { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
-| `entityVisible` | { entity: string, minProjectedPixels: number, throughoutFrames?: boolean } | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `frameDiff` | { baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number } | no | `{"fields":[{"constraints":{"format":"project-relative-png","kind":"string","nonEmpty":true},"description":"","name":"baselineImage","required":false,"type":"project-relative PNG"},{"constraints":{"kind":"number"},"description":"","name":"minChangedPixelRatio","required":false,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"maxChangedPixelRatio","required":false,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
+| `region` | { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no | `{"fields":[{"constraints":{"kind":"number"},"description":"","name":"x","required":true,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"y","required":true,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"width","required":true,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"height","required":true,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"minNonblankPixelRatio","required":false,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"minDarkPixelRatio","required":false,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"maxLuminance","required":false,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
+| `entityVisible` | { entity: string, minProjectedPixels: number, throughoutFrames?: boolean } | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"entity","required":true,"type":"string"},{"constraints":{"kind":"number"},"description":"","name":"minProjectedPixels","required":true,"type":"number"},{"constraints":{"kind":"boolean"},"description":"","name":"throughoutFrames","required":false,"type":"boolean"}],"kind":"record","unknownKeys":"reject"}` |
 
 
 ```json
@@ -135,23 +135,23 @@ Proves the subject moved, reached a minimum velocity, or changed rotation during
 
 - **Supported on:** web, desktop, bevy · **Requires:** entity.observe
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `closesDistanceToPosition` | { position: [number, number, number], min: number } | no |
-| `facesMovementWithinDegrees` | number | no |
-| `axis` | string | no |
-| `minAxisDelta` | { axis: string, min: number } | no |
-| `minResolvedAxisDelta` | { axis: string, min: number } | no |
-| `maxTiltDegrees` | number in [0, 180] | no |
-| `minDistance` | number | no |
-| `maxDistance` | number | no |
-| `minVelocity` | number | no |
-| `pathLength` | number | no |
-| `notFacing` | { entity: string, minDegrees: number } | no |
-| `notFacingPosition` | { position: [number, number, number], minDegrees: number } | no |
-| `reachesPositionWithin` | { position: [number, number, number], maxDistance: number, atStep?: string } | no |
-| `rotationChanged` | boolean | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `closesDistanceToPosition` | { position: [number, number, number], min: number } | no | `{"fields":[{"constraints":{"items":[{"kind":"number"},{"kind":"number"},{"kind":"number"}],"kind":"tuple"},"description":"","name":"position","required":true,"type":"[number, number, number]"},{"constraints":{"kind":"number"},"description":"","name":"min","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
+| `facesMovementWithinDegrees` | number | no | `{"kind":"number"}` |
+| `axis` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `minAxisDelta` | { axis: string, min: number } | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"axis","required":true,"type":"string"},{"constraints":{"kind":"number"},"description":"","name":"min","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
+| `minResolvedAxisDelta` | { axis: string, min: number } | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"axis","required":true,"type":"string"},{"constraints":{"kind":"number"},"description":"","name":"min","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
+| `maxTiltDegrees` | number in [0, 180] | no | `{"kind":"number","max":180,"min":0}` |
+| `minDistance` | number | no | `{"kind":"number"}` |
+| `maxDistance` | number | no | `{"kind":"number"}` |
+| `minVelocity` | number | no | `{"kind":"number"}` |
+| `pathLength` | number | no | `{"kind":"number"}` |
+| `notFacing` | { entity: string, minDegrees: number } | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"entity","required":true,"type":"string"},{"constraints":{"kind":"number"},"description":"","name":"minDegrees","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
+| `notFacingPosition` | { position: [number, number, number], minDegrees: number } | no | `{"fields":[{"constraints":{"items":[{"kind":"number"},{"kind":"number"},{"kind":"number"}],"kind":"tuple"},"description":"","name":"position","required":true,"type":"[number, number, number]"},{"constraints":{"kind":"number"},"description":"","name":"minDegrees","required":true,"type":"number"}],"kind":"record","unknownKeys":"reject"}` |
+| `reachesPositionWithin` | { position: [number, number, number], maxDistance: number, atStep?: string } | no | `{"fields":[{"constraints":{"items":[{"kind":"number"},{"kind":"number"},{"kind":"number"}],"kind":"tuple"},"description":"","name":"position","required":true,"type":"[number, number, number]"},{"constraints":{"kind":"number"},"description":"","name":"maxDistance","required":true,"type":"number"},{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"atStep","required":false,"type":"string"}],"kind":"record","unknownKeys":"reject"}` |
+| `rotationChanged` | boolean | no | `{"kind":"boolean"}` |
 
 
 ```json
@@ -171,12 +171,12 @@ Proves a camera follows an entity or keeps a target in view. **Use when** that i
 
 - **Supported on:** web, desktop, bevy · **Requires:** camera.observe, entity.observe
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `follows` | string | no |
-| `within` | number | no |
-| `targetInViewport` | boolean | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `follows` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `within` | number | no | `{"kind":"number"}` |
+| `targetInViewport` | boolean | no | `{"kind":"boolean"}` |
 
 
 ```json
@@ -196,17 +196,17 @@ Proves a live entity component value after the scenario or at named steps. **Use
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.components
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | yes |
-| `component` | string | yes |
-| `path` | string | no |
-| `equals` | json | no |
-| `gte` | number | no |
-| `lte` | number | no |
-| `changed` | boolean | no |
-| `atSteps` | Array<{ label: string, equals: json }> | no |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `component` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `path` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `equals` | json | no | `{"kind":"json"}` |
+| `gte` | number | no | `{"kind":"number"}` |
+| `lte` | number | no | `{"kind":"number"}` |
+| `changed` | boolean | no | `{"kind":"boolean"}` |
+| `atSteps` | Array<{ label: string, equals: json }> | no | `{"items":{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"label","required":true,"type":"string"},{"constraints":{"kind":"json"},"description":"","name":"equals","required":true,"type":"json"}],"kind":"record","unknownKeys":"reject"},"kind":"array"}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
@@ -229,19 +229,19 @@ Proves resource state after the scenario through equals, gte, lte, textIncludes,
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.resources
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `id` | string | yes |
-| `path` | string | no |
-| `equals` | json | no |
-| `gte` | number | no |
-| `lte` | number | no |
-| `textIncludes` | string | no |
-| `changed` | boolean | no |
-| `throughoutSteps` | boolean | no |
-| `atSteps` | Array<{ label: string, equals?: json, textIncludes?: string }> | no |
-| `allowTrivial` | triviality reason | no |
-| `anyOf` | Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }> | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `id` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `path` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `equals` | json | no | `{"kind":"json"}` |
+| `gte` | number | no | `{"kind":"number"}` |
+| `lte` | number | no | `{"kind":"number"}` |
+| `textIncludes` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `changed` | boolean | no | `{"kind":"boolean"}` |
+| `throughoutSteps` | boolean | no | `{"kind":"boolean"}` |
+| `atSteps` | Array<{ label: string, equals?: json, textIncludes?: string }> | no | `{"items":{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"label","required":true,"type":"string"},{"constraints":{"kind":"json"},"description":"","name":"equals","required":false,"type":"json"},{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"textIncludes","required":false,"type":"string"}],"kind":"record","unknownKeys":"reject"},"kind":"array"}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
+| `anyOf` | Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }> | no | `{"items":{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"path","required":true,"type":"string"},{"constraints":{"kind":"json"},"description":"","name":"equals","required":false,"type":"json"},{"constraints":{"kind":"number"},"description":"","name":"gte","required":false,"type":"number"},{"constraints":{"kind":"number"},"description":"","name":"lte","required":false,"type":"number"},{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"textIncludes","required":false,"type":"string"},{"constraints":{"kind":"boolean"},"description":"","name":"changed","required":false,"type":"boolean"}],"kind":"record","unknownKeys":"reject"},"kind":"array"}` |
 
 
 ```json
@@ -263,13 +263,13 @@ Proves the final count of entities carrying a bounded runtime tag. **Use when** 
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.tags
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `tag` | string | yes |
-| `count` | non-negative integer | no |
-| `gte` | non-negative integer | no |
-| `lte` | non-negative integer | no |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `tag` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `count` | non-negative integer | no | `{"integer":true,"kind":"number","min":0}` |
+| `gte` | non-negative integer | no | `{"integer":true,"kind":"number","min":0}` |
+| `lte` | non-negative integer | no | `{"integer":true,"kind":"number","min":0}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
@@ -289,13 +289,13 @@ Proves a named Godot signal was emitted by the application during the run or at 
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.events
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `atStep` | string | no |
-| `entity` | string | no |
-| `maxCount` | non-negative integer | no |
-| `minCount` | non-negative integer | no |
-| `name` | string | yes |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `atStep` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `maxCount` | non-negative integer | no | `{"integer":true,"kind":"number","min":0}` |
+| `minCount` | non-negative integer | no | `{"integer":true,"kind":"number","min":0}` |
+| `name` | string | yes | `{"kind":"string","nonEmpty":true}` |
 
 
 ```json
@@ -317,11 +317,11 @@ Proves an observed entity's final runtime-owned state-machine state. **Use when*
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.state
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `equals` | string | yes |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `equals` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
@@ -340,16 +340,16 @@ Proves retained UI/HUD text or values after the scenario. **Use when** that is t
 
 - **Supported on:** web · **Requires:** runtime.ui
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `id` | string | yes |
-| `path` | string | no |
-| `equals` | json | no |
-| `gte` | number | no |
-| `lte` | number | no |
-| `textIncludes` | string | no |
-| `changed` | boolean | no |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `id` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `path` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `equals` | json | no | `{"kind":"json"}` |
+| `gte` | number | no | `{"kind":"number"}` |
+| `lte` | number | no | `{"kind":"number"}` |
+| `textIncludes` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `changed` | boolean | no | `{"kind":"boolean"}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
@@ -369,14 +369,14 @@ Proves DOM state inside a same-origin webview overlay iframe. **Use when** that 
 
 - **Supported on:** web · **Requires:** browser.dom
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `overlayId` | string | yes |
-| `selector` | string | yes |
-| `attribute` | string | no |
-| `equals` | json | no |
-| `textIncludes` | string | no |
-| `visible` | boolean | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `overlayId` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `selector` | string | yes | `{"kind":"string","nonEmpty":true}` |
+| `attribute` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `equals` | json | no | `{"kind":"json"}` |
+| `textIncludes` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `visible` | boolean | no | `{"kind":"boolean"}` |
 
 
 ```json
@@ -399,15 +399,15 @@ Proves console, network, runtime, and readiness diagnostics stayed clean. **Use 
 
 - **Supported on:** web · **Requires:** browser.console, browser.network, runtime.diagnostics
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `noConsoleErrors` | boolean | no |
-| `noNetworkErrors` | boolean | no |
-| `noRuntimeDiagnostics` | boolean | no |
-| `consoleErrorsOptOutReason` | non-empty string | no |
-| `networkErrorsOptOutReason` | non-empty string | no |
-| `runtimeDiagnosticsOptOutReason` | non-empty string | no |
-| `runtimeReady` | boolean | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `noConsoleErrors` | boolean | no | `{"kind":"boolean"}` |
+| `noNetworkErrors` | boolean | no | `{"kind":"boolean"}` |
+| `noRuntimeDiagnostics` | boolean | no | `{"kind":"boolean"}` |
+| `consoleErrorsOptOutReason` | non-empty string | no | `{"kind":"string","nonEmpty":true}` |
+| `networkErrorsOptOutReason` | non-empty string | no | `{"kind":"string","nonEmpty":true}` |
+| `runtimeDiagnosticsOptOutReason` | non-empty string | no | `{"kind":"string","nonEmpty":true}` |
+| `runtimeReady` | boolean | no | `{"kind":"boolean"}` |
 
 
 ```json
@@ -427,11 +427,11 @@ Proves a live render sample exists and optionally bounds frame time, draw calls,
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.performance
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `maxFrameMsP95` | number | no |
-| `maxDrawCalls` | number | no |
-| `maxTriangles` | number | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `maxFrameMsP95` | non-negative number | no | `{"kind":"number","min":0}` |
+| `maxDrawCalls` | non-negative number | no | `{"kind":"number","min":0}` |
+| `maxTriangles` | non-negative number | no | `{"kind":"number","min":0}` |
 
 
 ```json
@@ -450,13 +450,13 @@ Proves projected entity visibility in the viewport. **Use when** that is the thi
 
 - **Supported on:** web · **Requires:** entity.bounds
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `minProjectedPixels` | number | no |
-| `maxOffscreenRatio` | number | no |
-| `present` | boolean | no |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `minProjectedPixels` | number | no | `{"kind":"number"}` |
+| `maxOffscreenRatio` | number | no | `{"kind":"number"}` |
+| `present` | boolean | no | `{"kind":"boolean"}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
@@ -477,10 +477,10 @@ Proves runtime world metadata exposed by the application bridge. **Use when** th
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.world
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `seed` | json | yes |
-| `runtime` | object | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `seed` | json | yes | `{"kind":"union","variants":[{"kind":"number"},{"kind":"literal","values":[null]}]}` |
+| `runtime` | object | no | `{"fields":[{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"agent","required":true,"type":"string"},{"constraints":{"kind":"string","nonEmpty":true},"description":"","name":"core","required":true,"type":"string"},{"constraints":{"kind":"boolean"},"description":"","name":"portable","required":false,"type":"boolean"},{"constraints":{"integer":true,"kind":"number"},"description":"","name":"randomState","required":true,"type":"integer"},{"constraints":{"kind":"union","variants":[{"kind":"string","nonEmpty":true},{"kind":"literal","values":[null]}]},"description":"","name":"rapier","required":true,"type":"string | null"},{"constraints":{"kind":"number","min":0,"minExclusive":true},"description":"","name":"step","required":true,"type":"positive number"}],"kind":"record","unknownKeys":"reject"}` |
 
 
 ```json
@@ -497,15 +497,15 @@ Proves contact or trigger evidence appeared in the effect log. **Use when** that
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.contacts
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `atStep` | string | no |
-| `entity` | string | no |
-| `with` | string | no |
-| `kind` | string | no |
-| `minCount` | number | no |
-| `maxCount` | non-negative integer | no |
-| `requiredOn` | Array<'web' | 'desktop' | 'bevy'> | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `atStep` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `with` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `kind` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `minCount` | number | no | `{"kind":"number"}` |
+| `maxCount` | non-negative integer | no | `{"integer":true,"kind":"number","min":0}` |
+| `requiredOn` | Array<'web' | 'desktop' | 'bevy'> | no | `{"items":{"kind":"literal","values":["web","desktop","bevy"]},"kind":"array"}` |
 
 
 ```json
@@ -527,15 +527,15 @@ Proves an observed cohort of matching physics bodies is asleep in a retained phy
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.physics
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `atStep` | string | no |
-| `minBodies` | positive integer | no |
-| `compareToStep` | string | no |
-| `minMeanPoseDistance` | positive number | no |
-| `requiredOn` | Array<'web' | 'desktop' | 'bevy'> | no |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `atStep` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `minBodies` | positive integer | no | `{"integer":true,"kind":"number","min":1}` |
+| `compareToStep` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `minMeanPoseDistance` | positive number | no | `{"kind":"number","min":0,"minExclusive":true}` |
+| `requiredOn` | Array<'web' | 'desktop' | 'bevy'> | no | `{"items":{"kind":"literal","values":["web","desktop","bevy"]},"kind":"array"}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
@@ -555,11 +555,11 @@ Proves rendered scene geometry occludes the segment between an origin entity and
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.physics
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `target` | string | no |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `target` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
@@ -579,14 +579,14 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.animation
 
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `clip` | string | no |
-| `entered` | boolean | no |
-| `advancedFrames` | number | no |
-| `finished` | boolean | no |
-| `allowTrivial` | triviality reason | no |
+| Field | Type | Required | Constraint |
+| --- | --- | --- | --- |
+| `entity` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `clip` | string | no | `{"kind":"string","nonEmpty":true}` |
+| `entered` | boolean | no | `{"kind":"boolean"}` |
+| `advancedFrames` | number | no | `{"kind":"number"}` |
+| `finished` | boolean | no | `{"kind":"boolean"}` |
+| `allowTrivial` | triviality reason | no | `{"kind":"string","minNonWhitespace":20}` |
 
 
 ```json
