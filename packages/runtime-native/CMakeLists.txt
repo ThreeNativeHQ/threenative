@@ -1227,13 +1227,15 @@ if(TN_ENABLE_VIDEO)
     )
 endif()
 
-# Ray tracing sources (conditional)
-if(MYSTRAL_USE_RAYTRACING)
-    list(APPEND MYSTRAL_SOURCES
-        src/raytracing/rt_common.cpp
-        src/raytracing/bindings.cpp
-    )
+# The public ray tracing surface is always present. With the feature disabled, the common
+# factory returns its lightweight stub backend; the heavy platform backends remain opt-in.
+list(APPEND MYSTRAL_SOURCES
+    src/raytracing/rt_common.cpp
+    src/raytracing/bindings.cpp
+)
 
+# Heavy ray tracing backend sources (conditional)
+if(MYSTRAL_USE_RAYTRACING)
     # Add Vulkan RT backend if Vulkan is available
     if(Vulkan_FOUND)
         list(APPEND MYSTRAL_SOURCES

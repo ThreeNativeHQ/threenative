@@ -47,6 +47,69 @@ test('native traceRays refuses before any backend can report success', () => {
   );
 });
 
+test('default native builds register the refusal surface without compiling heavy backends', () => {
+  const cmake = read('CMakeLists.txt');
+  const runtime = read('src/runtime.cpp');
+  const bindings = readFileSync(bindingsPath, 'utf8');
+  const sourceStart = cmake.indexOf('# The public ray tracing surface');
+  const sourceEnd = cmake.indexOf('\nif(ANDROID)', sourceStart);
+  assert.ok(sourceStart >= 0, 'ray tracing source section is missing');
+  assert.ok(sourceEnd > sourceStart, 'ray tracing source section has no end');
+
+  const sourceSection = cmake.slice(sourceStart, sourceEnd);
+  const heavyGate = sourceSection.indexOf('if(MYSTRAL_USE_RAYTRACING)');
+  assert.ok(heavyGate >= 0, 'heavy ray tracing sources must retain an explicit feature gate');
+
+  const alwaysSources = sourceSection.slice(0, heavyGate);
+  assert.match(
+    alwaysSources,
+    /list\(APPEND MYSTRAL_SOURCES\s+src\/raytracing\/rt_common\.cpp\s+src\/raytracing\/bindings\.cpp\s+\)/u,
+    'the no-RT build must compile the lightweight common backend and JS bindings',
+  );
+  assert.doesNotMatch(
+    alwaysSources,
+    /(?:vulkan_rt|dxr_rt|metal_rt)\./u,
+    'heavy RT backend sources must not enter the default source list',
+  );
+
+  const heavySources = sourceSection.slice(heavyGate);
+  for (const backend of ['vulkan_rt.cpp', 'dxr_rt.cpp', 'metal_rt.mm']) {
+    assert.match(
+      heavySources,
+      new RegExp(`src/raytracing/${backend.replace('.', '\\.')}`),
+      `${backend} must remain covered by the opt-in RT compile path`,
+    );
+  }
+
+  assert.match(
+    runtime,
+    /#include "raytracing\/bindings\.h"/u,
+    'the runtime must know the public raytracing surface in every build',
+  );
+  assert.doesNotMatch(
+    runtime,
+    /#ifdef MYSTRAL_HAS_RAYTRACING\s+#include "raytracing\/bindings\.h"/u,
+    'binding declarations must not be hidden behind the heavy backend flag',
+  );
+
+  const setupStart = runtime.indexOf('void setupRayTracing()');
+  const setupEnd = runtime.indexOf('\n    void processPendingDracoCallbacks()', setupStart);
+  assert.ok(setupStart >= 0 && setupEnd > setupStart, 'ray tracing setup function is missing');
+  const setup = runtime.slice(setupStart, setupEnd);
+  assert.match(setup, /rt::initializeRTBindings\(jsEngine_\.get\(\)\)/u);
+  assert.doesNotMatch(setup, /#ifdef MYSTRAL_HAS_RAYTRACING/u);
+
+  const shutdownStart = runtime.indexOf('// Clean up ray tracing resources');
+  const shutdownEnd = runtime.indexOf('// Shutdown async HTTP client', shutdownStart);
+  assert.ok(shutdownStart >= 0 && shutdownEnd > shutdownStart, 'ray tracing cleanup is missing');
+  const shutdown = runtime.slice(shutdownStart, shutdownEnd);
+  assert.match(shutdown, /rt::cleanupRTBindings\(\)/u);
+  assert.doesNotMatch(shutdown, /#ifdef MYSTRAL_HAS_RAYTRACING/u);
+
+  assert.match(bindings, /setGlobalProperty\("mystralRT", mystralRT\)/u);
+  assertNativeRayTracingGate(bindings);
+});
+
 test('negative control: restoring the old accept path makes the refusal contract red', () => {
   const bindings = readFileSync(bindingsPath, 'utf8');
   const gate = `if (!kNativeRayTracingResultInteropAvailable) {

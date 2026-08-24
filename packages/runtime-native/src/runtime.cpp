@@ -20,10 +20,8 @@
 #endif
 #include "storage/local_storage.h"
 
-// Ray tracing bindings (conditional)
-#ifdef MYSTRAL_HAS_RAYTRACING
+// The public ray tracing surface is always registered; heavy backends are conditional in CMake.
 #include "raytracing/bindings.h"
-#endif
 #include <map>
 #include <iostream>
 
@@ -517,7 +515,7 @@ public:
             );
         }
 
-        // Set up ray tracing bindings (if compiled with MYSTRAL_HAS_RAYTRACING)
+        // Set up the public ray tracing surface; no-RT builds register a refusal stub.
         setupRayTracing();
 
         // Install crash handlers AFTER full initialization
@@ -551,10 +549,8 @@ public:
         // (Audio callback thread may be accessing JS handles)
         audio::cleanupAudioBindings();
 
-        // Clean up ray tracing resources
-#ifdef MYSTRAL_HAS_RAYTRACING
+        // Clean up ray tracing resources, including the no-RT stub backend.
         rt::cleanupRTBindings();
-#endif
 
         // Shutdown async HTTP client (cancels pending requests)
         http::getAsyncHttpClient().shutdown();
@@ -3337,13 +3333,11 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
     }
 
     void setupRayTracing() {
-#ifdef MYSTRAL_HAS_RAYTRACING
         if (!jsEngine_) return;
 
         if (!rt::initializeRTBindings(jsEngine_.get())) {
             std::cerr << "[Mystral] Failed to initialize ray tracing bindings" << std::endl;
         }
-#endif
     }
 
     void processPendingDracoCallbacks() {
