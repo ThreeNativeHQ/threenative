@@ -27,6 +27,7 @@ public:
     struct NativeFunctionData {
         NativeFunction callback;
         JSGlobalContextRef owner;
+        JSCEngine* ownerEngine;
     };
 
     JSCEngine() {
@@ -381,7 +382,7 @@ public:
     JSValueHandle newFunction(const char* name, NativeFunction fn) override {
         JSObjectRef funcObj = JSObjectMake(
             context_, nativeFunctionClass_,
-            new NativeFunctionData{std::move(fn), context_});
+            new NativeFunctionData{std::move(fn), context_, this});
         if (functionPrototype_) {
             JSObjectSetPrototype(context_, funcObj, functionPrototype_);
         }
@@ -742,6 +743,7 @@ public:
         lastException_ = nullptr;
         std::string result = toString({(void*)exception, context_});
         JSValueUnprotect(context_, exception);
+        exceptionFromNativeCallback_ = false;
         return result;
     }
 
@@ -762,6 +764,7 @@ public:
         JSObjectRef error = JSObjectCallAsConstructor(context_, errorConstructor, 1, args, &exception);
         replaceLastException(exception ? exception : (error ? error : msgVal));
         JSValueUnprotect(context_, msgVal);
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
     }
 
     // ========================================================================
@@ -978,6 +981,15 @@ private:
             std::cerr << "[JSC] Native function owner not found for callback" << std::endl;
             return JSValueMakeUndefined(ctx);
         }
+        // A native callback may have thrown an exception that JavaScript caught. Keep the
+        // host-side exception latch aligned with the next callback boundary.
+        if (callbackData->ownerEngine && callbackData->ownerEngine->nativeCallbackDepth_ == 0 &&
+            callbackData->ownerEngine->exceptionFromNativeCallback_ &&
+            callbackData->ownerEngine->hasException()) {
+            callbackData->ownerEngine->getException();
+        }
+
+        if (callbackData->ownerEngine) callbackData->ownerEngine->nativeCallbackDepth_ += 1;
 
         // Convert arguments
         std::vector<JSValueHandle> args;
@@ -988,6 +1000,7 @@ private:
 
         // Call the native function
         JSValueHandle result = callbackData->callback((void*)ctx, args);
+        if (callbackData->ownerEngine) callbackData->ownerEngine->nativeCallbackDepth_ -= 1;
         return (JSValueRef)result.ptr;
     }
 
@@ -1002,6 +1015,8 @@ private:
     JSClassRef ordinaryObjectClass_ = nullptr;
     JSClassRef nativeFunctionClass_ = nullptr;
     JSValueRef lastException_ = nullptr;
+    int nativeCallbackDepth_ = 0;
+    bool exceptionFromNativeCallback_ = false;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
     std::chrono::high_resolution_clock::time_point startTime_;
 };

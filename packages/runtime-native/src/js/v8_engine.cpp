@@ -1139,6 +1139,7 @@ public:
     std::string getException() override {
         std::string result = lastException_;
         lastException_.clear();
+        exceptionFromNativeCallback_ = false;
         return result;
     }
 
@@ -1150,6 +1151,7 @@ public:
         isolate_->ThrowException(
             v8::String::NewFromUtf8(isolate_, message).ToLocalChecked());
         lastException_ = message;
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
     }
 
     // ========================================================================
@@ -1432,10 +1434,20 @@ private:
 
         // Get engine for frame handle tracking
         auto* engine = static_cast<V8Engine*>(isolate->GetData(0));
+        // A native callback may have thrown an exception that JavaScript caught. The host-side
+        // latch must follow JavaScript control flow, or a later binding transaction will reject a
+        // valid install even though the pending JS exception is gone.
+        if (engine && engine->nativeCallbackDepth_ == 0 &&
+            engine->exceptionFromNativeCallback_ && engine->hasException() &&
+            !isolate->HasPendingException()) {
+            engine->getException();
+        }
 
         // Get the native function from external data
         v8::Local<v8::External> external = info.Data().As<v8::External>();
         NativeFunction* fn = static_cast<NativeFunction*>(external->Value());
+
+        if (engine) engine->nativeCallbackDepth_ += 1;
 
         // Convert arguments
         std::vector<JSValueHandle> args;
@@ -1488,6 +1500,7 @@ private:
             resPersistent->Reset();
             delete resPersistent;
         }
+        if (engine) engine->nativeCallbackDepth_ -= 1;
     }
 
     // Weak reference data for GC-triggered Dawn resource cleanup
@@ -1514,6 +1527,8 @@ private:
     std::unordered_set<NativeFunctionRef*> nativeFunctionRefs_;
     bool inFrame_ = false;  // True during animation frame execution
     bool frameTrackingSuspended_ = false;  // When true, skip frame tracking for new allocations
+    int nativeCallbackDepth_ = 0;
+    bool exceptionFromNativeCallback_ = false;
 };
 
 // Factory function

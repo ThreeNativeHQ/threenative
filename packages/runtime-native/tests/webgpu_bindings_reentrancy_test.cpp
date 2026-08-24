@@ -110,6 +110,68 @@ bool checkRowOwnedAndAtomicInstall(mystral::Runtime& runtime) {
     return atomicProbePassed;
 }
 
+bool checkCaughtNativeExceptionDoesNotPoisonLaterInstall(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    if (engine->getType() != mystral::js::EngineType::V8) return true;
+
+    struct HandleGuard {
+        mystral::js::Engine* engine;
+        std::vector<mystral::js::JSValueHandle> handles;
+        ~HandleGuard() {
+            for (auto it = handles.rbegin(); it != handles.rend(); ++it) engine->unprotect(*it);
+        }
+    } guard{engine, {}};
+
+    const auto destination = engine->newObject();
+    const auto thrower = engine->newFunction(
+        "throwExpectedNativeError",
+        [engine](void*, const std::vector<mystral::js::JSValueHandle>&) {
+            engine->throwException("expected caught native error");
+            return mystral::js::JSValueHandle{};
+        });
+    const auto installer = engine->newFunction(
+        "installAfterCaughtNativeError",
+        [engine, state, destination](void*, const std::vector<mystral::js::JSValueHandle>&) {
+            const auto table = mystral::webgpu::bindingTable({
+                {"TestSurface", "afterCaught", 0, nullptr, &tableProbe, destination},
+            });
+            const bool installed = table.valid &&
+                mystral::webgpu::installBindingTable(engine, state, table);
+            if (!installed) {
+                if (engine->hasException()) engine->getException();
+                return engine->newBoolean(false);
+            }
+            return engine->newBoolean(
+                engine->isFunction(engine->getProperty(destination, "afterCaught")));
+        });
+    if (!destination.ptr || !thrower.ptr || !installer.ptr) return false;
+
+    for (const auto handle : {destination, thrower, installer}) {
+        engine->protect(handle);
+        guard.handles.push_back(handle);
+    }
+    if (!engine->setGlobalProperty("__tnThrowExpectedNativeError", thrower) ||
+        !engine->setGlobalProperty("__tnInstallAfterCaughtNativeError", installer)) {
+        return false;
+    }
+
+    const bool passed = runtime.evalScript(R"JS((() => {
+        try {
+            __tnThrowExpectedNativeError();
+        } catch (error) {
+            if (String(error).includes("expected caught native error") === false)
+                throw new Error("the expected native exception was not caught");
+        }
+        if (__tnInstallAfterCaughtNativeError() !== true)
+            throw new Error("a caught native exception poisoned the next binding install");
+    })())JS", "webgpu-binding-caught-exception-recovery.js");
+
+    engine->deleteProperty(engine->getGlobal(), "__tnThrowExpectedNativeError");
+    engine->deleteProperty(engine->getGlobal(), "__tnInstallAfterCaughtNativeError");
+    return passed;
+}
+
 bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -1514,6 +1576,7 @@ int main() {
     }
 
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
+    if (!checkCaughtNativeExceptionDoesNotPoisonLaterInstall(*first)) return 1;
     if (!checkAtomicRollbackAndDestinationValidation(*first)) return 1;
     if (!checkWholeTableVerification(*first)) return 1;
     if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;
