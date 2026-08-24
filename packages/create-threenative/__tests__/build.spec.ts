@@ -148,13 +148,41 @@ describe("threenative build", () => {
     await expect(readFile(path.join(output, "ui.html"), "utf8")).rejects.toThrow();
   });
 
-  it("fails closed when a native target would discard a web UI bundle", () => {
-    expect(() => assertNativeUiRendererCompatible("android", "web")).not.toThrow();
-    expect(() => assertNativeUiRendererCompatible("desktop", "web")).toThrow(
-      /TN_UI_RENDERER_UNSUPPORTED.*desktop.*native/u,
+  it("preserves a project-owned file while building the native UI page", async () => {
+    const root = await makeTempDir("threenative-ui-project-file-");
+    roots.push(root);
+    await mkdir(path.join(root, "src/ui"), { recursive: true });
+    await mkdir(path.join(root, "node_modules"), { recursive: true });
+    const vitePackage = (await readdir(path.resolve("node_modules/.pnpm"))).find((entry) =>
+      entry.startsWith("vite@"),
     );
-    expect(() => assertNativeUiRendererCompatible("ios", "web")).toThrow(
-      /TN_UI_RENDERER_UNSUPPORTED.*ios.*native/u,
+    if (vitePackage === undefined) throw new Error("The workspace Vite package is missing.");
+    await symlink(
+      path.resolve("node_modules/.pnpm", vitePackage, "node_modules/vite"),
+      path.join(root, "node_modules/vite"),
+      "dir",
+    );
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "ui-build" }));
+    await writeFile(path.join(root, "src/ui/main.tsx"), "export const ui = true;\n");
+    const projectFile = path.join(root, ".threenative-ui.html");
+    await writeFile(projectFile, "project-owned\n");
+
+    await buildUi(root, {
+      ui: { renderer: "web" },
+    } as Parameters<typeof buildUi>[1]);
+
+    await expect(readFile(projectFile, "utf8")).resolves.toBe("project-owned\n");
+  });
+
+  it("accepts web UI bundles for every native host that stages them", () => {
+    expect(() => assertNativeUiRendererCompatible("android", "web")).not.toThrow();
+    expect(() => assertNativeUiRendererCompatible("desktop", "web", "linux")).not.toThrow();
+    expect(() => assertNativeUiRendererCompatible("ios", "web")).not.toThrow();
+    expect(() => assertNativeUiRendererCompatible("desktop", "web", "darwin")).toThrow(
+      /TN_UI_RENDERER_UNSUPPORTED.*desktop.*macOS/u,
+    );
+    expect(() => assertNativeUiRendererCompatible("desktop", "web", "win32")).toThrow(
+      /TN_UI_RENDERER_UNSUPPORTED.*desktop.*Windows/u,
     );
   });
 

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -82,17 +83,20 @@ export async function assertNativeBundleCompatible(
 }
 
 /**
- * Refuse a web UI target before native packaging can silently discard its bundle. Android is the
- * only host with the WebView surface implemented; desktop and iOS retain the native renderer
- * until their host surfaces land.
+ * Refuse a web UI target before native packaging can silently discard its bundle. Android and
+ * iOS own platform overlays; the desktop overlay currently exists on Linux only.
  */
 export function assertNativeUiRendererCompatible(
   target: NativeBuildTarget,
   renderer: IResolvedThreeNativeConfig["ui"]["renderer"],
+  platform: NodeJS.Platform = process.platform,
 ): void {
-  if (renderer === "native" || target === "android") return;
+  if (renderer === "native" || target === "android" || target === "ios") return;
+  if (target === "desktop" && platform === "linux") return;
+  const platformName =
+    platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform;
   throw new Error(
-    `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "web", but ${target} has no WebView host yet. Set ui.renderer to "native" for ${target}; Android is the only native web UI target currently implemented.`,
+    `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "web", but ${target} has no WebView host on ${platformName}. Set ui.renderer to "native" for ${target}.`,
   );
 }
 
@@ -187,7 +191,7 @@ const UI_ENTRY = path.join("src", "ui", "main.tsx");
  * Keeping the page in the root makes the emitted path the output root, so the rename below is
  * within one directory and `./assets/...` keeps resolving.
  */
-const UI_PAGE = ".threenative-ui.html";
+const UI_PAGE_PREFIX = ".threenative-ui-";
 
 /**
  * Build `src/ui/` on its own, for the platform's web view to load.
@@ -212,7 +216,7 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
   }
   const buildRoot = path.join(cwd, ".threenative", "build");
   await mkdir(buildRoot, { recursive: true });
-  const page = path.join(cwd, UI_PAGE);
+  const page = path.join(cwd, `${UI_PAGE_PREFIX}${randomUUID()}.html`);
   // `viewport-fit=cover` so the UI can reach under a display cutout, and a transparent body so
   // the game surface underneath is what shows through everywhere the UI does not draw.
   await writeFile(
@@ -239,7 +243,7 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
   } finally {
     await rm(page, { force: true });
   }
-  const generatedPage = path.join(output, UI_PAGE);
+  const generatedPage = path.join(output, path.basename(page));
   const index = path.join(output, "index.html");
   await rename(generatedPage, index);
   return output;

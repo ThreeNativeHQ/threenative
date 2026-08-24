@@ -55,6 +55,21 @@ configureArgs.push(
   '-DTN_ENABLE_NATIVE_PHYSICS=ON',
   `-DTHREENATIVE_PHYSICS_LIBRARY=${physicsLibrary}`,
 );
+if (process.platform === 'linux') {
+  run(process.execPath, [join(root, 'scripts', 'build-native-ui-overlay.mjs')]);
+  const uiOverlayLibrary = join(
+    root,
+    'native',
+    'ui-overlay',
+    'target',
+    'release',
+    'libthreenative_ui_overlay.a',
+  );
+  configureArgs.push(
+    '-DTN_ENABLE_UI_OVERLAY=ON',
+    `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,
+  );
+}
 const vcpkgRoot = process.env.VCPKG_ROOT ?? process.env.VCPKG_INSTALLATION_ROOT;
 if (windows && vcpkgRoot) {
   configureArgs.push(
