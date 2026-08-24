@@ -505,7 +505,9 @@ ENVIRONMENT:
     MYSTRAL_DEBUG=1           Enable verbose debug logging
     MYSTRAL_BUNDLE=<path>     Load external bundle file (overrides auto-detection)
     MYSTRAL_WEBTRANSPORT_INSECURE=1
-                              Development-only override for invalid WebTransport certificates
+                              Development-only override for invalid WebTransport certificates;
+                              only the exact value 1 enables it, and other values keep
+                              TLS peer verification enabled
 
 )" << std::endl;
 }

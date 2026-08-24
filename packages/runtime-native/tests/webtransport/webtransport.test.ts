@@ -15,6 +15,10 @@
  *     is feature-detected at runtime by attempting a connection.
  *   - A Rust toolchain (`cargo`) to build the echo server.
  *
+ * Set TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE=1 when the live fixture is a required
+ * verification gate. Missing fixture inputs then fail the suite with their exact
+ * paths instead of being reported as skipped.
+ *
  * Because they need a Rust toolchain and a live UDP server, the default pnpm
  * test lane reports them as explicitly skipped until those requirements exist.
  */
@@ -31,6 +35,7 @@ const SERVER_DIR = join(runtimeRoot, "examples/webtransport/server");
 const SERVER_BIN = join(SERVER_DIR, "target/release/wt-echo-server");
 const TEST_DIR = join(runtimeRoot, ".test-tmp/webtransport");
 const SERVER_URL = "https://127.0.0.1:4433/echo";
+const REQUIRE_LIVE_FIXTURE = process.env.TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE === "1";
 
 const missingRequirements = [
   !existsSync(runtimeBinary) ? `built native runtime (${runtimeBinary})` : null,
@@ -112,7 +117,12 @@ function requireWebTransport(skip: (note?: string) => never): void {
 
 describe("WebTransport API", () => {
   beforeAll(async () => {
-    if (unavailableReason) return;
+    if (unavailableReason) {
+      if (REQUIRE_LIVE_FIXTURE) {
+        throw new Error(`WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`);
+      }
+      return;
+    }
 
     // Feature-detect WebTransport support: the global exists in all builds, but a
     // connection only initiates when quiche is compiled in.
@@ -131,6 +141,9 @@ describe("WebTransport API", () => {
     const started = await startServer();
     if (!started) {
       unavailableReason ??= "requires a WebTransport echo server that reaches LISTENING";
+      if (REQUIRE_LIVE_FIXTURE) {
+        throw new Error(`WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`);
+      }
     }
   });
 

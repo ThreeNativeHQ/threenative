@@ -603,22 +603,9 @@ private:
             })
         );
 
-        // setTimeout / setInterval (basic implementation)
-        // Note: Full implementation requires integration with the event loop
-        setGlobalProperty("setTimeout",
-            newFunction("setTimeout", [](void* ctx, const std::vector<JSValueHandle>& args) {
-                // TODO: Implement proper timer scheduling
-                static int nextId = 1;
-                return JSValueHandle{(void*)JSValueMakeNumber((JSGlobalContextRef)ctx, nextId++), ctx};
-            })
-        );
-
-        setGlobalProperty("clearTimeout",
-            newFunction("clearTimeout", [](void* ctx, const std::vector<JSValueHandle>& args) {
-                // TODO: Implement timer cancellation
-                return JSValueHandle{(void*)JSValueMakeUndefined((JSGlobalContextRef)ctx), ctx};
-            })
-        );
+        // Timers are deliberately absent until Runtime::setupTimers() installs
+        // the scheduler backed by the host event loop. An engine-only JSC
+        // context must not expose an ID-returning stub that claims delivery.
     }
 
     void reportException(JSValueRef exception) {

@@ -40,6 +40,24 @@ test("native timers have one real runtime owner and no engine-level stubs", () =
   assert.doesNotThrow(() => assertTimerContract(v8, quickjs, runtime));
 });
 
+test("JSC does not install a non-scheduling timer stub", () => {
+  const jsc = read("src/js/jsc_engine.mm");
+  assert.doesNotMatch(
+    jsc,
+    /setGlobalProperty\("setTimeout"/u,
+    "JSC must leave timer installation to Runtime::setupTimers()",
+  );
+  assert.doesNotMatch(jsc, /TODO: Implement proper timer scheduling/u);
+});
+
+test("JSC timer contract rejects restoring the old non-scheduling stub", () => {
+  const jsc = read("src/js/jsc_engine.mm");
+  const oldStub = `${jsc}\nsetGlobalProperty("setTimeout",\n// TODO: Implement proper timer scheduling`;
+  assert.throws(() => {
+    assert.doesNotMatch(oldStub, /setGlobalProperty\("setTimeout"/u);
+  });
+});
+
 test("timer executable fails closed when the completion callback never arrives", () => {
   const source = read("tests/timer_delivery_test.cpp");
   assert.doesNotThrow(() => assertTimerExecutableFailsClosed(source));

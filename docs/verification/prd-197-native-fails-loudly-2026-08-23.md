@@ -7,6 +7,7 @@ Run 2026-08-23 in lane `lane-197`. The changes are engine-layer changes under
 
 - `packages/runtime-native/CMakeLists.txt`
 - `packages/runtime-native/src/cli/main.cpp`
+- `packages/runtime-native/src/js/jsc_engine.mm`
 - `packages/runtime-native/src/js/quickjs_engine.cpp`
 - `packages/runtime-native/src/js/v8_engine.cpp`
 - `packages/runtime-native/src/runtime.cpp`
@@ -112,13 +113,67 @@ native timer delivery contract passed
 exit 0
 ```
 
+## Repair round 2 — remaining blocking findings
+
+This round addressed the JSC timer stub, the over-broad TLS environment parser, and the
+non-failing live-fixture prerequisite.
+
+The red controls were added before the source fixes. Against the lane at the start of this
+round, they failed on the JSC stub and the missing exact-parser/mode-log contract:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webtransport/peer-verification-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  2 failed (2)
+Tests       3 failed | 7 passed (10)
+FAIL  tests/timer-contract.test.mjs > JSC does not install a non-scheduling timer stub
+FAIL  tests/webtransport/peer-verification-contract.test.mjs > WebTransport verifies TLS peers by default and documents the dev override
+```
+
+The corrected source and controls are green:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/webtransport/peer-verification-contract.test.mjs \
+    tests/webgpu-bindings-contract.test.mjs tests/timer-contract.test.mjs --reporter=dot
+Test Files  3 passed (3)
+Tests       16 passed (16)
+exit 0
+```
+
+JSC no longer installs `setTimeout` or `clearTimeout`; the runtime scheduler remains the only
+timer owner, so an engine-only JSC context cannot return a timer ID for work it will never deliver.
+The TLS override now enables insecure verification only for the exact value
+`MYSTRAL_WEBTRANSPORT_INSECURE=1`; the runtime logs either `insecure-override` or `verify-peer` and
+prints the parsed environment value. The CLI help documents that all other values preserve peer
+verification.
+
+The live certificate fixture was checked in fail-closed mode. It could not execute because the
+fixture source is absent; the prerequisite returned a failure with the exact required path rather
+than allowing the 11 live tests to appear as successful skips:
+
+```text
+$ TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE=1 pnpm --dir packages/runtime-native exec vitest run \
+    --config vitest.config.ts tests/webtransport/webtransport.test.ts --reporter=dot
+FAIL  tests/webtransport/webtransport.test.ts > WebTransport API
+Error: WebTransport live certificate fixture prerequisite failed: requires WebTransport echo-server source \
+(/home/joao/projects/threenative/threenative-engine/.worktrees/prd-197-native-host-fails-loudly/packages/runtime-native/examples/webtransport/server)
+Test Files  1 failed (1)
+Tests       11 skipped (11)
+exit 1
+```
+
+This is `BLOCKED` live-fixture evidence, not a certificate-connectivity PASS. The next evidence
+action is to provide that exact echo-server fixture (and its Rust toolchain), then rerun the same
+command with `TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE=1`.
+
 ## Acceptance criteria
 
 | Criterion | Implementation and mutation | Observed proof |
 |---|---|---|
-| Invalid WebTransport certificates fail by default and require an explicit override. | `quiche_config_verify_peer` now receives `!allowInsecurePeerVerification`; only `MYSTRAL_WEBTRANSPORT_INSECURE=1` enables the development override, and the warning names the variable. | Contract mutation is red above. `webtransport.test.ts` contains default-reject and explicit-override cases. The live cases were not executed because the existing fixture path `packages/runtime-native/examples/webtransport/server` is absent; the file run reported `Test Files 1 passed`, `Tests 11 skipped`. |
+| Invalid WebTransport certificates fail by default and require an explicit override. | `quiche_config_verify_peer` receives `!allowInsecurePeerVerification`; only exact `MYSTRAL_WEBTRANSPORT_INSECURE=1` enables the development override, the parsed mode is logged, and CLI help documents other values as secure. | The focused contract suite passed 16 tests and rejects truthy-alias and missing-mode-log mutations. The live prerequisite was run with `TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE=1` and is `BLOCKED` on the absent fixture path above. No live certificate connection is claimed. |
 | Null sampler and bind-group creation fails at creation. | Both native handle returns are checked immediately. Malformed descriptors are also rejected at the binding boundary so Dawn's non-null error handles cannot escape as wrappers; automatically created bind-group views are released on both failure and success. | Removing either check or the failure-path view release is rejected by `webgpu-bindings-contract.test.mjs`. Display-free proof: `./packages/runtime-native/build/tn-linux/threenative-bindings-creation-test` printed `native WebGPU creation bindings passed` and exited `0`. |
-| Timer delivery survives installation order and pending work. | Engine-level timer stubs were removed from V8 and QuickJS; `Runtime::setupTimers()` owns the real libuv/chrono timers after engine creation, and shutdown waits for timer close callbacks. The executable requires `process.exit(42)` from the completed callback and fails closed on timeout. | Restoring either engine stub or the old timeout check is rejected by `timer-contract.test.mjs`; the disabled-delivery executable mutation returned `1` without the success line. Display-free proof: `./packages/runtime-native/build/tn-linux/threenative-timer-delivery-test` logged `process.exit(42)`, printed `native timer delivery contract passed`, and exited `0`. |
+| Timer delivery survives installation order and pending work. | Engine-level timer stubs were removed from V8, QuickJS, and JSC; `Runtime::setupTimers()` owns the real libuv/chrono timers after engine creation, and shutdown waits for timer close callbacks. The executable requires `process.exit(42)` from the completed callback and fails closed on timeout. | Restoring an engine stub or the old timeout check is rejected by `timer-contract.test.mjs`; the disabled-delivery executable mutation returned `1` without the success line. Display-free proof: `./packages/runtime-native/build/tn-linux/threenative-timer-delivery-test` logged `process.exit(42)`, printed `native timer delivery contract passed`, and exited `0`. |
 
 ## Native and desktop verification
 
@@ -153,7 +208,7 @@ Android, and iOS. The source contract covers QuickJS, but no QuickJS executable 
 
 ```text
 $ grep -n "verify_peer\|TODO" packages/runtime-native/src/webtransport/webtransport.cpp
-803:    quiche_config_verify_peer(s->config, !allowInsecurePeerVerification);
+808:    quiche_config_verify_peer(s->config, !allowInsecurePeerVerification);
 ```
 
 ## Repository gates

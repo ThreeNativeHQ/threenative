@@ -98,8 +98,7 @@ constexpr size_t STREAM_READ_CHUNK = 64 * 1024;
 constexpr const char* kInsecurePeerVerificationEnv = "MYSTRAL_WEBTRANSPORT_INSECURE";
 
 bool isTruthyEnvironmentValue(const char* value) {
-    if (!value) return false;
-    return std::string(value) == "1" || std::string(value) == "true" || std::string(value) == "TRUE";
+    return value != nullptr && std::string(value) == "1";
 }
 
 // ---------------------------------------------------------------------------
@@ -793,8 +792,14 @@ uint32_t connectSession(const std::string& url) {
     quiche_config_set_initial_max_streams_bidi(s->config, 100);
     quiche_config_set_initial_max_streams_uni(s->config, 100);
     quiche_config_set_disable_active_migration(s->config, true);
+    const char* insecurePeerVerificationValue = std::getenv(kInsecurePeerVerificationEnv);
     const bool allowInsecurePeerVerification =
-        isTruthyEnvironmentValue(std::getenv(kInsecurePeerVerificationEnv));
+        isTruthyEnvironmentValue(insecurePeerVerificationValue);
+    std::cerr << "[WebTransport] TLS peer verification mode: "
+              << (allowInsecurePeerVerification ? "insecure-override" : "verify-peer")
+              << " (parsed from " << kInsecurePeerVerificationEnv << "="
+              << (insecurePeerVerificationValue ? insecurePeerVerificationValue : "<unset>")
+              << ")" << std::endl;
     if (allowInsecurePeerVerification) {
         std::cerr << "[WebTransport] WARNING: TLS peer verification disabled by "
                   << kInsecurePeerVerificationEnv << "=1 (development only)" << std::endl;
