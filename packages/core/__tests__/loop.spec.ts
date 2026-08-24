@@ -260,4 +260,39 @@ describe("FixedStepLoop metrics collection", () => {
     loop.stepFrame(32);
     expect(loop.runtimeDiagnosticsSeries()).toHaveLength(1);
   });
+
+  it("renders but does not simulate, tick or bank time while held", () => {
+    // Boot holds the loop so a loading screen can draw before the start scene has loaded. Three
+    // things have to survive that hold: nothing is stepped, `tick()` still reads zero -- the
+    // determinism contract every playtest hold rests on, and `#tick` advances inside the very
+    // block a naive "skip the callback" gate would leave running -- and no elapsed time is
+    // banked, or the first real tick arrives with a dt spanning the whole asset load.
+    const steps: number[] = [];
+    let renders = 0;
+    const loop = new FixedStepLoop({
+      onUpdate: (dt) => steps.push(dt),
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+
+    loop.setHeld(true);
+    expect(loop.held).toBe(true);
+    loop.start(0);
+    // Two seconds of held frames: unheld, this is 120 updates.
+    for (let frame = 1; frame <= 120; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
+
+    expect(renders).toBe(120);
+    expect(steps).toHaveLength(0);
+    expect(loop.tick()).toBe(0);
+
+    loop.setHeld(false);
+    expect(loop.held).toBe(false);
+    // One ordinary frame after release. A loop that banked the hold would spend its whole
+    // catch-up budget here instead of running the single step the frame is worth.
+    expect(loop.stepFrame(121 * 16.6667)).toBe(1);
+    expect(steps).toEqual([1 / 60]);
+    expect(loop.tick()).toBe(1);
+  });
 });

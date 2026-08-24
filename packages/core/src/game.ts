@@ -581,7 +581,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // is what lets a change the game made this tick reach the screen this tick instead of the
         // next one. Scenes under its mesh floor get their own graph back and pay nothing.
         this.#projection?.reconcile();
-        if (!projectionSettled) {
+        // Reconciling is unconditional -- a goto clears the graph before its destination enters,
+        // and the projection has to drop those objects on the very next frame. Settling is not:
+        // frames run during the boot hold, before the start scene has loaded, and a loading
+        // screen awaiting `startup.whenReady()` would be told the world is ready while its
+        // assets were still downloading.
+        if (!projectionSettled && this.#sceneEntered) {
           projectionSettled = true;
           markProjectionSettled();
         }
@@ -670,6 +675,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       this.#teardown(ctx);
       return;
     }
+    // Held: the loop renders every frame from here but steps nothing. On native the render loop
+    // is the only thing that can put pixels on the screen, so starting it after `load()` resolved
+    // meant a black screen for the entire asset load and a HUD's `!ready` branch was unreachable.
+    // Holding rather than simply starting keeps the determinism contract intact: no tick advances
+    // and no elapsed time is banked before the release below.
+    gameLoop.setHeld(true);
+    gameLoop.start();
     try {
       await scene.load(ctx);
     } catch (error) {
@@ -705,6 +717,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     this.#started = true;
+    // Every gate has resolved and the scene has entered, so the simulation may move. The first
+    // tick after this reads a single frame's dt, not one spanning the load.
+    gameLoop.setHeld(false);
     gameLoop.start();
   }
   pause(): void {

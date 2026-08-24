@@ -1521,4 +1521,71 @@ describe("IGame", () => {
         Object.defineProperty(globalThis, "window", windowDescriptor);
     }
   });
+
+  it("draws the overlay while the start scene is still loading, without stepping the simulation", async () => {
+    // A phone has no DOM, so the render loop is the only thing that can put a loading screen on
+    // the screen. Booting with the loop stopped until `scene.load` resolves means every native
+    // game shows a black screen for its whole asset load, and the HUD's own !ready branch is
+    // unreachable. The loop must run during load; the simulation must not.
+    let releaseLoad: () => void = () => undefined;
+    const loadGate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    let updates = 0;
+    let renders = 0;
+    class SlowScene extends Scene {
+      static override readonly initialState = {};
+      override load(): Promise<void> {
+        return loadGate;
+      }
+      override update(): void {
+        updates += 1;
+      }
+    }
+    const canvas = testCanvas();
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => {
+            renders += 1;
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: SlowScene },
+      start: "test",
+    });
+    const pending: FrameRequestCallback[] = [];
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => {
+        pending.push(callback);
+        return pending.length;
+      },
+    });
+    try {
+      const started = game.start();
+      for (let flush = 0; flush < 20; flush += 1) await Promise.resolve();
+      // Drive real frames while `load` is still outstanding.
+      for (let frame = 1; frame <= 6; frame += 1) {
+        const callback = pending.shift();
+        if (callback === undefined) break;
+        callback(frame * 32);
+        for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
+      }
+      expect(renders).toBeGreaterThan(0);
+      expect(updates).toBe(0);
+      releaseLoad();
+      await started;
+      game.stop();
+    } finally {
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
 });

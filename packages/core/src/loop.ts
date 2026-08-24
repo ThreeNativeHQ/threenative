@@ -43,6 +43,7 @@ export class FixedStepLoop {
   #lastTime: number | undefined;
   #frameHandle: number | undefined;
   #running = false;
+  #held = false;
   #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
@@ -108,6 +109,23 @@ export class FixedStepLoop {
   setCollectMetrics(enabled: boolean): void {
     this.#collectMetrics = enabled;
   }
+  /** True while the loop renders without simulating. */
+  get held(): boolean {
+    return this.#held;
+  }
+  /**
+   * Render without simulating.
+   *
+   * Boot needs frames on the screen before the start scene has finished loading: on native the
+   * render loop is the only thing that can draw, so a loop that starts after `load()` resolves
+   * leaves the screen black for the whole asset load and a loading screen never appears. A held
+   * loop draws and does nothing else -- `onUpdate` is never called, `tick()` still reads zero,
+   * and the hold banks no time, so the first tick after release gets one frame of `dt` rather
+   * than one covering the entire load.
+   */
+  setHeld(held: boolean): void {
+    this.#held = held;
+  }
   readonly tick = (): number => this.#tick;
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
@@ -130,17 +148,25 @@ export class FixedStepLoop {
   stepFrame(now: number): number {
     const budget = this.#budget;
     budget?.beginFrame(now, this.#now());
-    const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
-    this.#lastTime = Math.max(this.#lastTime ?? now, now);
-    this.#accumulator += elapsed;
     let updates = 0;
-    while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
-      this.#onUpdate(this.step);
-      this.#tick += 1;
-      this.#accumulator -= this.step;
-      updates += 1;
+    if (this.#held) {
+      // The whole accumulate-and-update block is skipped rather than just the callback: `#tick`
+      // advances inside that loop, and a held frame that moved the tick would break the
+      // determinism contract every playtest hold depends on. The clock still moves forward so
+      // the hold banks no time.
+      this.#lastTime = Math.max(this.#lastTime ?? now, now);
+    } else {
+      const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
+      this.#lastTime = Math.max(this.#lastTime ?? now, now);
+      this.#accumulator += elapsed;
+      while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
+        this.#onUpdate(this.step);
+        this.#tick += 1;
+        this.#accumulator -= this.step;
+        updates += 1;
+      }
+      if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
     }
-    if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
     budget?.markSimulationEnd(this.#now(), updates);
     let frameMs: number | undefined;
     if (Number.isFinite(now)) {
