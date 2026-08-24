@@ -218,6 +218,9 @@ public final class TnUiOverlay extends WebView {
     public boolean dispatchTouchEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             ownsGesture = hits(event.getX(), event.getY());
+            android.util.Log.i("Mystral", "TN_UI_HITTEST:{\"x\":" + event.getX() + ",\"y\":" + event.getY()
+                + ",\"w\":" + getWidth() + ",\"h\":" + getHeight() + ",\"regions\":" + (regions.length / 4)
+                + ",\"owns\":" + ownsGesture + "}");
             if (!ownsGesture) return false;
         }
         return ownsGesture && super.dispatchTouchEvent(event);

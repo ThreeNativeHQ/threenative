@@ -12,6 +12,21 @@ export interface IAndroidDriverOptions {
   adbPath?: string;
   packageName: string;
   serial?: string;
+  /**
+   * The rotation between the touchscreen's raw axes and the frame the app draws in, when the
+   * device cannot be asked.
+   *
+   * Normally this is read from the display — `dumpsys input`'s `SurfaceOrientation`, then the
+   * `user_rotation` setting — and that is right whenever the app's window and the display agree.
+   * It is wrong for an orientation-locked app on a device whose display never rotated: an
+   * emulator sitting at rotation 0 running a `landscape` game gives the app a window turned 90°
+   * from the panel, so an injected touch lands somewhere else entirely and every input assertion
+   * fails for a reason that has nothing to do with the game.
+   *
+   * Set explicitly to make such a run reproducible, and say so in the evidence. Fails closed on
+   * anything but 0, 1, 2 or 3.
+   */
+  touchRotation?: number;
 }
 
 export interface IAndroidDriver {
@@ -58,6 +73,14 @@ export class AdbAndroidDriver implements IAndroidDriver {
 
   constructor(private readonly options: IAndroidDriverOptions) {
     this.adbPath = options.adbPath ?? discoverAdb();
+    if (options.touchRotation !== undefined) {
+      if (![0, 1, 2, 3].includes(options.touchRotation)) {
+        throw new Error(
+          `TN_PLAYTEST_ANDROID_ROTATION_INVALID: touch rotation must be 0, 1, 2 or 3, got '${String(options.touchRotation)}'.`,
+        );
+      }
+      this.rotation = options.touchRotation;
+    }
   }
 
   async prepare(endpoint: string, mailboxRoot?: string): Promise<void> {
@@ -202,7 +225,16 @@ export class AdbAndroidDriver implements IAndroidDriver {
         held.y = y;
       }
     }
-    for (const batch of androidTouchBatches(identity, positions)) {
+    // Coordinates first, identity second, and the order is the whole point.
+    //
+    // A tracking id and a coordinate cannot share one emulator batch — the emulator answers OK
+    // and drops the coordinate — so they are two batches, and which one goes first decides where
+    // Android thinks the finger landed. Sending the tracking id first activates the slot at
+    // whatever position it still held from the previous gesture, so every press was reported at
+    // the *previous* step's coordinates and then moved: a tap on a HUD button arrived as a press
+    // somewhere else followed by a drag onto the button. Positioning the inactive slot first and
+    // activating it second reports the press where the scenario asked for it.
+    for (const batch of androidTouchBatches(positions, identity)) {
       await this.adb(["emu", "event", "send", ...batch]);
     }
     return {

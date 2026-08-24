@@ -83,6 +83,7 @@ export async function runAndroidPlaytest(
   const driver = dependencies.driver ?? new AdbAndroidDriver({
     ...android,
     ...(config.adbPath === undefined ? {} : { adbPath: config.adbPath }),
+    ...(config.touchRotation === undefined ? {} : { touchRotation: config.touchRotation }),
     ...(config.device === undefined ? {} : { serial: config.device }),
   });
   const mailboxRoot = config.mailboxRoot ?? `/sdcard/Android/data/${android.packageName}/files`;

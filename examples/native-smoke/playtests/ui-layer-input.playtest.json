@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "name": "native-smoke-ui-layer-input",
+  "target": "web",
+  "subject": "multitouch-player",
+  "viewport": {
+    "width": 2400,
+    "height": 1080
+  },
+  "warmupFrames": 2,
+  "steps": [
+    {
+      "label": "ui-ready",
+      "waitTicks": 180
+    },
+    {
+      "pointers": [
+        {
+          "id": 1,
+          "x": 0.25,
+          "y": 0.9
+        }
+      ],
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "label": "empty-hud",
+      "waitTicks": 30
+    },
+    {
+      "pointers": [
+        {
+          "id": 2,
+          "x": 0.85,
+          "y": 0.5
+        }
+      ],
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "label": "island",
+      "waitTicks": 30
+    },
+    {
+      "pointers": [
+        {
+          "id": 3,
+          "x": 0.25,
+          "y": 0.9
+        }
+      ],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "pointers": [
+        {
+          "id": 3,
+          "x": 0.85,
+          "y": 0.5
+        }
+      ],
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "label": "drag-across",
+      "waitTicks": 30
+    },
+    {
+      "pointers": [
+        {
+          "id": 4,
+          "x": 0.3,
+          "y": 0.75
+        }
+      ],
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "label": "moving-origin",
+      "waitTicks": 30
+    },
+    {
+      "waitTicks": 1200
+    },
+    {
+      "pointers": [
+        {
+          "id": 5,
+          "x": 0.7,
+          "y": 0.75
+        }
+      ],
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "label": "moving-settled",
+      "waitTicks": 30
+    }
+  ],
+  "artifacts": {
+    "screenshots": true
+  },
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "uiReady",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "uiRegions",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "pointerDowns",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": 0
+          },
+          {
+            "label": "empty-hud",
+            "equals": 1
+          },
+          {
+            "label": "island",
+            "equals": 1
+          },
+          {
+            "label": "drag-across",
+            "equals": 2
+          },
+          {
+            "label": "moving-origin",
+            "equals": 3
+          },
+          {
+            "label": "moving-settled",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "uiIntents",
+        "atSteps": [
+          {
+            "label": "island",
+            "equals": 2
+          },
+          {
+            "label": "drag-across",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "slide",
+        "atSteps": [
+          {
+            "label": "island",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "lastUiIntent",
+        "atSteps": [
+          {
+            "label": "moving-origin",
+            "equals": "slide"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "restarts",
+        "atSteps": [
+          {
+            "label": "moving-origin",
+            "equals": 0
+          },
+          {
+            "label": "moving-settled",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "diagnostics": {
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "Chromium logs 'Could not reconstruct index from disk' and a missing Code Cache directory the first time a WebView starts in a fresh app data directory; the input assertions below are the authoritative result."
+    }
+  }
+}

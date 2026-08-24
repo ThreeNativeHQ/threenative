@@ -12,7 +12,7 @@ import {
   type IPlaytestSampleRequest,
 } from "../src/index.js";
 import type { IAndroidDriver } from "../src/runner/android.js";
-import { androidTouchBatches } from "../src/runner/android.js";
+import { AdbAndroidDriver, androidTouchBatches } from "../src/runner/android.js";
 import { runAndroidPlaytest } from "../src/runner/androidRunner.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
@@ -593,4 +593,29 @@ test("emulator touch batches never mix a tracking id with a coordinate", () => {
   expect(() => androidTouchBatches([...identity, ...positions], [])).toThrow(
     /TN_PLAYTEST_ANDROID_TOUCH_BATCH_MIXED/u,
   );
+});
+
+// The batches are emitted in argument order, and setPointers passes coordinates first on
+// purpose: a slot activated before it is positioned presses at wherever the previous gesture
+// left it. Observed on an emulator as every tap landing at the previous step's coordinates and
+// then dragging to the requested ones.
+test("emulator touch batches position a slot before activating it", async () => {
+  const sent: string[][] = [];
+  const driver = new AdbAndroidDriver({
+    activity: ".MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+    touchRotation: 0,
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+    args,
+  ) => {
+    if (args[0] === "get-serialno") return "emulator-5554\n";
+    if (args[0] === "emu") sent.push([...args.slice(3)]);
+    return "";
+  };
+  await driver.setPointers([{ id: 1, x: 0.25, y: 0.75 }]);
+  expect(sent).toHaveLength(2);
+  expect(sent[0]?.some((event) => event.includes("ABS_MT_POSITION_X"))).toBe(true);
+  expect(sent[1]?.some((event) => event.includes("ABS_MT_TRACKING_ID"))).toBe(true);
 });

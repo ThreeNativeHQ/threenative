@@ -19,6 +19,8 @@ export interface IStandalonePlaytestConfig {
   allowSoftwareAdapter?: boolean;
   android?: { activity: string; packageName: string };
   adbPath?: string;
+  /** @see IAndroidDriverOptions.touchRotation */
+  touchRotation?: number;
   artifactDirectory: string;
   browserArgs?: readonly string[];
   device?: string;
@@ -49,6 +51,11 @@ export interface IPlaytestFlagHelp {
 
 export const PLAYTEST_FLAGS = {
   "--adb": { default: "auto-discover", summary: "absolute adb executable path", takesValue: true },
+  "--touch-rotation": {
+    default: "read from the device",
+    summary: "Android raw-touch rotation (0-3) when the app's window and the display disagree",
+    takesValue: true,
+  },
   "--allow-software": { default: "false", summary: "accept a software WebGPU adapter as evidence", takesValue: false },
   "--activity": { default: ".MystralActivity", summary: "Android launch activity", takesValue: true },
   "--app": { default: "required for iOS", summary: "built iOS .app bundle", takesValue: true },
@@ -153,6 +160,15 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   if (browserRecipe !== undefined && explicitBrowserArgs.length > 0) {
     throw new PlaytestCliUsageError("Choose --browser-recipe or --browser-arg, not both.");
   }
+  const rawTouchRotation = flags.get("--touch-rotation")?.[0];
+  // Fail closed rather than defaulting: a mistyped rotation that quietly became 0 would put every
+  // injected touch somewhere else and report the game as broken.
+  if (rawTouchRotation !== undefined && !/^[0-3]$/u.test(rawTouchRotation)) {
+    throw new Error(
+      `TN_PLAYTEST_ANDROID_ROTATION_INVALID: --touch-rotation must be 0, 1, 2 or 3, got '${rawTouchRotation}'.`,
+    );
+  }
+  const touchRotation = rawTouchRotation === undefined ? undefined : Number(rawTouchRotation);
   const browserArgs =
     explicitBrowserArgs.length > 0
       ? explicitBrowserArgs
@@ -161,6 +177,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
         : [];
   return {
     ...(flags.get("--adb")?.[0] === undefined ? {} : { adbPath: flags.get("--adb")![0] }),
+    ...(touchRotation === undefined ? {} : { touchRotation }),
     allowSoftwareAdapter: argv.includes("--allow-software"),
     android: {
       activity: flags.get("--activity")?.[0] ?? ".MystralActivity",
