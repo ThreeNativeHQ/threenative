@@ -46,6 +46,7 @@ async function arrowExportFixture(): Promise<string> {
       path.join(packageRoot, "package.json"),
       JSON.stringify({
         name: `@threenative/${packageName}`,
+        version: "0.0.0",
         exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
       }),
     );
