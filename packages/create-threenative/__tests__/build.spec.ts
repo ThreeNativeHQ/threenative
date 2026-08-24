@@ -226,6 +226,26 @@ describe("threenative build", () => {
     }
   });
 
+  // PRD-217 acceptance criterion 4. The UI layer now renders react-dom on every target, and the
+  // temptation is to conclude this guard has been superseded. It has not: the guard is about the
+  // PORTABLE entry — the graph that reaches `THREE.Scene` — and the UI ships as a separate bundle
+  // the packager stages under `assets/ui/`, which never passes through here. A game whose
+  // `src/game.ts` mounts React is still refused, whatever its `ui.renderer` says.
+  it("still refuses react-dom in the portable entry after the UI layer landed", async () => {
+    const root = await makeTempDir("threenative-portable-guard-");
+    roots.push(root);
+    const portable = path.join(root, "game.js");
+    await writeFile(
+      portable,
+      'import { createRoot } from "react-dom/client";\nexport default defineGame({});\n',
+    );
+    for (const target of ["desktop", "android", "ios"] as const) {
+      await expect(assertNativeBundleCompatible(portable, target)).rejects.toThrow(
+        /TN_NATIVE_WEB_ONLY_UI/u,
+      );
+    }
+  });
+
   it("fails closed when the declared native entry is missing", async () => {
     const root = await makeTempDir("threenative-missing-entry-");
     roots.push(root);

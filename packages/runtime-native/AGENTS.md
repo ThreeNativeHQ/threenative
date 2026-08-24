@@ -5,10 +5,20 @@ native half of the "web and native are one codebase" rule stated there.
 
 ## Product contract
 
-A native-first Three.js games runtime with no Chromium, WebView, Electron or Tauri WebView.
+A native-first Three.js games runtime that ships no Chromium, and is not Electron or a Tauri app.
 It is **a host, not a renderer**: upstream Three.js `WebGPURenderer` stays the primary
-renderer, at exactly the workspace catalog version. Runtime internals may keep Mystral names
-recognizable during the fork, but public contracts expose ThreeNative names.
+renderer, at exactly the workspace catalog version.
+
+**The scene never enters a web view; the UI may.** As of PRD-217 a game can render `src/ui/`
+through the platform's own browser-class renderer — a transparent `WebView` composited over the
+game surface — so one `src/ui/` runs unchanged on web and native. That is the platform's browser,
+attached at the composition layer, not a browser this package ships: measured free on a Pixel 8,
+and about 6% of one game's memory in a process the OS can reclaim. `ui.renderer: "native"` is the
+opt-out and ships no overlay and no extra process. `TnUiOverlay` owns the input hit test; the
+contract is in `include/mystral/platform/ui_overlay.h` and `@threenative/core/ui-layer`.
+
+Runtime internals may keep Mystral names recognizable during the fork, but public contracts expose
+ThreeNative names.
 
 Targets: browser/upstream Three.js, Windows/macOS/Linux V8+Dawn, Android V8+wgpu-native,
 iOS JSC+wgpu-native. The JavaScript runtime that owns `THREE.Scene` also owns the renderer —

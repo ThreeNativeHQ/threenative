@@ -3,7 +3,15 @@ import { GLYPH_ADVANCE, GLYPH_HEIGHT, GLYPH_WIDTH } from "./react-glyphs.js";
 /**
  * The layout model behind the native React overlay: pure TypeScript, no WASM, no Yoga, no CSS
  * parser. `TN_NATIVE_WASM_ON_MOBILE` refuses WebAssembly in mobile bundles, which rules out Yoga;
- * a CSS engine is a browser, which is the thing this whole path exists to avoid.
+ * writing a CSS engine here would be writing a browser, one ticket at a time.
+ *
+ * That last clause used to read "which is the thing this whole path exists to avoid", and PRD-217
+ * corrected it: the thing to avoid is *shipping* a browser, and every platform already provides
+ * one at the composition layer for free. So `ui.renderer: "web"` is now the default — the same
+ * React DOM, Tailwind, CSS and SVG on every target — and this renderer is the opt-in for a UI that
+ * is part of the rendered frame, a target with no web view, or zero extra processes. Growing this
+ * vocabulary toward CSS is still the wrong move; a game that needs CSS should ask for the web
+ * renderer instead.
  *
  * **The supported subset is exactly the fields on {@link IOverlayStyle} and nothing else.** A style
  * key that is not on that interface is not "ignored for now" — {@link assertKnownStyle} throws

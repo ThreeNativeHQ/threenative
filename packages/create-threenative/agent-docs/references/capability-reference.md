@@ -588,6 +588,98 @@ export function View(props: IViewProps): ReactNode { … }
 <View style={{ centerX: 0, top: 24 }}><Text>READY</Text></View>
 ```
 
+## `@threenative/core/ui-layer`
+
+### `connectUiBridge`
+
+`function` — Open the message channel between a game and its UI, whatever host is underneath.
+
+```ts
+export function connectUiBridge(options: IConnectOptions): IUiBridge { … }
+```
+
+- **Use when:** write a UI that talks to the game on web and on a phone alike · send a message from a HUD rendered over the game surface
+- **Constraints:** the transport is discovered, never configured; no game names the web view
+
+```ts
+const bridge = connectUiBridge({ end: "ui" });
+```
+
+### `onUiIntent`
+
+`function` — Handle the actions a UI sends back to the game.
+
+```ts
+export function onUiIntent( bridge: IUiBridge, listener: (intent: string, payload: unknown) => void, ): () => void { … }
+```
+
+- **Use when:** restart or pause a game from a button in its HUD
+- **Constraints:** prefer game.ui.onIntent, which connects the bridge for you
+
+```ts
+onUiIntent(bridge, (intent) => { if (intent === "restart") game.goto("Play"); });
+```
+
+### `publishHitRegions`
+
+`function` — Tell the native input host where a UI's touchable controls are.
+
+```ts
+export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry { … }
+```
+
+- **Use when:** let a touch on empty HUD space reach the game instead of the UI · make a HUD button receive taps on a phone
+- **Constraints:** mark controls with data-tn-interactive; pointer-events is not the mechanism
+
+```ts
+publishHitRegions({ bridge });
+```
+
+### `publishUiState`
+
+`function` — Publish the game's state so a UI in another process can mirror it.
+
+```ts
+export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }
+```
+
+- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop
+- **Constraints:** publishes at the store's throttled cadence, and not at all with no UI listening
+
+```ts
+publishUiState(bridge, game.state);
+```
+
+### `sendUiIntent`
+
+`function` — Send a player action from the UI back to the game.
+
+```ts
+export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void { … }
+```
+
+- **Use when:** wire a Restart button in a HUD to the running game · pause a game from a menu drawn over its surface
+- **Constraints:** one-way; the game decides what each name means and may ignore one
+
+```ts
+sendUiIntent(bridge, "restart");
+```
+
+### `subscribeUiState`
+
+`function` — Mirror the game's published state on the UI side.
+
+```ts
+export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … }
+```
+
+- **Use when:** read game state from a HUD that runs in the platform's web view
+- **Constraints:** returns undefined until the game publishes its first state
+
+```ts
+const mirror = subscribeUiState(bridge);
+```
+
 ## `@threenative/physics`
 
 ### `Area3D`
@@ -1951,6 +2043,21 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>( { 
 <GameCanvas game={game} />
 ```
 
+### `UiLayer`
+
+`function` — Render a game's UI so the same source runs on web and on every native target.
+
+```ts
+export function UiLayer( { … }
+```
+
+- **Use when:** write one HUD that looks the same on the web build and on a phone · mount a React UI over the game surface on Android or iOS
+- **Constraints:** mark every control the player touches with data-tn-interactive
+
+```ts
+<UiLayer><Hud /></UiLayer>
+```
+
 ### `useGameState`
 
 `function` — Read throttled game state from React.
@@ -1964,5 +2071,35 @@ export function useGameState<TState extends Record<string, unknown>, TPhysics, T
 
 ```ts
 const score = useGameState(game, (state) => state.score);
+```
+
+### `useUiIntent`
+
+`function` — Send a player action from the UI back to the game.
+
+```ts
+export function useUiIntent(): (intent: string, payload?: unknown) => void { … }
+```
+
+- **Use when:** wire a Restart button in a HUD to the running game · pause a game from a menu rendered over its surface
+- **Constraints:** the game decides what each intent name means; it may ignore one
+
+```ts
+const send = useUiIntent(); send("restart");
+```
+
+### `useUiState`
+
+`function` — Read the game's published state from a UI that may be in another process.
+
+```ts
+export function useUiState<TSelected>( selector: (state: Record<string, unknown>) => TSelected, ): TSelected | undefined { … }
+```
+
+- **Use when:** bind a HUD to game state on web and native alike · show score or health in a UI rendered over the game surface
+- **Constraints:** returns undefined until the game publishes its first state
+
+```ts
+const score = useUiState((state) => state.score);
 ```
 

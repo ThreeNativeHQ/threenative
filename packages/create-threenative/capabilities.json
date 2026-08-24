@@ -623,6 +623,100 @@
       "symbol": "View"
     },
     {
+      "constraints": ["the transport is discovered, never configured; no game names the web view"],
+      "example": "const bridge = connectUiBridge({ end: \"ui\" });",
+      "importPath": "@threenative/core/ui-layer",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function connectUiBridge(options: IConnectOptions): IUiBridge { … }",
+      "situations": [
+        "write a UI that talks to the game on web and on a phone alike",
+        "send a message from a HUD rendered over the game surface"
+      ],
+      "summary": "Open the message channel between a game and its UI, whatever host is underneath.",
+      "supersedes": [],
+      "symbol": "connectUiBridge"
+    },
+    {
+      "constraints": ["prefer game.ui.onIntent, which connects the bridge for you"],
+      "example": "onUiIntent(bridge, (intent) => { if (intent === \"restart\") game.goto(\"Play\"); });",
+      "importPath": "@threenative/core/ui-layer",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function onUiIntent( bridge: IUiBridge, listener: (intent: string, payload: unknown) => void, ): () => void { … }",
+      "situations": ["restart or pause a game from a button in its HUD"],
+      "summary": "Handle the actions a UI sends back to the game.",
+      "supersedes": [],
+      "symbol": "onUiIntent"
+    },
+    {
+      "constraints": [
+        "mark controls with data-tn-interactive; pointer-events is not the mechanism"
+      ],
+      "example": "publishHitRegions({ bridge });",
+      "importPath": "@threenative/core/ui-layer",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry { … }",
+      "situations": [
+        "let a touch on empty HUD space reach the game instead of the UI",
+        "make a HUD button receive taps on a phone"
+      ],
+      "summary": "Tell the native input host where a UI's touchable controls are.",
+      "supersedes": [],
+      "symbol": "publishHitRegions"
+    },
+    {
+      "constraints": [
+        "publishes at the store's throttled cadence, and not at all with no UI listening"
+      ],
+      "example": "publishUiState(bridge, game.state);",
+      "importPath": "@threenative/core/ui-layer",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }",
+      "situations": [
+        "show score or health in a UI rendered over the game surface",
+        "keep a HUD in step with the game without re-rendering on the loop"
+      ],
+      "summary": "Publish the game's state so a UI in another process can mirror it.",
+      "supersedes": [],
+      "symbol": "publishUiState"
+    },
+    {
+      "constraints": ["one-way; the game decides what each name means and may ignore one"],
+      "example": "sendUiIntent(bridge, \"restart\");",
+      "importPath": "@threenative/core/ui-layer",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void { … }",
+      "situations": [
+        "wire a Restart button in a HUD to the running game",
+        "pause a game from a menu drawn over its surface"
+      ],
+      "summary": "Send a player action from the UI back to the game.",
+      "supersedes": [],
+      "symbol": "sendUiIntent"
+    },
+    {
+      "constraints": ["returns undefined until the game publishes its first state"],
+      "example": "const mirror = subscribeUiState(bridge);",
+      "importPath": "@threenative/core/ui-layer",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … }",
+      "situations": ["read game state from a HUD that runs in the platform's web view"],
+      "summary": "Mirror the game's published state on the UI side.",
+      "supersedes": [],
+      "symbol": "subscribeUiState"
+    },
+    {
       "constraints": ["add the area to the physics context before stepping the world"],
       "example": "const area = new Area3D({ context, shape });",
       "importPath": "@threenative/physics",
@@ -2057,6 +2151,22 @@
       "symbol": "GameCanvas"
     },
     {
+      "constraints": ["mark every control the player touches with data-tn-interactive"],
+      "example": "<UiLayer><Hud /></UiLayer>",
+      "importPath": "@threenative/ui",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ui",
+      "signature": "export function UiLayer( { … }",
+      "situations": [
+        "write one HUD that looks the same on the web build and on a phone",
+        "mount a React UI over the game surface on Android or iOS"
+      ],
+      "summary": "Render a game's UI so the same source runs on web and on every native target.",
+      "supersedes": [],
+      "symbol": "UiLayer"
+    },
+    {
       "constraints": ["use this hook only from the web UI entry"],
       "example": "const score = useGameState(game, (state) => state.score);",
       "importPath": "@threenative/ui",
@@ -2071,6 +2181,38 @@
       "summary": "Read throttled game state from React.",
       "supersedes": [],
       "symbol": "useGameState"
+    },
+    {
+      "constraints": ["the game decides what each intent name means; it may ignore one"],
+      "example": "const send = useUiIntent(); send(\"restart\");",
+      "importPath": "@threenative/ui",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ui",
+      "signature": "export function useUiIntent(): (intent: string, payload?: unknown) => void { … }",
+      "situations": [
+        "wire a Restart button in a HUD to the running game",
+        "pause a game from a menu rendered over its surface"
+      ],
+      "summary": "Send a player action from the UI back to the game.",
+      "supersedes": [],
+      "symbol": "useUiIntent"
+    },
+    {
+      "constraints": ["returns undefined until the game publishes its first state"],
+      "example": "const score = useUiState((state) => state.score);",
+      "importPath": "@threenative/ui",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ui",
+      "signature": "export function useUiState<TSelected>( selector: (state: Record<string, unknown>) => TSelected, ): TSelected | undefined { … }",
+      "situations": [
+        "bind a HUD to game state on web and native alike",
+        "show score or health in a UI rendered over the game surface"
+      ],
+      "summary": "Read the game's published state from a UI that may be in another process.",
+      "supersedes": [],
+      "symbol": "useUiState"
     }
   ],
   "version": 1
