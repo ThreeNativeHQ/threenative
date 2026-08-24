@@ -227,27 +227,52 @@ function audioProblem(relativePath, bytes) {
   };
 }
 
-/** The glTF JSON chunk of a `.glb`, or undefined when the file is not a GLB this can read. */
-export function readGlbJson(bytes) {
-  if (bytes.length < 20) return undefined;
+function parseGlb(bytes) {
+  if (bytes.length < 12) return { error: 'the 12-byte header is truncated' };
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (view.getUint32(0, true) !== GLB_MAGIC) return undefined;
+  if (view.getUint32(0, true) !== GLB_MAGIC) return { error: 'the header magic is not glTF' };
+  if (view.getUint32(4, true) !== 2) return { error: 'the version is not 2' };
+  const declaredLength = view.getUint32(8, true);
+  if (declaredLength !== bytes.length) {
+    return {
+      error: `the header declares ${declaredLength} bytes but the file contains ${bytes.length}`,
+    };
+  }
+
   let offset = 12;
-  while (offset + 8 <= bytes.length) {
+  let json;
+  while (offset < bytes.length) {
+    if (offset + 8 > bytes.length) return { error: 'a chunk header is truncated' };
     const length = view.getUint32(offset, true);
     const kind = view.getUint32(offset + 4, true);
+    if (length % 4 !== 0) return { error: 'a chunk length is not 4-byte aligned' };
     const start = offset + 8;
-    if (start + length > bytes.length) return undefined;
+    if (start + length > bytes.length) return { error: 'a chunk is truncated' };
+    if (offset === 12 && kind !== GLB_CHUNK_JSON) {
+      return { error: 'the first chunk is not the required JSON chunk' };
+    }
     if (kind === GLB_CHUNK_JSON) {
+      if (json !== undefined) return { error: 'the file contains more than one JSON chunk' };
       try {
-        return JSON.parse(new TextDecoder().decode(bytes.subarray(start, start + length)));
+        json = JSON.parse(
+          new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(start, start + length)),
+        );
       } catch {
-        return undefined;
+        return { error: 'the JSON chunk is not valid UTF-8 JSON' };
+      }
+      if (json === null || typeof json !== 'object' || Array.isArray(json)) {
+        return { error: 'the JSON chunk is not a glTF object' };
       }
     }
     offset = start + length;
   }
-  return undefined;
+  if (json === undefined) return { error: 'the file has no JSON chunk' };
+  return { json };
+}
+
+/** The glTF JSON chunk of a `.glb`, or undefined when the file is not a GLB this can read. */
+export function readGlbJson(bytes) {
+  return parseGlb(bytes).json;
 }
 
 /**
@@ -311,6 +336,14 @@ function glbProblems(relativePath, json, capabilities) {
   return problems;
 }
 
+function malformedGlbProblem(relativePath, reason) {
+  return {
+    file: relativePath,
+    reason: `is not a readable GLB: ${reason}`,
+    fix: `re-export or replace "${relativePath}" with a valid glTF 2.0 binary asset`,
+  };
+}
+
 function listFiles(directory, relative = '') {
   const files = [];
   for (const entry of readdirSync(join(directory, relative), { withFileTypes: true })) {
@@ -346,6 +379,7 @@ export function findNativeAssetProblems(directory, capabilities = NO_DECODERS) {
     try {
       bytes = readFileSync(join(directory, file));
     } catch {
+      if (isGlb) problems.push(malformedGlbProblem(file, 'the file could not be read'));
       continue;
     }
     if (isAudio) {
@@ -353,8 +387,9 @@ export function findNativeAssetProblems(directory, capabilities = NO_DECODERS) {
       if (problem !== undefined) problems.push(problem);
       continue;
     }
-    const json = readGlbJson(bytes);
-    if (json !== undefined) problems.push(...glbProblems(file, json, capabilities));
+    const parsed = parseGlb(bytes);
+    if (parsed.json !== undefined) problems.push(...glbProblems(file, parsed.json, capabilities));
+    else problems.push(malformedGlbProblem(file, parsed.error));
   }
   return problems;
 }

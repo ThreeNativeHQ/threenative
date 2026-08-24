@@ -391,10 +391,6 @@ size_t liveContextCount() {
 }
 
 AudioContext::AudioContext() {
-    {
-        std::lock_guard<std::mutex> lock(contextRegistryMutex());
-        contextRegistry().push_back(this);
-    }
     destination_ = std::make_unique<AudioDestinationNode>(this);
 
     // Initialize SDL audio
@@ -423,6 +419,13 @@ AudioContext::AudioContext() {
         return;
     }
 
+    // Publish only after every field the lifecycle watch can touch is initialized. The watch is
+    // synchronous on SDL's event-sending thread, so publishing `this` at constructor entry would
+    // let a background event observe a partially constructed stream or state.
+    {
+        std::lock_guard<std::mutex> lock(contextRegistryMutex());
+        contextRegistry().push_back(this);
+    }
     std::cout << "[Audio] AudioContext created (sample rate: " << sampleRate_ << " Hz)" << std::endl;
 }
 
@@ -502,6 +505,11 @@ std::shared_ptr<AudioBuffer> AudioContext::decodeAudioDataSync(const uint8_t* da
 }
 
 void AudioContext::resume() {
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
+    resumeLocked();
+}
+
+void AudioContext::resumeLocked() {
     if (state_ == State::Closed) return;
     if (audioStream_) {
         SDL_ResumeAudioStreamDevice(audioStream_);
@@ -511,6 +519,11 @@ void AudioContext::resume() {
 }
 
 void AudioContext::suspend() {
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
+    suspendLocked();
+}
+
+void AudioContext::suspendLocked() {
     if (state_ == State::Closed) return;
     if (audioStream_) {
         SDL_PauseAudioStreamDevice(audioStream_);
@@ -519,23 +532,30 @@ void AudioContext::suspend() {
 }
 
 void AudioContext::suspendForHost() {
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
     if (state_ == State::Closed) return;
     // A context the game already suspended stays the game's business; the host does not claim it,
     // and so will not resume it later.
     if (state_ == State::Suspended) return;
-    suspend();
+    suspendLocked();
     hostSuspended_ = true;
     std::cout << "[Audio] AudioContext suspended by the host lifecycle" << std::endl;
 }
 
 void AudioContext::resumeForHost() {
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
     if (!hostSuspended_) return;
     hostSuspended_ = false;
     if (state_ == State::Closed) return;
-    resume();
+    resumeLocked();
 }
 
 void AudioContext::close() {
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
+    closeLocked();
+}
+
+void AudioContext::closeLocked() {
     if (state_ == State::Closed) return;
 
     // Signal callback to stop processing first

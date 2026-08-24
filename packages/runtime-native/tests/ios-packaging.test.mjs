@@ -11,6 +11,7 @@ import {
   runIosPackageCli,
   stageIosSimulatorApp,
 } from '../scripts/package-ios.mjs';
+import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
 const roots = [];
 const VALID_PNG = Buffer.from(
@@ -39,12 +40,13 @@ test('staging replaces the bundle and records every packaged game asset checksum
   mkdirSync(join(templateApp, 'game'), { recursive: true });
   mkdirSync(join(assets, 'models'), { recursive: true });
   mkdirSync(join(assets, 'textures'), { recursive: true });
+  const model = minimalGlb();
   writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
   writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
   writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
   writeFileSync(join(templateApp, 'game', 'stale.bin'), 'stale');
   writeFileSync(bundle, 'new-game');
-  writeFileSync(join(assets, 'models', 'level.glb'), 'model');
+  writeFileSync(join(assets, 'models', 'level.glb'), model);
   writeFileSync(join(assets, 'textures', 'x.png'), 'texture');
 
   const report = stageIosSimulatorApp({ assets, bundle, orientation: 'portrait', output, templateApp });
@@ -63,7 +65,7 @@ test('staging replaces the bundle and records every packaged game asset checksum
   assert.deepEqual(report.assets, [
     {
       path: 'models/level.glb',
-      sha256: createHash('sha256').update('model').digest('hex'),
+      sha256: createHash('sha256').update(model).digest('hex'),
     },
     {
       path: 'textures/x.png',
