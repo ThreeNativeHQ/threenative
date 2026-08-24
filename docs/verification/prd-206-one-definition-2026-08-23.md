@@ -350,3 +350,75 @@ Error: /home/joao/projects/threenative/threenative-engine/.worktrees/prd-206-sha
 | `pnpm budgets` | PASS; exit 0, `budgets ok`; existing framework LOC and native census drift notices remain. |
 | `pnpm quality` | PASS; exit 0, 70 findings (11 new, 9 grew, 50 inherited, 0 waived). |
 | `pnpm test` | PASS; exit 0, 198 test files and 1,894 tests passed, including native parity. |
+
+## Repair handoff — navigation unreachable/finished contract — 2026-08-24
+
+The regression constructs a successful planner path whose final waypoint is `1.1 × tolerance`,
+then places the object at the requested target before calling `advance()`. The existing
+reachable case remains at `0.9 × tolerance` across `0.05, 0.1, 0.25, 0.5, 1`.
+
+Red first against `9587a3968beff0d41ab570bf2caee3341ec42584`, before the source repair:
+
+```text
+$ pnpm exec vitest run packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+
+ FAIL  packages/physics/__tests__/navigation-agent.spec.ts > NavigationAgent3D > should not finish an unreachable path after reaching the requested target
+AssertionError: tolerance=0.05: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+Tests 1 failed | 16 passed (17)
+exit=1
+```
+
+After changing `setTargetPosition()` to retain a path only for a reachable plan:
+
+```text
+$ pnpm exec vitest run packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+
+Test Files  1 passed (1)
+Tests  17 passed (17)
+exit=0
+```
+
+Focused cross-package proof:
+
+```text
+$ pnpm exec vitest run packages/core/__tests__/input.spec.ts packages/core/__tests__/replay.spec.ts packages/physics/__tests__/plugin.spec.ts packages/physics/__tests__/navigation-agent.spec.ts --reporter=dot
+
+Test Files  4 passed (4)
+Tests  82 passed (82)
+exit=0
+```
+
+The browser WebGPU navigation scenario passed the requested tolerance sweep. Each run reported
+`targetReachable=true`, `navigationFinished=true`, `pass=true`, and zero console, network, or
+runtime diagnostics:
+
+```text
+$ for tolerance in 0.05 0.1 0.25 0.5 1; do
+    node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/navigation.playtest.json --url "http://127.0.0.1:5180/?navigation&targetDesiredDistance=$tolerance" --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort" --browser-recipe webgpu --headed || exit $?;
+  done
+exit=0
+```
+
+Desktop native navigation remains **unverified**. The native-smoke bundle check passed, but the
+desktop verifier stopped at the missing build artifact:
+
+```text
+$ pnpm native:verify:desktop
+Error: packages/runtime-native/build/tn-linux does not exist; run pnpm native:build
+exit=1
+```
+
+Repository gates:
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS; exit 0. Typecheck covered 16 of 17 workspace projects; Biome checked 939 files with 290 existing complexity warnings and no errors; the full suite passed 197 files and 1,892 tests, with 1 skipped file and 3 skipped tests. |
+| `pnpm budgets` | PASS; exit 0; existing framework LOC trigger and native census drift notices remain. |
+| `pnpm quality` | PASS; exit 0; 70 existing findings (11 new, 9 grew, 50 inherited, 0 waived). |

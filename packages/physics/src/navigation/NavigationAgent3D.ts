@@ -183,7 +183,9 @@ export class NavigationAgent3D {
     this.#finished = false;
     const target = this.#target;
     const plan = this.#planTarget(target, this.targetDesiredDistance);
-    this.#path = plan.path.map((point) => new Vector3(point.x, point.y, point.z));
+    this.#path = plan.reachable
+      ? plan.path.map((point) => new Vector3(point.x, point.y, point.z))
+      : [];
     if (!plan.reachable) {
       this.#crowdAgent?.resetMoveTarget();
     } else if (this.#path.length > 0) {

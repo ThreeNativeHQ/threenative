@@ -104,6 +104,44 @@ describe("NavigationAgent3D", () => {
     }
   });
 
+  it("should not finish an unreachable path after reaching the requested target", () => {
+    for (const tolerance of [0.05, 0.1, 0.25, 0.5, 1]) {
+      const finalDistance = tolerance * 1.1;
+      const navigation = {
+        agents: new Set(),
+        obstacles: new Set(),
+        query: {
+          computePath: () => ({
+            path: [{ x: finalDistance, y: 0, z: 0 }],
+            success: true,
+          }),
+          findClosestPoint: (position: { x: number; y: number; z: number }) => ({
+            point: position,
+            polyRef: position.x > 0 ? 1 : 2,
+            success: true,
+          }),
+        },
+        regions: new Set([{ enabled: true }]),
+      } as unknown as NonNullable<IPhysicsContext["navigation"]>;
+      const object = new Object3D();
+      object.position.set(1, 0, 0);
+      const agent = new NavigationAgent3D({
+        avoidanceEnabled: false,
+        navigation,
+        object,
+        targetDesiredDistance: tolerance,
+      });
+
+      agent.setTargetPosition(new Vector3(0, 0, 0));
+      object.position.set(0, 0, 0);
+      agent.advance();
+
+      expect(agent.isTargetReachable(), `tolerance=${tolerance}`).toBe(false);
+      expect(agent.isNavigationFinished(), `tolerance=${tolerance}`).toBe(false);
+      agent.dispose();
+    }
+  });
+
   it("should reject same-polygon empty or mismatched planner paths across tolerances", () => {
     for (const [label, path] of [
       ["empty", []],
