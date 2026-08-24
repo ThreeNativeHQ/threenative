@@ -6,6 +6,7 @@ import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bindingsPath = join(root, 'src/raytracing/bindings.cpp');
+const scenePath = join(root, 'conformance/scenes/shared/raytracing-refusal.js');
 
 function read(path) {
   return readFileSync(join(root, path), 'utf8');
@@ -37,6 +38,27 @@ export function assertNativeRayTracingGate(source) {
   );
 }
 
+export function assertBrowserRayTracingGate(source) {
+  const capabilityStart = source.indexOf('async function assertBrowserRayTracingCapability()');
+  const capabilityEnd = source.indexOf('\n\nfunction assertNativeRayTracingRefusal()', capabilityStart);
+  if (capabilityStart < 0 || capabilityEnd <= capabilityStart) {
+    throw new Error('RED observed: browser raytracing capability gate missing');
+  }
+  const capability = source.slice(capabilityStart, capabilityEnd);
+  assert.match(capability, /navigator\.gpu/u);
+  assert.match(capability, /requestAdapter\(\)/u);
+  assert.match(capability, /adapter\.features\?\.has\(WEB_RAY_TRACING_FEATURE\)/u);
+  assert.match(capability, /requestDevice\(\{ requiredFeatures: \[WEB_RAY_TRACING_FEATURE\] \}\)/u);
+  assert.match(capability, /TN_WEB_RAYTRACING_UNAVAILABLE/u);
+
+  const browserCall = source.indexOf('await assertBrowserRayTracingCapability()');
+  const visualSurface = source.indexOf('return startVisualScene', browserCall);
+  if (browserCall < 0 || visualSurface <= browserCall) {
+    throw new Error('RED observed: browser raytracing capability is not checked before the surface');
+  }
+  assert.doesNotMatch(source, /target: "web", refused: false/u);
+}
+
 test('native traceRays refuses before any backend can report success', () => {
   const bindings = readFileSync(bindingsPath, 'utf8');
   assertNativeRayTracingGate(bindings);
@@ -44,6 +66,21 @@ test('native traceRays refuses before any backend can report success', () => {
     bindings,
     /kNativeRayTracingResultInteropAvailable = false/u,
     'native ray tracing support must remain unavailable until result interop exists',
+  );
+});
+
+test('browser raytracing conformance checks the web capability before rendering', () => {
+  const scene = readFileSync(scenePath, 'utf8');
+  assertBrowserRayTracingGate(scene);
+});
+
+test('negative control: removing the browser capability check is red', () => {
+  const scene = readFileSync(scenePath, 'utf8');
+  const withoutBrowserCheck = scene.replace('await assertBrowserRayTracingCapability()', 'assertBrowserRayTracingCapability()');
+  assert.notEqual(withoutBrowserCheck, scene, 'the mutation must remove the awaited browser capability check');
+  assert.throws(
+    () => assertBrowserRayTracingGate(withoutBrowserCheck),
+    /RED observed: browser raytracing capability is not checked before the surface/u,
   );
 });
 
@@ -152,6 +189,8 @@ test('registry marks the refusal scene as native-unavailable until readback exis
     },
   );
   const scene = read('conformance/scenes/shared/raytracing-refusal.js');
+  assert.match(scene, /navigator\.gpu/u);
+  assert.match(scene, /WEB_RAY_TRACING_FEATURE/u);
   assert.match(scene, /globalThis\.mystralRT/u);
   assert.match(scene, /TN_NATIVE_RAYTRACING_UNAVAILABLE/u);
   assert.match(scene, /native raytracing refusal:/u);
