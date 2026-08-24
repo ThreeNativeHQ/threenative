@@ -13,7 +13,6 @@ import {
   summarizeMatchingEntries,
 } from "./helpers.js";
 import { evaluateTrivialityGuard, guardedAssertion } from "../triviality-guard.js";
-
 export function emitContactAssertions(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
   const { input, scenarioAssertions } = ctx;
@@ -93,7 +92,6 @@ export function emitContactAssertions(ctx: IEvaluationContext): void {
     }
   }
 }
-
 export function emitSettledAssertions(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
   const { input, scenarioAssertions } = ctx;

@@ -9,9 +9,7 @@ import {
   runtimeAnimationObservations,
   runtimeGameplayBefore,
 } from "./helpers.js";
-
 type AnimationAssertion = NonNullable<IEvaluationContext["scenarioAssertions"]["animation"]>[number];
-
 function animationDiagnostic(entity: string, assertion: AnimationAssertion, trivial: boolean): IPlaytestDiagnostic {
   return {
     code: trivial ? "TN_PLAYTEST_ASSERTION_TRIVIAL" : "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
@@ -24,7 +22,6 @@ function animationDiagnostic(entity: string, assertion: AnimationAssertion, triv
       : "Check model animation clip wiring and runtime animation playback state.",
   };
 }
-
 export function emitOccludedAssertions(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
   const { input, scenarioAssertions } = ctx;
@@ -61,7 +58,6 @@ export function emitOccludedAssertions(ctx: IEvaluationContext): void {
     });
   }
 }
-
 export function emitAnimationAssertions(ctx: IEvaluationContext): void {
   const { assertions, diagnostics, input, scenarioAssertions } = ctx;
   for (const assertion of scenarioAssertions.animation ?? []) {

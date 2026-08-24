@@ -62,3 +62,50 @@ projections for fulfilled and empty evidence cases.
 - Meaningful nonblank/non-comment LOC across the touched production, test, and
   fixture paths decreased from 11,500 to 11,492 (-8), excluding this evidence
   record.
+
+## Repair round 1 — review findings closed
+
+- The physical LOC calculation was rerun against the staged repaired tree with the
+  verification record excluded:
+
+  ```text
+  $ git diff --cached --numstat edbee19fe90c672305568764b98e36620c507e9^ -- ':!docs/verification/prd-200-evaluator-plumbing-2026-08-23.md' | awk 'BEGIN{a=0;d=0;srca=0;srcd=0} {a+=$1;d+=$2;if ($3 ~ /^packages\/playtest\/src\//) {srca+=$1;srcd+=$2}} END{printf "physical LOC excluding verification record: additions=%d deletions=%d net=%d\n",a,d,a-d; printf "packages/playtest/src: additions=%d deletions=%d net=%d\n",srca,srcd,srca-srcd}'
+  physical LOC excluding verification record: additions=987 deletions=988 net=-1
+  packages/playtest/src: additions=704 deletions=716 net=-12
+  ```
+
+- Full pre/post serialized-verdict parity was rerun with the fixture generated from
+  `edbee19fe90c672305568764b98e36620c507e9^`:
+
+  ```text
+  $ pnpm exec vitest run packages/playtest/__tests__/evaluator-semantics.spec.ts -t 'pre/post serialized verdicts'
+  PRD-200 verdict parity: 512 scenarios; diff: empty
+  Test Files 1 passed (1)
+  Tests 1 passed (1)
+  ```
+
+  The test enumerates the same `rg --files -g '*.playtest.json' -g '!**/.worktrees/**'`
+  inventory, requires all 512 paths in the fixture, and compares the complete
+  serialized `{ assertions, diagnostics }` projection byte-for-byte.
+
+- Focused evaluator/scenario specs after the repair: `pnpm exec vitest run
+  packages/playtest/__tests__/evaluator-semantics.spec.ts
+  packages/playtest/__tests__/runner-orchestration.spec.ts
+  packages/playtest/__tests__/runner.spec.ts
+  packages/playtest/__tests__/scenario.spec.ts
+  packages/playtest/__tests__/setup-reporting.spec.ts` — exit 0, 5 files and 123
+  tests passed. The earlier red mutation evidence above remains unchanged.
+- The package gate was rerun alone after a concurrent first attempt observed a
+  temporary-directory race: `pnpm --filter @threenative/playtest test` — exit 0,
+  no orphans and publint passed. The package build also passed with
+  `pnpm --filter @threenative/playtest build`.
+
+## Required repair gates
+
+- `pnpm typecheck` — exit 0; all 16 participating workspace projects passed.
+- `pnpm lint` — exit 0; 295 inherited complexity warnings, no errors.
+- `pnpm budgets` — exit 0; capability docs, generated references, and budgets passed;
+  existing framework LOC and native census notices remained informational.
+- `pnpm quality` — exit 0; 68 findings (11 new, 9 grew, 48 inherited, 0 waived).
+- `pnpm test:playtest` — exit 0; all four browser scenarios passed with
+  `pass: true`, NVIDIA WebGPU adapter evidence, and no assertion failures.

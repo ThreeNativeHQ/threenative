@@ -1,6 +1,5 @@
 import type { IEvaluationContext } from "./context.js";
 import { evaluateVisibilityAssertion } from "./helpers.js";
-
 export function emitMovementVisibility(ctx: IEvaluationContext): void {
   const { assertions, diagnostics, input, scenarioAssertions } = ctx;
   for (const assertion of scenarioAssertions.visibility ?? []) {

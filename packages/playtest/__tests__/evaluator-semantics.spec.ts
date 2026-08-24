@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-
 import { evaluateRichPlaytestAssertions } from "../src/assertion-evaluators.js";
 import { MOVEMENT_EVIDENCE_KINDS, MOVEMENT_EVALUATORS } from "../src/evaluators/movement-evidence.js";
 import type { IPlaytestScenario } from "../src/scenario.js";
@@ -10,7 +11,6 @@ import type { IPlaytestScenario } from "../src/scenario.js";
 // and result ordering - so the Phase 2 file split cannot disturb them unnoticed. Behavior
 // that looks wrong (e.g. tags passing with count 0) is pinned AS IS; fixing behavior is
 // explicitly NOT this PRD. Every expected value below was captured from the unsplit module.
-
 const base = {
   consoleErrors: 0,
   diagnostics: [],
@@ -21,14 +21,12 @@ const base = {
   trivialityOptOuts: [],
   observations: { console: [], hud: {}, network: [], resources: {} },
 };
-
 function evaluate(assert_: IPlaytestScenario["assert"], extra: object = {}) {
   return evaluateRichPlaytestAssertions({
     report: { ...base, ...extra } as never,
     scenario: { assert: assert_, name: "c", schemaVersion: 1, steps: [{ release: true, waitTicks: 1 }] } as never,
   });
 }
-
 describe("evaluator semantics (characterization)", () => {
   test("the guard has one definition and movement kinds have one dispatch entry", async () => {
     const root = new URL("../src/", import.meta.url);
@@ -40,7 +38,21 @@ describe("evaluator semantics (characterization)", () => {
     expect(matches).toEqual([{ count: 1, path: "triviality-guard.ts" }]);
     expect(Object.keys(MOVEMENT_EVALUATORS).sort()).toEqual([...MOVEMENT_EVIDENCE_KINDS].sort());
   });
-
+  test("pre/post serialized verdicts match for every in-repo scenario", async () => {
+    const golden = JSON.parse(await readFile(new URL("./fixtures/prd-200-verdicts.json", import.meta.url), "utf8"));
+    const paths = execFileSync("rg", ["--files", "-g", "*.playtest.json", "-g", "!**/.worktrees/**"], { encoding: "utf8" }).trim().split("\n").filter(Boolean).sort();
+    expect({ source: golden.source, paths }).toEqual({ source: "edbee19fe90c672305568764b98e36620c507e9^", paths: golden.scenarios });
+    expect(Object.keys(golden.verdicts).sort()).toEqual(paths);
+    const report = { consoleErrors: 0, diagnostics: [], distance: 0, entity: "player", expectMoved: false, frames: 1, trivialityOptOuts: [], observations: { console: [], hud: {}, network: [], resources: {} } } as never;
+    const diffs: string[] = [];
+    for (const path of paths) {
+      const parsed = JSON.parse(await readFile(join(process.cwd(), path), "utf8"));
+      const scenario = { ...parsed, name: parsed.name ?? path, target: parsed.target ?? "web", schemaVersion: parsed.schemaVersion ?? 1, steps: parsed.steps ?? [], viewport: parsed.viewport ?? { height: 720, width: 1280 }, sourcePath: path } as never;
+      if (JSON.stringify(evaluateRichPlaytestAssertions({ report, scenario })) !== golden.verdicts[path]) diffs.push(path);
+    }
+    console.log(`PRD-200 verdict parity: ${paths.length} scenarios; diff: ${diffs.length === 0 ? "empty" : diffs.join(",")}`);
+    expect(diffs).toEqual([]);
+  });
   test("movement pins its verdict id and minimum-distance details", () => {
     const result = evaluate(
       { movement: { entity: "player", minDistance: 1 } } as never,
@@ -59,7 +71,6 @@ describe("evaluator semantics (characterization)", () => {
     expect(result.assertions[1]?.details).toEqual({ distance: 2, entity: "player", minimum: 1 });
     expect(result.diagnostics).toEqual([]);
   });
-
   test("movement treats distance exactly equal to the minimum as passing", () => {
     // Boundary pin: >= not >. A flipped comparison must turn this row red.
     const atMinimum = evaluate(
@@ -86,7 +97,6 @@ describe("evaluator semantics (characterization)", () => {
     );
     expect(below.assertions.find(({ id }) => id === "movement.distance")?.pass).toBe(false);
   });
-
   test("world without a seed observation fails with its three-field detail shape", () => {
     const result = evaluate({ world: {} } as never);
     expect(result.assertions).toEqual([
@@ -108,7 +118,6 @@ describe("evaluator semantics (characterization)", () => {
     ]);
     expect(result.diagnostics.map(({ code }) => code)).toEqual(["TN_PLAYTEST_WORLD_ASSERTION_FAILED"]);
   });
-
   test("states require terminal evidence even when the state already matches", () => {
     const result = evaluate(
       { states: [{ entity: "enemy", states: ["chase"] }] } as never,
@@ -133,7 +142,6 @@ describe("evaluator semantics (characterization)", () => {
     });
     expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_STATE_ASSERTION_FAILED");
   });
-
   test("a resource assertion with no rich evaluator registers as not-evaluated, never skipped", () => {
     const result = evaluate({ resources: [{ resources: ["gold"], type: "present" }] } as never);
     expect(result.assertions.find(({ id }) => id === "assert.resources")).toEqual({

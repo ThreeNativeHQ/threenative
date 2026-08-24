@@ -16,13 +16,10 @@ import {
   rotationDelta,
   tiltDegrees,
 } from "./helpers.js";
-
 type MovementDetails = NonNullable<IPlaytestAssertionResult["details"]>;
-
 function movementFailure(code: string, message: string, suggestion: string): IPlaytestDiagnostic {
   return { code, message, severity: "error", suggestion };
 }
-
 export function emitMovementAssertions(ctx: IEvaluationContext): void {
   const { assertions, diagnostics, input, scenarioAssertions } = ctx;
   const movement = scenarioAssertions.movement;
@@ -33,7 +30,6 @@ export function emitMovementAssertions(ctx: IEvaluationContext): void {
   };
   const entity = movement.entity ?? input.scenario.subject ?? input.report.entity;
   const movementEntity = movement.entity ?? input.report.entity;
-
   if (movement.minVelocity !== undefined) {
     const velocity = input.report.frames <= 0 ? 0 : input.report.distance / input.report.frames;
     const pass = velocity >= movement.minVelocity;

@@ -11,7 +11,6 @@ import { emitMovementAssertions } from "./movement-kinematics.js";
 import { emitAnimationAssertions, emitOccludedAssertions } from "./movement-events.js";
 import { emitContactAssertions, emitSettledAssertions } from "./movement-physics.js";
 import { emitMovementVisibility } from "./movement-visibility.js";
-
 export const MOVEMENT_EVIDENCE_KINDS = [
   "movement",
   "visibility",
@@ -20,10 +19,8 @@ export const MOVEMENT_EVIDENCE_KINDS = [
   "occluded",
   "animation",
 ] as const;
-
 export type MovementEvidenceKind = typeof MOVEMENT_EVIDENCE_KINDS[number];
 type MovementEvaluator = (ctx: IEvaluationContext) => void;
-
 export const MOVEMENT_EVALUATORS: Readonly<Record<MovementEvidenceKind, MovementEvaluator>> = {
   animation: emitAnimationAssertions,
   contacts: emitContactAssertions,
@@ -32,7 +29,6 @@ export const MOVEMENT_EVALUATORS: Readonly<Record<MovementEvidenceKind, Movement
   settled: emitSettledAssertions,
   visibility: emitMovementVisibility,
 };
-
 function emitDiagnostics(ctx: IEvaluationContext): void {
   const { assertions, diagnostics, input, scenarioAssertions } = ctx;
   const diagnosticsPolicy = resolveDiagnosticsPolicy(scenarioAssertions.diagnostics);
@@ -49,7 +45,6 @@ function emitDiagnostics(ctx: IEvaluationContext): void {
     pass: policyDiagnostics.length === 0,
   });
 }
-
 export function emitMovementEvidence(ctx: IEvaluationContext): void {
   emitDiagnostics(ctx);
   for (const kind of MOVEMENT_EVIDENCE_KINDS) {
