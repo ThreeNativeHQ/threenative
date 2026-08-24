@@ -18,7 +18,49 @@ The focused consistency spec passed after restoration:
 ```text
 pnpm exec vitest run --config vitest.config.ts packages/create-threenative/__tests__/loading-screen.spec.ts --reporter=dot
 Test Files  1 passed (1)
-Tests       18 passed (18)
+Tests       19 passed (19)
+```
+
+## Review-round repair
+
+`loading-screen.spec.ts` now calls `createProject` against an isolated copy of the templates and a
+uniquely mutated canonical loading source. The generated platformer scaffold must contain the
+mutation and retain the platformer's loading appearance block.
+
+The required negative control removed the live `stampTemplateLoading` call from
+`packages/create-threenative/src/index.ts`. The focused test went red at the scaffold assertion:
+
+```text
+FAIL ... propagates a canonical edit through createProject while retaining the kit appearance
+AssertionError: expected ... to contain 'function canonicalReviewRoundMeshFor('
+Tests       1 failed | 18 passed (19)
+RED_CONTROL_EXIT=1
+```
+
+After restoring the live call, the same command was green:
+
+```text
+pnpm exec vitest run --config vitest.config.ts packages/create-threenative/__tests__/loading-screen.spec.ts --reporter=dot
+
+Test Files  1 passed (1)
+Tests       19 passed (19)
+```
+
+Repair-round checks were also green:
+
+```text
+pnpm --filter create-threenative typecheck
+exit 0
+
+pnpm --filter create-threenative test
+All good!
+
+pnpm exec vitest run --config vitest.config.ts packages/create-threenative/__tests__ --reporter=dot
+Test Files  23 passed (23)
+Tests      250 passed (250)
+
+sh scripts/xvfb.sh pnpm exec tsx scripts/verify-one-template.ts platformer
+platformer: scaffolded playtests passed
 ```
 
 The independent source check reported:
@@ -94,7 +136,7 @@ Passed:
 - `pnpm lint` — exit 0; it reported 291 existing warnings and no errors.
 - `pnpm --filter create-threenative typecheck` — exit 0.
 - `pnpm exec vitest run --config vitest.config.ts packages/create-threenative/__tests__` — 23 test
-  files and 249 tests passed.
+  files and 250 tests passed.
 - `pnpm exec tsx scripts/verify-one-template.ts starter` under the repository Xvfb wrapper — the
   isolated starter scaffold passed all playtests.
 

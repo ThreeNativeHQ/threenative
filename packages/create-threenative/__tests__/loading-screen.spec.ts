@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { cp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type Mesh,
@@ -9,7 +9,8 @@ import {
   Texture,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { canonicalLoadingPath, stampLoadingSource } from "../src/index.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { canonicalLoadingPath, createProject, stampLoadingSource } from "../src/index.js";
 import { createLoadingScreen, loading } from "../templates/platformer/src/render/loading.js";
 
 const templateRoot = path.resolve("packages/create-threenative/templates");
@@ -96,6 +97,38 @@ describe("template loading screen", () => {
 
     expect(stampLoadingSource(edited, source)).toContain("function canonicalMeshFor(");
     expect(stampLoadingSource(edited, source)).toContain("maxWidth: 1200");
+  });
+
+  it("propagates a canonical edit through createProject while retaining the kit appearance", async () => {
+    const root = await makeTempDir("threenative-loading-scaffold-");
+    const stagedTemplates = path.join(root, "templates");
+    await cp(templateRoot, stagedTemplates, { recursive: true });
+    await cp(path.join(templateRoot, "..", "template-assets"), path.join(root, "template-assets"), {
+      recursive: true,
+    });
+    await cp(path.join(templateRoot, "..", "agent-docs"), path.join(root, "agent-docs"), {
+      recursive: true,
+    });
+
+    const canonicalPath = path.join(root, "template-assets", "loading.ts");
+    const canonical = await readFile(canonicalPath, "utf8");
+    const mutation = "function canonicalReviewRoundMeshFor(";
+    await writeFile(canonicalPath, canonical.replace("function meshFor(", mutation));
+
+    const templateSource = await readFile(loadingPath("platformer"), "utf8");
+    const appearance = templateSource.match(
+      /\/\* BEGIN THREENATIVE LOADING APPEARANCE \*\/[\s\S]*?\/\* END THREENATIVE LOADING APPEARANCE \*\//u,
+    )?.[0];
+    expect(appearance).toBeDefined();
+
+    const { target } = await createProject(
+      { install: false, target: "generated", template: "platformer" },
+      root,
+      stagedTemplates,
+    );
+    const generated = await readFile(path.join(target, "src/render/loading.ts"), "utf8");
+    expect(generated).toContain(mutation);
+    expect(generated).toContain(appearance as string);
   });
 
   it("draws opaque quads only in the independent canvas layer", () => {
