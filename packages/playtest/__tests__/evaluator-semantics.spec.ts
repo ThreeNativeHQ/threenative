@@ -29,9 +29,12 @@ function evaluate(assert_: IPlaytestScenario["assert"], extra: object = {}) {
     scenario: { assert: assert_, name: "c", schemaVersion: 1, steps: [{ release: true, waitTicks: 1 }] } as never,
   });
 }
-
+const observations = (extra: object = {}) => ({ ...base.observations, ...extra });
+const movementReport = (minimum: number, distance = 2) => evaluate(
+  { movement: { entity: "player", minDistance: minimum } } as never,
+  { after: { position: [distance, 0, 0], tick: 3 }, before: { position: [0, 0, 0], tick: 0 }, distance, expectMoved: true, movementDelta: [distance, 0, 0] },
+);
 const TRIVIALITY_GUARD_OWNER = "triviality-guard.ts";
-
 function referencesAllowTrivial(node: ts.Node, aliases: ReadonlySet<string> = new Set()): boolean {
   if (ts.isIdentifier(node)) return node.text === "allowTrivial" || aliases.has(node.text);
   if (ts.isPropertyAccessExpression(node)) {
@@ -47,9 +50,7 @@ function referencesAllowTrivial(node: ts.Node, aliases: ReadonlySet<string> = ne
   }
   return false;
 }
-
-function findTrivialityPredicates(source: string, path: string): number {
-  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+function collectAllowTrivialAliases(file: ts.SourceFile): Set<string> {
   const aliases = new Set<string>();
   let aliasesChanged = true;
   while (aliasesChanged) {
@@ -69,6 +70,11 @@ function findTrivialityPredicates(source: string, path: string): number {
     };
     collect(file);
   }
+  return aliases;
+}
+function findTrivialityPredicates(source: string, path: string): number {
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const aliases = collectAllowTrivialAliases(file);
   let count = 0;
   const visit = (node: ts.Node): void => {
     if (ts.isTypeOfExpression(node) && referencesAllowTrivial(node.expression, aliases)) count += 1;
@@ -77,25 +83,73 @@ function findTrivialityPredicates(source: string, path: string): number {
   visit(file);
   return count;
 }
-
+function contains(node: ts.Node, predicate: (node: ts.Node) => boolean): boolean {
+  if (predicate(node)) return true;
+  let found = false;
+  ts.forEachChild(node, (child) => {
+    if (!found && contains(child, predicate)) found = true;
+  });
+  return found;
+}
+function isNegatedTrivial(node: ts.Node): boolean {
+  return ts.isPrefixUnaryExpression(node)
+    && node.operator === ts.SyntaxKind.ExclamationToken
+    && ts.isIdentifier(node.operand)
+    && node.operand.text === "trivial";
+}
+function isTrivialityOptOut(node: ts.Node, aliases: ReadonlySet<string>): boolean {
+  if (ts.isIdentifier(node) && node.text === "trivialityOptOut") return true;
+  if (ts.isTypeOfExpression(node) && referencesAllowTrivial(node.expression, aliases)) return true;
+  return ts.isCallExpression(node)
+    && ts.isIdentifier(node.expression)
+    && node.expression.text === "isStringValue"
+    && node.arguments.some((argument) => referencesAllowTrivial(argument, aliases));
+}
+function findTrivialityEnforcements(source: string, path: string): number {
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const aliases = collectAllowTrivialAliases(file);
+  let count = 0;
+  const visit = (node: ts.Node): void => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+      const operands = [node.left, node.right];
+      const comparison = operands.find((operand) => ts.isIdentifier(operand) && operand.text === "comparisonPass");
+      const guard = operands.find((operand) => contains(operand, isNegatedTrivial));
+      if (comparison !== undefined && guard !== undefined && contains(guard, (child) => isTrivialityOptOut(child, aliases))) count += 1;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return count;
+}
+function scanGuardSources(files: Array<{ path: string; source: string }>) {
+  return files
+    .map(({ path, source }) => ({
+      enforcementCount: findTrivialityEnforcements(source, path),
+      path,
+      predicateCount: findTrivialityPredicates(source, path),
+    }))
+    .filter(({ enforcementCount, predicateCount }) => enforcementCount > 0 || predicateCount > 0);
+}
 function scanInlineTrivialityPredicates(files: Array<{ path: string; source: string }>) {
   return files
     .filter(({ path }) => path !== TRIVIALITY_GUARD_OWNER)
     .map(({ path, source }) => ({ count: findTrivialityPredicates(source, path), path }))
     .filter(({ count }) => count > 0);
 }
-
-function parityHash(path: string): number {
-  return [...path].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % 997, 17);
-}
-
-function paritySnapshot(entity: string, position: [number, number, number], tick: number) {
-  return {
-    clock: { mode: "fixed-step" as const, tick },
-    ...(entity === "" ? {} : { entities: [{ id: entity, transform: { position }, visible: true }] }),
-  };
-}
-
+const PARITY_CONFIG = {
+  allowSoftwareAdapter: true,
+  artifactDirectory: "artifacts/prd-200-parity",
+  headless: true,
+  projectPath: process.cwd(),
+  timeoutMs: 1,
+  trace: false,
+  url: "http://127.0.0.1:1",
+};
+const parityHash = (path: string) => [...path].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % 997, 17);
+const paritySnapshot = (entity: string, position: [number, number, number], tick: number) => ({
+  clock: { mode: "fixed-step" as const, tick },
+  ...(entity === "" ? {} : { entities: [{ id: entity, transform: { position }, visible: true }] }),
+});
 function buildParityReport(path: string, scenario: IPlaytestScenario) {
   const movement = scenario.assert?.movement;
   const entity = movement?.entity ?? scenario.subject ?? "";
@@ -103,26 +157,13 @@ function buildParityReport(path: string, scenario: IPlaytestScenario) {
   const tick = parityHash(path);
   const beforeSnapshot = paritySnapshot(entity, [0, 0, 0], tick);
   const afterSnapshot = paritySnapshot(entity, [distance, 0, 0], tick + 1);
-  const anonymousMovement = movement !== undefined && movement.entity === undefined && scenario.subject === undefined;
-  const movementSamples = anonymousMovement
-    ? [
-        { after: paritySnapshot("player", [0, 0, 0], tick), before: paritySnapshot("player", [0, 0, 0], tick - 1), inputDriven: false },
-        { after: paritySnapshot("player", [distance, 0, 0], tick + 1), before: paritySnapshot("player", [0, 0, 0], tick), inputDriven: true },
-      ]
+  const movementSamples = movement !== undefined && movement.entity === undefined && scenario.subject === undefined
+    ? [{ after: paritySnapshot("player", [0, 0, 0], tick), before: paritySnapshot("player", [0, 0, 0], tick - 1), inputDriven: false }, { after: paritySnapshot("player", [distance, 0, 0], tick + 1), before: paritySnapshot("player", [0, 0, 0], tick), inputDriven: true }]
     : [];
   return buildReport({
     afterSnapshot,
     beforeSnapshot,
-    config: {
-      allowSoftwareAdapter: true,
-      artifactDirectory: "artifacts/prd-200-parity",
-      headless: true,
-      projectPath: process.cwd(),
-      scenarioPath: path,
-      timeoutMs: 1,
-      trace: false,
-      url: "http://127.0.0.1:1",
-    } as never,
+    config: { ...PARITY_CONFIG, scenarioPath: path },
     consoleEntries: [],
     movementSamples,
     networkEntries: [],
@@ -130,21 +171,24 @@ function buildParityReport(path: string, scenario: IPlaytestScenario) {
     scenario,
   });
 }
-
-function projectReport(report: { assertionResults?: unknown; diagnostics: unknown }): string {
-  return JSON.stringify({ assertions: report.assertionResults ?? [], diagnostics: report.diagnostics });
-}
-
+const projectReport = (report: { assertionResults?: unknown; diagnostics: unknown }) => JSON.stringify({ assertions: report.assertionResults ?? [], diagnostics: report.diagnostics });
 describe("evaluator semantics (characterization)", () => {
   test("the guard has one definition and movement kinds have one dispatch entry", async () => {
     const root = new URL("../src/", import.meta.url);
-    const matches = (await Promise.all((await readdir(root, { recursive: true }))
+    const sources = await Promise.all((await readdir(root, { recursive: true }))
       .filter((path) => path.endsWith(".ts"))
-      .map(async (path) => ({ path, source: await readFile(new URL(path, root), "utf8") }))))
-      .map(({ path, source }) => ({ count: findTrivialityPredicates(source, path), path }))
-      .filter(({ count }) => count > 0);
-    expect(matches).toEqual([{ count: 1, path: "triviality-guard.ts" }]);
+      .map(async (path) => ({ path, source: await readFile(new URL(path, root), "utf8") })));
+    expect(scanGuardSources(sources)).toEqual([{ enforcementCount: 1, path: TRIVIALITY_GUARD_OWNER, predicateCount: 1 }]);
     expect(Object.keys(MOVEMENT_EVALUATORS).sort()).toEqual([...MOVEMENT_EVIDENCE_KINDS].sort());
+  });
+  test("guard source mutations fail the uniqueness gate", async () => {
+    const ownerSource = await readFile(new URL("../src/triviality-guard.ts", import.meta.url), "utf8");
+    const expected = [{ enforcementCount: 1, path: TRIVIALITY_GUARD_OWNER, predicateCount: 1 }];
+    const helperDuplicate = `${ownerSource}\nconst duplicate = (comparisonPass: boolean, trivial: boolean, allowTrivial: unknown) => comparisonPass && (!trivial || isStringValue(allowTrivial));`;
+    const enforcementRemoved = ownerSource.replace("pass: comparisonPass && (!trivial || trivialityOptOut)", "pass: comparisonPass");
+    expect(enforcementRemoved).not.toBe(ownerSource);
+    expect(scanGuardSources([{ path: TRIVIALITY_GUARD_OWNER, source: helperDuplicate }])).not.toEqual(expected);
+    expect(scanGuardSources([{ path: TRIVIALITY_GUARD_OWNER, source: enforcementRemoved }])).not.toEqual(expected);
   });
   test.each([
     `const duplicate = (assertion: { allowTrivial?: unknown }) => typeof assertion.allowTrivial === 'string';`,
@@ -173,12 +217,7 @@ describe("evaluator semantics (characterization)", () => {
     expect(diffs).toEqual([]);
   });
   test("parity rejects bypassing production report assembly", () => {
-    const scenario = {
-      name: "build-report-red-control",
-      schemaVersion: 1,
-      steps: [{ release: true, waitTicks: 1 }],
-      assert: { movement: { entity: "player", minDistance: 1 } },
-    } as never;
+    const scenario = { name: "build-report-red-control", schemaVersion: 1, steps: [{ release: true, waitTicks: 1 }], assert: { movement: { entity: "player", minDistance: 1 } } } as never;
     const assembled = buildParityReport("red-control.playtest.json", scenario);
     const bypassed = evaluateRichPlaytestAssertions({ report: { ...base, entity: "player" } as never, scenario });
     expect(assembled.assertionResults?.find(({ id }) => id === "movement.distance")?.pass).toBe(true);
@@ -186,16 +225,7 @@ describe("evaluator semantics (characterization)", () => {
     expect(projectReport(assembled)).not.toBe(JSON.stringify(bypassed));
   });
   test("movement pins its verdict id and minimum-distance details", () => {
-    const result = evaluate(
-      { movement: { entity: "player", minDistance: 1 } } as never,
-      {
-        expectMoved: true,
-        before: { position: [0, 0, 0], tick: 0 },
-        after: { position: [2, 0, 0], tick: 3 },
-        movementDelta: [2, 0, 0],
-        distance: 2,
-      },
-    );
+    const result = movementReport(1);
     expect(result.assertions.map(({ id, pass }) => ({ id, pass }))).toEqual([
       { id: "diagnostics", pass: true },
       { id: "movement.distance", pass: true },
@@ -205,28 +235,9 @@ describe("evaluator semantics (characterization)", () => {
   });
   test("movement treats distance exactly equal to the minimum as passing", () => {
     // Boundary pin: >= not >. A flipped comparison must turn this row red.
-    const atMinimum = evaluate(
-      { movement: { entity: "player", minDistance: 2 } } as never,
-      {
-        expectMoved: true,
-        before: { position: [0, 0, 0], tick: 0 },
-        after: { position: [2, 0, 0], tick: 3 },
-        movementDelta: [2, 0, 0],
-        distance: 2,
-      },
-    );
+    const atMinimum = movementReport(2);
     expect(atMinimum.assertions.find(({ id }) => id === "movement.distance")?.pass).toBe(true);
-
-    const below = evaluate(
-      { movement: { entity: "player", minDistance: 3 } } as never,
-      {
-        expectMoved: true,
-        before: { position: [0, 0, 0], tick: 0 },
-        after: { position: [2, 0, 0], tick: 3 },
-        movementDelta: [2, 0, 0],
-        distance: 2,
-      },
-    );
+    const below = movementReport(3);
     expect(below.assertions.find(({ id }) => id === "movement.distance")?.pass).toBe(false);
   });
   test("world without a seed observation fails with its three-field detail shape", () => {
@@ -254,13 +265,7 @@ describe("evaluator semantics (characterization)", () => {
     const result = evaluate(
       { states: [{ entity: "enemy", states: ["chase"] }] } as never,
       {
-        observations: {
-          console: [],
-          hud: {},
-          network: [],
-          resources: {},
-          runtimeObservations: { gameplay: { states: { enemy: "chase" } } },
-        },
+        observations: observations({ runtimeObservations: { gameplay: { states: { enemy: "chase" } } } }),
       },
     );
     const states = result.assertions.find(({ id }) => id === "states.enemy");
@@ -283,22 +288,13 @@ describe("evaluator semantics (characterization)", () => {
     });
     expect(result.diagnostics.map(({ code }) => code)).toEqual(["TN_PLAYTEST_ASSERTION_NOT_EVALUATED"]);
   });
-
   test("a blank capture fails the declared visual rows instead of passing them", () => {
     // Decided 2026-08-23: green rows for unevaluated assertions are the v1 dropped-assertion
     // shape this package fails closed against; a capture failure is a missing observation.
     const result = evaluate(
       { visual: [{ frameDiff: { minChangedPixelRatio: 0.01 } }] } as never,
       {
-        observations: {
-          console: [],
-          hud: {},
-          network: [],
-          resources: {},
-          visual: {
-            captureFailure: { code: "TN_CAPTURE_BLANK", label: "after.png", reason: "uniform" },
-          },
-        },
+        observations: observations({ visual: { captureFailure: { code: "TN_CAPTURE_BLANK", label: "after.png", reason: "uniform" } } }),
       },
     );
     const row = result.assertions.find(({ id }) => id === "visual.0");
@@ -311,7 +307,6 @@ describe("evaluator semantics (characterization)", () => {
       "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
     );
   });
-
   test("empty assertion arrays register as not-evaluated per family, in family order", () => {
     const result = evaluate({ hud: [], resources: [], visual: [] } as never);
     const summary = result.assertions.map((entry) => ({ id: entry.id, pass: entry.pass }));
@@ -322,7 +317,6 @@ describe("evaluator semantics (characterization)", () => {
     ]);
     expect(result.diagnostics.filter((d) => d.code === "TN_PLAYTEST_ASSERTION_NOT_EVALUATED")).toHaveLength(3);
   });
-
   test("composite scenarios keep a stable assertion order across families", () => {
     const result = evaluate(
       {
@@ -330,16 +324,10 @@ describe("evaluator semantics (characterization)", () => {
         world: {},
       } as never,
       {
-        observations: {
-          console: [],
-          hud: {},
-          network: [],
-          resources: {},
-          entityTransforms: {
-            a: { position: [0, 0, 0], scale: [1, 1, 1] },
-            b: { position: [1, 0, 0], scale: [1, 1, 1] },
-          },
-        },
+        observations: observations({ entityTransforms: {
+          a: { position: [0, 0, 0], scale: [1, 1, 1] },
+          b: { position: [1, 0, 0], scale: [1, 1, 1] },
+        } }),
       },
     );
     expect(result.assertions.map(({ id }) => id)).toEqual([
@@ -352,20 +340,13 @@ describe("evaluator semantics (characterization)", () => {
       "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
     ]);
   });
-
   test("framebuffer coverage pins its diagnostic ladder in priority order", () => {
     const unreadable = evaluate(
       {
         framebufferCoverage: { backdrop: [0, 0, 0], tolerance: 0, window: { endStep: "x", startStep: "x" } },
       } as never,
       {
-        observations: {
-          console: [],
-          framebufferCoverage: { unreadableReason: "no readback" },
-          hud: {},
-          network: [],
-          resources: {},
-        },
+        observations: observations({ framebufferCoverage: { unreadableReason: "no readback" } }),
       },
     );
     expect(unreadable.diagnostics[0]?.code).toBe("TN_PLAYTEST_FRAMEBUFFER_PIXELS_UNREADABLE");
@@ -375,18 +356,11 @@ describe("evaluator semantics (characterization)", () => {
         framebufferCoverage: { backdrop: [0, 0, 0], tolerance: 0, window: { endStep: "x", startStep: "x" } },
       } as never,
       {
-        observations: {
-          console: [],
-          framebufferCoverage: { frameCount: 3, windowCompleted: false, windowStarted: true },
-          hud: {},
-          network: [],
-          resources: {},
-        } as never,
+        observations: observations({ framebufferCoverage: { frameCount: 3, windowCompleted: false, windowStarted: true } }) as never,
       },
     );
     expect(windowMissing.diagnostics[0]?.code).toBe("TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED");
   });
-
   test("a camera-only scenario with nothing observed reports no evaluated assertions", () => {
     const result = evaluate({ camera: { follow: true, entity: "player" } } as never, {
       follow: { offset: [0, 2, 5] },

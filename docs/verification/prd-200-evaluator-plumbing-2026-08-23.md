@@ -202,3 +202,63 @@ projections for fulfilled and empty evidence cases.
   `succeeded (exit 0)`; no generated-file drift remained outside the five explicit
   repair paths.
   Its package build and publint checks also passed.
+
+## Repair round 3 — enforcement uniqueness and net-negative repair (2026-08-24)
+
+- The previous `typeof allowTrivial`-only gate was reproduced false-green before
+  the fix. Appending a helper-shaped duplicate to
+  `packages/playtest/src/triviality-guard.ts` left the gate green (`Test Files 1
+  passed (1)`), and replacing the real `pass: comparisonPass && (!trivial ||
+  trivialityOptOut)` enforcement with `pass: comparisonPass` also left it green
+  (`Test Files 1 passed (1)`).
+- The repaired source-derived scanner now requires one owner-file enforcement
+  and one owner-file predicate. The permanent mutation controls went red for
+  both mutations:
+
+  ```text
+  helper duplicate: expected enforcementCount 1, received 2
+  enforcement removal: expected enforcementCount 1, received 0
+  ```
+
+- Focused evaluator/orchestration and report suite:
+
+  ```text
+  $ pnpm exec vitest run packages/playtest/__tests__/evaluator-semantics.spec.ts packages/playtest/__tests__/runner-orchestration.spec.ts packages/playtest/__tests__/runner.spec.ts packages/playtest/__tests__/scenario.spec.ts packages/playtest/__tests__/setup-reporting.spec.ts
+  Test Files 5 passed (5)
+  Tests 129 passed (129)
+  PRD-200 verdict parity: 512 scenarios; diff: empty
+  ```
+
+- Final implementation/test LOC evidence, excluding this verification record:
+
+  ```text
+  $ git diff --numstat linchpin/batch-2026-08-23-base -- ':!docs/verification/prd-200-evaluator-plumbing-2026-08-23.md' | awk '{a+=$1; d+=$2} END {printf "additions=%d deletions=%d net=%d\n", a, d, a-d}'
+  additions=1061 deletions=1067 net=-6
+  ```
+
+- `pnpm --filter @threenative/playtest build` — exit 0; tsup, declarations, and
+  publint passed.
+- `pnpm typecheck` — exit 0 across all 16 participating workspace projects.
+- `pnpm lint` — exit 0; 295 inherited complexity warnings, no errors.
+- `pnpm budgets` — exit 0; existing framework LOC and native census notices
+  remained informational.
+- `pnpm quality` — exit 0; 68 findings (11 new, 9 grew, 48 inherited, 0 waived).
+- One real browser playtest passed in isolation:
+
+  ```text
+  $ sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtest/moves.json --url http://127.0.0.1:5180 --server-command "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort" --browser-recipe webgpu --headed
+  scenario: framework-movement
+  pass: true
+  movement.distance: 51.57022114931329 (minimum 10)
+  adapter: NVIDIA / Turing WebGPU
+  diagnostics: []
+  exit: 0
+  ```
+
+- The chained `pnpm test:playtest` gate was attempted and exited 137 after its
+  first two browser scenarios passed. The runner was killed by the environment
+  before the remaining scenarios completed; this is recorded as an
+  environment-only blocker, not as a full playtest pass.
+- `pnpm test` — exit 0; `Test Files 198 passed (198)` and `Tests 1891 passed
+  (1891)`. The temporary-directory count was unchanged.
+- No source PRD or unrelated file was edited.

@@ -94,6 +94,11 @@ function labeledScenario(
   };
 }
 
+type TestReportOptions = Partial<Omit<Parameters<typeof buildReport>[0], "config" | "scenario">> & { config?: IStandalonePlaytestConfig };
+function buildTestReport(currentScenario: IPlaytestScenario, { config = CONFIG, consoleEntries = [], networkEntries = [], ...options }: TestReportOptions = {}) {
+  return buildReport({ ...options, config, consoleEntries, networkEntries, scenario: currentScenario });
+}
+
 function report(
   currentScenario: IPlaytestScenario,
   hud: Record<string, { after?: unknown; before?: unknown }> = {},
@@ -102,14 +107,7 @@ function report(
     runtimeReady?: boolean;
   } = {},
 ) {
-  return buildReport({
-    config: CONFIG,
-    consoleEntries: options.consoleEntries ?? [],
-    hud,
-    networkEntries: [],
-    runtimeReady: options.runtimeReady,
-    scenario: currentScenario,
-  });
+  return buildTestReport(currentScenario, { consoleEntries: options.consoleEntries ?? [], hud, runtimeReady: options.runtimeReady });
 }
 
 // Without --enable-features=Vulkan, or headless on a host the browser will not take a GPU
@@ -121,7 +119,7 @@ function reportWithAdapter(
   adapter: Record<string, string>,
   config: IStandalonePlaytestConfig = CONFIG,
 ) {
-  return buildReport({
+  return buildTestReport(scenario(undefined), {
     capture: {
       adapter,
       browserArgs: [],
@@ -131,9 +129,6 @@ function reportWithAdapter(
       viewport: { height: 720, width: 1280 },
     },
     config,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: scenario(undefined),
   });
 }
 
@@ -193,13 +188,9 @@ test("runner records the reason for each triviality opt-out", () => {
     resources: {},
   });
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot(true),
     beforeSnapshot: snapshot(false),
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.pass).toBe(true);
@@ -228,13 +219,9 @@ test("runner records a tag triviality reason while another assertion proves the 
     resources: {},
   });
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot("active"),
     beforeSnapshot: snapshot("idle"),
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.pass).toBe(true);
@@ -257,13 +244,9 @@ test("a scenario with only waived triviality assertions fails closed", () => {
     resources: {},
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot,
     beforeSnapshot: snapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.pass).toBe(false);
@@ -284,17 +267,13 @@ test("framebuffer coverage passes only after observing readable matching frames 
       window: { endStep: "loading", startStep: "loading" },
     },
   });
-  const result = buildReport({
-    config: CONFIG,
-    consoleEntries: [],
+  const result = buildTestReport(currentScenario, {
     framebufferCoverage: {
       boundarySource: "scenario-steps",
       frameCount: 3,
       windowCompleted: true,
       windowStarted: true,
     },
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({
@@ -338,12 +317,8 @@ test.each([
       window: { endStep: "loading", startStep: "loading" },
     },
   });
-  const result = buildReport({
-    config: CONFIG,
-    consoleEntries: [],
+  const result = buildTestReport(currentScenario, {
     framebufferCoverage: observation,
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({
@@ -362,12 +337,7 @@ test("a framebuffer window that was never reached maps to exit code 2", () => {
       window: { endStep: "loading", startStep: "loading" },
     },
   });
-  const result = buildReport({
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
-  });
+  const result = buildTestReport(currentScenario);
 
   expect(result.diagnostics.map(({ code }) => code)).toContain(
     "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED",
@@ -391,13 +361,9 @@ test("visibility can prove a streamed entity is absent or present", () => {
     entities: [{ bounds: { height: 100, width: 100, x: 100, y: 100 }, id: "chunk.7", visible: true }],
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot,
     beforeSnapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.chunk.0", pass: true }));
@@ -412,13 +378,9 @@ test("visibility presence fails when an unloaded entity remains registered", () 
     entities: [{ id: "chunk.0", visible: false }],
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot,
     beforeSnapshot: snapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.chunk.0", pass: false }));
@@ -435,13 +397,9 @@ test("visibility evaluates projected pixels when present is also asserted", () =
     entities: [{ bounds: { height: 100, width: 100, x: 100, y: 100 }, id: "chunk.7", visible: true }],
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot,
     beforeSnapshot: snapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({
@@ -459,13 +417,9 @@ test("rotationChanged falls back to before/after bridge quaternions", () => {
     resources: {},
   });
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot([0, 0.3826834, 0, 0.9238795]),
     beforeSnapshot: snapshot([0, 0, 0, 1]),
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.rotation", pass: true }));
@@ -497,18 +451,14 @@ test("anonymous movement rejects concurrent autonomous motion", () => {
   const inputAfter = snapshot(2, 7, 2);
   const afterSnapshot = snapshot(3, 11, 2);
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot,
     beforeSnapshot,
-    config: CONFIG,
-    consoleEntries: [],
     movementSamples: [
       { after: inputBefore, before: beforeSnapshot, inputDriven: false },
       { after: inputAfter, before: inputBefore, inputDriven: true },
       { after: afterSnapshot, before: inputAfter, inputDriven: false },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.entity).toBe("controlled");
@@ -533,18 +483,14 @@ test("anonymous movement rejects faster autonomous motion", () => {
     clock: { mode: "fixed-step", tick },
     entities: [{ id: "autonomous", transform: { position: [x, 0, 0] }, visible: true }],
   });
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot(3, 4),
     beforeSnapshot: snapshot(0, 0),
-    config: CONFIG,
-    consoleEntries: [],
     movementSamples: [
       { after: snapshot(1, 1), before: snapshot(0, 0), inputDriven: false },
       { after: snapshot(2, 3), before: snapshot(1, 1), inputDriven: true },
       { after: snapshot(3, 4), before: snapshot(2, 3), inputDriven: false },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.entity).toBe("");
@@ -668,18 +614,14 @@ test("anonymous movement rejects constant-speed autonomous render-frame motion",
   const inputAfter = snapshot(96, 96);
   const afterSnapshot = snapshot(112, 112);
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot,
     beforeSnapshot,
-    config: CONFIG,
-    consoleEntries: [],
     movementSamples: [
       { after: inputBefore, before: beforeSnapshot, inputDriven: false },
       { after: inputAfter, before: inputBefore, inputDriven: true },
       { after: afterSnapshot, before: inputAfter, inputDriven: false },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.entity).toBe("");
@@ -709,31 +651,23 @@ test("anonymous movement passes an input-sensitive render-frame candidate and fa
   const inputAfter = snapshot(96, 80);
   const afterSnapshot = snapshot(112, 80);
 
-  const withContrast = buildReport({
+  const withContrast = buildTestReport(currentScenario, {
     afterSnapshot,
     beforeSnapshot,
-    config: CONFIG,
-    consoleEntries: [],
     movementSamples: [
       { after: inputBefore, before: beforeSnapshot, inputDriven: false },
       { after: inputAfter, before: inputBefore, inputDriven: true },
       { after: afterSnapshot, before: inputAfter, inputDriven: false },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(withContrast.pass).toBe(true);
   expect(withContrast.entity).toBe("controlled");
 
-  const withoutContrast = buildReport({
+  const withoutContrast = buildTestReport(currentScenario, {
     afterSnapshot,
     beforeSnapshot,
-    config: CONFIG,
-    consoleEntries: [],
     movementSamples: [{ after: inputAfter, before: inputBefore, inputDriven: true }],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(withoutContrast.distance).toBe(0);
@@ -830,13 +764,9 @@ test("runner carries performance samples in their separate report channel", () =
     ],
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot,
     beforeSnapshot: snapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.observations?.performanceSeries).toEqual(snapshot.runtimeDiagnosticsSeries);
@@ -859,13 +789,9 @@ test("runner keeps performance samples out of visual throughout-frame observatio
     },
   }];
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot,
     beforeSnapshot: snapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
     visual: { runtimeDiagnosticsSeries: visualSeries },
   });
 
@@ -885,13 +811,9 @@ test("runner does not reinterpret the shared series for visual-only scenarios", 
     runtimeDiagnosticsSeries: [{ frameMs: 16, drawCalls: 2, triangles: 12 }],
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot,
     beforeSnapshot: snapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.observations?.visual?.runtimeDiagnosticsSeries).toBeUndefined();
@@ -921,17 +843,13 @@ test("runner derives semantic series from labeled snapshots and the exported fie
     resources: { GameState: { coins } },
   });
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: snapshot(3, 2, 2),
     beforeSnapshot: snapshot(0, 1, 0),
-    config: CONFIG,
-    consoleEntries: [],
     labeledSamples: [
       { label: "first", signals: [{ entity: "player", name: "collected" }], snapshot: snapshot(1, 3, 1) },
       { label: "last", signals: [{ entity: "player", name: "collected" }], snapshot: snapshot(3, 2, 2) },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(STANDALONE_PLAYTEST_OBSERVATION_FIELDS).toContain("resourceSeries");
@@ -973,12 +891,8 @@ test("runner preserves physics debug series for contact and settled assertions",
     physicsDebugSeries,
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.observations?.physicsDebugSeries).toEqual(physicsDebugSeries);
@@ -992,15 +906,11 @@ test("anonymous contact assertions require a retained candidate even for maxCoun
     { contacts: [{ atStep: "contact", maxCount: 0 }] },
     ["contact"],
   );
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: {
       clock: { mode: "fixed-step", tick: 1 },
       physicsDebugSeries: [{ label: "contact", snapshot: { artifact: { primitives: [] } }, tick: 1 }],
     },
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.0", pass: false }));
@@ -1023,7 +933,7 @@ test("anonymous settled assertions choose an observed body cohort", () => {
       ],
     },
   });
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: {
       clock: { mode: "fixed-step", tick: 2 },
       physicsDebugSeries: [
@@ -1031,10 +941,6 @@ test("anonymous settled assertions choose an observed body cohort", () => {
         { label: "settled", snapshot: debugSnapshot(1), tick: 2 },
       ],
     },
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   // Anonymous assertions are identified by their position in the sealed proof, not by the
@@ -1063,7 +969,7 @@ test("terminal anonymous state passes only after retained contact evidence", () 
     clock: { mode: "fixed-step", tick },
     gameplay: gameplay(state),
   });
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: {
       ...snapshot("won", 3),
       physicsDebugSeries: [{
@@ -1072,15 +978,11 @@ test("terminal anonymous state passes only after retained contact evidence", () 
         tick: 2,
       }],
     },
-    config: CONFIG,
-    consoleEntries: [],
     labeledSamples: [
       { label: "before", signals: [], snapshot: snapshot("idle", 1) },
       { label: "goal-contact", signals: [], snapshot: snapshot("won", 2) },
       { label: "after", signals: [], snapshot: snapshot("won", 3) },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "contact.0", pass: true }));
@@ -1110,7 +1012,7 @@ test("terminal anonymous state rejects success that predates retained contact", 
     clock: { mode: "fixed-step", tick },
     gameplay: gameplay(state),
   });
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: {
       ...snapshot("won", 2),
       physicsDebugSeries: [{
@@ -1119,14 +1021,10 @@ test("terminal anonymous state rejects success that predates retained contact", 
         tick: 2,
       }],
     },
-    config: CONFIG,
-    consoleEntries: [],
     labeledSamples: [
       { label: "before", signals: [], snapshot: snapshot("won", 1) },
       { label: "goal-contact", signals: [], snapshot: snapshot("won", 2) },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.0", pass: false }));
@@ -1150,7 +1048,7 @@ test("terminal anonymous state rejects contact-only and success without retained
     clock: { mode: "fixed-step", tick },
     gameplay: gameplay(state),
   });
-  const run = (state: string, includeContact: boolean) => buildReport({
+  const run = (state: string, includeContact: boolean) => buildTestReport(currentScenario, {
     afterSnapshot: {
       ...snapshot(state, 2),
       physicsDebugSeries: [{
@@ -1159,14 +1057,10 @@ test("terminal anonymous state rejects contact-only and success without retained
         tick: 2,
       }],
     },
-    config: CONFIG,
-    consoleEntries: [],
     labeledSamples: [
       { label: "before", signals: [], snapshot: snapshot("idle", 1) },
       { label: "goal-contact", signals: [], snapshot: snapshot(state, 2) },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(run("idle", true).assertionResults?.find(({ id }) => id.startsWith("states."))).toMatchObject({ pass: false });
@@ -1192,7 +1086,7 @@ test("named final-state assertions remain plain equality checks", () => {
     clock: { mode: "fixed-step", tick },
     gameplay: gameplay(state),
   });
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot: {
       ...snapshot("won", 2),
       physicsDebugSeries: [{
@@ -1201,14 +1095,10 @@ test("named final-state assertions remain plain equality checks", () => {
         tick: 2,
       }],
     },
-    config: CONFIG,
-    consoleEntries: [],
     labeledSamples: [
       { label: "before", signals: [], snapshot: snapshot("won", 1) },
       { label: "goal-contact", signals: [], snapshot: snapshot("won", 2) },
     ],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "states.avatar", pass: true }));
@@ -1233,12 +1123,8 @@ test("settled fails closed when physics evidence reports omitted bodies", () => 
     }],
   };
 
-  const result = buildReport({
+  const result = buildTestReport(currentScenario, {
     afterSnapshot,
-    config: CONFIG,
-    consoleEntries: [],
-    networkEntries: [],
-    scenario: currentScenario,
   });
 
   expect(result.assertionResults).toContainEqual(
