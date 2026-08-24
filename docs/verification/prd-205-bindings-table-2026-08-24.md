@@ -1,134 +1,114 @@
 # PRD-205 — WebGPU bindings-table closure
 
 Date: 2026-08-24
-Lane: linchpin/prd-205-closure
-Status: verified on Linux desktop; mobile execution unverified
+Lane: `linchpin/prd-205-closure`
+Base: `a523efc17064aeca0bc341ae408926b532887036`
+Status: verified on Linux desktop; Android and iOS execution unavailable on this host
 
 ## Repairs
 
-1. registration_table.cpp:37 now dispatches each row through its row-owned destination
-   resolver. bindingTable(owner, rows) installs the resolver, while the shared dispatcher
-   rejects a missing, null, or undefined destination before calling setProperty. Mixed-surface
-   rows clear their resolver during table construction and therefore fail closed. The installer
-   no longer accepts a separate owner, so a surface cannot silently use another table's owner.
-   Adjacent registrations for the same owner are consolidated into one table.
-2. wrapper_factories.cpp:25 routes texture createView/destroy and render/compute pipeline
-   getBindGroupLayout through the same table dispatcher. The file has no direct newFunction
-   WebGPU registration path left.
-3. webgpu-bindings-contract.test.mjs:289 inventories exact (surface, name) pairs. The
-   regression mutation deleting GPUComputePassEncoder.setPipeline fails the census, proving that
-   the compute-pass family is not counted by method name alone. The final census is 86/86 pairs and
-   43/43 error strings.
-4. bindings.cpp was consolidated instead of relaxing the size criterion. The final mandated
-   subtotal is net-negative against the actual pre-lane baseline.
+1. `registration_table.cpp` now validates the whole table before writing any property. Each
+   `BindingRegistration` carries its own `BindingDestination`; null, undefined, malformed, empty,
+   and mixed-surface tables fail closed with no partial install. The native reentrancy executable
+   checks distinct destinations, wrong-destination non-copying, mixed-surface rejection, and the
+   invalid-row partial-install negative control.
+2. `installWebGPUBindingTables` is declarative: the final source block is 315 lines, has zero
+   inline `BindingsState` lambdas, and dispatches named handlers. The 93 rows are split across 91
+   rows in `bindings.cpp` and 2 wrapper-factory rows; named capture factories retain native IDs or
+   handles where the old inline closures did so.
+3. The LOC proof counts every abstraction file: both registration/wrapper implementations and all
+   five related headers/state files. The final subtotal is net-negative against the explicit PRD
+   baseline.
+4. The call-trace fixture covers DOM/HTMLElement, canvas, pipeline wrappers, render pass, compute
+   pass, render bundle, and the remaining migrated families. A source mutation deleting a required
+   row fails the focused test; the stored pre/post traces remain byte-identical.
 
 ## Red/green evidence
 
-The focused contract/trace command was run before the repair and produced the required red
-baseline:
+The focused contract/trace command was red before the repair:
 
     pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
       tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs
     Test Files  2 failed (2)
-    Tests       5 failed | 12 passed (17)
+    Tests       4 failed | 14 passed (18)
 
-The five red assertions covered row-owned destinations, migrated surface/name pairs, the shared
-wrapper-factory path, render-pass trace coverage, and the supplementary census. The LOC red
-observation was:
-
-    prior lane bindings.cpp: 6275
-    new-header accounting:    287
-    prior subtotal:          6562
-    pre-lane baseline:       6510
-    net:                       +52
-
-After the four repairs and the trace extension, the focused command was green:
+The failures covered row-owned destination handling, atomic mixed/invalid installation, the
+installer's inline-handler structure, and the missing trace families. After the repairs:
 
     Test Files  2 passed (2)
-    Tests       17 passed (17)
+    Tests       18 passed (18)
 
-The exact trace regression was also red before extension (trace must include
-render-pass.setPipeline) and green after regeneration:
+The live native trace also matched both stored fixtures:
 
-    pre/post trace matches: 62 calls, 52 results, 10 errors
+    current trace matches pre/post byte-identical fixtures: 69 calls
+    results=58, errors=11
+
+Required trace families include `HTMLElement.appendChild`, `HTMLElement.addEventListener`,
+`HTMLCanvasElement.getContext`, `HTMLCanvasElement.addEventListener`,
+`GPURenderPipeline.getBindGroupLayout`, `GPUComputePipeline.getBindGroupLayout`, and every
+render-pass, compute-pass, and render-bundle method group.
 
 ## LOC accounting
 
-The baseline command and final command were measured directly; the criterion remains the
-bindings.cpp plus new-header subtotal:
+The explicit PRD baseline is:
 
     git show efa71954:packages/runtime-native/src/webgpu/bindings.cpp | wc -l
     6510
 
-    wc -l packages/runtime-native/src/webgpu/bindings.cpp \
-      packages/runtime-native/include/mystral/webgpu/bindings.h \
-      packages/runtime-native/include/mystral/webgpu/registration_table.h \
-      packages/runtime-native/include/mystral/webgpu/wrapper_factories.h \
-      packages/runtime-native/src/webgpu/bindings_state.h
-      6216 packages/runtime-native/src/webgpu/bindings.cpp
-        56 packages/runtime-native/include/mystral/webgpu/bindings.h
-        40 packages/runtime-native/include/mystral/webgpu/registration_table.h
-        25 packages/runtime-native/include/mystral/webgpu/wrapper_factories.h
-       166 packages/runtime-native/src/webgpu/bindings_state.h
-      6503 total
+The complete implementation/header accounting set is:
 
-Arithmetic: 6216 + 56 + 40 + 25 + 166 = 6503; 6503 - 6510 = -7 lines.
+    5885 packages/runtime-native/src/webgpu/bindings.cpp
+     124 packages/runtime-native/src/webgpu/registration_table.cpp
+     158 packages/runtime-native/src/webgpu/wrapper_factories.cpp
+      56 packages/runtime-native/include/mystral/webgpu/bindings.h
+      42 packages/runtime-native/include/mystral/webgpu/registration_table.h
+      25 packages/runtime-native/include/mystral/webgpu/wrapper_factories.h
+     166 packages/runtime-native/src/webgpu/bindings_state.h
+    6456 total
 
-The repository LOC command also passed:
+Arithmetic: `5885 + 124 + 158 + 56 + 42 + 25 + 166 = 6456`; `6456 - 6510 = -54` lines.
+
+The repository LOC command passed:
 
     pnpm tsx scripts/count-loc.ts: exit 0
     suggested framework normalised baseline: 432 (current baseline 441)
     platformer template LOC: 1891
-
-## Trace fixtures
-
-webgpu-bindings-call-trace.js now covers every migrated family, including DOM, canvas, GPU,
-adapter/features, device, queue, buffer, texture, command encoder, render pass, compute pass,
-render-bundle encoder, and global helpers. It preserves argument shape and records exactly one
-result or error shape per call. The pre-repair executable was
-/tmp/mystral-prd205-pre-repair; the final executable was
-packages/runtime-native/build/tn-linux/mystral. The stored pre/post fixtures compare exactly.
 
 ## Native proof
 
     pnpm native:build: exit 0
     native WebGPU bindings reentrancy passed
 
-The reentrancy executable ran on an NVIDIA GeForce RTX 2080 through Vulkan. The desktop gate was
-also green with the host's required dummy audio driver:
+The reentrancy executable ran two independently owned bindings states on an NVIDIA GeForce RTX 2080 through
+Vulkan. The packaged desktop gate passed with the host's dummy audio driver:
 
     SDL_AUDIODRIVER=dummy pnpm native:verify:desktop: exit 0
+    Verified native-smoke.js (6752705 bytes), one file with no imports
     desktop audio decodeAudioData Promise proof passed on V8
     desktop core gate passed: 300 frames, 1280x720
     desktop physics actuation bindings proof passed
     desktop physics playtest proof passed: 14 assertions
     desktop physics query proof passed
 
-## Browser/native conformance
-
-The browser reference capture completed with:
-
-    target: web
-    pass: 68, fail: 0, blocked: 0
-
-The named desktop comparison completed with:
-
-    target: desktop
-    pass: 67, fail: 0, blocked: 1
-    report: packages/runtime-native/artifacts/conformance/prd205-desktop-final/report.json
-
-The one blocked row is the registry-declared 90-multitouch-input host exclusion; the Xvfb host
-has no evdev input backend. No Android or iOS execution is claimed: neither adb nor xcrun is
-installed on this host.
-
 ## Repository gates
 
-    pnpm typecheck && pnpm lint && pnpm test: exit 0
-      typecheck: Scope 16 of 17 workspace projects
-      lint: 380 warnings, no errors
-      test: 198 files passed; 1883 tests passed
-
-    runtime-native unit suite: 57 files passed; 388 tests passed; 33 skipped
+    pnpm typecheck: exit 0; Scope 16 of 17 workspace projects
+    pnpm lint: exit 0; 380 inherited warnings, no errors
+    pnpm test: exit 0; 198 files passed; 1883 tests passed
+    runtime-native unit suite: 57 files passed; 389 tests passed; 33 skipped
     pnpm budgets: exit 0; 18376/15000 framework LOC review trigger, no hard failure
     pnpm quality: exit 0; 70 findings (11 new, 9 grew, 50 inherited)
     git diff --check: exit 0
+
+The budgets run also reported pre-existing native census drift; it did not fail the gate. The
+quality and lint findings are outside the scoped runtime-native repair.
+
+## Browser/native conformance and host limits
+
+Existing PRD-205 evidence retained from the prior lane:
+
+    target: web       pass: 68, fail: 0, blocked: 0
+    target: desktop   pass: 67, fail: 0, blocked: 1
+
+The desktop blocked row is the registry-declared 90-multitouch input host exclusion. Android and
+iOS were not claimed: `adb` and `xcrun` are unavailable on this host.

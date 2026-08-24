@@ -15,17 +15,32 @@ function blockBetween(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+function handlerBlock(source, handlerName) {
+  const startMarker = `static js::JSValueHandle ${handlerName}`;
+  const start = source.indexOf(startMarker);
+  assert.ok(start >= 0, `missing named handler: ${handlerName}`);
+  const endMarkers = [
+    "\n}\n\nstatic js::JSValueHandle",
+    "\n}\n\n/** Every migrated WebGPU method",
+  ]
+    .map((marker) => source.indexOf(marker, start))
+    .filter((index) => index >= 0);
+  const end = Math.min(...endMarkers);
+  assert.ok(end > start, `unterminated named handler: ${handlerName}`);
+  return source.slice(start, end);
+}
+
+function handlerForRow(source, surface, name) {
+  const row = source.match(
+    new RegExp(`\\{"${surface}",\\s*"${name}"[\\s\\S]*?&([A-Za-z_][A-Za-z0-9_]*)`, "u"),
+  );
+  assert.ok(row, `missing registration row: ${surface}.${name}`);
+  return handlerBlock(source, row[1]);
+}
+
 function assertCreationChecks(candidate) {
-  const sampler = blockBetween(
-    candidate,
-    '"createSampler",',
-    "// device.createBindGroupLayout(descriptor)",
-  );
-  const bindGroup = blockBetween(
-    candidate,
-    '"createBindGroup",',
-    "// device.createPipelineLayout(descriptor)",
-  );
+  const sampler = handlerForRow(candidate, "GPUDevice", "createSampler");
+  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
 
   assert.match(
     sampler,
@@ -40,11 +55,7 @@ function assertCreationChecks(candidate) {
 }
 
 function assertBindGroupViewOwnership(candidate) {
-  const bindGroup = blockBetween(
-    candidate,
-    '"createBindGroup",',
-    "// device.createPipelineLayout(descriptor)",
-  );
+  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
 
   assert.match(
     bindGroup,
@@ -69,11 +80,7 @@ function assertBindGroupViewOwnership(candidate) {
 }
 
 function assertNullResourceValidation(candidate) {
-  const bindGroup = blockBetween(
-    candidate,
-    '"createBindGroup",',
-    "// device.createPipelineLayout(descriptor)",
-  );
+  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
 
   assert.ok(
     bindGroup.includes(
@@ -133,8 +140,8 @@ test("resource validation contract rejects restoring the warning path", () => {
   );
   const bindGroup = blockBetween(
     warningPath,
-    '"createBindGroup",',
-    "// device.createPipelineLayout(descriptor)",
+    "static js::JSValueHandle tnWebgpuHandler69",
+    "\n}\n\nstatic js::JSValueHandle",
   );
 
   assert.throws(
@@ -185,27 +192,39 @@ test("the native null-handle proof is wired as a display-free bindings executabl
 function assertCanvasRegistrationTable(candidate) {
   assert.match(
     candidate,
-    /bindingTable\(canvasContext, \{[\s\S]*\{"GPUCanvasContext", "configure"[\s\S]*\{"GPUCanvasContext", "unconfigure"[\s\S]*\{"GPUCanvasContext", "getCurrentTexture"/u,
+    /bindingTable\(\{[\s\S]*\{"GPUCanvasContext", "configure"[\s\S]*&configureCanvasContext, canvasContext[\s\S]*\{"GPUCanvasContext", "unconfigure"[\s\S]*canvasContext[\s\S]*\{"GPUCanvasContext", "getCurrentTexture"[\s\S]*canvasContext/u,
     "canvas context API surface must be represented by one registration table",
   );
-  assert.match(candidate, /installBindingTable\(\s*state->engine,\s*state,\s*bindingTable\(canvasContext/u);
+  assert.match(candidate, /installBindingTable\(\s*state->engine,\s*state,\s*bindingTable\(\{/u);
+  assert.doesNotMatch(candidate, /bindingTable\(canvasContext,/u);
 }
 
 function assertRowOwnedDestinations(header, implementation) {
-  assert.match(header, /using BindingOwnerResolver = std::function<js::JSValueHandle\(/u);
-  assert.match(header, /BindingOwnerResolver owner;/u);
+  assert.match(header, /using BindingDestination = js::JSValueHandle;/u);
+  assert.match(header, /BindingDestination destination;/u);
   assert.doesNotMatch(
     header,
-    /js::JSValueHandle owner,\s*const BindingRegistration\*/u,
+    /js::JSValueHandle owner,\s*std::initializer_list<BindingRegistration>/u,
   );
-  assert.match(implementation, /const auto owner = registration\.owner\(state\);/u);
+  assert.match(
+    header,
+    /BindingTable bindingTable\(\s*std::initializer_list<BindingRegistration>/u,
+  );
+  assert.match(implementation, /bool validateTable\(/u);
+  const invalidTableCheck = blockBetween(
+    implementation,
+    "if (!table.valid)",
+    "if (table.registrations.empty())",
+  );
+  assert.match(invalidTableCheck, /return false;/u);
+  assert.match(implementation, /destinations\.reserve\(/u);
   assert.match(
     implementation,
-    /if \(engine->isNull\(owner\) \|\| engine->isUndefined\(owner\)\)/u,
+    /if \(engine->isNull\(destination\) \|\| engine->isUndefined\(destination\)\)/u,
   );
-  assert.match(implementation, /std::string_view\(registration\.surface\)/u);
-  assert.match(implementation, /registration\.owner = \{\};/u);
-  assert.match(implementation, /engine->setProperty\(\s*owner,/u);
+  assert.match(implementation, /engine->setProperty\(\s*destination,/u);
+  assert.doesNotMatch(implementation, /continue;/u);
+  assert.match(implementation, /return false;/u);
 }
 
 test("each binding row owns its destination and mismatches fail closed", () => {
@@ -213,12 +232,36 @@ test("each binding row owns its destination and mismatches fail closed", () => {
   const implementation = read("src/webgpu/registration_table.cpp");
   assert.doesNotThrow(() => assertRowOwnedDestinations(header, implementation));
 
-  const withoutRowResolver = implementation.replace(
-    "registration.owner(state)",
-    "engine->getGlobal()",
+  const withoutAtomicPreflight = implementation.replace(
+    /if \(!table\.valid\) \{[\s\S]*?return false;\s*\}/u,
+    "if (!table.valid) { return true; }",
   );
   assert.throws(
-    () => assertRowOwnedDestinations(header, withoutRowResolver),
+    () => assertRowOwnedDestinations(header, withoutAtomicPreflight),
+    /if \(!table\.valid\)/u,
+  );
+});
+
+test("binding-table installation validates every row before the first property write", () => {
+  const implementation = read("src/webgpu/registration_table.cpp");
+  const preflight = implementation.slice(
+    implementation.indexOf("bool installBindingTable"),
+  );
+  const writeLoop = preflight.indexOf("for (size_t index = 0;");
+  const firstWrite = preflight.indexOf("engine->setProperty(", writeLoop);
+  const firstDestinationCheck = preflight.indexOf("destinations.push_back");
+  assert.ok(firstDestinationCheck >= 0, "destination preflight must exist");
+  assert.ok(writeLoop > firstDestinationCheck, "writes must follow destination validation");
+  assert.ok(firstWrite > writeLoop, "property writes must be in the second pass");
+  assert.doesNotMatch(preflight.slice(0, writeLoop), /engine->setProperty\(/u);
+
+  const partialInstallMutation = preflight.replace(
+    "destinations.push_back(destination);",
+    "engine->setProperty(destination, registration.name, engine->newUndefined());",
+  );
+  assert.throws(
+    () => assert.doesNotMatch(partialInstallMutation.slice(0, writeLoop), /engine->setProperty\(/u),
+    /engine->setProperty/u,
   );
 });
 
@@ -226,12 +269,12 @@ test("canvas context registration is table-driven and deletion is a red mutation
   const bindings = read("src/webgpu/bindings.cpp");
   const table = read("src/webgpu/registration_table.cpp");
   assert.match(table, /for \(const auto& registration : table\.registrations\)/u);
-  assert.match(table, /\[engine, state, registration\]/u);
+  assert.match(table, /\[engine, state, registration, destination\]/u);
   assert.match(table, /bool requireArguments\(/u);
   assert.doesNotThrow(() => assertCanvasRegistrationTable(bindings));
 
   const withoutGetCurrentTexture = bindings.replace(
-    /\s*\{"GPUCanvasContext", "getCurrentTexture", 0, nullptr,[\s\S]*?\n\s*\}\},/u,
+    /\s*\{"GPUCanvasContext", "getCurrentTexture",[\s\S]*?makeCurrentTextureCanvasContextHandler\(offscreen\), canvasContext\},/u,
     "",
   );
   assert.throws(() => assertCanvasRegistrationTable(withoutGetCurrentTexture));
@@ -350,6 +393,23 @@ function assertSurfaceInstallerDelegates(candidate) {
   assert.doesNotMatch(surfaceInstaller, /BindingRegistration|\[state|newFunction/u);
 }
 
+function assertDeclarativeInstaller(candidate) {
+  const start = candidate.indexOf(
+    "static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {",
+  );
+  const end = candidate.indexOf("\n}\n#endif\n\n/** Initialize", start);
+  assert.ok(start >= 0 && end > start, "WebGPU table installer must have a bounded source block");
+  const installer = candidate.slice(start, end);
+  assert.doesNotMatch(
+    installer,
+    /\[[^\]]*\]\(BindingsState/u,
+    "WebGPU table installer must not contain inline handlers",
+  );
+  assert.match(installer, /installBindingTable\(\s*state->engine\s*,\s*state\s*,/u);
+  assert.match(installer, /\{"HTMLElement",\s*"appendChild"[\s\S]*&[A-Za-z_][A-Za-z0-9_]*/u);
+  assert.match(installer, /bindingTable\(\{/u);
+}
+
 test("all migrated WebGPU registration families use the shared table dispatcher", () => {
   const bindings = read("src/webgpu/bindings.cpp");
   assert.doesNotMatch(bindings, /(?:state->engine|engine)->newFunction\(/u);
@@ -359,10 +419,20 @@ test("all migrated WebGPU registration families use the shared table dispatcher"
   );
   assert.doesNotMatch(bindings, /install(?:Global)?Binding\(/u);
   assertSurfaceInstallerDelegates(bindings);
+  assertDeclarativeInstaller(bindings);
   assertMigratedRegistrationRows(bindings);
 
+  const inlineHandlerMutation = bindings.replace(
+    "&tnWebgpuHandler20",
+    "[state](BindingsState*, BindingDestination, const std::vector<js::JSValueHandle>&) { return state->engine->newUndefined(); }",
+  );
+  assert.throws(
+    () => assertDeclarativeInstaller(inlineHandlerMutation),
+    /WebGPU table installer/u,
+  );
+
   const withoutComputePipeline = bindings.replace(
-    /\{"GPUComputePassEncoder", "setPipeline", 0, nullptr,[\s\S]*?wgpuComputePassEncoderSetPipeline[\s\S]*?\n\s*\}\}\)\);/u,
+    /\s*\{"GPUComputePassEncoder", "setPipeline",[\s\S]*?&[A-Za-z_][A-Za-z0-9_]*\s*,\s*jsComputePass\},/u,
     "",
   );
   assert.throws(

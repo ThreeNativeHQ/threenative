@@ -41,6 +41,57 @@ function assertCallTrace(trace, side) {
   }
 }
 
+function assertRequiredTraceFamilies(trace) {
+  const calls = new Set(trace.map((entry) => `${entry.surface}.${entry.name}`));
+  const requiredFamilies = {
+    dom: [
+      "Document.querySelector",
+      "HTMLElement.appendChild",
+      "HTMLElement.addEventListener",
+      "HTMLCanvasElement.getContext",
+      "HTMLCanvasElement.addEventListener",
+    ],
+    canvas: [
+      "GPUCanvasContext.configure",
+      "GPUCanvasContext.unconfigure",
+      "GPUCanvasContext.getCurrentTexture",
+    ],
+    gpu: ["GPU.getPreferredCanvasFormat"],
+    "adapter/features": ["GPUAdapter.features.has"],
+    device: ["GPUDevice.createBuffer", "GPUDevice.createShaderModule"],
+    queue: ["GPUQueue.submit", "GPUQueue.writeBuffer"],
+    buffer: ["GPUBuffer.getMappedRange", "GPUBuffer.destroy"],
+    texture: ["GPUTexture.createView", "GPUTexture.destroy"],
+    "command-encoder": [
+      "GPUCommandEncoder.beginRenderPass",
+      "GPUCommandEncoder.beginComputePass",
+      "GPUCommandEncoder.finish",
+    ],
+    pipelines: [
+      "GPURenderPipeline.getBindGroupLayout",
+      "GPUComputePipeline.getBindGroupLayout",
+    ],
+    "render-pass": ["setPipeline", "setBindGroup", "draw", "end"],
+    "compute-pass": ["setPipeline", "setBindGroup", "dispatchWorkgroups", "end"],
+    "render-bundle": ["setPipeline", "setVertexBuffer", "setBindGroup", "draw", "finish"],
+    globals: ["WebGPU.__decodeImageData", "WebGPU.createOffscreenCanvas2D"],
+  };
+  for (const [family, methods] of Object.entries(requiredFamilies)) {
+    for (const method of methods) {
+      const key = method.includes(".")
+        ? method
+        : `${
+            family === "render-pass"
+              ? "GPURenderPassEncoder"
+              : family === "compute-pass"
+                ? "GPUComputePassEncoder"
+                : "GPURenderBundleEncoder"
+          }.${method}`;
+      assert.ok(calls.has(key), `trace must include ${family}.${key}`);
+    }
+  }
+}
+
 test("pre-refactor and post-refactor JS call traces are identical", () => {
   const pre = JSON.parse(read("tests/fixtures/webgpu-bindings-call-trace-pre.json"));
   const post = JSON.parse(read("tests/fixtures/webgpu-bindings-call-trace-post.json"));
@@ -48,28 +99,14 @@ test("pre-refactor and post-refactor JS call traces are identical", () => {
   assertCallTrace(post, "post-refactor");
   assert.deepEqual(post, pre);
 
-  const calls = new Set(pre.map((entry) => `${entry.surface}.${entry.name}`));
-  const requiredFamilies = {
-    "render-pass": ["setPipeline", "setBindGroup", "draw", "end"],
-    "compute-pass": ["setPipeline", "setBindGroup", "dispatchWorkgroups", "end"],
-    "render-bundle": ["setPipeline", "setVertexBuffer", "setBindGroup", "draw", "finish"],
-  };
-  for (const [family, methods] of Object.entries(requiredFamilies)) {
-    for (const method of methods) {
-      assert.ok(
-        calls.has(
-          `${
-            family === "render-pass"
-              ? "GPURenderPassEncoder"
-              : family === "compute-pass"
-                ? "GPUComputePassEncoder"
-                : "GPURenderBundleEncoder"
-          }.${method}`,
-        ),
-        `trace must include ${family}.${method}`,
-      );
-    }
-  }
+  assertRequiredTraceFamilies(pre);
+  const withoutPipelineRow = pre.filter(
+    (entry) => entry.surface !== "GPURenderPipeline" || entry.name !== "getBindGroupLayout",
+  );
+  assert.throws(
+    () => assertRequiredTraceFamilies(withoutPipelineRow),
+    /GPURenderPipeline\.getBindGroupLayout/u,
+  );
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /function record\(/u);
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /TN_WEBGPU_CALL_TRACE:/u);
 });

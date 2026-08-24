@@ -40,8 +40,18 @@ function record(surface, name, args, call) {
 }
 
 const canvas = document.getElementById("canvas");
+const parent = canvas.parentElement;
+const resizeListener = () => {};
+const pointerListener = () => {};
+record("HTMLElement", "appendChild", [canvas], () => parent.appendChild(canvas));
+record("HTMLElement", "addEventListener", ["resize", resizeListener], () =>
+  parent.addEventListener("resize", resizeListener),
+);
 record("Document", "querySelector", ["canvas"], () => document.querySelector("canvas"));
 record("HTMLCanvasElement", "getContext", ["webgpu"], () => canvas.getContext("webgpu"));
+record("HTMLCanvasElement", "addEventListener", ["pointerdown", pointerListener], () =>
+  canvas.addEventListener("pointerdown", pointerListener),
+);
 const context = canvas.getContext("webgpu");
 const format = navigator.gpu.getPreferredCanvasFormat();
 record("GPU", "getPreferredCanvasFormat", [], () => format);
@@ -65,15 +75,59 @@ record("GPUQueue", "writeBuffer", [buffer, 0, new ArrayBuffer(4)], () =>
 record("GPUQueue", "onSubmittedWorkDone", [], () => device.queue.onSubmittedWorkDone());
 record("GPUBuffer", "getMappedRange", [], () => buffer.getMappedRange());
 record("GPUBuffer", "destroy", [], () => buffer.destroy());
-record(
+const renderShader = record(
   "GPUDevice",
   "createShaderModule",
-  [{ code: "@vertex fn main() -> @builtin(position) vec4f { return vec4f(0.0); }" }],
+  [{
+    code:
+      "@vertex fn main() -> @builtin(position) vec4f { return vec4f(0.0); } " +
+      "@fragment fn fragmentMain() -> @location(0) vec4f { return vec4f(0.0); }",
+  }],
   () =>
     device.createShaderModule({
-      code: "@vertex fn main() -> @builtin(position) vec4f { return vec4f(0.0); }",
+      code:
+        "@vertex fn main() -> @builtin(position) vec4f { return vec4f(0.0); } " +
+        "@fragment fn fragmentMain() -> @location(0) vec4f { return vec4f(0.0); }",
     }),
 );
+const renderPipeline = record(
+  "GPUDevice",
+  "createRenderPipeline",
+  [{ layout: "auto", vertex: {}, fragment: {} }],
+  () =>
+    device.createRenderPipeline({
+      layout: "auto",
+      vertex: { module: renderShader, entryPoint: "main" },
+      fragment: {
+        module: renderShader,
+        entryPoint: "fragmentMain",
+        targets: [{ format }],
+      },
+    }),
+);
+if (renderPipeline) {
+  record("GPURenderPipeline", "getBindGroupLayout", [0], () =>
+    renderPipeline.getBindGroupLayout(0),
+  );
+}
+const computeShader = device.createShaderModule({
+  code: "@compute @workgroup_size(1) fn computeMain() {}",
+});
+const computePipeline = record(
+  "GPUDevice",
+  "createComputePipeline",
+  [{ layout: "auto", compute: {} }],
+  () =>
+    device.createComputePipeline({
+      layout: "auto",
+      compute: { module: computeShader, entryPoint: "computeMain" },
+    }),
+);
+if (computePipeline) {
+  record("GPUComputePipeline", "getBindGroupLayout", [0], () =>
+    computePipeline.getBindGroupLayout(0),
+  );
+}
 record("GPUDevice", "createRenderPipeline", [], () => device.createRenderPipeline());
 record("GPUDevice", "createComputePipeline", [], () => device.createComputePipeline());
 const encoder = device.createCommandEncoder();

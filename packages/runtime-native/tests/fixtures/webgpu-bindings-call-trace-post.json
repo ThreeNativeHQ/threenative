@@ -1,5 +1,22 @@
 [
   {
+    "surface": "HTMLElement",
+    "name": "appendChild",
+    "args": [
+      "object(addEventListener,clientHeight,clientWidth,dispatchEvent,getBoundingClientRect,getContext,height,id,parentElement,releasePointerCapture,removeEventListener,requestPointerLock,setPointerCapture,style,tagName,toDataURL,width)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLElement",
+    "name": "addEventListener",
+    "args": [
+      "string",
+      "function"
+    ],
+    "error": "parent.addEventListener is not a function"
+  },
+  {
     "surface": "Document",
     "name": "querySelector",
     "args": [
@@ -14,6 +31,15 @@
       "string"
     ],
     "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "addEventListener",
+    "args": [
+      "string",
+      "function"
+    ],
+    "result": "undefined"
   },
   {
     "surface": "GPU",
@@ -104,6 +130,38 @@
     "name": "createShaderModule",
     "args": [
       "object(code)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createRenderPipeline",
+    "args": [
+      "object(fragment,layout,vertex)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPURenderPipeline",
+    "name": "getBindGroupLayout",
+    "args": [
+      "number"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createComputePipeline",
+    "args": [
+      "object(compute,layout)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUComputePipeline",
+    "name": "getBindGroupLayout",
+    "args": [
+      "number"
     ],
     "result": "object"
   },

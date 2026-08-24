@@ -997,6 +997,7 @@ static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
 
 static js::JSValueHandle configureCanvasContext(
     BindingsState* state,
+    BindingDestination,
     const std::vector<js::JSValueHandle>& args) {
     const auto descriptor = args[0];
     const std::string format = state->engine->toString(state->engine->getProperty(descriptor, "format"));
@@ -1081,22 +1082,52 @@ static js::JSValueHandle getCurrentCanvasTexture(
 
 }
 
+static BindingHandler makeUnconfigureCanvasContextHandler(bool offscreen) {
+    return [offscreen](BindingsState* state, BindingDestination, const std::vector<js::JSValueHandle>&) {
+        if (!offscreen) state->contextConfigured = false;
+        return state->engine->newUndefined();
+    };
+}
+
+static BindingHandler makeCurrentTextureCanvasContextHandler(bool offscreen) {
+    return [offscreen](BindingsState* state, BindingDestination, const std::vector<js::JSValueHandle>& args) {
+        return getCurrentCanvasTexture(state, args, offscreen);
+    };
+}
+
 static void installCanvasContextBindings(
     BindingsState* state,
     js::JSValueHandle canvasContext,
     bool offscreen) {
-    installBindingTable(state->engine, state, bindingTable(canvasContext, {
-        {"GPUCanvasContext", "configure", 1, "configure requires a descriptor", &configureCanvasContext},
+    installBindingTable(state->engine, state, bindingTable({
+        {"GPUCanvasContext", "configure", 1, "configure requires a descriptor", &configureCanvasContext, canvasContext},
         {"GPUCanvasContext", "unconfigure", 0, nullptr,
-         [offscreen](BindingsState* state, const std::vector<js::JSValueHandle>&) {
-             if (!offscreen) state->contextConfigured = false;
-             return state->engine->newUndefined();
-         }},
+         makeUnconfigureCanvasContextHandler(offscreen), canvasContext},
         {"GPUCanvasContext", "getCurrentTexture", 0, nullptr,
-         [offscreen](BindingsState* state, const std::vector<js::JSValueHandle>& args) {
-             return getCurrentCanvasTexture(state, args, offscreen);
-         }},
+         makeCurrentTextureCanvasContextHandler(offscreen), canvasContext},
     }));
+}
+
+template <typename T>
+static BindingHandler makeCapturedHandler(
+    T captured,
+    js::JSValueHandle (*handler)(BindingsState*, T, const std::vector<js::JSValueHandle>&)) {
+    return [captured, handler](BindingsState* state, BindingDestination,
+                               const std::vector<js::JSValueHandle>& args) {
+        return handler(state, captured, args);
+    };
+}
+
+template <typename T, typename U>
+static BindingHandler makeCapturedPairHandler(
+    T first,
+    U second,
+    js::JSValueHandle (*handler)(
+        BindingsState*, T, U, const std::vector<js::JSValueHandle>&)) {
+    return [first, second, handler](BindingsState* state, BindingDestination,
+                                    const std::vector<js::JSValueHandle>& args) {
+        return handler(state, first, second, args);
+    };
 }
 
 /** Install the table-driven WebGPU surfaces after state has been initialized. */
@@ -1107,662 +1138,1162 @@ static bool installWebGPUBindingSurfaces(BindingsState* state, js::Engine* engin
     return installWebGPUBindingTables(state, engine);
 }
 
-/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
-static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {
-    // ========================================================================
-    // Create a mock parent element for the canvas (needed by Debugger)
-    // ========================================================================
-    auto parentElement = engine->newObject();
-    engine->setProperty(parentElement, "style", engine->newObject());
-    installBindingTable(state->engine, state, bindingTable(parentElement, {
-        {"HTMLElement", "appendChild", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            // No-op in native runtime
-            return args.empty() ? state->engine->newUndefined() : args[0];
-        }
-    },
-        {"HTMLElement", "removeChild", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            return args.empty() ? state->engine->newUndefined() : args[0];
-        }
-    }}));
-
-    // ========================================================================
-    // Get existing canvas from runtime.cpp's document.getElementById
-    // The canvas was created by setupDOMEvents() with addEventListener, style, etc.
-    // We just need to add WebGPU-specific methods (getContext) to it.
-    // ========================================================================
-    auto existingDocument = engine->getGlobalProperty("document");
-    auto getElementByIdFunc = engine->getProperty(existingDocument, "getElementById");
-
-    // Call document.getElementById('canvas') to get the existing canvas
-    std::vector<js::JSValueHandle> args;
-    args.push_back(engine->newString("canvas"));
-    auto canvasObject = engine->call(getElementByIdFunc, existingDocument, args);
-
-    if (engine->isNull(canvasObject) || engine->isUndefined(canvasObject)) {
-        std::cerr << "[WebGPU] Warning: No existing canvas found, creating new one" << std::endl;
-        canvasObject = engine->newObject();
-        engine->setProperty(canvasObject, "width", engine->newNumber(state->canvasWidth));
-        engine->setProperty(canvasObject, "height", engine->newNumber(state->canvasHeight));
-        engine->setProperty(canvasObject, "clientWidth", engine->newNumber(state->canvasWidth));
-        engine->setProperty(canvasObject, "clientHeight", engine->newNumber(state->canvasHeight));
-    }
-
-    // Update canvas dimensions (in case they differ)
-    engine->setProperty(canvasObject, "width", engine->newNumber(state->canvasWidth));
-    engine->setProperty(canvasObject, "height", engine->newNumber(state->canvasHeight));
-    engine->setProperty(canvasObject, "clientWidth", engine->newNumber(state->canvasWidth));
-    engine->setProperty(canvasObject, "clientHeight", engine->newNumber(state->canvasHeight));
-
-    // canvas.parentElement - mock parent element (for Debugger compatibility)
-    engine->setProperty(canvasObject, "parentElement", parentElement);
-
-    // canvas.getContext('webgpu') -> GPUCanvasContext
-    // This is the WebGPU-specific method we add to the existing canvas
-    installBindingTable(state->engine, state, bindingTable(canvasObject, {
-        {"HTMLCanvasElement", "getContext", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            if (args.empty()) {
-                return state->engine->newNull();
-            }
-
-            std::string contextType = state->engine->toString(args[0]);
-
-            // Handle Canvas 2D context
-            if (contextType == "2d") {
-                if (state->verboseLogging) std::cout << "[Canvas] Creating 2D context (" << state->canvasWidth << "x" << state->canvasHeight << ")" << std::endl;
-                auto ctx2d = canvas::createCanvas2DContext(state->engine, state->canvasWidth, state->canvasHeight);
-
-                // Set reference back to canvas
-                auto canvas = state->engine->getGlobalProperty("canvas");
-                state->engine->setProperty(ctx2d, "canvas", canvas);
-
-                // Store the native context for Canvas 2D to WebGPU compositing
-                state->mainCanvas2DContext = static_cast<canvas::Canvas2DContext*>(state->engine->getPrivateData(ctx2d));
-                if (state->verboseLogging) std::cout << "[Canvas] Main canvas using 2D context - will composite to WebGPU" << std::endl;
-
-                return ctx2d;
-            }
-
-            if (contextType != "webgpu") {
-                std::cerr << "[Canvas] Unknown context type: " << contextType << std::endl;
-                return state->engine->newNull();
-            }
-
-            // Create GPUCanvasContext
-            auto canvasContext = state->engine->newObject();
-
-            // Store reference to our surface
-            state->engine->setPrivateData(canvasContext, state->surface);
-
-            // context.canvas - reference back to canvas
-            auto canvas = state->engine->getGlobalProperty("canvas");
-            state->engine->setProperty(canvasContext, "canvas", canvas);
-
-            installCanvasContextBindings(state, canvasContext, false);
-
-            if (state->verboseLogging) std::cout << "[Canvas] WebGPU context created" << std::endl;
-            return canvasContext;
-        }
-    }}));
-
-    // Set global canvas - this is the SAME object as document.getElementById('canvas')
-    // so it now has both WebGPU getContext AND event listener support
-    engine->setGlobalProperty("canvas", canvasObject);
-
-    // ========================================================================
-    // Add missing methods to the existing document (from runtime.cpp)
-    // We DON'T create a new document - just augment the existing one
-    // ========================================================================
-
-    // Add querySelector to existing document (if not present)
-    installBindingTable(state->engine, state, bindingTable(existingDocument, {
-        {"Document", "querySelector", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            // Check if querying for canvas
-            if (!args.empty()) {
-                std::string selector = state->engine->toString(args[0]);
-                if (selector == "canvas" || selector.find("canvas") != std::string::npos) {
-                    return state->engine->getGlobalProperty("canvas");
-                }
-            }
-            return state->engine->newNull();
-        }
-    },
-
-    // Add createElement to existing document
-    // NOTE: runtime.cpp sets up a createElement with canvas support (toDataURL) for @loaders.gl WebP detection
-    // We ALWAYS override it here to add proper Canvas 2D support for offscreen canvases
-        {"Document", "createElement", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            auto element = state->engine->newObject();
-
-            // Get tag name if provided
-            std::string tagName = "";
-            if (!args.empty()) {
-                tagName = state->engine->toString(args[0]);
-            }
-
-            // Add basic DOM element properties
-            state->engine->setProperty(element, "style", state->engine->newObject());
-            state->engine->setProperty(element, "className", state->engine->newString(""));
-            state->engine->setProperty(element, "innerHTML", state->engine->newString(""));
-            state->engine->setProperty(element, "textContent", state->engine->newString(""));
-            state->engine->setProperty(element, "tagName", state->engine->newString(tagName.c_str()));
-            installBindingTable(state->engine, state, bindingTable(element, {
-                {"HTMLElement", "appendChild", 0, nullptr,
-                [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                    return a.empty() ? state->engine->newUndefined() : a[0];
-                }
-            },
-                {"HTMLElement", "removeChild", 0, nullptr,
-                [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                    return a.empty() ? state->engine->newUndefined() : a[0];
-                }
-            },
-                {"HTMLElement", "remove", 0, nullptr,
-                [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                    // No-op in native runtime - element is not attached to DOM
-                    return state->engine->newUndefined();
-                }
-            },
-                {"HTMLElement", "addEventListener", 0, nullptr,
-                [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                    // No-op in native runtime
-                    return state->engine->newUndefined();
-                }
-            },
-                {"HTMLElement", "removeEventListener", 0, nullptr,
-                [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                    return state->engine->newUndefined();
-                }
-            }}));
-
-            // Special handling for canvas elements - add Canvas 2D support
-            if (tagName == "canvas" || tagName == "CANVAS") {
-                // Three's renderer creates its surface through document.createElement('canvas'),
-                // while the runtime's SDL input dispatches to the main canvas exposed by
-                // document.getElementById('canvas'). Forward the event surface so a renderer
-                // canvas receives the same pointer and pointer-lock events on native.
-                const auto mainCanvas = state->engine->getGlobalProperty("canvas");
-                installBindingTable(state->engine, state, bindingTable(element, {
-                    {"HTMLCanvasElement", "addEventListener", 0, nullptr,
-                    [mainCanvas, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                        const auto add = state->engine->getProperty(mainCanvas, "addEventListener");
-                        return state->engine->call(add, mainCanvas, args);
-                    }
-                },
-                    {"HTMLCanvasElement", "removeEventListener", 0, nullptr,
-                    [mainCanvas, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                        const auto remove = state->engine->getProperty(mainCanvas, "removeEventListener");
-                        return state->engine->call(remove, mainCanvas, args);
-                    }
-                },
-                    {"HTMLCanvasElement", "dispatchEvent", 0, nullptr,
-                    [mainCanvas, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                        const auto dispatch = state->engine->getProperty(mainCanvas, "dispatchEvent");
-                        return state->engine->call(dispatch, mainCanvas, args);
-                    }
-                },
-                    {"HTMLCanvasElement", "requestPointerLock", 0, nullptr,
-                    [mainCanvas, element, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                        const auto request = state->engine->getProperty(mainCanvas, "requestPointerLock");
-                        const auto result = state->engine->call(request, mainCanvas, args);
-                        const auto document = state->engine->getGlobalProperty("document");
-                        state->engine->setProperty(document, "pointerLockElement", element);
-                        const auto event = state->engine->newObject();
-                        state->engine->setProperty(event, "type", state->engine->newString("pointerlockchange"));
-                        const auto dispatch = state->engine->getProperty(document, "dispatchEvent");
-                        state->engine->call(dispatch, document, {event});
-                        return result;
-                    }
-                }}));
-
-                // Create OffscreenCanvas struct to store state
-                int canvasId = state->nextOffscreenCanvasId++;
-                auto offscreenCanvas = std::make_unique<OffscreenCanvas>();
-                OffscreenCanvas* canvasPtr = offscreenCanvas.get();
-                state->offscreenCanvases[canvasId] = std::move(offscreenCanvas);
-
-                // Store the canvas ID as private data for getContext lookup
-                state->engine->setPrivateData(element, reinterpret_cast<void*>(static_cast<intptr_t>(canvasId)));
-
-                // Also store as property for debugging
-                state->engine->setProperty(element, "_offscreenCanvasId", state->engine->newNumber(canvasId));
-
-                // Default canvas dimensions (stored in struct)
-                state->engine->setProperty(element, "width", state->engine->newNumber(canvasPtr->width));
-                state->engine->setProperty(element, "height", state->engine->newNumber(canvasPtr->height));
-
-                // Store reference to element globally so getContext can find it
-                std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
-                state->engine->setGlobalProperty(globalName.c_str(), element);
-
-                // Create getContext function
-                // Capture canvasId to ensure each canvas element's getContext uses its own canvas
-                // This fixes the bug where all canvases shared the same context
-                installBindingTable(state->engine, state, bindingTable(element, {
-                    {"HTMLCanvasElement", "getContext", 0, nullptr,
-                    [canvasId, canvasPtr, state](BindingsState* c, const std::vector<js::JSValueHandle>& contextArgs) {
-                    if (contextArgs.empty()) {
-                        return state->engine->newNull();
-                    }
-
-                    std::string contextType = state->engine->toString(contextArgs[0]);
-
-                    // Use the captured canvasId to find the correct canvas
-                    // This ensures each canvas element's getContext returns its own context
-                    auto it = state->offscreenCanvases.find(canvasId);
-                    if (it == state->offscreenCanvases.end()) {
-                        std::cerr << "[Canvas] Canvas not found: " << canvasId << std::endl;
-                        return state->engine->newNull();
-                    }
-
-                    OffscreenCanvas* canvas = it->second.get();
-
-                    if (contextType == "2d") {
-                        // Return cached context if already created
-                        if (canvas->hasContext2d) {
-                            return canvas->context2d;
-                        }
-
-                        // Get current dimensions from the canvas element (in case they were changed)
-                        std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
-                        auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
-                        if (!state->engine->isNull(canvasElement) && !state->engine->isUndefined(canvasElement)) {
-                            auto widthProp = state->engine->getProperty(canvasElement, "width");
-                            auto heightProp = state->engine->getProperty(canvasElement, "height");
-                            if (!state->engine->isUndefined(widthProp)) {
-                                canvas->width = static_cast<int>(state->engine->toNumber(widthProp));
-                            }
-                            if (!state->engine->isUndefined(heightProp)) {
-                                canvas->height = static_cast<int>(state->engine->toNumber(heightProp));
-                            }
-                        }
-
-                        // Create Canvas 2D context
-                        if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
-                        canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
-                        canvas->hasContext2d = true;
-                        state->engine->protect(canvas->context2d);
-                        return canvas->context2d;
-                    }
-
-                    if (contextType == "webgpu") {
-                        // Create GPUCanvasContext for offscreen canvas
-                        // This shares the main surface/device for simplicity
-                        if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen WebGPU context" << std::endl;
-
-                        // Suspend frame tracking - this context persists across frames
-                        state->engine->suspendFrameTracking();
-
-                        auto canvasContext = state->engine->newObject();
-
-                        // Store reference to our surface
-                        state->engine->setPrivateData(canvasContext, state->surface);
-
-                        // context.canvas - reference back to canvas element
-                        std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
-                        auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
-                        state->engine->setProperty(canvasContext, "canvas", canvasElement);
-
-                        installCanvasContextBindings(state, canvasContext, true);
-
-                        state->engine->resumeFrameTracking();
-
-                        return canvasContext;
-                    }
-
-                    // Ignore webgl requests silently (PixiJS feature detection)
-                    if (contextType == "webgl" || contextType == "webgl2" || contextType == "experimental-webgl") {
-                        return state->engine->newNull();
-                    }
-
-                    std::cerr << "[Canvas] Unsupported context type: " << contextType << std::endl;
+static js::JSValueHandle tnWebgpuHandler88(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                    // Get the stored context from the global (we need a way to access it)
+                    // For now, return null and let callers use the _context directly
                     return state->engine->newNull();
-                }
-                }}));
-                if (state->verboseLogging) std::cout << "[Canvas] Created offscreen canvas " << canvasId << std::endl;
+}
 
-                // toDataURL for compatibility (returns empty data URI)
-                installBindingTable(state->engine, state, bindingTable(element, {
-                    {"HTMLCanvasElement", "toDataURL", 0, nullptr,
-                    [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                        std::string mimeType = "image/png";
-                        if (!a.empty()) {
-                            mimeType = state->engine->toString(a[0]);
-                        }
-                        // Return a minimal data URI (for @loaders.gl WebP detection)
-                        if (mimeType.find("webp") != std::string::npos) {
-                            return state->engine->newString("data:image/webp;base64,");
-                        }
-                        return state->engine->newString("data:image/png;base64,");
-                    }
-                },
-
-                // getBoundingClientRect - return canvas dimensions
-                    {"HTMLCanvasElement", "getBoundingClientRect", 0, nullptr,
-                    [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                        // Get dimensions from the main canvas if available
-                        auto rect = state->engine->newObject();
-                        state->engine->setProperty(rect, "x", state->engine->newNumber(0));
-                        state->engine->setProperty(rect, "y", state->engine->newNumber(0));
-                        state->engine->setProperty(rect, "width", state->engine->newNumber(state->canvasWidth));
-                        state->engine->setProperty(rect, "height", state->engine->newNumber(state->canvasHeight));
-                        state->engine->setProperty(rect, "top", state->engine->newNumber(0));
-                        state->engine->setProperty(rect, "left", state->engine->newNumber(0));
-                        state->engine->setProperty(rect, "right", state->engine->newNumber(state->canvasWidth));
-                        state->engine->setProperty(rect, "bottom", state->engine->newNumber(state->canvasHeight));
-                        return rect;
-                    }
-                }}));
+static js::JSValueHandle tnWebgpuHandler87(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            int width = 800;
+            int height = 600;
+            if (args.size() >= 1) {
+                width = static_cast<int>(state->engine->toNumber(args[0]));
             }
+            if (args.size() >= 2) {
+                height = static_cast<int>(state->engine->toNumber(args[1]));
+            }
+            if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D canvas (" << width << "x" << height << ")" << std::endl;
+            // Create a wrapper object that mimics a canvas with a 2D context
+            auto canvasWrapper = state->engine->newObject();
+            state->engine->setProperty(canvasWrapper, "width", state->engine->newNumber(width));
+            state->engine->setProperty(canvasWrapper, "height", state->engine->newNumber(height));
+            // Create the 2D context
+            auto ctx2d = canvas::createCanvas2DContext(state->engine, width, height);
+            state->engine->setProperty(canvasWrapper, "_context", ctx2d);
+            // getContext('2d') returns the pre-created context
+            installBindingTable(state->engine, state, bindingTable({
+                {"HTMLCanvasElement", "getContext", 0, nullptr,
+                &tnWebgpuHandler88
+            , canvasWrapper}}));
+            return canvasWrapper;
+}
 
-            return element;
-        }
-    }}));
+static js::JSValueHandle tnWebgpuHandler86(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            if (args.size() < 2) {
+                std::cerr << "[Canvas] __nativeGetContext2D requires contextType and canvasId" << std::endl;
+                return state->engine->newNull();
+            }
+            std::string contextType = state->engine->toString(args[0]);
+            int canvasId = static_cast<int>(state->engine->toNumber(args[1]));
+            if (contextType != "2d") {
+                std::cerr << "[Canvas] Unsupported context type for offscreen canvas: " << contextType << std::endl;
+                return state->engine->newNull();
+            }
+            auto it = state->offscreenCanvases.find(canvasId);
+            if (it == state->offscreenCanvases.end()) {
+                std::cerr << "[Canvas] Canvas not found: " << canvasId << std::endl;
+                return state->engine->newNull();
+            }
+            OffscreenCanvas* canvas = it->second.get();
+            // Return cached context if already created
+            if (canvas->hasContext2d) {
+                return canvas->context2d;
+            }
+            // Get current dimensions from the canvas element (in case they were changed)
+            std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
+            auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
+            if (!state->engine->isNull(canvasElement) && !state->engine->isUndefined(canvasElement)) {
+                auto widthProp = state->engine->getProperty(canvasElement, "width");
+                auto heightProp = state->engine->getProperty(canvasElement, "height");
+                if (!state->engine->isUndefined(widthProp)) {
+                    canvas->width = static_cast<int>(state->engine->toNumber(widthProp));
+                }
+                if (!state->engine->isUndefined(heightProp)) {
+                    canvas->height = static_cast<int>(state->engine->toNumber(heightProp));
+                }
+            }
+            // Create Canvas 2D context with current dimensions
+            if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
+            canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
+            canvas->hasContext2d = true;
+            state->engine->protect(canvas->context2d);
+            return canvas->context2d;
+}
+#if TN_ENABLE_NATIVE_GLTF
+static js::JSValueHandle tnWebgpuHandler85(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            if (args.empty()) {
+                state->engine->throwException("loadGLTF requires a file path argument");
+                return state->engine->newUndefined();
+            }
+            std::string path = state->engine->toString(args[0]);
+            if (state->verboseLogging) std::cout << "[GLTF] Loading: " << path << std::endl;
+            auto gltfData = mystral::gltf::loadGLTF(path);
+            if (!gltfData) {
+                state->engine->throwException(("Failed to load GLTF file: " + path).c_str());
+                return state->engine->newUndefined();
+            }
+            // Convert to JavaScript object
+            auto result = state->engine->newObject();
+            // Meshes array
+            auto jsMeshes = state->engine->newArray();
+            for (size_t mi = 0; mi < gltfData->meshes.size(); mi++) {
+                const auto& mesh = gltfData->meshes[mi];
+                auto jsMesh = state->engine->newObject();
+                state->engine->setProperty(jsMesh, "name", state->engine->newString(mesh.name.c_str()));
+                // Primitives array
+                auto jsPrimitives = state->engine->newArray();
+                for (size_t pi = 0; pi < mesh.primitives.size(); pi++) {
+                    const auto& prim = mesh.primitives[pi];
+                    auto jsPrim = state->engine->newObject();
+                    // Positions Float32Array
+                    if (!prim.positions.data.empty()) {
+                        auto posArr = state->engine->createFloat32Array(
+                            prim.positions.data.data(),
+                            prim.positions.data.size()
+                        );
+                        state->engine->setProperty(jsPrim, "positions", posArr);
+                        state->engine->setProperty(jsPrim, "positionCount",
+                            state->engine->newNumber((double)prim.positions.count));
+                    }
+                    // Normals Float32Array
+                    if (!prim.normals.data.empty()) {
+                        auto normArr = state->engine->createFloat32Array(
+                            prim.normals.data.data(),
+                            prim.normals.data.size()
+                        );
+                        state->engine->setProperty(jsPrim, "normals", normArr);
+                    }
+                    // Texcoords Float32Array
+                    if (!prim.texcoords.data.empty()) {
+                        auto uvArr = state->engine->createFloat32Array(
+                            prim.texcoords.data.data(),
+                            prim.texcoords.data.size()
+                        );
+                        state->engine->setProperty(jsPrim, "texcoords", uvArr);
+                    }
+                    // Tangents Float32Array
+                    if (!prim.tangents.data.empty()) {
+                        auto tanArr = state->engine->createFloat32Array(
+                            prim.tangents.data.data(),
+                            prim.tangents.data.size()
+                        );
+                        state->engine->setProperty(jsPrim, "tangents", tanArr);
+                    }
+                    // Indices Uint32Array
+                    if (!prim.indices.empty()) {
+                        auto idxArr = state->engine->createUint32Array(
+                            prim.indices.data(),
+                            prim.indices.size()
+                        );
+                        state->engine->setProperty(jsPrim, "indices", idxArr);
+                        state->engine->setProperty(jsPrim, "indexCount",
+                            state->engine->newNumber((double)prim.indices.size()));
+                    }
+                    state->engine->setProperty(jsPrim, "materialIndex",
+                        state->engine->newNumber((double)prim.materialIndex));
+                    state->engine->setPropertyIndex(jsPrimitives, pi, jsPrim);
+                }
+                state->engine->setProperty(jsMesh, "primitives", jsPrimitives);
+                state->engine->setPropertyIndex(jsMeshes, mi, jsMesh);
+            }
+            state->engine->setProperty(result, "meshes", jsMeshes);
+            // Materials array
+            auto jsMaterials = state->engine->newArray();
+            for (size_t mi = 0; mi < gltfData->materials.size(); mi++) {
+                const auto& mat = gltfData->materials[mi];
+                auto jsMat = state->engine->newObject();
+                state->engine->setProperty(jsMat, "name", state->engine->newString(mat.name.c_str()));
+                // PBR factors
+                auto baseColor = state->engine->newArray();
+                for (int i = 0; i < 4; i++) {
+                    state->engine->setPropertyIndex(baseColor, i, state->engine->newNumber(mat.baseColorFactor[i]));
+                }
+                state->engine->setProperty(jsMat, "baseColorFactor", baseColor);
+                state->engine->setProperty(jsMat, "metallicFactor", state->engine->newNumber(mat.metallicFactor));
+                state->engine->setProperty(jsMat, "roughnessFactor", state->engine->newNumber(mat.roughnessFactor));
+                // Emissive
+                auto emissive = state->engine->newArray();
+                for (int i = 0; i < 3; i++) {
+                    state->engine->setPropertyIndex(emissive, i, state->engine->newNumber(mat.emissiveFactor[i]));
+                }
+                state->engine->setProperty(jsMat, "emissiveFactor", emissive);
+                // Texture indices
+                state->engine->setProperty(jsMat, "baseColorTextureIndex",
+                    state->engine->newNumber(mat.baseColorTexture.imageIndex));
+                state->engine->setProperty(jsMat, "metallicRoughnessTextureIndex",
+                    state->engine->newNumber(mat.metallicRoughnessTexture.imageIndex));
+                state->engine->setProperty(jsMat, "normalTextureIndex",
+                    state->engine->newNumber(mat.normalTexture.imageIndex));
+                state->engine->setProperty(jsMat, "occlusionTextureIndex",
+                    state->engine->newNumber(mat.occlusionTexture.imageIndex));
+                state->engine->setProperty(jsMat, "emissiveTextureIndex",
+                    state->engine->newNumber(mat.emissiveTexture.imageIndex));
+                state->engine->setProperty(jsMat, "normalScale", state->engine->newNumber(mat.normalScale));
+                state->engine->setProperty(jsMat, "occlusionStrength", state->engine->newNumber(mat.occlusionStrength));
+                state->engine->setProperty(jsMat, "alphaCutoff", state->engine->newNumber(mat.alphaCutoff));
+                state->engine->setProperty(jsMat, "doubleSided", state->engine->newBoolean(mat.doubleSided));
+                const char* alphaModeStr = "OPAQUE";
+                if (mat.alphaMode == mystral::gltf::MaterialData::AlphaMode::Mask) alphaModeStr = "MASK";
+                else if (mat.alphaMode == mystral::gltf::MaterialData::AlphaMode::Blend) alphaModeStr = "BLEND";
+                state->engine->setProperty(jsMat, "alphaMode", state->engine->newString(alphaModeStr));
+                state->engine->setPropertyIndex(jsMaterials, mi, jsMat);
+            }
+            state->engine->setProperty(result, "materials", jsMaterials);
+            // Images array (with embedded data as ArrayBuffers)
+            auto jsImages = state->engine->newArray();
+            for (size_t ii = 0; ii < gltfData->images.size(); ii++) {
+                const auto& img = gltfData->images[ii];
+                auto jsImg = state->engine->newObject();
+                state->engine->setProperty(jsImg, "name", state->engine->newString(img.name.c_str()));
+                state->engine->setProperty(jsImg, "uri", state->engine->newString(img.uri.c_str()));
+                state->engine->setProperty(jsImg, "mimeType", state->engine->newString(img.mimeType.c_str()));
+                // Embedded image data as ArrayBuffer
+                if (!img.data.empty()) {
+                    auto dataArr = state->engine->createUint8Array(
+                        img.data.data(),
+                        img.data.size()
+                    );
+                    state->engine->setProperty(jsImg, "data", dataArr);
+                }
+                state->engine->setPropertyIndex(jsImages, ii, jsImg);
+            }
+            state->engine->setProperty(result, "images", jsImages);
+            // Nodes array
+            auto jsNodes = state->engine->newArray();
+            for (size_t ni = 0; ni < gltfData->nodes.size(); ni++) {
+                const auto& node = gltfData->nodes[ni];
+                auto jsNode = state->engine->newObject();
+                state->engine->setProperty(jsNode, "name", state->engine->newString(node.name.c_str()));
+                state->engine->setProperty(jsNode, "meshIndex", state->engine->newNumber(node.meshIndex));
+                // Transform - store as separate arrays
+                auto translation = state->engine->newArray();
+                auto rotation = state->engine->newArray();
+                auto scale = state->engine->newArray();
+                for (int i = 0; i < 3; i++) {
+                    state->engine->setPropertyIndex(translation, i, state->engine->newNumber(node.translation[i]));
+                    state->engine->setPropertyIndex(scale, i, state->engine->newNumber(node.scale[i]));
+                }
+                for (int i = 0; i < 4; i++) {
+                    state->engine->setPropertyIndex(rotation, i, state->engine->newNumber(node.rotation[i]));
+                }
+                state->engine->setProperty(jsNode, "translation", translation);
+                state->engine->setProperty(jsNode, "rotation", rotation);
+                state->engine->setProperty(jsNode, "scale", scale);
+                // Matrix (if present)
+                if (node.hasMatrix) {
+                    auto matrix = state->engine->newArray();
+                    for (int i = 0; i < 16; i++) {
+                        state->engine->setPropertyIndex(matrix, i, state->engine->newNumber(node.matrix[i]));
+                    }
+                    state->engine->setProperty(jsNode, "matrix", matrix);
+                }
+                // Children indices
+                auto children = state->engine->newArray();
+                for (size_t ci = 0; ci < node.children.size(); ci++) {
+                    state->engine->setPropertyIndex(children, ci, state->engine->newNumber(node.children[ci]));
+                }
+                state->engine->setProperty(jsNode, "children", children);
+                state->engine->setPropertyIndex(jsNodes, ni, jsNode);
+            }
+            state->engine->setProperty(result, "nodes", jsNodes);
+            // Scenes array
+            auto jsScenes = state->engine->newArray();
+            for (size_t si = 0; si < gltfData->scenes.size(); si++) {
+                const auto& scene = gltfData->scenes[si];
+                auto jsScene = state->engine->newObject();
+                state->engine->setProperty(jsScene, "name", state->engine->newString(scene.name.c_str()));
+                auto sceneNodes = state->engine->newArray();
+                for (size_t sni = 0; sni < scene.nodes.size(); sni++) {
+                    state->engine->setPropertyIndex(sceneNodes, sni, state->engine->newNumber(scene.nodes[sni]));
+                }
+                state->engine->setProperty(jsScene, "nodes", sceneNodes);
+                state->engine->setPropertyIndex(jsScenes, si, jsScene);
+            }
+            state->engine->setProperty(result, "scenes", jsScenes);
+            state->engine->setProperty(result, "defaultScene", state->engine->newNumber(gltfData->defaultScene));
+            if (state->verboseLogging) {
+                std::cout << "[GLTF] Loaded " << gltfData->meshes.size() << " meshes, "
+                          << gltfData->materials.size() << " materials, "
+                          << gltfData->images.size() << " images" << std::endl;
+            }
+            return result;
+}
+#endif
+static js::JSValueHandle tnWebgpuHandler84(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            if (args.empty()) {
+                state->engine->throwException("__decodeImageData requires an ArrayBuffer argument");
+                return state->engine->newUndefined();
+            }
+            // Get ArrayBuffer data
+            size_t inputSize = 0;
+            void* inputData = state->engine->getArrayBufferData(args[0], &inputSize);
+            if (!inputData || inputSize == 0) {
+                state->engine->throwException("__decodeImageData: invalid ArrayBuffer");
+                return state->engine->newUndefined();
+            }
+            const unsigned char* inputBytes = (const unsigned char*)inputData;
+            int width = 0, height = 0;
+            unsigned char* data = nullptr;
+            bool isWebP = false;
+            // Check if this is a WebP image (starts with "RIFF" and has "WEBP" at offset 8)
+            if (inputSize >= 12 &&
+                inputBytes[0] == 'R' && inputBytes[1] == 'I' &&
+                inputBytes[2] == 'F' && inputBytes[3] == 'F' &&
+                inputBytes[8] == 'W' && inputBytes[9] == 'E' &&
+                inputBytes[10] == 'B' && inputBytes[11] == 'P') {
+                isWebP = true;
+            }
+            if (isWebP) {
+#ifdef MYSTRAL_HAS_WEBP
+                // Decode WebP using libwebp
+                data = WebPDecodeRGBA(inputBytes, inputSize, &width, &height);
+                if (!data) {
+                    state->engine->throwException("Failed to decode WebP image");
+                    return state->engine->newUndefined();
+                }
+                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded WebP " << width << "x" << height << " image" << std::endl;
+#else
+                state->engine->throwException("WebP image detected but libwebp support not compiled in. Rebuild with MYSTRAL_HAS_WEBP.");
+                return state->engine->newUndefined();
+#endif
+            } else {
+                // Decode using stb_image (PNG, JPEG, etc.)
+                int channels;
+                data = stbi_load_from_memory(inputBytes, (int)inputSize, &width, &height, &channels, 4);
+                if (!data) {
+                    std::string error = std::string("Failed to decode image: ") + stbi_failure_reason();
+                    state->engine->throwException(error.c_str());
+                    return state->engine->newUndefined();
+                }
+                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded " << width << "x" << height << " image" << std::endl;
+            }
+            // Create ImageBitmap-like object
+            auto result = state->engine->newObject();
+            // Create ArrayBuffer with RGBA pixel data
+            size_t dataSize = width * height * 4;
+            auto arrayBuffer = state->engine->newArrayBuffer(data, dataSize);
+            state->engine->setProperty(result, "width", state->engine->newNumber(width));
+            state->engine->setProperty(result, "height", state->engine->newNumber(height));
+            state->engine->setProperty(result, "_data", arrayBuffer);  // Internal pixel data
+            state->engine->setProperty(result, "_closed", state->engine->newBoolean(false));
+            // Free decoded data (we copied it to ArrayBuffer)
+            if (isWebP) {
+#ifdef MYSTRAL_HAS_WEBP
+                WebPFree(data);
+#endif
+            } else {
+                stbi_image_free(data);
+            }
+            return result;
+}
 
-    // Add document.body if not present, or enhance existing body with required methods
-    auto existingBody = engine->getProperty(existingDocument, "body");
-    if (engine->isUndefined(existingBody) || engine->isNull(existingBody)) {
-        existingBody = engine->newObject();
-        engine->setProperty(existingDocument, "body", existingBody);
-    }
-    // Always add/update these methods on body
-    engine->setProperty(existingBody, "style", engine->newObject());
-    installBindingTable(state->engine, state, bindingTable(existingBody, {
-        {"HTMLElement", "appendChild", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            return args.empty() ? state->engine->newUndefined() : args[0];
-        }
-    },
-        {"HTMLElement", "removeChild", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            return args.empty() ? state->engine->newUndefined() : args[0];
-        }
-    }}));
+static js::JSValueHandle tnWebgpuHandler83(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            return state->engine->newString(formatToString(state->surfaceFormat));
+}
 
-    // ========================================================================
-    // Navigator object
-    // ========================================================================
-    auto navigatorHandle = engine->getGlobalProperty("navigator");
-    if (engine->isUndefined(navigatorHandle)) {
-        navigatorHandle = engine->newObject();
-        engine->setGlobalProperty("navigator", navigatorHandle);
-    }
+static js::JSValueHandle tnWebgpuHandler82(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                    if (args.empty()) return state->engine->newBoolean(false);
+                    std::string featureName = state->engine->toString(args[0]);
+                    // indirect-first-instance is required for indirect draws with non-zero firstInstance
+                    // This is supported by Dawn on all backends
+                    if (featureName == "indirect-first-instance") {
+                        return state->engine->newBoolean(true);
+                    }
+                    // timestamp-query is NOT supported yet - bindings not implemented
+                    if (featureName == "timestamp-query") {
+                        return state->engine->newBoolean(false);
+                    }
+                    // Answered from the real adapter so feature-dependent consumers (three's
+                    // KTX2Loader.detectSupport among them) request what the hardware has.
+                    WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
+                    if (feature == static_cast<WGPUFeatureName>(0)) return state->engine->newBoolean(false);
+                    return state->engine->newBoolean(wgpuAdapterHasFeature(state->adapter, feature) != 0);
+}
 
-    // Add common navigator properties for browser compatibility
-    // PixiJS and other libraries check these for feature detection
-    engine->setProperty(navigatorHandle, "userAgent",
-        engine->newString("Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"));
-    engine->setProperty(navigatorHandle, "platform", engine->newString("MystralNative"));
-    engine->setProperty(navigatorHandle, "vendor", engine->newString("Mystral Engine"));
-    engine->setProperty(navigatorHandle, "language", engine->newString("en-US"));
-    engine->setProperty(navigatorHandle, "languages", engine->newArray(1));  // ["en-US"]
-    engine->setProperty(navigatorHandle, "onLine", engine->newBoolean(true));
-    engine->setProperty(navigatorHandle, "hardwareConcurrency", engine->newNumber(8));
-    engine->setProperty(navigatorHandle, "maxTouchPoints", engine->newNumber(0));
+static js::JSValueHandle tnWebgpuHandler81(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (state->verboseLogging) {
+                                std::cout << "[WebGPU] popErrorScope" << std::endl;
+                            }
+                            auto* data = new ErrorScopeData();
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+                            WGPUPopErrorScopeCallbackInfo callbackInfo = {};
+                            callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+                            callbackInfo.callback = onErrorScopePopped;
+                            callbackInfo.userdata1 = data;
+                            callbackInfo.userdata2 = nullptr;
+                            (void)wgpuDevicePopErrorScope(state->device, callbackInfo);
+#else
+                            wgpuDevicePopErrorScope(state->device, onErrorScopePopped, data);
+#endif
+                            if (!waitForWebGpuCallback(state, data->completed)) {
+                                releaseCallbackData(data);
+                                return rejectedPromise(state,
+                                    "GPUDevice.popErrorScope timed out waiting for native observation.",
+                                    "popErrorScope-timeout"
+                                );
+                            }
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+                            const WGPUPopErrorScopeStatus popStatus = data->status;
+                            if (popStatus != WGPUPopErrorScopeStatus_Success) {
+                                releaseCallbackData(data);
+                                return rejectedPromise(state,
+                                    "GPUDevice.popErrorScope failed with native status "
+                                        + std::to_string(static_cast<int>(popStatus)),
+                                    "popErrorScope-status"
+                                );
+                            }
+#endif
+                            const WGPUErrorType errorType = data->type;
+                            const std::string errorMessage = data->message;
+                            releaseCallbackData(data);
+                            if (errorType == WGPUErrorType_NoError) {
+                            return resolvedPromise(state, "null", "popErrorScope-empty");
+                            }
+                            const std::string errorExpression = "{ name: "
+                                + jsStringLiteral(gpuErrorName(errorType))
+                                + ", message: " + jsStringLiteral(errorMessage) + " }";
+                            return resolvedPromise(state, errorExpression, "popErrorScope-observed");
+}
 
-    // Create navigator.gpu object
-    auto gpuObject = engine->newObject();
+static js::JSValueHandle tnWebgpuHandler80(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            const std::string filterName = args.empty() ? "validation" : state->engine->toString(args[0]);
+                            WGPUErrorFilter filter;
+                            if (filterName == "validation") filter = WGPUErrorFilter_Validation;
+                            else if (filterName == "out-of-memory") filter = WGPUErrorFilter_OutOfMemory;
+                            else if (filterName == "internal") filter = WGPUErrorFilter_Internal;
+                            else {
+                                state->engine->throwException("GPUDevice.pushErrorScope received an unknown filter");
+                                return state->engine->newUndefined();
+                            }
+                            wgpuDevicePushErrorScope(state->device, filter);
+                            if (state->verboseLogging) {
+                                std::cout << "[WebGPU] pushErrorScope: " << filterName << std::endl;
+                            }
+                            return state->engine->newUndefined();
+}
 
-    // ========================================================================
-    // navigator.gpu.requestAdapter()
-    // ========================================================================
-    installBindingTable(state->engine, state, bindingTable(gpuObject, {
-        {"GPU", "requestAdapter", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            // In native runtime, we already have an adapter, so just return a mock adapter object
-            auto adapter = state->engine->newObject();
+static js::JSValueHandle tnWebgpuHandler79(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    WGPURenderBundleDescriptor desc = {};
+                                    WGPURenderBundle bundle = wgpuRenderBundleEncoderFinish(capturedEncoder, &desc);
+                                    auto jsBundle = state->engine->newObject();
+                                    state->engine->setPrivateData(jsBundle, bundle);
+                                    state->engine->setProperty(jsBundle, "_type", state->engine->newString("renderBundle"));
+                                    if (state->verboseLogging) std::cout << "[WebGPU] Render bundle finished" << std::endl;
+                                    return jsBundle;
+}
 
-            // adapter.requestDevice()
-            installBindingTable(state->engine, state, bindingTable(adapter, {
-                {"GPUAdapter", "requestDevice", 0, nullptr,
-                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                    // Return a device object wrapping our native device
-                    auto device = state->engine->newObject();
-                    state->engine->setPrivateData(device, state->device);
+static js::JSValueHandle tnWebgpuHandler78(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.empty()) return state->engine->newUndefined();
+                                    uint32_t indexCount = (uint32_t)state->engine->toNumber(args[0]);
+                                    uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
+                                    uint32_t firstIndex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
+                                    int32_t baseVertex = args.size() > 3 ? (int32_t)state->engine->toNumber(args[3]) : 0;
+                                    uint32_t firstInstance = args.size() > 4 ? (uint32_t)state->engine->toNumber(args[4]) : 0;
+                                    wgpuRenderBundleEncoderDrawIndexed(capturedEncoder, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+                                    return state->engine->newUndefined();
+}
 
-                    // device.queue
-                    auto queue = state->engine->newObject();
-                    state->engine->setPrivateData(queue, state->queue);
+static js::JSValueHandle tnWebgpuHandler77(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.empty()) return state->engine->newUndefined();
+                                    uint32_t vertexCount = (uint32_t)state->engine->toNumber(args[0]);
+                                    uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
+                                    uint32_t firstVertex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
+                                    uint32_t firstInstance = args.size() > 3 ? (uint32_t)state->engine->toNumber(args[3]) : 0;
+                                    wgpuRenderBundleEncoderDraw(capturedEncoder, vertexCount, instanceCount, firstVertex, firstInstance);
+                                    return state->engine->newUndefined();
+}
 
-                    // queue.submit(commandBuffers)
-                    installBindingTable(state->engine, state, bindingTable(queue, {
-                        {"GPUQueue", "submit", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
+static js::JSValueHandle tnWebgpuHandler76(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 2) return state->engine->newUndefined();
+                                    uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
+                                    WGPUBindGroup bindGroup = (WGPUBindGroup)state->engine->getPrivateData(args[1]);
+                                    // Parse dynamic offsets if provided
+                                    std::vector<uint32_t> dynamicOffsets;
+                                    if (args.size() > 2 && !state->engine->isUndefined(args[2])) {
+                                        auto offsetsArray = args[2];
+                                        auto lengthProp = state->engine->getProperty(offsetsArray, "length");
+                                        int offsetCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
+                                        for (int i = 0; i < offsetCount; i++) {
+                                            dynamicOffsets.push_back((uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(offsetsArray, i)));
+                                        }
+                                    }
+                                    wgpuRenderBundleEncoderSetBindGroup(capturedEncoder, index, bindGroup, dynamicOffsets.size(), dynamicOffsets.data());
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler75(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 2) return state->engine->newUndefined();
+                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                    std::string formatStr = state->engine->toString(args[1]);
+                                    WGPUIndexFormat format = formatStr == "uint32" ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16;
+                                    uint64_t offset = args.size() > 2 && !state->engine->isUndefined(args[2]) ? (uint64_t)state->engine->toNumber(args[2]) : 0;
+                                    uint64_t size = args.size() > 3 && !state->engine->isUndefined(args[3]) ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
+                                    wgpuRenderBundleEncoderSetIndexBuffer(capturedEncoder, buffer, format, offset, size);
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler74(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 2) return state->engine->newUndefined();
+                                    uint32_t slot = (uint32_t)state->engine->toNumber(args[0]);
+                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[1]);
+                                    uint64_t offset = args.size() > 2 && !state->engine->isUndefined(args[2]) ? (uint64_t)state->engine->toNumber(args[2]) : 0;
+                                    uint64_t size = args.size() > 3 && !state->engine->isUndefined(args[3]) ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
+                                    wgpuRenderBundleEncoderSetVertexBuffer(capturedEncoder, slot, buffer, offset, size);
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler73(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.empty()) return state->engine->newUndefined();
+                                    WGPURenderPipeline pipeline = (WGPURenderPipeline)state->engine->getPrivateData(args[0]);
+                                    wgpuRenderBundleEncoderSetPipeline(capturedEncoder, pipeline);
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler72(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
+                                state->engine->throwException("createRenderBundleEncoder requires a descriptor");
                                 return state->engine->newUndefined();
                             }
-
-                            // Get command buffers array and submit them
-                            auto cmdBuffersArray = args[0];
-
-                            // Get array length
-                            auto lengthProp = state->engine->getProperty(cmdBuffersArray, "length");
-                            int length = (int)state->engine->toNumber(lengthProp);
-
-                            // Collect command buffers
-                            std::vector<WGPUCommandBuffer> cmdBuffers;
-                            for (int i = 0; i < length; i++) {
-                                auto cmdBufferHandle = state->engine->getPropertyIndex(cmdBuffersArray, i);
-                                WGPUCommandBuffer cmdBuffer = (WGPUCommandBuffer)state->engine->getPrivateData(cmdBufferHandle);
-                                if (cmdBuffer) {
-                                    cmdBuffers.push_back(cmdBuffer);
+                            auto descriptor = args[0];
+                            // Parse color formats
+                            auto colorFormats = state->engine->getProperty(descriptor, "colorFormats");
+                            auto colorFormatsLength = state->engine->getProperty(colorFormats, "length");
+                            int colorFormatCount = state->engine->isUndefined(colorFormatsLength) ? 0 : (int)state->engine->toNumber(colorFormatsLength);
+                            std::vector<WGPUTextureFormat> formats;
+                            formats.reserve(colorFormatCount);
+                            for (int i = 0; i < colorFormatCount; i++) {
+                                auto formatProp = state->engine->getPropertyIndex(colorFormats, i);
+                                if (!state->engine->isUndefined(formatProp) && !state->engine->isNull(formatProp)) {
+                                    formats.push_back(stringToFormat(state->engine->toString(formatProp)));
                                 }
                             }
-
-                            // Submit user command buffers first
-                            state->submitCount++;
-#if TN_ANDROID_JS_PROFILE
-                            uint64_t submitPollNs = 0;
-                            uint64_t presentNs = 0;
-#endif
-                            if (!cmdBuffers.empty() && state->queue) {
-#if TN_ANDROID_JS_PROFILE
-                                const auto submitStart = std::chrono::steady_clock::now();
-#endif
-                                wgpuQueueSubmit(state->queue, cmdBuffers.size(), cmdBuffers.data());
-#if TN_ANDROID_JS_PROFILE
-                                submitPollNs = static_cast<uint64_t>(
-                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                        std::chrono::steady_clock::now() - submitStart
-                                    ).count()
-                                );
-#endif
-                                // Release command buffers after submission (they're consumed by submit)
-                                for (auto cmdBuf : cmdBuffers) {
-                                    wgpuCommandBufferRelease(cmdBuf);
-                                }
-                                // Tick to flush GPU work
-#if TN_ANDROID_JS_PROFILE
-                                const auto pollStart = std::chrono::steady_clock::now();
-#endif
-#if defined(MYSTRAL_WEBGPU_DAWN)
-                                wgpuDeviceTick(state->device);
-#elif defined(MYSTRAL_WEBGPU_WGPU)
-                                wgpuDevicePoll(state->device, false, nullptr);
-#endif
-#if TN_ANDROID_JS_PROFILE
-                                submitPollNs += static_cast<uint64_t>(
-                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                        std::chrono::steady_clock::now() - pollStart
-                                    ).count()
-                                );
-#endif
-                                if (state->verboseLogging) std::cout << "[WebGPU] Submit #" << state->submitCount << ": " << cmdBuffers.size() << " command buffers, currentTexture=" << (void*)state->currentTexture << std::endl;
-                            } else {
-                                if (state->verboseLogging) std::cout << "[WebGPU] Submit #" << state->submitCount << ": EMPTY (length=" << length << "), currentTexture=" << (void*)state->currentTexture << std::endl;
+                            // Parse depth stencil format
+                            WGPUTextureFormat depthFormat = WGPUTextureFormat_Undefined;
+                            auto depthFormatProp = state->engine->getProperty(descriptor, "depthStencilFormat");
+                            if (!state->engine->isUndefined(depthFormatProp) && !state->engine->isNull(depthFormatProp)) {
+                                depthFormat = stringToFormat(state->engine->toString(depthFormatProp));
                             }
-
-
-                            // Mark the frame ready to present rather than presenting here.
-                            //
-                            // A frame can submit more than once: three.js renders the world, then
-                            // the framework renders `ctx.canvasLayer` as an overlay pass, and each
-                            // `renderer.render()` ends in its own submit. Presenting per submit gave
-                            // each of those its own swapchain image, so only the first reached the
-                            // display and every overlay was silently dropped — the framework's own
-                            // loading screen and any game HUD on the canvas layer drew nothing on
-                            // native while working on web. presentPendingSurface() runs once per
-                            // frame from endDawnFrame(), after every rAF callback has returned.
-                            if (state->surface && state->currentTexture && state->surfaceRenderPassEnded) {
-                                state->framePresentPending = true;
+                            // Parse sample count
+                            uint32_t sampleCount = 1;
+                            auto sampleCountProp = state->engine->getProperty(descriptor, "sampleCount");
+                            if (!state->engine->isUndefined(sampleCountProp)) {
+                                sampleCount = (uint32_t)state->engine->toNumber(sampleCountProp);
                             }
-
-#if TN_ANDROID_JS_PROFILE
-                            // The present happens after this submit returns, from
-                            // presentPendingSurface(); report the previous frame's present on this
-                            // frame's first submit only, so per-frame sums count it once.
-                            if (!state->presentReportedSinceLastPresent) {
-                                presentNs = state->lastPresentNs;
-                                state->presentReportedSinceLastPresent = true;
-                            }
-#endif
-
-#if TN_ANDROID_JS_PROFILE
-                            emitAndroidJsNativeProfile(state, submitPollNs, presentNs);
-#endif
-
-                            return state->engine->newUndefined();
-                        }
-                    },
-
-                    // queue.writeBuffer(buffer, offset, data, dataOffset?, size?)
-                                            {"GPUQueue", "writeBuffer", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.size() < 3) {
-                                state->engine->throwException("writeBuffer requires buffer, offset, and data");
+                            WGPURenderBundleEncoderDescriptor desc = {};
+                            desc.colorFormatCount = formats.size();
+                            desc.colorFormats = formats.data();
+                            desc.depthStencilFormat = depthFormat;
+                            desc.sampleCount = sampleCount;
+                            WGPURenderBundleEncoder bundleEncoder = wgpuDeviceCreateRenderBundleEncoder(state->device, &desc);
+                            if (!bundleEncoder) {
+                                state->engine->throwException("Failed to create render bundle encoder");
                                 return state->engine->newUndefined();
                             }
+                            auto jsEncoder = state->engine->newObject();
+                            state->engine->setPrivateData(jsEncoder, bundleEncoder);
+                            // Capture for closures
+                            WGPURenderBundleEncoder capturedEncoder = bundleEncoder;
+                            // renderBundleEncoder.setPipeline(pipeline)
+                            installBindingTable(state->engine, state, bindingTable({
+                                {"GPURenderBundleEncoder", "setPipeline", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler73)
+                            , jsEncoder},
+                            // renderBundleEncoder.setVertexBuffer(slot, buffer, offset?, size?)
+                                {"GPURenderBundleEncoder", "setVertexBuffer", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler74)
+                            , jsEncoder},
+                            // renderBundleEncoder.setIndexBuffer(buffer, format, offset?, size?)
+                                {"GPURenderBundleEncoder", "setIndexBuffer", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler75)
+                            , jsEncoder},
+                            // renderBundleEncoder.setBindGroup(index, bindGroup, dynamicOffsets?)
+                                {"GPURenderBundleEncoder", "setBindGroup", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler76)
+                            , jsEncoder},
+                            // renderBundleEncoder.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
+                                {"GPURenderBundleEncoder", "draw", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler77)
+                            , jsEncoder},
+                            // renderBundleEncoder.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
+                                {"GPURenderBundleEncoder", "drawIndexed", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler78)
+                            , jsEncoder},
+                            // renderBundleEncoder.finish(descriptor?)
+                                {"GPURenderBundleEncoder", "finish", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler79)
+                            , jsEncoder}}));
+                            if (state->verboseLogging) std::cout << "[WebGPU] Created render bundle encoder" << std::endl;
+                            return jsEncoder;
+}
 
-                            WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                            const double offsetValue = state->engine->toNumber(args[1]);
-                            if (!std::isfinite(offsetValue) || offsetValue < 0 || std::floor(offsetValue) != offsetValue ||
-                                static_cast<uint64_t>(offsetValue) % 4 != 0) {
-                                state->engine->throwException("writeBuffer: buffer offset must be a non-negative multiple of 4");
+static js::JSValueHandle tnWebgpuHandler71(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createTextureView requires a texture");
                                 return state->engine->newUndefined();
                             }
-                            const uint64_t offset = static_cast<uint64_t>(offsetValue);
-
-                            // Get ArrayBuffer data
-                            size_t dataSize = 0;
-                            void* dataPtr = state->engine->getArrayBufferData(args[2], &dataSize);
-
-                            if (!dataPtr || dataSize == 0) {
-                                state->engine->throwException("writeBuffer: invalid data");
-                                return state->engine->newUndefined();
-                            }
-
-                            // WebGPU expresses dataOffset/size in elements for a TypedArray,
-                            // but in bytes for ArrayBuffer and DataView inputs.
-                            size_t bytesPerElement = 1;
-                            auto bytesPerElementValue = state->engine->getProperty(args[2], "BYTES_PER_ELEMENT");
-                            if (!state->engine->isUndefined(bytesPerElementValue)) {
-                                const double value = state->engine->toNumber(bytesPerElementValue);
-                                if (value > 0) bytesPerElement = static_cast<size_t>(value);
-                            }
-
-                            const double dataOffsetValue = args.size() > 3 ? state->engine->toNumber(args[3]) : 0;
-                            const double sizeValue = args.size() > 4 ? state->engine->toNumber(args[4]) : -1;
-                            if (!std::isfinite(dataOffsetValue) || dataOffsetValue < 0 ||
-                                std::floor(dataOffsetValue) != dataOffsetValue ||
-                                (args.size() > 4 && (!std::isfinite(sizeValue) || sizeValue < 0 ||
-                                                    std::floor(sizeValue) != sizeValue))) {
-                                state->engine->throwException("writeBuffer: data offset and size must be non-negative");
-                                return state->engine->newUndefined();
-                            }
-                            const size_t dataOffset = static_cast<size_t>(dataOffsetValue) * bytesPerElement;
-                            const size_t writeSize = args.size() > 4
-                                ? static_cast<size_t>(sizeValue) * bytesPerElement
-                                : (dataOffset <= dataSize ? dataSize - dataOffset : 0);
-                            if (dataOffset > dataSize || writeSize > dataSize - dataOffset) {
-                                state->engine->throwException("writeBuffer: source range exceeds the supplied buffer view");
-                                return state->engine->newUndefined();
-                            }
-
-                            if (buffer && state->queue) {
-                                const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
-                                const size_t alignedWriteSize = (writeSize + 3) & ~size_t(3);
-                                if (alignedWriteSize == writeSize) {
-                                    wgpuQueueWriteBuffer(state->queue, buffer, offset, source, writeSize);
-                                } else {
-                                    // Three pads destination attribute buffers to four bytes.
-                                    // Mirror browser implementations by zero-padding the final
-                                    // partial element before crossing the native WebGPU ABI.
-                                    std::vector<uint8_t> alignedData(alignedWriteSize, 0);
-                                    std::memcpy(alignedData.data(), source, writeSize);
-                                    wgpuQueueWriteBuffer(state->queue, buffer, offset, alignedData.data(), alignedData.size());
-                                }
-                            }
-
-                            return state->engine->newUndefined();
-                        }
-                    },
-
-                    // queue.writeTexture(destination, data, dataLayout, size)
-                                            {"GPUQueue", "writeTexture", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.size() < 4) {
-                                state->engine->throwException("writeTexture requires destination, data, dataLayout, and size");
-                                return state->engine->newUndefined();
-                            }
-
-                            // Parse destination {texture, mipLevel?, origin?, aspect?}
-                            auto destination = args[0];
-                            auto textureHandle = state->engine->getProperty(destination, "texture");
+                            auto textureHandle = args[0];
                             WGPUTexture texture = (WGPUTexture)state->engine->getPrivateData(textureHandle);
-
                             if (!texture) {
-                                state->engine->throwException("writeTexture: invalid texture");
+                                state->engine->throwException("createTextureView: invalid texture");
                                 return state->engine->newUndefined();
                             }
-
-                            auto mipLevelVal = state->engine->getProperty(destination, "mipLevel");
-                            uint32_t mipLevel = state->engine->isUndefined(mipLevelVal) ? 0 : (uint32_t)state->engine->toNumber(mipLevelVal);
-
-                            // Parse origin
-                            auto originVal = state->engine->getProperty(destination, "origin");
-                            uint32_t originX = 0, originY = 0, originZ = 0;
-                            if (!state->engine->isUndefined(originVal)) {
-                                auto lengthProp = state->engine->getProperty(originVal, "length");
-                                if (!state->engine->isUndefined(lengthProp)) {
-                                    // Array format
-                                    int len = (int)state->engine->toNumber(lengthProp);
-                                    if (len >= 1) originX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originVal, 0));
-                                    if (len >= 2) originY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originVal, 1));
-                                    if (len >= 3) originZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originVal, 2));
-                                } else {
-                                    // Object format
-                                    auto x = state->engine->getProperty(originVal, "x");
-                                    auto y = state->engine->getProperty(originVal, "y");
-                                    auto z = state->engine->getProperty(originVal, "z");
-                                    if (!state->engine->isUndefined(x)) originX = (uint32_t)state->engine->toNumber(x);
-                                    if (!state->engine->isUndefined(y)) originY = (uint32_t)state->engine->toNumber(y);
-                                    if (!state->engine->isUndefined(z)) originZ = (uint32_t)state->engine->toNumber(z);
+                            // Get texture info
+                            double formatEnum = state->engine->toNumber(state->engine->getProperty(textureHandle, "_formatEnum"));
+                            WGPUTextureFormat format = formatEnum == 0 ? state->surfaceFormat : (WGPUTextureFormat)(int)formatEnum;
+                            // Get format from _textureId if available
+                            auto textureIdVal = state->engine->getProperty(textureHandle, "_textureId");
+                            if (!state->engine->isUndefined(textureIdVal)) {
+                                uint64_t textureId = (uint64_t)state->engine->toNumber(textureIdVal);
+                                auto it = state->textureRegistry.find(textureId);
+                                if (it != state->textureRegistry.end()) {
+                                    format = it->second.format;
                                 }
                             }
+                            WGPUTextureViewDescriptor viewDesc = {};
+                            viewDesc.format = format;
+                            viewDesc.dimension = WGPUTextureViewDimension_2D;
+                            viewDesc.baseMipLevel = 0;
+                            viewDesc.mipLevelCount = 1;
+                            viewDesc.baseArrayLayer = 0;
+                            viewDesc.arrayLayerCount = 1;
+                            viewDesc.aspect = WGPUTextureAspect_All;
+                            // Parse descriptor if provided
+                            if (args.size() > 1 && !state->engine->isUndefined(args[1])) {
+                                auto descriptor = args[1];
+                                auto formatProp = state->engine->getProperty(descriptor, "format");
+                                if (!state->engine->isUndefined(formatProp)) {
+                                    viewDesc.format = stringToFormat(state->engine->toString(formatProp));
+                                }
+                                auto dimensionProp = state->engine->getProperty(descriptor, "dimension");
+                                if (!state->engine->isUndefined(dimensionProp)) {
+                                    viewDesc.dimension = stringToTextureViewDimension(state->engine->toString(dimensionProp));
+                                }
+                                auto baseMipLevel = state->engine->getProperty(descriptor, "baseMipLevel");
+                                if (!state->engine->isUndefined(baseMipLevel)) {
+                                    viewDesc.baseMipLevel = (uint32_t)state->engine->toNumber(baseMipLevel);
+                                }
+                                auto mipLevelCount = state->engine->getProperty(descriptor, "mipLevelCount");
+                                if (!state->engine->isUndefined(mipLevelCount)) {
+                                    viewDesc.mipLevelCount = (uint32_t)state->engine->toNumber(mipLevelCount);
+                                }
+                                auto baseArrayLayer = state->engine->getProperty(descriptor, "baseArrayLayer");
+                                if (!state->engine->isUndefined(baseArrayLayer)) {
+                                    viewDesc.baseArrayLayer = (uint32_t)state->engine->toNumber(baseArrayLayer);
+                                }
+                                auto arrayLayerCount = state->engine->getProperty(descriptor, "arrayLayerCount");
+                                if (!state->engine->isUndefined(arrayLayerCount)) {
+                                    uint32_t requested = (uint32_t)state->engine->toNumber(arrayLayerCount);
+                                    // Clamp to 1 for surface textures (which only have 1 layer)
+                                    // or look up actual layer count from registry
+                                    auto textureIdVal2 = state->engine->getProperty(textureHandle, "_textureId");
+                                    uint32_t maxLayers = 1;
+                                    if (!state->engine->isUndefined(textureIdVal2)) {
+                                        uint64_t tid = (uint64_t)state->engine->toNumber(textureIdVal2);
+                                        auto it = state->textureRegistry.find(tid);
+                                        if (it != state->textureRegistry.end()) {
+                                            maxLayers = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 1;
+                                        }
+                                    }
+                                    viewDesc.arrayLayerCount = std::min(requested, maxLayers - viewDesc.baseArrayLayer);
+                                }
+                                auto aspect = state->engine->getProperty(descriptor, "aspect");
+                                if (!state->engine->isUndefined(aspect)) {
+                                    std::string aspectStr = state->engine->toString(aspect);
+                                    if (aspectStr == "all") viewDesc.aspect = WGPUTextureAspect_All;
+                                    else if (aspectStr == "stencil-only") viewDesc.aspect = WGPUTextureAspect_StencilOnly;
+                                    else if (aspectStr == "depth-only") viewDesc.aspect = WGPUTextureAspect_DepthOnly;
+                                }
+                            }
+                            // Final validation: Fix arrayLayerCount based on view dimension
+                            if (viewDesc.dimension == WGPUTextureViewDimension_3D ||
+                                viewDesc.dimension == WGPUTextureViewDimension_1D) {
+                                viewDesc.arrayLayerCount = 1;
+                            } else if (viewDesc.dimension == WGPUTextureViewDimension_Cube) {
+                                viewDesc.arrayLayerCount = 6;
+                            }
+                            WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
+                            auto jsView = state->engine->newObject();
+                            state->engine->setPrivateData(jsView, view);
+                            state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
+                            state->engine->registerRelease(jsView, [view]() {
+                                wgpuTextureViewRelease(view);
+                            });
+                            if (state->verboseLogging) std::cout << "[WebGPU] Created texture view" << std::endl;
+                            return jsView;
+}
 
-                            // Get ArrayBuffer data
-                            size_t dataSize = 0;
-                            void* dataPtr = state->engine->getArrayBufferData(args[1], &dataSize);
-
-                            if (!dataPtr || dataSize == 0) {
-                                state->engine->throwException("writeTexture: invalid data");
+static js::JSValueHandle tnWebgpuHandler70(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createPipelineLayout requires a descriptor");
                                 return state->engine->newUndefined();
                             }
+                            auto descriptor = args[0];
+                            auto bindGroupLayouts = state->engine->getProperty(descriptor, "bindGroupLayouts");
+                            auto lengthProp = state->engine->getProperty(bindGroupLayouts, "length");
+                            int layoutCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
+                            std::vector<WGPUBindGroupLayout> layouts;
+                            layouts.reserve(layoutCount);
+                            for (int i = 0; i < layoutCount; i++) {
+                                auto layoutHandle = state->engine->getPropertyIndex(bindGroupLayouts, i);
+                                WGPUBindGroupLayout layout = (WGPUBindGroupLayout)state->engine->getPrivateData(layoutHandle);
+                                layouts.push_back(layout);
+                            }
+                            WGPUPipelineLayoutDescriptor layoutDesc = {};
+                            layoutDesc.bindGroupLayoutCount = layouts.size();
+                            layoutDesc.bindGroupLayouts = layouts.data();
+                            WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(state->device, &layoutDesc);
+                            auto jsLayout = state->engine->newObject();
+                            state->engine->setPrivateData(jsLayout, pipelineLayout);
+                            if (state->verboseLogging) std::cout << "[WebGPU] Created pipeline layout with " << layoutCount << " bind group layouts" << std::endl;
+                            return jsLayout;
+}
 
-                            // Parse size FIRST (need height for rowsPerImage default)
-                            auto sizeVal = args[3];
+static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createBindGroup requires a descriptor");
+                                return state->engine->newUndefined();
+                            }
+                            auto descriptor = args[0];
+                            auto layoutHandle = state->engine->getProperty(descriptor, "layout");
+                            WGPUBindGroupLayout layout = (WGPUBindGroupLayout)state->engine->getPrivateData(layoutHandle);
+                            if (!layout) {
+                                state->engine->throwException("Failed to create bind group");
+                                return state->engine->newUndefined();
+                            }
+                            auto entries = state->engine->getProperty(descriptor, "entries");
+                            auto lengthProp = state->engine->getProperty(entries, "length");
+                            int entryCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
+                            std::vector<WGPUBindGroupEntry> bindGroupEntries;
+                            bindGroupEntries.reserve(entryCount);
+                            std::vector<WGPUTextureView> autoCreatedViews;
+                            auto releaseAutoCreatedViews = [&autoCreatedViews]() {
+                                for (auto v : autoCreatedViews) {
+                                    wgpuTextureViewRelease(v);
+                                }
+                            };
+                            auto failResource = [&](const std::string& resourceType, const std::string& reason, uint32_t binding) -> js::JSValueHandle {
+                                releaseAutoCreatedViews();
+                                const std::string message =
+                                    "Failed to create bind group: " + resourceType +
+                                    " at binding " + std::to_string(binding) + ": " + reason;
+                                state->engine->throwException(message.c_str());
+                                return state->engine->newUndefined();
+                            };
+                            for (int i = 0; i < entryCount; i++) {
+                                auto entry = state->engine->getPropertyIndex(entries, i);
+                                WGPUBindGroupEntry bgEntry = {};
+                                bgEntry.binding = (uint32_t)state->engine->toNumber(state->engine->getProperty(entry, "binding"));
+                                auto resource = state->engine->getProperty(entry, "resource");
+                                if (state->engine->isUndefined(resource) || state->engine->isNull(resource)) {
+                                    return failResource("resource", "resource handle is null or undefined", bgEntry.binding);
+                                }
+                                // Check if resource is a sampler (has no buffer property)
+                                auto bufferProp = state->engine->getProperty(resource, "buffer");
+                                if (!state->engine->isUndefined(bufferProp)) {
+                                    // Buffer binding: {buffer, offset?, size?}
+                                    bgEntry.buffer = (WGPUBuffer)state->engine->getPrivateData(bufferProp);
+                                    if (!bgEntry.buffer) {
+                                        return failResource("buffer", "native handle is null", bgEntry.binding);
+                                    }
+                                    auto offset = state->engine->getProperty(resource, "offset");
+                                    bgEntry.offset = state->engine->isUndefined(offset) ? 0 : (uint64_t)state->engine->toNumber(offset);
+                                    auto size = state->engine->getProperty(resource, "size");
+                                    // Size 0 means whole buffer
+                                    bgEntry.size = state->engine->isUndefined(size) ? WGPU_WHOLE_SIZE : (uint64_t)state->engine->toNumber(size);
+                                } else {
+                                    // Could be a sampler or texture view
+                                    void* resourcePtr = state->engine->getPrivateData(resource);
+                                    // Check for type hints set when creating the object
+                                    auto typeHint = state->engine->getProperty(resource, "_type");
+                                    if (!state->engine->isUndefined(typeHint)) {
+                                        std::string typeStr = state->engine->toString(typeHint);
+                                        if (typeStr == "sampler") {
+                                            if (resourcePtr) {
+                                                bgEntry.sampler = (WGPUSampler)resourcePtr;
+                                            } else {
+                                                return failResource("sampler", "native handle is null", bgEntry.binding);
+                                            }
+                                        } else if (typeStr == "textureView") {
+                                            if (resourcePtr) {
+                                                bgEntry.textureView = (WGPUTextureView)resourcePtr;
+                                            } else {
+                                                return failResource("texture view", "native handle is null", bgEntry.binding);
+                                            }
+                                        } else if (!resourcePtr) {
+                                            return failResource("resource", "native handle is null", bgEntry.binding);
+                                        }
+                                    } else if (resourcePtr) {
+                                        // No type hint - try to detect based on properties
+                                        // Check if it looks like a texture (has width/height/format properties)
+                                        auto widthProp = state->engine->getProperty(resource, "width");
+                                        auto formatProp = state->engine->getProperty(resource, "format");
+                                        if (!state->engine->isUndefined(widthProp) && !state->engine->isUndefined(formatProp)) {
+                                            // This is a texture, create a view automatically
+                                            WGPUTexture tex = (WGPUTexture)resourcePtr;
+                                            WGPUTextureViewDescriptor viewDesc = {};
+                                            WGPUTextureView view = wgpuTextureCreateView(tex, &viewDesc);
+                                            if (!view) {
+                                                return failResource("texture view", "native handle is null after automatic creation", bgEntry.binding);
+                                            }
+                                            autoCreatedViews.push_back(view);
+                                            bgEntry.textureView = view;
+                                            if (state->verboseLogging) std::cout << "[WebGPU] Auto-created texture view for binding " << bgEntry.binding << std::endl;
+                                        } else {
+                                            // Assume sampler as fallback
+                                            bgEntry.sampler = (WGPUSampler)resourcePtr;
+                                        }
+                                    } else {
+                                        return failResource("resource", "native handle is null", bgEntry.binding);
+                                    }
+                                }
+                                bindGroupEntries.push_back(bgEntry);
+                            }
+                            WGPUBindGroupDescriptor bgDesc = {};
+                            bgDesc.layout = layout;
+                            bgDesc.entryCount = bindGroupEntries.size();
+                            bgDesc.entries = bindGroupEntries.data();
+                            WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(state->device, &bgDesc);
+                            if (!bindGroup) {
+                                releaseAutoCreatedViews();
+                                state->engine->throwException("Failed to create bind group");
+                                return state->engine->newUndefined();
+                            }
+                            // Release auto-created texture views — Dawn holds its own
+                            // internal references through the bind group
+                            releaseAutoCreatedViews();
+                            auto jsBindGroup = state->engine->newObject();
+                            state->engine->setPrivateData(jsBindGroup, bindGroup);
+                            state->engine->registerRelease(jsBindGroup, [bindGroup]() {
+                                wgpuBindGroupRelease(bindGroup);
+                            });
+                            if (state->verboseLogging) std::cout << "[WebGPU] Created bind group with " << entryCount << " entries" << std::endl;
+                            return jsBindGroup;
+}
+
+static js::JSValueHandle tnWebgpuHandler68(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createBindGroupLayout requires a descriptor");
+                                return state->engine->newUndefined();
+                            }
+                            auto descriptor = args[0];
+                            auto entries = state->engine->getProperty(descriptor, "entries");
+                            auto lengthProp = state->engine->getProperty(entries, "length");
+                            int entryCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
+                            std::vector<WGPUBindGroupLayoutEntry> layoutEntries;
+                            layoutEntries.reserve(entryCount);
+                            for (int i = 0; i < entryCount; i++) {
+                                auto entry = state->engine->getPropertyIndex(entries, i);
+                                WGPUBindGroupLayoutEntry layoutEntry = {};
+                                layoutEntry.binding = (uint32_t)state->engine->toNumber(state->engine->getProperty(entry, "binding"));
+                                layoutEntry.visibility = (WGPUShaderStage)(uint32_t)state->engine->toNumber(state->engine->getProperty(entry, "visibility"));
+                                // Check for buffer binding
+                                auto buffer = state->engine->getProperty(entry, "buffer");
+                                if (!state->engine->isUndefined(buffer)) {
+                                    auto typeProp = state->engine->getProperty(buffer, "type");
+                                    std::string typeStr = state->engine->isUndefined(typeProp) ? "" : state->engine->toString(typeProp);
+                                    if (typeStr == "uniform" || typeStr == "") {
+                                        // Default to uniform if no type specified (Three.js uses empty {})
+                                        layoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
+                                    } else if (typeStr == "storage") {
+                                        layoutEntry.buffer.type = WGPUBufferBindingType_Storage;
+                                    } else if (typeStr == "read-only-storage") {
+                                        layoutEntry.buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+                                    } else {
+                                        // Default to uniform for unknown types
+                                        layoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
+                                    }
+                                }
+                                // Check for sampler binding
+                                auto sampler = state->engine->getProperty(entry, "sampler");
+                                if (!state->engine->isUndefined(sampler)) {
+                                    std::string typeStr = state->engine->toString(state->engine->getProperty(sampler, "type"));
+                                    if (typeStr == "filtering") {
+                                        layoutEntry.sampler.type = WGPUSamplerBindingType_Filtering;
+                                    } else if (typeStr == "non-filtering") {
+                                        layoutEntry.sampler.type = WGPUSamplerBindingType_NonFiltering;
+                                    } else if (typeStr == "comparison") {
+                                        layoutEntry.sampler.type = WGPUSamplerBindingType_Comparison;
+                                    } else {
+                                        // Default to filtering
+                                        layoutEntry.sampler.type = WGPUSamplerBindingType_Filtering;
+                                    }
+                                }
+                                // Check for texture binding
+                                auto texture = state->engine->getProperty(entry, "texture");
+                                if (!state->engine->isUndefined(texture)) {
+                                    auto sampleTypeProp = state->engine->getProperty(texture, "sampleType");
+                                    std::string sampleType = state->engine->isUndefined(sampleTypeProp) ? "" : state->engine->toString(sampleTypeProp);
+                                    if (sampleType == "float" || sampleType == "") {
+                                        // Default to float if no type specified (Three.js uses empty {})
+                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Float;
+                                    } else if (sampleType == "unfilterable-float") {
+                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
+                                    } else if (sampleType == "depth") {
+                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Depth;
+                                    } else if (sampleType == "sint") {
+                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Sint;
+                                    } else if (sampleType == "uint") {
+                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Uint;
+                                    } else {
+                                        // Default to float for unknown types
+                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Float;
+                                    }
+                                    auto viewDim = state->engine->getProperty(texture, "viewDimension");
+                                    if (!state->engine->isUndefined(viewDim)) {
+                                        layoutEntry.texture.viewDimension = stringToTextureViewDimension(state->engine->toString(viewDim));
+                                    } else {
+                                        layoutEntry.texture.viewDimension = WGPUTextureViewDimension_2D;
+                                    }
+                                    auto multisampled = state->engine->getProperty(texture, "multisampled");
+                                    layoutEntry.texture.multisampled = !state->engine->isUndefined(multisampled) && state->engine->toBoolean(multisampled);
+                                }
+                                // Check for storageTexture binding
+                                auto storageTexture = state->engine->getProperty(entry, "storageTexture");
+                                if (!state->engine->isUndefined(storageTexture)) {
+                                    std::string access = state->engine->toString(state->engine->getProperty(storageTexture, "access"));
+                                    if (access == "write-only") {
+                                        layoutEntry.storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+                                    } else if (access == "read-only") {
+                                        layoutEntry.storageTexture.access = WGPUStorageTextureAccess_ReadOnly;
+                                    } else if (access == "read-write") {
+                                        layoutEntry.storageTexture.access = WGPUStorageTextureAccess_ReadWrite;
+                                    }
+                                    auto format = state->engine->getProperty(storageTexture, "format");
+                                    if (!state->engine->isUndefined(format)) {
+                                        layoutEntry.storageTexture.format = stringToFormat(state->engine->toString(format));
+                                    }
+                                    auto viewDim = state->engine->getProperty(storageTexture, "viewDimension");
+                                    if (!state->engine->isUndefined(viewDim)) {
+                                        layoutEntry.storageTexture.viewDimension = stringToTextureViewDimension(state->engine->toString(viewDim));
+                                    } else {
+                                        layoutEntry.storageTexture.viewDimension = WGPUTextureViewDimension_2D;
+                                    }
+                                }
+                                layoutEntries.push_back(layoutEntry);
+                            }
+                            WGPUBindGroupLayoutDescriptor layoutDesc = {};
+                            layoutDesc.entryCount = layoutEntries.size();
+                            layoutDesc.entries = layoutEntries.data();
+                            WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(state->device, &layoutDesc);
+                            auto jsLayout = state->engine->newObject();
+                            state->engine->setPrivateData(jsLayout, layout);
+                            if (state->verboseLogging) std::cout << "[WebGPU] Created bind group layout with " << entryCount << " entries" << std::endl;
+                            return jsLayout;
+}
+
+static js::JSValueHandle tnWebgpuHandler67(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            WGPUSamplerDescriptor samplerDesc = {};
+                            // Default values
+                            samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+                            samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+                            samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+                            samplerDesc.magFilter = WGPUFilterMode_Nearest;
+                            samplerDesc.minFilter = WGPUFilterMode_Nearest;
+                            samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+                            samplerDesc.lodMinClamp = 0.0f;
+                            samplerDesc.lodMaxClamp = 32.0f;
+                            samplerDesc.maxAnisotropy = 1;
+                            if (!args.empty()) {
+                                auto descriptor = args[0];
+                                auto addressModeU = state->engine->getProperty(descriptor, "addressModeU");
+                                if (!state->engine->isUndefined(addressModeU)) {
+                                    samplerDesc.addressModeU = stringToAddressMode(state->engine->toString(addressModeU));
+                                }
+                                auto addressModeV = state->engine->getProperty(descriptor, "addressModeV");
+                                if (!state->engine->isUndefined(addressModeV)) {
+                                    samplerDesc.addressModeV = stringToAddressMode(state->engine->toString(addressModeV));
+                                }
+                                auto addressModeW = state->engine->getProperty(descriptor, "addressModeW");
+                                if (!state->engine->isUndefined(addressModeW)) {
+                                    samplerDesc.addressModeW = stringToAddressMode(state->engine->toString(addressModeW));
+                                }
+                                auto magFilter = state->engine->getProperty(descriptor, "magFilter");
+                                if (!state->engine->isUndefined(magFilter)) {
+                                    samplerDesc.magFilter = stringToFilterMode(state->engine->toString(magFilter));
+                                }
+                                auto minFilter = state->engine->getProperty(descriptor, "minFilter");
+                                if (!state->engine->isUndefined(minFilter)) {
+                                    samplerDesc.minFilter = stringToFilterMode(state->engine->toString(minFilter));
+                                }
+                                auto mipmapFilter = state->engine->getProperty(descriptor, "mipmapFilter");
+                                if (!state->engine->isUndefined(mipmapFilter)) {
+                                    samplerDesc.mipmapFilter = stringToMipmapFilterMode(state->engine->toString(mipmapFilter));
+                                }
+                                auto lodMinClamp = state->engine->getProperty(descriptor, "lodMinClamp");
+                                if (!state->engine->isUndefined(lodMinClamp)) {
+                                    samplerDesc.lodMinClamp = (float)state->engine->toNumber(lodMinClamp);
+                                }
+                                auto lodMaxClamp = state->engine->getProperty(descriptor, "lodMaxClamp");
+                                if (!state->engine->isUndefined(lodMaxClamp)) {
+                                    samplerDesc.lodMaxClamp = (float)state->engine->toNumber(lodMaxClamp);
+                                }
+                                auto compare = state->engine->getProperty(descriptor, "compare");
+                                if (!state->engine->isUndefined(compare)) {
+                                    samplerDesc.compare = stringToCompareFunction(state->engine->toString(compare));
+                                }
+                                auto maxAnisotropy = state->engine->getProperty(descriptor, "maxAnisotropy");
+                                if (!state->engine->isUndefined(maxAnisotropy)) {
+                                    samplerDesc.maxAnisotropy = (uint16_t)state->engine->toNumber(maxAnisotropy);
+                                }
+                            }
+#if defined(MYSTRAL_WEBGPU_WGPU)
+                            // wgpu-native's Vulkan backend returns zero when Three.js samples
+                            // a one-level render target with its generic lodMaxClamp of 32.
+                            // Samplers are created before they are paired with a texture view,
+                            // so keep filtering intact and cap the backend's effective LOD range.
+                            if (samplerDesc.lodMaxClamp > 1.0f) {
+                                samplerDesc.lodMaxClamp = 1.0f;
+                            }
+#endif
+                            if (samplerDesc.lodMinClamp > samplerDesc.lodMaxClamp) {
+                                state->engine->throwException("Failed to create sampler");
+                                return state->engine->newUndefined();
+                            }
+                            WGPUSampler sampler = wgpuDeviceCreateSampler(state->device, &samplerDesc);
+                            if (!sampler) {
+                                state->engine->throwException("Failed to create sampler");
+                                return state->engine->newUndefined();
+                            }
+                            auto jsSampler = state->engine->newObject();
+                            state->engine->setPrivateData(jsSampler, sampler);
+                            state->engine->setProperty(jsSampler, "_type", state->engine->newString("sampler"));
+                            if (state->verboseLogging) std::cout << "[WebGPU] Created sampler" << std::endl;
+                            return jsSampler;
+}
+
+static js::JSValueHandle tnWebgpuHandler66(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                    // TODO: Get texture from context and destroy
+                                    // Would need to look up by ID and call wgpuTextureDestroy
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler65(BindingsState* state, uint64_t textureId, const std::vector<js::JSValueHandle>& args) {
+                                    // Look up texture from registry using captured textureId
+                                    auto it = state->textureRegistry.find(textureId);
+                                    if (it == state->textureRegistry.end()) {
+                                        std::cerr << "[WebGPU] createView: Texture " << textureId << " not found in registry" << std::endl;
+                                        return state->engine->newUndefined();
+                                    }
+                                    WGPUTexture texture = it->second.texture;
+                                    if (!texture) {
+                                        std::cerr << "[WebGPU] createView: Texture " << textureId << " is null" << std::endl;
+                                        return state->engine->newUndefined();
+                                    }
+                                    WGPUTextureViewDescriptor viewDesc = {};
+                                    // Default values - use all mips and layers from the texture
+                                    viewDesc.format = it->second.format;
+                                    viewDesc.mipLevelCount = it->second.mipLevelCount > 0 ? it->second.mipLevelCount : 1;
+                                    viewDesc.baseMipLevel = 0;
+                                    viewDesc.baseArrayLayer = 0;
+                                    viewDesc.aspect = WGPUTextureAspect_All;
+                                    // Default dimension and arrayLayerCount based on texture dimension
+                                    if (it->second.dimension == WGPUTextureDimension_3D) {
+                                        // 3D textures: view as 3D, arrayLayerCount must be 1
+                                        viewDesc.dimension = WGPUTextureViewDimension_3D;
+                                        viewDesc.arrayLayerCount = 1;
+                                    } else if (it->second.dimension == WGPUTextureDimension_1D) {
+                                        // 1D textures
+                                        viewDesc.dimension = WGPUTextureViewDimension_1D;
+                                        viewDesc.arrayLayerCount = 1;
+                                    } else {
+                                        // 2D textures: use layers for 2D-array, 1 for regular 2D
+                                        viewDesc.arrayLayerCount = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 1;
+                                        viewDesc.dimension = it->second.depthOrArrayLayers > 1 ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
+                                    }
+                                    // Parse view descriptor if provided
+                                    if (!args.empty() && !state->engine->isUndefined(args[0])) {
+                                        auto descriptor = args[0];
+                                        // format (optional, defaults to texture format)
+                                        auto formatProp = state->engine->getProperty(descriptor, "format");
+                                        if (!state->engine->isUndefined(formatProp)) {
+                                            viewDesc.format = stringToFormat(state->engine->toString(formatProp));
+                                        } else {
+                                            viewDesc.format = it->second.format;
+                                        }
+                                        // dimension (optional)
+                                        auto dimensionProp = state->engine->getProperty(descriptor, "dimension");
+                                        if (!state->engine->isUndefined(dimensionProp)) {
+                                            std::string dimStr = state->engine->toString(dimensionProp);
+                                            if (dimStr == "1d") viewDesc.dimension = WGPUTextureViewDimension_1D;
+                                            else if (dimStr == "2d") viewDesc.dimension = WGPUTextureViewDimension_2D;
+                                            else if (dimStr == "2d-array") viewDesc.dimension = WGPUTextureViewDimension_2DArray;
+                                            else if (dimStr == "cube") viewDesc.dimension = WGPUTextureViewDimension_Cube;
+                                            else if (dimStr == "cube-array") viewDesc.dimension = WGPUTextureViewDimension_CubeArray;
+                                            else if (dimStr == "3d") viewDesc.dimension = WGPUTextureViewDimension_3D;
+                                        }
+                                        // aspect (optional)
+                                        auto aspectProp = state->engine->getProperty(descriptor, "aspect");
+                                        if (!state->engine->isUndefined(aspectProp)) {
+                                            std::string aspectStr = state->engine->toString(aspectProp);
+                                            if (aspectStr == "all") viewDesc.aspect = WGPUTextureAspect_All;
+                                            else if (aspectStr == "stencil-only") viewDesc.aspect = WGPUTextureAspect_StencilOnly;
+                                            else if (aspectStr == "depth-only") viewDesc.aspect = WGPUTextureAspect_DepthOnly;
+                                        }
+                                        // baseMipLevel (optional)
+                                        auto baseMipProp = state->engine->getProperty(descriptor, "baseMipLevel");
+                                        if (!state->engine->isUndefined(baseMipProp)) {
+                                            viewDesc.baseMipLevel = (uint32_t)state->engine->toNumber(baseMipProp);
+                                        }
+                                        // mipLevelCount (optional)
+                                        auto mipCountProp = state->engine->getProperty(descriptor, "mipLevelCount");
+                                        if (!state->engine->isUndefined(mipCountProp)) {
+                                            viewDesc.mipLevelCount = (uint32_t)state->engine->toNumber(mipCountProp);
+                                        }
+                                        // baseArrayLayer (optional)
+                                        auto baseLayerProp = state->engine->getProperty(descriptor, "baseArrayLayer");
+                                        if (!state->engine->isUndefined(baseLayerProp)) {
+                                            viewDesc.baseArrayLayer = (uint32_t)state->engine->toNumber(baseLayerProp);
+                                        }
+                                        // arrayLayerCount (optional)
+                                        auto layerCountProp = state->engine->getProperty(descriptor, "arrayLayerCount");
+                                        if (!state->engine->isUndefined(layerCountProp)) {
+                                            uint32_t requested = (uint32_t)state->engine->toNumber(layerCountProp);
+                                            uint32_t maxLayers = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 1;
+                                            // Clamp to actual texture layer count
+                                            viewDesc.arrayLayerCount = std::min(requested, maxLayers - viewDesc.baseArrayLayer);
+                                        }
+                                    }
+                                    // else: defaults are already set above
+                                    // Final validation: Fix arrayLayerCount based on view dimension
+                                    if (viewDesc.dimension == WGPUTextureViewDimension_3D ||
+                                        viewDesc.dimension == WGPUTextureViewDimension_1D) {
+                                        // 3D/1D textures have no array layers
+                                        viewDesc.arrayLayerCount = 1;
+                                    } else if (viewDesc.dimension == WGPUTextureViewDimension_Cube) {
+                                        // Cube requires exactly 6 layers (the 6 faces)
+                                        viewDesc.arrayLayerCount = 6;
+                                    } else if (viewDesc.dimension == WGPUTextureViewDimension_CubeArray) {
+                                        // CubeArray must have multiple of 6 layers
+                                        uint32_t maxLayers = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 6;
+                                        viewDesc.arrayLayerCount = std::min(viewDesc.arrayLayerCount, maxLayers);
+                                        // Round down to nearest multiple of 6
+                                        viewDesc.arrayLayerCount = (viewDesc.arrayLayerCount / 6) * 6;
+                                        if (viewDesc.arrayLayerCount < 6) viewDesc.arrayLayerCount = 6;
+                                    }
+                                    WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
+                                    if (!view) {
+                                        std::cerr << "[WebGPU] createView: Failed to create texture view" << std::endl;
+                                        return state->engine->newUndefined();
+                                    }
+                                    auto jsView = state->engine->newObject();
+                                    state->engine->setPrivateData(jsView, view);
+                                    state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
+                                    state->engine->registerRelease(jsView, [view]() {
+                                        wgpuTextureViewRelease(view);
+                                    });
+                                    return jsView;
+}
+
+static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createTexture requires a descriptor");
+                                return state->engine->newUndefined();
+                            }
+                            auto descriptor = args[0];
+                            // Parse size - can be [width, height, depth] array or {width, height, depthOrArrayLayers} object
+                            auto sizeVal = state->engine->getProperty(descriptor, "size");
                             uint32_t width = 1, height = 1, depthOrArrayLayers = 1;
+                            // Check if size is an array
                             auto lengthProp = state->engine->getProperty(sizeVal, "length");
                             if (!state->engine->isUndefined(lengthProp)) {
+                                // Array format: [width, height?, depth?]
                                 int len = (int)state->engine->toNumber(lengthProp);
                                 if (len >= 1) width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 0));
                                 if (len >= 2) height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 1));
                                 if (len >= 3) depthOrArrayLayers = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 2));
                             } else {
+                                // Object format: {width, height, depthOrArrayLayers}
                                 auto w = state->engine->getProperty(sizeVal, "width");
                                 auto h = state->engine->getProperty(sizeVal, "height");
                                 auto d = state->engine->getProperty(sizeVal, "depthOrArrayLayers");
@@ -1770,65 +2301,1598 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                 if (!state->engine->isUndefined(h)) height = (uint32_t)state->engine->toNumber(h);
                                 if (!state->engine->isUndefined(d)) depthOrArrayLayers = (uint32_t)state->engine->toNumber(d);
                             }
+                            // Parse format
+                            std::string formatStr = state->engine->toString(state->engine->getProperty(descriptor, "format"));
+                            WGPUTextureFormat format = stringToFormat(formatStr);
+                            // Parse usage
+                            double usageVal = state->engine->toNumber(state->engine->getProperty(descriptor, "usage"));
+                            WGPUTextureUsage usage = (WGPUTextureUsage)(uint32_t)usageVal;
+                            // Fix format/usage incompatibility:
+                            // BGRA8UnormSrgb doesn't support StorageBinding, convert to BGRA8Unorm or RGBA8Unorm
+                            if (format == WGPUTextureFormat_BGRA8UnormSrgb && (usage & WGPUTextureUsage_StorageBinding)) {
+                                std::cout << "[WebGPU] Warning: BGRA8UnormSrgb doesn't support StorageBinding, using RGBA8Unorm instead" << std::endl;
+                                format = WGPUTextureFormat_RGBA8Unorm;
+                                formatStr = "rgba8unorm";
+                            }
+                            // Also handle BGRA8Unorm which may not support storage on all platforms
+                            if (format == WGPUTextureFormat_BGRA8Unorm && (usage & WGPUTextureUsage_StorageBinding)) {
+                                std::cout << "[WebGPU] Warning: BGRA8Unorm may not support StorageBinding, using RGBA8Unorm instead" << std::endl;
+                                format = WGPUTextureFormat_RGBA8Unorm;
+                                formatStr = "rgba8unorm";
+                            }
+                            // Parse optional properties
+                            std::string dimensionStr = state->engine->toString(state->engine->getProperty(descriptor, "dimension"));
+                            WGPUTextureDimension dimension = dimensionStr.empty() ? WGPUTextureDimension_2D : stringToTextureDimension(dimensionStr);
+                            auto mipLevelCountVal = state->engine->getProperty(descriptor, "mipLevelCount");
+                            uint32_t mipLevelCount = state->engine->isUndefined(mipLevelCountVal) ? 1 : (uint32_t)state->engine->toNumber(mipLevelCountVal);
+                            auto sampleCountVal = state->engine->getProperty(descriptor, "sampleCount");
+                            uint32_t sampleCount = state->engine->isUndefined(sampleCountVal) ? 1 : (uint32_t)state->engine->toNumber(sampleCountVal);
+                            // Create texture descriptor
+                            WGPUTextureDescriptor texDesc = {};
+                            texDesc.size.width = width;
+                            texDesc.size.height = height;
+                            texDesc.size.depthOrArrayLayers = depthOrArrayLayers;
+                            texDesc.format = format;
+                            texDesc.usage = usage;
+                            texDesc.dimension = dimension;
+                            texDesc.mipLevelCount = mipLevelCount;
+                            texDesc.sampleCount = sampleCount;
+                            WGPUTexture texture = wgpuDeviceCreateTexture(state->device, &texDesc);
+                            if (!texture) {
+                                state->engine->throwException("Failed to create texture");
+                                return state->engine->newUndefined();
+                            }
+                            recordTextureCreated(state, width, height, depthOrArrayLayers, mipLevelCount,
+                                                 sampleCount, formatStr);
+                            // Create JS wrapper
+                            auto jsTexture = state->engine->newObject();
+                            state->engine->setPrivateData(jsTexture, texture);
+                            // Store texture properties
+                            state->engine->setProperty(jsTexture, "width", state->engine->newNumber(width));
+                            state->engine->setProperty(jsTexture, "height", state->engine->newNumber(height));
+                            state->engine->setProperty(jsTexture, "depthOrArrayLayers", state->engine->newNumber(depthOrArrayLayers));
+                            state->engine->setProperty(jsTexture, "format", state->engine->newString(formatStr.c_str()));
+                            state->engine->setProperty(jsTexture, "mipLevelCount", state->engine->newNumber(mipLevelCount));
+                            state->engine->setProperty(jsTexture, "sampleCount", state->engine->newNumber(sampleCount));
+                            // Register texture for lookup by createView
+                            uint64_t textureId = state->nextTextureId++;
+                            state->textureRegistry[textureId] = {texture, format, width, height, depthOrArrayLayers, mipLevelCount, dimension};
+                            // Store texture ID for lookup
+                            state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber((double)textureId));
+                            // texture.createView(descriptor?) - Store texture ID for lookup
+                            // We store the textureId to look up the texture later since callbacks don't have 'this'
+                            state->engine->setProperty(jsTexture, "_createViewTextureId", state->engine->newNumber((double)textureId));
+                            installBindingTable(state->engine, state, bindingTable({
+                                {"GPUTexture", "createView", 0, nullptr,
+                                makeCapturedHandler(textureId, &tnWebgpuHandler65)
+                            , jsTexture},
+                            // texture.destroy()
+                                                            {"GPUTexture", "destroy", 0, nullptr,
+                                &tnWebgpuHandler66
+                            , jsTexture}}));
+                            if (state->verboseLogging) std::cout << "[WebGPU] Created texture " << width << "x" << height << " format=" << formatStr << " (id=" << textureId << ")" << std::endl;
+                            return jsTexture;
+}
 
-                            // Parse dataLayout {offset?, bytesPerRow, rowsPerImage?}
-                            auto dataLayout = args[2];
-                            auto layoutOffsetVal = state->engine->getProperty(dataLayout, "offset");
-                            uint64_t layoutOffset = state->engine->isUndefined(layoutOffsetVal) ? 0 : (uint64_t)state->engine->toNumber(layoutOffsetVal);
+static js::JSValueHandle tnWebgpuHandler63(BindingsState* state, WGPUCommandEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    // Use captured encoder for this specific command encoder
+                                    WGPUCommandEncoder encoderToFinish = capturedEncoder;
+                                    // Auto-end any active render/compute passes for THIS encoder
+                                    // Look up from per-encoder map, not global
+                                    auto renderPassIt = state->encoderRenderPassMap.find(encoderToFinish);
+                                    if (renderPassIt != state->encoderRenderPassMap.end() && renderPassIt->second) {
+                                        WGPURenderPassEncoder renderPass = renderPassIt->second;
+                                        if (state->verboseLogging) std::cout << "[WebGPU] Auto-ending render pass (pass=" << (void*)renderPass << ", encoder=" << (void*)encoderToFinish << ")" << std::endl;
+                                        wgpuRenderPassEncoderEnd(renderPass);
+                                        wgpuRenderPassEncoderRelease(renderPass);
+                                        state->encoderRenderPassMap.erase(renderPassIt);
+                                        // Clear global if it matches
+                                        if (state->jsRenderPass == renderPass) {
+                                            state->jsRenderPass = nullptr;
+                                        }
+                                        // Mark surface render pass as ended
+                                        if (state->surfaceRenderEncoder == encoderToFinish) {
+                                            state->surfaceRenderPassEnded = true;
+                                            if (state->verboseLogging) std::cout << "[WebGPU] Surface render pass auto-ended (encoder=" << (void*)encoderToFinish << ")" << std::endl;
+                                        }
+                                    }
+                                    auto computePassIt = state->encoderComputePassMap.find(encoderToFinish);
+                                    if (computePassIt != state->encoderComputePassMap.end() && computePassIt->second) {
+                                        WGPUComputePassEncoder computePass = computePassIt->second;
+                                        if (state->verboseLogging) std::cout << "[WebGPU] Auto-ending compute pass (pass=" << (void*)computePass << ", encoder=" << (void*)encoderToFinish << ")" << std::endl;
+                                        wgpuComputePassEncoderEnd(computePass);
+                                        wgpuComputePassEncoderRelease(computePass);
+                                        state->encoderComputePassMap.erase(computePassIt);
+                                        // Clear global if it matches
+                                        if (state->jsComputePass == computePass) {
+                                            state->jsComputePass = nullptr;
+                                        }
+                                    }
+                                    WGPUCommandBufferDescriptor cmdDesc = {};
+                                    WGPUCommandBuffer cmdBuffer = nullptr;
+                                    if (encoderToFinish) {
+                                        cmdBuffer = wgpuCommandEncoderFinish(encoderToFinish, &cmdDesc);
+                                        wgpuCommandEncoderRelease(encoderToFinish);
+                                        // Clear global if it matches
+                                        if (state->jsCommandEncoder == encoderToFinish) {
+                                            state->jsCommandEncoder = nullptr;
+                                        }
+                                        if (state->verboseLogging) std::cout << "[WebGPU] Command encoder finished, buffer: " << cmdBuffer << std::endl;
+                                    }
+                                    auto jsCommandBuffer = state->engine->newObject();
+                                    state->engine->setPrivateData(jsCommandBuffer, cmdBuffer);
+                                    return jsCommandBuffer;
+}
 
-                            uint32_t bytesPerRow = (uint32_t)state->engine->toNumber(state->engine->getProperty(dataLayout, "bytesPerRow"));
+static js::JSValueHandle tnWebgpuHandler62(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.empty() || !state->jsCommandEncoder) return state->engine->newUndefined();
+                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                    uint64_t offset = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : 0;
+                                    uint64_t size = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : WGPU_WHOLE_SIZE;
+                                    if (buffer) {
+                                        wgpuCommandEncoderClearBuffer(state->jsCommandEncoder, buffer, offset, size);
+                                    }
+                                    return state->engine->newUndefined();
+}
 
-                            auto rowsPerImageVal = state->engine->getProperty(dataLayout, "rowsPerImage");
-                            // rowsPerImage must be >= height for 2D textures (wgpu validation requirement)
-                            uint32_t rowsPerImage = state->engine->isUndefined(rowsPerImageVal) ? height : (uint32_t)state->engine->toNumber(rowsPerImageVal);
-                            if (rowsPerImage == 0) rowsPerImage = height;
+static js::JSValueHandle tnWebgpuHandler61(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
+                                    auto sourceProp = args[0];
+                                    auto destProp = args[1];
+                                    auto sizeProp = args[2];
+                                    // Source texture
+                                    WGPUTexture srcTexture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(sourceProp, "texture"));
+                                    uint32_t srcMipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "mipLevel"));
+                                    auto srcOriginProp = state->engine->getProperty(sourceProp, "origin");
+                                    uint32_t srcOriginX = 0, srcOriginY = 0, srcOriginZ = 0;
+                                    if (!state->engine->isUndefined(srcOriginProp)) {
+                                        srcOriginX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(srcOriginProp, 0));
+                                        srcOriginY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(srcOriginProp, 1));
+                                        srcOriginZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(srcOriginProp, 2));
+                                    }
+                                    // Destination texture
+                                    WGPUTexture dstTexture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(destProp, "texture"));
+                                    uint32_t dstMipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "mipLevel"));
+                                    auto dstOriginProp = state->engine->getProperty(destProp, "origin");
+                                    uint32_t dstOriginX = 0, dstOriginY = 0, dstOriginZ = 0;
+                                    if (!state->engine->isUndefined(dstOriginProp)) {
+                                        dstOriginX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(dstOriginProp, 0));
+                                        dstOriginY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(dstOriginProp, 1));
+                                        dstOriginZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(dstOriginProp, 2));
+                                    }
+                                    // Copy size - handle both array and object forms
+                                    uint32_t width = 1, height = 1, depthOrLayers = 1;
+                                    if (state->engine->isArray(sizeProp)) {
+                                        width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 0));
+                                        height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 1));
+                                        auto depthVal = state->engine->getPropertyIndex(sizeProp, 2);
+                                        if (!state->engine->isUndefined(depthVal)) {
+                                            depthOrLayers = (uint32_t)state->engine->toNumber(depthVal);
+                                        }
+                                    } else {
+                                        width = (uint32_t)state->engine->toNumber(state->engine->getProperty(sizeProp, "width"));
+                                        height = (uint32_t)state->engine->toNumber(state->engine->getProperty(sizeProp, "height"));
+                                        auto depthVal = state->engine->getProperty(sizeProp, "depthOrArrayLayers");
+                                        if (!state->engine->isUndefined(depthVal)) {
+                                            depthOrLayers = (uint32_t)state->engine->toNumber(depthVal);
+                                        }
+                                    }
+                                    if (depthOrLayers == 0) depthOrLayers = 1;
+                                    if (srcTexture && dstTexture) {
+                                        WGPUImageCopyTexture_Compat srcCopy = {};
+                                        srcCopy.texture = srcTexture;
+                                        srcCopy.mipLevel = srcMipLevel;
+                                        srcCopy.origin = {srcOriginX, srcOriginY, srcOriginZ};
+                                        WGPUImageCopyTexture_Compat dstCopy = {};
+                                        dstCopy.texture = dstTexture;
+                                        dstCopy.mipLevel = dstMipLevel;
+                                        dstCopy.origin = {dstOriginX, dstOriginY, dstOriginZ};
+                                        WGPUExtent3D copySize = {width, height, depthOrLayers};
+                                        wgpuCommandEncoderCopyTextureToTexture(state->jsCommandEncoder, &srcCopy, &dstCopy, &copySize);
+                                    }
+                                    return state->engine->newUndefined();
+}
 
-                            // Create copy structures
-                            WGPUImageCopyTexture_Compat destCopy = {};
-                            destCopy.texture = texture;
-                            destCopy.mipLevel = mipLevel;
-                            destCopy.origin = {originX, originY, originZ};
-                            destCopy.aspect = WGPUTextureAspect_All;
+static js::JSValueHandle tnWebgpuHandler60(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
+                                    auto sourceProp = args[0];
+                                    auto destProp = args[1];
+                                    auto sizeProp = args[2];
+                                    // Source (texture info)
+                                    WGPUTexture texture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(sourceProp, "texture"));
+                                    uint32_t mipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "mipLevel"));
+                                    auto originProp = state->engine->getProperty(sourceProp, "origin");
+                                    uint32_t originX = 0, originY = 0, originZ = 0;
+                                    if (!state->engine->isUndefined(originProp)) {
+                                        originX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 0));
+                                        originY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 1));
+                                        originZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 2));
+                                    }
+                                    // Destination (buffer info)
+                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(state->engine->getProperty(destProp, "buffer"));
+                                    uint64_t offset = (uint64_t)state->engine->toNumber(state->engine->getProperty(destProp, "offset"));
+                                    uint32_t bytesPerRow = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "bytesPerRow"));
+                                    uint32_t rowsPerImage = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "rowsPerImage"));
+                                    // Copy size - can be array [w,h,d] or object {width, height, depthOrArrayLayers}
+                                    uint32_t width = 0, height = 0, depthOrLayers = 1;
+                                    auto widthProp = state->engine->getProperty(sizeProp, "width");
+                                    if (!state->engine->isUndefined(widthProp)) {
+                                        // Object format: { width, height, depthOrArrayLayers }
+                                        width = (uint32_t)state->engine->toNumber(widthProp);
+                                        height = (uint32_t)state->engine->toNumber(state->engine->getProperty(sizeProp, "height"));
+                                        auto depthProp = state->engine->getProperty(sizeProp, "depthOrArrayLayers");
+                                        depthOrLayers = state->engine->isUndefined(depthProp) ? 1 : (uint32_t)state->engine->toNumber(depthProp);
+                                    } else {
+                                        // Array format: [width, height, depth]
+                                        width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 0));
+                                        height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 1));
+                                        depthOrLayers = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 2));
+                                    }
+                                    if (depthOrLayers == 0) depthOrLayers = 1;
+                                    if (state->verboseLogging) {
+                                        std::cout << "[WebGPU] copyTextureToBuffer: texture=" << texture
+                                                  << ", buffer=" << buffer
+                                                  << ", size=" << width << "x" << height << "x" << depthOrLayers
+                                                  << ", bytesPerRow=" << bytesPerRow << std::endl;
+                                    }
+                                    if (buffer && texture) {
+                                        WGPUImageCopyTexture_Compat srcCopy = {};
+                                        srcCopy.texture = texture;
+                                        srcCopy.mipLevel = mipLevel;
+                                        srcCopy.origin = {originX, originY, originZ};
+                                        WGPUImageCopyBuffer_Compat dstCopy = {};
+                                        dstCopy.buffer = buffer;
+                                        dstCopy.layout.offset = offset;
+                                        dstCopy.layout.bytesPerRow = bytesPerRow;
+                                        dstCopy.layout.rowsPerImage = rowsPerImage > 0 ? rowsPerImage : height;
+                                        WGPUExtent3D copySize = {width, height, depthOrLayers};
+                                        wgpuCommandEncoderCopyTextureToBuffer(state->jsCommandEncoder, &srcCopy, &dstCopy, &copySize);
+                                    }
+                                    return state->engine->newUndefined();
+}
 
-                            WGPUTextureDataLayout_Compat layout = {};
-                            layout.offset = layoutOffset;
-                            layout.bytesPerRow = bytesPerRow;
-                            layout.rowsPerImage = rowsPerImage;
+static js::JSValueHandle tnWebgpuHandler59(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
+                                    auto sourceProp = args[0];
+                                    auto destProp = args[1];
+                                    auto sizeProp = args[2];
+                                    // Source (buffer info)
+                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(state->engine->getProperty(sourceProp, "buffer"));
+                                    uint64_t offset = (uint64_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "offset"));
+                                    uint32_t bytesPerRow = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "bytesPerRow"));
+                                    uint32_t rowsPerImage = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "rowsPerImage"));
+                                    // Destination (texture info)
+                                    WGPUTexture texture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(destProp, "texture"));
+                                    uint32_t mipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "mipLevel"));
+                                    auto originProp = state->engine->getProperty(destProp, "origin");
+                                    uint32_t originX = 0, originY = 0, originZ = 0;
+                                    if (!state->engine->isUndefined(originProp)) {
+                                        originX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 0));
+                                        originY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 1));
+                                        originZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 2));
+                                    }
+                                    // Copy size
+                                    uint32_t width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 0));
+                                    uint32_t height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 1));
+                                    uint32_t depthOrLayers = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 2));
+                                    if (depthOrLayers == 0) depthOrLayers = 1;
+                                    if (buffer && texture) {
+                                        WGPUImageCopyBuffer_Compat srcCopy = {};
+                                        srcCopy.buffer = buffer;
+                                        srcCopy.layout.offset = offset;
+                                        srcCopy.layout.bytesPerRow = bytesPerRow;
+                                        srcCopy.layout.rowsPerImage = rowsPerImage > 0 ? rowsPerImage : height;
+                                        WGPUImageCopyTexture_Compat dstCopy = {};
+                                        dstCopy.texture = texture;
+                                        dstCopy.mipLevel = mipLevel;
+                                        dstCopy.origin = {originX, originY, originZ};
+                                        WGPUExtent3D copySize = {width, height, depthOrLayers};
+                                        wgpuCommandEncoderCopyBufferToTexture(state->jsCommandEncoder, &srcCopy, &dstCopy, &copySize);
+                                    }
+                                    return state->engine->newUndefined();
+}
 
-                            WGPUExtent3D copySize = {width, height, depthOrArrayLayers};
+static js::JSValueHandle tnWebgpuHandler58(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 5 || !state->jsCommandEncoder) return state->engine->newUndefined();
+                                    WGPUBuffer source = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                    uint64_t sourceOffset = (uint64_t)state->engine->toNumber(args[1]);
+                                    WGPUBuffer destination = (WGPUBuffer)state->engine->getPrivateData(args[2]);
+                                    uint64_t destOffset = (uint64_t)state->engine->toNumber(args[3]);
+                                    uint64_t size = (uint64_t)state->engine->toNumber(args[4]);
+                                    if (source && destination) {
+                                        wgpuCommandEncoderCopyBufferToBuffer(state->jsCommandEncoder, source, sourceOffset, destination, destOffset, size);
+                                    }
+                                    return state->engine->newUndefined();
+}
 
-                            // Write texture
-                            wgpuQueueWriteTexture(state->queue, &destCopy, (uint8_t*)dataPtr + layoutOffset, dataSize - layoutOffset, &layout, &copySize);
+static js::JSValueHandle tnWebgpuHandler57(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                            if (state->jsComputePass) {
+                                                wgpuComputePassEncoderEnd(state->jsComputePass);
+                                                wgpuComputePassEncoderRelease(state->jsComputePass);
+                                                state->jsComputePass = nullptr;
+                                            }
+                                            return state->engine->newUndefined();
+}
 
-                            if (state->verboseLogging) std::cout << "[WebGPU] writeTexture: " << width << "x" << height << " (" << dataSize << " bytes)" << std::endl;
+static js::JSValueHandle tnWebgpuHandler56(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty()) return state->engine->newUndefined();
+                                            uint32_t countX = (uint32_t)state->engine->toNumber(args[0]);
+                                            uint32_t countY = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
+                                            uint32_t countZ = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 1;
+                                            if (state->jsComputePass) {
+                                                wgpuComputePassEncoderDispatchWorkgroups(state->jsComputePass, countX, countY, countZ);
+                                            }
+                                            return state->engine->newUndefined();
+}
 
+static js::JSValueHandle tnWebgpuHandler55(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) return state->engine->newUndefined();
+                                            uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
+                                            WGPUBindGroup bindGroup = (WGPUBindGroup)state->engine->getPrivateData(args[1]);
+                                            if (state->jsComputePass && bindGroup) {
+                                                wgpuComputePassEncoderSetBindGroup(state->jsComputePass, index, bindGroup, 0, nullptr);
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler54(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty()) return state->engine->newUndefined();
+                                            WGPUComputePipeline pipeline = (WGPUComputePipeline)state->engine->getPrivateData(args[0]);
+                                            if (state->jsComputePass && pipeline) {
+                                                wgpuComputePassEncoderSetPipeline(state->jsComputePass, pipeline);
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                    if (!state->jsCommandEncoder) {
+                                        state->engine->throwException("No command encoder");
+                                        return state->engine->newUndefined();
+                                    }
+                                    WGPUComputePassDescriptor computePassDesc = {};
+                                    state->jsComputePass = wgpuCommandEncoderBeginComputePass(state->jsCommandEncoder, &computePassDesc);
+                                    auto jsComputePass = state->engine->newObject();
+                                    // computePass.setPipeline(pipeline)
+                                    installBindingTable(state->engine, state, bindingTable({
+                                        {"GPUComputePassEncoder", "setPipeline", 0, nullptr,
+                                        &tnWebgpuHandler54
+                                    , jsComputePass},
+                                    // computePass.setBindGroup(index, bindGroup, dynamicOffsets?)
+                                                                            {"GPUComputePassEncoder", "setBindGroup", 0, nullptr,
+                                        &tnWebgpuHandler55
+                                    , jsComputePass},
+                                    // computePass.dispatchWorkgroups(countX, countY?, countZ?)
+                                                                            {"GPUComputePassEncoder", "dispatchWorkgroups", 0, nullptr,
+                                        &tnWebgpuHandler56
+                                    , jsComputePass},
+                                    // computePass.end()
+                                                                            {"GPUComputePassEncoder", "end", 0, nullptr,
+                                        &tnWebgpuHandler57
+                                    , jsComputePass}}));
+                                    if (state->verboseLogging) std::cout << "[WebGPU] Compute pass started" << std::endl;
+                                    return jsComputePass;
+}
+
+static js::JSValueHandle tnWebgpuHandler52(
+    BindingsState* state,
+    WGPUCommandEncoder capturedEncoderForEnd,
+    WGPURenderPassEncoder capturedRenderPass,
+    const std::vector<js::JSValueHandle>& args) {
+                                            if (capturedRenderPass) {
+                                                wgpuRenderPassEncoderEnd(capturedRenderPass);
+                                                wgpuRenderPassEncoderRelease(capturedRenderPass);
+                                                // Remove from per-encoder map
+                                                state->encoderRenderPassMap.erase(capturedEncoderForEnd);
+                                                // Clear global if it matches
+                                                if (state->jsRenderPass == capturedRenderPass) {
+                                                    state->jsRenderPass = nullptr;
+                                                }
+                                                // Mark surface render pass as ended
+                                                if (state->surfaceRenderEncoder == capturedEncoderForEnd) {
+                                                    state->surfaceRenderPassEnded = true;
+                                                }
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Render pass ended" << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler51(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForBundles, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty() || !capturedRenderPassForBundles) return state->engine->newUndefined();
+                                            auto bundlesArray = args[0];
+                                            auto lengthProp = state->engine->getProperty(bundlesArray, "length");
+                                            int bundleCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
+                                            std::vector<WGPURenderBundle> bundles;
+                                            bundles.reserve(bundleCount);
+                                            for (int i = 0; i < bundleCount; i++) {
+                                                auto bundleHandle = state->engine->getPropertyIndex(bundlesArray, i);
+                                                WGPURenderBundle bundle = (WGPURenderBundle)state->engine->getPrivateData(bundleHandle);
+                                                if (bundle) bundles.push_back(bundle);
+                                            }
+                                            if (!bundles.empty()) {
+                                                wgpuRenderPassEncoderExecuteBundles(capturedRenderPassForBundles, bundles.size(), bundles.data());
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Executed " << bundles.size() << " render bundles" << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler50(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty()) return state->engine->newUndefined();
+                                            uint32_t reference = (uint32_t)state->engine->toNumber(args[0]);
+                                            if (capturedRenderPassForCommands) {
+                                                wgpuRenderPassEncoderSetStencilReference(capturedRenderPassForCommands, reference);
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler49(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty()) return state->engine->newUndefined();
+                                            auto color = args[0];
+                                            WGPUColor blendColor = {};
+                                            if (state->engine->isArray(color)) {
+                                                blendColor.r = state->engine->toNumber(state->engine->getPropertyIndex(color, 0));
+                                                blendColor.g = state->engine->toNumber(state->engine->getPropertyIndex(color, 1));
+                                                blendColor.b = state->engine->toNumber(state->engine->getPropertyIndex(color, 2));
+                                                blendColor.a = state->engine->toNumber(state->engine->getPropertyIndex(color, 3));
+                                            } else {
+                                                blendColor.r = state->engine->toNumber(state->engine->getProperty(color, "r"));
+                                                blendColor.g = state->engine->toNumber(state->engine->getProperty(color, "g"));
+                                                blendColor.b = state->engine->toNumber(state->engine->getProperty(color, "b"));
+                                                blendColor.a = state->engine->toNumber(state->engine->getProperty(color, "a"));
+                                            }
+                                            if (capturedRenderPassForCommands) {
+                                                wgpuRenderPassEncoderSetBlendConstant(capturedRenderPassForCommands, &blendColor);
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler48(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 4) return state->engine->newUndefined();
+                                            uint32_t x = (uint32_t)state->engine->toNumber(args[0]);
+                                            uint32_t y = (uint32_t)state->engine->toNumber(args[1]);
+                                            uint32_t width = (uint32_t)state->engine->toNumber(args[2]);
+                                            uint32_t height = (uint32_t)state->engine->toNumber(args[3]);
+                                            if (capturedRenderPassForCommands) {
+                                                wgpuRenderPassEncoderSetScissorRect(capturedRenderPassForCommands, x, y, width, height);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] SetScissorRect: " << x << "," << y << " " << width << "x" << height << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler47(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 6) return state->engine->newUndefined();
+                                            float x = (float)state->engine->toNumber(args[0]);
+                                            float y = (float)state->engine->toNumber(args[1]);
+                                            float width = (float)state->engine->toNumber(args[2]);
+                                            float height = (float)state->engine->toNumber(args[3]);
+                                            float minDepth = (float)state->engine->toNumber(args[4]);
+                                            float maxDepth = (float)state->engine->toNumber(args[5]);
+                                            if (capturedRenderPassForCommands) {
+                                                wgpuRenderPassEncoderSetViewport(capturedRenderPassForCommands, x, y, width, height, minDepth, maxDepth);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] SetViewport: " << x << "," << y << " " << width << "x" << height << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler46(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) return state->engine->newUndefined();
+                                            WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                            uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
+                                            if (capturedRenderPassForCommands && indirectBuffer) {
+                                                wgpuRenderPassEncoderDrawIndexedIndirect(capturedRenderPassForCommands, indirectBuffer, indirectOffset);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] DrawIndexedIndirect at offset " << indirectOffset << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler45(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) return state->engine->newUndefined();
+                                            WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                            uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
+                                            if (capturedRenderPassForCommands && indirectBuffer) {
+                                                wgpuRenderPassEncoderDrawIndirect(capturedRenderPassForCommands, indirectBuffer, indirectOffset);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] DrawIndirect at offset " << indirectOffset << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler44(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty()) return state->engine->newUndefined();
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
+                                            uint32_t indexCount = (uint32_t)state->engine->toNumber(args[0]);
+                                            uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
+                                            uint32_t firstIndex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
+                                            int32_t baseVertex = args.size() > 3 ? (int32_t)state->engine->toNumber(args[3]) : 0;
+                                            uint32_t firstInstance = args.size() > 4 ? (uint32_t)state->engine->toNumber(args[4]) : 0;
+                                            if (capturedRenderPassForCommands) {
+                                                wgpuRenderPassEncoderDrawIndexed(capturedRenderPassForCommands, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] DrawIndexed: " << indexCount << " indices, firstInstance=" << firstInstance << std::endl;
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::DrawIndexed, profileStart);
+#endif
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler43(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) return state->engine->newUndefined();
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
+                                            WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                            std::string formatStr = state->engine->toString(args[1]);
+                                            uint64_t offset = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : 0;
+                                            uint64_t size = args.size() > 3 ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
+                                            WGPUIndexFormat format = WGPUIndexFormat_Uint16;
+                                            if (formatStr == "uint32") format = WGPUIndexFormat_Uint32;
+                                            else if (formatStr == "uint16") format = WGPUIndexFormat_Uint16;
+                                            if (capturedRenderPassForCommands && buffer) {
+                                                wgpuRenderPassEncoderSetIndexBuffer(capturedRenderPassForCommands, buffer, format, offset, size);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Set index buffer, format: " << formatStr << std::endl;
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::SetIndexBuffer, profileStart);
+#endif
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler42(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) return state->engine->newUndefined();
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
+                                            uint32_t slot = (uint32_t)state->engine->toNumber(args[0]);
+                                            WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[1]);
+                                            uint64_t offset = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : 0;
+                                            uint64_t size = args.size() > 3 ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
+                                            if (capturedRenderPassForCommands && buffer) {
+                                                wgpuRenderPassEncoderSetVertexBuffer(capturedRenderPassForCommands, slot, buffer, offset, size);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Set vertex buffer at slot " << slot << std::endl;
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::SetVertexBuffer, profileStart);
+#endif
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler41(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty()) return state->engine->newUndefined();
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
+                                            uint32_t vertexCount = (uint32_t)state->engine->toNumber(args[0]);
+                                            uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
+                                            uint32_t firstVertex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
+                                            uint32_t firstInstance = args.size() > 3 ? (uint32_t)state->engine->toNumber(args[3]) : 0;
+                                            if (capturedRenderPassForCommands) {
+                                                wgpuRenderPassEncoderDraw(capturedRenderPassForCommands, vertexCount, instanceCount, firstVertex, firstInstance);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Draw: " << vertexCount << " vertices" << std::endl;
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::Draw, profileStart);
+#endif
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler40(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) {
+                                                state->engine->throwException("setBindGroup requires index and bindGroup");
+                                                return state->engine->newUndefined();
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
+                                            uint32_t groupIndex = (uint32_t)state->engine->toNumber(args[0]);
+                                            WGPUBindGroup bindGroup = (WGPUBindGroup)state->engine->getPrivateData(args[1]);
+                                            if (capturedRenderPassForCommands && bindGroup) {
+                                                // TODO: Support dynamic offsets
+                                                wgpuRenderPassEncoderSetBindGroup(capturedRenderPassForCommands, groupIndex, bindGroup, 0, nullptr);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Set bind group at index " << groupIndex << std::endl;
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::SetBindGroup, profileStart);
+#endif
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler39(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForCommands, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.empty()) return state->engine->newUndefined();
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
+                                            WGPURenderPipeline pipeline = (WGPURenderPipeline)state->engine->getPrivateData(args[0]);
+                                            if (capturedRenderPassForCommands && pipeline) {
+                                                wgpuRenderPassEncoderSetPipeline(capturedRenderPassForCommands, pipeline);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Pipeline set" << std::endl;
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::SetPipeline, profileStart);
+#endif
+                                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.empty()) {
+                                        state->engine->throwException("beginRenderPass requires a descriptor");
+                                        return state->engine->newUndefined();
+                                    }
+                                    // Use the captured encoder for this specific command encoder
+                                    WGPUCommandEncoder encoderToUse = capturedEncoder;
+                                    if (!encoderToUse) {
+                                        state->engine->throwException("Command encoder not available");
+                                        return state->engine->newUndefined();
+                                    }
+                                    auto descriptor = args[0];
+                                    auto colorAttachments = state->engine->getProperty(descriptor, "colorAttachments");
+                                    // Parse all color attachments (deferred renderer uses multiple)
+                                    auto attachmentsLengthProp = state->engine->getProperty(colorAttachments, "length");
+                                    int numAttachments = state->engine->isUndefined(attachmentsLengthProp) ? 0 : (int)state->engine->toNumber(attachmentsLengthProp);
+                                    std::vector<WGPURenderPassColorAttachment> colorAttachmentList;
+                                    colorAttachmentList.reserve(numAttachments);
+                                    double firstR = 0, firstG = 0, firstB = 0, firstA = 1;
+                                    for (int i = 0; i < numAttachments; i++) {
+                                        auto attachment = state->engine->getPropertyIndex(colorAttachments, i);
+                                        auto viewHandle = state->engine->getProperty(attachment, "view");
+                                        WGPUTextureView view = (WGPUTextureView)state->engine->getPrivateData(viewHandle);
+                                        // Debug: Log first color attachment for comparison with state->currentTextureView
+                                        if (i == 0) {
+                                            if (state->verboseLogging) {
+                                                std::cout << "[WebGPU] Render pass attachment[0]: view=" << (void*)view
+                                                          << ", state->currentTextureView=" << (void*)state->currentTextureView
+                                                          << ", matches=" << (view == state->currentTextureView ? "YES" : "NO") << std::endl;
+                                            }
+                                            // Track if this render pass uses the surface texture
+                                            if (view == state->currentTextureView && state->currentTextureView != nullptr) {
+                                                state->surfaceRenderEncoder = encoderToUse;
+                                                state->surfaceRenderPassEnded = false;
+                                            }
+                                        }
+                                        // Debug: Log GBuffer pass attachments
+                                        if (numAttachments >= 5 && i == 0) {
+                                            if (state->verboseLogging) std::cout << "[WebGPU] GBuffer pass - 5 attachments, view[0]=" << (void*)view << std::endl;
+                                        }
+                                        if (!view && numAttachments >= 5) {
+                                            std::cerr << "[WebGPU] ERROR: GBuffer attachment " << i << " has null view!" << std::endl;
+                                        }
+                                        // Parse loadOp (default 'clear')
+                                        WGPULoadOp loadOp = WGPULoadOp_Clear;
+                                        auto loadOpProp = state->engine->getProperty(attachment, "loadOp");
+                                        if (!state->engine->isUndefined(loadOpProp)) {
+                                            std::string loadOpStr = state->engine->toString(loadOpProp);
+                                            if (loadOpStr == "load") loadOp = WGPULoadOp_Load;
+                                        }
+                                        // Parse storeOp (default 'store')
+                                        WGPUStoreOp storeOp = WGPUStoreOp_Store;
+                                        auto storeOpProp = state->engine->getProperty(attachment, "storeOp");
+                                        if (!state->engine->isUndefined(storeOpProp)) {
+                                            std::string storeOpStr = state->engine->toString(storeOpProp);
+                                            if (storeOpStr == "discard") storeOp = WGPUStoreOp_Discard;
+                                        }
+                                        // Parse clearValue only if loadOp is 'clear'
+                                        double r = 0, g = 0, b = 0, a = 1;
+                                        if (loadOp == WGPULoadOp_Clear) {
+                                            auto clearValue = state->engine->getProperty(attachment, "clearValue");
+                                            if (!state->engine->isUndefined(clearValue)) {
+                                                // Check if it's an array [r, g, b, a] or object {r, g, b, a}
+                                                if (state->engine->isArray(clearValue)) {
+                                                    r = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 0));
+                                                    g = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 1));
+                                                    b = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 2));
+                                                    a = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 3));
+                                                } else {
+                                                    r = state->engine->toNumber(state->engine->getProperty(clearValue, "r"));
+                                                    g = state->engine->toNumber(state->engine->getProperty(clearValue, "g"));
+                                                    b = state->engine->toNumber(state->engine->getProperty(clearValue, "b"));
+                                                    a = state->engine->toNumber(state->engine->getProperty(clearValue, "a"));
+                                                }
+                                            }
+                                        }
+                                        if (i == 0) {
+                                            firstR = r; firstG = g; firstB = b; firstA = a;
+                                        }
+                                        WGPURenderPassColorAttachment colorAttachment = {};
+                                        colorAttachment.view = view;
+                                        colorAttachment.loadOp = loadOp;
+                                        colorAttachment.storeOp = storeOp;
+                                        colorAttachment.clearValue = {r, g, b, a};
+                                        colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+                                        colorAttachmentList.push_back(colorAttachment);
+                                    }
+                                    WGPURenderPassDescriptor renderPassDesc = {};
+                                    renderPassDesc.colorAttachmentCount = colorAttachmentList.size();
+                                    renderPassDesc.colorAttachments = colorAttachmentList.data();
+                                    // Parse depth stencil attachment if present
+                                    WGPURenderPassDepthStencilAttachment depthStencilAttachment = {};
+                                    auto depthStencilProp = state->engine->getProperty(descriptor, "depthStencilAttachment");
+                                    if (!state->engine->isUndefined(depthStencilProp)) {
+                                        auto depthViewHandle = state->engine->getProperty(depthStencilProp, "view");
+                                        WGPUTextureView depthView = (WGPUTextureView)state->engine->getPrivateData(depthViewHandle);
+                                        depthStencilAttachment.view = depthView;
+                                        // Depth clear value (default 1.0)
+                                        auto depthClearValueProp = state->engine->getProperty(depthStencilProp, "depthClearValue");
+                                        depthStencilAttachment.depthClearValue = state->engine->isUndefined(depthClearValueProp)
+                                            ? 1.0f : (float)state->engine->toNumber(depthClearValueProp);
+                                        // Depth load/store ops (default clear/store)
+                                        auto depthLoadOpProp = state->engine->getProperty(depthStencilProp, "depthLoadOp");
+                                        if (!state->engine->isUndefined(depthLoadOpProp)) {
+                                            std::string loadOpStr = state->engine->toString(depthLoadOpProp);
+                                            if (loadOpStr == "load") depthStencilAttachment.depthLoadOp = WGPULoadOp_Load;
+                                            else depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
+                                        } else {
+                                            depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
+                                        }
+                                        auto depthStoreOpProp = state->engine->getProperty(depthStencilProp, "depthStoreOp");
+                                        if (!state->engine->isUndefined(depthStoreOpProp)) {
+                                            std::string storeOpStr = state->engine->toString(depthStoreOpProp);
+                                            if (storeOpStr == "discard") depthStencilAttachment.depthStoreOp = WGPUStoreOp_Discard;
+                                            else depthStencilAttachment.depthStoreOp = WGPUStoreOp_Store;
+                                        } else {
+                                            depthStencilAttachment.depthStoreOp = WGPUStoreOp_Store;
+                                        }
+                                        // Stencil ops (default undefined/disabled)
+                                        depthStencilAttachment.stencilClearValue = 0;
+                                        depthStencilAttachment.stencilLoadOp = WGPULoadOp_Undefined;
+                                        depthStencilAttachment.stencilStoreOp = WGPUStoreOp_Undefined;
+                                        renderPassDesc.depthStencilAttachment = &depthStencilAttachment;
+                                        if (state->verboseLogging) std::cout << "[WebGPU] Render pass with depth attachment, clear=" << depthStencilAttachment.depthClearValue << std::endl;
+                                    }
+                                    // Begin render pass on the captured encoder (not the global)
+                                    WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoderToUse, &renderPassDesc);
+                                    // Store in per-encoder map (fixes issue with multiple encoders)
+                                    state->encoderRenderPassMap[encoderToUse] = renderPass;
+                                    // Also set global for backwards compatibility with render pass methods
+                                    state->jsRenderPass = renderPass;
+                                    if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
+                                    // Suspend frame tracking while creating render pass wrapper
+                                    state->engine->suspendFrameTracking();
+                                    auto jsRenderPass = state->engine->newObject();
+                                    state->engine->setPrivateData(jsRenderPass, renderPass);
+                                    WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
+                                    // renderPass.setPipeline(pipeline)
+                                    installBindingTable(state->engine, state, bindingTable({
+                                        {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler39)
+                                    , jsRenderPass},
+                                    // renderPass.setBindGroup(index, bindGroup, dynamicOffsets?)
+                                        {"GPURenderPassEncoder", "setBindGroup", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler40)
+                                    , jsRenderPass},
+                                    // renderPass.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
+                                        {"GPURenderPassEncoder", "draw", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler41)
+                                    , jsRenderPass},
+                                    // renderPass.setVertexBuffer(slot, buffer, offset?, size?)
+                                        {"GPURenderPassEncoder", "setVertexBuffer", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler42)
+                                    , jsRenderPass},
+                                    // renderPass.setIndexBuffer(buffer, format, offset?, size?)
+                                        {"GPURenderPassEncoder", "setIndexBuffer", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler43)
+                                    , jsRenderPass},
+                                    // renderPass.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
+                                        {"GPURenderPassEncoder", "drawIndexed", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler44)
+                                    , jsRenderPass},
+                                    // renderPass.drawIndirect(indirectBuffer, indirectOffset)
+                                        {"GPURenderPassEncoder", "drawIndirect", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler45)
+                                    , jsRenderPass},
+                                    // renderPass.drawIndexedIndirect(indirectBuffer, indirectOffset)
+                                        {"GPURenderPassEncoder", "drawIndexedIndirect", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler46)
+                                    , jsRenderPass},
+                                    // renderPass.setViewport(x, y, width, height, minDepth, maxDepth)
+                                        {"GPURenderPassEncoder", "setViewport", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler47)
+                                    , jsRenderPass},
+                                    // renderPass.setScissorRect(x, y, width, height)
+                                        {"GPURenderPassEncoder", "setScissorRect", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler48)
+                                    , jsRenderPass},
+                                    // renderPass.setBlendConstant(color)
+                                        {"GPURenderPassEncoder", "setBlendConstant", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler49)
+                                    , jsRenderPass},
+                                    // renderPass.setStencilReference(reference)
+                                        {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler50)
+                                    , jsRenderPass}}));
+                                    // renderPass.executeBundles(bundles)
+                                    // Used by Three.js for mipmap generation
+                                    WGPURenderPassEncoder capturedRenderPassForBundles = renderPass;
+                                    installBindingTable(state->engine, state, bindingTable({
+                                        {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler51)
+                                    , jsRenderPass}}));
+                                    // renderPass.end() - capture encoder and render pass for cleanup
+                                    installBindingTable(state->engine, state, bindingTable({
+                                        {"GPURenderPassEncoder", "end", 0, nullptr,
+                                        makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuHandler52)
+                                    , jsRenderPass}}));
+                                    // Resume frame tracking
+                                    state->engine->resumeFrameTracking();
+                                    return jsRenderPass;
+}
+
+static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            WGPUCommandEncoderDescriptor desc = {};
+                            WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &desc);
+                            // Store in global for use by beginRenderPass
+                            // Note: Multiple encoders are supported via per-encoder render pass tracking
+                            state->jsCommandEncoder = encoder;
+                            // Suspend frame tracking while creating encoder wrapper
+                            // This prevents the wrapper's methods from being garbage collected at frame end
+                            state->engine->suspendFrameTracking();
+                            auto jsEncoder = state->engine->newObject();
+                            state->engine->setPrivateData(jsEncoder, encoder);
+                            // Capture encoder pointer for use in closures
+                            WGPUCommandEncoder capturedEncoder = encoder;
+                            // encoder.beginRenderPass(descriptor)
+                            installBindingTable(state->engine, state, bindingTable({
+                                {"GPUCommandEncoder", "beginRenderPass", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler38)
+                            , jsEncoder}}));
+                            // encoder.beginComputePass(descriptor?)
+                            installBindingTable(state->engine, state, bindingTable({
+                                {"GPUCommandEncoder", "beginComputePass", 0, nullptr,
+                                &tnWebgpuHandler53
+                            , jsEncoder}}));
+                            // encoder.copyBufferToBuffer(source, sourceOffset, destination, destinationOffset, size)
+                            installBindingTable(state->engine, state, bindingTable({
+                                {"GPUCommandEncoder", "copyBufferToBuffer", 0, nullptr,
+                                &tnWebgpuHandler58
+                            , jsEncoder},
+                            // encoder.copyBufferToTexture(source, destination, copySize)
+                                                            {"GPUCommandEncoder", "copyBufferToTexture", 0, nullptr,
+                                &tnWebgpuHandler59
+                            , jsEncoder},
+                            // encoder.copyTextureToBuffer(source, destination, copySize)
+                                                            {"GPUCommandEncoder", "copyTextureToBuffer", 0, nullptr,
+                                &tnWebgpuHandler60
+                            , jsEncoder},
+                            // encoder.copyTextureToTexture(source, destination, copySize)
+                                                            {"GPUCommandEncoder", "copyTextureToTexture", 0, nullptr,
+                                &tnWebgpuHandler61
+                            , jsEncoder},
+                            // encoder.clearBuffer(buffer, offset?, size?)
+                                                            {"GPUCommandEncoder", "clearBuffer", 0, nullptr,
+                                &tnWebgpuHandler62
+                            , jsEncoder},
+                            // encoder.finish(descriptor?)
+                                {"GPUCommandEncoder", "finish", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &tnWebgpuHandler63)
+                            , jsEncoder}}));
+                            // Resume frame tracking now that encoder wrapper is created
+                            state->engine->resumeFrameTracking();
+                            return jsEncoder;
+}
+
+static js::JSValueHandle tnWebgpuHandler36(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createComputePipeline requires a descriptor");
+                                return state->engine->newUndefined();
+                            }
+                            auto descriptor = args[0];
+                            // Get layout
+                            auto layoutProp = state->engine->getProperty(descriptor, "layout");
+                            WGPUPipelineLayout layout = nullptr;
+                            bool isAutoLayout = false;
+                            if (!state->engine->isUndefined(layoutProp) && !state->engine->isString(layoutProp)) {
+                                layout = (WGPUPipelineLayout)state->engine->getPrivateData(layoutProp);
+                            } else if (state->engine->isString(layoutProp)) {
+                                std::string layoutStr = state->engine->toString(layoutProp);
+                                if (layoutStr == "auto") {
+                                    isAutoLayout = true;
+                                    if (state->verboseLogging) std::cout << "[WebGPU] Using 'auto' layout for compute pipeline" << std::endl;
+                                    std::cout.flush();
+                                }
+                            }
+                            // Get compute stage
+                            auto computeProp = state->engine->getProperty(descriptor, "compute");
+                            auto moduleProp = state->engine->getProperty(computeProp, "module");
+                            WGPUShaderModule module = (WGPUShaderModule)state->engine->getPrivateData(moduleProp);
+                            // Entry point (default "main")
+                            std::string entryPoint = "main";
+                            auto entryPointProp = state->engine->getProperty(computeProp, "entryPoint");
+                            if (!state->engine->isUndefined(entryPointProp)) {
+                                entryPoint = state->engine->toString(entryPointProp);
+                            }
+                            // Create pipeline
+                            WGPUComputePipelineDescriptor pipelineDesc = {};
+                            pipelineDesc.layout = layout;
+                            pipelineDesc.compute.module = module;
+                            WGPU_SET_ENTRY_POINT(pipelineDesc.compute, entryPoint.c_str());
+                            WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(state->device, &pipelineDesc);
+                            if (!pipeline) {
+                                state->engine->throwException("Failed to create compute pipeline");
+                                return state->engine->newUndefined();
+                            }
+                            // Register pipeline for getBindGroupLayout
+                            uint64_t pipelineId = state->nextComputePipelineId++;
+                            state->computePipelineRegistry[pipelineId] = pipeline;
+                            auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, false);
+                            if (state->verboseLogging) std::cout << "[WebGPU] Compute pipeline created (id=" << pipelineId << ")" << std::endl;
+                            return jsPipeline;
+}
+
+static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createRenderPipeline requires a descriptor");
+                                return state->engine->newUndefined();
+                            }
+                            auto descriptor = args[0];
+                            // Get vertex stage
+                            auto vertex = state->engine->getProperty(descriptor, "vertex");
+                            auto vertexModule = state->engine->getProperty(vertex, "module");
+                            auto vertexEntryProp = state->engine->getProperty(vertex, "entryPoint");
+                            const bool hasVertexEntry = !state->engine->isUndefined(vertexEntryProp);
+                            std::string vertexEntry = hasVertexEntry
+                                ? state->engine->toString(vertexEntryProp)
+                                : state->engine->toString(
+                                    state->engine->getProperty(vertexModule, "_tnVertexEntryPoint"));
+                            if (vertexEntry.empty()) {
+                                state->engine->throwException(
+                                    "createRenderPipeline: omitted vertex entryPoint requires exactly one @vertex function");
+                                return state->engine->newUndefined();
+                            }
+                            // Get fragment stage (optional - depth-only pipelines don't have fragment)
+                            auto fragment = state->engine->getProperty(descriptor, "fragment");
+                            WGPUShaderModule fsModule = nullptr;
+                            std::string fragmentEntry;
+                            bool hasFragment = !state->engine->isUndefined(fragment) && !state->engine->isNull(fragment);
+                            if (hasFragment) {
+                                auto fragmentModule = state->engine->getProperty(fragment, "module");
+                                fsModule = (WGPUShaderModule)state->engine->getPrivateData(fragmentModule);
+                                auto fragEntryProp = state->engine->getProperty(fragment, "entryPoint");
+                                if (!state->engine->isUndefined(fragEntryProp)) {
+                                    fragmentEntry = state->engine->toString(fragEntryProp);
+                                } else {
+                                    fragmentEntry = state->engine->toString(state->engine->getProperty(
+                                        fragmentModule, "_tnFragmentEntryPoint"));
+                                    if (fragmentEntry.empty()) {
+                                        state->engine->throwException(
+                                            "createRenderPipeline: omitted fragment entryPoint requires exactly one @fragment function");
+                                        return state->engine->newUndefined();
+                                    }
+                                }
+                            }
+                            // Get native shader modules
+                            WGPUShaderModule vsModule = (WGPUShaderModule)state->engine->getPrivateData(vertexModule);
+                            // Create pipeline descriptor
+                            WGPURenderPipelineDescriptor pipelineDesc = {};
+                            // Check for layout property
+                            auto layoutProp = state->engine->getProperty(descriptor, "layout");
+                            if (!state->engine->isUndefined(layoutProp)) {
+                                // Check if it's "auto" string or a PipelineLayout object
+                                if (state->engine->isString(layoutProp)) {
+                                    std::string layoutStr = state->engine->toString(layoutProp);
+                                    if (layoutStr == "auto") {
+                                        pipelineDesc.layout = nullptr;  // Auto layout
+                                    }
+                                } else {
+                                    // It's a PipelineLayout object
+                                    WGPUPipelineLayout layout = (WGPUPipelineLayout)state->engine->getPrivateData(layoutProp);
+                                    pipelineDesc.layout = layout;
+                                }
+                            }
+                            // Vertex state
+                            pipelineDesc.vertex.module = vsModule;
+                            WGPU_SET_ENTRY_POINT(pipelineDesc.vertex, vertexEntry.c_str());
+                            // Parse vertex buffers if present
+                            std::vector<WGPUVertexBufferLayout> vertexBuffers;
+                            std::vector<std::vector<WGPUVertexAttribute>> allAttributes; // Keep attributes alive
+                            auto buffersArray = state->engine->getProperty(vertex, "buffers");
+                            if (!state->engine->isUndefined(buffersArray)) {
+                                auto buffersLen = state->engine->getProperty(buffersArray, "length");
+                                int bufferCount = (int)state->engine->toNumber(buffersLen);
+                                for (int i = 0; i < bufferCount; i++) {
+                                    auto buffer = state->engine->getPropertyIndex(buffersArray, i);
+                                    WGPUVertexBufferLayout layout = {};
+                                    layout.arrayStride = (uint64_t)state->engine->toNumber(state->engine->getProperty(buffer, "arrayStride"));
+                                    layout.stepMode = WGPUVertexStepMode_Vertex;
+                                    // Parse step mode if present
+                                    auto stepModeProp = state->engine->getProperty(buffer, "stepMode");
+                                    if (!state->engine->isUndefined(stepModeProp)) {
+                                        std::string stepModeStr = state->engine->toString(stepModeProp);
+                                        if (stepModeStr == "instance") {
+                                            layout.stepMode = WGPUVertexStepMode_Instance;
+                                        }
+                                    }
+                                    // Parse attributes
+                                    auto attrsArray = state->engine->getProperty(buffer, "attributes");
+                                    if (!state->engine->isUndefined(attrsArray)) {
+                                        auto attrsLen = state->engine->getProperty(attrsArray, "length");
+                                        int attrCount = (int)state->engine->toNumber(attrsLen);
+                                        std::vector<WGPUVertexAttribute> attributes;
+                                        for (int j = 0; j < attrCount; j++) {
+                                            auto attr = state->engine->getPropertyIndex(attrsArray, j);
+                                            WGPUVertexAttribute va = {};
+                                            va.shaderLocation = (uint32_t)state->engine->toNumber(state->engine->getProperty(attr, "shaderLocation"));
+                                            va.offset = (uint64_t)state->engine->toNumber(state->engine->getProperty(attr, "offset"));
+                                            std::string formatStr = state->engine->toString(state->engine->getProperty(attr, "format"));
+                                            // Parse vertex format
+                                            if (formatStr == "float32") va.format = WGPUVertexFormat_Float32;
+                                            else if (formatStr == "float32x2") va.format = WGPUVertexFormat_Float32x2;
+                                            else if (formatStr == "float32x3") va.format = WGPUVertexFormat_Float32x3;
+                                            else if (formatStr == "float32x4") va.format = WGPUVertexFormat_Float32x4;
+                                            else if (formatStr == "uint8x2") va.format = WGPUVertexFormat_Uint8x2;
+                                            else if (formatStr == "uint8x4") va.format = WGPUVertexFormat_Uint8x4;
+                                            else if (formatStr == "sint8x2") va.format = WGPUVertexFormat_Sint8x2;
+                                            else if (formatStr == "sint8x4") va.format = WGPUVertexFormat_Sint8x4;
+                                            else if (formatStr == "unorm8x2") va.format = WGPUVertexFormat_Unorm8x2;
+                                            else if (formatStr == "unorm8x4") va.format = WGPUVertexFormat_Unorm8x4;
+                                            else if (formatStr == "snorm8x2") va.format = WGPUVertexFormat_Snorm8x2;
+                                            else if (formatStr == "snorm8x4") va.format = WGPUVertexFormat_Snorm8x4;
+                                            else if (formatStr == "uint16x2") va.format = WGPUVertexFormat_Uint16x2;
+                                            else if (formatStr == "uint16x4") va.format = WGPUVertexFormat_Uint16x4;
+                                            else if (formatStr == "sint16x2") va.format = WGPUVertexFormat_Sint16x2;
+                                            else if (formatStr == "sint16x4") va.format = WGPUVertexFormat_Sint16x4;
+                                            else if (formatStr == "unorm16x2") va.format = WGPUVertexFormat_Unorm16x2;
+                                            else if (formatStr == "unorm16x4") va.format = WGPUVertexFormat_Unorm16x4;
+                                            else if (formatStr == "snorm16x2") va.format = WGPUVertexFormat_Snorm16x2;
+                                            else if (formatStr == "snorm16x4") va.format = WGPUVertexFormat_Snorm16x4;
+                                            else if (formatStr == "float16x2") va.format = WGPUVertexFormat_Float16x2;
+                                            else if (formatStr == "float16x4") va.format = WGPUVertexFormat_Float16x4;
+                                            else if (formatStr == "uint32") va.format = WGPUVertexFormat_Uint32;
+                                            else if (formatStr == "uint32x2") va.format = WGPUVertexFormat_Uint32x2;
+                                            else if (formatStr == "uint32x3") va.format = WGPUVertexFormat_Uint32x3;
+                                            else if (formatStr == "uint32x4") va.format = WGPUVertexFormat_Uint32x4;
+                                            else if (formatStr == "sint32") va.format = WGPUVertexFormat_Sint32;
+                                            else if (formatStr == "sint32x2") va.format = WGPUVertexFormat_Sint32x2;
+                                            else if (formatStr == "sint32x3") va.format = WGPUVertexFormat_Sint32x3;
+                                            else if (formatStr == "sint32x4") va.format = WGPUVertexFormat_Sint32x4;
+                                            else va.format = WGPUVertexFormat_Float32x3; // Default
+                                            attributes.push_back(va);
+                                        }
+                                        allAttributes.push_back(attributes);
+                                        layout.attributeCount = attributes.size();
+                                        layout.attributes = allAttributes.back().data();
+                                    }
+                                    vertexBuffers.push_back(layout);
+                                }
+                                pipelineDesc.vertex.bufferCount = vertexBuffers.size();
+                                pipelineDesc.vertex.buffers = vertexBuffers.data();
+                            }
+                            // Fragment state (only if fragment shader exists)
+                            WGPUColorTargetState colorTarget = {};
+                            WGPUFragmentState fragmentState = {};
+                            std::vector<WGPUColorTargetState> colorTargets;
+                            bool targetsExplicitlySpecified = false;
+                            if (hasFragment && fsModule) {
+                                // Parse targets from fragment descriptor
+                                auto targetsProp = state->engine->getProperty(fragment, "targets");
+                                if (!state->engine->isUndefined(targetsProp)) {
+                                    targetsExplicitlySpecified = true;  // Even if empty array
+                                    auto targetsLen = state->engine->getProperty(targetsProp, "length");
+                                    int targetCount = (int)state->engine->toNumber(targetsLen);
+                                    for (int i = 0; i < targetCount; i++) {
+                                        auto target = state->engine->getPropertyIndex(targetsProp, i);
+                                        WGPUColorTargetState targetState = {};
+                                        auto formatProp = state->engine->getProperty(target, "format");
+                                        if (!state->engine->isUndefined(formatProp)) {
+                                            std::string formatStr = state->engine->toString(formatProp);
+                                            targetState.format = stringToFormat(formatStr);
+                                            if (targetCount >= 5) {
+                                                if (state->verboseLogging) std::cout << "[WebGPU] Pipeline target " << i << ": format=" << formatStr << " (enum=" << targetState.format << ")" << std::endl;
+                                            }
+                                        } else {
+                                            targetState.format = state->surfaceFormat;
+                                        }
+                                        targetState.writeMask = WGPUColorWriteMask_All;
+                                        // Parse blend state if provided
+                                        auto blendProp = state->engine->getProperty(target, "blend");
+                                        if (!state->engine->isUndefined(blendProp)) {
+                                            // Store blend state in a persistent container
+                                            auto blendState = std::make_unique<WGPUBlendState>();
+                                            // Helper lambda to parse blend factor
+                                            auto parseBlendFactor = [](const std::string& str) -> WGPUBlendFactor {
+                                                if (str == "zero") return WGPUBlendFactor_Zero;
+                                                if (str == "one") return WGPUBlendFactor_One;
+                                                if (str == "src") return WGPUBlendFactor_Src;
+                                                if (str == "one-minus-src") return WGPUBlendFactor_OneMinusSrc;
+                                                if (str == "src-alpha") return WGPUBlendFactor_SrcAlpha;
+                                                if (str == "one-minus-src-alpha") return WGPUBlendFactor_OneMinusSrcAlpha;
+                                                if (str == "dst") return WGPUBlendFactor_Dst;
+                                                if (str == "one-minus-dst") return WGPUBlendFactor_OneMinusDst;
+                                                if (str == "dst-alpha") return WGPUBlendFactor_DstAlpha;
+                                                if (str == "one-minus-dst-alpha") return WGPUBlendFactor_OneMinusDstAlpha;
+                                                if (str == "src-alpha-saturated") return WGPUBlendFactor_SrcAlphaSaturated;
+                                                if (str == "constant") return WGPUBlendFactor_Constant;
+                                                if (str == "one-minus-constant") return WGPUBlendFactor_OneMinusConstant;
+                                                return WGPUBlendFactor_One;  // Default
+                                            };
+                                            // Helper lambda to parse blend operation
+                                            auto parseBlendOp = [](const std::string& str) -> WGPUBlendOperation {
+                                                if (str == "add") return WGPUBlendOperation_Add;
+                                                if (str == "subtract") return WGPUBlendOperation_Subtract;
+                                                if (str == "reverse-subtract") return WGPUBlendOperation_ReverseSubtract;
+                                                if (str == "min") return WGPUBlendOperation_Min;
+                                                if (str == "max") return WGPUBlendOperation_Max;
+                                                return WGPUBlendOperation_Add;  // Default
+                                            };
+                                            // Parse color blend component
+                                            auto colorProp = state->engine->getProperty(blendProp, "color");
+                                            if (!state->engine->isUndefined(colorProp)) {
+                                                auto srcFactor = state->engine->getProperty(colorProp, "srcFactor");
+                                                auto dstFactor = state->engine->getProperty(colorProp, "dstFactor");
+                                                auto operation = state->engine->getProperty(colorProp, "operation");
+                                                if (!state->engine->isUndefined(srcFactor))
+                                                    blendState->color.srcFactor = parseBlendFactor(state->engine->toString(srcFactor));
+                                                else
+                                                    blendState->color.srcFactor = WGPUBlendFactor_One;
+                                                if (!state->engine->isUndefined(dstFactor))
+                                                    blendState->color.dstFactor = parseBlendFactor(state->engine->toString(dstFactor));
+                                                else
+                                                    blendState->color.dstFactor = WGPUBlendFactor_Zero;
+                                                if (!state->engine->isUndefined(operation))
+                                                    blendState->color.operation = parseBlendOp(state->engine->toString(operation));
+                                                else
+                                                    blendState->color.operation = WGPUBlendOperation_Add;
+                                            } else {
+                                                // Default color blend (no blending)
+                                                blendState->color.srcFactor = WGPUBlendFactor_One;
+                                                blendState->color.dstFactor = WGPUBlendFactor_Zero;
+                                                blendState->color.operation = WGPUBlendOperation_Add;
+                                            }
+                                            // Parse alpha blend component
+                                            auto alphaProp = state->engine->getProperty(blendProp, "alpha");
+                                            if (!state->engine->isUndefined(alphaProp)) {
+                                                auto srcFactor = state->engine->getProperty(alphaProp, "srcFactor");
+                                                auto dstFactor = state->engine->getProperty(alphaProp, "dstFactor");
+                                                auto operation = state->engine->getProperty(alphaProp, "operation");
+                                                if (!state->engine->isUndefined(srcFactor))
+                                                    blendState->alpha.srcFactor = parseBlendFactor(state->engine->toString(srcFactor));
+                                                else
+                                                    blendState->alpha.srcFactor = WGPUBlendFactor_One;
+                                                if (!state->engine->isUndefined(dstFactor))
+                                                    blendState->alpha.dstFactor = parseBlendFactor(state->engine->toString(dstFactor));
+                                                else
+                                                    blendState->alpha.dstFactor = WGPUBlendFactor_Zero;
+                                                if (!state->engine->isUndefined(operation))
+                                                    blendState->alpha.operation = parseBlendOp(state->engine->toString(operation));
+                                                else
+                                                    blendState->alpha.operation = WGPUBlendOperation_Add;
+                                            } else {
+                                                // Default alpha blend (no blending)
+                                                blendState->alpha.srcFactor = WGPUBlendFactor_One;
+                                                blendState->alpha.dstFactor = WGPUBlendFactor_Zero;
+                                                blendState->alpha.operation = WGPUBlendOperation_Add;
+                                            }
+                                            targetState.blend = blendState.get();
+                                            state->blendStates.push_back(std::move(blendState));
+                                            if (state->verboseLogging) std::cout << "[WebGPU] Pipeline target " << i << " has blend state" << std::endl;
+                                        }
+                                        colorTargets.push_back(targetState);
+                                    }
+                                }
+                                // Only add default target if targets wasn't explicitly specified
+                                // If targets: [] was specified, don't add any (depth-only pass)
+                                if (colorTargets.empty() && !targetsExplicitlySpecified) {
+                                    // Default single target only when targets is not specified at all
+                                    colorTarget.format = state->surfaceFormat;
+                                    colorTarget.writeMask = WGPUColorWriteMask_All;
+                                    colorTargets.push_back(colorTarget);
+                                }
+                                fragmentState.module = fsModule;
+                                WGPU_SET_ENTRY_POINT(fragmentState, fragmentEntry.c_str());
+                                fragmentState.targetCount = colorTargets.size();
+                                fragmentState.targets = colorTargets.data();
+                                pipelineDesc.fragment = &fragmentState;
+                                if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline with " << colorTargets.size() << " color targets" << std::endl;
+                            } else {
+                                // Depth-only pipeline - no fragment state
+                                pipelineDesc.fragment = nullptr;
+                            }
+                            // Primitive state
+                            pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+                            pipelineDesc.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
+                            pipelineDesc.primitive.frontFace = WGPUFrontFace_CCW;
+                            pipelineDesc.primitive.cullMode = WGPUCullMode_None;
+                            // Parse primitive state if provided
+                            auto primitiveProp = state->engine->getProperty(descriptor, "primitive");
+                            if (!state->engine->isUndefined(primitiveProp)) {
+                                auto topologyProp = state->engine->getProperty(primitiveProp, "topology");
+                                if (!state->engine->isUndefined(topologyProp)) {
+                                    std::string topologyStr = state->engine->toString(topologyProp);
+                                    if (topologyStr == "point-list") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_PointList;
+                                    else if (topologyStr == "line-list") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_LineList;
+                                    else if (topologyStr == "line-strip") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_LineStrip;
+                                    else if (topologyStr == "triangle-list") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+                                    else if (topologyStr == "triangle-strip") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleStrip;
+                                }
+                                auto cullModeProp = state->engine->getProperty(primitiveProp, "cullMode");
+                                if (!state->engine->isUndefined(cullModeProp)) {
+                                    std::string cullModeStr = state->engine->toString(cullModeProp);
+                                    if (cullModeStr == "none") pipelineDesc.primitive.cullMode = WGPUCullMode_None;
+                                    else if (cullModeStr == "front") pipelineDesc.primitive.cullMode = WGPUCullMode_Front;
+                                    else if (cullModeStr == "back") pipelineDesc.primitive.cullMode = WGPUCullMode_Back;
+                                }
+                                auto frontFaceProp = state->engine->getProperty(primitiveProp, "frontFace");
+                                if (!state->engine->isUndefined(frontFaceProp)) {
+                                    std::string frontFaceStr = state->engine->toString(frontFaceProp);
+                                    if (frontFaceStr == "ccw") pipelineDesc.primitive.frontFace = WGPUFrontFace_CCW;
+                                    else if (frontFaceStr == "cw") pipelineDesc.primitive.frontFace = WGPUFrontFace_CW;
+                                }
+                            }
+                            // Depth stencil state
+                            WGPUDepthStencilState depthStencilState = {};
+                            bool hasDepthStencil = false;
+                            auto depthStencilProp = state->engine->getProperty(descriptor, "depthStencil");
+                            if (!state->engine->isUndefined(depthStencilProp)) {
+                                hasDepthStencil = true;
+                                auto formatProp = state->engine->getProperty(depthStencilProp, "format");
+                                if (!state->engine->isUndefined(formatProp)) {
+                                    depthStencilState.format = stringToFormat(state->engine->toString(formatProp));
+                                } else {
+                                    depthStencilState.format = WGPUTextureFormat_Depth24Plus;
+                                }
+                                auto depthWriteEnabledProp = state->engine->getProperty(depthStencilProp, "depthWriteEnabled");
+                                depthStencilState.depthWriteEnabled = state->engine->isUndefined(depthWriteEnabledProp)
+                                    ? WGPU_OPTIONAL_BOOL_TRUE
+                                    : (state->engine->toBoolean(depthWriteEnabledProp) ? WGPU_OPTIONAL_BOOL_TRUE : WGPU_OPTIONAL_BOOL_FALSE);
+                                auto depthCompareProp = state->engine->getProperty(depthStencilProp, "depthCompare");
+                                if (!state->engine->isUndefined(depthCompareProp)) {
+                                    std::string compareStr = state->engine->toString(depthCompareProp);
+                                    if (compareStr == "never") depthStencilState.depthCompare = WGPUCompareFunction_Never;
+                                    else if (compareStr == "less") depthStencilState.depthCompare = WGPUCompareFunction_Less;
+                                    else if (compareStr == "less-equal") depthStencilState.depthCompare = WGPUCompareFunction_LessEqual;
+                                    else if (compareStr == "greater") depthStencilState.depthCompare = WGPUCompareFunction_Greater;
+                                    else if (compareStr == "greater-equal") depthStencilState.depthCompare = WGPUCompareFunction_GreaterEqual;
+                                    else if (compareStr == "equal") depthStencilState.depthCompare = WGPUCompareFunction_Equal;
+                                    else if (compareStr == "not-equal") depthStencilState.depthCompare = WGPUCompareFunction_NotEqual;
+                                    else if (compareStr == "always") depthStencilState.depthCompare = WGPUCompareFunction_Always;
+                                } else {
+                                    depthStencilState.depthCompare = WGPUCompareFunction_Less;
+                                }
+                                // Default stencil operations
+                                depthStencilState.stencilFront.compare = WGPUCompareFunction_Always;
+                                depthStencilState.stencilFront.failOp = WGPUStencilOperation_Keep;
+                                depthStencilState.stencilFront.depthFailOp = WGPUStencilOperation_Keep;
+                                depthStencilState.stencilFront.passOp = WGPUStencilOperation_Keep;
+                                depthStencilState.stencilBack = depthStencilState.stencilFront;
+                                depthStencilState.stencilReadMask = 0xFFFFFFFF;
+                                depthStencilState.stencilWriteMask = 0xFFFFFFFF;
+                                pipelineDesc.depthStencil = &depthStencilState;
+                            }
+                            // Multisample state - parse from descriptor or use defaults
+                            pipelineDesc.multisample.count = 1;
+                            pipelineDesc.multisample.mask = 0xFFFFFFFF;
+                            pipelineDesc.multisample.alphaToCoverageEnabled = false;
+                            auto multisampleProp = state->engine->getProperty(descriptor, "multisample");
+                            if (!state->engine->isUndefined(multisampleProp)) {
+                                auto countProp = state->engine->getProperty(multisampleProp, "count");
+                                if (!state->engine->isUndefined(countProp)) {
+                                    pipelineDesc.multisample.count = (uint32_t)state->engine->toNumber(countProp);
+                                }
+                                auto maskProp = state->engine->getProperty(multisampleProp, "mask");
+                                if (!state->engine->isUndefined(maskProp)) {
+                                    pipelineDesc.multisample.mask = (uint32_t)state->engine->toNumber(maskProp);
+                                }
+                                auto alphaToCoverageProp = state->engine->getProperty(multisampleProp, "alphaToCoverageEnabled");
+                                if (!state->engine->isUndefined(alphaToCoverageProp)) {
+                                    pipelineDesc.multisample.alphaToCoverageEnabled = state->engine->toBoolean(alphaToCoverageProp);
+                                }
+                                if (state->verboseLogging) {
+                                    std::cout << "[WebGPU] Render pipeline multisample: count=" << pipelineDesc.multisample.count
+                                              << ", mask=" << pipelineDesc.multisample.mask << std::endl;
+                                }
+                            }
+                            // Create pipeline
+                            WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(state->device, &pipelineDesc);
+                            if (!pipeline) {
+                                state->engine->throwException("Failed to create render pipeline");
+                                return state->engine->newUndefined();
+                            }
+                            // Register pipeline for getBindGroupLayout
+                            uint64_t pipelineId = state->nextRenderPipelineId++;
+                            state->renderPipelineRegistry[pipelineId] = pipeline;
+                            auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, true);
+                            if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline created (id=" << pipelineId << ")" << std::endl;
+                            return jsPipeline;
+}
+
+static js::JSValueHandle tnWebgpuHandler34(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createShaderModule requires a descriptor");
+                                return state->engine->newUndefined();
+                            }
+                            auto descriptor = args[0];
+                            std::string code = state->engine->toString(state->engine->getProperty(descriptor, "code"));
+                            // Debug: Print first 500 chars of shader code
+                            if (state->verboseLogging && code.length() > 0) {
+                                std::cout << "[Shader] Creating shader (" << code.length() << " chars):\n"
+                                          << code.substr(0, std::min((size_t)500, code.length()))
+                                          << (code.length() > 500 ? "\n..." : "") << std::endl;
+                            }
+                            WGPUShaderModuleWGSLDescriptor_Compat wgslDesc = {};
+                            WGPUShaderModuleDescriptor shaderDesc = {};
+                            setupShaderModuleWGSL(&shaderDesc, &wgslDesc, code.c_str());
+                            WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(state->device, &shaderDesc);
+                            auto jsShader = state->engine->newObject();
+                            state->engine->setPrivateData(jsShader, shaderModule);
+                            state->engine->setProperty(jsShader, "_tnVertexEntryPoint",
+                                state->engine->newString(singleWgslEntryPoint(code, "vertex").c_str()));
+                            state->engine->setProperty(jsShader, "_tnFragmentEntryPoint",
+                                state->engine->newString(singleWgslEntryPoint(code, "fragment").c_str()));
+                            return jsShader;
+}
+
+static js::JSValueHandle tnWebgpuHandler33(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
+                                    auto it = state->bufferRegistry.find(bufferId);
+                                    if (it != state->bufferRegistry.end()) {
+                                        wgpuBufferDestroy(it->second.buffer);
+                                        wgpuBufferRelease(it->second.buffer);
+                                        state->bufferRegistry.erase(it);
+                                    }
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler32(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
+                                    // Look up this specific buffer by its ID
+                                    auto it = state->bufferRegistry.find(bufferId);
+                                    if (it == state->bufferRegistry.end()) {
+                                        std::cerr << "[WebGPU] unmap: Buffer " << bufferId << " not found in registry" << std::endl;
+                                        return state->engine->newUndefined();
+                                    }
+                                    auto& bufferInfo = it->second;
+                                    if (bufferInfo.isMapped) {
+                                        wgpuBufferUnmap(bufferInfo.buffer);
+                                        bufferInfo.isMapped = false;
+                                        bufferInfo.mappedData = nullptr;
+                                        bufferInfo.mappedSize = 0;
+                                    }
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler31(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
+                                    // Look up this specific buffer by its ID
+                                    auto it = state->bufferRegistry.find(bufferId);
+                                    if (it == state->bufferRegistry.end()) {
+                                        std::cerr << "[WebGPU] getMappedRange: Buffer " << bufferId << " not found in registry" << std::endl;
+                                        return state->engine->newUndefined();
+                                    }
+                                    auto& bufferInfo = it->second;
+                                    if (!bufferInfo.isMapped && !bufferInfo.mappedData) {
+                                        if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: Buffer " << bufferId << " is not mapped" << std::endl;
+                                        return state->engine->newUndefined();
+                                    }
+                                    uint64_t offset = args.empty() ? 0 : (uint64_t)state->engine->toNumber(args[0]);
+                                    uint64_t rangeSize = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
+                                    // Use wgpuBufferGetConstMappedRange for MAP_READ, wgpuBufferGetMappedRange for MAP_WRITE
+                                    // Dawn requires the const version for read-only mapped buffers
+                                    const void* mappedData = nullptr;
+                                    if (bufferInfo.mapMode == WGPUMapMode_Read) {
+                                        mappedData = wgpuBufferGetConstMappedRange(bufferInfo.buffer, offset, rangeSize);
+                                    } else {
+                                        mappedData = wgpuBufferGetMappedRange(bufferInfo.buffer, offset, rangeSize);
+                                    }
+                                    if (mappedData) {
+                                        // Use newArrayBufferExternal to avoid copying
+                                        // Cast away const for read-only buffers - the JS side shouldn't modify but we need void*
+                                        return state->engine->newArrayBufferExternal(const_cast<void*>(mappedData), rangeSize);
+                                    }
+                                    if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: GetMappedRange returned null for buffer " << bufferId << std::endl;
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler30(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
+                                    auto it = state->bufferRegistry.find(bufferId);
+                                    if (it == state->bufferRegistry.end()) {
+                                        std::cerr << "[WebGPU] mapAsync: Buffer " << bufferId << " not found" << std::endl;
+                                        return state->engine->evalWithResult("Promise.reject(new Error('Buffer not found'))", "mapAsync-error");
+                                    }
+                                    auto& bufferInfo = it->second;
+                                    // Already mapped (mappedAtCreation)?
+                                    if (bufferInfo.isMapped) {
+                                        return state->engine->evalWithResult("Promise.resolve()", "mapAsync-already-mapped");
+                                    }
+                                    // Get mode (default to READ)
+                                    WGPUMapMode mode = WGPUMapMode_Read;
+                                    if (!args.empty()) {
+                                        uint32_t jsMode = (uint32_t)state->engine->toNumber(args[0]);
+                                        // GPUMapMode.READ = 1, GPUMapMode.WRITE = 2
+                                        if (jsMode == 2) mode = WGPUMapMode_Write;
+                                    }
+                                    uint64_t offset = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : 0;
+                                    uint64_t mapSize = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : bufferInfo.size;
+                                    // Debug: Log buffer info
+                                    bool hasMapRead = (bufferInfo.usage & WGPUBufferUsage_MapRead) != 0;
+                                    (void)hasMapRead;  // Used for debug logging when enabled
+                                    // Ensure all pending GPU work is processed before attempting to map
+                                    // This is critical for buffers that were just used in a copy operation
+                                    for (int prePoll = 0; prePoll < 100; prePoll++) {
+#if defined(MYSTRAL_WEBGPU_WGPU)
+                                        wgpuDevicePoll(state->device, false, nullptr);
+#else
+                                        if (state->instance) {
+                                            wgpuInstanceProcessEvents(state->instance);
+                                        }
+                                        if (state->device) {
+                                            wgpuDeviceTick(state->device);
+                                        }
+#endif
+                                    }
+                                    // Synchronous mapping: use global callback + device poll
+                                    state->bufferMapData.completed = false;
+                                    state->bufferMapData.status = WGPUBufferMapAsyncStatus_Unknown_Compat;
+                                    state->bufferMapData.errorMessage.clear();
+#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
+                                    // Dawn uses CallbackInfo struct with 4-param callback
+                                    // Use AllowSpontaneous mode so callback can be invoked at any time
+                                    WGPUBufferMapCallbackInfo mapCallbackInfo = {};
+                                    mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+                                    mapCallbackInfo.callback = onBufferMapped;
+                                    mapCallbackInfo.userdata1 = &state->bufferMapData;
+                                    mapCallbackInfo.userdata2 = nullptr;
+                                    wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, mapCallbackInfo);
+#else
+                                    // wgpu-native uses separate callback and userdata
+                                    wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, onBufferMapped, &state->bufferMapData);
+#endif
+                                    // Poll device until mapping completes
+                                    // Add small sleep to avoid busy-looping and let GPU work complete
+                                    int pollCount = 0;
+                                    while (!state->bufferMapData.completed && pollCount < 10000) {
+#if defined(MYSTRAL_WEBGPU_WGPU)
+                                        wgpuDevicePoll(state->device, true, nullptr);
+#else
+                                        if (state->instance) {
+                                            wgpuInstanceProcessEvents(state->instance);
+                                        }
+                                        if (state->device) {
+                                            wgpuDeviceTick(state->device);
+                                        }
+#endif
+                                        // Small sleep every 100 iterations to avoid busy loop
+                                        if (pollCount % 100 == 0) {
+                                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                        }
+                                        pollCount++;
+                                    }
+                                    if (state->bufferMapData.status == WGPUBufferMapAsyncStatus_Success_Compat) {
+                                        bufferInfo.isMapped = true;
+                                        bufferInfo.mapMode = mode;  // Store whether mapped for read or write
+                                        return state->engine->evalWithResult("Promise.resolve()", "mapAsync-success");
+                                    } else {
+                                        std::cerr << "[WebGPU] mapAsync: Failed with status " << state->bufferMapData.status;
+                                        if (!state->bufferMapData.errorMessage.empty()) {
+                                            std::cerr << " - " << state->bufferMapData.errorMessage;
+                                        }
+                                        std::cerr << std::endl;
+                                        return state->engine->evalWithResult("Promise.reject(new Error('Buffer map failed'))", "mapAsync-failed");
+                                    }
+}
+
+static js::JSValueHandle tnWebgpuHandler29(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                state->engine->throwException("createBuffer requires a descriptor");
+                                return state->engine->newUndefined();
+                            }
+                            auto descriptor = args[0];
+                            double size = state->engine->toNumber(state->engine->getProperty(descriptor, "size"));
+                            double usage = state->engine->toNumber(state->engine->getProperty(descriptor, "usage"));
+                            // Check for mappedAtCreation
+                            auto mappedAtCreationProp = state->engine->getProperty(descriptor, "mappedAtCreation");
+                            bool mappedAtCreation = !state->engine->isUndefined(mappedAtCreationProp) && state->engine->toBoolean(mappedAtCreationProp);
+                            WGPUBufferDescriptor bufferDesc = {};
+                            bufferDesc.size = (uint64_t)size;
+                            bufferDesc.usage = (WGPUBufferUsage)(uint32_t)usage;
+                            bufferDesc.mappedAtCreation = mappedAtCreation;
+                            WGPUBuffer buffer = wgpuDeviceCreateBuffer(state->device, &bufferDesc);
+                            if (!buffer) {
+                                state->engine->throwException("Failed to create buffer");
+                                return state->engine->newUndefined();
+                            }
+                            recordBufferCreated(state, bufferDesc.size, (uint32_t)usage);
+                            // Register buffer for mapping operations
+                            uint64_t bufferId = state->nextBufferId++;
+                            // mappedAtCreation buffers are mapped for write
+                            WGPUMapMode initialMapMode = mappedAtCreation ? WGPUMapMode_Write : WGPUMapMode_None;
+                            state->bufferRegistry[bufferId] = {buffer, (uint64_t)size, (WGPUBufferUsage)(uint32_t)usage, mappedAtCreation, nullptr, 0, initialMapMode};
+                            auto jsBuffer = state->engine->newObject();
+                            state->engine->setPrivateData(jsBuffer, buffer);
+                            state->engine->setProperty(jsBuffer, "size", state->engine->newNumber(size));
+                            state->engine->setProperty(jsBuffer, "_bufferId", state->engine->newNumber((double)bufferId));
+                            state->engine->setProperty(jsBuffer, "usage", state->engine->newNumber(usage));
+                            // Set initial mapState
+                            state->engine->setProperty(jsBuffer, "mapState", state->engine->newString(mappedAtCreation ? "mapped" : "unmapped"));
+                            // buffer.mapAsync(mode, offset?, size?) -> Promise
+                            // Returns a Promise that resolves when the buffer is mapped
+                            installBindingTable(state->engine, state, bindingTable({
+                                {"GPUBuffer", "mapAsync", 0, nullptr,
+                                makeCapturedHandler(bufferId, &tnWebgpuHandler30)
+                            , jsBuffer},
+                            // buffer.getMappedRange(offset?, size?) -> ArrayBuffer
+                            // Capture bufferId in closure to identify the correct buffer
+                                {"GPUBuffer", "getMappedRange", 0, nullptr,
+                                makeCapturedHandler(bufferId, &tnWebgpuHandler31)
+                            , jsBuffer},
+                            // buffer.unmap()
+                            // Capture bufferId in closure to identify the correct buffer
+                                {"GPUBuffer", "unmap", 0, nullptr,
+                                makeCapturedHandler(bufferId, &tnWebgpuHandler32)
+                            , jsBuffer},
+                            // buffer.destroy()
+                            // Capture bufferId in closure to identify the correct buffer
+                                {"GPUBuffer", "destroy", 0, nullptr,
+                                makeCapturedHandler(bufferId, &tnWebgpuHandler33)
+                            , jsBuffer}}));
+                            return jsBuffer;
+}
+
+static js::JSValueHandle tnWebgpuHandler28(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) return state->engine->newBoolean(false);
+                            std::string featureName = state->engine->toString(args[0]);
+                            // indirect-first-instance enables non-zero firstInstance in indirect draws
+                            if (featureName == "indirect-first-instance") {
+                                return state->engine->newBoolean(true);
+                            }
+                            // timestamp-query is NOT supported yet - bindings not implemented
+                            if (featureName == "timestamp-query") {
+                                return state->engine->newBoolean(false);
+                            }
+                            // This Dawn has no Undefined member; 0 is outside the enum's values
+                            // and never a valid feature, so it stands in as the sentinel.
+                            WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
+                            if (feature == static_cast<WGPUFeatureName>(0)) return state->engine->newBoolean(false);
+                            return state->engine->newBoolean(wgpuDeviceHasFeature(state->device, feature) != 0);
+}
+
+static js::JSValueHandle tnWebgpuHandler27(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>&) {
+                            std::cout << "[WebGPU] device.destroy(): teardown is owned by the host"
+                                      << std::endl;
                             return state->engine->newUndefined();
-                        }
-                    },
+}
 
-                    // queue.copyExternalImageToTexture(source, destination, copySize)
-                    // Standard WebGPU way to upload ImageBitmap to texture
-                                            {"GPUQueue", "copyExternalImageToTexture", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
+static js::JSValueHandle tnWebgpuHandler26(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            auto* data = new QueueWorkDoneData();
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+                            WGPUQueueWorkDoneCallbackInfo callbackInfo = {};
+                            callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+                            callbackInfo.callback = onQueueWorkDone;
+                            callbackInfo.userdata1 = data;
+                            callbackInfo.userdata2 = nullptr;
+                            (void)wgpuQueueOnSubmittedWorkDone(state->queue, callbackInfo);
+#else
+                            wgpuQueueOnSubmittedWorkDone(state->queue, onQueueWorkDone, data);
+#endif
+                            if (!waitForWebGpuCallback(state, data->completed)) {
+                                releaseCallbackData(data);
+                                return rejectedPromise(state,
+                                    "GPUQueue.onSubmittedWorkDone timed out waiting for native completion.",
+                                    "onSubmittedWorkDone-timeout"
+                                );
+                            }
+                            const WGPUQueueWorkDoneStatus status = data->status;
+                            const std::string nativeMessage = data->message;
+                            releaseCallbackData(data);
+                            if (status != WGPUQueueWorkDoneStatus_Success) {
+                                std::string message = "GPUQueue.onSubmittedWorkDone failed with native status "
+                                    + std::to_string(static_cast<int>(status));
+                                if (!nativeMessage.empty()) message += ": " + nativeMessage;
+                                return rejectedPromise(state, message, "onSubmittedWorkDone-error");
+                            }
+                            return resolvedPromise(state, "undefined", "onSubmittedWorkDone-success");
+}
+
+static js::JSValueHandle tnWebgpuHandler25(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             if (args.size() < 3) {
                                 state->engine->throwException("copyExternalImageToTexture requires source, destination, and copySize");
                                 return state->engine->newUndefined();
                             }
-
                             // Parse source (ImageBitmap-like object or canvas element)
                             auto source = args[0];
                             auto sourceObj = state->engine->getProperty(source, "source");
                             if (state->engine->isUndefined(sourceObj)) {
                                 sourceObj = source; // source might be passed directly
                             }
-
                             // Parse flipY option (default false per WebGPU spec)
                             bool flipY = false;
                             auto flipYProp = state->engine->getProperty(source, "flipY");
                             if (!state->engine->isUndefined(flipYProp)) {
                                 flipY = state->engine->toBoolean(flipYProp);
                             }
-
                             // Parse destination.premultipliedAlpha (default false per WebGPU spec).
                             // PixiJS sets this true so its NORMAL blend (ONE, ONE_MINUS_SRC_ALPHA)
                             // produces correct results. Our PNG decoder returns straight alpha, so
@@ -1842,12 +3906,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     premultipliedAlpha = state->engine->toBoolean(premulProp);
                                 }
                             }
-
                             int imgWidth = 0;
                             int imgHeight = 0;
                             size_t dataSize = 0;
                             void* dataPtr = nullptr;
-
                             // Try to get data from ImageBitmap
                             auto imageData = state->engine->getProperty(sourceObj, "_data");
                             if (!state->engine->isUndefined(imageData)) {
@@ -1859,7 +3921,6 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                 // Check if it's a canvas element
                                 auto tagName = state->engine->getProperty(sourceObj, "tagName");
                                 std::string tagNameStr = state->engine->isUndefined(tagName) ? "" : state->engine->toString(tagName);
-
                                 if (tagNameStr == "CANVAS" || tagNameStr == "canvas") {
                                     // Get the canvas ID from private data or property
                                     auto canvasIdProp = state->engine->getProperty(sourceObj, "_offscreenCanvasId");
@@ -1879,7 +3940,6 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                         }
                                     }
                                 }
-
                                 // Check if it's already a 2D context (has getImageData method or _contextType)
                                 auto contextType = state->engine->getProperty(sourceObj, "_contextType");
                                 if (!state->engine->isUndefined(contextType)) {
@@ -1906,19 +3966,16 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                 }
                             }
-
                             if (!dataPtr || dataSize == 0) {
                                 // Try to get width/height anyway for better error message
                                 auto widthProp = state->engine->getProperty(sourceObj, "width");
                                 auto heightProp = state->engine->getProperty(sourceObj, "height");
                                 if (!state->engine->isUndefined(widthProp)) imgWidth = (int)state->engine->toNumber(widthProp);
                                 if (!state->engine->isUndefined(heightProp)) imgHeight = (int)state->engine->toNumber(heightProp);
-
                                 std::cerr << "[WebGPU] copyExternalImageToTexture: unsupported source type, width=" << imgWidth << ", height=" << imgHeight << std::endl;
                                 // Return silently instead of throwing - PixiJS might be able to continue
                                 return state->engine->newUndefined();
                             }
-
                             // Parse destination
                             auto destination = args[1];
                             auto textureObj = state->engine->getProperty(destination, "texture");
@@ -1927,7 +3984,6 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                 state->engine->throwException("copyExternalImageToTexture: invalid texture");
                                 return state->engine->newUndefined();
                             }
-
                             // Detect the destination texture format. In a real browser,
                             // copyExternalImageToTexture converts the source's RGBA pixels into the
                             // destination's format; we upload bytes verbatim via writeTexture, so for
@@ -1944,14 +4000,12 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     swapRB = (fmt == "bgra8unorm" || fmt == "bgra8unorm-srgb");
                                 }
                             }
-
                             // Optional mipLevel and origin
                             uint32_t mipLevel = 0;
                             auto mipLevelVal = state->engine->getProperty(destination, "mipLevel");
                             if (!state->engine->isUndefined(mipLevelVal)) {
                                 mipLevel = (uint32_t)state->engine->toNumber(mipLevelVal);
                             }
-
                             uint32_t originX = 0, originY = 0, originZ = 0;
                             auto originVal = state->engine->getProperty(destination, "origin");
                             if (!state->engine->isUndefined(originVal)) {
@@ -1961,7 +4015,6 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     originZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originVal, 2));
                                 }
                             }
-
                             // Parse copySize
                             auto sizeVal = args[2];
                             uint32_t width = imgWidth, height = imgHeight, depthOrArrayLayers = 1;
@@ -1978,7 +4031,6 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                 if (!state->engine->isUndefined(widthVal)) width = (uint32_t)state->engine->toNumber(widthVal);
                                 if (!state->engine->isUndefined(heightVal)) height = (uint32_t)state->engine->toNumber(heightVal);
                             }
-
                             // Handle flipY, premultipliedAlpha, and/or BGRA channel swap by writing
                             // into a staging copy. RGBA8 only (matches the hardcoded bytesPerRow below).
                             std::vector<uint8_t> stagingData;
@@ -2022,80 +4074,298 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                               << std::endl;
                                 }
                             }
-
                             // Use writeTexture internally (same effect as copyExternalImageToTexture)
                             WGPUImageCopyTexture_Compat destCopy = {};
                             destCopy.texture = texture;
                             destCopy.mipLevel = mipLevel;
                             destCopy.origin = {originX, originY, originZ};
                             destCopy.aspect = WGPUTextureAspect_All;
-
                             WGPUTextureDataLayout_Compat layout = {};
                             layout.offset = 0;
                             layout.bytesPerRow = imgWidth * 4;  // RGBA
                             layout.rowsPerImage = imgHeight;
-
                             WGPUExtent3D copySize = {width, height, depthOrArrayLayers};
-
                             wgpuQueueWriteTexture(state->queue, &destCopy, uploadDataPtr, dataSize, &layout, &copySize);
-
                             if (state->verboseLogging) std::cout << "[WebGPU] copyExternalImageToTexture: " << width << "x" << height << (flipY ? " (flipY)" : "") << std::endl;
-
                             return state->engine->newUndefined();
-                        }
-                    },
+}
 
+static js::JSValueHandle tnWebgpuHandler24(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.size() < 4) {
+                                state->engine->throwException("writeTexture requires destination, data, dataLayout, and size");
+                                return state->engine->newUndefined();
+                            }
+                            // Parse destination {texture, mipLevel?, origin?, aspect?}
+                            auto destination = args[0];
+                            auto textureHandle = state->engine->getProperty(destination, "texture");
+                            WGPUTexture texture = (WGPUTexture)state->engine->getPrivateData(textureHandle);
+                            if (!texture) {
+                                state->engine->throwException("writeTexture: invalid texture");
+                                return state->engine->newUndefined();
+                            }
+                            auto mipLevelVal = state->engine->getProperty(destination, "mipLevel");
+                            uint32_t mipLevel = state->engine->isUndefined(mipLevelVal) ? 0 : (uint32_t)state->engine->toNumber(mipLevelVal);
+                            // Parse origin
+                            auto originVal = state->engine->getProperty(destination, "origin");
+                            uint32_t originX = 0, originY = 0, originZ = 0;
+                            if (!state->engine->isUndefined(originVal)) {
+                                auto lengthProp = state->engine->getProperty(originVal, "length");
+                                if (!state->engine->isUndefined(lengthProp)) {
+                                    // Array format
+                                    int len = (int)state->engine->toNumber(lengthProp);
+                                    if (len >= 1) originX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originVal, 0));
+                                    if (len >= 2) originY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originVal, 1));
+                                    if (len >= 3) originZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originVal, 2));
+                                } else {
+                                    // Object format
+                                    auto x = state->engine->getProperty(originVal, "x");
+                                    auto y = state->engine->getProperty(originVal, "y");
+                                    auto z = state->engine->getProperty(originVal, "z");
+                                    if (!state->engine->isUndefined(x)) originX = (uint32_t)state->engine->toNumber(x);
+                                    if (!state->engine->isUndefined(y)) originY = (uint32_t)state->engine->toNumber(y);
+                                    if (!state->engine->isUndefined(z)) originZ = (uint32_t)state->engine->toNumber(z);
+                                }
+                            }
+                            // Get ArrayBuffer data
+                            size_t dataSize = 0;
+                            void* dataPtr = state->engine->getArrayBufferData(args[1], &dataSize);
+                            if (!dataPtr || dataSize == 0) {
+                                state->engine->throwException("writeTexture: invalid data");
+                                return state->engine->newUndefined();
+                            }
+                            // Parse size FIRST (need height for rowsPerImage default)
+                            auto sizeVal = args[3];
+                            uint32_t width = 1, height = 1, depthOrArrayLayers = 1;
+                            auto lengthProp = state->engine->getProperty(sizeVal, "length");
+                            if (!state->engine->isUndefined(lengthProp)) {
+                                int len = (int)state->engine->toNumber(lengthProp);
+                                if (len >= 1) width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 0));
+                                if (len >= 2) height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 1));
+                                if (len >= 3) depthOrArrayLayers = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 2));
+                            } else {
+                                auto w = state->engine->getProperty(sizeVal, "width");
+                                auto h = state->engine->getProperty(sizeVal, "height");
+                                auto d = state->engine->getProperty(sizeVal, "depthOrArrayLayers");
+                                if (!state->engine->isUndefined(w)) width = (uint32_t)state->engine->toNumber(w);
+                                if (!state->engine->isUndefined(h)) height = (uint32_t)state->engine->toNumber(h);
+                                if (!state->engine->isUndefined(d)) depthOrArrayLayers = (uint32_t)state->engine->toNumber(d);
+                            }
+                            // Parse dataLayout {offset?, bytesPerRow, rowsPerImage?}
+                            auto dataLayout = args[2];
+                            auto layoutOffsetVal = state->engine->getProperty(dataLayout, "offset");
+                            uint64_t layoutOffset = state->engine->isUndefined(layoutOffsetVal) ? 0 : (uint64_t)state->engine->toNumber(layoutOffsetVal);
+                            uint32_t bytesPerRow = (uint32_t)state->engine->toNumber(state->engine->getProperty(dataLayout, "bytesPerRow"));
+                            auto rowsPerImageVal = state->engine->getProperty(dataLayout, "rowsPerImage");
+                            // rowsPerImage must be >= height for 2D textures (wgpu validation requirement)
+                            uint32_t rowsPerImage = state->engine->isUndefined(rowsPerImageVal) ? height : (uint32_t)state->engine->toNumber(rowsPerImageVal);
+                            if (rowsPerImage == 0) rowsPerImage = height;
+                            // Create copy structures
+                            WGPUImageCopyTexture_Compat destCopy = {};
+                            destCopy.texture = texture;
+                            destCopy.mipLevel = mipLevel;
+                            destCopy.origin = {originX, originY, originZ};
+                            destCopy.aspect = WGPUTextureAspect_All;
+                            WGPUTextureDataLayout_Compat layout = {};
+                            layout.offset = layoutOffset;
+                            layout.bytesPerRow = bytesPerRow;
+                            layout.rowsPerImage = rowsPerImage;
+                            WGPUExtent3D copySize = {width, height, depthOrArrayLayers};
+                            // Write texture
+                            wgpuQueueWriteTexture(state->queue, &destCopy, (uint8_t*)dataPtr + layoutOffset, dataSize - layoutOffset, &layout, &copySize);
+                            if (state->verboseLogging) std::cout << "[WebGPU] writeTexture: " << width << "x" << height << " (" << dataSize << " bytes)" << std::endl;
+                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.size() < 3) {
+                                state->engine->throwException("writeBuffer requires buffer, offset, and data");
+                                return state->engine->newUndefined();
+                            }
+                            WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                            const double offsetValue = state->engine->toNumber(args[1]);
+                            if (!std::isfinite(offsetValue) || offsetValue < 0 || std::floor(offsetValue) != offsetValue ||
+                                static_cast<uint64_t>(offsetValue) % 4 != 0) {
+                                state->engine->throwException("writeBuffer: buffer offset must be a non-negative multiple of 4");
+                                return state->engine->newUndefined();
+                            }
+                            const uint64_t offset = static_cast<uint64_t>(offsetValue);
+                            // Get ArrayBuffer data
+                            size_t dataSize = 0;
+                            void* dataPtr = state->engine->getArrayBufferData(args[2], &dataSize);
+                            if (!dataPtr || dataSize == 0) {
+                                state->engine->throwException("writeBuffer: invalid data");
+                                return state->engine->newUndefined();
+                            }
+                            // WebGPU expresses dataOffset/size in elements for a TypedArray,
+                            // but in bytes for ArrayBuffer and DataView inputs.
+                            size_t bytesPerElement = 1;
+                            auto bytesPerElementValue = state->engine->getProperty(args[2], "BYTES_PER_ELEMENT");
+                            if (!state->engine->isUndefined(bytesPerElementValue)) {
+                                const double value = state->engine->toNumber(bytesPerElementValue);
+                                if (value > 0) bytesPerElement = static_cast<size_t>(value);
+                            }
+                            const double dataOffsetValue = args.size() > 3 ? state->engine->toNumber(args[3]) : 0;
+                            const double sizeValue = args.size() > 4 ? state->engine->toNumber(args[4]) : -1;
+                            if (!std::isfinite(dataOffsetValue) || dataOffsetValue < 0 ||
+                                std::floor(dataOffsetValue) != dataOffsetValue ||
+                                (args.size() > 4 && (!std::isfinite(sizeValue) || sizeValue < 0 ||
+                                                    std::floor(sizeValue) != sizeValue))) {
+                                state->engine->throwException("writeBuffer: data offset and size must be non-negative");
+                                return state->engine->newUndefined();
+                            }
+                            const size_t dataOffset = static_cast<size_t>(dataOffsetValue) * bytesPerElement;
+                            const size_t writeSize = args.size() > 4
+                                ? static_cast<size_t>(sizeValue) * bytesPerElement
+                                : (dataOffset <= dataSize ? dataSize - dataOffset : 0);
+                            if (dataOffset > dataSize || writeSize > dataSize - dataOffset) {
+                                state->engine->throwException("writeBuffer: source range exceeds the supplied buffer view");
+                                return state->engine->newUndefined();
+                            }
+                            if (buffer && state->queue) {
+                                const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
+                                const size_t alignedWriteSize = (writeSize + 3) & ~size_t(3);
+                                if (alignedWriteSize == writeSize) {
+                                    wgpuQueueWriteBuffer(state->queue, buffer, offset, source, writeSize);
+                                } else {
+                                    // Three pads destination attribute buffers to four bytes.
+                                    // Mirror browser implementations by zero-padding the final
+                                    // partial element before crossing the native WebGPU ABI.
+                                    std::vector<uint8_t> alignedData(alignedWriteSize, 0);
+                                    std::memcpy(alignedData.data(), source, writeSize);
+                                    wgpuQueueWriteBuffer(state->queue, buffer, offset, alignedData.data(), alignedData.size());
+                                }
+                            }
+                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler22(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            if (args.empty()) {
+                                return state->engine->newUndefined();
+                            }
+                            // Get command buffers array and submit them
+                            auto cmdBuffersArray = args[0];
+                            // Get array length
+                            auto lengthProp = state->engine->getProperty(cmdBuffersArray, "length");
+                            int length = (int)state->engine->toNumber(lengthProp);
+                            // Collect command buffers
+                            std::vector<WGPUCommandBuffer> cmdBuffers;
+                            for (int i = 0; i < length; i++) {
+                                auto cmdBufferHandle = state->engine->getPropertyIndex(cmdBuffersArray, i);
+                                WGPUCommandBuffer cmdBuffer = (WGPUCommandBuffer)state->engine->getPrivateData(cmdBufferHandle);
+                                if (cmdBuffer) {
+                                    cmdBuffers.push_back(cmdBuffer);
+                                }
+                            }
+                            // Submit user command buffers first
+                            state->submitCount++;
+#if TN_ANDROID_JS_PROFILE
+                            uint64_t submitPollNs = 0;
+                            uint64_t presentNs = 0;
+#endif
+                            if (!cmdBuffers.empty() && state->queue) {
+#if TN_ANDROID_JS_PROFILE
+                                const auto submitStart = std::chrono::steady_clock::now();
+#endif
+                                wgpuQueueSubmit(state->queue, cmdBuffers.size(), cmdBuffers.data());
+#if TN_ANDROID_JS_PROFILE
+                                submitPollNs = static_cast<uint64_t>(
+                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now() - submitStart
+                                    ).count()
+                                );
+#endif
+                                // Release command buffers after submission (they're consumed by submit)
+                                for (auto cmdBuf : cmdBuffers) {
+                                    wgpuCommandBufferRelease(cmdBuf);
+                                }
+                                // Tick to flush GPU work
+#if TN_ANDROID_JS_PROFILE
+                                const auto pollStart = std::chrono::steady_clock::now();
+#endif
+#if defined(MYSTRAL_WEBGPU_DAWN)
+                                wgpuDeviceTick(state->device);
+#elif defined(MYSTRAL_WEBGPU_WGPU)
+                                wgpuDevicePoll(state->device, false, nullptr);
+#endif
+#if TN_ANDROID_JS_PROFILE
+                                submitPollNs += static_cast<uint64_t>(
+                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now() - pollStart
+                                    ).count()
+                                );
+#endif
+                                if (state->verboseLogging) std::cout << "[WebGPU] Submit #" << state->submitCount << ": " << cmdBuffers.size() << " command buffers, currentTexture=" << (void*)state->currentTexture << std::endl;
+                            } else {
+                                if (state->verboseLogging) std::cout << "[WebGPU] Submit #" << state->submitCount << ": EMPTY (length=" << length << "), currentTexture=" << (void*)state->currentTexture << std::endl;
+                            }
+                            // Mark the frame ready to present rather than presenting here.
+                            //
+                            // A frame can submit more than once: three.js renders the world, then
+                            // the framework renders `ctx.canvasLayer` as an overlay pass, and each
+                            // `renderer.render()` ends in its own submit. Presenting per submit gave
+                            // each of those its own swapchain image, so only the first reached the
+                            // display and every overlay was silently dropped — the framework's own
+                            // loading screen and any game HUD on the canvas layer drew nothing on
+                            // native while working on web. presentPendingSurface() runs once per
+                            // frame from endDawnFrame(), after every rAF callback has returned.
+                            if (state->surface && state->currentTexture && state->surfaceRenderPassEnded) {
+                                state->framePresentPending = true;
+                            }
+#if TN_ANDROID_JS_PROFILE
+                            // The present happens after this submit returns, from
+                            // presentPendingSurface(); report the previous frame's present on this
+                            // frame's first submit only, so per-frame sums count it once.
+                            if (!state->presentReportedSinceLastPresent) {
+                                presentNs = state->lastPresentNs;
+                                state->presentReportedSinceLastPresent = true;
+                            }
+#endif
+#if TN_ANDROID_JS_PROFILE
+                            emitAndroidJsNativeProfile(state, submitPollNs, presentNs);
+#endif
+                            return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                    // Return a device object wrapping our native device
+                    auto device = state->engine->newObject();
+                    state->engine->setPrivateData(device, state->device);
+                    // device.queue
+                    auto queue = state->engine->newObject();
+                    state->engine->setPrivateData(queue, state->queue);
+                    // queue.submit(commandBuffers)
+                    installBindingTable(state->engine, state, bindingTable({
+                        {"GPUQueue", "submit", 0, nullptr,
+                        &tnWebgpuHandler22
+                    , queue},
+                    // queue.writeBuffer(buffer, offset, data, dataOffset?, size?)
+                                            {"GPUQueue", "writeBuffer", 0, nullptr,
+                        &tnWebgpuHandler23
+                    , queue},
+                    // queue.writeTexture(destination, data, dataLayout, size)
+                                            {"GPUQueue", "writeTexture", 0, nullptr,
+                        &tnWebgpuHandler24
+                    , queue},
+                    // queue.copyExternalImageToTexture(source, destination, copySize)
+                    // Standard WebGPU way to upload ImageBitmap to texture
+                                            {"GPUQueue", "copyExternalImageToTexture", 0, nullptr,
+                        &tnWebgpuHandler25
+                    , queue},
                     // queue.onSubmittedWorkDone() - returns Promise that resolves when GPU work is done
                                             {"GPUQueue", "onSubmittedWorkDone", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            auto* data = new QueueWorkDoneData();
-#if WGPU_USES_CALLBACK_INFO_PATTERN
-                            WGPUQueueWorkDoneCallbackInfo callbackInfo = {};
-                            callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-                            callbackInfo.callback = onQueueWorkDone;
-                            callbackInfo.userdata1 = data;
-                            callbackInfo.userdata2 = nullptr;
-                            (void)wgpuQueueOnSubmittedWorkDone(state->queue, callbackInfo);
-#else
-                            wgpuQueueOnSubmittedWorkDone(state->queue, onQueueWorkDone, data);
-#endif
-                            if (!waitForWebGpuCallback(state, data->completed)) {
-                                releaseCallbackData(data);
-                                return rejectedPromise(state,
-                                    "GPUQueue.onSubmittedWorkDone timed out waiting for native completion.",
-                                    "onSubmittedWorkDone-timeout"
-                                );
-                            }
-                            const WGPUQueueWorkDoneStatus status = data->status;
-                            const std::string nativeMessage = data->message;
-                            releaseCallbackData(data);
-                            if (status != WGPUQueueWorkDoneStatus_Success) {
-                                std::string message = "GPUQueue.onSubmittedWorkDone failed with native status "
-                                    + std::to_string(static_cast<int>(status));
-                                if (!nativeMessage.empty()) message += ": " + nativeMessage;
-                                return rejectedPromise(state, message, "onSubmittedWorkDone-error");
-                            }
-                            return resolvedPromise(state, "undefined", "onSubmittedWorkDone-success");
-                        }
-                    }}));
-
+                        &tnWebgpuHandler26
+                    , queue}}));
                     state->engine->setProperty(device, "queue", queue);
-
                     // device.destroy() - part of the GPUDevice interface, and three.js calls it from
                     // `WebGPURenderer.dispose()`. Without it every clean teardown on a native host
                     // throws `this.device.destroy is not a function`, which reads as a crash at the
                     // end of an otherwise successful run. Releasing the wgpu device here would pull
                     // the surface out from under a host that may still be presenting, so this
                     // reports the call and lets the host own the lifetime.
-                    installBindingTable(state->engine, state, bindingTable(device, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "destroy", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>&) {
-                            std::cout << "[WebGPU] device.destroy(): teardown is owned by the host"
-                                      << std::endl;
-                            return state->engine->newUndefined();
-                        }
-                    }}));
-
+                        &tnWebgpuHandler27
+                    , device}}));
                     // device.limits - expose device limits
                     auto deviceLimits = state->engine->newObject();
                     state->engine->setProperty(deviceLimits, "maxTextureDimension2D", state->engine->newNumber(8192));
@@ -2113,785 +4383,33 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     state->engine->setProperty(deviceLimits, "minUniformBufferOffsetAlignment", state->engine->newNumber(256));
                     state->engine->setProperty(deviceLimits, "minStorageBufferOffsetAlignment", state->engine->newNumber(256));
                     state->engine->setProperty(device, "limits", deviceLimits);
-
                     // device.features - Set-like object with enabled features, answered from the
                     // real device so consumers (three's KTX2Loader.detectSupport among them)
                     // pick transcode targets from actual hardware capability.
                     auto deviceFeatures = state->engine->newArray(0);
-                    installBindingTable(state->engine, state, bindingTable(deviceFeatures, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUSupportedFeatures", "has", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) return state->engine->newBoolean(false);
-                            std::string featureName = state->engine->toString(args[0]);
-                            // indirect-first-instance enables non-zero firstInstance in indirect draws
-                            if (featureName == "indirect-first-instance") {
-                                return state->engine->newBoolean(true);
-                            }
-                            // timestamp-query is NOT supported yet - bindings not implemented
-                            if (featureName == "timestamp-query") {
-                                return state->engine->newBoolean(false);
-                            }
-                            // This Dawn has no Undefined member; 0 is outside the enum's values
-                            // and never a valid feature, so it stands in as the sentinel.
-                            WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
-                            if (feature == static_cast<WGPUFeatureName>(0)) return state->engine->newBoolean(false);
-                            return state->engine->newBoolean(wgpuDeviceHasFeature(state->device, feature) != 0);
-                        }
-                    }}));
+                        &tnWebgpuHandler28
+                    , deviceFeatures}}));
                     state->engine->setProperty(device, "features", deviceFeatures);
-
                     // device.createBuffer(descriptor)
-                    installBindingTable(state->engine, state, bindingTable(device, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createBuffer", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createBuffer requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-                            double size = state->engine->toNumber(state->engine->getProperty(descriptor, "size"));
-                            double usage = state->engine->toNumber(state->engine->getProperty(descriptor, "usage"));
-
-                            // Check for mappedAtCreation
-                            auto mappedAtCreationProp = state->engine->getProperty(descriptor, "mappedAtCreation");
-                            bool mappedAtCreation = !state->engine->isUndefined(mappedAtCreationProp) && state->engine->toBoolean(mappedAtCreationProp);
-
-                            WGPUBufferDescriptor bufferDesc = {};
-                            bufferDesc.size = (uint64_t)size;
-                            bufferDesc.usage = (WGPUBufferUsage)(uint32_t)usage;
-                            bufferDesc.mappedAtCreation = mappedAtCreation;
-
-                            WGPUBuffer buffer = wgpuDeviceCreateBuffer(state->device, &bufferDesc);
-                            if (!buffer) {
-                                state->engine->throwException("Failed to create buffer");
-                                return state->engine->newUndefined();
-                            }
-                            recordBufferCreated(state, bufferDesc.size, (uint32_t)usage);
-
-                            // Register buffer for mapping operations
-                            uint64_t bufferId = state->nextBufferId++;
-                            // mappedAtCreation buffers are mapped for write
-                            WGPUMapMode initialMapMode = mappedAtCreation ? WGPUMapMode_Write : WGPUMapMode_None;
-                            state->bufferRegistry[bufferId] = {buffer, (uint64_t)size, (WGPUBufferUsage)(uint32_t)usage, mappedAtCreation, nullptr, 0, initialMapMode};
-
-                            auto jsBuffer = state->engine->newObject();
-                            state->engine->setPrivateData(jsBuffer, buffer);
-                            state->engine->setProperty(jsBuffer, "size", state->engine->newNumber(size));
-                            state->engine->setProperty(jsBuffer, "_bufferId", state->engine->newNumber((double)bufferId));
-                            state->engine->setProperty(jsBuffer, "usage", state->engine->newNumber(usage));
-
-                            // Set initial mapState
-                            state->engine->setProperty(jsBuffer, "mapState", state->engine->newString(mappedAtCreation ? "mapped" : "unmapped"));
-
-                            // buffer.mapAsync(mode, offset?, size?) -> Promise
-                            // Returns a Promise that resolves when the buffer is mapped
-                            installBindingTable(state->engine, state, bindingTable(jsBuffer, {
-                                {"GPUBuffer", "mapAsync", 0, nullptr,
-                                [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    auto it = state->bufferRegistry.find(bufferId);
-                                    if (it == state->bufferRegistry.end()) {
-                                        std::cerr << "[WebGPU] mapAsync: Buffer " << bufferId << " not found" << std::endl;
-                                        return state->engine->evalWithResult("Promise.reject(new Error('Buffer not found'))", "mapAsync-error");
-                                    }
-
-                                    auto& bufferInfo = it->second;
-
-                                    // Already mapped (mappedAtCreation)?
-                                    if (bufferInfo.isMapped) {
-                                        return state->engine->evalWithResult("Promise.resolve()", "mapAsync-already-mapped");
-                                    }
-
-                                    // Get mode (default to READ)
-                                    WGPUMapMode mode = WGPUMapMode_Read;
-                                    if (!args.empty()) {
-                                        uint32_t jsMode = (uint32_t)state->engine->toNumber(args[0]);
-                                        // GPUMapMode.READ = 1, GPUMapMode.WRITE = 2
-                                        if (jsMode == 2) mode = WGPUMapMode_Write;
-                                    }
-
-                                    uint64_t offset = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : 0;
-                                    uint64_t mapSize = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : bufferInfo.size;
-
-                                    // Debug: Log buffer info
-                                    bool hasMapRead = (bufferInfo.usage & WGPUBufferUsage_MapRead) != 0;
-                                    (void)hasMapRead;  // Used for debug logging when enabled
-
-                                    // Ensure all pending GPU work is processed before attempting to map
-                                    // This is critical for buffers that were just used in a copy operation
-                                    for (int prePoll = 0; prePoll < 100; prePoll++) {
-#if defined(MYSTRAL_WEBGPU_WGPU)
-                                        wgpuDevicePoll(state->device, false, nullptr);
-#else
-                                        if (state->instance) {
-                                            wgpuInstanceProcessEvents(state->instance);
-                                        }
-                                        if (state->device) {
-                                            wgpuDeviceTick(state->device);
-                                        }
-#endif
-                                    }
-
-                                    // Synchronous mapping: use global callback + device poll
-                                    state->bufferMapData.completed = false;
-                                    state->bufferMapData.status = WGPUBufferMapAsyncStatus_Unknown_Compat;
-                                    state->bufferMapData.errorMessage.clear();
-
-#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
-                                    // Dawn uses CallbackInfo struct with 4-param callback
-                                    // Use AllowSpontaneous mode so callback can be invoked at any time
-                                    WGPUBufferMapCallbackInfo mapCallbackInfo = {};
-                                    mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-                                    mapCallbackInfo.callback = onBufferMapped;
-                                    mapCallbackInfo.userdata1 = &state->bufferMapData;
-                                    mapCallbackInfo.userdata2 = nullptr;
-
-                                    wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, mapCallbackInfo);
-#else
-                                    // wgpu-native uses separate callback and userdata
-                                    wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, onBufferMapped, &state->bufferMapData);
-#endif
-
-                                    // Poll device until mapping completes
-                                    // Add small sleep to avoid busy-looping and let GPU work complete
-                                    int pollCount = 0;
-                                    while (!state->bufferMapData.completed && pollCount < 10000) {
-#if defined(MYSTRAL_WEBGPU_WGPU)
-                                        wgpuDevicePoll(state->device, true, nullptr);
-#else
-                                        if (state->instance) {
-                                            wgpuInstanceProcessEvents(state->instance);
-                                        }
-                                        if (state->device) {
-                                            wgpuDeviceTick(state->device);
-                                        }
-#endif
-                                        // Small sleep every 100 iterations to avoid busy loop
-                                        if (pollCount % 100 == 0) {
-                                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                                        }
-                                        pollCount++;
-                                    }
-
-                                    if (state->bufferMapData.status == WGPUBufferMapAsyncStatus_Success_Compat) {
-                                        bufferInfo.isMapped = true;
-                                        bufferInfo.mapMode = mode;  // Store whether mapped for read or write
-                                        return state->engine->evalWithResult("Promise.resolve()", "mapAsync-success");
-                                    } else {
-                                        std::cerr << "[WebGPU] mapAsync: Failed with status " << state->bufferMapData.status;
-                                        if (!state->bufferMapData.errorMessage.empty()) {
-                                            std::cerr << " - " << state->bufferMapData.errorMessage;
-                                        }
-                                        std::cerr << std::endl;
-                                        return state->engine->evalWithResult("Promise.reject(new Error('Buffer map failed'))", "mapAsync-failed");
-                                    }
-                                }
-                            },
-
-                            // buffer.getMappedRange(offset?, size?) -> ArrayBuffer
-                            // Capture bufferId in closure to identify the correct buffer
-                                                            {"GPUBuffer", "getMappedRange", 0, nullptr,
-                                [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    // Look up this specific buffer by its ID
-                                    auto it = state->bufferRegistry.find(bufferId);
-                                    if (it == state->bufferRegistry.end()) {
-                                        std::cerr << "[WebGPU] getMappedRange: Buffer " << bufferId << " not found in registry" << std::endl;
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    auto& bufferInfo = it->second;
-
-                                    if (!bufferInfo.isMapped && !bufferInfo.mappedData) {
-                                        if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: Buffer " << bufferId << " is not mapped" << std::endl;
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    uint64_t offset = args.empty() ? 0 : (uint64_t)state->engine->toNumber(args[0]);
-                                    uint64_t rangeSize = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
-
-                                    // Use wgpuBufferGetConstMappedRange for MAP_READ, wgpuBufferGetMappedRange for MAP_WRITE
-                                    // Dawn requires the const version for read-only mapped buffers
-                                    const void* mappedData = nullptr;
-                                    if (bufferInfo.mapMode == WGPUMapMode_Read) {
-                                        mappedData = wgpuBufferGetConstMappedRange(bufferInfo.buffer, offset, rangeSize);
-                                    } else {
-                                        mappedData = wgpuBufferGetMappedRange(bufferInfo.buffer, offset, rangeSize);
-                                    }
-
-                                    if (mappedData) {
-                                        // Use newArrayBufferExternal to avoid copying
-                                        // Cast away const for read-only buffers - the JS side shouldn't modify but we need void*
-                                        return state->engine->newArrayBufferExternal(const_cast<void*>(mappedData), rangeSize);
-                                    }
-
-                                    if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: GetMappedRange returned null for buffer " << bufferId << std::endl;
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // buffer.unmap()
-                            // Capture bufferId in closure to identify the correct buffer
-                                                            {"GPUBuffer", "unmap", 0, nullptr,
-                                [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    // Look up this specific buffer by its ID
-                                    auto it = state->bufferRegistry.find(bufferId);
-                                    if (it == state->bufferRegistry.end()) {
-                                        std::cerr << "[WebGPU] unmap: Buffer " << bufferId << " not found in registry" << std::endl;
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    auto& bufferInfo = it->second;
-                                    if (bufferInfo.isMapped) {
-                                        wgpuBufferUnmap(bufferInfo.buffer);
-                                        bufferInfo.isMapped = false;
-                                        bufferInfo.mappedData = nullptr;
-                                        bufferInfo.mappedSize = 0;
-                                    }
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // buffer.destroy()
-                            // Capture bufferId in closure to identify the correct buffer
-                                                            {"GPUBuffer", "destroy", 0, nullptr,
-                                [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    auto it = state->bufferRegistry.find(bufferId);
-                                    if (it != state->bufferRegistry.end()) {
-                                        wgpuBufferDestroy(it->second.buffer);
-                                        wgpuBufferRelease(it->second.buffer);
-                                        state->bufferRegistry.erase(it);
-                                    }
-                                    return state->engine->newUndefined();
-                                }
-                            }}));
-
-                            return jsBuffer;
-                        }
-                    }}));
-
+                        &tnWebgpuHandler29
+                    , device}}));
                     // device.createShaderModule(descriptor)
-                    installBindingTable(state->engine, state, bindingTable(device, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createShaderModule", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createShaderModule requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-                            std::string code = state->engine->toString(state->engine->getProperty(descriptor, "code"));
-                            // Debug: Print first 500 chars of shader code
-                            if (state->verboseLogging && code.length() > 0) {
-                                std::cout << "[Shader] Creating shader (" << code.length() << " chars):\n"
-                                          << code.substr(0, std::min((size_t)500, code.length()))
-                                          << (code.length() > 500 ? "\n..." : "") << std::endl;
-                            }
-
-                            WGPUShaderModuleWGSLDescriptor_Compat wgslDesc = {};
-                            WGPUShaderModuleDescriptor shaderDesc = {};
-                            setupShaderModuleWGSL(&shaderDesc, &wgslDesc, code.c_str());
-
-                            WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(state->device, &shaderDesc);
-
-                            auto jsShader = state->engine->newObject();
-                            state->engine->setPrivateData(jsShader, shaderModule);
-                            state->engine->setProperty(jsShader, "_tnVertexEntryPoint",
-                                state->engine->newString(singleWgslEntryPoint(code, "vertex").c_str()));
-                            state->engine->setProperty(jsShader, "_tnFragmentEntryPoint",
-                                state->engine->newString(singleWgslEntryPoint(code, "fragment").c_str()));
-
-                            return jsShader;
-                        }
-                    },
-
+                        &tnWebgpuHandler34
+                    , device},
                     // device.createRenderPipeline(descriptor)
                                             {"GPUDevice", "createRenderPipeline", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createRenderPipeline requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-
-                            // Get vertex stage
-                            auto vertex = state->engine->getProperty(descriptor, "vertex");
-                            auto vertexModule = state->engine->getProperty(vertex, "module");
-                            auto vertexEntryProp = state->engine->getProperty(vertex, "entryPoint");
-                            const bool hasVertexEntry = !state->engine->isUndefined(vertexEntryProp);
-                            std::string vertexEntry = hasVertexEntry
-                                ? state->engine->toString(vertexEntryProp)
-                                : state->engine->toString(
-                                    state->engine->getProperty(vertexModule, "_tnVertexEntryPoint"));
-                            if (vertexEntry.empty()) {
-                                state->engine->throwException(
-                                    "createRenderPipeline: omitted vertex entryPoint requires exactly one @vertex function");
-                                return state->engine->newUndefined();
-                            }
-
-                            // Get fragment stage (optional - depth-only pipelines don't have fragment)
-                            auto fragment = state->engine->getProperty(descriptor, "fragment");
-                            WGPUShaderModule fsModule = nullptr;
-                            std::string fragmentEntry;
-                            bool hasFragment = !state->engine->isUndefined(fragment) && !state->engine->isNull(fragment);
-                            if (hasFragment) {
-                                auto fragmentModule = state->engine->getProperty(fragment, "module");
-                                fsModule = (WGPUShaderModule)state->engine->getPrivateData(fragmentModule);
-                                auto fragEntryProp = state->engine->getProperty(fragment, "entryPoint");
-                                if (!state->engine->isUndefined(fragEntryProp)) {
-                                    fragmentEntry = state->engine->toString(fragEntryProp);
-                                } else {
-                                    fragmentEntry = state->engine->toString(state->engine->getProperty(
-                                        fragmentModule, "_tnFragmentEntryPoint"));
-                                    if (fragmentEntry.empty()) {
-                                        state->engine->throwException(
-                                            "createRenderPipeline: omitted fragment entryPoint requires exactly one @fragment function");
-                                        return state->engine->newUndefined();
-                                    }
-                                }
-                            }
-
-                            // Get native shader modules
-                            WGPUShaderModule vsModule = (WGPUShaderModule)state->engine->getPrivateData(vertexModule);
-
-                            // Create pipeline descriptor
-                            WGPURenderPipelineDescriptor pipelineDesc = {};
-
-                            // Check for layout property
-                            auto layoutProp = state->engine->getProperty(descriptor, "layout");
-                            if (!state->engine->isUndefined(layoutProp)) {
-                                // Check if it's "auto" string or a PipelineLayout object
-                                if (state->engine->isString(layoutProp)) {
-                                    std::string layoutStr = state->engine->toString(layoutProp);
-                                    if (layoutStr == "auto") {
-                                        pipelineDesc.layout = nullptr;  // Auto layout
-                                    }
-                                } else {
-                                    // It's a PipelineLayout object
-                                    WGPUPipelineLayout layout = (WGPUPipelineLayout)state->engine->getPrivateData(layoutProp);
-                                    pipelineDesc.layout = layout;
-                                }
-                            }
-
-                            // Vertex state
-                            pipelineDesc.vertex.module = vsModule;
-                            WGPU_SET_ENTRY_POINT(pipelineDesc.vertex, vertexEntry.c_str());
-
-                            // Parse vertex buffers if present
-                            std::vector<WGPUVertexBufferLayout> vertexBuffers;
-                            std::vector<std::vector<WGPUVertexAttribute>> allAttributes; // Keep attributes alive
-
-                            auto buffersArray = state->engine->getProperty(vertex, "buffers");
-                            if (!state->engine->isUndefined(buffersArray)) {
-                                auto buffersLen = state->engine->getProperty(buffersArray, "length");
-                                int bufferCount = (int)state->engine->toNumber(buffersLen);
-
-                                for (int i = 0; i < bufferCount; i++) {
-                                    auto buffer = state->engine->getPropertyIndex(buffersArray, i);
-
-                                    WGPUVertexBufferLayout layout = {};
-                                    layout.arrayStride = (uint64_t)state->engine->toNumber(state->engine->getProperty(buffer, "arrayStride"));
-                                    layout.stepMode = WGPUVertexStepMode_Vertex;
-
-                                    // Parse step mode if present
-                                    auto stepModeProp = state->engine->getProperty(buffer, "stepMode");
-                                    if (!state->engine->isUndefined(stepModeProp)) {
-                                        std::string stepModeStr = state->engine->toString(stepModeProp);
-                                        if (stepModeStr == "instance") {
-                                            layout.stepMode = WGPUVertexStepMode_Instance;
-                                        }
-                                    }
-
-                                    // Parse attributes
-                                    auto attrsArray = state->engine->getProperty(buffer, "attributes");
-                                    if (!state->engine->isUndefined(attrsArray)) {
-                                        auto attrsLen = state->engine->getProperty(attrsArray, "length");
-                                        int attrCount = (int)state->engine->toNumber(attrsLen);
-
-                                        std::vector<WGPUVertexAttribute> attributes;
-                                        for (int j = 0; j < attrCount; j++) {
-                                            auto attr = state->engine->getPropertyIndex(attrsArray, j);
-
-                                            WGPUVertexAttribute va = {};
-                                            va.shaderLocation = (uint32_t)state->engine->toNumber(state->engine->getProperty(attr, "shaderLocation"));
-                                            va.offset = (uint64_t)state->engine->toNumber(state->engine->getProperty(attr, "offset"));
-
-                                            std::string formatStr = state->engine->toString(state->engine->getProperty(attr, "format"));
-                                            // Parse vertex format
-                                            if (formatStr == "float32") va.format = WGPUVertexFormat_Float32;
-                                            else if (formatStr == "float32x2") va.format = WGPUVertexFormat_Float32x2;
-                                            else if (formatStr == "float32x3") va.format = WGPUVertexFormat_Float32x3;
-                                            else if (formatStr == "float32x4") va.format = WGPUVertexFormat_Float32x4;
-                                            else if (formatStr == "uint8x2") va.format = WGPUVertexFormat_Uint8x2;
-                                            else if (formatStr == "uint8x4") va.format = WGPUVertexFormat_Uint8x4;
-                                            else if (formatStr == "sint8x2") va.format = WGPUVertexFormat_Sint8x2;
-                                            else if (formatStr == "sint8x4") va.format = WGPUVertexFormat_Sint8x4;
-                                            else if (formatStr == "unorm8x2") va.format = WGPUVertexFormat_Unorm8x2;
-                                            else if (formatStr == "unorm8x4") va.format = WGPUVertexFormat_Unorm8x4;
-                                            else if (formatStr == "snorm8x2") va.format = WGPUVertexFormat_Snorm8x2;
-                                            else if (formatStr == "snorm8x4") va.format = WGPUVertexFormat_Snorm8x4;
-                                            else if (formatStr == "uint16x2") va.format = WGPUVertexFormat_Uint16x2;
-                                            else if (formatStr == "uint16x4") va.format = WGPUVertexFormat_Uint16x4;
-                                            else if (formatStr == "sint16x2") va.format = WGPUVertexFormat_Sint16x2;
-                                            else if (formatStr == "sint16x4") va.format = WGPUVertexFormat_Sint16x4;
-                                            else if (formatStr == "unorm16x2") va.format = WGPUVertexFormat_Unorm16x2;
-                                            else if (formatStr == "unorm16x4") va.format = WGPUVertexFormat_Unorm16x4;
-                                            else if (formatStr == "snorm16x2") va.format = WGPUVertexFormat_Snorm16x2;
-                                            else if (formatStr == "snorm16x4") va.format = WGPUVertexFormat_Snorm16x4;
-                                            else if (formatStr == "float16x2") va.format = WGPUVertexFormat_Float16x2;
-                                            else if (formatStr == "float16x4") va.format = WGPUVertexFormat_Float16x4;
-                                            else if (formatStr == "uint32") va.format = WGPUVertexFormat_Uint32;
-                                            else if (formatStr == "uint32x2") va.format = WGPUVertexFormat_Uint32x2;
-                                            else if (formatStr == "uint32x3") va.format = WGPUVertexFormat_Uint32x3;
-                                            else if (formatStr == "uint32x4") va.format = WGPUVertexFormat_Uint32x4;
-                                            else if (formatStr == "sint32") va.format = WGPUVertexFormat_Sint32;
-                                            else if (formatStr == "sint32x2") va.format = WGPUVertexFormat_Sint32x2;
-                                            else if (formatStr == "sint32x3") va.format = WGPUVertexFormat_Sint32x3;
-                                            else if (formatStr == "sint32x4") va.format = WGPUVertexFormat_Sint32x4;
-                                            else va.format = WGPUVertexFormat_Float32x3; // Default
-
-                                            attributes.push_back(va);
-                                        }
-
-                                        allAttributes.push_back(attributes);
-                                        layout.attributeCount = attributes.size();
-                                        layout.attributes = allAttributes.back().data();
-                                    }
-
-                                    vertexBuffers.push_back(layout);
-                                }
-
-                                pipelineDesc.vertex.bufferCount = vertexBuffers.size();
-                                pipelineDesc.vertex.buffers = vertexBuffers.data();
-                            }
-
-                            // Fragment state (only if fragment shader exists)
-                            WGPUColorTargetState colorTarget = {};
-                            WGPUFragmentState fragmentState = {};
-                            std::vector<WGPUColorTargetState> colorTargets;
-                            bool targetsExplicitlySpecified = false;
-                            if (hasFragment && fsModule) {
-                                // Parse targets from fragment descriptor
-                                auto targetsProp = state->engine->getProperty(fragment, "targets");
-                                if (!state->engine->isUndefined(targetsProp)) {
-                                    targetsExplicitlySpecified = true;  // Even if empty array
-                                    auto targetsLen = state->engine->getProperty(targetsProp, "length");
-                                    int targetCount = (int)state->engine->toNumber(targetsLen);
-                                    for (int i = 0; i < targetCount; i++) {
-                                        auto target = state->engine->getPropertyIndex(targetsProp, i);
-                                        WGPUColorTargetState targetState = {};
-
-                                        auto formatProp = state->engine->getProperty(target, "format");
-                                        if (!state->engine->isUndefined(formatProp)) {
-                                            std::string formatStr = state->engine->toString(formatProp);
-                                            targetState.format = stringToFormat(formatStr);
-                                            if (targetCount >= 5) {
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Pipeline target " << i << ": format=" << formatStr << " (enum=" << targetState.format << ")" << std::endl;
-                                            }
-                                        } else {
-                                            targetState.format = state->surfaceFormat;
-                                        }
-                                        targetState.writeMask = WGPUColorWriteMask_All;
-
-                                        // Parse blend state if provided
-                                        auto blendProp = state->engine->getProperty(target, "blend");
-                                        if (!state->engine->isUndefined(blendProp)) {
-                                            // Store blend state in a persistent container
-                                            auto blendState = std::make_unique<WGPUBlendState>();
-
-                                            // Helper lambda to parse blend factor
-                                            auto parseBlendFactor = [](const std::string& str) -> WGPUBlendFactor {
-                                                if (str == "zero") return WGPUBlendFactor_Zero;
-                                                if (str == "one") return WGPUBlendFactor_One;
-                                                if (str == "src") return WGPUBlendFactor_Src;
-                                                if (str == "one-minus-src") return WGPUBlendFactor_OneMinusSrc;
-                                                if (str == "src-alpha") return WGPUBlendFactor_SrcAlpha;
-                                                if (str == "one-minus-src-alpha") return WGPUBlendFactor_OneMinusSrcAlpha;
-                                                if (str == "dst") return WGPUBlendFactor_Dst;
-                                                if (str == "one-minus-dst") return WGPUBlendFactor_OneMinusDst;
-                                                if (str == "dst-alpha") return WGPUBlendFactor_DstAlpha;
-                                                if (str == "one-minus-dst-alpha") return WGPUBlendFactor_OneMinusDstAlpha;
-                                                if (str == "src-alpha-saturated") return WGPUBlendFactor_SrcAlphaSaturated;
-                                                if (str == "constant") return WGPUBlendFactor_Constant;
-                                                if (str == "one-minus-constant") return WGPUBlendFactor_OneMinusConstant;
-                                                return WGPUBlendFactor_One;  // Default
-                                            };
-
-                                            // Helper lambda to parse blend operation
-                                            auto parseBlendOp = [](const std::string& str) -> WGPUBlendOperation {
-                                                if (str == "add") return WGPUBlendOperation_Add;
-                                                if (str == "subtract") return WGPUBlendOperation_Subtract;
-                                                if (str == "reverse-subtract") return WGPUBlendOperation_ReverseSubtract;
-                                                if (str == "min") return WGPUBlendOperation_Min;
-                                                if (str == "max") return WGPUBlendOperation_Max;
-                                                return WGPUBlendOperation_Add;  // Default
-                                            };
-
-                                            // Parse color blend component
-                                            auto colorProp = state->engine->getProperty(blendProp, "color");
-                                            if (!state->engine->isUndefined(colorProp)) {
-                                                auto srcFactor = state->engine->getProperty(colorProp, "srcFactor");
-                                                auto dstFactor = state->engine->getProperty(colorProp, "dstFactor");
-                                                auto operation = state->engine->getProperty(colorProp, "operation");
-                                                if (!state->engine->isUndefined(srcFactor))
-                                                    blendState->color.srcFactor = parseBlendFactor(state->engine->toString(srcFactor));
-                                                else
-                                                    blendState->color.srcFactor = WGPUBlendFactor_One;
-                                                if (!state->engine->isUndefined(dstFactor))
-                                                    blendState->color.dstFactor = parseBlendFactor(state->engine->toString(dstFactor));
-                                                else
-                                                    blendState->color.dstFactor = WGPUBlendFactor_Zero;
-                                                if (!state->engine->isUndefined(operation))
-                                                    blendState->color.operation = parseBlendOp(state->engine->toString(operation));
-                                                else
-                                                    blendState->color.operation = WGPUBlendOperation_Add;
-                                            } else {
-                                                // Default color blend (no blending)
-                                                blendState->color.srcFactor = WGPUBlendFactor_One;
-                                                blendState->color.dstFactor = WGPUBlendFactor_Zero;
-                                                blendState->color.operation = WGPUBlendOperation_Add;
-                                            }
-
-                                            // Parse alpha blend component
-                                            auto alphaProp = state->engine->getProperty(blendProp, "alpha");
-                                            if (!state->engine->isUndefined(alphaProp)) {
-                                                auto srcFactor = state->engine->getProperty(alphaProp, "srcFactor");
-                                                auto dstFactor = state->engine->getProperty(alphaProp, "dstFactor");
-                                                auto operation = state->engine->getProperty(alphaProp, "operation");
-                                                if (!state->engine->isUndefined(srcFactor))
-                                                    blendState->alpha.srcFactor = parseBlendFactor(state->engine->toString(srcFactor));
-                                                else
-                                                    blendState->alpha.srcFactor = WGPUBlendFactor_One;
-                                                if (!state->engine->isUndefined(dstFactor))
-                                                    blendState->alpha.dstFactor = parseBlendFactor(state->engine->toString(dstFactor));
-                                                else
-                                                    blendState->alpha.dstFactor = WGPUBlendFactor_Zero;
-                                                if (!state->engine->isUndefined(operation))
-                                                    blendState->alpha.operation = parseBlendOp(state->engine->toString(operation));
-                                                else
-                                                    blendState->alpha.operation = WGPUBlendOperation_Add;
-                                            } else {
-                                                // Default alpha blend (no blending)
-                                                blendState->alpha.srcFactor = WGPUBlendFactor_One;
-                                                blendState->alpha.dstFactor = WGPUBlendFactor_Zero;
-                                                blendState->alpha.operation = WGPUBlendOperation_Add;
-                                            }
-
-                                            targetState.blend = blendState.get();
-                                            state->blendStates.push_back(std::move(blendState));
-
-                                            if (state->verboseLogging) std::cout << "[WebGPU] Pipeline target " << i << " has blend state" << std::endl;
-                                        }
-
-                                        colorTargets.push_back(targetState);
-                                    }
-                                }
-                                // Only add default target if targets wasn't explicitly specified
-                                // If targets: [] was specified, don't add any (depth-only pass)
-                                if (colorTargets.empty() && !targetsExplicitlySpecified) {
-                                    // Default single target only when targets is not specified at all
-                                    colorTarget.format = state->surfaceFormat;
-                                    colorTarget.writeMask = WGPUColorWriteMask_All;
-                                    colorTargets.push_back(colorTarget);
-                                }
-
-                                fragmentState.module = fsModule;
-                                WGPU_SET_ENTRY_POINT(fragmentState, fragmentEntry.c_str());
-                                fragmentState.targetCount = colorTargets.size();
-                                fragmentState.targets = colorTargets.data();
-                                pipelineDesc.fragment = &fragmentState;
-                                if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline with " << colorTargets.size() << " color targets" << std::endl;
-                            } else {
-                                // Depth-only pipeline - no fragment state
-                                pipelineDesc.fragment = nullptr;
-                            }
-
-                            // Primitive state
-                            pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-                            pipelineDesc.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
-                            pipelineDesc.primitive.frontFace = WGPUFrontFace_CCW;
-                            pipelineDesc.primitive.cullMode = WGPUCullMode_None;
-
-                            // Parse primitive state if provided
-                            auto primitiveProp = state->engine->getProperty(descriptor, "primitive");
-                            if (!state->engine->isUndefined(primitiveProp)) {
-                                auto topologyProp = state->engine->getProperty(primitiveProp, "topology");
-                                if (!state->engine->isUndefined(topologyProp)) {
-                                    std::string topologyStr = state->engine->toString(topologyProp);
-                                    if (topologyStr == "point-list") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_PointList;
-                                    else if (topologyStr == "line-list") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_LineList;
-                                    else if (topologyStr == "line-strip") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_LineStrip;
-                                    else if (topologyStr == "triangle-list") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-                                    else if (topologyStr == "triangle-strip") pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleStrip;
-                                }
-                                auto cullModeProp = state->engine->getProperty(primitiveProp, "cullMode");
-                                if (!state->engine->isUndefined(cullModeProp)) {
-                                    std::string cullModeStr = state->engine->toString(cullModeProp);
-                                    if (cullModeStr == "none") pipelineDesc.primitive.cullMode = WGPUCullMode_None;
-                                    else if (cullModeStr == "front") pipelineDesc.primitive.cullMode = WGPUCullMode_Front;
-                                    else if (cullModeStr == "back") pipelineDesc.primitive.cullMode = WGPUCullMode_Back;
-                                }
-                                auto frontFaceProp = state->engine->getProperty(primitiveProp, "frontFace");
-                                if (!state->engine->isUndefined(frontFaceProp)) {
-                                    std::string frontFaceStr = state->engine->toString(frontFaceProp);
-                                    if (frontFaceStr == "ccw") pipelineDesc.primitive.frontFace = WGPUFrontFace_CCW;
-                                    else if (frontFaceStr == "cw") pipelineDesc.primitive.frontFace = WGPUFrontFace_CW;
-                                }
-                            }
-
-                            // Depth stencil state
-                            WGPUDepthStencilState depthStencilState = {};
-                            bool hasDepthStencil = false;
-
-                            auto depthStencilProp = state->engine->getProperty(descriptor, "depthStencil");
-                            if (!state->engine->isUndefined(depthStencilProp)) {
-                                hasDepthStencil = true;
-
-                                auto formatProp = state->engine->getProperty(depthStencilProp, "format");
-                                if (!state->engine->isUndefined(formatProp)) {
-                                    depthStencilState.format = stringToFormat(state->engine->toString(formatProp));
-                                } else {
-                                    depthStencilState.format = WGPUTextureFormat_Depth24Plus;
-                                }
-
-                                auto depthWriteEnabledProp = state->engine->getProperty(depthStencilProp, "depthWriteEnabled");
-                                depthStencilState.depthWriteEnabled = state->engine->isUndefined(depthWriteEnabledProp)
-                                    ? WGPU_OPTIONAL_BOOL_TRUE
-                                    : (state->engine->toBoolean(depthWriteEnabledProp) ? WGPU_OPTIONAL_BOOL_TRUE : WGPU_OPTIONAL_BOOL_FALSE);
-
-                                auto depthCompareProp = state->engine->getProperty(depthStencilProp, "depthCompare");
-                                if (!state->engine->isUndefined(depthCompareProp)) {
-                                    std::string compareStr = state->engine->toString(depthCompareProp);
-                                    if (compareStr == "never") depthStencilState.depthCompare = WGPUCompareFunction_Never;
-                                    else if (compareStr == "less") depthStencilState.depthCompare = WGPUCompareFunction_Less;
-                                    else if (compareStr == "less-equal") depthStencilState.depthCompare = WGPUCompareFunction_LessEqual;
-                                    else if (compareStr == "greater") depthStencilState.depthCompare = WGPUCompareFunction_Greater;
-                                    else if (compareStr == "greater-equal") depthStencilState.depthCompare = WGPUCompareFunction_GreaterEqual;
-                                    else if (compareStr == "equal") depthStencilState.depthCompare = WGPUCompareFunction_Equal;
-                                    else if (compareStr == "not-equal") depthStencilState.depthCompare = WGPUCompareFunction_NotEqual;
-                                    else if (compareStr == "always") depthStencilState.depthCompare = WGPUCompareFunction_Always;
-                                } else {
-                                    depthStencilState.depthCompare = WGPUCompareFunction_Less;
-                                }
-
-                                // Default stencil operations
-                                depthStencilState.stencilFront.compare = WGPUCompareFunction_Always;
-                                depthStencilState.stencilFront.failOp = WGPUStencilOperation_Keep;
-                                depthStencilState.stencilFront.depthFailOp = WGPUStencilOperation_Keep;
-                                depthStencilState.stencilFront.passOp = WGPUStencilOperation_Keep;
-                                depthStencilState.stencilBack = depthStencilState.stencilFront;
-                                depthStencilState.stencilReadMask = 0xFFFFFFFF;
-                                depthStencilState.stencilWriteMask = 0xFFFFFFFF;
-
-                                pipelineDesc.depthStencil = &depthStencilState;
-                            }
-
-                            // Multisample state - parse from descriptor or use defaults
-                            pipelineDesc.multisample.count = 1;
-                            pipelineDesc.multisample.mask = 0xFFFFFFFF;
-                            pipelineDesc.multisample.alphaToCoverageEnabled = false;
-
-                            auto multisampleProp = state->engine->getProperty(descriptor, "multisample");
-                            if (!state->engine->isUndefined(multisampleProp)) {
-                                auto countProp = state->engine->getProperty(multisampleProp, "count");
-                                if (!state->engine->isUndefined(countProp)) {
-                                    pipelineDesc.multisample.count = (uint32_t)state->engine->toNumber(countProp);
-                                }
-
-                                auto maskProp = state->engine->getProperty(multisampleProp, "mask");
-                                if (!state->engine->isUndefined(maskProp)) {
-                                    pipelineDesc.multisample.mask = (uint32_t)state->engine->toNumber(maskProp);
-                                }
-
-                                auto alphaToCoverageProp = state->engine->getProperty(multisampleProp, "alphaToCoverageEnabled");
-                                if (!state->engine->isUndefined(alphaToCoverageProp)) {
-                                    pipelineDesc.multisample.alphaToCoverageEnabled = state->engine->toBoolean(alphaToCoverageProp);
-                                }
-
-                                if (state->verboseLogging) {
-                                    std::cout << "[WebGPU] Render pipeline multisample: count=" << pipelineDesc.multisample.count
-                                              << ", mask=" << pipelineDesc.multisample.mask << std::endl;
-                                }
-                            }
-
-                            // Create pipeline
-                            WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(state->device, &pipelineDesc);
-                            if (!pipeline) {
-                                state->engine->throwException("Failed to create render pipeline");
-                                return state->engine->newUndefined();
-                            }
-
-                            // Register pipeline for getBindGroupLayout
-                            uint64_t pipelineId = state->nextRenderPipelineId++;
-                            state->renderPipelineRegistry[pipelineId] = pipeline;
-
-                            auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, true);
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline created (id=" << pipelineId << ")" << std::endl;
-                            return jsPipeline;
-                        }
-                    },
-
+                        &tnWebgpuHandler35
+                    , device},
                     // device.createComputePipeline(descriptor)
                                             {"GPUDevice", "createComputePipeline", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createComputePipeline requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-
-                            // Get layout
-                            auto layoutProp = state->engine->getProperty(descriptor, "layout");
-                            WGPUPipelineLayout layout = nullptr;
-                            bool isAutoLayout = false;
-                            if (!state->engine->isUndefined(layoutProp) && !state->engine->isString(layoutProp)) {
-                                layout = (WGPUPipelineLayout)state->engine->getPrivateData(layoutProp);
-                            } else if (state->engine->isString(layoutProp)) {
-                                std::string layoutStr = state->engine->toString(layoutProp);
-                                if (layoutStr == "auto") {
-                                    isAutoLayout = true;
-                                    if (state->verboseLogging) std::cout << "[WebGPU] Using 'auto' layout for compute pipeline" << std::endl;
-                                    std::cout.flush();
-                                }
-                            }
-
-                            // Get compute stage
-                            auto computeProp = state->engine->getProperty(descriptor, "compute");
-                            auto moduleProp = state->engine->getProperty(computeProp, "module");
-                            WGPUShaderModule module = (WGPUShaderModule)state->engine->getPrivateData(moduleProp);
-
-                            // Entry point (default "main")
-                            std::string entryPoint = "main";
-                            auto entryPointProp = state->engine->getProperty(computeProp, "entryPoint");
-                            if (!state->engine->isUndefined(entryPointProp)) {
-                                entryPoint = state->engine->toString(entryPointProp);
-                            }
-
-                            // Create pipeline
-                            WGPUComputePipelineDescriptor pipelineDesc = {};
-                            pipelineDesc.layout = layout;
-                            pipelineDesc.compute.module = module;
-                            WGPU_SET_ENTRY_POINT(pipelineDesc.compute, entryPoint.c_str());
-
-                            WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(state->device, &pipelineDesc);
-                            if (!pipeline) {
-                                state->engine->throwException("Failed to create compute pipeline");
-                                return state->engine->newUndefined();
-                            }
-
-                            // Register pipeline for getBindGroupLayout
-                            uint64_t pipelineId = state->nextComputePipelineId++;
-                            state->computePipelineRegistry[pipelineId] = pipeline;
-
-                            auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, false);
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Compute pipeline created (id=" << pipelineId << ")" << std::endl;
-                            return jsPipeline;
-                        }
-                    }}));
-
+                        &tnWebgpuHandler36
+                    , device}}));
                     // device.createRenderPipelineAsync / createComputePipelineAsync
                     //
                     // Without these, `renderer.compileAsync()` throws "not a function" and every
@@ -2936,1915 +4454,54 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                       << std::endl;
                         }
                     }
-
                     // device.createCommandEncoder(descriptor?)
-                    installBindingTable(state->engine, state, bindingTable(device, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createCommandEncoder", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            WGPUCommandEncoderDescriptor desc = {};
-                            WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &desc);
-
-                            // Store in global for use by beginRenderPass
-                            // Note: Multiple encoders are supported via per-encoder render pass tracking
-                            state->jsCommandEncoder = encoder;
-
-                            // Suspend frame tracking while creating encoder wrapper
-                            // This prevents the wrapper's methods from being garbage collected at frame end
-                            state->engine->suspendFrameTracking();
-
-                            auto jsEncoder = state->engine->newObject();
-                            state->engine->setPrivateData(jsEncoder, encoder);
-
-                            // Capture encoder pointer for use in closures
-                            WGPUCommandEncoder capturedEncoder = encoder;
-
-                            // encoder.beginRenderPass(descriptor)
-                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
-                                {"GPUCommandEncoder", "beginRenderPass", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.empty()) {
-                                        state->engine->throwException("beginRenderPass requires a descriptor");
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    // Use the captured encoder for this specific command encoder
-                                    WGPUCommandEncoder encoderToUse = capturedEncoder;
-                                    if (!encoderToUse) {
-                                        state->engine->throwException("Command encoder not available");
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    auto descriptor = args[0];
-                                    auto colorAttachments = state->engine->getProperty(descriptor, "colorAttachments");
-
-                                    // Parse all color attachments (deferred renderer uses multiple)
-                                    auto attachmentsLengthProp = state->engine->getProperty(colorAttachments, "length");
-                                    int numAttachments = state->engine->isUndefined(attachmentsLengthProp) ? 0 : (int)state->engine->toNumber(attachmentsLengthProp);
-                                    std::vector<WGPURenderPassColorAttachment> colorAttachmentList;
-                                    colorAttachmentList.reserve(numAttachments);
-
-                                    double firstR = 0, firstG = 0, firstB = 0, firstA = 1;
-
-                                    for (int i = 0; i < numAttachments; i++) {
-                                        auto attachment = state->engine->getPropertyIndex(colorAttachments, i);
-                                        auto viewHandle = state->engine->getProperty(attachment, "view");
-                                        WGPUTextureView view = (WGPUTextureView)state->engine->getPrivateData(viewHandle);
-
-                                        // Debug: Log first color attachment for comparison with state->currentTextureView
-                                        if (i == 0) {
-                                            if (state->verboseLogging) {
-                                                std::cout << "[WebGPU] Render pass attachment[0]: view=" << (void*)view
-                                                          << ", state->currentTextureView=" << (void*)state->currentTextureView
-                                                          << ", matches=" << (view == state->currentTextureView ? "YES" : "NO") << std::endl;
-                                            }
-
-                                            // Track if this render pass uses the surface texture
-                                            if (view == state->currentTextureView && state->currentTextureView != nullptr) {
-                                                state->surfaceRenderEncoder = encoderToUse;
-                                                state->surfaceRenderPassEnded = false;
-                                            }
-                                        }
-
-                                        // Debug: Log GBuffer pass attachments
-                                        if (numAttachments >= 5 && i == 0) {
-                                            if (state->verboseLogging) std::cout << "[WebGPU] GBuffer pass - 5 attachments, view[0]=" << (void*)view << std::endl;
-                                        }
-                                        if (!view && numAttachments >= 5) {
-                                            std::cerr << "[WebGPU] ERROR: GBuffer attachment " << i << " has null view!" << std::endl;
-                                        }
-
-                                        // Parse loadOp (default 'clear')
-                                        WGPULoadOp loadOp = WGPULoadOp_Clear;
-                                        auto loadOpProp = state->engine->getProperty(attachment, "loadOp");
-                                        if (!state->engine->isUndefined(loadOpProp)) {
-                                            std::string loadOpStr = state->engine->toString(loadOpProp);
-                                            if (loadOpStr == "load") loadOp = WGPULoadOp_Load;
-                                        }
-
-                                        // Parse storeOp (default 'store')
-                                        WGPUStoreOp storeOp = WGPUStoreOp_Store;
-                                        auto storeOpProp = state->engine->getProperty(attachment, "storeOp");
-                                        if (!state->engine->isUndefined(storeOpProp)) {
-                                            std::string storeOpStr = state->engine->toString(storeOpProp);
-                                            if (storeOpStr == "discard") storeOp = WGPUStoreOp_Discard;
-                                        }
-
-                                        // Parse clearValue only if loadOp is 'clear'
-                                        double r = 0, g = 0, b = 0, a = 1;
-                                        if (loadOp == WGPULoadOp_Clear) {
-                                            auto clearValue = state->engine->getProperty(attachment, "clearValue");
-                                            if (!state->engine->isUndefined(clearValue)) {
-                                                // Check if it's an array [r, g, b, a] or object {r, g, b, a}
-                                                if (state->engine->isArray(clearValue)) {
-                                                    r = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 0));
-                                                    g = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 1));
-                                                    b = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 2));
-                                                    a = state->engine->toNumber(state->engine->getPropertyIndex(clearValue, 3));
-                                                } else {
-                                                    r = state->engine->toNumber(state->engine->getProperty(clearValue, "r"));
-                                                    g = state->engine->toNumber(state->engine->getProperty(clearValue, "g"));
-                                                    b = state->engine->toNumber(state->engine->getProperty(clearValue, "b"));
-                                                    a = state->engine->toNumber(state->engine->getProperty(clearValue, "a"));
-                                                }
-                                            }
-                                        }
-
-                                        if (i == 0) {
-                                            firstR = r; firstG = g; firstB = b; firstA = a;
-                                        }
-
-                                        WGPURenderPassColorAttachment colorAttachment = {};
-                                        colorAttachment.view = view;
-                                        colorAttachment.loadOp = loadOp;
-                                        colorAttachment.storeOp = storeOp;
-                                        colorAttachment.clearValue = {r, g, b, a};
-                                        colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-                                        colorAttachmentList.push_back(colorAttachment);
-                                    }
-
-                                    WGPURenderPassDescriptor renderPassDesc = {};
-                                    renderPassDesc.colorAttachmentCount = colorAttachmentList.size();
-                                    renderPassDesc.colorAttachments = colorAttachmentList.data();
-
-                                    // Parse depth stencil attachment if present
-                                    WGPURenderPassDepthStencilAttachment depthStencilAttachment = {};
-                                    auto depthStencilProp = state->engine->getProperty(descriptor, "depthStencilAttachment");
-                                    if (!state->engine->isUndefined(depthStencilProp)) {
-                                        auto depthViewHandle = state->engine->getProperty(depthStencilProp, "view");
-                                        WGPUTextureView depthView = (WGPUTextureView)state->engine->getPrivateData(depthViewHandle);
-                                        depthStencilAttachment.view = depthView;
-
-                                        // Depth clear value (default 1.0)
-                                        auto depthClearValueProp = state->engine->getProperty(depthStencilProp, "depthClearValue");
-                                        depthStencilAttachment.depthClearValue = state->engine->isUndefined(depthClearValueProp)
-                                            ? 1.0f : (float)state->engine->toNumber(depthClearValueProp);
-
-                                        // Depth load/store ops (default clear/store)
-                                        auto depthLoadOpProp = state->engine->getProperty(depthStencilProp, "depthLoadOp");
-                                        if (!state->engine->isUndefined(depthLoadOpProp)) {
-                                            std::string loadOpStr = state->engine->toString(depthLoadOpProp);
-                                            if (loadOpStr == "load") depthStencilAttachment.depthLoadOp = WGPULoadOp_Load;
-                                            else depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
-                                        } else {
-                                            depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
-                                        }
-
-                                        auto depthStoreOpProp = state->engine->getProperty(depthStencilProp, "depthStoreOp");
-                                        if (!state->engine->isUndefined(depthStoreOpProp)) {
-                                            std::string storeOpStr = state->engine->toString(depthStoreOpProp);
-                                            if (storeOpStr == "discard") depthStencilAttachment.depthStoreOp = WGPUStoreOp_Discard;
-                                            else depthStencilAttachment.depthStoreOp = WGPUStoreOp_Store;
-                                        } else {
-                                            depthStencilAttachment.depthStoreOp = WGPUStoreOp_Store;
-                                        }
-
-                                        // Stencil ops (default undefined/disabled)
-                                        depthStencilAttachment.stencilClearValue = 0;
-                                        depthStencilAttachment.stencilLoadOp = WGPULoadOp_Undefined;
-                                        depthStencilAttachment.stencilStoreOp = WGPUStoreOp_Undefined;
-
-                                        renderPassDesc.depthStencilAttachment = &depthStencilAttachment;
-                                        if (state->verboseLogging) std::cout << "[WebGPU] Render pass with depth attachment, clear=" << depthStencilAttachment.depthClearValue << std::endl;
-                                    }
-
-                                    // Begin render pass on the captured encoder (not the global)
-                                    WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoderToUse, &renderPassDesc);
-
-                                    // Store in per-encoder map (fixes issue with multiple encoders)
-                                    state->encoderRenderPassMap[encoderToUse] = renderPass;
-
-                                    // Also set global for backwards compatibility with render pass methods
-                                    state->jsRenderPass = renderPass;
-
-                                    if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
-
-                                    // Suspend frame tracking while creating render pass wrapper
-                                    state->engine->suspendFrameTracking();
-
-                                    auto jsRenderPass = state->engine->newObject();
-                                    state->engine->setPrivateData(jsRenderPass, renderPass);
-                                    WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
-
-                                    // renderPass.setPipeline(pipeline)
-                                    installBindingTable(state->engine, state, bindingTable(jsRenderPass, {
-                                        {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty()) return state->engine->newUndefined();
-
-#if TN_ANDROID_JS_PROFILE
-                                            const auto profileStart = beginProfiledBinding();
-#endif
-                                            WGPURenderPipeline pipeline = (WGPURenderPipeline)state->engine->getPrivateData(args[0]);
-                                            if (capturedRenderPassForCommands && pipeline) {
-                                                wgpuRenderPassEncoderSetPipeline(capturedRenderPassForCommands, pipeline);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Pipeline set" << std::endl;
-                                            }
-#if TN_ANDROID_JS_PROFILE
-                                            endProfiledBinding(state, ProfiledRenderCommand::SetPipeline, profileStart);
-#endif
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.setBindGroup(index, bindGroup, dynamicOffsets?)
-                                                                            {"GPURenderPassEncoder", "setBindGroup", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 2) {
-                                                state->engine->throwException("setBindGroup requires index and bindGroup");
-                                                return state->engine->newUndefined();
-                                            }
-
-#if TN_ANDROID_JS_PROFILE
-                                            const auto profileStart = beginProfiledBinding();
-#endif
-                                            uint32_t groupIndex = (uint32_t)state->engine->toNumber(args[0]);
-                                            WGPUBindGroup bindGroup = (WGPUBindGroup)state->engine->getPrivateData(args[1]);
-
-                                            if (capturedRenderPassForCommands && bindGroup) {
-                                                // TODO: Support dynamic offsets
-                                                wgpuRenderPassEncoderSetBindGroup(capturedRenderPassForCommands, groupIndex, bindGroup, 0, nullptr);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Set bind group at index " << groupIndex << std::endl;
-                                            }
-#if TN_ANDROID_JS_PROFILE
-                                            endProfiledBinding(state, ProfiledRenderCommand::SetBindGroup, profileStart);
-#endif
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
-                                                                            {"GPURenderPassEncoder", "draw", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty()) return state->engine->newUndefined();
-
-#if TN_ANDROID_JS_PROFILE
-                                            const auto profileStart = beginProfiledBinding();
-#endif
-                                            uint32_t vertexCount = (uint32_t)state->engine->toNumber(args[0]);
-                                            uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
-                                            uint32_t firstVertex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
-                                            uint32_t firstInstance = args.size() > 3 ? (uint32_t)state->engine->toNumber(args[3]) : 0;
-
-                                            if (capturedRenderPassForCommands) {
-                                                wgpuRenderPassEncoderDraw(capturedRenderPassForCommands, vertexCount, instanceCount, firstVertex, firstInstance);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Draw: " << vertexCount << " vertices" << std::endl;
-                                            }
-#if TN_ANDROID_JS_PROFILE
-                                            endProfiledBinding(state, ProfiledRenderCommand::Draw, profileStart);
-#endif
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.setVertexBuffer(slot, buffer, offset?, size?)
-                                                                            {"GPURenderPassEncoder", "setVertexBuffer", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 2) return state->engine->newUndefined();
-
-#if TN_ANDROID_JS_PROFILE
-                                            const auto profileStart = beginProfiledBinding();
-#endif
-                                            uint32_t slot = (uint32_t)state->engine->toNumber(args[0]);
-                                            WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[1]);
-                                            uint64_t offset = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : 0;
-                                            uint64_t size = args.size() > 3 ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
-
-                                            if (capturedRenderPassForCommands && buffer) {
-                                                wgpuRenderPassEncoderSetVertexBuffer(capturedRenderPassForCommands, slot, buffer, offset, size);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Set vertex buffer at slot " << slot << std::endl;
-                                            }
-#if TN_ANDROID_JS_PROFILE
-                                            endProfiledBinding(state, ProfiledRenderCommand::SetVertexBuffer, profileStart);
-#endif
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.setIndexBuffer(buffer, format, offset?, size?)
-                                                                            {"GPURenderPassEncoder", "setIndexBuffer", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 2) return state->engine->newUndefined();
-
-#if TN_ANDROID_JS_PROFILE
-                                            const auto profileStart = beginProfiledBinding();
-#endif
-                                            WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                            std::string formatStr = state->engine->toString(args[1]);
-                                            uint64_t offset = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : 0;
-                                            uint64_t size = args.size() > 3 ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
-
-                                            WGPUIndexFormat format = WGPUIndexFormat_Uint16;
-                                            if (formatStr == "uint32") format = WGPUIndexFormat_Uint32;
-                                            else if (formatStr == "uint16") format = WGPUIndexFormat_Uint16;
-
-                                            if (capturedRenderPassForCommands && buffer) {
-                                                wgpuRenderPassEncoderSetIndexBuffer(capturedRenderPassForCommands, buffer, format, offset, size);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Set index buffer, format: " << formatStr << std::endl;
-                                            }
-#if TN_ANDROID_JS_PROFILE
-                                            endProfiledBinding(state, ProfiledRenderCommand::SetIndexBuffer, profileStart);
-#endif
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
-                                                                            {"GPURenderPassEncoder", "drawIndexed", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty()) return state->engine->newUndefined();
-
-#if TN_ANDROID_JS_PROFILE
-                                            const auto profileStart = beginProfiledBinding();
-#endif
-                                            uint32_t indexCount = (uint32_t)state->engine->toNumber(args[0]);
-                                            uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
-                                            uint32_t firstIndex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
-                                            int32_t baseVertex = args.size() > 3 ? (int32_t)state->engine->toNumber(args[3]) : 0;
-                                            uint32_t firstInstance = args.size() > 4 ? (uint32_t)state->engine->toNumber(args[4]) : 0;
-
-                                            if (capturedRenderPassForCommands) {
-                                                wgpuRenderPassEncoderDrawIndexed(capturedRenderPassForCommands, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] DrawIndexed: " << indexCount << " indices, firstInstance=" << firstInstance << std::endl;
-                                            }
-#if TN_ANDROID_JS_PROFILE
-                                            endProfiledBinding(state, ProfiledRenderCommand::DrawIndexed, profileStart);
-#endif
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.drawIndirect(indirectBuffer, indirectOffset)
-                                                                            {"GPURenderPassEncoder", "drawIndirect", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 2) return state->engine->newUndefined();
-
-                                            WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                            uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
-
-                                            if (capturedRenderPassForCommands && indirectBuffer) {
-                                                wgpuRenderPassEncoderDrawIndirect(capturedRenderPassForCommands, indirectBuffer, indirectOffset);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] DrawIndirect at offset " << indirectOffset << std::endl;
-                                            }
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.drawIndexedIndirect(indirectBuffer, indirectOffset)
-                                                                            {"GPURenderPassEncoder", "drawIndexedIndirect", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 2) return state->engine->newUndefined();
-
-                                            WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                            uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
-
-                                            if (capturedRenderPassForCommands && indirectBuffer) {
-                                                wgpuRenderPassEncoderDrawIndexedIndirect(capturedRenderPassForCommands, indirectBuffer, indirectOffset);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] DrawIndexedIndirect at offset " << indirectOffset << std::endl;
-                                            }
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.setViewport(x, y, width, height, minDepth, maxDepth)
-                                                                            {"GPURenderPassEncoder", "setViewport", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 6) return state->engine->newUndefined();
-
-                                            float x = (float)state->engine->toNumber(args[0]);
-                                            float y = (float)state->engine->toNumber(args[1]);
-                                            float width = (float)state->engine->toNumber(args[2]);
-                                            float height = (float)state->engine->toNumber(args[3]);
-                                            float minDepth = (float)state->engine->toNumber(args[4]);
-                                            float maxDepth = (float)state->engine->toNumber(args[5]);
-
-                                            if (capturedRenderPassForCommands) {
-                                                wgpuRenderPassEncoderSetViewport(capturedRenderPassForCommands, x, y, width, height, minDepth, maxDepth);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] SetViewport: " << x << "," << y << " " << width << "x" << height << std::endl;
-                                            }
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.setScissorRect(x, y, width, height)
-                                                                            {"GPURenderPassEncoder", "setScissorRect", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 4) return state->engine->newUndefined();
-
-                                            uint32_t x = (uint32_t)state->engine->toNumber(args[0]);
-                                            uint32_t y = (uint32_t)state->engine->toNumber(args[1]);
-                                            uint32_t width = (uint32_t)state->engine->toNumber(args[2]);
-                                            uint32_t height = (uint32_t)state->engine->toNumber(args[3]);
-
-                                            if (capturedRenderPassForCommands) {
-                                                wgpuRenderPassEncoderSetScissorRect(capturedRenderPassForCommands, x, y, width, height);
-                                                if (state->verboseLogging) std::cout << "[WebGPU] SetScissorRect: " << x << "," << y << " " << width << "x" << height << std::endl;
-                                            }
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.setBlendConstant(color)
-                                                                            {"GPURenderPassEncoder", "setBlendConstant", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty()) return state->engine->newUndefined();
-
-                                            auto color = args[0];
-                                            WGPUColor blendColor = {};
-                                            if (state->engine->isArray(color)) {
-                                                blendColor.r = state->engine->toNumber(state->engine->getPropertyIndex(color, 0));
-                                                blendColor.g = state->engine->toNumber(state->engine->getPropertyIndex(color, 1));
-                                                blendColor.b = state->engine->toNumber(state->engine->getPropertyIndex(color, 2));
-                                                blendColor.a = state->engine->toNumber(state->engine->getPropertyIndex(color, 3));
-                                            } else {
-                                                blendColor.r = state->engine->toNumber(state->engine->getProperty(color, "r"));
-                                                blendColor.g = state->engine->toNumber(state->engine->getProperty(color, "g"));
-                                                blendColor.b = state->engine->toNumber(state->engine->getProperty(color, "b"));
-                                                blendColor.a = state->engine->toNumber(state->engine->getProperty(color, "a"));
-                                            }
-
-                                            if (capturedRenderPassForCommands) {
-                                                wgpuRenderPassEncoderSetBlendConstant(capturedRenderPassForCommands, &blendColor);
-                                            }
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // renderPass.setStencilReference(reference)
-                                                                            {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
-                                        [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty()) return state->engine->newUndefined();
-
-                                            uint32_t reference = (uint32_t)state->engine->toNumber(args[0]);
-                                            if (capturedRenderPassForCommands) {
-                                                wgpuRenderPassEncoderSetStencilReference(capturedRenderPassForCommands, reference);
-                                            }
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    }}));
-
-                                    // renderPass.executeBundles(bundles)
-                                    // Used by Three.js for mipmap generation
-                                    WGPURenderPassEncoder capturedRenderPassForBundles = renderPass;
-                                    installBindingTable(state->engine, state, bindingTable(jsRenderPass, {
-                                        {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
-                                        [capturedRenderPassForBundles, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty() || !capturedRenderPassForBundles) return state->engine->newUndefined();
-
-                                            auto bundlesArray = args[0];
-                                            auto lengthProp = state->engine->getProperty(bundlesArray, "length");
-                                            int bundleCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
-
-                                            std::vector<WGPURenderBundle> bundles;
-                                            bundles.reserve(bundleCount);
-                                            for (int i = 0; i < bundleCount; i++) {
-                                                auto bundleHandle = state->engine->getPropertyIndex(bundlesArray, i);
-                                                WGPURenderBundle bundle = (WGPURenderBundle)state->engine->getPrivateData(bundleHandle);
-                                                if (bundle) bundles.push_back(bundle);
-                                            }
-
-                                            if (!bundles.empty()) {
-                                                wgpuRenderPassEncoderExecuteBundles(capturedRenderPassForBundles, bundles.size(), bundles.data());
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Executed " << bundles.size() << " render bundles" << std::endl;
-                                            }
-
-                                            return state->engine->newUndefined();
-                                        }
-                                    }}));
-
-                                    // renderPass.end() - capture encoder and render pass for cleanup
-                                    WGPUCommandEncoder capturedEncoderForEnd = encoderToUse;
-                                    WGPURenderPassEncoder capturedRenderPass = renderPass;
-                                    installBindingTable(state->engine, state, bindingTable(jsRenderPass, {
-                                        {"GPURenderPassEncoder", "end", 0, nullptr,
-                                        [capturedEncoderForEnd, capturedRenderPass, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (capturedRenderPass) {
-                                                wgpuRenderPassEncoderEnd(capturedRenderPass);
-                                                wgpuRenderPassEncoderRelease(capturedRenderPass);
-
-                                                // Remove from per-encoder map
-                                                state->encoderRenderPassMap.erase(capturedEncoderForEnd);
-
-                                                // Clear global if it matches
-                                                if (state->jsRenderPass == capturedRenderPass) {
-                                                    state->jsRenderPass = nullptr;
-                                                }
-
-                                                // Mark surface render pass as ended
-                                                if (state->surfaceRenderEncoder == capturedEncoderForEnd) {
-                                                    state->surfaceRenderPassEnded = true;
-                                                }
-                                                if (state->verboseLogging) std::cout << "[WebGPU] Render pass ended" << std::endl;
-                                            }
-                                            return state->engine->newUndefined();
-                                        }
-                                    }}));
-
-                                    // Resume frame tracking
-                                    state->engine->resumeFrameTracking();
-
-                                    return jsRenderPass;
-                                }
-                            }}));
-
-                            // encoder.beginComputePass(descriptor?)
-                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
-                                {"GPUCommandEncoder", "beginComputePass", 0, nullptr,
-                                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (!state->jsCommandEncoder) {
-                                        state->engine->throwException("No command encoder");
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    WGPUComputePassDescriptor computePassDesc = {};
-                                    state->jsComputePass = wgpuCommandEncoderBeginComputePass(state->jsCommandEncoder, &computePassDesc);
-
-                                    auto jsComputePass = state->engine->newObject();
-
-                                    // computePass.setPipeline(pipeline)
-                                    installBindingTable(state->engine, state, bindingTable(jsComputePass, {
-                                        {"GPUComputePassEncoder", "setPipeline", 0, nullptr,
-                                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty()) return state->engine->newUndefined();
-                                            WGPUComputePipeline pipeline = (WGPUComputePipeline)state->engine->getPrivateData(args[0]);
-                                            if (state->jsComputePass && pipeline) {
-                                                wgpuComputePassEncoderSetPipeline(state->jsComputePass, pipeline);
-                                            }
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // computePass.setBindGroup(index, bindGroup, dynamicOffsets?)
-                                                                            {"GPUComputePassEncoder", "setBindGroup", 0, nullptr,
-                                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.size() < 2) return state->engine->newUndefined();
-                                            uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
-                                            WGPUBindGroup bindGroup = (WGPUBindGroup)state->engine->getPrivateData(args[1]);
-                                            if (state->jsComputePass && bindGroup) {
-                                                wgpuComputePassEncoderSetBindGroup(state->jsComputePass, index, bindGroup, 0, nullptr);
-                                            }
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // computePass.dispatchWorkgroups(countX, countY?, countZ?)
-                                                                            {"GPUComputePassEncoder", "dispatchWorkgroups", 0, nullptr,
-                                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (args.empty()) return state->engine->newUndefined();
-                                            uint32_t countX = (uint32_t)state->engine->toNumber(args[0]);
-                                            uint32_t countY = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
-                                            uint32_t countZ = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 1;
-                                            if (state->jsComputePass) {
-                                                wgpuComputePassEncoderDispatchWorkgroups(state->jsComputePass, countX, countY, countZ);
-                                            }
-                                            return state->engine->newUndefined();
-                                        }
-                                    },
-
-                                    // computePass.end()
-                                                                            {"GPUComputePassEncoder", "end", 0, nullptr,
-                                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                            if (state->jsComputePass) {
-                                                wgpuComputePassEncoderEnd(state->jsComputePass);
-                                                wgpuComputePassEncoderRelease(state->jsComputePass);
-                                                state->jsComputePass = nullptr;
-                                            }
-                                            return state->engine->newUndefined();
-                                        }
-                                    }}));
-
-                                    if (state->verboseLogging) std::cout << "[WebGPU] Compute pass started" << std::endl;
-                                    return jsComputePass;
-                                }
-                            }}));
-
-                            // encoder.copyBufferToBuffer(source, sourceOffset, destination, destinationOffset, size)
-                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
-                                {"GPUCommandEncoder", "copyBufferToBuffer", 0, nullptr,
-                                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 5 || !state->jsCommandEncoder) return state->engine->newUndefined();
-
-                                    WGPUBuffer source = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                    uint64_t sourceOffset = (uint64_t)state->engine->toNumber(args[1]);
-                                    WGPUBuffer destination = (WGPUBuffer)state->engine->getPrivateData(args[2]);
-                                    uint64_t destOffset = (uint64_t)state->engine->toNumber(args[3]);
-                                    uint64_t size = (uint64_t)state->engine->toNumber(args[4]);
-
-                                    if (source && destination) {
-                                        wgpuCommandEncoderCopyBufferToBuffer(state->jsCommandEncoder, source, sourceOffset, destination, destOffset, size);
-                                    }
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // encoder.copyBufferToTexture(source, destination, copySize)
-                                                            {"GPUCommandEncoder", "copyBufferToTexture", 0, nullptr,
-                                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
-
-                                    auto sourceProp = args[0];
-                                    auto destProp = args[1];
-                                    auto sizeProp = args[2];
-
-                                    // Source (buffer info)
-                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(state->engine->getProperty(sourceProp, "buffer"));
-                                    uint64_t offset = (uint64_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "offset"));
-                                    uint32_t bytesPerRow = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "bytesPerRow"));
-                                    uint32_t rowsPerImage = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "rowsPerImage"));
-
-                                    // Destination (texture info)
-                                    WGPUTexture texture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(destProp, "texture"));
-                                    uint32_t mipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "mipLevel"));
-                                    auto originProp = state->engine->getProperty(destProp, "origin");
-                                    uint32_t originX = 0, originY = 0, originZ = 0;
-                                    if (!state->engine->isUndefined(originProp)) {
-                                        originX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 0));
-                                        originY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 1));
-                                        originZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 2));
-                                    }
-
-                                    // Copy size
-                                    uint32_t width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 0));
-                                    uint32_t height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 1));
-                                    uint32_t depthOrLayers = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 2));
-                                    if (depthOrLayers == 0) depthOrLayers = 1;
-
-                                    if (buffer && texture) {
-                                        WGPUImageCopyBuffer_Compat srcCopy = {};
-                                        srcCopy.buffer = buffer;
-                                        srcCopy.layout.offset = offset;
-                                        srcCopy.layout.bytesPerRow = bytesPerRow;
-                                        srcCopy.layout.rowsPerImage = rowsPerImage > 0 ? rowsPerImage : height;
-
-                                        WGPUImageCopyTexture_Compat dstCopy = {};
-                                        dstCopy.texture = texture;
-                                        dstCopy.mipLevel = mipLevel;
-                                        dstCopy.origin = {originX, originY, originZ};
-
-                                        WGPUExtent3D copySize = {width, height, depthOrLayers};
-                                        wgpuCommandEncoderCopyBufferToTexture(state->jsCommandEncoder, &srcCopy, &dstCopy, &copySize);
-                                    }
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // encoder.copyTextureToBuffer(source, destination, copySize)
-                                                            {"GPUCommandEncoder", "copyTextureToBuffer", 0, nullptr,
-                                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
-
-                                    auto sourceProp = args[0];
-                                    auto destProp = args[1];
-                                    auto sizeProp = args[2];
-
-                                    // Source (texture info)
-                                    WGPUTexture texture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(sourceProp, "texture"));
-                                    uint32_t mipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "mipLevel"));
-                                    auto originProp = state->engine->getProperty(sourceProp, "origin");
-                                    uint32_t originX = 0, originY = 0, originZ = 0;
-                                    if (!state->engine->isUndefined(originProp)) {
-                                        originX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 0));
-                                        originY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 1));
-                                        originZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(originProp, 2));
-                                    }
-
-                                    // Destination (buffer info)
-                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(state->engine->getProperty(destProp, "buffer"));
-                                    uint64_t offset = (uint64_t)state->engine->toNumber(state->engine->getProperty(destProp, "offset"));
-                                    uint32_t bytesPerRow = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "bytesPerRow"));
-                                    uint32_t rowsPerImage = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "rowsPerImage"));
-
-                                    // Copy size - can be array [w,h,d] or object {width, height, depthOrArrayLayers}
-                                    uint32_t width = 0, height = 0, depthOrLayers = 1;
-                                    auto widthProp = state->engine->getProperty(sizeProp, "width");
-                                    if (!state->engine->isUndefined(widthProp)) {
-                                        // Object format: { width, height, depthOrArrayLayers }
-                                        width = (uint32_t)state->engine->toNumber(widthProp);
-                                        height = (uint32_t)state->engine->toNumber(state->engine->getProperty(sizeProp, "height"));
-                                        auto depthProp = state->engine->getProperty(sizeProp, "depthOrArrayLayers");
-                                        depthOrLayers = state->engine->isUndefined(depthProp) ? 1 : (uint32_t)state->engine->toNumber(depthProp);
-                                    } else {
-                                        // Array format: [width, height, depth]
-                                        width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 0));
-                                        height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 1));
-                                        depthOrLayers = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 2));
-                                    }
-                                    if (depthOrLayers == 0) depthOrLayers = 1;
-
-                                    if (state->verboseLogging) {
-                                        std::cout << "[WebGPU] copyTextureToBuffer: texture=" << texture
-                                                  << ", buffer=" << buffer
-                                                  << ", size=" << width << "x" << height << "x" << depthOrLayers
-                                                  << ", bytesPerRow=" << bytesPerRow << std::endl;
-                                    }
-
-                                    if (buffer && texture) {
-                                        WGPUImageCopyTexture_Compat srcCopy = {};
-                                        srcCopy.texture = texture;
-                                        srcCopy.mipLevel = mipLevel;
-                                        srcCopy.origin = {originX, originY, originZ};
-
-                                        WGPUImageCopyBuffer_Compat dstCopy = {};
-                                        dstCopy.buffer = buffer;
-                                        dstCopy.layout.offset = offset;
-                                        dstCopy.layout.bytesPerRow = bytesPerRow;
-                                        dstCopy.layout.rowsPerImage = rowsPerImage > 0 ? rowsPerImage : height;
-
-                                        WGPUExtent3D copySize = {width, height, depthOrLayers};
-                                        wgpuCommandEncoderCopyTextureToBuffer(state->jsCommandEncoder, &srcCopy, &dstCopy, &copySize);
-                                    }
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // encoder.copyTextureToTexture(source, destination, copySize)
-                                                            {"GPUCommandEncoder", "copyTextureToTexture", 0, nullptr,
-                                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
-
-                                    auto sourceProp = args[0];
-                                    auto destProp = args[1];
-                                    auto sizeProp = args[2];
-
-                                    // Source texture
-                                    WGPUTexture srcTexture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(sourceProp, "texture"));
-                                    uint32_t srcMipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(sourceProp, "mipLevel"));
-                                    auto srcOriginProp = state->engine->getProperty(sourceProp, "origin");
-                                    uint32_t srcOriginX = 0, srcOriginY = 0, srcOriginZ = 0;
-                                    if (!state->engine->isUndefined(srcOriginProp)) {
-                                        srcOriginX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(srcOriginProp, 0));
-                                        srcOriginY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(srcOriginProp, 1));
-                                        srcOriginZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(srcOriginProp, 2));
-                                    }
-
-                                    // Destination texture
-                                    WGPUTexture dstTexture = (WGPUTexture)state->engine->getPrivateData(state->engine->getProperty(destProp, "texture"));
-                                    uint32_t dstMipLevel = (uint32_t)state->engine->toNumber(state->engine->getProperty(destProp, "mipLevel"));
-                                    auto dstOriginProp = state->engine->getProperty(destProp, "origin");
-                                    uint32_t dstOriginX = 0, dstOriginY = 0, dstOriginZ = 0;
-                                    if (!state->engine->isUndefined(dstOriginProp)) {
-                                        dstOriginX = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(dstOriginProp, 0));
-                                        dstOriginY = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(dstOriginProp, 1));
-                                        dstOriginZ = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(dstOriginProp, 2));
-                                    }
-
-                                    // Copy size - handle both array and object forms
-                                    uint32_t width = 1, height = 1, depthOrLayers = 1;
-                                    if (state->engine->isArray(sizeProp)) {
-                                        width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 0));
-                                        height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeProp, 1));
-                                        auto depthVal = state->engine->getPropertyIndex(sizeProp, 2);
-                                        if (!state->engine->isUndefined(depthVal)) {
-                                            depthOrLayers = (uint32_t)state->engine->toNumber(depthVal);
-                                        }
-                                    } else {
-                                        width = (uint32_t)state->engine->toNumber(state->engine->getProperty(sizeProp, "width"));
-                                        height = (uint32_t)state->engine->toNumber(state->engine->getProperty(sizeProp, "height"));
-                                        auto depthVal = state->engine->getProperty(sizeProp, "depthOrArrayLayers");
-                                        if (!state->engine->isUndefined(depthVal)) {
-                                            depthOrLayers = (uint32_t)state->engine->toNumber(depthVal);
-                                        }
-                                    }
-                                    if (depthOrLayers == 0) depthOrLayers = 1;
-
-                                    if (srcTexture && dstTexture) {
-                                        WGPUImageCopyTexture_Compat srcCopy = {};
-                                        srcCopy.texture = srcTexture;
-                                        srcCopy.mipLevel = srcMipLevel;
-                                        srcCopy.origin = {srcOriginX, srcOriginY, srcOriginZ};
-
-                                        WGPUImageCopyTexture_Compat dstCopy = {};
-                                        dstCopy.texture = dstTexture;
-                                        dstCopy.mipLevel = dstMipLevel;
-                                        dstCopy.origin = {dstOriginX, dstOriginY, dstOriginZ};
-
-                                        WGPUExtent3D copySize = {width, height, depthOrLayers};
-                                        wgpuCommandEncoderCopyTextureToTexture(state->jsCommandEncoder, &srcCopy, &dstCopy, &copySize);
-                                    }
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // encoder.clearBuffer(buffer, offset?, size?)
-                                                            {"GPUCommandEncoder", "clearBuffer", 0, nullptr,
-                                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.empty() || !state->jsCommandEncoder) return state->engine->newUndefined();
-
-                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                    uint64_t offset = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : 0;
-                                    uint64_t size = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : WGPU_WHOLE_SIZE;
-
-                                    if (buffer) {
-                                        wgpuCommandEncoderClearBuffer(state->jsCommandEncoder, buffer, offset, size);
-                                    }
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // encoder.finish(descriptor?)
-                                                            {"GPUCommandEncoder", "finish", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    // Use captured encoder for this specific command encoder
-                                    WGPUCommandEncoder encoderToFinish = capturedEncoder;
-
-                                    // Auto-end any active render/compute passes for THIS encoder
-                                    // Look up from per-encoder map, not global
-                                    auto renderPassIt = state->encoderRenderPassMap.find(encoderToFinish);
-                                    if (renderPassIt != state->encoderRenderPassMap.end() && renderPassIt->second) {
-                                        WGPURenderPassEncoder renderPass = renderPassIt->second;
-                                        if (state->verboseLogging) std::cout << "[WebGPU] Auto-ending render pass (pass=" << (void*)renderPass << ", encoder=" << (void*)encoderToFinish << ")" << std::endl;
-                                        wgpuRenderPassEncoderEnd(renderPass);
-                                        wgpuRenderPassEncoderRelease(renderPass);
-                                        state->encoderRenderPassMap.erase(renderPassIt);
-
-                                        // Clear global if it matches
-                                        if (state->jsRenderPass == renderPass) {
-                                            state->jsRenderPass = nullptr;
-                                        }
-
-                                        // Mark surface render pass as ended
-                                        if (state->surfaceRenderEncoder == encoderToFinish) {
-                                            state->surfaceRenderPassEnded = true;
-                                            if (state->verboseLogging) std::cout << "[WebGPU] Surface render pass auto-ended (encoder=" << (void*)encoderToFinish << ")" << std::endl;
-                                        }
-                                    }
-
-                                    auto computePassIt = state->encoderComputePassMap.find(encoderToFinish);
-                                    if (computePassIt != state->encoderComputePassMap.end() && computePassIt->second) {
-                                        WGPUComputePassEncoder computePass = computePassIt->second;
-                                        if (state->verboseLogging) std::cout << "[WebGPU] Auto-ending compute pass (pass=" << (void*)computePass << ", encoder=" << (void*)encoderToFinish << ")" << std::endl;
-                                        wgpuComputePassEncoderEnd(computePass);
-                                        wgpuComputePassEncoderRelease(computePass);
-                                        state->encoderComputePassMap.erase(computePassIt);
-
-                                        // Clear global if it matches
-                                        if (state->jsComputePass == computePass) {
-                                            state->jsComputePass = nullptr;
-                                        }
-                                    }
-
-                                    WGPUCommandBufferDescriptor cmdDesc = {};
-                                    WGPUCommandBuffer cmdBuffer = nullptr;
-
-                                    if (encoderToFinish) {
-                                        cmdBuffer = wgpuCommandEncoderFinish(encoderToFinish, &cmdDesc);
-                                        wgpuCommandEncoderRelease(encoderToFinish);
-
-                                        // Clear global if it matches
-                                        if (state->jsCommandEncoder == encoderToFinish) {
-                                            state->jsCommandEncoder = nullptr;
-                                        }
-
-                                        if (state->verboseLogging) std::cout << "[WebGPU] Command encoder finished, buffer: " << cmdBuffer << std::endl;
-                                    }
-
-                                    auto jsCommandBuffer = state->engine->newObject();
-                                    state->engine->setPrivateData(jsCommandBuffer, cmdBuffer);
-
-                                    return jsCommandBuffer;
-                                }
-                            }}));
-
-                            // Resume frame tracking now that encoder wrapper is created
-                            state->engine->resumeFrameTracking();
-
-                            return jsEncoder;
-                        }
-                    }}));
-
+                        &tnWebgpuHandler37
+                    , device}}));
                     // device.createTexture(descriptor)
-                    installBindingTable(state->engine, state, bindingTable(device, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createTexture", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createTexture requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-
-                            // Parse size - can be [width, height, depth] array or {width, height, depthOrArrayLayers} object
-                            auto sizeVal = state->engine->getProperty(descriptor, "size");
-                            uint32_t width = 1, height = 1, depthOrArrayLayers = 1;
-
-                            // Check if size is an array
-                            auto lengthProp = state->engine->getProperty(sizeVal, "length");
-                            if (!state->engine->isUndefined(lengthProp)) {
-                                // Array format: [width, height?, depth?]
-                                int len = (int)state->engine->toNumber(lengthProp);
-                                if (len >= 1) width = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 0));
-                                if (len >= 2) height = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 1));
-                                if (len >= 3) depthOrArrayLayers = (uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(sizeVal, 2));
-                            } else {
-                                // Object format: {width, height, depthOrArrayLayers}
-                                auto w = state->engine->getProperty(sizeVal, "width");
-                                auto h = state->engine->getProperty(sizeVal, "height");
-                                auto d = state->engine->getProperty(sizeVal, "depthOrArrayLayers");
-                                if (!state->engine->isUndefined(w)) width = (uint32_t)state->engine->toNumber(w);
-                                if (!state->engine->isUndefined(h)) height = (uint32_t)state->engine->toNumber(h);
-                                if (!state->engine->isUndefined(d)) depthOrArrayLayers = (uint32_t)state->engine->toNumber(d);
-                            }
-
-                            // Parse format
-                            std::string formatStr = state->engine->toString(state->engine->getProperty(descriptor, "format"));
-                            WGPUTextureFormat format = stringToFormat(formatStr);
-
-                            // Parse usage
-                            double usageVal = state->engine->toNumber(state->engine->getProperty(descriptor, "usage"));
-                            WGPUTextureUsage usage = (WGPUTextureUsage)(uint32_t)usageVal;
-
-                            // Fix format/usage incompatibility:
-                            // BGRA8UnormSrgb doesn't support StorageBinding, convert to BGRA8Unorm or RGBA8Unorm
-                            if (format == WGPUTextureFormat_BGRA8UnormSrgb && (usage & WGPUTextureUsage_StorageBinding)) {
-                                std::cout << "[WebGPU] Warning: BGRA8UnormSrgb doesn't support StorageBinding, using RGBA8Unorm instead" << std::endl;
-                                format = WGPUTextureFormat_RGBA8Unorm;
-                                formatStr = "rgba8unorm";
-                            }
-                            // Also handle BGRA8Unorm which may not support storage on all platforms
-                            if (format == WGPUTextureFormat_BGRA8Unorm && (usage & WGPUTextureUsage_StorageBinding)) {
-                                std::cout << "[WebGPU] Warning: BGRA8Unorm may not support StorageBinding, using RGBA8Unorm instead" << std::endl;
-                                format = WGPUTextureFormat_RGBA8Unorm;
-                                formatStr = "rgba8unorm";
-                            }
-
-                            // Parse optional properties
-                            std::string dimensionStr = state->engine->toString(state->engine->getProperty(descriptor, "dimension"));
-                            WGPUTextureDimension dimension = dimensionStr.empty() ? WGPUTextureDimension_2D : stringToTextureDimension(dimensionStr);
-
-                            auto mipLevelCountVal = state->engine->getProperty(descriptor, "mipLevelCount");
-                            uint32_t mipLevelCount = state->engine->isUndefined(mipLevelCountVal) ? 1 : (uint32_t)state->engine->toNumber(mipLevelCountVal);
-
-                            auto sampleCountVal = state->engine->getProperty(descriptor, "sampleCount");
-                            uint32_t sampleCount = state->engine->isUndefined(sampleCountVal) ? 1 : (uint32_t)state->engine->toNumber(sampleCountVal);
-
-                            // Create texture descriptor
-                            WGPUTextureDescriptor texDesc = {};
-                            texDesc.size.width = width;
-                            texDesc.size.height = height;
-                            texDesc.size.depthOrArrayLayers = depthOrArrayLayers;
-                            texDesc.format = format;
-                            texDesc.usage = usage;
-                            texDesc.dimension = dimension;
-                            texDesc.mipLevelCount = mipLevelCount;
-                            texDesc.sampleCount = sampleCount;
-
-                            WGPUTexture texture = wgpuDeviceCreateTexture(state->device, &texDesc);
-
-                            if (!texture) {
-                                state->engine->throwException("Failed to create texture");
-                                return state->engine->newUndefined();
-                            }
-                            recordTextureCreated(state, width, height, depthOrArrayLayers, mipLevelCount,
-                                                 sampleCount, formatStr);
-
-                            // Create JS wrapper
-                            auto jsTexture = state->engine->newObject();
-                            state->engine->setPrivateData(jsTexture, texture);
-
-                            // Store texture properties
-                            state->engine->setProperty(jsTexture, "width", state->engine->newNumber(width));
-                            state->engine->setProperty(jsTexture, "height", state->engine->newNumber(height));
-                            state->engine->setProperty(jsTexture, "depthOrArrayLayers", state->engine->newNumber(depthOrArrayLayers));
-                            state->engine->setProperty(jsTexture, "format", state->engine->newString(formatStr.c_str()));
-                            state->engine->setProperty(jsTexture, "mipLevelCount", state->engine->newNumber(mipLevelCount));
-                            state->engine->setProperty(jsTexture, "sampleCount", state->engine->newNumber(sampleCount));
-
-                            // Register texture for lookup by createView
-                            uint64_t textureId = state->nextTextureId++;
-                            state->textureRegistry[textureId] = {texture, format, width, height, depthOrArrayLayers, mipLevelCount, dimension};
-
-                            // Store texture ID for lookup
-                            state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber((double)textureId));
-
-                            // texture.createView(descriptor?) - Store texture ID for lookup
-                            // We store the textureId to look up the texture later since callbacks don't have 'this'
-                            state->engine->setProperty(jsTexture, "_createViewTextureId", state->engine->newNumber((double)textureId));
-
-                            installBindingTable(state->engine, state, bindingTable(jsTexture, {
-                                {"GPUTexture", "createView", 0, nullptr,
-                                [textureId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    // Look up texture from registry using captured textureId
-                                    auto it = state->textureRegistry.find(textureId);
-                                    if (it == state->textureRegistry.end()) {
-                                        std::cerr << "[WebGPU] createView: Texture " << textureId << " not found in registry" << std::endl;
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    WGPUTexture texture = it->second.texture;
-                                    if (!texture) {
-                                        std::cerr << "[WebGPU] createView: Texture " << textureId << " is null" << std::endl;
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    WGPUTextureViewDescriptor viewDesc = {};
-                                    // Default values - use all mips and layers from the texture
-                                    viewDesc.format = it->second.format;
-                                    viewDesc.mipLevelCount = it->second.mipLevelCount > 0 ? it->second.mipLevelCount : 1;
-                                    viewDesc.baseMipLevel = 0;
-                                    viewDesc.baseArrayLayer = 0;
-                                    viewDesc.aspect = WGPUTextureAspect_All;
-
-                                    // Default dimension and arrayLayerCount based on texture dimension
-                                    if (it->second.dimension == WGPUTextureDimension_3D) {
-                                        // 3D textures: view as 3D, arrayLayerCount must be 1
-                                        viewDesc.dimension = WGPUTextureViewDimension_3D;
-                                        viewDesc.arrayLayerCount = 1;
-                                    } else if (it->second.dimension == WGPUTextureDimension_1D) {
-                                        // 1D textures
-                                        viewDesc.dimension = WGPUTextureViewDimension_1D;
-                                        viewDesc.arrayLayerCount = 1;
-                                    } else {
-                                        // 2D textures: use layers for 2D-array, 1 for regular 2D
-                                        viewDesc.arrayLayerCount = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 1;
-                                        viewDesc.dimension = it->second.depthOrArrayLayers > 1 ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
-                                    }
-
-                                    // Parse view descriptor if provided
-                                    if (!args.empty() && !state->engine->isUndefined(args[0])) {
-                                        auto descriptor = args[0];
-
-                                        // format (optional, defaults to texture format)
-                                        auto formatProp = state->engine->getProperty(descriptor, "format");
-                                        if (!state->engine->isUndefined(formatProp)) {
-                                            viewDesc.format = stringToFormat(state->engine->toString(formatProp));
-                                        } else {
-                                            viewDesc.format = it->second.format;
-                                        }
-
-                                        // dimension (optional)
-                                        auto dimensionProp = state->engine->getProperty(descriptor, "dimension");
-                                        if (!state->engine->isUndefined(dimensionProp)) {
-                                            std::string dimStr = state->engine->toString(dimensionProp);
-                                            if (dimStr == "1d") viewDesc.dimension = WGPUTextureViewDimension_1D;
-                                            else if (dimStr == "2d") viewDesc.dimension = WGPUTextureViewDimension_2D;
-                                            else if (dimStr == "2d-array") viewDesc.dimension = WGPUTextureViewDimension_2DArray;
-                                            else if (dimStr == "cube") viewDesc.dimension = WGPUTextureViewDimension_Cube;
-                                            else if (dimStr == "cube-array") viewDesc.dimension = WGPUTextureViewDimension_CubeArray;
-                                            else if (dimStr == "3d") viewDesc.dimension = WGPUTextureViewDimension_3D;
-                                        }
-
-                                        // aspect (optional)
-                                        auto aspectProp = state->engine->getProperty(descriptor, "aspect");
-                                        if (!state->engine->isUndefined(aspectProp)) {
-                                            std::string aspectStr = state->engine->toString(aspectProp);
-                                            if (aspectStr == "all") viewDesc.aspect = WGPUTextureAspect_All;
-                                            else if (aspectStr == "stencil-only") viewDesc.aspect = WGPUTextureAspect_StencilOnly;
-                                            else if (aspectStr == "depth-only") viewDesc.aspect = WGPUTextureAspect_DepthOnly;
-                                        }
-
-                                        // baseMipLevel (optional)
-                                        auto baseMipProp = state->engine->getProperty(descriptor, "baseMipLevel");
-                                        if (!state->engine->isUndefined(baseMipProp)) {
-                                            viewDesc.baseMipLevel = (uint32_t)state->engine->toNumber(baseMipProp);
-                                        }
-
-                                        // mipLevelCount (optional)
-                                        auto mipCountProp = state->engine->getProperty(descriptor, "mipLevelCount");
-                                        if (!state->engine->isUndefined(mipCountProp)) {
-                                            viewDesc.mipLevelCount = (uint32_t)state->engine->toNumber(mipCountProp);
-                                        }
-
-                                        // baseArrayLayer (optional)
-                                        auto baseLayerProp = state->engine->getProperty(descriptor, "baseArrayLayer");
-                                        if (!state->engine->isUndefined(baseLayerProp)) {
-                                            viewDesc.baseArrayLayer = (uint32_t)state->engine->toNumber(baseLayerProp);
-                                        }
-
-                                        // arrayLayerCount (optional)
-                                        auto layerCountProp = state->engine->getProperty(descriptor, "arrayLayerCount");
-                                        if (!state->engine->isUndefined(layerCountProp)) {
-                                            uint32_t requested = (uint32_t)state->engine->toNumber(layerCountProp);
-                                            uint32_t maxLayers = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 1;
-                                            // Clamp to actual texture layer count
-                                            viewDesc.arrayLayerCount = std::min(requested, maxLayers - viewDesc.baseArrayLayer);
-                                        }
-                                    }
-                                    // else: defaults are already set above
-
-                                    // Final validation: Fix arrayLayerCount based on view dimension
-                                    if (viewDesc.dimension == WGPUTextureViewDimension_3D ||
-                                        viewDesc.dimension == WGPUTextureViewDimension_1D) {
-                                        // 3D/1D textures have no array layers
-                                        viewDesc.arrayLayerCount = 1;
-                                    } else if (viewDesc.dimension == WGPUTextureViewDimension_Cube) {
-                                        // Cube requires exactly 6 layers (the 6 faces)
-                                        viewDesc.arrayLayerCount = 6;
-                                    } else if (viewDesc.dimension == WGPUTextureViewDimension_CubeArray) {
-                                        // CubeArray must have multiple of 6 layers
-                                        uint32_t maxLayers = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 6;
-                                        viewDesc.arrayLayerCount = std::min(viewDesc.arrayLayerCount, maxLayers);
-                                        // Round down to nearest multiple of 6
-                                        viewDesc.arrayLayerCount = (viewDesc.arrayLayerCount / 6) * 6;
-                                        if (viewDesc.arrayLayerCount < 6) viewDesc.arrayLayerCount = 6;
-                                    }
-
-                                    WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
-
-                                    if (!view) {
-                                        std::cerr << "[WebGPU] createView: Failed to create texture view" << std::endl;
-                                        return state->engine->newUndefined();
-                                    }
-
-                                    auto jsView = state->engine->newObject();
-                                    state->engine->setPrivateData(jsView, view);
-                                    state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
-                                    state->engine->registerRelease(jsView, [view]() {
-                                        wgpuTextureViewRelease(view);
-                                    });
-
-                                    return jsView;
-                                }
-                            },
-
-                            // texture.destroy()
-                                                            {"GPUTexture", "destroy", 0, nullptr,
-                                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    // TODO: Get texture from context and destroy
-                                    // Would need to look up by ID and call wgpuTextureDestroy
-                                    return state->engine->newUndefined();
-                                }
-                            }}));
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Created texture " << width << "x" << height << " format=" << formatStr << " (id=" << textureId << ")" << std::endl;
-                            return jsTexture;
-                        }
-                    }}));
-
+                        &tnWebgpuHandler64
+                    , device}}));
                     // device.createSampler(descriptor?)
-                    installBindingTable(state->engine, state, bindingTable(device, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createSampler", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            WGPUSamplerDescriptor samplerDesc = {};
-
-                            // Default values
-                            samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
-                            samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
-                            samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
-                            samplerDesc.magFilter = WGPUFilterMode_Nearest;
-                            samplerDesc.minFilter = WGPUFilterMode_Nearest;
-                            samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
-                            samplerDesc.lodMinClamp = 0.0f;
-                            samplerDesc.lodMaxClamp = 32.0f;
-                            samplerDesc.maxAnisotropy = 1;
-
-                            if (!args.empty()) {
-                                auto descriptor = args[0];
-
-                                auto addressModeU = state->engine->getProperty(descriptor, "addressModeU");
-                                if (!state->engine->isUndefined(addressModeU)) {
-                                    samplerDesc.addressModeU = stringToAddressMode(state->engine->toString(addressModeU));
-                                }
-
-                                auto addressModeV = state->engine->getProperty(descriptor, "addressModeV");
-                                if (!state->engine->isUndefined(addressModeV)) {
-                                    samplerDesc.addressModeV = stringToAddressMode(state->engine->toString(addressModeV));
-                                }
-
-                                auto addressModeW = state->engine->getProperty(descriptor, "addressModeW");
-                                if (!state->engine->isUndefined(addressModeW)) {
-                                    samplerDesc.addressModeW = stringToAddressMode(state->engine->toString(addressModeW));
-                                }
-
-                                auto magFilter = state->engine->getProperty(descriptor, "magFilter");
-                                if (!state->engine->isUndefined(magFilter)) {
-                                    samplerDesc.magFilter = stringToFilterMode(state->engine->toString(magFilter));
-                                }
-
-                                auto minFilter = state->engine->getProperty(descriptor, "minFilter");
-                                if (!state->engine->isUndefined(minFilter)) {
-                                    samplerDesc.minFilter = stringToFilterMode(state->engine->toString(minFilter));
-                                }
-
-                                auto mipmapFilter = state->engine->getProperty(descriptor, "mipmapFilter");
-                                if (!state->engine->isUndefined(mipmapFilter)) {
-                                    samplerDesc.mipmapFilter = stringToMipmapFilterMode(state->engine->toString(mipmapFilter));
-                                }
-
-                                auto lodMinClamp = state->engine->getProperty(descriptor, "lodMinClamp");
-                                if (!state->engine->isUndefined(lodMinClamp)) {
-                                    samplerDesc.lodMinClamp = (float)state->engine->toNumber(lodMinClamp);
-                                }
-
-                                auto lodMaxClamp = state->engine->getProperty(descriptor, "lodMaxClamp");
-                                if (!state->engine->isUndefined(lodMaxClamp)) {
-                                    samplerDesc.lodMaxClamp = (float)state->engine->toNumber(lodMaxClamp);
-                                }
-
-                                auto compare = state->engine->getProperty(descriptor, "compare");
-                                if (!state->engine->isUndefined(compare)) {
-                                    samplerDesc.compare = stringToCompareFunction(state->engine->toString(compare));
-                                }
-
-                                auto maxAnisotropy = state->engine->getProperty(descriptor, "maxAnisotropy");
-                                if (!state->engine->isUndefined(maxAnisotropy)) {
-                                    samplerDesc.maxAnisotropy = (uint16_t)state->engine->toNumber(maxAnisotropy);
-                                }
-                            }
-#if defined(MYSTRAL_WEBGPU_WGPU)
-                            // wgpu-native's Vulkan backend returns zero when Three.js samples
-                            // a one-level render target with its generic lodMaxClamp of 32.
-                            // Samplers are created before they are paired with a texture view,
-                            // so keep filtering intact and cap the backend's effective LOD range.
-                            if (samplerDesc.lodMaxClamp > 1.0f) {
-                                samplerDesc.lodMaxClamp = 1.0f;
-                            }
-#endif
-
-                            if (samplerDesc.lodMinClamp > samplerDesc.lodMaxClamp) {
-                                state->engine->throwException("Failed to create sampler");
-                                return state->engine->newUndefined();
-                            }
-
-                            WGPUSampler sampler = wgpuDeviceCreateSampler(state->device, &samplerDesc);
-                            if (!sampler) {
-                                state->engine->throwException("Failed to create sampler");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto jsSampler = state->engine->newObject();
-                            state->engine->setPrivateData(jsSampler, sampler);
-                            state->engine->setProperty(jsSampler, "_type", state->engine->newString("sampler"));
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Created sampler" << std::endl;
-                            return jsSampler;
-                        }
-                    },
-
+                        &tnWebgpuHandler67
+                    , device},
                     // device.createBindGroupLayout(descriptor)
                                             {"GPUDevice", "createBindGroupLayout", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createBindGroupLayout requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-                            auto entries = state->engine->getProperty(descriptor, "entries");
-                            auto lengthProp = state->engine->getProperty(entries, "length");
-                            int entryCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
-
-                            std::vector<WGPUBindGroupLayoutEntry> layoutEntries;
-                            layoutEntries.reserve(entryCount);
-
-                            for (int i = 0; i < entryCount; i++) {
-                                auto entry = state->engine->getPropertyIndex(entries, i);
-
-                                WGPUBindGroupLayoutEntry layoutEntry = {};
-                                layoutEntry.binding = (uint32_t)state->engine->toNumber(state->engine->getProperty(entry, "binding"));
-                                layoutEntry.visibility = (WGPUShaderStage)(uint32_t)state->engine->toNumber(state->engine->getProperty(entry, "visibility"));
-
-                                // Check for buffer binding
-                                auto buffer = state->engine->getProperty(entry, "buffer");
-                                if (!state->engine->isUndefined(buffer)) {
-                                    auto typeProp = state->engine->getProperty(buffer, "type");
-                                    std::string typeStr = state->engine->isUndefined(typeProp) ? "" : state->engine->toString(typeProp);
-                                    if (typeStr == "uniform" || typeStr == "") {
-                                        // Default to uniform if no type specified (Three.js uses empty {})
-                                        layoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
-                                    } else if (typeStr == "storage") {
-                                        layoutEntry.buffer.type = WGPUBufferBindingType_Storage;
-                                    } else if (typeStr == "read-only-storage") {
-                                        layoutEntry.buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-                                    } else {
-                                        // Default to uniform for unknown types
-                                        layoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
-                                    }
-                                }
-
-                                // Check for sampler binding
-                                auto sampler = state->engine->getProperty(entry, "sampler");
-                                if (!state->engine->isUndefined(sampler)) {
-                                    std::string typeStr = state->engine->toString(state->engine->getProperty(sampler, "type"));
-                                    if (typeStr == "filtering") {
-                                        layoutEntry.sampler.type = WGPUSamplerBindingType_Filtering;
-                                    } else if (typeStr == "non-filtering") {
-                                        layoutEntry.sampler.type = WGPUSamplerBindingType_NonFiltering;
-                                    } else if (typeStr == "comparison") {
-                                        layoutEntry.sampler.type = WGPUSamplerBindingType_Comparison;
-                                    } else {
-                                        // Default to filtering
-                                        layoutEntry.sampler.type = WGPUSamplerBindingType_Filtering;
-                                    }
-                                }
-
-                                // Check for texture binding
-                                auto texture = state->engine->getProperty(entry, "texture");
-                                if (!state->engine->isUndefined(texture)) {
-                                    auto sampleTypeProp = state->engine->getProperty(texture, "sampleType");
-                                    std::string sampleType = state->engine->isUndefined(sampleTypeProp) ? "" : state->engine->toString(sampleTypeProp);
-                                    if (sampleType == "float" || sampleType == "") {
-                                        // Default to float if no type specified (Three.js uses empty {})
-                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Float;
-                                    } else if (sampleType == "unfilterable-float") {
-                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
-                                    } else if (sampleType == "depth") {
-                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Depth;
-                                    } else if (sampleType == "sint") {
-                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Sint;
-                                    } else if (sampleType == "uint") {
-                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Uint;
-                                    } else {
-                                        // Default to float for unknown types
-                                        layoutEntry.texture.sampleType = WGPUTextureSampleType_Float;
-                                    }
-
-                                    auto viewDim = state->engine->getProperty(texture, "viewDimension");
-                                    if (!state->engine->isUndefined(viewDim)) {
-                                        layoutEntry.texture.viewDimension = stringToTextureViewDimension(state->engine->toString(viewDim));
-                                    } else {
-                                        layoutEntry.texture.viewDimension = WGPUTextureViewDimension_2D;
-                                    }
-
-                                    auto multisampled = state->engine->getProperty(texture, "multisampled");
-                                    layoutEntry.texture.multisampled = !state->engine->isUndefined(multisampled) && state->engine->toBoolean(multisampled);
-                                }
-
-                                // Check for storageTexture binding
-                                auto storageTexture = state->engine->getProperty(entry, "storageTexture");
-                                if (!state->engine->isUndefined(storageTexture)) {
-                                    std::string access = state->engine->toString(state->engine->getProperty(storageTexture, "access"));
-                                    if (access == "write-only") {
-                                        layoutEntry.storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
-                                    } else if (access == "read-only") {
-                                        layoutEntry.storageTexture.access = WGPUStorageTextureAccess_ReadOnly;
-                                    } else if (access == "read-write") {
-                                        layoutEntry.storageTexture.access = WGPUStorageTextureAccess_ReadWrite;
-                                    }
-
-                                    auto format = state->engine->getProperty(storageTexture, "format");
-                                    if (!state->engine->isUndefined(format)) {
-                                        layoutEntry.storageTexture.format = stringToFormat(state->engine->toString(format));
-                                    }
-
-                                    auto viewDim = state->engine->getProperty(storageTexture, "viewDimension");
-                                    if (!state->engine->isUndefined(viewDim)) {
-                                        layoutEntry.storageTexture.viewDimension = stringToTextureViewDimension(state->engine->toString(viewDim));
-                                    } else {
-                                        layoutEntry.storageTexture.viewDimension = WGPUTextureViewDimension_2D;
-                                    }
-                                }
-
-                                layoutEntries.push_back(layoutEntry);
-                            }
-
-                            WGPUBindGroupLayoutDescriptor layoutDesc = {};
-                            layoutDesc.entryCount = layoutEntries.size();
-                            layoutDesc.entries = layoutEntries.data();
-
-                            WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(state->device, &layoutDesc);
-
-                            auto jsLayout = state->engine->newObject();
-                            state->engine->setPrivateData(jsLayout, layout);
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Created bind group layout with " << entryCount << " entries" << std::endl;
-                            return jsLayout;
-                        }
-                    },
-
+                        &tnWebgpuHandler68
+                    , device},
                     // device.createBindGroup(descriptor)
                                             {"GPUDevice", "createBindGroup", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createBindGroup requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-                            auto layoutHandle = state->engine->getProperty(descriptor, "layout");
-                            WGPUBindGroupLayout layout = (WGPUBindGroupLayout)state->engine->getPrivateData(layoutHandle);
-                            if (!layout) {
-                                state->engine->throwException("Failed to create bind group");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto entries = state->engine->getProperty(descriptor, "entries");
-                            auto lengthProp = state->engine->getProperty(entries, "length");
-                            int entryCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
-
-                            std::vector<WGPUBindGroupEntry> bindGroupEntries;
-                            bindGroupEntries.reserve(entryCount);
-                            std::vector<WGPUTextureView> autoCreatedViews;
-
-                            auto releaseAutoCreatedViews = [&autoCreatedViews]() {
-                                for (auto v : autoCreatedViews) {
-                                    wgpuTextureViewRelease(v);
-                                }
-                            };
-                            auto failResource = [&](const std::string& resourceType, const std::string& reason, uint32_t binding) -> js::JSValueHandle {
-                                releaseAutoCreatedViews();
-                                const std::string message =
-                                    "Failed to create bind group: " + resourceType +
-                                    " at binding " + std::to_string(binding) + ": " + reason;
-                                state->engine->throwException(message.c_str());
-                                return state->engine->newUndefined();
-                            };
-
-                            for (int i = 0; i < entryCount; i++) {
-                                auto entry = state->engine->getPropertyIndex(entries, i);
-
-                                WGPUBindGroupEntry bgEntry = {};
-                                bgEntry.binding = (uint32_t)state->engine->toNumber(state->engine->getProperty(entry, "binding"));
-
-                                auto resource = state->engine->getProperty(entry, "resource");
-                                if (state->engine->isUndefined(resource) || state->engine->isNull(resource)) {
-                                    return failResource("resource", "resource handle is null or undefined", bgEntry.binding);
-                                }
-
-                                // Check if resource is a sampler (has no buffer property)
-                                auto bufferProp = state->engine->getProperty(resource, "buffer");
-                                if (!state->engine->isUndefined(bufferProp)) {
-                                    // Buffer binding: {buffer, offset?, size?}
-                                    bgEntry.buffer = (WGPUBuffer)state->engine->getPrivateData(bufferProp);
-                                    if (!bgEntry.buffer) {
-                                        return failResource("buffer", "native handle is null", bgEntry.binding);
-                                    }
-
-                                    auto offset = state->engine->getProperty(resource, "offset");
-                                    bgEntry.offset = state->engine->isUndefined(offset) ? 0 : (uint64_t)state->engine->toNumber(offset);
-
-                                    auto size = state->engine->getProperty(resource, "size");
-                                    // Size 0 means whole buffer
-                                    bgEntry.size = state->engine->isUndefined(size) ? WGPU_WHOLE_SIZE : (uint64_t)state->engine->toNumber(size);
-                                } else {
-                                    // Could be a sampler or texture view
-                                    void* resourcePtr = state->engine->getPrivateData(resource);
-
-                                    // Check for type hints set when creating the object
-                                    auto typeHint = state->engine->getProperty(resource, "_type");
-                                    if (!state->engine->isUndefined(typeHint)) {
-                                        std::string typeStr = state->engine->toString(typeHint);
-                                        if (typeStr == "sampler") {
-                                            if (resourcePtr) {
-                                                bgEntry.sampler = (WGPUSampler)resourcePtr;
-                                            } else {
-                                                return failResource("sampler", "native handle is null", bgEntry.binding);
-                                            }
-                                        } else if (typeStr == "textureView") {
-                                            if (resourcePtr) {
-                                                bgEntry.textureView = (WGPUTextureView)resourcePtr;
-                                            } else {
-                                                return failResource("texture view", "native handle is null", bgEntry.binding);
-                                            }
-                                        } else if (!resourcePtr) {
-                                            return failResource("resource", "native handle is null", bgEntry.binding);
-                                        }
-                                    } else if (resourcePtr) {
-                                        // No type hint - try to detect based on properties
-                                        // Check if it looks like a texture (has width/height/format properties)
-                                        auto widthProp = state->engine->getProperty(resource, "width");
-                                        auto formatProp = state->engine->getProperty(resource, "format");
-                                        if (!state->engine->isUndefined(widthProp) && !state->engine->isUndefined(formatProp)) {
-                                            // This is a texture, create a view automatically
-                                            WGPUTexture tex = (WGPUTexture)resourcePtr;
-                                            WGPUTextureViewDescriptor viewDesc = {};
-                                            WGPUTextureView view = wgpuTextureCreateView(tex, &viewDesc);
-                                            if (!view) {
-                                                return failResource("texture view", "native handle is null after automatic creation", bgEntry.binding);
-                                            }
-
-                                            autoCreatedViews.push_back(view);
-                                            bgEntry.textureView = view;
-                                            if (state->verboseLogging) std::cout << "[WebGPU] Auto-created texture view for binding " << bgEntry.binding << std::endl;
-                                        } else {
-                                            // Assume sampler as fallback
-                                            bgEntry.sampler = (WGPUSampler)resourcePtr;
-                                        }
-                                    } else {
-                                        return failResource("resource", "native handle is null", bgEntry.binding);
-                                    }
-                                }
-
-                                bindGroupEntries.push_back(bgEntry);
-                            }
-
-                            WGPUBindGroupDescriptor bgDesc = {};
-                            bgDesc.layout = layout;
-                            bgDesc.entryCount = bindGroupEntries.size();
-                            bgDesc.entries = bindGroupEntries.data();
-
-                            WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(state->device, &bgDesc);
-                            if (!bindGroup) {
-                                releaseAutoCreatedViews();
-                                state->engine->throwException("Failed to create bind group");
-                                return state->engine->newUndefined();
-                            }
-
-                            // Release auto-created texture views — Dawn holds its own
-                            // internal references through the bind group
-                            releaseAutoCreatedViews();
-
-                            auto jsBindGroup = state->engine->newObject();
-                            state->engine->setPrivateData(jsBindGroup, bindGroup);
-                            state->engine->registerRelease(jsBindGroup, [bindGroup]() {
-                                wgpuBindGroupRelease(bindGroup);
-                            });
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Created bind group with " << entryCount << " entries" << std::endl;
-                            return jsBindGroup;
-                        }
-                    },
-
+                        &tnWebgpuHandler69
+                    , device},
                     // device.createPipelineLayout(descriptor)
                                             {"GPUDevice", "createPipelineLayout", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createPipelineLayout requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-                            auto bindGroupLayouts = state->engine->getProperty(descriptor, "bindGroupLayouts");
-                            auto lengthProp = state->engine->getProperty(bindGroupLayouts, "length");
-                            int layoutCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
-
-                            std::vector<WGPUBindGroupLayout> layouts;
-                            layouts.reserve(layoutCount);
-
-                            for (int i = 0; i < layoutCount; i++) {
-                                auto layoutHandle = state->engine->getPropertyIndex(bindGroupLayouts, i);
-                                WGPUBindGroupLayout layout = (WGPUBindGroupLayout)state->engine->getPrivateData(layoutHandle);
-                                layouts.push_back(layout);
-                            }
-
-                            WGPUPipelineLayoutDescriptor layoutDesc = {};
-                            layoutDesc.bindGroupLayoutCount = layouts.size();
-                            layoutDesc.bindGroupLayouts = layouts.data();
-
-                            WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(state->device, &layoutDesc);
-
-                            auto jsLayout = state->engine->newObject();
-                            state->engine->setPrivateData(jsLayout, pipelineLayout);
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Created pipeline layout with " << layoutCount << " bind group layouts" << std::endl;
-                            return jsLayout;
-                        }
-                    },
-
+                        &tnWebgpuHandler70
+                    , device},
                     // device.createTextureView(texture, descriptor?) - Non-standard helper
                     // Workaround because texture.createView() can't easily access 'this'
                                             {"GPUDevice", "createTextureView", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createTextureView requires a texture");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto textureHandle = args[0];
-                            WGPUTexture texture = (WGPUTexture)state->engine->getPrivateData(textureHandle);
-
-                            if (!texture) {
-                                state->engine->throwException("createTextureView: invalid texture");
-                                return state->engine->newUndefined();
-                            }
-
-                            // Get texture info
-                            double formatEnum = state->engine->toNumber(state->engine->getProperty(textureHandle, "_formatEnum"));
-                            WGPUTextureFormat format = formatEnum == 0 ? state->surfaceFormat : (WGPUTextureFormat)(int)formatEnum;
-
-                            // Get format from _textureId if available
-                            auto textureIdVal = state->engine->getProperty(textureHandle, "_textureId");
-                            if (!state->engine->isUndefined(textureIdVal)) {
-                                uint64_t textureId = (uint64_t)state->engine->toNumber(textureIdVal);
-                                auto it = state->textureRegistry.find(textureId);
-                                if (it != state->textureRegistry.end()) {
-                                    format = it->second.format;
-                                }
-                            }
-
-                            WGPUTextureViewDescriptor viewDesc = {};
-                            viewDesc.format = format;
-                            viewDesc.dimension = WGPUTextureViewDimension_2D;
-                            viewDesc.baseMipLevel = 0;
-                            viewDesc.mipLevelCount = 1;
-                            viewDesc.baseArrayLayer = 0;
-                            viewDesc.arrayLayerCount = 1;
-                            viewDesc.aspect = WGPUTextureAspect_All;
-
-                            // Parse descriptor if provided
-                            if (args.size() > 1 && !state->engine->isUndefined(args[1])) {
-                                auto descriptor = args[1];
-
-                                auto formatProp = state->engine->getProperty(descriptor, "format");
-                                if (!state->engine->isUndefined(formatProp)) {
-                                    viewDesc.format = stringToFormat(state->engine->toString(formatProp));
-                                }
-
-                                auto dimensionProp = state->engine->getProperty(descriptor, "dimension");
-                                if (!state->engine->isUndefined(dimensionProp)) {
-                                    viewDesc.dimension = stringToTextureViewDimension(state->engine->toString(dimensionProp));
-                                }
-
-                                auto baseMipLevel = state->engine->getProperty(descriptor, "baseMipLevel");
-                                if (!state->engine->isUndefined(baseMipLevel)) {
-                                    viewDesc.baseMipLevel = (uint32_t)state->engine->toNumber(baseMipLevel);
-                                }
-
-                                auto mipLevelCount = state->engine->getProperty(descriptor, "mipLevelCount");
-                                if (!state->engine->isUndefined(mipLevelCount)) {
-                                    viewDesc.mipLevelCount = (uint32_t)state->engine->toNumber(mipLevelCount);
-                                }
-
-                                auto baseArrayLayer = state->engine->getProperty(descriptor, "baseArrayLayer");
-                                if (!state->engine->isUndefined(baseArrayLayer)) {
-                                    viewDesc.baseArrayLayer = (uint32_t)state->engine->toNumber(baseArrayLayer);
-                                }
-
-                                auto arrayLayerCount = state->engine->getProperty(descriptor, "arrayLayerCount");
-                                if (!state->engine->isUndefined(arrayLayerCount)) {
-                                    uint32_t requested = (uint32_t)state->engine->toNumber(arrayLayerCount);
-                                    // Clamp to 1 for surface textures (which only have 1 layer)
-                                    // or look up actual layer count from registry
-                                    auto textureIdVal2 = state->engine->getProperty(textureHandle, "_textureId");
-                                    uint32_t maxLayers = 1;
-                                    if (!state->engine->isUndefined(textureIdVal2)) {
-                                        uint64_t tid = (uint64_t)state->engine->toNumber(textureIdVal2);
-                                        auto it = state->textureRegistry.find(tid);
-                                        if (it != state->textureRegistry.end()) {
-                                            maxLayers = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 1;
-                                        }
-                                    }
-                                    viewDesc.arrayLayerCount = std::min(requested, maxLayers - viewDesc.baseArrayLayer);
-                                }
-
-                                auto aspect = state->engine->getProperty(descriptor, "aspect");
-                                if (!state->engine->isUndefined(aspect)) {
-                                    std::string aspectStr = state->engine->toString(aspect);
-                                    if (aspectStr == "all") viewDesc.aspect = WGPUTextureAspect_All;
-                                    else if (aspectStr == "stencil-only") viewDesc.aspect = WGPUTextureAspect_StencilOnly;
-                                    else if (aspectStr == "depth-only") viewDesc.aspect = WGPUTextureAspect_DepthOnly;
-                                }
-                            }
-
-                            // Final validation: Fix arrayLayerCount based on view dimension
-                            if (viewDesc.dimension == WGPUTextureViewDimension_3D ||
-                                viewDesc.dimension == WGPUTextureViewDimension_1D) {
-                                viewDesc.arrayLayerCount = 1;
-                            } else if (viewDesc.dimension == WGPUTextureViewDimension_Cube) {
-                                viewDesc.arrayLayerCount = 6;
-                            }
-
-                            WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
-
-                            auto jsView = state->engine->newObject();
-                            state->engine->setPrivateData(jsView, view);
-                            state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
-                            state->engine->registerRelease(jsView, [view]() {
-                                wgpuTextureViewRelease(view);
-                            });
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Created texture view" << std::endl;
-                            return jsView;
-                        }
-                    },
-
+                        &tnWebgpuHandler71
+                    , device},
                     // device.createRenderBundleEncoder(descriptor)
                     // Used by Three.js for mipmap generation
                                             {"GPUDevice", "createRenderBundleEncoder", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (args.empty()) {
-                                state->engine->throwException("createRenderBundleEncoder requires a descriptor");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto descriptor = args[0];
-
-                            // Parse color formats
-                            auto colorFormats = state->engine->getProperty(descriptor, "colorFormats");
-                            auto colorFormatsLength = state->engine->getProperty(colorFormats, "length");
-                            int colorFormatCount = state->engine->isUndefined(colorFormatsLength) ? 0 : (int)state->engine->toNumber(colorFormatsLength);
-
-                            std::vector<WGPUTextureFormat> formats;
-                            formats.reserve(colorFormatCount);
-                            for (int i = 0; i < colorFormatCount; i++) {
-                                auto formatProp = state->engine->getPropertyIndex(colorFormats, i);
-                                if (!state->engine->isUndefined(formatProp) && !state->engine->isNull(formatProp)) {
-                                    formats.push_back(stringToFormat(state->engine->toString(formatProp)));
-                                }
-                            }
-
-                            // Parse depth stencil format
-                            WGPUTextureFormat depthFormat = WGPUTextureFormat_Undefined;
-                            auto depthFormatProp = state->engine->getProperty(descriptor, "depthStencilFormat");
-                            if (!state->engine->isUndefined(depthFormatProp) && !state->engine->isNull(depthFormatProp)) {
-                                depthFormat = stringToFormat(state->engine->toString(depthFormatProp));
-                            }
-
-                            // Parse sample count
-                            uint32_t sampleCount = 1;
-                            auto sampleCountProp = state->engine->getProperty(descriptor, "sampleCount");
-                            if (!state->engine->isUndefined(sampleCountProp)) {
-                                sampleCount = (uint32_t)state->engine->toNumber(sampleCountProp);
-                            }
-
-                            WGPURenderBundleEncoderDescriptor desc = {};
-                            desc.colorFormatCount = formats.size();
-                            desc.colorFormats = formats.data();
-                            desc.depthStencilFormat = depthFormat;
-                            desc.sampleCount = sampleCount;
-
-                            WGPURenderBundleEncoder bundleEncoder = wgpuDeviceCreateRenderBundleEncoder(state->device, &desc);
-
-                            if (!bundleEncoder) {
-                                state->engine->throwException("Failed to create render bundle encoder");
-                                return state->engine->newUndefined();
-                            }
-
-                            auto jsEncoder = state->engine->newObject();
-                            state->engine->setPrivateData(jsEncoder, bundleEncoder);
-
-                            // Capture for closures
-                            WGPURenderBundleEncoder capturedEncoder = bundleEncoder;
-
-                            // renderBundleEncoder.setPipeline(pipeline)
-                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
-                                {"GPURenderBundleEncoder", "setPipeline", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.empty()) return state->engine->newUndefined();
-                                    WGPURenderPipeline pipeline = (WGPURenderPipeline)state->engine->getPrivateData(args[0]);
-                                    wgpuRenderBundleEncoderSetPipeline(capturedEncoder, pipeline);
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // renderBundleEncoder.setVertexBuffer(slot, buffer, offset?, size?)
-                                                            {"GPURenderBundleEncoder", "setVertexBuffer", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 2) return state->engine->newUndefined();
-                                    uint32_t slot = (uint32_t)state->engine->toNumber(args[0]);
-                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[1]);
-                                    uint64_t offset = args.size() > 2 && !state->engine->isUndefined(args[2]) ? (uint64_t)state->engine->toNumber(args[2]) : 0;
-                                    uint64_t size = args.size() > 3 && !state->engine->isUndefined(args[3]) ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
-                                    wgpuRenderBundleEncoderSetVertexBuffer(capturedEncoder, slot, buffer, offset, size);
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // renderBundleEncoder.setIndexBuffer(buffer, format, offset?, size?)
-                                                            {"GPURenderBundleEncoder", "setIndexBuffer", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 2) return state->engine->newUndefined();
-                                    WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
-                                    std::string formatStr = state->engine->toString(args[1]);
-                                    WGPUIndexFormat format = formatStr == "uint32" ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16;
-                                    uint64_t offset = args.size() > 2 && !state->engine->isUndefined(args[2]) ? (uint64_t)state->engine->toNumber(args[2]) : 0;
-                                    uint64_t size = args.size() > 3 && !state->engine->isUndefined(args[3]) ? (uint64_t)state->engine->toNumber(args[3]) : WGPU_WHOLE_SIZE;
-                                    wgpuRenderBundleEncoderSetIndexBuffer(capturedEncoder, buffer, format, offset, size);
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // renderBundleEncoder.setBindGroup(index, bindGroup, dynamicOffsets?)
-                                                            {"GPURenderBundleEncoder", "setBindGroup", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.size() < 2) return state->engine->newUndefined();
-                                    uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
-                                    WGPUBindGroup bindGroup = (WGPUBindGroup)state->engine->getPrivateData(args[1]);
-
-                                    // Parse dynamic offsets if provided
-                                    std::vector<uint32_t> dynamicOffsets;
-                                    if (args.size() > 2 && !state->engine->isUndefined(args[2])) {
-                                        auto offsetsArray = args[2];
-                                        auto lengthProp = state->engine->getProperty(offsetsArray, "length");
-                                        int offsetCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
-                                        for (int i = 0; i < offsetCount; i++) {
-                                            dynamicOffsets.push_back((uint32_t)state->engine->toNumber(state->engine->getPropertyIndex(offsetsArray, i)));
-                                        }
-                                    }
-
-                                    wgpuRenderBundleEncoderSetBindGroup(capturedEncoder, index, bindGroup, dynamicOffsets.size(), dynamicOffsets.data());
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // renderBundleEncoder.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
-                                                            {"GPURenderBundleEncoder", "draw", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.empty()) return state->engine->newUndefined();
-                                    uint32_t vertexCount = (uint32_t)state->engine->toNumber(args[0]);
-                                    uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
-                                    uint32_t firstVertex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
-                                    uint32_t firstInstance = args.size() > 3 ? (uint32_t)state->engine->toNumber(args[3]) : 0;
-                                    wgpuRenderBundleEncoderDraw(capturedEncoder, vertexCount, instanceCount, firstVertex, firstInstance);
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // renderBundleEncoder.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
-                                                            {"GPURenderBundleEncoder", "drawIndexed", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    if (args.empty()) return state->engine->newUndefined();
-                                    uint32_t indexCount = (uint32_t)state->engine->toNumber(args[0]);
-                                    uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
-                                    uint32_t firstIndex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
-                                    int32_t baseVertex = args.size() > 3 ? (int32_t)state->engine->toNumber(args[3]) : 0;
-                                    uint32_t firstInstance = args.size() > 4 ? (uint32_t)state->engine->toNumber(args[4]) : 0;
-                                    wgpuRenderBundleEncoderDrawIndexed(capturedEncoder, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
-                                    return state->engine->newUndefined();
-                                }
-                            },
-
-                            // renderBundleEncoder.finish(descriptor?)
-                                                            {"GPURenderBundleEncoder", "finish", 0, nullptr,
-                                [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                                    WGPURenderBundleDescriptor desc = {};
-                                    WGPURenderBundle bundle = wgpuRenderBundleEncoderFinish(capturedEncoder, &desc);
-
-                                    auto jsBundle = state->engine->newObject();
-                                    state->engine->setPrivateData(jsBundle, bundle);
-                                    state->engine->setProperty(jsBundle, "_type", state->engine->newString("renderBundle"));
-
-                                    if (state->verboseLogging) std::cout << "[WebGPU] Render bundle finished" << std::endl;
-                                    return jsBundle;
-                                }
-                            }}));
-
-                            if (state->verboseLogging) std::cout << "[WebGPU] Created render bundle encoder" << std::endl;
-                            return jsEncoder;
-                        }
-                    }}));
-
+                        &tnWebgpuHandler72
+                    , device}}));
                     // device.pushErrorScope(filter) - Push an error scope for validation/OOM/internal errors
                     // Used by Three.js for error handling during pipeline creation
-                    installBindingTable(state->engine, state, bindingTable(device, {
+                    installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "pushErrorScope", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            const std::string filterName = args.empty() ? "validation" : state->engine->toString(args[0]);
-                            WGPUErrorFilter filter;
-                            if (filterName == "validation") filter = WGPUErrorFilter_Validation;
-                            else if (filterName == "out-of-memory") filter = WGPUErrorFilter_OutOfMemory;
-                            else if (filterName == "internal") filter = WGPUErrorFilter_Internal;
-                            else {
-                                state->engine->throwException("GPUDevice.pushErrorScope received an unknown filter");
-                                return state->engine->newUndefined();
-                            }
-                            wgpuDevicePushErrorScope(state->device, filter);
-                            if (state->verboseLogging) {
-                                std::cout << "[WebGPU] pushErrorScope: " << filterName << std::endl;
-                            }
-                            return state->engine->newUndefined();
-                        }
-                    },
-
+                        &tnWebgpuHandler80
+                    , device},
                     // device.popErrorScope() - Pop an error scope and return Promise<GPUError | null>
                     // Returns Promise<GPUError | null>
                                             {"GPUDevice", "popErrorScope", 0, nullptr,
-                        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                            if (state->verboseLogging) {
-                                std::cout << "[WebGPU] popErrorScope" << std::endl;
-                            }
-                            auto* data = new ErrorScopeData();
-#if WGPU_USES_CALLBACK_INFO_PATTERN
-                            WGPUPopErrorScopeCallbackInfo callbackInfo = {};
-                            callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-                            callbackInfo.callback = onErrorScopePopped;
-                            callbackInfo.userdata1 = data;
-                            callbackInfo.userdata2 = nullptr;
-                            (void)wgpuDevicePopErrorScope(state->device, callbackInfo);
-#else
-                            wgpuDevicePopErrorScope(state->device, onErrorScopePopped, data);
-#endif
-                            if (!waitForWebGpuCallback(state, data->completed)) {
-                                releaseCallbackData(data);
-                                return rejectedPromise(state,
-                                    "GPUDevice.popErrorScope timed out waiting for native observation.",
-                                    "popErrorScope-timeout"
-                                );
-                            }
-#if WGPU_USES_CALLBACK_INFO_PATTERN
-                            const WGPUPopErrorScopeStatus popStatus = data->status;
-                            if (popStatus != WGPUPopErrorScopeStatus_Success) {
-                                releaseCallbackData(data);
-                                return rejectedPromise(state,
-                                    "GPUDevice.popErrorScope failed with native status "
-                                        + std::to_string(static_cast<int>(popStatus)),
-                                    "popErrorScope-status"
-                                );
-                            }
-#endif
-                            const WGPUErrorType errorType = data->type;
-                            const std::string errorMessage = data->message;
-                            releaseCallbackData(data);
-                            if (errorType == WGPUErrorType_NoError) {
-                            return resolvedPromise(state, "null", "popErrorScope-empty");
-                            }
-                            const std::string errorExpression = "{ name: "
-                                + jsStringLiteral(gpuErrorName(errorType))
-                                + ", message: " + jsStringLiteral(errorMessage) + " }";
-                            return resolvedPromise(state, errorExpression, "popErrorScope-observed");
-                        }
-                    }}));
-
+                        &tnWebgpuHandler81
+                    , device}}));
                     // device.lost - Promise that resolves when the device is lost
                     // Required by Three.js WebGPU renderer during init
                     // We create a Promise that never resolves (device never lost in normal operation)
@@ -4853,42 +4510,30 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                         "device.lost"
                     );
                     state->engine->setProperty(device, "lost", deviceLostPromise);
-
                     // Return the device directly
                     // await on a non-Promise just returns the value
                     return device;
-                }
-            }}));
+}
 
+static js::JSValueHandle tnWebgpuHandler20(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            // In native runtime, we already have an adapter, so just return a mock adapter object
+            auto adapter = state->engine->newObject();
+            // adapter.requestDevice()
+            installBindingTable(state->engine, state, bindingTable({
+                {"GPUAdapter", "requestDevice", 0, nullptr,
+                &tnWebgpuHandler21
+            , adapter}}));
             // adapter.features - Set-like object that is also iterable
             // We use an array for iteration support with a has() method added
             // Dawn supports indirect-first-instance on Metal which is required for indirect draws
             // with non-zero firstInstance values
             auto features = state->engine->newArray(0);
-            installBindingTable(state->engine, state, bindingTable(features, {
+            installBindingTable(state->engine, state, bindingTable({
                 {"GPUSupportedFeatures", "has", 0, nullptr,
-                [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-                    if (args.empty()) return state->engine->newBoolean(false);
-                    std::string featureName = state->engine->toString(args[0]);
-                    // indirect-first-instance is required for indirect draws with non-zero firstInstance
-                    // This is supported by Dawn on all backends
-                    if (featureName == "indirect-first-instance") {
-                        return state->engine->newBoolean(true);
-                    }
-                    // timestamp-query is NOT supported yet - bindings not implemented
-                    if (featureName == "timestamp-query") {
-                        return state->engine->newBoolean(false);
-                    }
-                    // Answered from the real adapter so feature-dependent consumers (three's
-                    // KTX2Loader.detectSupport among them) request what the hardware has.
-                    WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
-                    if (feature == static_cast<WGPUFeatureName>(0)) return state->engine->newBoolean(false);
-                    return state->engine->newBoolean(wgpuAdapterHasFeature(state->adapter, feature) != 0);
-                }
-            }}));
+                &tnWebgpuHandler82
+            , features}}));
             state->engine->setProperty(features, "size", state->engine->newNumber(1));
             state->engine->setProperty(adapter, "features", features);
-
             // adapter.limits
             auto limits = state->engine->newObject();
             state->engine->setProperty(limits, "maxTextureDimension2D", state->engine->newNumber(8192));
@@ -4904,22 +4549,429 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
             state->engine->setProperty(limits, "maxStorageBuffersPerShaderStage", state->engine->newNumber(8));
             state->engine->setProperty(limits, "maxDynamicUniformBuffersPerPipelineLayout", state->engine->newNumber(8));
             state->engine->setProperty(adapter, "limits", limits);
-
             // Return the adapter directly
             // await on a non-Promise just returns the value
             // Three.js: const adapter = await navigator.gpu.requestAdapter()
             // This works whether we return a Promise or the adapter directly
             return adapter;
-        }
-    }}));
+}
+
+static js::JSValueHandle tnWebgpuHandler19(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            return args.empty() ? state->engine->newUndefined() : args[0];
+}
+
+static js::JSValueHandle tnWebgpuHandler18(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            return args.empty() ? state->engine->newUndefined() : args[0];
+}
+
+static js::JSValueHandle tnWebgpuHandler17(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                        // Get dimensions from the main canvas if available
+                        auto rect = state->engine->newObject();
+                        state->engine->setProperty(rect, "x", state->engine->newNumber(0));
+                        state->engine->setProperty(rect, "y", state->engine->newNumber(0));
+                        state->engine->setProperty(rect, "width", state->engine->newNumber(state->canvasWidth));
+                        state->engine->setProperty(rect, "height", state->engine->newNumber(state->canvasHeight));
+                        state->engine->setProperty(rect, "top", state->engine->newNumber(0));
+                        state->engine->setProperty(rect, "left", state->engine->newNumber(0));
+                        state->engine->setProperty(rect, "right", state->engine->newNumber(state->canvasWidth));
+                        state->engine->setProperty(rect, "bottom", state->engine->newNumber(state->canvasHeight));
+                        return rect;
+}
+
+static js::JSValueHandle tnWebgpuHandler16(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                        std::string mimeType = "image/png";
+                        if (!a.empty()) {
+                            mimeType = state->engine->toString(a[0]);
+                        }
+                        // Return a minimal data URI (for @loaders.gl WebP detection)
+                        if (mimeType.find("webp") != std::string::npos) {
+                            return state->engine->newString("data:image/webp;base64,");
+                        }
+                        return state->engine->newString("data:image/png;base64,");
+}
+
+static js::JSValueHandle tnWebgpuHandler15(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& contextArgs) {
+    const int canvasId = static_cast<int>(state->engine->toNumber(state->engine->getProperty(bindingDestination, "_offscreenCanvasId")));
+                    if (contextArgs.empty()) {
+                        return state->engine->newNull();
+                    }
+                    std::string contextType = state->engine->toString(contextArgs[0]);
+                    // Use the captured canvasId to find the correct canvas
+                    // This ensures each canvas element's getContext returns its own context
+                    auto it = state->offscreenCanvases.find(canvasId);
+                    if (it == state->offscreenCanvases.end()) {
+                        std::cerr << "[Canvas] Canvas not found: " << canvasId << std::endl;
+                        return state->engine->newNull();
+                    }
+                    OffscreenCanvas* canvas = it->second.get();
+                    if (contextType == "2d") {
+                        // Return cached context if already created
+                        if (canvas->hasContext2d) {
+                            return canvas->context2d;
+                        }
+                        // Get current dimensions from the canvas element (in case they were changed)
+                        std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
+                        auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
+                        if (!state->engine->isNull(canvasElement) && !state->engine->isUndefined(canvasElement)) {
+                            auto widthProp = state->engine->getProperty(canvasElement, "width");
+                            auto heightProp = state->engine->getProperty(canvasElement, "height");
+                            if (!state->engine->isUndefined(widthProp)) {
+                                canvas->width = static_cast<int>(state->engine->toNumber(widthProp));
+                            }
+                            if (!state->engine->isUndefined(heightProp)) {
+                                canvas->height = static_cast<int>(state->engine->toNumber(heightProp));
+                            }
+                        }
+                        // Create Canvas 2D context
+                        if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
+                        canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
+                        canvas->hasContext2d = true;
+                        state->engine->protect(canvas->context2d);
+                        return canvas->context2d;
+                    }
+                    if (contextType == "webgpu") {
+                        // Create GPUCanvasContext for offscreen canvas
+                        // This shares the main surface/device for simplicity
+                        if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen WebGPU context" << std::endl;
+                        // Suspend frame tracking - this context persists across frames
+                        state->engine->suspendFrameTracking();
+                        auto canvasContext = state->engine->newObject();
+                        // Store reference to our surface
+                        state->engine->setPrivateData(canvasContext, state->surface);
+                        // context.canvas - reference back to canvas element
+                        std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
+                        auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
+                        state->engine->setProperty(canvasContext, "canvas", canvasElement);
+                        installCanvasContextBindings(state, canvasContext, true);
+                        state->engine->resumeFrameTracking();
+                        return canvasContext;
+                    }
+                    // Ignore webgl requests silently (PixiJS feature detection)
+                    if (contextType == "webgl" || contextType == "webgl2" || contextType == "experimental-webgl") {
+                        return state->engine->newNull();
+                    }
+                    std::cerr << "[Canvas] Unsupported context type: " << contextType << std::endl;
+                    return state->engine->newNull();
+}
+
+static js::JSValueHandle tnWebgpuHandler14(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    const auto mainCanvas = state->engine->getGlobalProperty("canvas");
+    const auto element = bindingDestination;
+                        const auto request = state->engine->getProperty(mainCanvas, "requestPointerLock");
+                        const auto result = state->engine->call(request, mainCanvas, args);
+                        const auto document = state->engine->getGlobalProperty("document");
+                        state->engine->setProperty(document, "pointerLockElement", element);
+                        const auto event = state->engine->newObject();
+                        state->engine->setProperty(event, "type", state->engine->newString("pointerlockchange"));
+                        const auto dispatch = state->engine->getProperty(document, "dispatchEvent");
+                        state->engine->call(dispatch, document, {event});
+                        return result;
+}
+
+static js::JSValueHandle tnWebgpuHandler13(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    const auto mainCanvas = state->engine->getGlobalProperty("canvas");
+                        const auto dispatch = state->engine->getProperty(mainCanvas, "dispatchEvent");
+                        return state->engine->call(dispatch, mainCanvas, args);
+}
+
+static js::JSValueHandle tnWebgpuHandler12(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    const auto mainCanvas = state->engine->getGlobalProperty("canvas");
+                        const auto remove = state->engine->getProperty(mainCanvas, "removeEventListener");
+                        return state->engine->call(remove, mainCanvas, args);
+}
+
+static js::JSValueHandle tnWebgpuHandler11(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    const auto mainCanvas = state->engine->getGlobalProperty("canvas");
+                        const auto add = state->engine->getProperty(mainCanvas, "addEventListener");
+                        return state->engine->call(add, mainCanvas, args);
+}
+
+static js::JSValueHandle tnWebgpuHandler10(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler09(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                    // No-op in native runtime
+                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler08(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                    // No-op in native runtime - element is not attached to DOM
+                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle tnWebgpuHandler07(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                    return a.empty() ? state->engine->newUndefined() : a[0];
+}
+
+static js::JSValueHandle tnWebgpuHandler06(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                    return a.empty() ? state->engine->newUndefined() : a[0];
+}
+
+static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            auto element = state->engine->newObject();
+            // Get tag name if provided
+            std::string tagName = "";
+            if (!args.empty()) {
+                tagName = state->engine->toString(args[0]);
+            }
+            // Add basic DOM element properties
+            state->engine->setProperty(element, "style", state->engine->newObject());
+            state->engine->setProperty(element, "className", state->engine->newString(""));
+            state->engine->setProperty(element, "innerHTML", state->engine->newString(""));
+            state->engine->setProperty(element, "textContent", state->engine->newString(""));
+            state->engine->setProperty(element, "tagName", state->engine->newString(tagName.c_str()));
+            installBindingTable(state->engine, state, bindingTable({
+                {"HTMLElement", "appendChild", 0, nullptr,
+                &tnWebgpuHandler06
+            , element},
+                {"HTMLElement", "removeChild", 0, nullptr,
+                &tnWebgpuHandler07
+            , element},
+                {"HTMLElement", "remove", 0, nullptr,
+                &tnWebgpuHandler08
+            , element},
+                {"HTMLElement", "addEventListener", 0, nullptr,
+                &tnWebgpuHandler09
+            , element},
+                {"HTMLElement", "removeEventListener", 0, nullptr,
+                &tnWebgpuHandler10
+            , element}}));
+            // Special handling for canvas elements - add Canvas 2D support
+            if (tagName == "canvas" || tagName == "CANVAS") {
+                // Three's renderer creates its surface through document.createElement('canvas'),
+                // while the runtime's SDL input dispatches to the main canvas exposed by
+                // document.getElementById('canvas'). Forward the event surface so a renderer
+                // canvas receives the same pointer and pointer-lock events on native.
+                const auto mainCanvas = state->engine->getGlobalProperty("canvas");
+                installBindingTable(state->engine, state, bindingTable({
+                    {"HTMLCanvasElement", "addEventListener", 0, nullptr,
+                    &tnWebgpuHandler11
+                , element},
+                    {"HTMLCanvasElement", "removeEventListener", 0, nullptr,
+                    &tnWebgpuHandler12
+                , element},
+                    {"HTMLCanvasElement", "dispatchEvent", 0, nullptr,
+                    &tnWebgpuHandler13
+                , element},
+                    {"HTMLCanvasElement", "requestPointerLock", 0, nullptr,
+                    &tnWebgpuHandler14
+                , element}}));
+                // Create OffscreenCanvas struct to store state
+                int canvasId = state->nextOffscreenCanvasId++;
+                auto offscreenCanvas = std::make_unique<OffscreenCanvas>();
+                OffscreenCanvas* canvasPtr = offscreenCanvas.get();
+                state->offscreenCanvases[canvasId] = std::move(offscreenCanvas);
+                // Store the canvas ID as private data for getContext lookup
+                state->engine->setPrivateData(element, reinterpret_cast<void*>(static_cast<intptr_t>(canvasId)));
+                // Also store as property for debugging
+                state->engine->setProperty(element, "_offscreenCanvasId", state->engine->newNumber(canvasId));
+                // Default canvas dimensions (stored in struct)
+                state->engine->setProperty(element, "width", state->engine->newNumber(canvasPtr->width));
+                state->engine->setProperty(element, "height", state->engine->newNumber(canvasPtr->height));
+                // Store reference to element globally so getContext can find it
+                std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
+                state->engine->setGlobalProperty(globalName.c_str(), element);
+                // Create getContext function
+                // Capture canvasId to ensure each canvas element's getContext uses its own canvas
+                // This fixes the bug where all canvases shared the same context
+                installBindingTable(state->engine, state, bindingTable({
+                    {"HTMLCanvasElement", "getContext", 0, nullptr,
+                    &tnWebgpuHandler15
+                , element}}));
+                if (state->verboseLogging) std::cout << "[Canvas] Created offscreen canvas " << canvasId << std::endl;
+                // toDataURL for compatibility (returns empty data URI)
+                installBindingTable(state->engine, state, bindingTable({
+                    {"HTMLCanvasElement", "toDataURL", 0, nullptr,
+                    &tnWebgpuHandler16
+                , element},
+                // getBoundingClientRect - return canvas dimensions
+                    {"HTMLCanvasElement", "getBoundingClientRect", 0, nullptr,
+                    &tnWebgpuHandler17
+                , element}}));
+            }
+            return element;
+}
+
+static js::JSValueHandle tnWebgpuHandler04(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            // Check if querying for canvas
+            if (!args.empty()) {
+                std::string selector = state->engine->toString(args[0]);
+                if (selector == "canvas" || selector.find("canvas") != std::string::npos) {
+                    return state->engine->getGlobalProperty("canvas");
+                }
+            }
+            return state->engine->newNull();
+}
+
+static js::JSValueHandle tnWebgpuHandler03(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            if (args.empty()) {
+                return state->engine->newNull();
+            }
+            std::string contextType = state->engine->toString(args[0]);
+            // Handle Canvas 2D context
+            if (contextType == "2d") {
+                if (state->verboseLogging) std::cout << "[Canvas] Creating 2D context (" << state->canvasWidth << "x" << state->canvasHeight << ")" << std::endl;
+                auto ctx2d = canvas::createCanvas2DContext(state->engine, state->canvasWidth, state->canvasHeight);
+                // Set reference back to canvas
+                auto canvas = state->engine->getGlobalProperty("canvas");
+                state->engine->setProperty(ctx2d, "canvas", canvas);
+                // Store the native context for Canvas 2D to WebGPU compositing
+                state->mainCanvas2DContext = static_cast<canvas::Canvas2DContext*>(state->engine->getPrivateData(ctx2d));
+                if (state->verboseLogging) std::cout << "[Canvas] Main canvas using 2D context - will composite to WebGPU" << std::endl;
+                return ctx2d;
+            }
+            if (contextType != "webgpu") {
+                std::cerr << "[Canvas] Unknown context type: " << contextType << std::endl;
+                return state->engine->newNull();
+            }
+            // Create GPUCanvasContext
+            auto canvasContext = state->engine->newObject();
+            // Store reference to our surface
+            state->engine->setPrivateData(canvasContext, state->surface);
+            // context.canvas - reference back to canvas
+            auto canvas = state->engine->getGlobalProperty("canvas");
+            state->engine->setProperty(canvasContext, "canvas", canvas);
+            installCanvasContextBindings(state, canvasContext, false);
+            if (state->verboseLogging) std::cout << "[Canvas] WebGPU context created" << std::endl;
+            return canvasContext;
+}
+
+static js::JSValueHandle tnWebgpuHandler02(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            return args.empty() ? state->engine->newUndefined() : args[0];
+}
+
+static js::JSValueHandle tnWebgpuHandler01(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+            // No-op in native runtime
+            return args.empty() ? state->engine->newUndefined() : args[0];
+}/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
+static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {
+    // ========================================================================
+    // Create a mock parent element for the canvas (needed by Debugger)
+    // ========================================================================
+    auto parentElement = engine->newObject();
+    engine->setProperty(parentElement, "style", engine->newObject());
+    installBindingTable(state->engine, state, bindingTable({
+        {"HTMLElement", "appendChild", 0, nullptr,
+        &tnWebgpuHandler01
+    , parentElement},
+        {"HTMLElement", "removeChild", 0, nullptr,
+        &tnWebgpuHandler02
+    , parentElement}}));
+
+    // ========================================================================
+    // Get existing canvas from runtime.cpp's document.getElementById
+    // The canvas was created by setupDOMEvents() with addEventListener, style, etc.
+    // We just need to add WebGPU-specific methods (getContext) to it.
+    // ========================================================================
+    auto existingDocument = engine->getGlobalProperty("document");
+    auto getElementByIdFunc = engine->getProperty(existingDocument, "getElementById");
+
+    // Call document.getElementById('canvas') to get the existing canvas
+    std::vector<js::JSValueHandle> args;
+    args.push_back(engine->newString("canvas"));
+    auto canvasObject = engine->call(getElementByIdFunc, existingDocument, args);
+
+    if (engine->isNull(canvasObject) || engine->isUndefined(canvasObject)) {
+        std::cerr << "[WebGPU] Warning: No existing canvas found, creating new one" << std::endl;
+        canvasObject = engine->newObject();
+        engine->setProperty(canvasObject, "width", engine->newNumber(state->canvasWidth));
+        engine->setProperty(canvasObject, "height", engine->newNumber(state->canvasHeight));
+        engine->setProperty(canvasObject, "clientWidth", engine->newNumber(state->canvasWidth));
+        engine->setProperty(canvasObject, "clientHeight", engine->newNumber(state->canvasHeight));
+    }
+
+    // Update canvas dimensions (in case they differ)
+    engine->setProperty(canvasObject, "width", engine->newNumber(state->canvasWidth));
+    engine->setProperty(canvasObject, "height", engine->newNumber(state->canvasHeight));
+    engine->setProperty(canvasObject, "clientWidth", engine->newNumber(state->canvasWidth));
+    engine->setProperty(canvasObject, "clientHeight", engine->newNumber(state->canvasHeight));
+
+    // canvas.parentElement - mock parent element (for Debugger compatibility)
+    engine->setProperty(canvasObject, "parentElement", parentElement);
+
+    // canvas.getContext('webgpu') -> GPUCanvasContext
+    // This is the WebGPU-specific method we add to the existing canvas
+    installBindingTable(state->engine, state, bindingTable({
+        {"HTMLCanvasElement", "getContext", 0, nullptr,
+        &tnWebgpuHandler03
+    , canvasObject}}));
+
+    // Set global canvas - this is the SAME object as document.getElementById('canvas')
+    // so it now has both WebGPU getContext AND event listener support
+    engine->setGlobalProperty("canvas", canvasObject);
+
+    // ========================================================================
+    // Add missing methods to the existing document (from runtime.cpp)
+    // We DON'T create a new document - just augment the existing one
+    // ========================================================================
+
+    // Add querySelector to existing document (if not present)
+    installBindingTable(state->engine, state, bindingTable({
+        {"Document", "querySelector", 0, nullptr,
+        &tnWebgpuHandler04
+    , existingDocument},
+
+    // Add createElement to existing document
+    // NOTE: runtime.cpp sets up a createElement with canvas support (toDataURL) for @loaders.gl WebP detection
+    // We ALWAYS override it here to add proper Canvas 2D support for offscreen canvases
+        {"Document", "createElement", 0, nullptr,
+        &tnWebgpuHandler05
+    , existingDocument}}));
+
+    // Add document.body if not present, or enhance existing body with required methods
+    auto existingBody = engine->getProperty(existingDocument, "body");
+    if (engine->isUndefined(existingBody) || engine->isNull(existingBody)) {
+        existingBody = engine->newObject();
+        engine->setProperty(existingDocument, "body", existingBody);
+    }
+    // Always add/update these methods on body
+    engine->setProperty(existingBody, "style", engine->newObject());
+    installBindingTable(state->engine, state, bindingTable({
+        {"HTMLElement", "appendChild", 0, nullptr,
+        &tnWebgpuHandler18
+    , existingBody},
+        {"HTMLElement", "removeChild", 0, nullptr,
+        &tnWebgpuHandler19
+    , existingBody}}));
+
+    // ========================================================================
+    // Navigator object
+    // ========================================================================
+    auto navigatorHandle = engine->getGlobalProperty("navigator");
+    if (engine->isUndefined(navigatorHandle)) {
+        navigatorHandle = engine->newObject();
+        engine->setGlobalProperty("navigator", navigatorHandle);
+    }
+
+    // Add common navigator properties for browser compatibility
+    // PixiJS and other libraries check these for feature detection
+    engine->setProperty(navigatorHandle, "userAgent",
+        engine->newString("Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"));
+    engine->setProperty(navigatorHandle, "platform", engine->newString("MystralNative"));
+    engine->setProperty(navigatorHandle, "vendor", engine->newString("Mystral Engine"));
+    engine->setProperty(navigatorHandle, "language", engine->newString("en-US"));
+    engine->setProperty(navigatorHandle, "languages", engine->newArray(1));  // ["en-US"]
+    engine->setProperty(navigatorHandle, "onLine", engine->newBoolean(true));
+    engine->setProperty(navigatorHandle, "hardwareConcurrency", engine->newNumber(8));
+    engine->setProperty(navigatorHandle, "maxTouchPoints", engine->newNumber(0));
+
+    // Create navigator.gpu object
+    auto gpuObject = engine->newObject();
+
+    // ========================================================================
+    // navigator.gpu.requestAdapter()
+    // ========================================================================
+    installBindingTable(state->engine, state, bindingTable({
+        {"GPU", "requestAdapter", 0, nullptr,
+        &tnWebgpuHandler20
+    , gpuObject}}));
 
     // navigator.gpu.getPreferredCanvasFormat()
-    installBindingTable(state->engine, state, bindingTable(gpuObject, {
+    installBindingTable(state->engine, state, bindingTable({
         {"GPU", "getPreferredCanvasFormat", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            return state->engine->newString(formatToString(state->surfaceFormat));
-        }
-    }}));
+        &tnWebgpuHandler83
+    , gpuObject}}));
 
     // Set navigator.gpu
     engine->setProperty(navigatorHandle, "gpu", gpuObject);
@@ -4969,86 +5021,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // Note: PNG/JPEG supported via stb_image. WebP supported via libwebp (when MYSTRAL_HAS_WEBP defined).
 
     // Native helper that decodes image data synchronously
-    installBindingTable(state->engine, state, bindingTable(state->engine->getGlobal(), {
+    installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "__decodeImageData", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            if (args.empty()) {
-                state->engine->throwException("__decodeImageData requires an ArrayBuffer argument");
-                return state->engine->newUndefined();
-            }
-
-            // Get ArrayBuffer data
-            size_t inputSize = 0;
-            void* inputData = state->engine->getArrayBufferData(args[0], &inputSize);
-
-            if (!inputData || inputSize == 0) {
-                state->engine->throwException("__decodeImageData: invalid ArrayBuffer");
-                return state->engine->newUndefined();
-            }
-
-            const unsigned char* inputBytes = (const unsigned char*)inputData;
-            int width = 0, height = 0;
-            unsigned char* data = nullptr;
-            bool isWebP = false;
-
-            // Check if this is a WebP image (starts with "RIFF" and has "WEBP" at offset 8)
-            if (inputSize >= 12 &&
-                inputBytes[0] == 'R' && inputBytes[1] == 'I' &&
-                inputBytes[2] == 'F' && inputBytes[3] == 'F' &&
-                inputBytes[8] == 'W' && inputBytes[9] == 'E' &&
-                inputBytes[10] == 'B' && inputBytes[11] == 'P') {
-                isWebP = true;
-            }
-
-            if (isWebP) {
-#ifdef MYSTRAL_HAS_WEBP
-                // Decode WebP using libwebp
-                data = WebPDecodeRGBA(inputBytes, inputSize, &width, &height);
-                if (!data) {
-                    state->engine->throwException("Failed to decode WebP image");
-                    return state->engine->newUndefined();
-                }
-                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded WebP " << width << "x" << height << " image" << std::endl;
-#else
-                state->engine->throwException("WebP image detected but libwebp support not compiled in. Rebuild with MYSTRAL_HAS_WEBP.");
-                return state->engine->newUndefined();
-#endif
-            } else {
-                // Decode using stb_image (PNG, JPEG, etc.)
-                int channels;
-                data = stbi_load_from_memory(inputBytes, (int)inputSize, &width, &height, &channels, 4);
-                if (!data) {
-                    std::string error = std::string("Failed to decode image: ") + stbi_failure_reason();
-                    state->engine->throwException(error.c_str());
-                    return state->engine->newUndefined();
-                }
-                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded " << width << "x" << height << " image" << std::endl;
-            }
-
-            // Create ImageBitmap-like object
-            auto result = state->engine->newObject();
-
-            // Create ArrayBuffer with RGBA pixel data
-            size_t dataSize = width * height * 4;
-            auto arrayBuffer = state->engine->newArrayBuffer(data, dataSize);
-
-            state->engine->setProperty(result, "width", state->engine->newNumber(width));
-            state->engine->setProperty(result, "height", state->engine->newNumber(height));
-            state->engine->setProperty(result, "_data", arrayBuffer);  // Internal pixel data
-            state->engine->setProperty(result, "_closed", state->engine->newBoolean(false));
-
-            // Free decoded data (we copied it to ArrayBuffer)
-            if (isWebP) {
-#ifdef MYSTRAL_HAS_WEBP
-                WebPFree(data);
-#endif
-            } else {
-                stbi_image_free(data);
-            }
-
-            return result;
-        }
-    }}));
+        &tnWebgpuHandler84
+    , state->engine->getGlobal()}}));
 
     // JavaScript polyfill for createImageBitmap
     const char* imageBitmapPolyfill = R"(
@@ -5147,240 +5123,13 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // Mystral.loadGLTF() - deprecated native GLTF/GLB file loader
     // =========================================================================
     // Default builds intentionally do not expose this; use upstream Three.js GLTFLoader.
-    installBindingTable(state->engine, state, bindingTable(mystralNamespace, {
+    installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "loadGLTF", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            if (args.empty()) {
-                state->engine->throwException("loadGLTF requires a file path argument");
-                return state->engine->newUndefined();
-            }
-
-            std::string path = state->engine->toString(args[0]);
-            if (state->verboseLogging) std::cout << "[GLTF] Loading: " << path << std::endl;
-
-            auto gltfData = mystral::gltf::loadGLTF(path);
-            if (!gltfData) {
-                state->engine->throwException(("Failed to load GLTF file: " + path).c_str());
-                return state->engine->newUndefined();
-            }
-
-            // Convert to JavaScript object
-            auto result = state->engine->newObject();
-
-            // Meshes array
-            auto jsMeshes = state->engine->newArray();
-            for (size_t mi = 0; mi < gltfData->meshes.size(); mi++) {
-                const auto& mesh = gltfData->meshes[mi];
-                auto jsMesh = state->engine->newObject();
-                state->engine->setProperty(jsMesh, "name", state->engine->newString(mesh.name.c_str()));
-
-                // Primitives array
-                auto jsPrimitives = state->engine->newArray();
-                for (size_t pi = 0; pi < mesh.primitives.size(); pi++) {
-                    const auto& prim = mesh.primitives[pi];
-                    auto jsPrim = state->engine->newObject();
-
-                    // Positions Float32Array
-                    if (!prim.positions.data.empty()) {
-                        auto posArr = state->engine->createFloat32Array(
-                            prim.positions.data.data(),
-                            prim.positions.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "positions", posArr);
-                        state->engine->setProperty(jsPrim, "positionCount",
-                            state->engine->newNumber((double)prim.positions.count));
-                    }
-
-                    // Normals Float32Array
-                    if (!prim.normals.data.empty()) {
-                        auto normArr = state->engine->createFloat32Array(
-                            prim.normals.data.data(),
-                            prim.normals.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "normals", normArr);
-                    }
-
-                    // Texcoords Float32Array
-                    if (!prim.texcoords.data.empty()) {
-                        auto uvArr = state->engine->createFloat32Array(
-                            prim.texcoords.data.data(),
-                            prim.texcoords.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "texcoords", uvArr);
-                    }
-
-                    // Tangents Float32Array
-                    if (!prim.tangents.data.empty()) {
-                        auto tanArr = state->engine->createFloat32Array(
-                            prim.tangents.data.data(),
-                            prim.tangents.data.size()
-                        );
-                        state->engine->setProperty(jsPrim, "tangents", tanArr);
-                    }
-
-                    // Indices Uint32Array
-                    if (!prim.indices.empty()) {
-                        auto idxArr = state->engine->createUint32Array(
-                            prim.indices.data(),
-                            prim.indices.size()
-                        );
-                        state->engine->setProperty(jsPrim, "indices", idxArr);
-                        state->engine->setProperty(jsPrim, "indexCount",
-                            state->engine->newNumber((double)prim.indices.size()));
-                    }
-
-                    state->engine->setProperty(jsPrim, "materialIndex",
-                        state->engine->newNumber((double)prim.materialIndex));
-
-                    state->engine->setPropertyIndex(jsPrimitives, pi, jsPrim);
-                }
-                state->engine->setProperty(jsMesh, "primitives", jsPrimitives);
-                state->engine->setPropertyIndex(jsMeshes, mi, jsMesh);
-            }
-            state->engine->setProperty(result, "meshes", jsMeshes);
-
-            // Materials array
-            auto jsMaterials = state->engine->newArray();
-            for (size_t mi = 0; mi < gltfData->materials.size(); mi++) {
-                const auto& mat = gltfData->materials[mi];
-                auto jsMat = state->engine->newObject();
-                state->engine->setProperty(jsMat, "name", state->engine->newString(mat.name.c_str()));
-
-                // PBR factors
-                auto baseColor = state->engine->newArray();
-                for (int i = 0; i < 4; i++) {
-                    state->engine->setPropertyIndex(baseColor, i, state->engine->newNumber(mat.baseColorFactor[i]));
-                }
-                state->engine->setProperty(jsMat, "baseColorFactor", baseColor);
-                state->engine->setProperty(jsMat, "metallicFactor", state->engine->newNumber(mat.metallicFactor));
-                state->engine->setProperty(jsMat, "roughnessFactor", state->engine->newNumber(mat.roughnessFactor));
-
-                // Emissive
-                auto emissive = state->engine->newArray();
-                for (int i = 0; i < 3; i++) {
-                    state->engine->setPropertyIndex(emissive, i, state->engine->newNumber(mat.emissiveFactor[i]));
-                }
-                state->engine->setProperty(jsMat, "emissiveFactor", emissive);
-
-                // Texture indices
-                state->engine->setProperty(jsMat, "baseColorTextureIndex",
-                    state->engine->newNumber(mat.baseColorTexture.imageIndex));
-                state->engine->setProperty(jsMat, "metallicRoughnessTextureIndex",
-                    state->engine->newNumber(mat.metallicRoughnessTexture.imageIndex));
-                state->engine->setProperty(jsMat, "normalTextureIndex",
-                    state->engine->newNumber(mat.normalTexture.imageIndex));
-                state->engine->setProperty(jsMat, "occlusionTextureIndex",
-                    state->engine->newNumber(mat.occlusionTexture.imageIndex));
-                state->engine->setProperty(jsMat, "emissiveTextureIndex",
-                    state->engine->newNumber(mat.emissiveTexture.imageIndex));
-
-                state->engine->setProperty(jsMat, "normalScale", state->engine->newNumber(mat.normalScale));
-                state->engine->setProperty(jsMat, "occlusionStrength", state->engine->newNumber(mat.occlusionStrength));
-                state->engine->setProperty(jsMat, "alphaCutoff", state->engine->newNumber(mat.alphaCutoff));
-                state->engine->setProperty(jsMat, "doubleSided", state->engine->newBoolean(mat.doubleSided));
-
-                const char* alphaModeStr = "OPAQUE";
-                if (mat.alphaMode == mystral::gltf::MaterialData::AlphaMode::Mask) alphaModeStr = "MASK";
-                else if (mat.alphaMode == mystral::gltf::MaterialData::AlphaMode::Blend) alphaModeStr = "BLEND";
-                state->engine->setProperty(jsMat, "alphaMode", state->engine->newString(alphaModeStr));
-
-                state->engine->setPropertyIndex(jsMaterials, mi, jsMat);
-            }
-            state->engine->setProperty(result, "materials", jsMaterials);
-
-            // Images array (with embedded data as ArrayBuffers)
-            auto jsImages = state->engine->newArray();
-            for (size_t ii = 0; ii < gltfData->images.size(); ii++) {
-                const auto& img = gltfData->images[ii];
-                auto jsImg = state->engine->newObject();
-                state->engine->setProperty(jsImg, "name", state->engine->newString(img.name.c_str()));
-                state->engine->setProperty(jsImg, "uri", state->engine->newString(img.uri.c_str()));
-                state->engine->setProperty(jsImg, "mimeType", state->engine->newString(img.mimeType.c_str()));
-
-                // Embedded image data as ArrayBuffer
-                if (!img.data.empty()) {
-                    auto dataArr = state->engine->createUint8Array(
-                        img.data.data(),
-                        img.data.size()
-                    );
-                    state->engine->setProperty(jsImg, "data", dataArr);
-                }
-
-                state->engine->setPropertyIndex(jsImages, ii, jsImg);
-            }
-            state->engine->setProperty(result, "images", jsImages);
-
-            // Nodes array
-            auto jsNodes = state->engine->newArray();
-            for (size_t ni = 0; ni < gltfData->nodes.size(); ni++) {
-                const auto& node = gltfData->nodes[ni];
-                auto jsNode = state->engine->newObject();
-                state->engine->setProperty(jsNode, "name", state->engine->newString(node.name.c_str()));
-                state->engine->setProperty(jsNode, "meshIndex", state->engine->newNumber(node.meshIndex));
-
-                // Transform - store as separate arrays
-                auto translation = state->engine->newArray();
-                auto rotation = state->engine->newArray();
-                auto scale = state->engine->newArray();
-                for (int i = 0; i < 3; i++) {
-                    state->engine->setPropertyIndex(translation, i, state->engine->newNumber(node.translation[i]));
-                    state->engine->setPropertyIndex(scale, i, state->engine->newNumber(node.scale[i]));
-                }
-                for (int i = 0; i < 4; i++) {
-                    state->engine->setPropertyIndex(rotation, i, state->engine->newNumber(node.rotation[i]));
-                }
-                state->engine->setProperty(jsNode, "translation", translation);
-                state->engine->setProperty(jsNode, "rotation", rotation);
-                state->engine->setProperty(jsNode, "scale", scale);
-
-                // Matrix (if present)
-                if (node.hasMatrix) {
-                    auto matrix = state->engine->newArray();
-                    for (int i = 0; i < 16; i++) {
-                        state->engine->setPropertyIndex(matrix, i, state->engine->newNumber(node.matrix[i]));
-                    }
-                    state->engine->setProperty(jsNode, "matrix", matrix);
-                }
-
-                // Children indices
-                auto children = state->engine->newArray();
-                for (size_t ci = 0; ci < node.children.size(); ci++) {
-                    state->engine->setPropertyIndex(children, ci, state->engine->newNumber(node.children[ci]));
-                }
-                state->engine->setProperty(jsNode, "children", children);
-
-                state->engine->setPropertyIndex(jsNodes, ni, jsNode);
-            }
-            state->engine->setProperty(result, "nodes", jsNodes);
-
-            // Scenes array
-            auto jsScenes = state->engine->newArray();
-            for (size_t si = 0; si < gltfData->scenes.size(); si++) {
-                const auto& scene = gltfData->scenes[si];
-                auto jsScene = state->engine->newObject();
-                state->engine->setProperty(jsScene, "name", state->engine->newString(scene.name.c_str()));
-
-                auto sceneNodes = state->engine->newArray();
-                for (size_t sni = 0; sni < scene.nodes.size(); sni++) {
-                    state->engine->setPropertyIndex(sceneNodes, sni, state->engine->newNumber(scene.nodes[sni]));
-                }
-                state->engine->setProperty(jsScene, "nodes", sceneNodes);
-
-                state->engine->setPropertyIndex(jsScenes, si, jsScene);
-            }
-            state->engine->setProperty(result, "scenes", jsScenes);
-            state->engine->setProperty(result, "defaultScene", state->engine->newNumber(gltfData->defaultScene));
-
-            if (state->verboseLogging) {
-                std::cout << "[GLTF] Loaded " << gltfData->meshes.size() << " meshes, "
-                          << gltfData->materials.size() << " materials, "
-                          << gltfData->images.size() << " images" << std::endl;
-            }
-
-            return result;
-        }
-    }}));
+        &tnWebgpuHandler85
+    , mystralNamespace}}));
 #endif
+
+
 
     engine->setGlobalProperty("Mystral", mystralNamespace);
 
@@ -5388,57 +5137,10 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // Native helper for offscreen canvas getContext('2d')
     // Called by the JS closure created in createElement('canvas')
     // ========================================================================
-    installBindingTable(state->engine, state, bindingTable(state->engine->getGlobal(), {
+    installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "__nativeGetContext2D", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            if (args.size() < 2) {
-                std::cerr << "[Canvas] __nativeGetContext2D requires contextType and canvasId" << std::endl;
-                return state->engine->newNull();
-            }
-
-            std::string contextType = state->engine->toString(args[0]);
-            int canvasId = static_cast<int>(state->engine->toNumber(args[1]));
-
-            if (contextType != "2d") {
-                std::cerr << "[Canvas] Unsupported context type for offscreen canvas: " << contextType << std::endl;
-                return state->engine->newNull();
-            }
-
-            auto it = state->offscreenCanvases.find(canvasId);
-            if (it == state->offscreenCanvases.end()) {
-                std::cerr << "[Canvas] Canvas not found: " << canvasId << std::endl;
-                return state->engine->newNull();
-            }
-
-            OffscreenCanvas* canvas = it->second.get();
-
-            // Return cached context if already created
-            if (canvas->hasContext2d) {
-                return canvas->context2d;
-            }
-
-            // Get current dimensions from the canvas element (in case they were changed)
-            std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
-            auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
-            if (!state->engine->isNull(canvasElement) && !state->engine->isUndefined(canvasElement)) {
-                auto widthProp = state->engine->getProperty(canvasElement, "width");
-                auto heightProp = state->engine->getProperty(canvasElement, "height");
-                if (!state->engine->isUndefined(widthProp)) {
-                    canvas->width = static_cast<int>(state->engine->toNumber(widthProp));
-                }
-                if (!state->engine->isUndefined(heightProp)) {
-                    canvas->height = static_cast<int>(state->engine->toNumber(heightProp));
-                }
-            }
-
-            // Create Canvas 2D context with current dimensions
-            if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
-            canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
-            canvas->hasContext2d = true;
-            state->engine->protect(canvas->context2d);
-            return canvas->context2d;
-        }
-    },
+        &tnWebgpuHandler86
+    , state->engine->getGlobal()},
 
     // ========================================================================
     // Global createOffscreenCanvas2D(width, height) helper
@@ -5447,41 +5149,8 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // since it handles dimensions correctly
     // ========================================================================
             {"WebGPU", "createOffscreenCanvas2D", 0, nullptr,
-        [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
-            int width = 800;
-            int height = 600;
-
-            if (args.size() >= 1) {
-                width = static_cast<int>(state->engine->toNumber(args[0]));
-            }
-            if (args.size() >= 2) {
-                height = static_cast<int>(state->engine->toNumber(args[1]));
-            }
-
-            if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D canvas (" << width << "x" << height << ")" << std::endl;
-
-            // Create a wrapper object that mimics a canvas with a 2D context
-            auto canvasWrapper = state->engine->newObject();
-            state->engine->setProperty(canvasWrapper, "width", state->engine->newNumber(width));
-            state->engine->setProperty(canvasWrapper, "height", state->engine->newNumber(height));
-
-            // Create the 2D context
-            auto ctx2d = canvas::createCanvas2DContext(state->engine, width, height);
-            state->engine->setProperty(canvasWrapper, "_context", ctx2d);
-
-            // getContext('2d') returns the pre-created context
-            installBindingTable(state->engine, state, bindingTable(canvasWrapper, {
-                {"HTMLCanvasElement", "getContext", 0, nullptr,
-                [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
-                    // Get the stored context from the global (we need a way to access it)
-                    // For now, return null and let callers use the _context directly
-                    return state->engine->newNull();
-                }
-            }}));
-
-            return canvasWrapper;
-        }
-    }}));
+        &tnWebgpuHandler87
+    , state->engine->getGlobal()}}));
 
 
     if (state->verboseLogging) {
