@@ -59,6 +59,43 @@ pub fn newest_child(parent: c_ulong) -> Result<(c_ulong, i32), String> {
     }
 }
 
+/// Which top-level window the display server would send a click at `x, y` to.
+///
+/// The desktop half of the hit-region protocol, asked of the authority that decides it. With an
+/// input shape set, a point outside every published rectangle must answer with the game's window
+/// even though the overlay covers it — that is the whole property, and nothing short of asking the
+/// X server proves it.
+pub fn window_under_pointer(x: i32, y: i32) -> Result<c_ulong, String> {
+    let xlib = xlib::Xlib::open().map_err(|error| format!("xlib: {error}"))?;
+    unsafe {
+        let display = (xlib.XOpenDisplay)(std::ptr::null());
+        if display.is_null() {
+            return Err("no X display".into());
+        }
+        let screen = (xlib.XDefaultScreen)(display);
+        let root = (xlib.XRootWindow)(display, screen);
+        (xlib.XWarpPointer)(display, 0, root, 0, 0, 0, 0, x, y);
+        (xlib.XFlush)(display);
+        let mut root_return = 0;
+        let mut child = 0;
+        let (mut root_x, mut root_y, mut win_x, mut win_y) = (0, 0, 0, 0);
+        let mut mask = 0;
+        (xlib.XQueryPointer)(
+            display,
+            root,
+            &mut root_return,
+            &mut child,
+            &mut root_x,
+            &mut root_y,
+            &mut win_x,
+            &mut win_y,
+            &mut mask,
+        );
+        (xlib.XCloseDisplay)(display);
+        Ok(child)
+    }
+}
+
 /// Whether a compositing manager is running on this display.
 ///
 /// The alpha this file produces is real — a depth-32 window holds it and the web view writes it —
@@ -99,6 +136,15 @@ unsafe fn absolute_origin(
     let mut child = 0;
     (xlib.XTranslateCoordinates)(display, window, root, 0, 0, &mut x, &mut y, &mut child);
     (x, y)
+}
+
+/// `XRectangle`, which `x11-dl` does not re-export for the Shape extension.
+#[repr(C)]
+struct XRectangle {
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
 }
 
 pub struct ArgbContainer {
@@ -169,6 +215,95 @@ impl ArgbContainer {
     /// visible while painting nothing, which looks exactly like a transparency failure.
     pub fn show(&self) {
         self.window.show_all();
+    }
+
+    /// Move and resize the container so it keeps covering the game window.
+    pub fn set_bounds(&self, x: i32, y: i32, width: u32, height: u32) -> Result<(), String> {
+        let xlib = xlib::Xlib::open().map_err(|error| format!("xlib: {error}"))?;
+        unsafe {
+            let display = (xlib.XOpenDisplay)(std::ptr::null());
+            if display.is_null() {
+                return Err("no X display".into());
+            }
+            (xlib.XMoveResizeWindow)(
+                display,
+                self.x11_window,
+                x,
+                y,
+                width.max(1),
+                height.max(1),
+            );
+            (xlib.XFlush)(display);
+            (xlib.XCloseDisplay)(display);
+        }
+        self.window.resize(width.max(1) as i32, height.max(1) as i32);
+        Ok(())
+    }
+
+    /// Make the overlay take pointer events only inside the published rectangles.
+    ///
+    /// This is the hit-region protocol where X11 puts it. An overlay window covers the whole game,
+    /// so without a shape every click would land on the UI; with one, the X server routes a click
+    /// outside the rectangles to the game window underneath and the host forwards nothing. The
+    /// same published rects drive it as on Android — the difference is who does the hit test, and
+    /// here it is the display server.
+    ///
+    /// Rectangles are normalized to the viewport, so a resize needs no republication.
+    pub fn set_input_regions(&self, regions: &[f32]) -> Result<(), String> {
+        let xlib = xlib::Xlib::open().map_err(|error| format!("xlib: {error}"))?;
+        unsafe {
+            let shape = libloading::Library::new("libXext.so.6")
+                .map_err(|error| format!("libXext: {error}"))?;
+            let combine: libloading::Symbol<
+                unsafe extern "C" fn(
+                    *mut xlib::Display,
+                    c_ulong,
+                    i32,
+                    i32,
+                    i32,
+                    *mut XRectangle,
+                    i32,
+                    i32,
+                    i32,
+                ),
+            > = shape
+                .get(b"XShapeCombineRectangles\0")
+                .map_err(|error| format!("XShapeCombineRectangles: {error}"))?;
+
+            let display = (xlib.XOpenDisplay)(std::ptr::null());
+            if display.is_null() {
+                return Err("no X display".into());
+            }
+            let mut attributes: xlib::XWindowAttributes = std::mem::zeroed();
+            (xlib.XGetWindowAttributes)(display, self.x11_window, &mut attributes);
+            let (width, height) = (attributes.width as f32, attributes.height as f32);
+
+            let mut rectangles: Vec<XRectangle> = Vec::with_capacity(regions.len() / 4);
+            for region in regions.chunks_exact(4) {
+                rectangles.push(XRectangle {
+                    x: (region[0] * width).round() as i16,
+                    y: (region[1] * height).round() as i16,
+                    width: (region[2] * width).round().max(0.0) as u16,
+                    height: (region[3] * height).round().max(0.0) as u16,
+                });
+            }
+            // ShapeInput = 2, ShapeSet = 0, YXBanded = 1. An empty set is a window that takes no
+            // pointer events at all, which is exactly right for a UI with no interactive islands.
+            combine(
+                display,
+                self.x11_window,
+                2,
+                0,
+                0,
+                rectangles.as_mut_ptr(),
+                rectangles.len() as i32,
+                0,
+                1,
+            );
+            (xlib.XFlush)(display);
+            (xlib.XCloseDisplay)(display);
+        }
+        Ok(())
     }
 }
 

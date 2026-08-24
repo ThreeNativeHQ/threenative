@@ -300,5 +300,37 @@ fn main() {
         regions == 1,
         &format!("published interactive rects: {regions}"),
     );
+
+    // The desktop half of the input model. The page's one island is the button at 75-95% across
+    // and 40-60% down, so a pointer inside it must land on the overlay and a pointer anywhere else
+    // must land on the game — decided by the X server, not by anything this probe forwards.
+    let island = [0.75f32, 0.40, 0.20, 0.20];
+    // The named mutation: publish no input shape at all. The overlay then takes every pointer
+    // event over the whole game, which is the failure this protocol exists to prevent.
+    let published = if env::var("TN_SPIKE_NO_INPUT_SHAPE").is_ok() {
+        Ok(())
+    } else {
+        container.set_input_regions(&island)
+    };
+    match published {
+        Ok(()) => {
+            let inside = argb::window_under_pointer(1088, 360).unwrap_or(0);
+            let outside = argb::window_under_pointer(400, 600).unwrap_or(0);
+            report(
+                "click-on-an-island-hits-the-ui",
+                inside == container.x11_window,
+                &format!("window under 1088,360 is {inside:#x}; the overlay is {:#x}", container.x11_window),
+            );
+            report(
+                "click-elsewhere-hits-the-game",
+                outside == parent,
+                &format!("window under 400,600 is {outside:#x}; the game is {parent:#x}"),
+            );
+        }
+        Err(error) => {
+            report("click-on-an-island-hits-the-ui", false, &error);
+            report("click-elsewhere-hits-the-game", false, &error);
+        }
+    }
     println!("TN_SPIKE_DONE");
 }
