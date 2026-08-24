@@ -17,12 +17,12 @@
  * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source
  */
 
-import { execFileSync, execSync } from 'child_process';
-import { createHash } from 'crypto';
-import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync } from 'fs';
-import { pipeline } from 'stream/promises';
-import { join, dirname, relative, resolve } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { execFileSync, execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { join, dirname, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -112,9 +112,9 @@ const DEPS = {
         // macos-latest = arm64, macos-15-intel = x64
         const variant = ARCH === 'arm64' ? 'macos-latest' : 'macos-15-intel';
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-${variant}-Release.tar.gz`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-ubuntu-latest-Release.tar.gz`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-windows-latest-Release.tar.gz`;
       }
       console.warn(`Dawn prebuilts not available for ${platformName}-${archName}`);
@@ -136,10 +136,10 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x64';
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_macOS_${arch}.tar.xz`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         // Only x64 available for Linux
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_Linux_x64.tar.xz`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         // Only x64 available for Windows (7z format)
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_Windows_x64.7z`;
       }
@@ -173,13 +173,13 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/quiche-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         if (ARCH !== 'x64') {
           console.warn(`quiche prebuilts not available for ${platformName}-${archName}`);
           return null;
         }
         return `${baseUrl}/quiche-linux-x64.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         if (ARCH !== 'x64') {
           console.warn(`quiche prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -252,9 +252,9 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86-64';
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-mac-${arch}.tar.gz`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-linux-x86-64.tar.gz`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-windows-x64.zip`;
       }
       console.warn(`libwebp prebuilts not available for ${platformName}-${archName}`);
@@ -297,9 +297,9 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/skia-build-mac-${arch}-gpu-release.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         return `${baseUrl}/skia-build-linux-x64-gpu-release.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         return `${baseUrl}/skia-build-win-x64-gpu-release.zip`;
       }
       console.warn(`Skia prebuilts not available for ${platformName}-${archName}`);
@@ -314,13 +314,13 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/swc-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         if (ARCH !== 'x64') {
           console.warn(`SWC prebuilts not available for ${platformName}-${archName}`);
           return null;
         }
         return `${baseUrl}/swc-linux-x64.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         if (ARCH !== 'x64') {
           console.warn(`SWC prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -342,13 +342,13 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/libuv-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         if (ARCH !== 'x64') {
           console.warn(`libuv prebuilts not available for ${platformName}-${archName}`);
           return null;
         }
         return `${baseUrl}/libuv-linux-x64.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         if (ARCH !== 'x64') {
           console.warn(`libuv prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -370,13 +370,13 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/draco-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         if (ARCH !== 'x64') {
           console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
           return null;
         }
         return `${baseUrl}/draco-linux-x64.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         if (ARCH !== 'x64') {
           console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -423,8 +423,8 @@ const DEPS = {
     },
     extractTo: 'skia-ios',
     archives: {
-      device: `https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-device-arm64-gpu-release.zip`,
-      simulator: `https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-simulator-arm64-x86_64-gpu-release.zip`,
+      device: "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-device-arm64-gpu-release.zip",
+      simulator: "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-simulator-arm64-x86_64-gpu-release.zip",
     },
   },
   // ============================================================================
@@ -893,7 +893,7 @@ async function downloadDep(name) {
       const versionFile = join(destDir, 'quickjs-2024-01-13', 'version');
       const versionFileNew = join(destDir, 'quickjs-2024-01-13', 'VERSION.txt');
       try {
-        const { renameSync, existsSync: exists } = await import('fs');
+        const { renameSync, existsSync: exists } = await import('node:fs');
         if (exists(versionFile)) {
           renameSync(versionFile, versionFileNew);
           console.log('Renamed version -> VERSION.txt (C++ header conflict fix)');
@@ -937,7 +937,7 @@ async function downloadDep(name) {
 
     // Extract AAR if needed (SDL3 Android)
     if (dep.needsAarExtraction) {
-      const aarFiles = await import('fs/promises').then(fs => fs.readdir(destDir));
+      const aarFiles = await import('node:fs/promises').then(fs => fs.readdir(destDir));
       const aarFile = aarFiles.find(f => f.endsWith('.aar'));
       if (aarFile) {
         const aarPath = join(destDir, aarFile);

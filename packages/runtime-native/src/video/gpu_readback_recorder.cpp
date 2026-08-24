@@ -368,6 +368,11 @@ public:
             return false;
         }
 
+        if (!bindingsState_) {
+            std::cerr << "[GPUReadbackRecorder] An owning WebGPU bindings state is required" << std::endl;
+            return false;
+        }
+
         // Store configuration
         config_ = config;
         outputPath_ = outputPath;
@@ -702,6 +707,10 @@ private:
 // Factory function to create GPU readback recorder (used by video_recorder.cpp)
 std::unique_ptr<VideoRecorder> createGPUReadbackRecorder(
     WGPUDevice device, WGPUQueue queue, WGPUInstance instance, void* bindingsState) {
+    if (!bindingsState) {
+        std::cerr << "[VideoRecorder] GPU fallback requires an owning WebGPU bindings state" << std::endl;
+        return nullptr;
+    }
     return std::make_unique<GPUReadbackRecorder>(device, queue, instance, bindingsState);
 }
 

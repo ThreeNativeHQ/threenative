@@ -58,6 +58,10 @@ std::unique_ptr<VideoRecorder> VideoRecorder::create(
 
     // Fallback: GPU Readback recorder (works on all platforms with WebGPU)
     if (device && queue && instance) {
+        if (!bindingsState) {
+            std::cerr << "[VideoRecorder] GPU fallback requires an owning WebGPU bindings state" << std::endl;
+            return nullptr;
+        }
         std::cout << "[VideoRecorder] Using GPU Readback recorder (WebGPU fallback)" << std::endl;
         return createGPUReadbackRecorder(device, queue, instance, bindingsState);
     }

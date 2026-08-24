@@ -354,8 +354,8 @@ function parseHDR(buffer) {
 
     const parts = resLine.trim().split(/\s+/);
     for (let i = 0; i < parts.length; i++) {
-        if (parts[i] === '-Y' || parts[i] === '+Y') height = parseInt(parts[i+1]);
-        if (parts[i] === '+X' || parts[i] === '-X') width = parseInt(parts[i+1]);
+        if (parts[i] === '-Y' || parts[i] === '+Y') height = Number.parseInt(parts[i+1]);
+        if (parts[i] === '+X' || parts[i] === '-X') width = Number.parseInt(parts[i+1]);
     }
 
     if (width === 0 || height === 0) {
@@ -404,7 +404,7 @@ function parseHDR(buffer) {
                 if (e === 0) {
                     floatData[outIdx] = 0; floatData[outIdx+1] = 0; floatData[outIdx+2] = 0; floatData[outIdx+3] = 1;
                 } else {
-                    const f = Math.pow(2.0, e - 128 - 8);
+                    const f = 2.0 ** (e - 128 - 8);
                     floatData[outIdx] = r * f;
                     floatData[outIdx+1] = g * f;
                     floatData[outIdx+2] = b * f;
@@ -422,7 +422,7 @@ function parseHDR(buffer) {
                 if (e === 0) {
                     floatData[outIdx] = 0; floatData[outIdx+1] = 0; floatData[outIdx+2] = 0; floatData[outIdx+3] = 1;
                 } else {
-                    const f = Math.pow(2.0, e - 128 - 8);
+                    const f = 2.0 ** (e - 128 - 8);
                     floatData[outIdx] = r * f;
                     floatData[outIdx+1] = g * f;
                     floatData[outIdx+2] = b * f;
@@ -439,7 +439,7 @@ function packToHalf(data) {
     const out = new Uint16Array(data.length);
     const floatView = new Float32Array(1);
     const int32View = new Int32Array(floatView.buffer);
-    const HALF_MAX = 0x7bff;
+    const halfMax = 0x7bff;
 
     for (let i = 0; i < data.length; i++) {
         const val = data[i];
@@ -452,7 +452,7 @@ function packToHalf(data) {
         const e = (x >> 23) & 0xff;
 
         if (e < 103) { out[i] = bits; continue; }
-        if (e > 142) { out[i] = bits | HALF_MAX; continue; }
+        if (e > 142) { out[i] = bits | halfMax; continue; }
         if (e < 113) { m |= 0x0800; out[i] = bits | ((m >> (114 - e)) + ((m >> (113 - e)) & 1)); continue; }
         out[i] = bits | ((e - 112) << 10) | ((m >> 1) + (m & 1));
     }
@@ -460,7 +460,7 @@ function packToHalf(data) {
 }
 
 async function loadEnvironmentMap(device, url, resolution = 512) {
-    console.log("Loading HDR environment map: " + url);
+    console.log(`Loading HDR environment map: ${url}`);
 
     const response = await fetch(url);
     const buffer = await response.arrayBuffer();
@@ -469,7 +469,7 @@ async function loadEnvironmentMap(device, url, resolution = 512) {
     const height = hdr.height;
     const equirectData = hdr.data;
 
-    console.log("Loaded HDR: " + width + "x" + height);
+    console.log(`Loaded HDR: ${width}x${height}`);
 
     function getDirection(face, u, v) {
         const uc = 2.0 * u - 1.0;
@@ -588,7 +588,10 @@ async function loadEnvironmentMap(device, url, resolution = 512) {
                 for (let x = 0; x < nextRes; x++) {
                     const srcX = x * 2;
                     const srcY = y * 2;
-                    let r = 0, g = 0, b = 0, a = 0;
+                    let r = 0;
+                    let g = 0;
+                    let b = 0;
+                    let a = 0;
 
                     for (let dy = 0; dy < 2; dy++) {
                         for (let dx = 0; dx < 2; dx++) {
@@ -631,7 +634,7 @@ async function loadEnvironmentMap(device, url, resolution = 512) {
         mipmapFilter: 'linear',
     });
 
-    console.log("Created environment cubemap: " + resolution + "x" + resolution + " with " + mipLevels + " mip levels");
+    console.log(`Created environment cubemap: ${resolution}x${resolution} with ${mipLevels} mip levels`);
 
     return { texture: cubeTexture, view, sampler };
 }
@@ -731,10 +734,10 @@ async function init() {
 
     // Load GLTF - path will be set by the native app
     const helmetPath = globalThis.__GLTF_PATH__ || "DamagedHelmet.glb";
-    console.log("Loading GLTF: " + helmetPath);
+    console.log(`Loading GLTF: ${helmetPath}`);
 
     const gltf = await loadGLTF(helmetPath);
-    console.log("Loaded GLTF: " + gltf.meshes.length + " meshes");
+    console.log(`Loaded GLTF: ${gltf.meshes.length} meshes`);
 
     // Load environment map - path will be set by the native app
     const envMapPath = globalThis.__ENV_MAP_PATH__ || "sunny_rose_garden_2k.hdr";
@@ -744,7 +747,7 @@ async function init() {
     const primitive = mesh.primitives[0];
     const mat = gltf.materials[primitive.materialIndex];
 
-    console.log("Mesh: " + mesh.name + " with " + primitive.vertexCount + " vertices");
+    console.log(`Mesh: ${mesh.name} with ${primitive.vertexCount} vertices`);
 
     // Create typed array views from ArrayBuffer data
     const positions = new Float32Array(primitive.positions);
@@ -785,20 +788,20 @@ async function init() {
     // Create textures from GLTF images
     async function createTextureFromImage(imageIndex) {
         if (imageIndex === undefined || imageIndex < 0 || imageIndex >= gltf.images.length) {
-            console.log("Image index invalid or out of range: " + imageIndex);
+            console.log(`Image index invalid or out of range: ${imageIndex}`);
             return null;
         }
 
         const img = gltf.images[imageIndex];
         if (!img) {
-            console.log("Image " + imageIndex + " is null/undefined");
+            console.log(`Image ${imageIndex} is null/undefined`);
             return null;
         }
 
-        console.log("Image " + imageIndex + ": name=" + (img.name || "") + " uri=" + (img.uri || "") + " mimeType=" + (img.mimeType || "") + " hasData=" + (img.data ? "yes (" + img.data.byteLength + " bytes)" : "no"));
+        console.log(`Image ${imageIndex}: name=${img.name || ""} uri=${img.uri || ""} mimeType=${img.mimeType || ""} hasData=${img.data ? `yes (${img.data.byteLength} bytes)` : "no"}`);
 
         if (!img.data) {
-            console.log("Image " + imageIndex + " has no embedded data, creating white texture");
+            console.log(`Image ${imageIndex} has no embedded data, creating white texture`);
             return createWhiteTexture();
         }
 
@@ -1070,5 +1073,5 @@ async function init() {
 }
 
 init().catch((e) => {
-    console.log("Error: " + (e.message || e));
+    console.log(`Error: ${e.message || e}`);
 });

@@ -6,101 +6,87 @@ Status: **verified on Linux desktop; desktop multitouch remains the registry-dec
 
 ## Implementation
 
-- `bindings.cpp` now installs the WebGPU surfaces through the shared registration dispatcher;
-  the source contains 85 `installBinding(state, ...)` rows and no `newFunction(...)` calls.
-- `BindingsState` owns the former WebGPU file state. `RuntimeImpl` creates one state per runtime
-  and passes it to WebGPU, context, and video paths.
-- Windowed and offscreen texture wrappers use one factory. Render and compute pipeline wrappers
-  use one parameterized factory.
-- Biome now covers the runtime-native TypeScript files. Generated/runtime artifacts remain
-  ignored individually by path rather than through a package-wide ignore.
+- `packages/runtime-native/src/webgpu/bindings.cpp` contains 89 table-dispatch call sites and 91
+  registration rows, including the canvas table and repeated methods on different WebGPU objects.
+  `installWebGPUBindingSurfaces` is now a wrapper; the migrated registrations live in the adjacent
+  table unit and dispatch through `installBindingTable`.
+- The contract test enumerates the migrated DOM, GPU, adapter, device, queue, command encoder,
+  render pass, compute pass, render bundle, and global families. It retains the supplementary
+  71/71 registration-name and 43/43 error-string census.
+- `BindingsState` owns blend-state storage. Feature arrays are automatic per-call state in
+  `context.cpp`. The native reentrancy executable creates two real `Runtime` instances, interleaves
+  calls, and verifies markers, preferred formats, and buffers remain isolated.
+- GPU video fallback now requires an owning binding state. The public factory has an explicit
+  four-argument signature, the CLI passes the runtime state, and missing state is rejected before
+  callback registration.
+- Biome no longer ignores runtime-native `.js` or `.mjs` files package-wide. Generated, build,
+  vendor, artifact, and JSON paths remain excluded individually; the package check inspected 174
+  files with no errors.
 
-## LOC accounting
-
-The equivalent source count required by the PRD is the main binding source plus the new headers:
-
-```text
-baseline packages/runtime-native/src/webgpu/bindings.cpp: 6510
-current  packages/runtime-native/src/webgpu/bindings.cpp: 6190
-new headers (bindings.h, registration_table.h, wrapper_factories.h, bindings_state.h): 296
-current bindings.cpp + new headers: 6486
-net: -24
-```
-
-`pnpm tsx scripts/count-loc.ts` completed with exit 0:
+## Size check
 
 ```text
+baseline packages/runtime-native/src/webgpu/bindings.cpp: 6190 lines
+current  packages/runtime-native/src/webgpu/bindings.cpp: 6275 lines
+registration_table.h + bindings_state.h: 206 lines
+pnpm tsx scripts/count-loc.ts: exit 0
 suggested framework normalised baseline: 432 (current baseline 441)
 platformer template LOC: 1891
 ```
 
 ## Red/green controls
 
-Each temporary mutation was restored before continuing.
+Each temporary mutation was restored before the final gates:
 
-### Table row deletion
+- Deleting the `GPUQueue.submit` row made the contract test fail with `queue.submit must be a
+  table row`.
+- Making `blendStates` static or a required feature array static made the state contract fail.
+- Removing the missing-state video guard made its source contract fail.
+- Mutating one stored post-repair trace result made the trace test fail on the pre/post deep
+  comparison.
+- Adding invalid syntax to the covered `.mjs` fixture made Biome exit 1 with three parse errors.
 
-Mutation: remove the `GPUCanvasContext.getCurrentTexture` row from `bindings.cpp`.
-
-```sh
-pnpm exec vitest run --config packages/runtime-native/vitest.config.ts \
-  --dir packages/runtime-native \
-  tests/webgpu-bindings-contract.test.mjs -t "canvas context registration"
-```
-
-Observed red: exit 1, one failed test, `canvas API surface must be represented by one registration table`.
-The restored test suite passes.
-
-### Explicit-state reentrancy
-
-Mutation: make the second test state alias the first (`auto* second = first`). Rebuilding and
-running `threenative-webgpu-bindings-reentrancy-test` returned exit 1 with no pass marker.
-
-Restored green executable:
+Focused green result:
 
 ```text
-native WebGPU bindings reentrancy passed
+Test Files  3 passed (3)
+Tests       34 passed (34)
 ```
 
-### Shared wrapper factory
+## JavaScript-side call-trace parity
 
-Mutation: replace both `createTextureWrapper(` call sites in `bindings.cpp` with a divergent
-`createWindowTextureWrapper(` name.
-
-Observed red: the focused contract test returned exit 1 with `0 !== 2`, proving both paths are
-required to use the shared factory. The original two call sites were restored.
-
-### Biome coverage
-
-Mutation: add `const seededLintError = ;` to a covered runtime-native TypeScript test.
+`tests/fixtures/webgpu-bindings-call-trace.js` exercises 32 representative JS-visible calls. The
+pre-repair executable is `/tmp/mystral-prd205-pre-repair`; the final rebuilt executable is
+`packages/runtime-native/build/tn-linux/mystral`. The harness records surface/name, argument shape,
+and exactly one result or error shape for every call.
 
 ```text
-packages/runtime-native/tests/ci/cli-basic.test.ts:11:25 parse
-Expected an expression, or an assignment but instead found ';'.
-Found 3 errors.
-EXIT_CODE=1
+pre/post trace matches stored fixture: 32 calls
+supplementary registration census: 71/71
+supplementary error census: 43/43
 ```
 
-The invalid line was removed before the final lint run.
-
-## JS-visible behaviour trace
-
-`tests/fixtures/webgpu-bindings-trace.json` records the pre-refactor trace extracted from the
-parent source: 71 JS-visible registration names and 43 thrown-error strings. The focused trace
-test extracts the current registration rows, shared factory methods, and error strings and
-matches all 71/71 names and 43/43 errors.
+## Native proof
 
 ```sh
-pnpm exec vitest run --config packages/runtime-native/vitest.config.ts \
-  --dir packages/runtime-native tests/webgpu-bindings-trace.test.mjs
+cd packages/runtime-native
+cmake -S . -B build/tn-linux -DTN_ENABLE_VIDEO=OFF
+cmake --build build/tn-linux --target mystral threenative-webgpu-bindings-reentrancy-test -j2
+./build/tn-linux/threenative-webgpu-bindings-reentrancy-test
 ```
 
-Result: 1 test passed. The complete browser/native conformance run below supplies the returned
-render results for the same migrated families.
+Result: the build completed and the executable printed `native WebGPU bindings reentrancy passed`.
 
-## Native conformance
+The video seam proof was built with `-DTN_ENABLE_VIDEO=ON` and printed:
 
-Browser references:
+```text
+[VideoRecorder] GPU fallback requires an owning WebGPU bindings state
+native video recorder missing-state guard passed
+```
+
+## Browser/native conformance
+
+Browser reference:
 
 ```sh
 cd packages/runtime-native
@@ -119,51 +105,51 @@ sh ../../scripts/xvfb.sh node conformance/run-conformance.mjs \
   --out artifacts/conformance/prd205-desktop-final
 ```
 
-Result: `pass: 67`, `fail: 0`, `blocked: 1`. The single blocked row is the existing
-`90-multitouch-input` desktop exclusion: this Xvfb host has no evdev backend and the user cannot
-read `/dev/input/event*`. No native rendering row failed.
+Result: `pass: 67`, `fail: 0`, `blocked: 1`. The blocked row is the existing `90-multitouch-input`
+desktop exclusion: this Xvfb host has no evdev input backend. Every executable rendering row ran
+300 frames with no failure. The report observed NVIDIA GeForce RTX 2080 through Vulkan.
 
-The final report names the executable and adapter:
+## Desktop verification
 
-```text
-executable: packages/runtime-native/build/tn-linux/mystral
-adapter: NVIDIA GeForce RTX 2080
-vendor: nvidia
-backend: Vulkan
-native frames per implemented row: 300
-```
-
-## Desktop playtest
+The first run exposed the host ALSA device as `Host is down`. The same gate passed with the explicit
+headless audio driver required by this Linux host:
 
 ```sh
-pnpm native:verify:desktop
+cd packages/runtime-native
+SDL_AUDIODRIVER=dummy pnpm native:verify:desktop
 ```
 
-Named results:
+Results:
 
 ```text
 desktop audio decodeAudioData Promise proof passed on V8
 desktop core gate passed: 300 frames, 1280x720
 desktop physics actuation bindings proof passed
 desktop physics playtest proof passed: 14 assertions
-desktop physics query proof passed: {"clearHitCount":0,"maskedHitCount":0,"pointCount":1,"pointMaskedHitCount":0,"pointMissCount":0,"rayDistance":2,"rayNormal":[0,1,0],"rayPosition":[0,0,1],"shapeCount":1,"shapeMaskedHitCount":0,"shapeMissCount":0}
+desktop physics query proof passed
 ```
+
+Mobile execution is unavailable on this host: neither `adb` nor `xcrun` is installed, so no Android
+device/emulator or iOS simulator/physical-device result is claimed.
 
 ## Repository gates
 
-The required combined command completed with exit 0:
+Final results after this document was updated:
 
 ```sh
 pnpm typecheck && pnpm lint && pnpm test
+pnpm budgets
+pnpm quality
+git diff --check
 ```
-
-Recorded results:
 
 ```text
-typecheck: exit 0; all 16 workspace scopes completed
-lint: exit 0; Checked 950 files; Found 291 warnings; no errors
-runtime-native package test: 57 files passed; 383 tests passed; 33 skipped
-root unit suite: 198 files passed; 1883 tests passed; 0 failed
+pnpm typecheck: exit 0; Scope: 16 of 17 workspace projects
+pnpm lint: exit 0; Checked 1113 files; Found 380 warnings; no errors
+pnpm test: exit 0; 198 files passed; 1883 tests passed
+runtime-native package suite: 57 files passed; 386 tests passed; 33 skipped
+runtime-native Biome check: 174 files; 89 warnings; no errors
+pnpm budgets: exit 0; 18376/15000 framework LOC review trigger, no hard budget failure
+pnpm quality: exit 0; 70 findings (11 new, 9 grew, 50 inherited)
+git diff --check: exit 0
 ```
-
-The documentation link gate also passed: `Checked 762 relative documentation links across 600 Markdown files.`

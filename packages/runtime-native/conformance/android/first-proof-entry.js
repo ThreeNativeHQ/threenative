@@ -14,7 +14,7 @@ startFirstProofGame(canvas, { width, height }).then((result) => {
   globalThis.__TN_ANDROID_FIRST_PROOF_RESULT__ = result;
   console.log('[ThreeNative Android] first proof cube ready');
 }).catch((error) => {
-  const message = String(error && error.stack ? error.stack : error);
+  const message = String(error?.stack ? error.stack : error);
   globalThis.__TN_ANDROID_FIRST_PROOF_ERROR__ = message;
   console.error('[ThreeNative Android] first proof failed:', message);
 });

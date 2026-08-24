@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <vector>
 
 #include "mystral/js/engine.h"
@@ -30,21 +31,10 @@ void installBindingTable(
     const BindingRegistration* registrations,
     size_t count);
 
-void installBinding(
+void installBindingTable(
+    js::Engine* engine,
     BindingsState* state,
     js::JSValueHandle owner,
-    const char* surface,
-    const char* name,
-    BindingHandler handler,
-    uint8_t minimumArity = 0,
-    const char* arityError = nullptr);
-
-void installGlobalBinding(
-    BindingsState* state,
-    const char* surface,
-    const char* name,
-    BindingHandler handler,
-    uint8_t minimumArity = 0,
-    const char* arityError = nullptr);
+    std::initializer_list<BindingRegistration> registrations);
 
 }  // namespace mystral::webgpu

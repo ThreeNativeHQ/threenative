@@ -1662,6 +1662,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL
         tests/webgpu_bindings_reentrancy_test.cpp)
     target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE mystral-runtime)
+    if(TN_ENABLE_VIDEO)
+        add_executable(threenative-video-recorder-state-test EXCLUDE_FROM_ALL
+            tests/video_recorder_state_test.cpp)
+        target_link_libraries(threenative-video-recorder-state-test PRIVATE mystral-runtime)
+    endif()
     if(MYSTRAL_USE_DAWN)
         target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
             ${DAWN_INCLUDE_DIR})

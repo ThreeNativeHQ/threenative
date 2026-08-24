@@ -12,10 +12,7 @@
       "packages/runtime-native/.runtime/**",
       "packages/runtime-native/build/**",
       "packages/runtime-native/third_party/**",
-      "packages/runtime-native/**/*.cjs",
-      "packages/runtime-native/**/*.js",
       "packages/runtime-native/**/*.json",
-      "packages/runtime-native/**/*.mjs",
       "test-results/**",
       "examples/abyss-vanilla/index.html",
       "examples/abyss-vanilla/src/main.js",
@@ -60,6 +57,30 @@
     {
       "include": ["**/*.ts", "**/*.tsx"],
       "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+    },
+    {
+      "include": ["packages/runtime-native/**/*.js", "packages/runtime-native/**/*.mjs"],
+      "formatter": { "enabled": false },
+      "organizeImports": { "enabled": false },
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": {
+              "level": "error",
+              "options": {
+                "conventions": [
+                  { "selector": { "kind": "importNamespace" }, "match": ".*" },
+                  { "selector": { "kind": "objectLiteralProperty" }, "match": ".*" }
+                ],
+                "strictCase": false,
+                "requireAscii": false
+              }
+            },
+            "useDefaultParameterLast": "warn"
+          },
+          "performance": { "noDelete": "warn" }
+        }
+      }
     },
     {
       "include": [

@@ -91,8 +91,7 @@ export function inspectOverlayBuffer(
   }
   if (matched < minPixels) {
     throw new Error(
-      `canvas-layer overlay missing from ${label}: found ${matched} pixels of #${color.toString(16).padStart(6, '0')}, expected at least ${minPixels}. ` +
-      'The overlay pass rendered but never reached the display.',
+      `canvas-layer overlay missing from ${label}: found ${matched} pixels of #${color.toString(16).padStart(6, '0')}, expected at least ${minPixels}. The overlay pass rendered but never reached the display.`,
     );
   }
   return { overlayPixels: matched };
@@ -125,8 +124,7 @@ export function analyzePresentTicks(log, { minTicks = 1 } = {}) {
     ticks.push(tick);
     if (tick.presents > tick.frames) {
       failures.push(
-        `presented ${tick.presents} times in ${tick.frames} frames; expected at most one present per frame. ` +
-        'A second render pass is acquiring a swapchain image of its own and only one present reaches the display.',
+        `presented ${tick.presents} times in ${tick.frames} frames; expected at most one present per frame. A second render pass is acquiring a swapchain image of its own and only one present reaches the display.`,
       );
     }
   }

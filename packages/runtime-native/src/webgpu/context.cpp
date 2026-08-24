@@ -404,7 +404,7 @@ bool Context::initializeHeadless() {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[3];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -428,7 +428,7 @@ bool Context::initializeHeadless() {
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -453,7 +453,7 @@ bool Context::initializeHeadless() {
     requiredLimits.limits = adapterLimits.limits;
     deviceDesc.requiredLimits = &requiredLimits;
 
-    static WGPUFeatureName requiredFeaturesWGPU[4];
+    WGPUFeatureName requiredFeaturesWGPU[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -725,7 +725,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[3];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -760,7 +760,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // This feature allows instance_index in shaders to include firstInstance offset
     // Compression features are likewise requested when supported so JS-side consumers
     // (three's KTX2Loader.detectSupport among them) see what this GPU can upload.
-    static WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -800,7 +800,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
 
     // Check if IndirectFirstInstance is supported before requesting it
     // This feature allows instance_index in shaders to include firstInstance offset
-    static WGPUFeatureName requiredFeaturesWGPU[1];
+    WGPUFeatureName requiredFeaturesWGPU[1];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;
@@ -972,7 +972,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[3];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -1000,7 +1000,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -1027,7 +1027,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     }
     deviceDesc.requiredLimits = &requiredLimits;
 
-    static WGPUFeatureName requiredFeaturesWGPU[1];
+    WGPUFeatureName requiredFeaturesWGPU[1];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;

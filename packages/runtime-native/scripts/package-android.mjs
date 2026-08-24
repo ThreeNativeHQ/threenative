@@ -562,11 +562,7 @@ export async function packageAndroid(
       // Name the cause and the way out. The bare HTTP status told a person which URL failed and
       // nothing about why a published install can never satisfy it.
       throw new Error(
-        `${error instanceof Error ? error.message : String(error)}\n\n` +
-          `This install has no runtime source checkout at ${packageRoot}, so it tried to download\n` +
-          'prebuilt Android artifacts from a GitHub release. Point the packager at a source\n' +
-          'checkout of @threenative/runtime-native instead:\n\n' +
-          '  THREENATIVE_RUNTIME_SOURCE=/path/to/packages/runtime-native pnpm build:android\n',
+        `${error instanceof Error ? error.message : String(error)}\n\nThis install has no runtime source checkout at ${packageRoot}, so it tried to download\nprebuilt Android artifacts from a GitHub release. Point the packager at a source\ncheckout of @threenative/runtime-native instead:\n\n  THREENATIVE_RUNTIME_SOURCE=/path/to/packages/runtime-native pnpm build:android\n`,
         { cause: error },
       );
     }

@@ -80,7 +80,7 @@ function uniqueRow(rows, firstCell, heading) {
   return matches[0];
 }
 
-export function validateLedger(markdown) {
+function validateLedger(markdown) {
   assert.match(markdown, /^<!-- schemaVersion: 1 -->$/mu);
   for (const heading of ["## Target results", "## Controls", "## Gates", "## Verdict"]) {
     assert.match(markdown, new RegExp(`^${escapeRegExp(heading)}$`, "mu"));

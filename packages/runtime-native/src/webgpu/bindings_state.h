@@ -135,6 +135,7 @@ struct BindingsState {
     uint64_t nextComputePipelineId = 1;
     std::unordered_map<uint64_t, WGPURenderPipeline> renderPipelineRegistry;
     uint64_t nextRenderPipelineId = 1;
+    std::vector<std::unique_ptr<WGPUBlendState>> blendStates;
     BufferMapData bufferMapData;
     std::unordered_map<int, std::unique_ptr<OffscreenCanvas>> offscreenCanvases;
     int nextOffscreenCanvasId = 0;

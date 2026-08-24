@@ -23,7 +23,7 @@ function parseGLB(buffer) {
         throw new Error('Invalid GLB magic number');
     }
     if (version !== 2) {
-        throw new Error('Only GLTF 2.0 is supported, got version ' + version);
+        throw new Error(`Only GLTF 2.0 is supported, got version ${version}`);
     }
 
     // Parse chunks
@@ -104,16 +104,16 @@ function processGLTF(gltf, binBuffer) {
                 return uint32Data;
             }
         } else {
-            console.log('Unknown component type: ' + componentType);
+            console.log(`Unknown component type: ${componentType}`);
             data = new Float32Array(binBuffer, byteOffset, totalComponents);
         }
 
         // Return a copy to avoid alignment issues
         if (data instanceof Float32Array) {
             return new Float32Array(data);
-        } else if (data instanceof Uint32Array) {
+        }if (data instanceof Uint32Array) {
             return new Uint32Array(data);
-        } else if (data instanceof Uint16Array) {
+        }if (data instanceof Uint16Array) {
             return new Uint16Array(data);
         }
         return data;
@@ -126,7 +126,7 @@ function processGLTF(gltf, binBuffer) {
             const pbr = mat.pbrMetallicRoughness || {};
 
             result.materials.push({
-                name: mat.name || 'Material_' + i,
+                name: mat.name || `Material_${i}`,
                 baseColorFactor: pbr.baseColorFactor || [1, 1, 1, 1],
                 metallicFactor: pbr.metallicFactor !== undefined ? pbr.metallicFactor : 1,
                 roughnessFactor: pbr.roughnessFactor !== undefined ? pbr.roughnessFactor : 1,
@@ -148,7 +148,7 @@ function processGLTF(gltf, binBuffer) {
         for (let i = 0; i < gltf.images.length; i++) {
             const img = gltf.images[i];
             let imageData = null;
-            let mimeType = img.mimeType || 'image/png';
+            const mimeType = img.mimeType || 'image/png';
 
             if (img.bufferView !== undefined) {
                 const bv = gltf.bufferViews[img.bufferView];
@@ -160,7 +160,7 @@ function processGLTF(gltf, binBuffer) {
             }
 
             result.images.push({
-                name: img.name || 'Image_' + i,
+                name: img.name || `Image_${i}`,
                 uri: img.uri || '',
                 mimeType: mimeType,
                 data: imageData,
@@ -186,7 +186,7 @@ function processGLTF(gltf, binBuffer) {
         for (let i = 0; i < gltf.textures.length; i++) {
             const tex = gltf.textures[i];
             result.textures.push({
-                name: tex.name || 'Texture_' + i,
+                name: tex.name || `Texture_${i}`,
                 imageIndex: tex.source !== undefined ? tex.source : -1,
                 samplerIndex: tex.sampler !== undefined ? tex.sampler : -1,
             });
@@ -198,7 +198,7 @@ function processGLTF(gltf, binBuffer) {
         for (let mi = 0; mi < gltf.meshes.length; mi++) {
             const mesh = gltf.meshes[mi];
             const meshData = {
-                name: mesh.name || 'Mesh_' + mi,
+                name: mesh.name || `Mesh_${mi}`,
                 primitives: [],
             };
 
@@ -244,7 +244,7 @@ function processGLTF(gltf, binBuffer) {
         for (let ni = 0; ni < gltf.nodes.length; ni++) {
             const node = gltf.nodes[ni];
             result.nodes.push({
-                name: node.name || 'Node_' + ni,
+                name: node.name || `Node_${ni}`,
                 meshIndex: node.mesh !== undefined ? node.mesh : -1,
                 children: node.children || [],
                 translation: node.translation || [0, 0, 0],
@@ -260,7 +260,7 @@ function processGLTF(gltf, binBuffer) {
         for (let si = 0; si < gltf.scenes.length; si++) {
             const scene = gltf.scenes[si];
             result.scenes.push({
-                name: scene.name || 'Scene_' + si,
+                name: scene.name || `Scene_${si}`,
                 nodes: scene.nodes || [],
             });
         }
@@ -277,13 +277,13 @@ function processGLTF(gltf, binBuffer) {
  * @returns {Promise<Object>} Parsed GLTF data
  */
 async function loadGLB(url) {
-    console.log('loadGLB: Fetching ' + url);
+    console.log(`loadGLB: Fetching ${url}`);
     const response = await fetch(url);
     if (!response.ok) {
-        throw new Error('Failed to fetch GLB: ' + response.status);
+        throw new Error(`Failed to fetch GLB: ${response.status}`);
     }
     const buffer = await response.arrayBuffer();
-    console.log('loadGLB: Fetched ' + buffer.byteLength + ' bytes');
+    console.log(`loadGLB: Fetched ${buffer.byteLength} bytes`);
     return parseGLB(buffer);
 }
 

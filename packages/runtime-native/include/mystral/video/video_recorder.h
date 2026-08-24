@@ -44,7 +44,7 @@ struct VideoRecorderStats {
  * - Linux/Fallback: GPU Readback (WebGPU texture readback + WebP encoding)
  *
  * Usage:
- *   auto recorder = VideoRecorder::create(device, queue, instance);
+ *   auto recorder = VideoRecorder::create(device, queue, instance, bindingsState);
  *   recorder->startRecording(sdlWindow, "output.mp4", config);
  *   // ... run main loop ...
  *   recorder->stopRecording();
@@ -116,6 +116,7 @@ public:
      * @param device WebGPU device (for GPU fallback recorder)
      * @param queue WebGPU queue (for GPU fallback recorder)
      * @param instance WebGPU instance (for GPU fallback recorder)
+     * @param bindingsState owning WebGPU binding state; required by GPU fallback capture
      * @return Unique pointer to the recorder, or nullptr on failure
      *
      * The factory method selects the best recorder for the platform:
@@ -124,10 +125,10 @@ public:
      * - Other/Fallback: GPUReadbackRecorder (WebGPU readback)
      */
     static std::unique_ptr<VideoRecorder> create(
-        WGPUDevice device = nullptr,
-        WGPUQueue queue = nullptr,
-        WGPUInstance instance = nullptr,
-        void* bindingsState = nullptr
+        WGPUDevice device,
+        WGPUQueue queue,
+        WGPUInstance instance,
+        void* bindingsState
     );
 
     /**

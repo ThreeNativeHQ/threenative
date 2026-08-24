@@ -39,7 +39,7 @@ function readJson(path) {
  * The registration contract for the generated shooter input proof. Throws with the named red so
  * a deleted or renamed row fails this suite instead of silently unproving the native arm.
  */
-export function assertScenarioRegistered(registry = readJson(registryPath)) {
+function assertScenarioRegistered(registry = readJson(registryPath)) {
   const proofs = registry.generatedPlaytestProofs;
   if (!Array.isArray(proofs)) {
     throw new Error("RED observed: native scenario missing (no generatedPlaytestProofs section)");

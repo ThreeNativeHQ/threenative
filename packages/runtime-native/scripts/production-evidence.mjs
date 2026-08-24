@@ -87,7 +87,7 @@ export function evaluateProductionEvidence(input, options = {}) {
   }
   if (input.source.dirty === true && input.source.diffSha === undefined) codes.add('TN_PROD_SOURCE_DIFF_MISSING');
   const frameBudget = evaluateFrameBudget(input.metrics ?? {}, input.budget ?? {});
-  frameBudget.failures.forEach((code) => codes.add(code));
+  for (const code of frameBudget.failures) codes.add(code);
   if (input.metrics?.thermal?.complete === false || input.metrics?.battery?.complete === false) codes.add('TN_PROD_RESOURCE_SAMPLES_INCOMPLETE');
   if (input.metrics?.thermal?.severeSeconds >= 60) codes.add('TN_PROD_THERMAL_BUDGET');
   if (input.metrics?.durationSeconds !== undefined && input.budget?.minDurationSeconds !== undefined && input.metrics.durationSeconds < input.budget.minDurationSeconds) codes.add('TN_PROD_MARKER_MISSING');

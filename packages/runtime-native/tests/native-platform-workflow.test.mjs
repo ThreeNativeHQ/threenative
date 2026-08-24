@@ -125,13 +125,13 @@ test('clean consumers retain failure logs and use the measured device timeout', 
 
 test('clean desktop consumer provisions software Vulkan and prints its log on failure', () => {
   const cleanConsumer = releaseWorkflow.match(
-    /  clean-consumer:\n([\s\S]*?)\n  clean-consumer-ios:/u,
+    / {2}clean-consumer:\n([\s\S]*?)\n {2}clean-consumer-ios:/u,
   )?.[1];
   expect(cleanConsumer).toBeDefined();
   expect(cleanConsumer).toContain('sudo apt-get install -y mesa-vulkan-drivers');
 
   const launch = cleanConsumer.match(
-    /- name: Launch the packed desktop game for 300 frames\n        run: \|\n([\s\S]*?)\n      - name:/u,
+    /- name: Launch the packed desktop game for 300 frames\n {8}run: \|\n([\s\S]*?)\n {6}- name:/u,
   )?.[1];
   expect(launch).toBeDefined();
   expect(launch).toContain(`trap 'status=$?; trap - ERR; cat "$log"; exit "$status"' ERR`);

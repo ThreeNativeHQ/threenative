@@ -1616,7 +1616,11 @@ int runScript(const CLIOptions& opts) {
         // Create video recorder (factory selects appropriate backend)
         std::unique_ptr<mystral::video::VideoRecorder> recorder;
         if (useNative) {
-            recorder = mystral::video::VideoRecorder::create(nullptr, nullptr, nullptr);
+            recorder = mystral::video::VideoRecorder::create(
+                nullptr,
+                nullptr,
+                nullptr,
+                runtime->getWebGPUBindingsState());
         } else {
             // GPU readback mode requires WebGPU handles
             recorder = mystral::video::VideoRecorder::create(

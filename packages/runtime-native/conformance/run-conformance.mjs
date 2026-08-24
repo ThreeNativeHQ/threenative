@@ -1303,10 +1303,7 @@ export function androidDependencyBlocker(root = runtimeRoot) {
   const prebuiltPresent = prebuiltMissing.length < prebuiltFiles.length;
   if (!prebuiltComplete && (!sourceComplete || prebuiltPresent)) {
     return (
-      "TN_PARITY_ANDROID_DEPS_BLOCKED: checked source and packaged Android dependency layouts. " +
-      `source (${sourceRoot}): ${sourceAar} ${sourceComplete ? "exists" : "does not exist"}; ` +
-      `packaged (${prebuiltRoot}): missing ${prebuiltMissing.join(", ")}. ` +
-      `Run "pnpm native:build" to download the Android third-party dependencies.`
+      `TN_PARITY_ANDROID_DEPS_BLOCKED: checked source and packaged Android dependency layouts. source (${sourceRoot}): ${sourceAar} ${sourceComplete ? "exists" : "does not exist"}; packaged (${prebuiltRoot}): missing ${prebuiltMissing.join(", ")}. Run "pnpm native:build" to download the Android third-party dependencies.`
     );
   }
   return null;
@@ -1388,8 +1385,7 @@ export function assertAndroidEmulator(properties, serial = "the selected device"
   const kind = androidDeviceKind(properties);
   if (kind !== "emulator") {
     throw new Error(
-      `TN_PARITY_ANDROID_EMULATOR_REQUIRED: ${serial} identifies as physical hardware, ` +
-        "but --target android runs the emulator lane. Use --target android-hardware instead.",
+      `TN_PARITY_ANDROID_EMULATOR_REQUIRED: ${serial} identifies as physical hardware, but --target android runs the emulator lane. Use --target android-hardware instead.`,
     );
   }
   return kind;

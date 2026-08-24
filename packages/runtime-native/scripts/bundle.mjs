@@ -15,10 +15,10 @@
  *   node scripts/bundle.mjs --entry game.js --output dist/bundle
  */
 
-import { readFileSync, writeFileSync, writeSync, readdirSync, statSync, mkdirSync, existsSync } from 'fs';
-import { createRequire } from 'module';
-import { join, dirname, basename, resolve } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { readFileSync, writeFileSync, writeSync, readdirSync, statSync, mkdirSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join, dirname, basename, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -29,9 +29,9 @@ function bufferToCArray(buffer, varName) {
   const bytes = Array.from(buffer);
   const lines = [];
 
-  lines.push(`// Auto-generated - do not edit`);
+  lines.push("// Auto-generated - do not edit");
   lines.push(`// Size: ${buffer.length} bytes`);
-  lines.push(``);
+  lines.push("");
   lines.push(`static const unsigned char ${varName}[] = {`);
 
   // Output 16 bytes per line
@@ -41,8 +41,8 @@ function bufferToCArray(buffer, varName) {
     lines.push(`    ${hex}${i + 16 < bytes.length ? ',' : ''}`);
   }
 
-  lines.push(`};`);
-  lines.push(``);
+  lines.push("};");
+  lines.push("");
   lines.push(`static const unsigned int ${varName}_len = ${buffer.length};`);
 
   return lines.join('\n');
@@ -68,7 +68,7 @@ function bundleDirectory(dirPath, prefix = '') {
     const stat = statSync(fullPath);
 
     if (stat.isDirectory()) {
-      files.push(...bundleDirectory(fullPath, prefix + entry + '_'));
+      files.push(...bundleDirectory(fullPath, `${prefix + entry}_`));
     } else {
       const varName = prefix + entry.replace(/[^a-zA-Z0-9]/g, '_');
       files.push({
@@ -88,55 +88,55 @@ function bundleDirectory(dirPath, prefix = '') {
 function generateVFSHeader(files, outputPath) {
   const lines = [];
 
-  lines.push(`// Auto-generated virtual filesystem`);
-  lines.push(`// Do not edit`);
-  lines.push(``);
-  lines.push(`#pragma once`);
-  lines.push(``);
-  lines.push(`#include <cstddef>`);
-  lines.push(`#include <cstring>`);
-  lines.push(``);
-  lines.push(`namespace mystral {`);
-  lines.push(`namespace vfs {`);
-  lines.push(``);
+  lines.push("// Auto-generated virtual filesystem");
+  lines.push("// Do not edit");
+  lines.push("");
+  lines.push("#pragma once");
+  lines.push("");
+  lines.push("#include <cstddef>");
+  lines.push("#include <cstring>");
+  lines.push("");
+  lines.push("namespace mystral {");
+  lines.push("namespace vfs {");
+  lines.push("");
 
   // Embed each file
   for (const file of files) {
     const buffer = readFileSync(file.path);
     lines.push(bufferToCArray(buffer, file.varName));
-    lines.push(``);
+    lines.push("");
   }
 
   // File table
-  lines.push(`struct EmbeddedFile {`);
-  lines.push(`    const char* path;`);
-  lines.push(`    const unsigned char* data;`);
-  lines.push(`    unsigned int size;`);
-  lines.push(`};`);
-  lines.push(``);
-  lines.push(`static const EmbeddedFile files[] = {`);
+  lines.push("struct EmbeddedFile {");
+  lines.push("    const char* path;");
+  lines.push("    const unsigned char* data;");
+  lines.push("    unsigned int size;");
+  lines.push("};");
+  lines.push("");
+  lines.push("static const EmbeddedFile files[] = {");
 
   for (const file of files) {
     lines.push(`    { "${file.relativePath}", ${file.varName}, ${file.varName}_len },`);
   }
 
-  lines.push(`    { nullptr, nullptr, 0 }  // Sentinel`);
-  lines.push(`};`);
-  lines.push(``);
+  lines.push("    { nullptr, nullptr, 0 }  // Sentinel");
+  lines.push("};");
+  lines.push("");
 
   // Lookup function
-  lines.push(`inline const EmbeddedFile* findFile(const char* path) {`);
-  lines.push(`    for (const EmbeddedFile* f = files; f->path != nullptr; ++f) {`);
-  lines.push(`        if (strcmp(f->path, path) == 0) {`);
-  lines.push(`            return f;`);
-  lines.push(`        }`);
-  lines.push(`    }`);
-  lines.push(`    return nullptr;`);
-  lines.push(`}`);
-  lines.push(``);
+  lines.push("inline const EmbeddedFile* findFile(const char* path) {");
+  lines.push("    for (const EmbeddedFile* f = files; f->path != nullptr; ++f) {");
+  lines.push("        if (strcmp(f->path, path) == 0) {");
+  lines.push("            return f;");
+  lines.push("        }");
+  lines.push("    }");
+  lines.push("    return nullptr;");
+  lines.push("}");
+  lines.push("");
 
-  lines.push(`}  // namespace vfs`);
-  lines.push(`}  // namespace mystral`);
+  lines.push("}  // namespace vfs");
+  lines.push("}  // namespace mystral");
 
   const outputDir = dirname(outputPath);
   if (!existsSync(outputDir)) {

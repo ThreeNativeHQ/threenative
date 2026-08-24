@@ -1,8 +1,6 @@
 #include "mystral/webgpu/registration_table.h"
 
 #include <string>
-#include <utility>
-
 #include "bindings_state.h"
 
 namespace mystral::webgpu {
@@ -57,39 +55,12 @@ void installBindingTable(
     }
 }
 
-void installBinding(
+void installBindingTable(
+    js::Engine* engine,
     BindingsState* state,
     js::JSValueHandle owner,
-    const char* surface,
-    const char* name,
-    BindingHandler handler,
-    uint8_t minimumArity,
-    const char* arityError) {
-    const BindingRegistration registration{
-        surface,
-        name,
-        minimumArity,
-        arityError,
-        std::move(handler),
-    };
-    installBindingTable(state->engine, state, owner, &registration, 1);
-}
-
-void installGlobalBinding(
-    BindingsState* state,
-    const char* surface,
-    const char* name,
-    BindingHandler handler,
-    uint8_t minimumArity,
-    const char* arityError) {
-    installBinding(
-        state,
-        state->engine->getGlobal(),
-        surface,
-        name,
-        std::move(handler),
-        minimumArity,
-        arityError);
+    std::initializer_list<BindingRegistration> registrations) {
+    installBindingTable(engine, state, owner, registrations.begin(), registrations.size());
 }
 
 }  // namespace mystral::webgpu
