@@ -1,6 +1,7 @@
 import {
   type IUiBridge,
   type IUiStateMirror,
+  UI_READY_INTENT,
   connectUiBridge,
   publishHitRegions,
   sendUiIntent,
@@ -64,6 +65,10 @@ export function UiLayer({ children }: { children: ReactNode }) {
     // A registry started before the tree exists publishes an empty set, and an empty set means
     // every touch falls through to the game — a HUD whose buttons all look dead.
     const registry = publishHitRegions({ bridge: value.bridge });
+    // Announce the UI once it has rendered AND published, so the game can tell an overlay that
+    // never came up from one that came up empty. Sent by the framework rather than left to each
+    // game, because a game that forgets it has no way to notice.
+    sendUiIntent(value.bridge, UI_READY_INTENT, registry.regions().length);
     return () => registry.stop();
   }, [value]);
   if (value === undefined) return null;
@@ -77,17 +82,24 @@ export function UiLayer({ children }: { children: ReactNode }) {
  * realm, and a HUD written against a live store would work on web and read nothing on a phone.
  * The mirror is fed at the store's published cadence, which is not the game loop.
  */
-export function useUiState<TSelected>(
-  selector: (state: Record<string, unknown>) => TSelected,
-): TSelected | undefined {
+export function useUiState<TState extends object>(): TState | undefined;
+export function useUiState<TState extends object, TSelected>(
+  selector: (state: TState) => TSelected,
+): TSelected | undefined;
+export function useUiState<TState extends object, TSelected>(
+  selector?: (state: TState) => TSelected,
+): TSelected | TState | undefined {
   const { mirror } = useUiLayer("useUiState");
   const selectorRef = useRef(selector);
   selectorRef.current = selector;
   return useSyncExternalStore(
     (onChange) => mirror.subscribe(onChange),
     () => {
-      const state = mirror.get();
-      return state === undefined ? undefined : selectorRef.current(state);
+      const state = mirror.get() as TState | undefined;
+      if (state === undefined) return undefined;
+      // No selector reads the whole snapshot, which is what a HUD that shows several fields
+      // wants and what `useGameState(game, (value) => value)` used to give it.
+      return selectorRef.current === undefined ? state : selectorRef.current(state);
     },
     () => undefined,
   );

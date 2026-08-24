@@ -39,6 +39,8 @@ function quantize(value: number, scale: number): number {
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
+    paused: false,
+    uiReady: false,
     abilityCooldown: 0,
     abilityUses: 0,
     baseDamage: 12,

@@ -23,7 +23,7 @@ import { type IRendererLike, type IRendererOptions, createRenderer } from "./ren
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import { type GameStore, createGameStore } from "./state.js";
-import { type IUiBridge, connectUiBridge } from "./ui-bridge.js";
+import { type IUiBridge, UI_READY_INTENT, connectUiBridge } from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
 import { type IViewportOptions, Viewport } from "./viewport.js";
 
@@ -213,7 +213,13 @@ export type CameraConfig = IPerspectiveCameraConfig | IOrthogonalCameraConfig;
  * entirely when nothing is listening — a game whose `ui.renderer` is `native` pays nothing.
  */
 export interface IGameUi {
-  /** Whether a UI layer is listening. False for a game that ships no overlay. */
+  /**
+   * Whether a UI layer has announced itself.
+   *
+   * Stricter than "a transport exists": the UI sends `tn:ready` once its tree has rendered and its
+   * interactive rectangles are published, and only then is this true. A transport with nothing on
+   * the other end and a UI that failed to render look the same to a game otherwise.
+   */
   readonly connected: boolean;
   /** Handle an intent the UI sent — `restart`, `pause`, whatever the game defines. */
   onIntent(listener: (intent: string, payload: unknown) => void): () => void;
@@ -344,6 +350,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #started = false;
   #uiBridge: IUiBridge | undefined;
   #uiPublisher: IUiStatePublisher | undefined;
+  #uiReady = false;
   // Flipped only by a diagnostics consumer announcing itself; see enableRuntimeDiagnostics().
   #renderMetricsEnabled = false;
 
@@ -382,9 +389,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    */
   get ui(): IGameUi {
     const bridge = this.#connectUi();
+    const ready = () => this.#uiReady;
     return {
       get connected() {
-        return bridge.hasPeer();
+        return bridge.hasPeer() && ready();
       },
       onIntent: (listener) => onUiIntent(bridge, listener),
       publish: () => this.#uiPublisher?.publish(),
@@ -396,6 +404,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const bridge = connectUiBridge({ end: "game" });
     this.#uiBridge = bridge;
     this.#uiPublisher = publishUiState(bridge, this.#state);
+    onUiIntent(bridge, (intent) => {
+      if (intent !== UI_READY_INTENT) return;
+      this.#uiReady = true;
+      // Publish immediately: the UI has just rendered against nothing, and waiting for the store's
+      // next change would leave a HUD showing its initial values for up to a tick.
+      this.#uiPublisher?.publish();
+    });
     return bridge;
   }
 
@@ -799,6 +814,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const failures: unknown[] = [];
     this.#uiPublisher?.stop();
     this.#uiPublisher = undefined;
+    this.#uiReady = false;
     this.#uiBridge?.close();
     this.#uiBridge = undefined;
     this.#loop?.stop();

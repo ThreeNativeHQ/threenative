@@ -298,7 +298,10 @@ describe("starter playtest proof", () => {
     );
 
     expect(game).toContain("seed: 90210");
-    expect(menu).toContain("game.pause()");
+    // The pause button sends an intent; `src/game.ts` is what calls `game.pause()`. The UI is in
+    // another process on every native target and cannot call the game directly.
+    expect(menu).toContain('send(paused ? "resume" : "pause")');
+    expect(game).toContain("game.pause()");
     expect(seed).toContain('"path": "levelX"');
     // WAV, not OGG. The Android runtime decodes RIFF/WAVE only, so a starter shipping OGG hands
     // every scaffolded project an `--target android` build that installs and black-screens.

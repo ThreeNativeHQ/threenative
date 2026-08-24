@@ -24,6 +24,7 @@ export {
   HIT_REGIONS_MESSAGE,
   UI_BRIDGE_GLOBALS,
   UI_INTENT_MESSAGE,
+  UI_READY_INTENT,
   type IUiBridge,
   type IUiMessage,
   type UiBridgeEnd,

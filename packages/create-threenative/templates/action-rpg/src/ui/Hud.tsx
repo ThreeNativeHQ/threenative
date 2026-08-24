@@ -1,13 +1,15 @@
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { useGameState } from "@threenative/ui";
+import { useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
-export function Hud({ game }: { game: IGame<GameState, IPhysicsContext> }) {
-  const room = useGameState(game, (state) => state.room);
-  const phase = useGameState(game, (state) => state.phase);
-  const enemies = useGameState(game, (state) => state.enemiesDefeated);
-  const blocked = useGameState(game, (state) => state.lineOfSightBlocked);
+export function Hud() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
+  // Rendering zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
+  const room = state.room;
+  const phase = state.phase;
+  const enemies = state.enemiesDefeated;
+  const blocked = state.lineOfSightBlocked;
   return (
     <section className="pointer-events-none absolute left-6 top-5 w-72 text-[10px] uppercase tracking-[0.16em]">
       <div className="text-dim">dungeon / action rpg</div>

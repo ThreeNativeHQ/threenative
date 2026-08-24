@@ -1,12 +1,14 @@
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { useGameState } from "@threenative/ui";
+import { useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
-export function InventoryPanel({ game }: { game: IGame<GameState, IPhysicsContext> }) {
-  const items = useGameState(game, (state) => state.inventory);
-  const refused = useGameState(game, (state) => state.inventoryFullRefused);
-  const pending = useGameState(game, (state) => state.pendingLoot);
+export function InventoryPanel() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
+  // Rendering zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
+  const items = state.inventory;
+  const refused = state.inventoryFullRefused;
+  const pending = state.pendingLoot;
   const seen = new Map<string, number>();
   return (
     <aside className="pointer-events-none absolute bottom-6 right-6 w-64 border border-line bg-panel/90 p-3 text-[10px] uppercase tracking-[0.14em]">

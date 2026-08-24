@@ -2205,7 +2205,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ui",
-      "signature": "export function useUiState<TSelected>( selector: (state: Record<string, unknown>) => TSelected, ): TSelected | undefined { … }",
+      "signature": "export function useUiState<TState extends object>(): TState | undefined;",
       "situations": [
         "bind a HUD to game state on web and native alike",
         "show score or health in a UI rendered over the game surface"

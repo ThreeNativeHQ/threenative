@@ -62,6 +62,14 @@ export const HIT_REGIONS_MESSAGE = "tn:hit-regions";
 export const GAME_STATE_MESSAGE = "tn:state";
 /** The message the UI end sends when the player acts on a control. */
 export const UI_INTENT_MESSAGE = "tn:intent";
+/**
+ * The intent the UI layer sends once, when its tree has rendered and its rectangles are published.
+ *
+ * Namespaced so it cannot collide with a game's own vocabulary, and framework-sent so a game does
+ * not have to remember to announce itself. It is what lets "the overlay never came up" be told
+ * apart from "the game has no HUD" — two states that look identical in a screenshot.
+ */
+export const UI_READY_INTENT = "tn:ready";
 
 /**
  * The globals each host fills in. Named here so a host implementation and this file cannot

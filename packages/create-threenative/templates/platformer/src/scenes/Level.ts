@@ -31,6 +31,8 @@ const KILL_PLANE = -8;
 const GOAL_X = 21.5;
 export class Level extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState = {
+    paused: false,
+    uiReady: false,
     checkpoint: 0,
     coins: 0,
     coyoteJumps: 0,

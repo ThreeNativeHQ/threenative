@@ -4,23 +4,17 @@
   "schemaVersion": 1,
   "warmupFrames": 0,
   "steps": [
+    { "label": "ui-ready", "waitTicks": 180 },
     { "kind": "input", "label": "move-under-live-hud", "press": "ArrowRight", "holdTicks": 20 }
   ],
   "assert": {
-    "components": [
+    "resources": [
       {
-        "entity": "native-ui",
-        "component": "mounted",
-        "equals": true,
-        "allowTrivial": "The native-only plugin registers this observation only after React mounts into the CanvasLayer."
+        "id": "state",
+        "path": "uiReady",
+        "atSteps": [{ "label": "ui-ready", "equals": true }]
       },
-      {
-        "entity": "native-ui",
-        "component": "objectCount",
-        "gte": 1,
-        "allowTrivial": "At least one drawable object exists only after the shared HUD component commits through the native renderer."
-      }
-    ],
-    "resources": [{ "id": "state", "path": "playerX", "changed": true }]
+      { "id": "state", "path": "playerX", "changed": true }
+    ]
   }
 }

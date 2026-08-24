@@ -2093,7 +2093,7 @@ const send = useUiIntent(); send("restart");
 `function` — Read the game's published state from a UI that may be in another process.
 
 ```ts
-export function useUiState<TSelected>( selector: (state: Record<string, unknown>) => TSelected, ): TSelected | undefined { … }
+export function useUiState<TState extends object>(): TState | undefined;
 ```
 
 - **Use when:** bind a HUD to game state on web and native alike · show score or health in a UI rendered over the game surface

@@ -53,6 +53,8 @@ type ProjectileEntry = {
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
+    paused: false,
+    uiReady: false,
     aimedShots: 0,
     aiming: 0,
     armor: 0,

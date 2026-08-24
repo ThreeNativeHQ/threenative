@@ -1,10 +1,11 @@
-import type { IGame } from "@threenative/core";
-import { useGameState } from "@threenative/ui";
-import type { DefensePhysics } from "../physics.js";
+import { useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
-export function Hud({ game }: { game: IGame<GameState, DefensePhysics> }) {
-  const state = useGameState(game, (value) => value);
+export function Hud() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
+  // Rendering zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
   const statusClass =
     state.status === "WON" ? "text-win" : state.status === "LOST" ? "text-danger" : "text-lume";
   return (

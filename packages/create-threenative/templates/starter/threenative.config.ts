@@ -25,4 +25,9 @@ export default {
   },
   nativeEntry: "src/game.ts",
   renderer: { preferWebGPU: true }, // Use WebGPU when the host exposes it.
+  // One UI on every target: src/ui/ renders through the platform's own browser-class renderer,
+  // so the same React, Tailwind, CSS and SVG run on web, desktop, Android and iOS alike.
+  // Switch to "native" for a UI drawn as part of the rendered frame, with no web view and no
+  // extra process — and own the appearance difference that comes with it.
+  ui: { renderer: "web" },
 } satisfies IThreeNativeConfig;

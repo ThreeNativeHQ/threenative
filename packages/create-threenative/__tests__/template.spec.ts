@@ -352,7 +352,10 @@ describe("template contracts", () => {
 
   it("should ship exactly one starter HUD", async () => {
     const hud = await readFile(path.join(templateRoot, "starter/src/ui/Hud.tsx"), "utf8");
-    expect(hud).toContain("useGameState");
+    // `useUiState`, not `useGameState`: the HUD reads the game's PUBLISHED state, because on every
+    // native target it renders in another process and cannot hold the game object at all.
+    expect(hud).toContain("useUiState");
+    expect(hud).not.toContain("useGameState");
     await expect(
       readFile(path.join(templateRoot, "starter/src/render/hud.ts"), "utf8"),
     ).rejects.toThrow();
@@ -458,21 +461,29 @@ describe("template contracts", () => {
       expect(player).toContain("const JUMP_BUFFER = 0.14");
       expect(player).not.toContain(".move({");
     }
+    // Pause and resume moved out of the menu and into `src/game.ts`, because on every native
+    // target the UI is in another process and cannot call the game. It sends a named intent and
+    // the game decides what the name means; both halves are asserted rather than just the button.
     const menu = await readFile(path.join(templateRoot, "starter/src/ui/Menu.tsx"), "utf8");
-    expect(menu).toContain("game.pause()");
-    expect(menu).toContain("game.resume()");
+    expect(menu).toContain('send(paused ? "resume" : "pause")');
+    const gameEntry = await readFile(path.join(templateRoot, "starter/src/game.ts"), "utf8");
+    expect(gameEntry).toContain("game.pause()");
+    expect(gameEntry).toContain("game.resume()");
   });
 
   it("should demonstrate the complete ctx lifecycle surface", async () => {
     const play = await readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8");
     const menu = await readFile(path.join(templateRoot, "starter/src/ui/Menu.tsx"), "utf8");
+    const gameEntry = await readFile(path.join(templateRoot, "starter/src/game.ts"), "utf8");
     expect(play).toContain('frameCtx.goto("play")');
     expect(play).toContain("frameCtx.state.set(Play.initialState)");
     expect(play).toContain("frameCtx.state.flush()");
     expect(play).toContain("ctx.tween(");
     expect(play).toContain("ctx.after(");
     expect(play).toContain("pickup.monitoring = false");
-    expect(menu).toContain('game.goto("play")');
+    // The restart button sends an intent; `src/game.ts` is what calls goto.
+    expect(menu).toContain('send("restart")');
+    expect(gameEntry).toContain('game.goto("play")');
 
     const restart = JSON.parse(
       await readFile(path.join(templateRoot, "starter/playtests/restart.playtest.json"), "utf8"),
