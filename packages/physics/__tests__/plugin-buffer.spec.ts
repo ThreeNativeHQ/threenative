@@ -51,4 +51,37 @@ describe("plugin render buffer vs simulation body count", () => {
     for (const body of registered) body.dispose();
     stray.dispose();
   });
+
+  it("keeps updating when raw simulation bodies outnumber the plugin registry", async () => {
+    await RAPIER.init();
+    const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
+    const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
+    await plugin.setup?.(ctx);
+    plugins.push(plugin);
+
+    const body = {
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: {
+        collisionLayer: 1,
+        collisionMask: 65535,
+        kind: "box" as const,
+        sensor: false,
+        x: 1,
+        y: 1,
+        z: 1,
+      },
+      type: "fixed" as const,
+    };
+    for (let index = 0; index < 17; index += 1) {
+      ctx.physics.simulation.createBody({
+        ...body,
+        position: { x: index * 2, y: 0, z: 0 },
+      });
+    }
+
+    expect(() => plugin.update?.(ctx, 1 / 60)).not.toThrow();
+  });
 });

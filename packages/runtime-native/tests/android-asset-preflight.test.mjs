@@ -334,11 +334,22 @@ test('THREENATIVE_SKIP_ASSET_PREFLIGHT=1 packages anyway', () => {
   assert.deepEqual(assertAndroidAssetsDecodable(root), []);
 });
 
-test('a non-GLB and a missing directory are both quietly fine', () => {
+test('a non-asset and a missing directory are both quietly fine', () => {
   const root = makeAssets();
   writeFileSync(join(root, 'notes.txt'), 'not an asset');
-  writeFileSync(join(root, 'broken.glb'), Buffer.from('not a glb at all'));
   assert.deepEqual(findAndroidAssetProblems(root), []);
   assert.deepEqual(findAndroidAssetProblems(join(root, 'does-not-exist')), []);
   assert.equal(readGlbJson(Buffer.from('short')), undefined);
+});
+
+test('a malformed GLB fails closed instead of reaching the runtime', () => {
+  const root = makeAssets();
+  const valid = meshGlb();
+  writeFileSync(join(root, 'truncated.glb'), valid.subarray(0, valid.length - 1));
+  writeFileSync(join(root, 'not-a-glb.glb'), Buffer.from('not a glb at all'));
+
+  const problems = findAndroidAssetProblems(root);
+  assert.equal(problems.length, 2);
+  assert.ok(problems.every((problem) => /not a readable GLB/.test(problem.reason)));
+  assert.ok(problems.some((problem) => /declares|truncated/.test(problem.reason)));
 });

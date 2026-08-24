@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import { stageDesktopFiles } from '../scripts/package-desktop.mjs';
+import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
 const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
 /** An Ogg page carrying Opus: the magic number of a container the runtime reads, the codec of one it does not. */
@@ -23,16 +24,17 @@ test('desktop public assets are staged at web-root paths', () => {
     const bundle = join(root, 'bundle.js');
     const assets = join(root, 'public');
     const staging = join(root, 'staging');
+    const model = minimalGlb();
     mkdirSync(join(assets, 'models'), { recursive: true });
     writeFileSync(bundle, 'export default 1;');
     writeFileSync(join(assets, 'native-proof.png'), 'png');
-    writeFileSync(join(assets, 'models', 'native-proof.glb'), 'glb');
+    writeFileSync(join(assets, 'models', 'native-proof.glb'), model);
 
     const entry = stageDesktopFiles(bundle, assets, staging);
 
     assert.equal(entry, join(staging, '.threenative', 'game.js'));
     assert.equal(readFileSync(join(staging, 'native-proof.png'), 'utf8'), 'png');
-    assert.equal(readFileSync(join(staging, 'models', 'native-proof.glb'), 'utf8'), 'glb');
+    assert.deepEqual(readFileSync(join(staging, 'models', 'native-proof.glb')), model);
     assert.equal(readFileSync(entry, 'utf8'), 'export default 1;');
   } finally {
     rmSync(root, { force: true, recursive: true });

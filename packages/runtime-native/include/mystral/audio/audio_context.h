@@ -218,7 +218,10 @@ public:
 
     // State
     enum class State { Suspended, Running, Closed };
-    State state() const { return state_; }
+    State state() const {
+        std::lock_guard<std::mutex> lock(lifecycleMutex_);
+        return state_;
+    }
 
     // Properties
     float sampleRate() const { return sampleRate_; }
@@ -252,7 +255,10 @@ public:
      */
     void suspendForHost();
     void resumeForHost();
-    bool hostSuspended() const { return hostSuspended_; }
+    bool hostSuspended() const {
+        std::lock_guard<std::mutex> lock(lifecycleMutex_);
+        return hostSuspended_;
+    }
 
     // Internal: register/unregister active source nodes
     void registerSource(AudioBufferSourceNode* source);
@@ -262,7 +268,11 @@ public:
 private:
     void audioCallback(float* output, int numFrames);
     static void sdlAudioCallback(void* userdata, SDL_AudioStream* stream, int additionalAmount, int totalAmount);
+    void resumeLocked();
+    void suspendLocked();
+    void closeLocked();
 
+    mutable std::mutex lifecycleMutex_;
     State state_ = State::Suspended;
     bool hostSuspended_ = false;
     float sampleRate_ = 44100.0f;

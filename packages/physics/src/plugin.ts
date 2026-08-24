@@ -58,6 +58,10 @@ export type PhysicsPlugin = IGamePluginHooks<Record<string, unknown>, IPhysicsCo
 
 const PHYSICS_DEBUG_BODY_LIMIT = 100;
 const PHYSICS_DEBUG_SAMPLE_LIMIT = 100;
+// A backend that keeps refusing a larger buffer is malformed; bound retries so the frame loop
+// fails closed instead of allocating forever. The bound is independent of the plugin registry
+// because callers can still reach the simulation's raw createBody seam.
+const PHYSICS_BUFFER_RESIZE_ATTEMPTS = 12;
 
 interface IPhysicsDebugSample {
   readonly label: string;
@@ -203,16 +207,15 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       // The simulation may own more bodies than this registry (the deprecated raw-world node
       // path and direct createBody are both reachable), so a small-buffer refusal grows the
       // bulk buffer instead of killing every future frame.
-      const maximumVisibleValues = Math.max(
-        64,
-        (bodies.size + areas.size + 1) * 4 * PHYSICS_TRANSFORM_STRIDE,
-      );
+      let visibleResizeAttempts = 0;
       for (;;) {
         try {
           visibleCount = simulation.readVisibleTransforms(visible);
           break;
         } catch (error) {
-          if (!isSmallBufferError(error) || visible.length >= maximumVisibleValues) throw error;
+          if (!isSmallBufferError(error) || visibleResizeAttempts >= PHYSICS_BUFFER_RESIZE_ATTEMPTS)
+            throw error;
+          visibleResizeAttempts += 1;
           visible = growFloat(visible, Math.ceil(visible.length / PHYSICS_TRANSFORM_STRIDE) * 2);
         }
       }
