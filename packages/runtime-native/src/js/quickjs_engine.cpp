@@ -145,6 +145,8 @@ public:
             return;
         }
 
+        JS_SetContextOpaque(context_, this);
+
         JS_SetModuleLoaderFunc(runtime_, quickjsModuleNormalize, quickjsModuleLoader, nullptr);
 
         // Set up standard globals
@@ -190,6 +192,7 @@ public:
         }
 
         if (context_) {
+            JS_SetContextOpaque(context_, nullptr);
             JS_FreeContext(context_);
         }
         if (runtime_) {
@@ -835,7 +838,8 @@ private:
             delete val;
         }
 
-        if (engineInstance_ && engineInstance_->takePendingNativeException()) {
+        auto* engine = static_cast<QuickJSEngine*>(JS_GetContextOpaque(ctx));
+        if (engine && engine->takePendingNativeException()) {
             return JS_EXCEPTION;
         }
 

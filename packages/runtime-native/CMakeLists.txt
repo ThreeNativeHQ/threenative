@@ -1645,6 +1645,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/shutdown_lifetime_test.cpp)
     target_link_libraries(threenative-shutdown-lifetime-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-quickjs-context-test EXCLUDE_FROM_ALL
+        tests/quickjs_context_test.cpp)
+    target_link_libraries(threenative-quickjs-context-test PRIVATE mystral-runtime)
+
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)
         target_include_directories(mystral PRIVATE ${WEBP_INCLUDE_DIR})

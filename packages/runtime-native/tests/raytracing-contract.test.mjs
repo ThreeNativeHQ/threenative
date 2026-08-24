@@ -7,8 +7,10 @@ import { test } from 'vitest';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bindingsPath = join(root, 'src/raytracing/bindings.cpp');
 const scenePath = join(root, 'conformance/scenes/shared/raytracing-refusal.js');
+const cmakePath = join(root, 'CMakeLists.txt');
 const jscEnginePath = join(root, 'src/js/jsc_engine.mm');
 const quickJsEnginePath = join(root, 'src/js/quickjs_engine.cpp');
+const quickJsContextTestPath = join(root, 'tests/quickjs_context_test.cpp');
 const verificationPath = join(
   root,
   '../../docs/verification/prd-198-raytracing-gated-2026-08-23.md',
@@ -109,6 +111,30 @@ export function assertQuickJsNativeExceptionPropagation(source) {
   assert.match(source, /nativeExceptionPending_/u);
 }
 
+export function assertQuickJsContextOwnership(source, cmake, regression) {
+  const callback = callbackBody(
+    source,
+    'static JSValue nativeCallback(',
+    '\n    // Console functions',
+    'QuickJS native callback missing',
+  );
+  if (
+    !/JS_GetContextOpaque\(ctx\)/u.test(callback) ||
+    !/takePendingNativeException\(\)/u.test(callback) ||
+    /engineInstance_->takePendingNativeException\(\)/u.test(callback)
+  ) {
+    throw new Error('RED observed: QuickJS callback exception ownership is not context-local');
+  }
+  assert.match(source, /JS_SetContextOpaque\(context_, this\)/u);
+  assert.match(
+    cmake,
+    /add_executable\(threenative-quickjs-context-test EXCLUDE_FROM_ALL\s+tests\/quickjs_context_test\.cpp\)/u,
+  );
+  assert.match(regression, /createEngine\(mystral::js::EngineType::QuickJS\)/gu);
+  assert.match(regression, /auto secondEngine =/u);
+  assert.match(regression, /first->throwException\(/u);
+}
+
 export function assertVerificationRecordConsistency(source) {
   const headerEnd = source.indexOf('\n## 1. Contract red-green');
   const latestRepair = source.lastIndexOf('\n## 6. Repair round 2');
@@ -156,6 +182,14 @@ test('JSC and QuickJS propagate native callback exceptions', () => {
   assertQuickJsNativeExceptionPropagation(readFileSync(quickJsEnginePath, 'utf8'));
 });
 
+test('QuickJS native callback exceptions stay bound to their context', () => {
+  assertQuickJsContextOwnership(
+    readFileSync(quickJsEnginePath, 'utf8'),
+    readFileSync(cmakePath, 'utf8'),
+    readFileSync(quickJsContextTestPath, 'utf8'),
+  );
+});
+
 test('negative control: removing JSC exception propagation is red', () => {
   const jsc = readFileSync(jscEnginePath, 'utf8');
   const withoutPropagation = jsc.replace(
@@ -172,7 +206,7 @@ test('negative control: removing JSC exception propagation is red', () => {
 test('negative control: removing QuickJS exception propagation is red', () => {
   const quickJs = readFileSync(quickJsEnginePath, 'utf8');
   const withoutPropagation = quickJs.replace(
-    /if \(engineInstance_ && engineInstance_->takePendingNativeException\(\)\) \{\n\s+return JS_EXCEPTION;\n\s+\}/u,
+    /auto\* engine = static_cast<QuickJSEngine\*>\(JS_GetContextOpaque\(ctx\)\);\n\s+if \(engine && engine->takePendingNativeException\(\)\) \{\n\s+return JS_EXCEPTION;\n\s+\}/u,
     '',
   );
   assert.notEqual(withoutPropagation, quickJs, 'the mutation must remove QuickJS exception propagation');

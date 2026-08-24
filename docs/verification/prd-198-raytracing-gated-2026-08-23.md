@@ -472,3 +472,92 @@ Unexecuted targets and rows:
 - The 67 registry rows excluded by `--only-tests` remain blocked; they are not claimed as passed.
 - The native conformance host reported the stub raytracing backend; no hardware raytracing support
   or future result interop is claimed.
+
+## 8. Repair round 4 — QuickJS callback exceptions bind to their context
+
+The fresh review found that `packages/runtime-native/src/js/quickjs_engine.cpp:838` uses the
+process-global `engineInstance_` to consume a native callback's pending exception. A second
+QuickJS engine overwrites that pointer, so a callback created by the first engine can return
+`undefined` instead of `JS_EXCEPTION`.
+
+The two-engine regression and its focused contract assertion were added before the engine repair.
+The focused contract was red against the handoff commit:
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run tests/raytracing-contract.test.mjs
+```
+
+```text
+exit 1
+Test Files  1 failed (1)
+Tests       1 failed | 11 passed (12)
+Error: RED observed: QuickJS callback exception ownership is not context-local
+```
+
+The executable regression was built and run against the same unmodified engine implementation:
+
+```sh
+cmake --build packages/runtime-native/build/prd-198-quickjs \
+  --target threenative-quickjs-context-test --parallel 2
+packages/runtime-native/build/prd-198-quickjs/threenative-quickjs-context-test
+```
+
+It exited 1 after creating both QuickJS engines:
+
+```text
+FAILED: first context returned a value instead of JS_EXCEPTION
+```
+
+The repair stores `this` in the QuickJS context opaque slot at context creation and resolves that
+owner from the callback's `ctx`. The process-global `engineInstance_` remains only for the existing
+`performance.now()` helper. The existing JSC context mapping is unchanged.
+
+Focused contract result after the repair:
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run tests/raytracing-contract.test.mjs
+```
+
+```text
+exit 0
+Test Files  1 passed (1)
+Tests       12 passed (12)
+```
+
+The native two-context regression was rebuilt and passed:
+
+```sh
+cmake --build packages/runtime-native/build/prd-198-quickjs \
+  --target threenative-quickjs-context-test --parallel 2
+packages/runtime-native/build/prd-198-quickjs/threenative-quickjs-context-test
+```
+
+```text
+[QuickJS] Error: InternalError: first-engine exception
+PASS QuickJS: first context propagated its exception after the second engine existed
+```
+
+Native and repository gates for this repair:
+
+```text
+pnpm --filter @threenative/runtime-native test -> exit 0
+  Vitest: 54 files passed, 368 tests passed, 31 skipped
+  Physics parity: 28 web tests passed and 2 Rust tests passed
+  publint: All good!
+pnpm native:build -> exit 0
+  Default Linux native build configured V8 + Dawn and reported no work to do.
+pnpm typecheck -> exit 0
+pnpm lint -> exit 0 (291 pre-existing warnings; no errors)
+pnpm budgets -> exit 0 (existing LOC/census review notices reported)
+pnpm quality -> exit 0 (70 findings reported; no failure)
+```
+
+The root test orchestration reached the package suites and build phase, then exited 1 in the
+Playwright orphan guard. The guard reported Chromium processes left by its five-second teardown;
+the direct prescribed probe reproduced the same orphan result. No source test failure was
+reported. The generated build phase completed with 122 capability entries.
+
+The following remain explicitly unverified in this repair: JSC execution and iOS simulator or
+physical-device execution; Android physical-device and emulator execution; the 67 conformance
+rows excluded by the selected raytracing run; and hardware raytracing/result interop. The native
+QuickJS regression is the executed desktop QuickJS control.
