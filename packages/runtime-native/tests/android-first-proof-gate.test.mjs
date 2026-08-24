@@ -7,6 +7,7 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { PNG } from 'pngjs';
 
 import {
+  AUDIO_PROMISE_MARKER,
   EXPECTED_THREE_VERSION,
   assertNativeSmokeSource,
   catalogThreeVersion,
@@ -17,6 +18,7 @@ import {
   FRAME_MARKER,
   READY_MARKER,
   REQUIRED_MARKERS,
+  UNORDERED_REQUIRED_MARKERS,
   SUCCESS_MARKER,
   THREE_VERSION_MARKER,
   analyzeAppLog,
@@ -46,11 +48,14 @@ test('asset builder fails closed on catalog drift and non-core smoke input', () 
   assert.throws(() => catalogThreeVersion('catalog:\n  vite: 8.2.0\n'), /no catalog Three/);
   assert.doesNotThrow(() =>
     assertNativeSmokeSource(
-      `import { Scene, defineGame } from "@threenative/core";\n${FRAME_MARKER}\n`,
+      `import { Scene, defineGame } from "@threenative/core";\n${FRAME_MARKER}\n${AUDIO_PROMISE_MARKER}\n`,
     ),
   );
   assert.throws(
-    () => assertNativeSmokeSource(`const Scene = true; const defineGame = true; ${FRAME_MARKER}`),
+    () =>
+      assertNativeSmokeSource(
+        `const Scene = true; const defineGame = true; ${FRAME_MARKER} ${AUDIO_PROMISE_MARKER}`,
+      ),
     /public @threenative\/core/,
   );
 });
@@ -72,7 +77,7 @@ test('first proof prepares emulator before installation and launch', async () =>
   assert.throws(() => parseArgs(['--timeout-ms', '999']), /at least 1000/); assert.throws(() => parseArgs(['--unknown']), /Unknown option/); calls.length = 0;
   const temporary = makeTempDirSync('threenative-android-proof-'), apk = join(temporary, 'app-debug.apk'), screenshot = new PNG({ height: 80, width: 80 });
   for (let index = 0; index < screenshot.data.length; index += 4) screenshot.data.set([255, 0, 255, 255], index); screenshot.data.set([0, 0, 0, 255], 0); writeFileSync(apk, 'test apk');
-  const output = PNG.sync.write(screenshot), log = `${THREE_VERSION_MARKER}\n${READY_MARKER}\n${FIRST_FRAME_MARKER}\n${FRAME_MARKER}\n08-08 12:00:01.000 4242 4242 I MystralRuntime: TN_PRESENTS_TICK:{"frames":60,"presents":60}\n`;
+  const output = PNG.sync.write(screenshot), log = `${THREE_VERSION_MARKER}\n${READY_MARKER}\n${FIRST_FRAME_MARKER}\n${FRAME_MARKER}\n${AUDIO_PROMISE_MARKER}\n08-08 12:00:01.000 4242 4242 I MystralRuntime: TN_PRESENTS_TICK:{"frames":60,"presents":60}\n`;
   const execute = (_command, args) => (calls.push(args), args[0] === 'devices' ? { status: 0, stdout: 'List of devices attached\nemulator-5554 device\n' } : args.includes('pidof') ? { status: 0, stdout: '4242\n' } : args.includes('logcat') && args.includes('-d') ? { status: 0, stdout: log } : args.includes('exec-out') ? { status: 0, stdout: output } : args.includes('start') ? { status: 0, stdout: 'Status: ok\n' } : args.includes('install') ? { status: 0, stdout: 'Success\n' } : args.includes('size') ? { status: 0, stdout: 'Physical size: 1080x2400\n' } : args.includes('density') ? { status: 0, stdout: 'Physical density: 420\n' } : { status: 0, stdout: '' });
   const report = await verifyAndroidFirstProof(parseArgs(['--device', 'emulator-5554', '--apk', apk, '--skip-build', '--timeout-ms', '1000', '--settle-ms', '0', '--logcat', join(temporary, 'logcat.txt'), '--report', join(temporary, 'report.json'), '--screenshot', join(temporary, 'proof.png')]), { tools: { adb: 'fake-adb', javaHome: 'fake-java', sdkRoot: 'fake-sdk' }, run: execute, verifyAndroidBundle: () => ({ entry: 'test', outputSha256: 'test', publicApiPackage: '@threenative/core' }), verifyPackagedAndroidBundle: () => {}, delay: async () => {} });
   const preparation = calls.findIndex((args) => args.includes('immersive_mode_confirmations')), installation = calls.findIndex((args) => args.includes('install')), launch = calls.findIndex((args) => args.includes('start'));
@@ -106,14 +111,30 @@ test('clean log requires ordered catalog, ready, first-frame, and 300-frame mark
 08-08 12:00:00.300 123 124 I Mystral: ${FIRST_FRAME_MARKER}
 08-08 12:00:01.000 123 124 I MystralRuntime: TN_PRESENTS_TICK:{"frames":60,"presents":60}
 08-08 12:00:05.300 123 124 I Mystral: ${FRAME_MARKER}
+08-08 12:00:00.250 123 124 I Mystral: ${UNORDERED_REQUIRED_MARKERS[0]}
 `;
   assert.deepEqual(analyzeAppLog(log), { markerFound: true, missingMarkers: [], failures: [] });
-  assert.deepEqual(analyzeAppLog(SUCCESS_MARKER).missingMarkers, REQUIRED_MARKERS.slice(0, 3));
-  assert.equal(analyzeAppLog([...REQUIRED_MARKERS].reverse().join('\n')).failures[0]?.kind, 'marker-order');
+  assert.deepEqual(analyzeAppLog(SUCCESS_MARKER).missingMarkers, [
+    ...REQUIRED_MARKERS.slice(0, 3),
+    ...UNORDERED_REQUIRED_MARKERS,
+  ]);
+  assert.equal(
+    analyzeAppLog([...[...REQUIRED_MARKERS].reverse(), ...UNORDERED_REQUIRED_MARKERS].join('\n'))
+      .failures[0]?.kind,
+    'marker-order',
+  );
+  // The audio marker is required but not order-checked: it is delivered on the microtask queue, so
+  // its position relative to the frame markers is timing. Present anywhere satisfies it; absent
+  // fails the run.
+  assert.deepEqual(analyzeAppLog(REQUIRED_MARKERS.join('\n')).missingMarkers, UNORDERED_REQUIRED_MARKERS);
+  assert.equal(
+    analyzeAppLog([...UNORDERED_REQUIRED_MARKERS, ...REQUIRED_MARKERS].join('\n')).markerFound,
+    true,
+  );
 });
 
 test('the device lane rejects a log whose presents outrun its frames, and one with no tick', () => {
-  const base = REQUIRED_MARKERS.join('\n');
+  const base = [...REQUIRED_MARKERS, ...UNORDERED_REQUIRED_MARKERS].join('\n');
   // The defect: the world pass and the overlay pass each acquiring and presenting an image of
   // their own, so only one of the two reached the display.
   const doubled = analyzeAppLog(`${base}\nTN_PRESENTS_TICK:{"frames":60,"presents":120}`);
@@ -142,7 +163,9 @@ test('fatal signals, RangeError, and WebGPU failures reject an otherwise ready l
   ];
 
   for (const [expectedKind, line] of cases) {
-    const result = analyzeAppLog(`${REQUIRED_MARKERS.join('\n')}\n${line}\n`);
+    const result = analyzeAppLog(
+      `${[...REQUIRED_MARKERS, ...UNORDERED_REQUIRED_MARKERS].join('\n')}\n${line}\n`,
+    );
     assert.equal(result.markerFound, true);
     assert.ok(result.failures.some(({ kind }) => kind === expectedKind), `${expectedKind} was not classified: ${line}`);
   }

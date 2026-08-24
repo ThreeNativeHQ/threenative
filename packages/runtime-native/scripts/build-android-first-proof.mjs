@@ -11,6 +11,10 @@ export const EXAMPLE_ENTRY = 'examples/native-smoke/src/game.ts';
 export const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 export const FIRST_FRAME_MARKER = 'TN_NATIVE_SMOKE_FIRST_FRAME';
 export const FRAME_MARKER = 'TN_NATIVE_SMOKE_300_FRAMES:300';
+// The native Web Audio Promise contract, asserted on device because both defects it covers were
+// invisible on the desktop default engine: a `decodeAudioData` that was not a real Promise, and an
+// engine whose per-frame microtask pump did nothing so a settled Promise never arrived.
+export const AUDIO_PROMISE_MARKER = 'TN_NATIVE_SMOKE_AUDIO_PROMISE_OK';
 export const THREE_VERSION_MARKER = `TN_NATIVE_SMOKE_THREE:${EXPECTED_THREE_VERSION}`;
 export const PLAYTEST_BRIDGE = process.env.THREENATIVE_PLAYTEST_BRIDGE === 'disabled'
   ? 'disabled'
@@ -86,7 +90,7 @@ export function assertNativeSmokeSource(source) {
   if (!/from\s+["']@threenative\/core["']/.test(source)) {
     throw new Error(`${EXAMPLE_ENTRY} must consume unchanged public @threenative/core APIs`);
   }
-  for (const token of ['defineGame', 'Scene', FRAME_MARKER]) {
+  for (const token of ['defineGame', 'Scene', FRAME_MARKER, AUDIO_PROMISE_MARKER]) {
     if (!source.includes(token)) throw new Error(`${EXAMPLE_ENTRY} is missing ${token}`);
   }
 }
@@ -145,7 +149,7 @@ export function buildAndroidFirstProof() {
     `THREENATIVE_ANDROID_NATIVE_SMOKE_CORE_SHA256:${coreSourceHash}`,
     `THREENATIVE_ANDROID_NATIVE_SMOKE_BUNDLE_SHA256:${builtBundleHash}`,
     `THREENATIVE_ANDROID_NATIVE_SMOKE_THREE:${catalogThree}`,
-    `THREENATIVE_ANDROID_NATIVE_SMOKE_MARKERS:${READY_MARKER}|${FIRST_FRAME_MARKER}|${FRAME_MARKER} */`,
+    `THREENATIVE_ANDROID_NATIVE_SMOKE_MARKERS:${READY_MARKER}|${FIRST_FRAME_MARKER}|${FRAME_MARKER}|${AUDIO_PROMISE_MARKER} */`,
     `console.info(${JSON.stringify(THREE_VERSION_MARKER)});`,
   ].join('\n');
   run(
@@ -164,7 +168,7 @@ export function buildAndroidFirstProof() {
   );
 
   const androidBundle = readFileSync(output);
-  for (const marker of [THREE_VERSION_MARKER, READY_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER]) {
+  for (const marker of [THREE_VERSION_MARKER, READY_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER, AUDIO_PROMISE_MARKER]) {
     if (!androidBundle.includes(marker)) throw new Error(`Android native smoke bundle is missing ${marker}`);
   }
   const metadata = {
@@ -179,7 +183,7 @@ export function buildAndroidFirstProof() {
     builtBundleSha256: builtBundleHash,
     outputSha256: sha256(androidBundle),
     outputBytes: androidBundle.length,
-    markers: [THREE_VERSION_MARKER, READY_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER],
+    markers: [THREE_VERSION_MARKER, READY_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER, AUDIO_PROMISE_MARKER],
     inputs: {
       [EXAMPLE_ENTRY]: { sha256: sourceHash },
       [portable(exampleBundle)]: { sha256: builtBundleHash },

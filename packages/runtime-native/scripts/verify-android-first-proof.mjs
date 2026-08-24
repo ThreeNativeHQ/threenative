@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { PNG } from 'pngjs';
 import {
   EXPECTED_THREE_VERSION,
+  AUDIO_PROMISE_MARKER,
   FIRST_FRAME_MARKER,
   FRAME_MARKER,
   READY_MARKER,
@@ -19,7 +20,7 @@ import {
 // drift, and the weaker one would be the device's, which is the lane that had never asserted it.
 import { analyzePresentTicks, inspectOverlayBuffer } from './verify-desktop-core.mjs';
 
-export { FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
+export { AUDIO_PROMISE_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
 
 export const APP_ID = 'com.threenative.game';
 export const ACTIVITY_CLASS = 'com.threenative.runtime.MystralActivity';
@@ -31,6 +32,9 @@ export const SUCCESS_MARKER = FRAME_MARKER,
     return { prepared: serial.startsWith('emulator-') };
   };
 export const REQUIRED_MARKERS = [THREE_VERSION_MARKER, READY_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER];
+// Required but deliberately outside REQUIRED_MARKERS: those are order-checked, and where a
+// microtask-delivered result lands relative to the frame markers is timing, not contract.
+export const UNORDERED_REQUIRED_MARKERS = [AUDIO_PROMISE_MARKER];
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspace = resolve(root, '..', '..');
@@ -280,6 +284,7 @@ const failureMatchers = [
   // reported as a generic timeout instead of itself (PRD-166, probe run of 2026-08-22).
   { kind: 'scene-failure', pattern: /\[ThreeNative conformance\]\s*failed:/i },
   { kind: 'native-smoke-failure', pattern: /TN_NATIVE_SMOKE_FAILED:/i },
+  { kind: 'audio-promise-failure', pattern: /TN_NATIVE_SMOKE_AUDIO_PROMISE_FAIL:/i },
   { kind: 'fatal-signal', pattern: /\bFatal signal\b|\bSIG(?:ABRT|BUS|FPE|ILL|SEGV|TRAP)\b/i },
   { kind: 'range-error', pattern: /\bRangeError\b/i },
   { kind: 'javascript-error', pattern: /\b(?:Uncaught|Unhandled promise rejection|SyntaxError|TypeError|ReferenceError|EvalError|URIError)\b/i },
@@ -292,7 +297,12 @@ export function filterAppLog(log, pid) {
   if (!pid) return log;
   const pidPattern = new RegExp(`^\\S+\\s+\\S+\\s+${pid}\\s+\\d+\\s+[VDIWEF]\\s`, 'm');
   return log.split(/\r?\n/).filter((line) => {
-    return line.includes(APP_ID) || REQUIRED_MARKERS.some((marker) => line.includes(marker)) || pidPattern.test(line);
+    return (
+      line.includes(APP_ID) ||
+      REQUIRED_MARKERS.some((marker) => line.includes(marker)) ||
+      UNORDERED_REQUIRED_MARKERS.some((marker) => line.includes(marker)) ||
+      pidPattern.test(line)
+    );
   }).join('\n');
 }
 
@@ -350,6 +360,8 @@ export function analyzeAppLog(log, { requireTicks = false } = {}) {
   }
   const markerIndexes = REQUIRED_MARKERS.map((marker) => log.indexOf(marker));
   const missingMarkers = REQUIRED_MARKERS.filter((_marker, index) => markerIndexes[index] === -1);
+  const missingUnordered = UNORDERED_REQUIRED_MARKERS.filter((marker) => !log.includes(marker));
+  missingMarkers.push(...missingUnordered);
   if (missingMarkers.length === 0 && markerIndexes.some((value, index) => index > 0 && value <= markerIndexes[index - 1])) {
     failures.push({
       kind: 'marker-order',
@@ -455,7 +467,7 @@ export function verifyAndroidBundle() {
   if (metadata.coreSourceSha256 !== sourceTreeSha256(join(workspace, 'packages', 'core', 'src'))) {
     throw new GateError('Android asset does not match the current @threenative/core source tree.');
   }
-  for (const marker of REQUIRED_MARKERS) {
+  for (const marker of [...REQUIRED_MARKERS, ...UNORDERED_REQUIRED_MARKERS]) {
     if (!bundle.includes(marker) || !metadata.markers?.includes(marker)) {
       throw new GateError(`Android asset is missing exact proof marker ${marker}.`);
     }

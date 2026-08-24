@@ -76,6 +76,86 @@ if (__TN_RUNTIME__ === "native" || isNative()) {
   console.info(`TN_NATIVE_PLATFORM:${JSON.stringify(platform)}`);
 }
 
+/**
+ * The native Web Audio surface, exercised the way Three.js `AudioLoader` exercises it.
+ *
+ * `decodeAudioData` has to hand back a real Promise. A hand-rolled thenable satisfied `await` and
+ * one `.catch`, which is the only shape Three itself uses, and broke every chain of two — and a
+ * settled Promise is only delivered if the engine's microtask queue is actually pumped each frame,
+ * which one of the two shipping engines did not do. Both defects were invisible on the default
+ * desktop engine, so this asserts on device, on whichever engine the build carries.
+ *
+ * The WAV is built here rather than loaded, so the proof needs no staged asset and no network.
+ */
+function proveAudioDecodePromise(): void {
+  const fail = (reason: string) => console.error(`TN_NATIVE_SMOKE_AUDIO_PROMISE_FAIL:${reason}`);
+  const wav = () => {
+    const bytes = new Uint8Array(46);
+    const view = new DataView(bytes.buffer);
+    const ascii = (offset: number, text: string) => {
+      for (let index = 0; index < text.length; index += 1)
+        bytes[offset + index] = text.charCodeAt(index);
+    };
+    ascii(0, "RIFF");
+    view.setUint32(4, 38, true);
+    ascii(8, "WAVE");
+    ascii(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, 44100, true);
+    view.setUint32(28, 88200, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    ascii(36, "data");
+    view.setUint32(40, 2, true);
+    view.setInt16(44, 16384, true);
+    return bytes.buffer;
+  };
+
+  const context = new AudioContext();
+  let callbackRan = false;
+  // Three.js AudioLoader's exact call shape: legacy success callback, then `.catch` on the return.
+  const returned = context.decodeAudioData(wav(), () => {
+    callbackRan = true;
+  });
+  if (!(returned instanceof Promise)) {
+    fail("not-a-promise");
+    return;
+  }
+  const chained = returned.then((buffer) => buffer);
+  if (!(chained instanceof Promise) || typeof chained.catch !== "function") {
+    fail("then-is-not-chainable");
+    return;
+  }
+  if (!callbackRan) {
+    fail("legacy-callback-did-not-run");
+    return;
+  }
+  // Delivery, not just shape: this only resolves if the frame loop pumps microtasks.
+  chained
+    .then((buffer) => {
+      if (buffer === undefined || typeof buffer.getChannelData !== "function") {
+        fail("resolved-without-an-audiobuffer");
+        return;
+      }
+      // A rejection has to arrive as an Error, the way a browser rejects a bad decode.
+      return context.decodeAudioData(new ArrayBuffer(0)).then(
+        () => fail("empty-buffer-resolved"),
+        (error: unknown) => {
+          if (!(error instanceof Error)) {
+            fail("rejected-without-an-error");
+            return;
+          }
+          console.info("TN_NATIVE_SMOKE_AUDIO_PROMISE_OK");
+        },
+      );
+    })
+    .catch((error: unknown) => fail(`threw:${String(error)}`));
+}
+
+if (__TN_RUNTIME__ === "native" || isNative()) proveAudioDecodePromise();
+
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
