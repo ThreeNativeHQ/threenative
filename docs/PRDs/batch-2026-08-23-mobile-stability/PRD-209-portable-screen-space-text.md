@@ -4,7 +4,30 @@ prd_contract: v1
 
 # PRD-209 — the framework ships portable screen-space text, and nothing else
 
-**Status:** NOT STARTED
+**Status: CLOSED — G-only.** Phase 0 ran and exercised the clause this PRD wrote for itself:
+*"If a game reaches readable text in under 20 lines using candidate G alone … this PRD closes
+having shipped G's promotion and no package code."* It does, in three statements. **No package
+code was written, and none should be.** Phases 1 and 2 are moot as written — Phase 1's chosen
+surface is the template file that already exists and is already consumed by
+`templates/minimal/src/scenes/Play.ts`.
+
+Evidence: `docs/verification/prd-209-2026-08-23.md`. In one line: one unbranched source renders
+`SCORE 1200` to **2 152 bright glyph pixels, bounds `[49,56,313,85]`, on web, on the Linux desktop
+native host, on the Android emulator and on a physical Pixel 8** — `pixelMismatchRatio` 0 against
+the browser reference on all three native lanes — while the SDF-atlas arm costs 53 % more source
+and renders it as `2COKE ]500`.
+
+What shipped instead of a package: the convention, in the two template `AGENTS.md` files that were
+getting it wrong (`starter` called a native HUD optional; `minimal` described a DOM readout its own
+`main.ts` does not have), plus the instruction-budget override those words needed
+(`docs/verification/instruction-budgets-2026-08-23.md`).
+
+Still open, and neither is a text problem: row 31 on the physical Pixel 8 needs the phone unlocked
+by its owner, and row 25's `0.0221` pixel drift on that device belongs to PRD-214. PRD-055's
+recorded ADB blocker was retried and is **stale** — both an emulator and the Pixel 8 were driven
+from this lane today — but its criterion 2 (touch playability) is untested here and stays with it.
+
+**Original status:** NOT STARTED
 
 **Complexity:** +2 for multi-package changes (core + create-threenative templates), +2 for a new
 system (portable text surface) = **4 → MEDIUM mode**. Phase 0 is a spike whose result can close

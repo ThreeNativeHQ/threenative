@@ -11,7 +11,7 @@ The "not a bug" items (landscape orientation) are likewise absent.
 
 | PRD | Outcome | Bug doc items | Complexity | Depends on |
 | --- | --- | --- | --- | --- |
-| [209](./PRD-209-portable-screen-space-text.md) | Framework ships portable screen-space text; spike may close it as G-only | #2 | 4 → MEDIUM | none |
+| [209](./PRD-209-portable-screen-space-text.md) | **CLOSED, G-only.** Spike proved the template's geometry HUD portable on four lanes; no package code | #2 (text half) | 4 → MEDIUM | none |
 | [210](./PRD-210-native-host-survives-backgrounding-and-crashes.md) | Tombstones return; NULL wgpu handles throw; the loop pauses off-screen | #4, #9 | 6 → MEDIUM | none |
 | [211](./PRD-211-android-asset-lane-boots-from-repo-assets.md) | Ogg decodes natively; preflight claims derive from the build they ship with | #5, #10 | 5 → MEDIUM | none |
 | [212](./PRD-212-published-install-builds-android.md) | Tarballs are self-contained and substitution-clean; clean-room Android builds | #6, #7 | 5 → MEDIUM | PRD-196, PRD-078 (release milestone) |
@@ -42,7 +42,8 @@ The "not a bug" items (landscape orientation) are likewise absent.
 
 1. **211 Phase 2 and 212 Phase 1 first** — small, unblock everything else's proof lanes
    (preflight honesty, self-contained tarballs).
-2. **209 Phase 0 spike** in parallel — its outcome decides whether package code exists at all.
+2. ~~**209 Phase 0 spike** in parallel — its outcome decides whether package code exists at all.~~
+   **Done, 2026-08-23: G-only, no package code.** `docs/verification/prd-209-2026-08-23.md`.
 3. **210 Phases 1–2** (crash observability) before any long device campaign: every hour spent
    reproducing unnamed crashes is wasted until tombstones return.
 4. **213 Phase 1 attribution** next; its output shrinks 210's memory-pressure variable.

@@ -142,9 +142,10 @@ until published scenarios migrate.)
 `pnpm build --target desktop` runs this same source on a native host with **no browser**.
 Three things break there, and none of them fail on the web build:
 
-1. **No real DOM.** `document` exists only as a Three.js compatibility stub. The accessible
-   DOM score in `main.ts` remains a web convenience; the generated `src/render/hud.ts` is
-   camera-parented Three.js geometry, so its score, counter and clock run with the game.
+1. **No real DOM.** `document` exists only as a Three.js compatibility stub, so anything drawn
+   through it — a DOM chip, a React HUD, a CSS loading screen — is invisible natively. This
+   template draws no DOM readout for that reason: `src/render/hud.ts` is camera-parented
+   Three.js geometry, so its score, counter and clock run with the game everywhere.
 2. **No dynamic `import()` and no `window.localStorage` reach.** The native build is one
    bundled file; save games go through your own JSON via `ctx.state`.
 3. **`.raw` is web-only.** `ctx.physics.world.raw` is a Rapier object in the browser and
@@ -155,7 +156,8 @@ without thinking about it. If you only ever ship to the web, ignore this section
 
 ## The layout
 
-`src/main.ts` boots the game and subscribes the DOM score; `src/scenes/Play.ts` is the gameplay
+`src/main.ts` boots the game and mounts its canvas, deliberately without a DOM score;
+`src/scenes/Play.ts` is the gameplay
 (load, enter, update, exit); `src/entities/Player.ts` is a plain class, not an ECS;
 `src/render/` is your look including the camera-parented HUD geometry; `state.ts` holds the
 shape gameplay publishes; `playtests/survives.playtest.json` is the durable smoke proof run by
@@ -355,10 +357,13 @@ Nothing in the toolchain can see your game. `pnpm test` proves behaviour, never 
 
 ## HUD
 
-This template has no React. `main.ts` subscribes a plugin to the store and writes to a DOM
-node; never rebuild the DOM per frame, and give any event readout a decay longer than one
-flush interval. If the UI grows past a few readouts, scaffold with the `starter` template,
-which ships React 19 + Tailwind and `@threenative/ui`.
+This template has no React and **no DOM readout**: the HUD is `src/render/hud.ts`, camera-parented
+instanced-quad glyphs drawn in the scene, and `main.ts` deliberately draws no second copy of the
+score. That is the one HUD shape that survives every target — identical text on web, desktop and
+Android, no per-target branch. Rewrite its glyph table, labels, colours and layout freely; keep
+exactly one layer, because a DOM chip over the same score is how a build scored 1 of 5 for an
+unreadable doubled readout. If the UI grows past a few readouts **and the game is web-only**,
+scaffold with `starter`, which ships React 19 + Tailwind and `@threenative/ui`.
 
 The start scene owns the initial state in `static initialState`; omit a duplicate
 `initialState` literal from `defineGame`. `ctx.state.set({ playerX })` is a partial patch.
