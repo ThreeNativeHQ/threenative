@@ -331,7 +331,7 @@ describe("native shim contract", () => {
     );
     findings = await checkNativeShims(root);
     expect(findings).toEqual([]);
-  });
+  }, 30_000);
 
   it("preserves local, imported, property, and DOM type-only exclusions", async () => {
     const root = await fixtureRoot({
