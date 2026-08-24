@@ -132,6 +132,19 @@ pnpm test && pnpm publish:check`. Registry commands take `.npmrc` explicitly
       the real manifest (recorded then, not now).
 - [ ] `pnpm publish:check` refuses trees that would ship either defect.
 
+## Follow-on the sibling PRDs are waiting on
+
+PRD-211 derives each native target's decode capabilities from the build that ships them
+(`deriveAndroidWebpSupport`, `NATIVE_AUDIO_CONTAINERS`). That derivation works from a **source
+checkout** and cannot work from a **published install**, because the prebuilt lock declares no
+capabilities — so `deriveAndroidWebpSupport` falls back to a fail-closed refusal naming exactly
+that gap, and the audio table has the same hole.
+
+Adding a capability block to `prebuilt-lock.json` — what the release was actually built with —
+turns both refusals from fail-closed guesses into derivations. Recorded here rather than acted on:
+it belongs with whoever cuts the first surviving release, and the format is theirs to choose.
+Named in `docs/verification/prd-211-2026-08-23.md` and `prd-211-phase1-2026-08-23.md`.
+
 ## Out of scope
 
 - Cutting the actual release/tag (PRD-078 owns the lane going green; PRD-196 Phase 2 owns the cut).
