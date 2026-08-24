@@ -486,7 +486,34 @@ const RAW_PLAYTEST_ASSERTION_REGISTRY: readonly IRawPlaytestAssertionSchemaEntry
       { description: "Require the value assertion after every labeled scenario step.", name: "throughoutSteps", type: "boolean" },
       { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, textIncludes?: string }>" },
       { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
-      { description: "Require at least one alternative path assertion on this resource id.", name: "anyOf", type: "Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }>" },
+      {
+        constraints: {
+          items: {
+            fields: [
+              rawField("path", "string", { kind: "string", nonEmpty: true }, true),
+              rawField("equals", "json", { kind: "json" }),
+              rawField("gte", "number", { kind: "number" }),
+              rawField("lte", "number", { kind: "number" }),
+              rawField("textIncludes", "string", { kind: "string", nonEmpty: true }),
+              rawField("changed", "boolean", { kind: "boolean" }),
+            ],
+            kind: "record",
+            rules: [
+              {
+                fields: ["equals", "gte", "lte", "textIncludes", "changed"],
+                kind: "requireOneOf",
+                message: "must declare equals, gte, lte, textIncludes, or changed.",
+              },
+            ],
+            unknownKeys: "reject",
+          },
+          kind: "array",
+          minItems: 1,
+        },
+        description: "Require at least one alternative path assertion on this resource id.",
+        name: "anyOf",
+        type: "Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }>",
+      },
     ],
     cardinality: "array",
     kind: "resources",
@@ -805,6 +832,23 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
 export function assertPlaytestAssertionRegistryComplete(
   registry: readonly IPlaytestAssertionSchemaEntry[] = PLAYTEST_ASSERTION_REGISTRY,
 ): void {
+  const checkRuleReferences = (
+    fields: ReadonlySet<string>,
+    rules: readonly IPlaytestAssertionSchemaRule[] | undefined,
+    path: string,
+    errors: string[],
+  ): void => {
+    for (const rule of rules ?? []) {
+      const references = rule.kind === "requireOneOf" || rule.kind === "requireOneOfOrTrue"
+        ? [...rule.fields, ...(rule.kind === "requireOneOfOrTrue" ? rule.trueFields : [])]
+        : rule.kind === "requireWhen"
+          ? [rule.field, rule.required]
+          : [rule.field];
+      for (const fieldName of references) {
+        if (!fields.has(fieldName)) errors.push(`${path}.${fieldName} is not declared in the registry fields`);
+      }
+    }
+  };
   const checkConstraint = (
     constraint: IPlaytestAssertionSchemaConstraint | undefined,
     path: string,
@@ -824,6 +868,7 @@ export function assertPlaytestAssertionRegistryComplete(
       for (const field of constraint.fields) {
         checkConstraint(field.constraints, `${path}.${field.name}`, errors);
       }
+      checkRuleReferences(new Set(constraint.fields.map((field) => field.name)), constraint.rules, path, errors);
     }
   };
   const errors: string[] = [];
@@ -837,6 +882,7 @@ export function assertPlaytestAssertionRegistryComplete(
       fields.add(field.name);
       checkConstraint(field.constraints, `${entry.kind}.${field.name}`, errors);
     }
+    checkRuleReferences(fields, entry.rules, entry.kind, errors);
     for (const variant of entry.variants ?? []) {
       if (variant.fields === undefined && variant.excludeFields === undefined) {
         errors.push(`${entry.kind} has a variant without fields or excludeFields`);
@@ -854,6 +900,10 @@ export function assertPlaytestAssertionRegistryComplete(
         const included = variant.fields?.includes(fieldName) ?? !variant.excludeFields?.includes(fieldName);
         if (!included) errors.push(`${entry.kind}.${fieldName} is required by a variant that does not include it`);
       }
+      const variantFields = new Set(
+        variant.fields ?? entry.fields.map((field) => field.name).filter((name) => !variant.excludeFields?.includes(name)),
+      );
+      checkRuleReferences(variantFields, variant.rules, `${entry.kind}.variant`, errors);
     }
   }
   if (errors.length > 0) {

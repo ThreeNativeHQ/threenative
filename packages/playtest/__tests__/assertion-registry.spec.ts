@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { IPlaytestAssertionSchemaEntry } from "../src/assertions.js";
-import { PLAYTEST_ASSERTION_REGISTRY } from "../src/assertions.js";
+import { assertPlaytestAssertionRegistryComplete, PLAYTEST_ASSERTION_REGISTRY } from "../src/assertions.js";
 import { renderGeneratedAssertionValidators } from "../../../scripts/generate-assertion-validators.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -45,6 +45,57 @@ describe("assertion registry completeness", () => {
     ) => string;
 
     expect(render(registry)).toContain('"name": "registryOnlyField"');
+  });
+
+  it("rejects a typo in an entry-level rule field reference", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) =>
+      entry.kind === "tags"
+        ? {
+            ...entry,
+            rules: entry.rules?.map((rule) =>
+              rule.kind === "requireOneOf"
+                ? { ...rule, fields: ["counnt", "gte", "lte"] }
+                : rule,
+            ),
+          }
+        : entry,
+    ) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: tags.counnt is not declared in the registry fields.",
+    );
+  });
+
+  it("rejects a typo in a nested record-rule field reference", () => {
+    const registry = PLAYTEST_ASSERTION_REGISTRY.map((entry) => {
+      if (entry.kind !== "resources") return entry;
+      return {
+        ...entry,
+        fields: entry.fields.map((field) => {
+          if (field.name !== "anyOf" || field.constraints.kind !== "array" || field.constraints.items.kind !== "record") {
+            return field;
+          }
+          return {
+            ...field,
+            constraints: {
+              ...field.constraints,
+              items: {
+                ...field.constraints.items,
+                rules: field.constraints.items.rules?.map((rule) =>
+                  rule.kind === "requireOneOf"
+                    ? { ...rule, fields: ["equals", "gte", "ltee", "textIncludes", "changed"] }
+                    : rule,
+                ),
+              },
+            },
+          };
+        }),
+      };
+    }) as readonly IPlaytestAssertionSchemaEntry[];
+
+    expect(() => assertPlaytestAssertionRegistryComplete(registry)).toThrow(
+      "Assertion registry is incomplete: resources.anyOf[].ltee is not declared in the registry fields.",
+    );
   });
 
 });

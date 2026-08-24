@@ -965,6 +965,7 @@ export const GENERATED_ASSERTION_SCHEMAS: readonly IGeneratedEntry[] = [
             },
             {
               "constraints": {
+                "minItems": 1,
                 "items": {
                   "fields": [
                     {
@@ -1016,6 +1017,19 @@ export const GENERATED_ASSERTION_SCHEMAS: readonly IGeneratedEntry[] = [
                       "name": "changed",
                       "required": false,
                       "type": "boolean"
+                    }
+                  ],
+                  "rules": [
+                    {
+                      "fields": [
+                        "equals",
+                        "gte",
+                        "lte",
+                        "textIncludes",
+                        "changed"
+                      ],
+                      "kind": "requireOneOf",
+                      "message": "must declare equals, gte, lte, textIncludes, or changed."
                     }
                   ],
                   "unknownKeys": "reject",

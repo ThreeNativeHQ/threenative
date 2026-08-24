@@ -206,3 +206,15 @@ test("an empty signals array fails at load instead of asserting nothing", async 
 
   expect(error.diagnostic.message).toMatch(/assert\.signals.*at least one/u);
 });
+
+test("an empty resource anyOf array fails at load instead of asserting nothing", async () => {
+  const error = await loadError({ resources: [{ anyOf: [], id: "state" }] });
+
+  expect(error.diagnostic.message).toMatch(/assert\.resources\[0\]\.anyOf.*at least 1/u);
+});
+
+test("a resource anyOf alternative with only a path fails without a comparator", async () => {
+  const error = await loadError({ resources: [{ anyOf: [{ path: "score" }], id: "state" }] });
+
+  expect(error.diagnostic.message).toMatch(/assert\.resources\[0\]\.anyOf\[0\].*must declare/u);
+});

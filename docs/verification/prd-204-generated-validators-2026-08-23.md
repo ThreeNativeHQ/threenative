@@ -39,8 +39,10 @@ before comparison.
 }
 ```
 
-The two rejected scenarios were rejected identically: the camera binding negative scenario
-and the misspelled native-smoke assertion scenario.
+The two rejected scenarios were rejected identically:
+`examples/fps-friction/playtests/look.playtest.json` (camera binding negative) and
+`examples/native-smoke/playtests/device-smoke-misspelled.playtest.json` (misspelled
+native-smoke assertion).
 
 ## Negative controls
 
@@ -99,25 +101,66 @@ Test Files  7 passed (7)
 Tests  94 passed (94)
 ```
 
+## Review round 2 repair — red evidence
+
+The second-review defects were reproduced before editing with:
+
+```sh
+pnpm vitest run packages/playtest/__tests__/assertion-registry.spec.ts packages/playtest/__tests__/vacuous-assertion.spec.ts
+```
+
+The registry typo mutation did not throw, and both vacuous resource alternatives were
+accepted. The exact result was:
+
+```text
+Test Files  2 failed (2)
+Tests  3 failed | 20 passed (23)
+```
+
+The failures were the missing top-level `entry.rules` reference check, an empty
+`resources.anyOf` array that did not produce `PlaytestScenarioError`, and a path-only
+`resources.anyOf` alternative that did not produce `PlaytestScenarioError`.
+
+## Review round 2 repair — green evidence
+
+The resource registry now carries the machine-readable `anyOf` constraints for `minItems: 1`
+and the per-alternative `requireOneOf` rule. Registry completeness validation now checks
+`entry.rules`, variant rules, and nested record-rule field references. Red mutations cover
+both a misspelled top-level rule field and a misspelled nested resource record-rule field.
+
+The focused suite, including the registry, documentation drift, evaluator, fail-closed,
+negative-fixture, reachability, scenario-load, camera-binding, silent-drop, and vacuous
+assertion suites, passed:
+
+```text
+Test Files  11 passed (11)
+Tests  124 passed (124)
+```
+
+The golden matrix remained unchanged: 105 scenarios, 103 accepted, 2 rejected, and
+`semanticDifferences: []`.
+
 ## Gates
 
 - `pnpm tsx scripts/generate-assertion-validators.ts --check`: passed; `21 kinds` current.
 - `pnpm tsx scripts/generate-assertion-reference.ts --check`: passed; `21 kinds` current.
 - `pnpm typecheck`: passed for all workspace projects.
 - `pnpm build`: passed, including both generator checks; package builds and `publint` passed.
-- `TN_TEST_TEMP_TAG=prd204 pnpm --filter @threenative/playtest test`: passed with `no orphans`
-  and `publint --strict` green.
-- Changed-file Biome check: exit 0 with 29 existing complexity/style warnings and no errors.
-- `pnpm lint`: repository-wide exit 1 from existing cognitive-complexity diagnostics in unrelated
-  files (310 warnings; the changed-file check is separate and is recorded below).
+- `pnpm lint`: exit 0 with 311 warnings and no errors.
+- Changed-file Biome check: exit 0 with warnings and no errors.
+- `TN_TEST_TEMP_TAG=prd204 pnpm --filter @threenative/playtest test`: two standalone attempts
+  reached the package gate but exited during orphan cleanup because the real browser runner
+  left a Chromium PID; each reported the exact PID and it disappeared before any cleanup action.
+  A clean retry then passed with `no orphans`, `publint --strict`, and `All good!`; the same
+  tagged package phase also passed inside the full tagged suite.
+- `TN_TEST_TEMP_TAG=prd204 pnpm test`: passed; `199` test files and `1,893` tests passed,
+  with the package gates and `suite temporary directory count unchanged: 0`.
 
 ## Real playtest
 
-Ran `examples/abyss-framework/playtest/moves.json` through the real runner with the WebGPU
-recipe. The scenario loaded, reached assertions, and `movement.distance` passed at 24.04 units.
-The run exited 1 because this headless machine exposed the `swiftshader` adapter and produced
-29 existing WebGPU console/runtime errors; this is environment evidence, not a validator
-failure.
+Ran `pnpm test:playtest` through the real runner with the WebGPU recipe. All four scenarios
+passed on the NVIDIA/Turing adapter: framework movement, framework camera, movement-axis, and
+navigation. The navigation scenario passed `pathLength`, `reachesPosition`, and `visibility`.
 
 ## Files changed
 
@@ -151,4 +194,15 @@ packages/playtest/src/evaluators/movement-evidence.ts
 packages/playtest/src/scenario/generated-assertion-validators.ts
 packages/playtest/src/scenario/schema-base.ts
 scripts/generate-assertion-validators.ts
+```
+
+## Review round 2 files changed
+
+```text
+docs/verification/prd-204-generated-validators-2026-08-23.md
+packages/create-threenative/agent-docs/references/assertion-reference.md
+packages/playtest/__tests__/assertion-registry.spec.ts
+packages/playtest/__tests__/vacuous-assertion.spec.ts
+packages/playtest/src/assertion-schema.ts
+packages/playtest/src/scenario/generated-assertion-validators.ts
 ```
