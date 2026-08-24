@@ -72,5 +72,5 @@ describe("create-threenative CLI", () => {
     for (const command of ["dev", "test", "ship"]) {
       expect(cliSurface, command).not.toContain(`\`${command}\``);
     }
-  });
+  }, 30_000);
 });

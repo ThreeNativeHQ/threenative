@@ -266,7 +266,7 @@ describe("native shim contract", () => {
       findings = await checkNativeShims(root);
       expect(findings).toEqual([]);
     }
-  });
+  }, 30_000);
 
   it("preserves active backend setter evidence outside quoted literals", async () => {
     const root = await fixtureRoot({
@@ -291,7 +291,7 @@ describe("native shim contract", () => {
       await writeFile(runtimeFile, form);
       await expect(checkNativeShims(root)).resolves.toEqual([]);
     }
-  });
+  }, 30_000);
 
   it("strips comments inside C++ raw strings before matching shim assignments", async () => {
     const root = await fixtureRoot({

@@ -197,6 +197,9 @@ function broker(scope: IScope): IBroker {
  * The transport is discovered, never configured: a game asks for `ui` or `game` and gets the
  * platform channel when one exists and the in-process broker when it does not. That is what
  * keeps the backend — which web view, which host API — out of every game's source.
+ * @situation connect game code to a platform-owned UI realm
+ * @situation share one UI bridge implementation across web, Android, iOS, and desktop
+ * @example const bridge = connectUiBridge({ end: "game" });
  */
 export function connectUiBridge(options: IConnectOptions): IUiBridge {
   const { end } = options;

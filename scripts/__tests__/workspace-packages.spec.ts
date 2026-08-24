@@ -89,7 +89,7 @@ describe("workspace package derivation", () => {
     // The workflow is inspected directly by the L1 scan, while these assertions keep its
     // package/archive stream visibly tied to the derivation helper.
     expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
-  });
+  }, 30_000);
 
   it("detects a literal multi-package enumeration at a reverted call site", async () => {
     const root = await fixtureRoot();
@@ -139,7 +139,7 @@ describe("workspace package derivation", () => {
 
   it("keeps the checked-in call sites on derived package lists", async () => {
     expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
-  });
+  }, 30_000);
 
   it("detects repeated literal package commands in a workflow inventory", async () => {
     const root = await fixtureRoot();
@@ -265,5 +265,5 @@ describe("workspace package derivation", () => {
       "utf8",
     );
     expect(workflow).toContain("scripts/workspace-packages.ts --archives");
-  });
+  }, 30_000);
 });

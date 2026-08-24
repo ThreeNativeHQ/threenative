@@ -69,6 +69,9 @@ const microtask = (flush: () => void): void => {
  * Only the `game` end publishes: the UI is a mirror, and a UI that could write the game's state
  * directly would be a second source of truth that only diverges on the platform where the two
  * are actually separate processes.
+ * @situation publish game state to a HUD in another realm
+ * @situation keep a web and native UI mirror on the same throttled state stream
+ * @example const publisher = publishUiState(bridge, store);
  */
 export function publishUiState<T>(
   bridge: IUiBridge,
@@ -130,6 +133,9 @@ export function publishUiState<T>(
  * Fail closed: a `tn:state` frame with no `state` object throws rather than leaving the mirror
  * showing stale values, which is the failure mode where a HUD keeps displaying the last health
  * it saw and nobody can tell it stopped updating.
+ * @situation read published game state from a UI HUD
+ * @situation subscribe a web or native UI to the game's mirrored state
+ * @example const mirror = subscribeUiState<{ health: number }>(bridge);
  */
 export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> {
   if (bridge.end !== "ui") {
@@ -161,7 +167,12 @@ export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> {
   };
 }
 
-/** Send one intent from the UI to the game. The game may ignore it; that is not an error. */
+/**
+ * Send one intent from the UI to the game. The game may ignore it; that is not an error.
+ * @situation send a button or menu action from a UI HUD to game code
+ * @situation keep UI input portable across web and native hosts
+ * @example sendUiIntent(bridge, "restart");
+ */
 export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void {
   if (bridge.end !== "ui") {
     throw new Error(
@@ -178,7 +189,12 @@ export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknow
   } as IUiMessage);
 }
 
-/** Receive UI intents on the game end. Returns an unsubscribe function. */
+/**
+ * Receive UI intents on the game end. Returns an unsubscribe function.
+ * @situation handle a HUD button action in game code
+ * @situation route native and web UI commands through one listener
+ * @example const stop = onUiIntent(bridge, (intent) => handleIntent(intent));
+ */
 export function onUiIntent(
   bridge: IUiBridge,
   listener: (intent: string, payload: unknown) => void,
