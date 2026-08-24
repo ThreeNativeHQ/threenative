@@ -2,19 +2,23 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { promisify } from 'node:util';
 import { afterEach, test } from 'vitest';
+import { PNG } from 'pngjs';
 
 import {
+  PREBUILT_KEYS,
+  RELEASE_REPOSITORY,
   installPrebuilt,
   platformKey,
   readRelease,
   releaseManifestUrl,
   sha256,
   verifyChecksum,
+  writeInstallStatus,
 } from '../scripts/install-prebuilt.mjs';
 import {
   ANDROID_PREBUILT_ASSETS,
@@ -68,9 +72,53 @@ test('the default checksum lock URL is tied to the installed package version', (
   ).version;
   assert.equal(
     releaseManifestUrl(),
-    `https://github.com/jonit-dev/threenative/releases/download/runtime-native-v${version}/prebuilt-lock.json`,
+    `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v${version}/prebuilt-lock.json`,
   );
+  assert.equal(RELEASE_REPOSITORY, 'ThreeNativeHQ/threenative');
   assert.match(releaseManifestUrl(), /\/runtime-native-v\d+\.\d+\.\d+\//u);
+});
+
+test('records a failed prebuilt install with its release URL and reason', () => {
+  const root = makeTempDirSync('threenative-install-status-');
+  roots.push(root);
+  const url = releaseManifestUrl();
+  const statusPath = join(root, 'prebuilt', 'install-status.json');
+  writeInstallStatus(
+    {
+      key: 'linux-x64',
+      ok: false,
+      reason: `Prebuilt release manifest fetch failed for 'linux-x64' at ${url}: HTTP 404.`,
+      url,
+      version: '0.3.0',
+    },
+    statusPath,
+  );
+  assert.deepEqual(JSON.parse(readFileSync(statusPath, 'utf8')), {
+    key: 'linux-x64',
+    ok: false,
+    reason: `Prebuilt release manifest fetch failed for 'linux-x64' at ${url}: HTTP 404.`,
+    url,
+    version: '0.3.0',
+  });
+});
+
+test('exports the complete prebuilt key table consumed by release packaging', () => {
+  assert.ok(PREBUILT_KEYS.includes('linux-x64'));
+  assert.ok(PREBUILT_KEYS.includes('android-arm64-v8a-runtime'));
+  assert.ok(PREBUILT_KEYS.includes('android-arm64-v8a-runtime-v8'));
+  assert.ok(PREBUILT_KEYS.includes('ios-simulator-arm64'));
+});
+
+test('the native release workflow covers every exported prebuilt key', () => {
+  const workflow = readFileSync(
+    join(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'native-release.yml'),
+    'utf8',
+  );
+  assert.match(workflow, /PREBUILT_KEYS/u);
+  const namesBlock = workflow.match(/const names = \{([\s\S]*?)\n\s*\};/u)?.[1];
+  assert.ok(namesBlock, 'native release workflow has no checksum key table');
+  const workflowKeys = [...namesBlock.matchAll(/^\s*"([^"]+)":/gmu)].map((match) => match[1]);
+  assert.deepEqual([...workflowKeys].sort(), [...PREBUILT_KEYS].sort());
 });
 
 test('the installer can bootstrap a remote checksum lock before fetching the runtime', async () => {
@@ -265,11 +313,94 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
       ),
       runtime,
     );
+    assert.equal(
+      JSON.parse(
+        readFileSync(
+          join(
+            consumer,
+            'node_modules/@threenative/runtime-native/prebuilt/install-status.json',
+          ),
+          'utf8',
+        ),
+      ).ok,
+      true,
+    );
   } finally {
     await new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+test.runIf(process.platform === 'linux')('an installed runtime verifier uses packaged Linux display support', async () => {
+  const root = makeTempDirSync('threenative-installed-verifier-');
+  roots.push(root);
+  const consumer = join(root, 'consumer');
+  const packed = await packRuntime(root);
+  mkdirSync(consumer);
+  writeFileSync(
+    join(consumer, 'package.json'),
+    JSON.stringify({
+      dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
+      name: 'installed-verifier-proof',
+      private: true,
+    }),
+  );
+  await run('pnpm', ['install', '--ignore-scripts', '--node-linker=hoisted'], {
+    cwd: consumer,
+  });
+  const runtimePackage = join(consumer, 'node_modules', '@threenative', 'runtime-native');
+
+  const expectedScreenshot = join(root, 'expected.png');
+  const png = new PNG({ height: 16, width: 16 });
+  for (let index = 0; index < png.data.length; index += 4) {
+    const cyan = index < 128 * 4;
+    png.data[index] = cyan ? 20 : 0;
+    png.data[index + 1] = cyan ? 220 : 0;
+    png.data[index + 2] = cyan ? 240 : 0;
+    png.data[index + 3] = 255;
+  }
+  writeFileSync(expectedScreenshot, PNG.sync.write(png));
+
+  const artifactDirectory = join(consumer, 'dist-native');
+  mkdirSync(artifactDirectory, { recursive: true });
+  writeFileSync(join(consumer, 'package.json'), JSON.stringify({ name: 'starter' }));
+  const artifact = join(artifactDirectory, 'starter');
+  const artifactScript = [
+    '#!/bin/sh',
+    'set -eu',
+    'screenshot=',
+    'while [ "$#" -gt 0 ]; do',
+    '  case "$1" in',
+    '    --screenshot) screenshot="$2"; shift 2 ;;',
+    '    *) shift ;;',
+    '  esac',
+    'done',
+    'cp "$TN_TEST_SCREENSHOT" "$screenshot"',
+    "printf '%s\\n' 'TN_NATIVE_SMOKE_READY:webgpu' 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb' 'TN_NATIVE_SMOKE_300_FRAMES:300' 'Rendered 300 frames in 1ms'",
+    '',
+  ].join('\n');
+  writeFileSync(artifact, artifactScript);
+  chmodSync(artifact, 0o755);
+
+  const verifier = join(runtimePackage, 'scripts', 'verify-starter-desktop.mjs');
+  const result = await run(process.execPath, [verifier], {
+    cwd: consumer,
+    env: { ...process.env, TN_TEST_SCREENSHOT: expectedScreenshot },
+  });
+  assert.match(result.stdout, /starter desktop gate passed: 300 frames/u);
+  assert.equal(
+    JSON.parse(
+      readFileSync(join(consumer, 'artifacts', 'native', 'starter-desktop-report.json'), 'utf8'),
+    ).pass,
+    true,
+  );
+  await assert.rejects(
+    run('sh', [join(runtimePackage, 'scripts', 'xvfb.sh'), process.execPath, '-e', 'process.exit(7)'], {
+      cwd: consumer,
+    }),
+    (error) => error?.code === 7,
+  );
 });
 
 test('a corrupted download fails the packed consumer install lifecycle', async () => {
@@ -310,7 +441,24 @@ test('a corrupted download fails the packed consumer install lifecycle', async (
       (error) => /Checksum verification failed.*linux-x64/u.test(`${error.stdout}\n${error.stderr}`),
     );
     assert.equal(
-      existsSync(join(consumer, 'node_modules/@threenative/runtime-native/prebuilt')),
+      existsSync(
+        join(
+          consumer,
+          'node_modules/@threenative/runtime-native/prebuilt/linux-x64/threenative-runtime',
+        ),
+      ),
+      false,
+    );
+    assert.equal(
+      JSON.parse(
+        readFileSync(
+          join(
+            consumer,
+            'node_modules/@threenative/runtime-native/prebuilt/install-status.json',
+          ),
+          'utf8',
+        ),
+      ).ok,
       false,
     );
   } finally {

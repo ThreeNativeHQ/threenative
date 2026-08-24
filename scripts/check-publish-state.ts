@@ -24,6 +24,10 @@ import os from "node:os";
 import path from "node:path";
 import { init, parse } from "es-module-lexer";
 
+const { releaseManifestUrl } = (await import(
+  new URL("../packages/runtime-native/scripts/install-prebuilt.mjs", import.meta.url).href
+)) as { readonly releaseManifestUrl: (version?: string) => string };
+
 const REPO = path.resolve(import.meta.dirname, "..");
 
 export interface IPublishPackage {
@@ -83,16 +87,17 @@ export interface IRegistryFacts {
   readonly version?: string;
 }
 
-export type RegistryLookup = (packageName: string) => IRegistryFacts;
+export type RegistryLookup = (packageName: string, version?: string) => IRegistryFacts;
 
 export function npmLookup(repo: string): RegistryLookup {
   const userconfig = path.join(repo, ".npmrc");
   const config = fs.existsSync(userconfig) ? ["--userconfig", userconfig] : [];
-  return (packageName) => {
+  return (packageName, version) => {
+    const requested = version === undefined ? packageName : `${packageName}@${version}`;
     try {
       const stdout = execFileSync(
         "npm",
-        [...config, "view", packageName, "version", "time", "--json"],
+        [...config, "view", requested, "version", "time", "--json"],
         { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 },
       );
       const parsed = JSON.parse(stdout) as { time?: Record<string, string>; version?: string };
@@ -129,6 +134,12 @@ export function gitSourceCommits(repo: string): SourceCommits {
 }
 
 const UNRESOLVED = /^(?:catalog:|workspace:)/u;
+const TEMPLATE_DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
 
 /**
  * A template manifest ships to a user's disk verbatim. `catalog:` and `workspace:` are pnpm
@@ -144,7 +155,7 @@ export function unresolvedTemplateSpecifiers(repo: string): readonly IPublishFin
     const manifest = path.join(root, entry.name, "package.json");
     if (!fs.existsSync(manifest)) continue;
     const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
-    for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+    for (const field of TEMPLATE_DEPENDENCY_FIELDS) {
       const block = parsed[field];
       if (typeof block !== "object" || block === null) continue;
       for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>))
@@ -157,6 +168,129 @@ export function unresolvedTemplateSpecifiers(repo: string): readonly IPublishFin
     }
   }
   return findings;
+}
+
+/** Every package specifier copied to a stranger's project must be portable and resolvable. */
+export function templatePinCensus(
+  repo: string,
+  lookup: RegistryLookup = npmLookup(repo),
+  options: { readonly allowCurrentPublishSetPins?: boolean } = {},
+): readonly IPublishFinding[] {
+  const root = path.join(repo, "packages", "create-threenative", "templates");
+  if (!fs.existsSync(root)) return [];
+  const findings: IPublishFinding[] = [...unresolvedTemplateSpecifiers(repo)];
+  const currentPublishPins = options.allowCurrentPublishSetPins
+    ? new Set(publishSet(repo).map((item) => `${item.name}@${item.version}`))
+    : new Set<string>();
+  const seen = new Map<string, IRegistryFacts>();
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifest = path.join(root, entry.name, "package.json");
+    if (!fs.existsSync(manifest)) continue;
+    const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
+    for (const field of TEMPLATE_DEPENDENCY_FIELDS) {
+      const block = parsed[field];
+      if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
+      for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>)) {
+        if (typeof specifier !== "string" || UNRESOLVED.test(specifier)) continue;
+        const pin = `${dependency}@${specifier}`;
+        let facts = seen.get(pin);
+        if (facts === undefined) {
+          try {
+            facts = lookup(dependency, specifier);
+          } catch {
+            facts = { state: "unreachable" };
+          }
+          seen.set(pin, facts);
+        }
+        if (facts.state === "present") continue;
+        if (
+          options.allowCurrentPublishSetPins &&
+          facts.state === "absent" &&
+          currentPublishPins.has(pin)
+        )
+          continue;
+        findings.push({
+          detail:
+            facts.state === "absent"
+              ? `templates/${entry.name}/package.json pins ${pin}, but the registry has no resolvable version.`
+              : `The registry could not be reached while resolving templates/${entry.name}/package.json pin ${pin}.`,
+          package: `template:${entry.name}`,
+          severity: facts.state === "absent" ? "fail" : "blocked",
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+export type PrebuiltReleaseProbe = (url: string) => "absent" | "present" | "unreachable";
+
+function headPrebuiltRelease(url: string): ReturnType<PrebuiltReleaseProbe> {
+  try {
+    const status = execFileSync(
+      "curl",
+      [
+        "--silent",
+        "--show-error",
+        "--location",
+        "--head",
+        "--output",
+        "/dev/null",
+        "--write-out",
+        "%{http_code}",
+        url,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 },
+    ).trim();
+    if (/^2\d\d$/u.test(status)) return "present";
+    if (status === "404") return "absent";
+    return "unreachable";
+  } catch {
+    return "unreachable";
+  }
+}
+
+function runtimePackageVersion(repo: string): string | undefined {
+  const manifest = path.join(repo, "packages", "runtime-native", "package.json");
+  if (!fs.existsSync(manifest)) return undefined;
+  const version = (JSON.parse(fs.readFileSync(manifest, "utf8")) as { version?: unknown }).version;
+  if (typeof version !== "string" || version.length === 0)
+    throw new Error(`TN_PUBLISH_VERSION_MALFORMED: ${manifest} has no version.`);
+  return version;
+}
+
+/** The runtime package and its public prebuilt lock must move together. */
+export function prebuiltReleaseCensus(
+  repo: string,
+  probe: PrebuiltReleaseProbe = headPrebuiltRelease,
+  version = runtimePackageVersion(repo),
+): readonly IPublishFinding[] {
+  if (version === undefined) return [];
+  const url = releaseManifestUrl(version);
+  let state: ReturnType<PrebuiltReleaseProbe>;
+  try {
+    state = probe(url);
+  } catch {
+    state = "unreachable";
+  }
+  if (state === "present") return [];
+  if (state === "absent") {
+    return [
+      {
+        detail: `No prebuilt release exists at ${url}; publish runtime-native-v${version} before publishing the runtime package.`,
+        package: "@threenative/runtime-native",
+        severity: "fail",
+      },
+    ];
+  }
+  return [
+    {
+      detail: `The prebuilt release could not be reached at ${url}; its existence is unknown.`,
+      package: "@threenative/runtime-native",
+      severity: "blocked",
+    },
+  ];
 }
 
 /**
@@ -457,7 +591,9 @@ export function missingFromReleaseWorkflow(
 }
 
 export interface ICheckPublishOptions {
+  readonly allowCurrentPublishSetPins?: boolean;
   readonly lookup?: RegistryLookup;
+  readonly prebuiltProbe?: PrebuiltReleaseProbe;
   readonly repo?: string;
   readonly sourceCommits?: SourceCommits;
   readonly tarballs?: TarballReader;
@@ -508,7 +644,12 @@ export async function checkPublishState(
   findings.push(...missingPackageReadmes(packages));
   findings.push(...staleInternalPeerRanges(packages));
   findings.push(...missingFromReleaseWorkflow(repo, packages));
-  findings.push(...unresolvedTemplateSpecifiers(repo));
+  findings.push(
+    ...templatePinCensus(repo, lookup, {
+      allowCurrentPublishSetPins: options.allowCurrentPublishSetPins,
+    }),
+  );
+  findings.push(...prebuiltReleaseCensus(repo, options.prebuiltProbe));
   const readTarball = options.tarballs ?? pnpmPackReader();
   for (const item of packages) {
     const contents = readTarball(item);
@@ -535,8 +676,20 @@ export function formatPublishReport(report: IPublishReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-async function main(): Promise<void> {
-  const report = await checkPublishState();
+const ALLOW_CURRENT_PUBLISH_SET_PINS = "--allow-current-publish-set-pins";
+
+async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const unknown = argv.filter((argument) => argument !== ALLOW_CURRENT_PUBLISH_SET_PINS);
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `TN_PUBLISH_UNKNOWN_FLAG: ${unknown.join(", ")}. Supported flag: ${ALLOW_CURRENT_PUBLISH_SET_PINS}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const report = await checkPublishState({
+    allowCurrentPublishSetPins: argv.includes(ALLOW_CURRENT_PUBLISH_SET_PINS),
+  });
   process.stdout.write(formatPublishReport(report));
   process.exitCode = report.exitCode;
 }

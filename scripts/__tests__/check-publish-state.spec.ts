@@ -13,10 +13,12 @@ import {
   checkPublishState,
   missingPackageReadmes,
   pnpmPackReader,
+  prebuiltReleaseCensus,
   publishSet,
   relativeSpecifiers,
   satisfiesRange,
   staleInternalPeerRanges,
+  templatePinCensus,
   unresolvableTarballImports,
   unresolvedTarballSpecifiers,
   unresolvedTemplateSpecifiers,
@@ -225,6 +227,118 @@ describe("pnpm publish:check", () => {
     expect(findings[0]?.detail).toMatch(/no meaning outside this workspace/u);
   });
 
+  it("fails when a template pins a package the registry does not have", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/create-threenative/templates/starter/package.json",
+      JSON.stringify({ dependencies: { "@threenative/core": "9.9.9", three: "0.185.1" } }),
+    );
+    const findings = templatePinCensus(root, (name, version) =>
+      name === "@threenative/core" && version === "9.9.9"
+        ? { state: "absent" }
+        : { state: "present", version: "0.0.0" },
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.package).toBe("template:starter");
+    expect(findings[0]?.detail).toMatch(/@threenative\/core@9\.9\.9/u);
+  });
+
+  it("rejects an absent exact internal pin at the version in the current publish set by default", async () => {
+    const root = await fixture();
+    const lookup: RegistryLookup = (name, version) =>
+      name === "@threenative/core" && (version === undefined || version === "0.1.0")
+        ? { state: "absent" }
+        : { published: PUBLISHED, state: "present", version: "0.0.0" };
+
+    expect(templatePinCensus(root, lookup)).toContainEqual(
+      expect.objectContaining({
+        package: "template:starter",
+        severity: "fail",
+      }),
+    );
+    const report = await checkPublishState({
+      lookup,
+      prebuiltProbe: () => "present",
+      repo: root,
+      sourceCommits: () => 0,
+      tarballs: cleanTarballs,
+    });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        package: "template:starter",
+        severity: "fail",
+      }),
+    );
+    expect(report.exitCode).toBe(1);
+  });
+
+  it("allows an absent exact current-set pin only with the explicit release opt-in", async () => {
+    const root = await fixture();
+    const lookup: RegistryLookup = (name, version) =>
+      name === "@threenative/core" && (version === undefined || version === "0.1.0")
+        ? { state: "absent" }
+        : { published: PUBLISHED, state: "present", version: "0.0.0" };
+
+    expect(templatePinCensus(root, lookup, { allowCurrentPublishSetPins: true })).toEqual([]);
+    const report = await checkPublishState({
+      allowCurrentPublishSetPins: true,
+      lookup,
+      prebuiltProbe: () => "present",
+      repo: root,
+      sourceCommits: () => 0,
+      tarballs: cleanTarballs,
+    });
+    expect(report.findings).toEqual([]);
+    expect(report.exitCode).toBe(0);
+  });
+
+  it("still fails an absent pin outside the current publish set with the opt-in", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/create-threenative/templates/starter/package.json",
+      JSON.stringify({ dependencies: { "@threenative/core": "9.9.9" } }),
+    );
+    const findings = templatePinCensus(root, () => ({ state: "absent" }), {
+      allowCurrentPublishSetPins: true,
+    });
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        package: "template:starter",
+        severity: "fail",
+      }),
+    );
+  });
+
+  it("keeps the coordinated pin opt-in explicit in the npm release workflow", () => {
+    const workflow = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../../.github/workflows/npm-release.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("run: pnpm publish:check --allow-current-publish-set-pins");
+  });
+
+  it("passes a template pin resolved by the registry", async () => {
+    const root = await fixture();
+    expect(templatePinCensus(root, () => ({ state: "present", version: "0.1.0" }))).toEqual([]);
+  });
+
+  it("fails when no prebuilt release exists for the runtime version", async () => {
+    const root = await fixture();
+    const findings = prebuiltReleaseCensus(root, () => "absent", "0.3.0");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.detail).toMatch(/runtime-native-v0\.3\.0.*prebuilt-lock\.json/u);
+  });
+
+  it("blocks, never passes, when the prebuilt release probe is unreachable", async () => {
+    const root = await fixture();
+    const findings = prebuiltReleaseCensus(root, () => "unreachable", "0.3.0");
+    expect(findings).toMatchObject([
+      { package: "@threenative/runtime-native", severity: "blocked" },
+    ]);
+  });
+
   it("fails when a workspace: specifier survives into a template manifest", async () => {
     const root = await fixture();
     write(
@@ -233,6 +347,29 @@ describe("pnpm publish:check", () => {
       JSON.stringify({ devDependencies: { "@threenative/playtest": "workspace:*" } }),
     );
     expect(unresolvedTemplateSpecifiers(root)).toHaveLength(1);
+  });
+
+  it("fails the publish report when an optional template pin still uses workspace:", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/create-threenative/templates/starter/package.json",
+      JSON.stringify({
+        optionalDependencies: { "@threenative/runtime-native": "workspace:*" },
+      }),
+    );
+    const report = await checkPublishState({
+      lookup: (name) => ({ ...everythingPublished(name), version: "0.0.9" }),
+      repo: root,
+      sourceCommits: () => 0,
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({ package: "template:starter", severity: "fail" }),
+    );
+    expect(report.findings.map(({ detail }) => detail).join("\n")).toMatch(
+      /optionalDependencies\.@threenative\/runtime-native.*workspace:\*/u,
+    );
   });
 
   it("fails when a peer range on a sibling excludes the version shipping beside it", async () => {

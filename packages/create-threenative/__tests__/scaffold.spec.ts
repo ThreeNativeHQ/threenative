@@ -705,6 +705,16 @@ describe("create-threenative", () => {
     });
   });
 
+  it("should accept the short local runtime package override", () => {
+    expect(parseArgs(["my-game", "--no-install", "--runtime-package", "/tmp/runtime.tgz"])).toEqual(
+      {
+        install: false,
+        packageSources: { "@threenative/runtime-native": "/tmp/runtime.tgz" },
+        target: "my-game",
+      },
+    );
+  });
+
   it("should keep a local native runtime optional", async () => {
     const root = await makeTempDir("threenative-local-runtime-");
     try {

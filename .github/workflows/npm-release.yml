@@ -41,7 +41,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - name: Refuse a stale or incomplete publish set
-        run: pnpm publish:check
+        # The release is the only caller allowed to admit exact pins for packages published in this
+        # coordinated set. Ordinary `pnpm publish:check` remains fail-closed for those pins.
+        run: pnpm publish:check --allow-current-publish-set-pins
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -90,6 +92,10 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install native desktop runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
       # Proves the registry path, which no other gate in this repository exercises: the sandbox,
       # the sweeps and verify-golden-path all resolve `file:` tarballs by design.
       - name: Install from the registry in a directory with no workspace above it

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
+  PACKAGES,
   assertTemplateSourcesCovered,
   isArchived,
   makeSandbox,
@@ -29,6 +30,11 @@ async function temporaryRoot(prefix: string): Promise<string> {
 }
 
 describe("genre sandbox", () => {
+  it("packs the native runtime and capability server with the user-facing packages", () => {
+    expect(PACKAGES).toContain("runtime-native");
+    expect(PACKAGES).toContain("engine-mcp");
+  });
+
   it("defaults to the workspace sandbox and keeps package staging inside it", async () => {
     const workspace = await temporaryRoot("threenative-workspace-");
     const repo = path.join(workspace, "engine");
@@ -163,6 +169,8 @@ describe("genre sandbox", () => {
     // Every one of these 404s on the registry today; an unpassed source is a dead scaffold.
     expect(declared).toContain("@threenative/playtest");
     expect(declared).toContain("create-threenative");
+    expect(scaffold).toContain("--runtime-native-package");
+    expect(scaffold).toContain("--engine-mcp-package");
     for (const dependency of declared) {
       const flag =
         dependency === "create-threenative"

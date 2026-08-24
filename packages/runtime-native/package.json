@@ -33,7 +33,8 @@
     "scripts/production-evidence.mjs",
     "scripts/profile-production.mjs",
     "scripts/qualify-physical-mobile.mjs",
-    "scripts/verify-starter-desktop.mjs"
+    "scripts/verify-starter-desktop.mjs",
+    "scripts/xvfb.sh"
   ],
   "scripts": {
     "deps:download": "node scripts/download-deps.mjs",

@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { downloadReleaseArtifact, verifyChecksum } from './install-prebuilt.mjs';
+import { downloadReleaseArtifact, releaseManifestUrl, verifyChecksum } from './install-prebuilt.mjs';
 import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -452,8 +452,22 @@ export async function prepareAndroidPrebuilts(options = {}) {
   // gets forgotten, so the prebuilt path takes the same engine names the Gradle property does.
   const engine = String(options.engine ?? 'v8').toLowerCase();
   const assets = androidPrebuiltAssets(engine);
+  const expectedSource =
+    options.manifestPath ?? options.manifestUrl ?? releaseManifestUrl(options.version);
+  const downloadOptions = {
+    ...options,
+    manifestUrl: options.manifestUrl ?? releaseManifestUrl(options.version),
+  };
   const downloads = await Promise.all(
-    Object.keys(assets).map(async (key) => [key, await downloadReleaseArtifact(key, options)]),
+    Object.keys(assets).map(async (key) => {
+      try {
+        return [key, await downloadReleaseArtifact(key, downloadOptions)];
+      } catch (error) {
+        throw new Error(
+          `Android prebuilt '${key}' expected from '${expectedSource}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }),
   );
   const prebuiltRoot = resolve(options.outputRoot ?? join(runtimeRoot, 'android', 'prebuilt'));
   for (const [key, contents] of downloads) {

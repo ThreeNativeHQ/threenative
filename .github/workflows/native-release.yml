@@ -253,6 +253,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           pattern: runtime-*
@@ -266,6 +267,10 @@ jobs:
           node --input-type=module <<'NODE'
           import { createHash } from "node:crypto";
           import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+          import { PREBUILT_KEYS, RELEASE_REPOSITORY } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          if (process.env.RELEASE_REPOSITORY !== RELEASE_REPOSITORY) {
+            throw new Error(`Prebuilt releases must be published by ${RELEASE_REPOSITORY}, received ${process.env.RELEASE_REPOSITORY}.`);
+          }
           const names = {
             "android-arm64-v8a-runtime": "threenative-runtime-android-arm64-v8a.so",
             "android-arm64-v8a-runtime-v8": "threenative-runtime-android-arm64-v8a-v8.so",
@@ -285,6 +290,11 @@ jobs:
             "linux-x64": "threenative-runtime-linux-x64",
             "win32-x64": "threenative-runtime-win32-x64.exe",
           };
+          const expectedKeys = [...PREBUILT_KEYS].sort();
+          const actualKeys = Object.keys(names).sort();
+          if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
+            throw new Error(`Prebuilt key table drift: expected ${expectedKeys.join(", ")}; received ${actualKeys.join(", ")}.`);
+          }
           const expected = Object.values(names).sort();
           const actual = readdirSync("release").sort();
           if (JSON.stringify(actual) !== JSON.stringify(expected)) {

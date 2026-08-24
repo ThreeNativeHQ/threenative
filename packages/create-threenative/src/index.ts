@@ -467,6 +467,10 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
     const source = readFlag(argv, flag);
     if (source !== undefined) packageSources[name] = source;
   }
+  const shortRuntimeSource = readFlag(argv, "--runtime-package");
+  if (shortRuntimeSource !== undefined) {
+    packageSources["@threenative/runtime-native"] = shortRuntimeSource;
+  }
   return {
     install: !argv.includes("--no-install"),
     target,

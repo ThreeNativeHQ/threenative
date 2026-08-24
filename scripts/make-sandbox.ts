@@ -17,7 +17,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["assets", "core", "physics", "ui", "playtest"] as const;
+export const PACKAGES = [
+  "assets",
+  "core",
+  "physics",
+  "ui",
+  "playtest",
+  "runtime-native",
+  "engine-mcp",
+] as const;
 const CLI_PACKAGE = "create-threenative";
 const ARMS = ["framework", "vanilla"] as const;
 
@@ -283,11 +291,11 @@ function frameworkVersion(repo: string): string {
 /** Maps a dependency a template declares onto the tarball key that would replace it. */
 function tarballKey(dependency: string): PackageTarball | undefined {
   if (dependency === CLI_PACKAGE) return CLI_PACKAGE;
-  const scoped = dependency.startsWith("@threenative/")
+  const packageName = dependency.startsWith("@threenative/")
     ? dependency.slice("@threenative/".length)
-    : undefined;
-  return ([...PACKAGES] as string[]).includes(scoped ?? "")
-    ? (scoped as (typeof PACKAGES)[number])
+    : dependency;
+  return ([...PACKAGES] as string[]).includes(packageName)
+    ? (packageName as (typeof PACKAGES)[number])
     : undefined;
 }
 
@@ -467,7 +475,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   const requiredPackages: readonly PackageTarball[] =
     arm === "vanilla" ? (["playtest"] as const) : [...PACKAGES, CLI_PACKAGE];
   if (options.prepare ?? true) {
-    run("pnpm", ["--filter", "./packages/**", "build"], repo);
+    run("pnpm", ["--filter", "./packages/**", "--if-present", "run", "build"], repo);
     for (const name of [...PACKAGES, CLI_PACKAGE]) {
       run(
         "pnpm",
@@ -578,6 +586,15 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     install leaks the same; set sourcemap: false in the tsup configs to close it)`,
       "  CHARTER.md, docs/, PRDs, budgets, LOC classifier: not present",
       `  AGENTS.md in scope: ${bare ? "0 until it scaffolds" : "1 (the generated one)"}`,
+      ...(arm === "vanilla"
+        ? [
+            "  native runtime: not included in the vanilla observation arm",
+            "  capability server: not included in the vanilla observation arm",
+          ]
+        : [
+            "  native runtime: packed locally for build --target desktop",
+            "  capability server: packed locally for engine_search_capabilities",
+          ]),
       `  sealed proof SHA-256: ${input.proofHash}`,
       "",
       `  run from ${out}:`,
