@@ -174,6 +174,20 @@ export async function assertNativeAssetsCompatible(
 
 /** The one UI entry every target mounts. Convention, not configuration. */
 const UI_ENTRY = path.join("src", "ui", "main.tsx");
+/**
+ * The generated entry page, written into the Vite root rather than under `.threenative/build/`.
+ *
+ * Vite emits an entry HTML at the same path *inside* `outDir` that it had inside the root, and
+ * `base: "./"` writes every asset link relative to that path. A page generated two directories
+ * deep came out with `../../assets/index.js`, which was correct where Vite put it and wrong the
+ * moment the file was moved to the output root — nothing rewrites the links. Served from `/ui/`,
+ * the web view then asked for `/assets/index.js`, outside the handler that serves the UI, and
+ * rendered a blank page over the game: on a screenshot, a game whose HUD code is broken.
+ *
+ * Keeping the page in the root makes the emitted path the output root, so the rename below is
+ * within one directory and `./assets/...` keeps resolving.
+ */
+const UI_PAGE = ".threenative-ui.html";
 
 /**
  * Build `src/ui/` on its own, for the platform's web view to load.
@@ -198,7 +212,7 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
   }
   const buildRoot = path.join(cwd, ".threenative", "build");
   await mkdir(buildRoot, { recursive: true });
-  const page = path.join(buildRoot, "index.html");
+  const page = path.join(cwd, UI_PAGE);
   // `viewport-fit=cover` so the UI can reach under a display cutout, and a transparent body so
   // the game surface underneath is what shows through everywhere the UI does not draw.
   await writeFile(
@@ -220,13 +234,14 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
   );
   const driver = path.join(buildRoot, "build-ui.mjs");
   await writeFile(driver, uiBuildDriver(cwd, page, output));
-  await run(process.execPath, [driver], cwd);
-  const generatedPage = path.join(output, path.relative(cwd, page));
-  const index = path.join(output, "index.html");
-  if (generatedPage !== index) {
-    await rename(generatedPage, index);
-    await rm(path.dirname(generatedPage), { force: true, recursive: true });
+  try {
+    await run(process.execPath, [driver], cwd);
+  } finally {
+    await rm(page, { force: true });
   }
+  const generatedPage = path.join(output, UI_PAGE);
+  const index = path.join(output, "index.html");
+  await rename(generatedPage, index);
   return output;
 }
 

@@ -1,0 +1,80 @@
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+/**
+ * Every Vite plugin a template imports must actually be in its `plugins` array.
+ *
+ * `react()` and `tailwindcss()` were dropped from all six React templates by a commit that meant
+ * to remove a third plugin from the same line. Nothing failed: the imports stayed, so the file
+ * still type-checked, Vite still built, and `@import "tailwindcss"` still produced a stylesheet —
+ * the theme and preflight, with an empty `@layer utilities`. Every class name in `src/ui/` became
+ * an inert string. The scaffolded HUD rendered unstyled on web, desktop and Android alike for as
+ * long as that stood, and the only symptom was a screenshot nobody diffed.
+ *
+ * An unused import is the signature of the mistake, so that is what this checks.
+ */
+const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
+
+/** Plugin factories, by the identifier a template imports them under. */
+const PLUGIN_IMPORT = /^import\s+(\w+)\s+from\s+"(@tailwindcss\/vite|@vitejs\/plugin-react)";$/gm;
+
+const templates = async (): Promise<readonly string[]> =>
+  (await readdir(TEMPLATE_ROOT, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+
+describe("template vite configs", () => {
+  it("wires every plugin the template imports", async () => {
+    const unwired: string[] = [];
+    for (const template of await templates()) {
+      const file = path.join(TEMPLATE_ROOT, template, "vite.config.ts");
+      const source = await readFile(file, "utf8").catch(() => null);
+      if (source === null) continue;
+      const plugins = /plugins:\s*\[([^\]]*)\]/.exec(source)?.[1] ?? "";
+      for (const [, identifier] of source.matchAll(PLUGIN_IMPORT)) {
+        if (!plugins.includes(`${identifier}(`)) unwired.push(`${template}: ${identifier}`);
+      }
+    }
+    expect(unwired).toEqual([]);
+  });
+
+  it("gives every template with a React UI both the React and Tailwind plugins", async () => {
+    const missing: string[] = [];
+    for (const template of await templates()) {
+      const hasReactUi = await readdir(path.join(TEMPLATE_ROOT, template, "src", "ui"))
+        .then((entries) => entries.some((entry) => entry.endsWith(".tsx")))
+        .catch(() => false);
+      if (!hasReactUi) continue;
+      const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
+      const plugins = /plugins:\s*\[([^\]]*)\]/.exec(source)?.[1] ?? "";
+      // Named rather than inferred: a React UI that Tailwind never scanned still builds, and
+      // ships a stylesheet with no utilities in it.
+      if (!plugins.includes("react(")) missing.push(`${template}: react()`);
+      if (!plugins.includes("tailwindcss(")) missing.push(`${template}: tailwindcss()`);
+    }
+    expect(missing).toEqual([]);
+  });
+});
+
+describe("template stylesheets", () => {
+  it("never paints a background on body, in a stylesheet the UI layer imports", async () => {
+    const painted: string[] = [];
+    for (const template of await templates()) {
+      const stylesheet = path.join(TEMPLATE_ROOT, template, "src", "style.css");
+      const source = await readFile(stylesheet, "utf8").catch(() => null);
+      if (source === null) continue;
+      const uiEntry = path.join(TEMPLATE_ROOT, template, "src", "ui", "main.tsx");
+      const ui = await readFile(uiEntry, "utf8").catch(() => null);
+      if (ui === null || !ui.includes("style.css")) continue;
+      // `src/ui/main.tsx` is what the platform's transparent web view loads over the game. A
+      // `body` background in a stylesheet it imports is an opaque sheet over the rendered frame —
+      // and it stayed invisible for as long as `@theme` went unprocessed and left the custom
+      // property undefined, so the first thing that fixed Tailwind blacked out every native game.
+      const body = /^body \{([^}]*)\}/m.exec(source)?.[1] ?? "";
+      if (/(^|[\s;])background(-color)?\s*:/.test(body)) painted.push(template);
+    }
+    expect(painted).toEqual([]);
+  });
+});

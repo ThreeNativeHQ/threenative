@@ -21,7 +21,7 @@ function assetsWatchPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [createWebBrandPlugin(), assetsWatchPlugin()],
+  plugins: [createWebBrandPlugin(), react(), tailwindcss(), assetsWatchPlugin()],
   server: {
     watch: {
       ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],

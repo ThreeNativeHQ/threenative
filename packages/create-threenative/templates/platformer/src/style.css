@@ -24,10 +24,21 @@ body,
 }
 
 body {
-  background: var(--color-ink);
   color: var(--color-text);
   font-family: var(--font-mono);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * The page's backdrop belongs to the web document's own mount point, never to `body`.
+ * `src/ui/main.tsx` imports this same stylesheet, and on native that file is what the platform's
+ * transparent web view loads over the game: a `body` background there paints an opaque sheet over
+ * the frame the game just rendered, and the HUD appears to float on nothing. `#root` exists only
+ * in the web page, so the backdrop stays where it belongs and the UI layer stays see-through.
+ */
+
+#root {
+  background: var(--color-ink);
 }
 
 #threenative-launch {
