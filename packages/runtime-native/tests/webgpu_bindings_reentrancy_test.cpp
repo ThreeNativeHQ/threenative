@@ -158,6 +158,161 @@ bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
            !engine->hasProperty(objectDestination, "nonObjectFailure");
 }
 
+bool checkPropertyDescriptorAndExceptionControls(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    const auto failed = [](const char* message) {
+        std::cerr << "property binding proof failed: " << message << std::endl;
+        return false;
+    };
+    struct FrameTrackingGuard {
+        mystral::js::Engine* engine;
+        ~FrameTrackingGuard() { engine->resumeFrameTracking(); }
+    } frameTrackingGuard{engine};
+    engine->suspendFrameTracking();
+
+    if (!runtime.evalScript(R"JS((() => {
+        const prototype = { inheritedData: "inherited-original" };
+        globalThis.__tnInheritedRollbackTarget = Object.create(prototype);
+        globalThis.__tnRollbackProxy = new Proxy({}, {
+            set(target, property, value) {
+                if (property === "fail") throw new Error("controlled set failure");
+                return Reflect.set(target, property, value);
+            },
+        });
+        const silentPrototype = { silent: "inherited-silent" };
+        globalThis.__tnSilentProxy = new Proxy(Object.create(silentPrototype), {
+            set() {
+                return true;
+            },
+        });
+
+        globalThis.__tnAccessorSetterCalls = 0;
+        globalThis.__tnAccessorGetterCalls = 0;
+        globalThis.__tnAccessorTarget = {};
+        Object.defineProperty(__tnAccessorTarget, "ownAccessor", {
+            configurable: true,
+            get() {
+                __tnAccessorGetterCalls += 1;
+                return "accessor-value";
+            },
+            set() {
+                __tnAccessorSetterCalls += 1;
+            },
+        });
+        const setterPrototype = {};
+        Object.defineProperty(setterPrototype, "inheritedSetter", {
+            configurable: true,
+            set() {
+                __tnAccessorSetterCalls += 1;
+            },
+        });
+        globalThis.__tnInheritedSetterTarget = Object.create(setterPrototype);
+        globalThis.__tnAccessorEarlier = {};
+    })())JS", "webgpu-binding-property-controls-setup.js")) {
+        return failed("setup");
+    }
+
+    const auto inheritedTarget = engine->getGlobalProperty("__tnInheritedRollbackTarget");
+    const auto rollbackProxy = engine->getGlobalProperty("__tnRollbackProxy");
+    const auto silentProxy = engine->getGlobalProperty("__tnSilentProxy");
+    const auto accessorTarget = engine->getGlobalProperty("__tnAccessorTarget");
+    const auto inheritedSetterTarget = engine->getGlobalProperty("__tnInheritedSetterTarget");
+    const auto accessorEarlier = engine->getGlobalProperty("__tnAccessorEarlier");
+
+    const auto rollbackTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "inheritedData", 0, nullptr, &tableProbe, inheritedTarget},
+        {"TestSurface", "fail", 0, nullptr, &tableProbe, rollbackProxy},
+    });
+    if (!rollbackTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, rollbackTable) ||
+        !engine->hasException()) {
+        return failed("inherited-data rollback did not fail closed");
+    }
+    engine->getException();
+    if (!runtime.evalScript(
+            "if (Object.prototype.hasOwnProperty.call(__tnInheritedRollbackTarget, 'inheritedData')) "
+            "throw new Error('inherited data became an own property after rollback'); "
+            "if (__tnInheritedRollbackTarget.inheritedData !== 'inherited-original') "
+            "throw new Error('inherited data lookup changed after rollback');",
+            "webgpu-binding-inherited-rollback-check.js")) {
+        return failed("inherited-data rollback state");
+    }
+
+    const auto silentTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "silent", 0, nullptr, &tableProbe, silentProxy},
+    });
+    if (!silentTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, silentTable) ||
+        !engine->hasException()) {
+        return failed("silent proxy setter was accepted without an own binding");
+    }
+    engine->getException();
+    if (!runtime.evalScript(
+            "if (Object.prototype.hasOwnProperty.call(__tnSilentProxy, 'silent')) "
+            "throw new Error('silent proxy acquired an own binding'); "
+            "if (__tnSilentProxy.silent !== 'inherited-silent') "
+            "throw new Error('silent proxy inherited lookup changed');",
+            "webgpu-binding-silent-setter-check.js")) {
+        return failed("silent proxy rollback state");
+    }
+
+    const auto accessorTable = mystral::webgpu::bindingTable({
+        {"TestSurface", "earlier", 0, nullptr, &tableProbe, accessorEarlier},
+        {"TestSurface", "ownAccessor", 0, nullptr, &tableProbe, accessorTarget},
+        {"TestSurface", "inheritedSetter", 0, nullptr, &tableProbe, inheritedSetterTarget},
+    });
+    if (!accessorTable.valid ||
+        mystral::webgpu::installBindingTable(engine, state, accessorTable) ||
+        !engine->hasException()) {
+        return failed("accessor preflight did not fail closed");
+    }
+    engine->getException();
+    if (!runtime.evalScript(R"JS((() => {
+        const own = Object.getOwnPropertyDescriptor(__tnAccessorTarget, "ownAccessor");
+        const inherited = Object.getOwnPropertyDescriptor(
+            Object.getPrototypeOf(__tnInheritedSetterTarget), "inheritedSetter");
+        if (own === undefined || typeof own.get !== "function" || typeof own.set !== "function") {
+            throw new Error("own accessor descriptor changed");
+        }
+        if (inherited === undefined || typeof inherited.set !== "function") {
+            throw new Error("inherited setter descriptor changed");
+        }
+        if (__tnAccessorSetterCalls !== 0 || __tnAccessorGetterCalls !== 0) {
+            throw new Error("accessor getter or setter ran during preflight");
+        }
+        if (Object.prototype.hasOwnProperty.call(__tnAccessorEarlier, "earlier")) {
+            throw new Error("an earlier row survived accessor rejection");
+        }
+    })())JS", "webgpu-binding-accessor-check.js")) {
+        return failed("accessor rollback state");
+    }
+
+    if (!runtime.evalScript(
+            "const __tnRevoked = Proxy.revocable({}, {}); "
+            "globalThis.__tnRevokedProperty = __tnRevoked.proxy; "
+            "__tnRevoked.revoke();",
+            "webgpu-binding-exception-controls-setup.js")) {
+        return failed("exception-control setup");
+    }
+    const auto revoked = engine->getGlobalProperty("__tnRevokedProperty");
+    if (engine->hasProperty(revoked, "missing") || !engine->hasException()) {
+        return failed("hasProperty did not latch a revoked-proxy exception");
+    }
+    const auto hasMessage = engine->getException();
+    if (hasMessage.empty()) return failed("hasProperty exception was empty");
+    if (engine->deleteProperty(revoked, "missing") || !engine->hasException()) {
+        return failed("deleteProperty did not latch a revoked-proxy exception");
+    }
+    const auto deleteMessage = engine->getException();
+    if (deleteMessage.empty()) return failed("deleteProperty exception was empty");
+    if (engine->setProperty(revoked, "missing", engine->newNumber(1)) ||
+        !engine->hasException()) {
+        return failed("setProperty did not latch a revoked-proxy exception");
+    }
+    return !engine->getException().empty();
+}
+
 bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
     return runtime.evalScript(R"JS((() => {
         const first = document.createElement("canvas");
@@ -181,6 +336,16 @@ bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
             throw new Error("dynamic canvas getContext followed a mutable public id");
         }
     })())JS", "webgpu-binding-dynamic-canvas.js");
+}
+
+bool checkBindingProtectionOwnership(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    if (state->protectedHandles.size() < 4) {
+        std::cerr << "binding protection proof failed: dynamic handles were not state-owned"
+                  << std::endl;
+        return false;
+    }
+    return true;
 }
 
 bool runProbe(mystral::Runtime& runtime, const char* marker) {
@@ -225,7 +390,9 @@ int main() {
 
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
     if (!checkAtomicRollbackAndDestinationValidation(*first)) return 1;
+    if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;
     if (!checkDynamicCanvasOwnership(*first)) return 1;
+    if (!checkBindingProtectionOwnership(*first)) return 1;
 
     if (!runProbe(*first, "first") || !runProbe(*second, "second") ||
         !first->evalScript(
@@ -234,6 +401,13 @@ int main() {
         !second->evalScript(
             "if (__tnReentrancyMarker !== 'second') throw new Error('second binding state changed');",
             "webgpu-bindings-reentrancy-second-check.js")) {
+        return 1;
+    }
+
+    first.reset();
+    if (!second->evalScript(
+            "if (__tnReentrancyMarker !== 'second') throw new Error('second engine lost state');",
+            "webgpu-bindings-reentrancy-after-first-destroy.js")) {
         return 1;
     }
 

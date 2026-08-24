@@ -8,6 +8,7 @@
 #include "mystral/js/engine.h"
 #include <iostream>
 #include <sstream>
+#include <cstring>
 #include <unordered_map>
 #include <chrono>
 
@@ -36,6 +37,8 @@ public:
             return;
         }
 
+        cacheIntrinsics();
+
         // Set up standard globals
         setupGlobals();
 
@@ -46,6 +49,8 @@ public:
         std::cout << "[JSC] Destroying engine..." << std::endl;
 
         if (context_) {
+            if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
+            if (reflectHas_) JSValueUnprotect(context_, reflectHas_);
             JSGlobalContextRelease(context_);
         }
         if (contextGroup_) {
@@ -434,16 +439,12 @@ public:
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
         JSValueRef exception = nullptr;
         JSObjectSetProperty(context_, (JSObjectRef)obj.ptr, nameStr, (JSValueRef)value.ptr, 0, &exception);
+        JSStringRelease(nameStr);
         if (exception != nullptr) {
-            JSStringRelease(nameStr);
+            recordException(exception);
             return false;
         }
-        JSValueRef storedException = nullptr;
-        JSValueRef stored = JSObjectGetProperty(context_, (JSObjectRef)obj.ptr, nameStr, &storedException);
-        JSStringRelease(nameStr);
-        return storedException == nullptr &&
-               stored != nullptr &&
-               JSValueIsStrictEqual(context_, stored, (JSValueRef)value.ptr);
+        return true;
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -451,14 +452,102 @@ public:
         JSValueRef exception = nullptr;
         JSValueRef result = JSObjectGetProperty(context_, (JSObjectRef)obj.ptr, nameStr, &exception);
         JSStringRelease(nameStr);
+        if (exception != nullptr) recordException(exception);
         return {(void*)result, context_};
     }
 
-    bool hasProperty(JSValueHandle obj, const char* name) override {
+    bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) override {
+        if (!getOwnPropertyDescriptor_) {
+            throwException("JavaScriptCore property descriptor intrinsic is unavailable");
+            return false;
+        }
+
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
-        const bool result = JSObjectHasProperty(context_, (JSObjectRef)obj.ptr, nameStr);
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
         JSStringRelease(nameStr);
-        return result;
+        JSObjectRef current = (JSObjectRef)obj.ptr;
+        bool own = true;
+
+        while (current) {
+            JSValueRef args[] = {(JSValueRef)current, propertyName};
+            JSValueRef exception = nullptr;
+            JSValueRef descriptor = JSObjectCallAsFunction(
+                context_, getOwnPropertyDescriptor_, nullptr, 2, args, &exception);
+            if (exception != nullptr) {
+                recordException(exception);
+                return false;
+            }
+            if (!JSValueIsUndefined(context_, descriptor)) {
+                JSStringRef valueName = JSStringCreateWithUTF8CString("value");
+                JSValueRef valueNameValue = JSValueMakeString(context_, valueName);
+                JSStringRelease(valueName);
+                JSValueRef valueDescriptorArgs[] = {descriptor, valueNameValue};
+                JSValueRef valueDescriptorException = nullptr;
+                JSValueRef valueDescriptor = JSObjectCallAsFunction(
+                    context_, getOwnPropertyDescriptor_, nullptr, 2,
+                    valueDescriptorArgs, &valueDescriptorException);
+                if (valueDescriptorException != nullptr) {
+                    recordException(valueDescriptorException);
+                    return false;
+                }
+
+                info.own = own;
+                if (JSValueIsUndefined(context_, valueDescriptor)) {
+                    info.kind = JSPropertyKind::Accessor;
+                    info.writable = false;
+                    info.value = {};
+                    return true;
+                }
+
+                JSStringRef writableName = JSStringCreateWithUTF8CString("writable");
+                JSValueRef writable = JSObjectGetProperty(
+                    context_, (JSObjectRef)descriptor, writableName, &exception);
+                JSStringRelease(writableName);
+                if (exception != nullptr) {
+                    recordException(exception);
+                    return false;
+                }
+                JSStringRef valuePropertyName = JSStringCreateWithUTF8CString("value");
+                JSValueRef value = JSObjectGetProperty(
+                    context_, (JSObjectRef)descriptor, valuePropertyName, &exception);
+                JSStringRelease(valuePropertyName);
+                if (exception != nullptr) {
+                    recordException(exception);
+                    return false;
+                }
+                info.kind = JSPropertyKind::Data;
+                info.writable = JSValueToBoolean(context_, writable);
+                info.value = {(void*)value, context_};
+                return true;
+            }
+
+            JSValueRef prototype = JSObjectGetPrototype(context_, current);
+            if (!prototype || !JSValueIsObject(context_, prototype)) break;
+            current = (JSObjectRef)prototype;
+            own = false;
+        }
+
+        info = {};
+        return true;
+    }
+
+    bool hasProperty(JSValueHandle obj, const char* name) override {
+        if (!reflectHas_) {
+            throwException("JavaScriptCore Reflect.has intrinsic is unavailable");
+            return false;
+        }
+        JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
+        JSStringRelease(nameStr);
+        JSValueRef args[] = {(JSValueRef)obj.ptr, propertyName};
+        JSValueRef exception = nullptr;
+        JSValueRef result = JSObjectCallAsFunction(
+            context_, reflectHas_, nullptr, 2, args, &exception);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        return JSValueToBoolean(context_, result);
     }
 
     bool deleteProperty(JSValueHandle obj, const char* name) override {
@@ -466,7 +555,11 @@ public:
         JSValueRef exception = nullptr;
         const bool result = JSObjectDeleteProperty(context_, (JSObjectRef)obj.ptr, nameStr, &exception);
         JSStringRelease(nameStr);
-        return result && exception == nullptr;
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        return result;
     }
 
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
@@ -579,6 +672,41 @@ public:
     }
 
 private:
+    void cacheIntrinsics() {
+        JSObjectRef global = JSContextGetGlobalObject(context_);
+        JSStringRef objectName = JSStringCreateWithUTF8CString("Object");
+        JSValueRef objectValue = JSObjectGetProperty(context_, global, objectName, nullptr);
+        JSStringRelease(objectName);
+        if (!objectValue || !JSValueIsObject(context_, objectValue)) return;
+
+        JSStringRef descriptorName = JSStringCreateWithUTF8CString("getOwnPropertyDescriptor");
+        JSValueRef descriptorValue = JSObjectGetProperty(
+            context_, (JSObjectRef)objectValue, descriptorName, nullptr);
+        JSStringRelease(descriptorName);
+        if (descriptorValue && JSValueIsObject(context_, descriptorValue)) {
+            getOwnPropertyDescriptor_ = (JSObjectRef)descriptorValue;
+            JSValueProtect(context_, getOwnPropertyDescriptor_);
+        }
+
+        JSStringRef reflectName = JSStringCreateWithUTF8CString("Reflect");
+        JSValueRef reflectValue = JSObjectGetProperty(context_, global, reflectName, nullptr);
+        JSStringRelease(reflectName);
+        if (!reflectValue || !JSValueIsObject(context_, reflectValue)) return;
+        JSStringRef hasName = JSStringCreateWithUTF8CString("has");
+        JSValueRef hasValue = JSObjectGetProperty(
+            context_, (JSObjectRef)reflectValue, hasName, nullptr);
+        JSStringRelease(hasName);
+        if (hasValue && JSValueIsObject(context_, hasValue)) {
+            reflectHas_ = (JSObjectRef)hasValue;
+            JSValueProtect(context_, reflectHas_);
+        }
+    }
+
+    void recordException(JSValueRef exception) {
+        lastException_ = exception;
+        reportException(exception);
+    }
+
     void setupGlobals() {
         // console.log / console.warn / console.error
         JSObjectRef console = JSObjectMake(context_, nullptr, nullptr);
@@ -660,6 +788,8 @@ private:
 
     JSContextGroupRef contextGroup_ = nullptr;
     JSGlobalContextRef context_ = nullptr;
+    JSObjectRef getOwnPropertyDescriptor_ = nullptr;
+    JSObjectRef reflectHas_ = nullptr;
     JSValueRef lastException_ = nullptr;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
     std::chrono::high_resolution_clock::time_point startTime_;

@@ -100,6 +100,16 @@ BindingsState* createBindingsState() {
 
 void destroyBindingsState(BindingsState* state) {
     if (!state) return;
+    if (state->engine) {
+        js::Engine* engine = state->engine;
+        state->engine = nullptr;
+        for (auto it = state->protectedHandles.rbegin();
+             it != state->protectedHandles.rend();
+             ++it) {
+            engine->unprotect(*it);
+        }
+        state->protectedHandles.clear();
+    }
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
     if (state->canvas2DBindGroup) wgpuBindGroupRelease(state->canvas2DBindGroup);
     if (state->canvas2DPipeline) wgpuRenderPipelineRelease(state->canvas2DPipeline);
@@ -120,6 +130,12 @@ void destroyBindingsState(BindingsState* state) {
     }
 #endif
     delete state;
+}
+
+static void protectBindingHandle(BindingsState* state, js::JSValueHandle value) {
+    if (!state || !state->engine || !value.ptr) return;
+    state->engine->protect(value);
+    state->protectedHandles.push_back(value);
 }
 
 static std::string singleWgslEntryPoint(const std::string& code, const char* stage) {
@@ -1207,7 +1223,7 @@ static js::JSValueHandle tnWebgpuHandler86(BindingsState* state, BindingDestinat
             if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
             canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
             canvas->hasContext2d = true;
-            state->engine->protect(canvas->context2d);
+            protectBindingHandle(state, canvas->context2d);
             return canvas->context2d;
 }
 #if TN_ENABLE_NATIVE_GLTF
@@ -4628,7 +4644,7 @@ static js::JSValueHandle getOffscreenCanvasContext(
                         if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
                         canvas->context2d = canvas::createCanvas2DContext(state->engine, canvas->width, canvas->height);
                         canvas->hasContext2d = true;
-                        state->engine->protect(canvas->context2d);
+                        protectBindingHandle(state, canvas->context2d);
                         return canvas->context2d;
                     }
                     if (contextType == "webgpu") {
@@ -4722,7 +4738,7 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
             // Registration rows retain this handle for callbacks after the creating frame. The
             // JavaScript object is also returned to the caller, so this protection preserves the
             // existing ownership semantics without using a later mutable row property as state.
-            state->engine->protect(element);
+            protectBindingHandle(state, element);
             // Get tag name if provided
             std::string tagName = "";
             if (!args.empty()) {

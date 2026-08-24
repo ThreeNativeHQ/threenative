@@ -269,12 +269,20 @@ test("binding-table installation is object-only and rolls back failed writes", (
   const engine = read("include/mystral/js/engine.h");
   const implementation = read("src/webgpu/registration_table.cpp");
 
+  assert.match(
+    engine,
+    /virtual bool getPropertyInfo\(JSValueHandle obj, const char\* name, JSPropertyInfo& info\) = 0;/u,
+  );
   assert.match(engine, /virtual bool hasProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(engine, /virtual bool deleteProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(implementation, /!engine->isObject\(destination\)/u);
-  assert.match(implementation, /const bool propertyWritten[\s\S]*?engine->setProperty\(/u);
+  assert.match(implementation, /propertyWriteAttempted[\s\S]*?engine->setProperty\(/u);
+  assert.match(implementation, /getPropertyInfo\(/u);
+  assert.match(implementation, /JSPropertyKind::Accessor/u);
+  assert.match(implementation, /cannot replace a non-writable property/u);
   assert.match(implementation, /deleteProperty\(/u);
   assert.match(implementation, /getException\(\)/u);
+  assert.doesNotMatch(implementation, /getProperty\(it->destination/u);
 
   for (const implementationPath of [
     "src/js/v8_engine.cpp",
@@ -282,8 +290,11 @@ test("binding-table installation is object-only and rolls back failed writes", (
     "src/js/jsc_engine.mm",
   ]) {
     const source = read(implementationPath);
+    assert.match(source, /bool getPropertyInfo\(JSValueHandle obj, const char\* name, JSPropertyInfo& info\) override/u);
     assert.match(source, /bool hasProperty\(JSValueHandle obj, const char\* name\) override/u);
     assert.match(source, /bool deleteProperty\(JSValueHandle obj, const char\* name\) override/u);
+    assert.doesNotMatch(source, /JavaScript property assignment did not create a property/u);
+    assert.doesNotMatch(source, /JSValueIsStrictEqual\(context_, stored/u);
   }
 
 });
@@ -543,9 +554,15 @@ test("owned WebGPU binding state is wired to the executable reentrancy proof", (
     /threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL[\s\S]*webgpu_bindings_reentrancy_test\.cpp/u,
   );
   assert.match(state, /struct BindingsState \{/u);
+  assert.match(state, /std::vector<js::JSValueHandle> protectedHandles;/u);
+  assert.match(bindings, /for \(auto it = state->protectedHandles\.rbegin\(\)/u);
+  assert.match(bindings, /engine->unprotect\(\*it\)/u);
+  assert.match(source, /protectedHandles\.size\(\)/u);
   assert.match(state, /std::vector<std::unique_ptr<WGPUBlendState>> blendStates;/u);
   assert.doesNotMatch(state, /static\s+std::vector<.*blendStates/u);
   assert.doesNotMatch(bindings, /static\s+std::vector<.*blendStates/u);
+  assert.doesNotMatch(read("src/js/v8_engine.cpp"), /g_protectedHandles/u);
+  assert.doesNotMatch(read("src/js/quickjs_engine.cpp"), /g_protectedHandles/u);
   assert.doesNotMatch(context, /static\s+WGPUFeatureName\s+requiredFeatures/u);
   assert.match(source, /Runtime::create\(config\)[\s\S]*Runtime::create\(config\)/u);
   assert.match(source, /getWebGPUBindingsState\(\)[\s\S]*getWebGPUBindingsState\(\)/u);

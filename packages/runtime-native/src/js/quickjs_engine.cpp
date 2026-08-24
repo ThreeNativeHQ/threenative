@@ -40,9 +40,6 @@ namespace js {
 // Store native function callbacks
 static std::unordered_map<JSValue*, NativeFunction> g_nativeFunctions;
 
-// Global set of protected handles that should not be deleted by nativeCallback cleanup
-static std::unordered_set<void*> g_protectedHandles;
-
 static char* quickjsModuleNormalize(JSContext* ctx,
                                     const char* module_base_name,
                                     const char* module_name,
@@ -144,6 +141,7 @@ public:
             std::cerr << "[QuickJS] Failed to create context" << std::endl;
             return;
         }
+        JS_SetContextOpaque(context_, this);
 
         JS_SetModuleLoaderFunc(runtime_, quickjsModuleNormalize, quickjsModuleLoader, nullptr);
 
@@ -164,12 +162,12 @@ public:
             }
 
             // Free all remaining protected handles
-            for (void* ptr : g_protectedHandles) {
+            for (void* ptr : protectedHandles_) {
                 JSValue* val = (JSValue*)ptr;
                 JS_FreeValue(context_, *val);
                 delete val;
             }
-            g_protectedHandles.clear();
+            protectedHandles_.clear();
 
             // Clean up native function pointers stored in g_nativeFunctions
             g_nativeFunctions.clear();
@@ -610,7 +608,9 @@ public:
     bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) override {
         JSValue* objVal = (JSValue*)obj.ptr;
         JSValue* val = (JSValue*)value.ptr;
-        return JS_SetPropertyStr(context_, *objVal, name, JS_DupValue(context_, *val)) >= 0;
+        const int result = JS_SetPropertyStr(context_, *objVal, name, JS_DupValue(context_, *val));
+        if (result < 0) return capturePendingException();
+        return true;
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -620,19 +620,76 @@ public:
         return {stored, context_};
     }
 
+    bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) override {
+        JSValue* objVal = (JSValue*)obj.ptr;
+        JSAtom atom = JS_NewAtom(context_, name);
+        if (atom == JS_ATOM_NULL) return capturePendingException();
+
+        JSValue current = JS_DupValue(context_, *objVal);
+        bool own = true;
+        while (JS_IsObject(current)) {
+            JSPropertyDescriptor descriptor = {
+                0, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED};
+            const int result = JS_GetOwnProperty(context_, &descriptor, current, atom);
+            if (result < 0) {
+                JS_FreeValue(context_, current);
+                JS_FreeAtom(context_, atom);
+                return capturePendingException();
+            }
+            if (result > 0) {
+                info.own = own;
+                const bool accessor = (descriptor.flags & JS_PROP_TMASK) == JS_PROP_GETSET;
+                if (accessor) {
+                    info.kind = JSPropertyKind::Accessor;
+                    info.writable = false;
+                    info.value = {};
+                } else {
+                    auto* stored = new JSValue(JS_DupValue(context_, descriptor.value));
+                    info.kind = JSPropertyKind::Data;
+                    info.writable = (descriptor.flags & JS_PROP_WRITABLE) != 0;
+                    info.value = {stored, context_};
+                }
+                JS_FreeValue(context_, descriptor.value);
+                JS_FreeValue(context_, descriptor.getter);
+                JS_FreeValue(context_, descriptor.setter);
+                JS_FreeValue(context_, current);
+                JS_FreeAtom(context_, atom);
+                return true;
+            }
+
+            JSValue prototype = JS_GetPrototype(context_, current);
+            JS_FreeValue(context_, current);
+            if (JS_IsException(prototype)) {
+                JS_FreeAtom(context_, atom);
+                return capturePendingException();
+            }
+            current = prototype;
+            own = false;
+        }
+
+        JS_FreeValue(context_, current);
+        JS_FreeAtom(context_, atom);
+        info = {};
+        return true;
+    }
+
     bool hasProperty(JSValueHandle obj, const char* name) override {
         JSValue* objVal = (JSValue*)obj.ptr;
         JSAtom atom = JS_NewAtom(context_, name);
+        if (atom == JS_ATOM_NULL) return capturePendingException();
         const int result = JS_HasProperty(context_, *objVal, atom);
         JS_FreeAtom(context_, atom);
+        if (result < 0) return capturePendingException();
         return result > 0;
     }
 
     bool deleteProperty(JSValueHandle obj, const char* name) override {
         JSValue* objVal = (JSValue*)obj.ptr;
         JSAtom atom = JS_NewAtom(context_, name);
+        if (atom == JS_ATOM_NULL) return capturePendingException();
         const int result = JS_DeleteProperty(context_, *objVal, atom, 0);
         JS_FreeAtom(context_, atom);
+        if (result < 0) return capturePendingException();
         return result > 0;
     }
 
@@ -685,14 +742,14 @@ public:
         JSValue* val = (JSValue*)value.ptr;
         JS_DupValue(context_, *val);
         // Mark this handle as protected so nativeCallback won't clean it up
-        g_protectedHandles.insert(value.ptr);
+        protectedHandles_.insert(value.ptr);
     }
 
     void unprotect(JSValueHandle value) override {
         JSValue* val = (JSValue*)value.ptr;
         JS_FreeValue(context_, *val);
         // Remove from protected set and clean up
-        g_protectedHandles.erase(value.ptr);
+        protectedHandles_.erase(value.ptr);
         delete val;
     }
 
@@ -800,6 +857,14 @@ private:
         }
     }
 
+    bool capturePendingException() {
+        JSValue exception = JS_GetException(context_);
+        reportException(exception);
+        if (!JS_IsUndefined(lastException_)) JS_FreeValue(context_, lastException_);
+        lastException_ = exception;
+        return false;
+    }
+
     static JSValue nativeCallback(JSContext* ctx, JSValueConst this_val,
                                   int argc, JSValueConst* argv, int magic, JSValue* func_data) {
         // Extract the NativeFunction pointer from the BigInt64 stored in func_data[0]
@@ -823,10 +888,11 @@ private:
         // Call the native function
         JSValueHandle result = (*fn)(ctx, args);
 
+        auto* engine = static_cast<QuickJSEngine*>(JS_GetContextOpaque(ctx));
         // Clean up argument copies (skip protected handles)
         for (auto& arg : args) {
             // Skip handles that were protected during the callback
-            if (g_protectedHandles.find(arg.ptr) != g_protectedHandles.end()) {
+            if (engine && engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end()) {
                 continue;
             }
             JSValue* val = (JSValue*)arg.ptr;
@@ -897,6 +963,7 @@ private:
     std::chrono::high_resolution_clock::time_point startTime_;
     std::unordered_map<void*, void*> privateDataMap_;  // Map JS object ptr to native data
     std::vector<NativeFunction*> allocatedFunctions_;  // Track allocated function pointers
+    std::unordered_set<void*> protectedHandles_;
 
     static QuickJSEngine* engineInstance_;  // For performance.now access
 };

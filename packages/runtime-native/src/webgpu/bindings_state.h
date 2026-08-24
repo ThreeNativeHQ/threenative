@@ -80,6 +80,7 @@ struct BindingsState {
     WGPUPresentMode presentMode = WGPUPresentMode_Fifo;
     WGPUInstance instance = nullptr;
     js::Engine* engine = nullptr;
+    std::vector<js::JSValueHandle> protectedHandles;
 
     WGPUTexture offscreenTexture = nullptr;
     WGPUTextureView offscreenTextureView = nullptr;
@@ -159,6 +160,7 @@ struct BindingsState {
 struct BindingsState {
     bool verboseLogging = false;
     js::Engine* engine = nullptr;
+    std::vector<js::JSValueHandle> protectedHandles;
 };
 
 #endif

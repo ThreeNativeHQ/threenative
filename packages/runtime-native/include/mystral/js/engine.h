@@ -25,6 +25,23 @@ struct JSValueHandle {
     void* ctx = nullptr;  // Context needed for some operations
 };
 
+enum class JSPropertyKind {
+    Missing,
+    Data,
+    Accessor,
+};
+
+/**
+ * A side-effect-free property description resolved from an object through its prototype chain.
+ * The value is populated only for data properties; accessors are deliberately never invoked.
+ */
+struct JSPropertyInfo {
+    JSPropertyKind kind = JSPropertyKind::Missing;
+    bool own = false;
+    bool writable = false;
+    JSValueHandle value;
+};
+
 /**
  * Native function signature
  * Called from JavaScript with arguments, returns a value
@@ -213,6 +230,8 @@ public:
 
     virtual bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) = 0;
     virtual JSValueHandle getProperty(JSValueHandle obj, const char* name) = 0;
+    /** Inspect the first descriptor in the object/prototype chain without invoking accessors. */
+    virtual bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) = 0;
     /** Check whether a property is present on an object or its prototype chain. */
     virtual bool hasProperty(JSValueHandle obj, const char* name) = 0;
     /** Delete a property, returning false for a non-configurable property or exception. */
