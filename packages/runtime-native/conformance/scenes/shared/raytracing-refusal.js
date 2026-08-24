@@ -2,40 +2,34 @@ import * as THREE from "three/webgpu";
 import { startVisualScene } from "./scene-support.js";
 
 const REFUSAL = /TN_NATIVE_RAYTRACING_UNAVAILABLE[\s\S]*buffer-to-texture copy-out interop exists/u;
-const WEB_RAY_TRACING_FEATURE = "ray-tracing";
 
-async function assertBrowserRayTracingCapability() {
+async function assertBrowserWebGpuReadiness() {
   const gpu = globalThis.navigator?.gpu;
   if (typeof gpu?.requestAdapter !== "function") {
     throw new Error(
-      "TN_WEB_RAYTRACING_UNAVAILABLE: browser does not expose navigator.gpu.requestAdapter.",
+      "TN_WEBGPU_UNAVAILABLE: browser does not expose navigator.gpu.requestAdapter.",
     );
   }
 
   const adapter = await gpu.requestAdapter();
   if (!adapter) {
-    throw new Error("TN_WEB_RAYTRACING_UNAVAILABLE: browser WebGPU returned no adapter.");
+    throw new Error("TN_WEBGPU_UNAVAILABLE: browser WebGPU returned no adapter.");
   }
   if (typeof adapter.requestDevice !== "function") {
     throw new Error(
-      "TN_WEB_RAYTRACING_UNAVAILABLE: browser WebGPU adapter does not expose requestDevice.",
-    );
-  }
-  if (adapter.features?.has(WEB_RAY_TRACING_FEATURE) !== true) {
-    throw new Error(
-      `TN_WEB_RAYTRACING_UNAVAILABLE: browser WebGPU adapter does not expose the '${WEB_RAY_TRACING_FEATURE}' feature; refusing to report the raytracing surface.`,
+      "TN_WEBGPU_UNAVAILABLE: browser WebGPU adapter does not expose requestDevice.",
     );
   }
 
   let device;
   try {
-    device = await adapter.requestDevice({ requiredFeatures: [WEB_RAY_TRACING_FEATURE] });
+    device = await adapter.requestDevice();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`TN_WEB_RAYTRACING_UNAVAILABLE: browser requestDevice rejected ray tracing: ${message}`);
+    throw new Error(`TN_WEBGPU_UNAVAILABLE: browser requestDevice failed: ${message}`);
   }
   device?.destroy?.();
-  return { target: "web", rayTracingFeature: WEB_RAY_TRACING_FEATURE, rayTracingDevice: true };
+  return { target: "web", webGpuReady: true };
 }
 
 function assertNativeRayTracingRefusal() {
@@ -62,7 +56,7 @@ function assertNativeRayTracingRefusal() {
 export async function startScene(canvas, dimensions) {
   const detail =
     globalThis.__THREENATIVE_NATIVE__ === undefined
-      ? await assertBrowserRayTracingCapability()
+      ? await assertBrowserWebGpuReadiness()
       : assertNativeRayTracingRefusal();
   return startVisualScene(canvas, dimensions, "raytracing-refusal", ({ scene }) => {
     const card = new THREE.Mesh(

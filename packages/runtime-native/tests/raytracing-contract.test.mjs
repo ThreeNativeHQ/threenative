@@ -38,25 +38,28 @@ export function assertNativeRayTracingGate(source) {
   );
 }
 
-export function assertBrowserRayTracingGate(source) {
-  const capabilityStart = source.indexOf('async function assertBrowserRayTracingCapability()');
+export function assertBrowserWebGpuControl(source) {
+  const capabilityStart = source.indexOf('async function assertBrowserWebGpuReadiness()');
   const capabilityEnd = source.indexOf('\n\nfunction assertNativeRayTracingRefusal()', capabilityStart);
   if (capabilityStart < 0 || capabilityEnd <= capabilityStart) {
-    throw new Error('RED observed: browser raytracing capability gate missing');
+    throw new Error('RED observed: browser WebGPU readiness control missing');
   }
   const capability = source.slice(capabilityStart, capabilityEnd);
   assert.match(capability, /navigator\.gpu/u);
   assert.match(capability, /requestAdapter\(\)/u);
-  assert.match(capability, /adapter\.features\?\.has\(WEB_RAY_TRACING_FEATURE\)/u);
-  assert.match(capability, /requestDevice\(\{ requiredFeatures: \[WEB_RAY_TRACING_FEATURE\] \}\)/u);
-  assert.match(capability, /TN_WEB_RAYTRACING_UNAVAILABLE/u);
+  assert.match(capability, /await gpu\.requestAdapter\(\)/u);
+  assert.match(capability, /adapter\.requestDevice\(\)/u);
+  assert.match(capability, /TN_WEBGPU_UNAVAILABLE/u);
+  assert.match(capability, /webGpuReady: true/u);
+  assert.doesNotMatch(capability, /ray-tracing|requiredFeatures/u);
 
-  const browserCall = source.indexOf('await assertBrowserRayTracingCapability()');
+  const browserCall = source.indexOf('await assertBrowserWebGpuReadiness()');
   const visualSurface = source.indexOf('return startVisualScene', browserCall);
   if (browserCall < 0 || visualSurface <= browserCall) {
-    throw new Error('RED observed: browser raytracing capability is not checked before the surface');
+    throw new Error('RED observed: browser WebGPU readiness is not checked before the surface');
   }
   assert.doesNotMatch(source, /target: "web", refused: false/u);
+  assert.doesNotMatch(source, /WEB_RAY_TRACING_FEATURE|ray-tracing|requiredFeatures/u);
 }
 
 test('native traceRays refuses before any backend can report success', () => {
@@ -69,18 +72,21 @@ test('native traceRays refuses before any backend can report success', () => {
   );
 });
 
-test('browser raytracing conformance checks the web capability before rendering', () => {
+test('browser conformance checks standard WebGPU readiness before rendering', () => {
   const scene = readFileSync(scenePath, 'utf8');
-  assertBrowserRayTracingGate(scene);
+  assertBrowserWebGpuControl(scene);
 });
 
-test('negative control: removing the browser capability check is red', () => {
+test('negative control: replacing the browser readiness control with fake success is red', () => {
   const scene = readFileSync(scenePath, 'utf8');
-  const withoutBrowserCheck = scene.replace('await assertBrowserRayTracingCapability()', 'assertBrowserRayTracingCapability()');
-  assert.notEqual(withoutBrowserCheck, scene, 'the mutation must remove the awaited browser capability check');
+  const withoutBrowserCheck = scene.replace(
+    'await assertBrowserWebGpuReadiness()',
+    '({ target: "web", webGpuReady: true })',
+  );
+  assert.notEqual(withoutBrowserCheck, scene, 'the mutation must remove the browser readiness control');
   assert.throws(
-    () => assertBrowserRayTracingGate(withoutBrowserCheck),
-    /RED observed: browser raytracing capability is not checked before the surface/u,
+    () => assertBrowserWebGpuControl(withoutBrowserCheck),
+    /RED observed: browser WebGPU readiness is not checked before the surface/u,
   );
 });
 
@@ -190,7 +196,8 @@ test('registry marks the refusal scene as native-unavailable until readback exis
   );
   const scene = read('conformance/scenes/shared/raytracing-refusal.js');
   assert.match(scene, /navigator\.gpu/u);
-  assert.match(scene, /WEB_RAY_TRACING_FEATURE/u);
+  assert.match(scene, /webGpuReady: true/u);
+  assert.doesNotMatch(scene, /ray-tracing|requiredFeatures/u);
   assert.match(scene, /globalThis\.mystralRT/u);
   assert.match(scene, /TN_NATIVE_RAYTRACING_UNAVAILABLE/u);
   assert.match(scene, /native raytracing refusal:/u);

@@ -273,25 +273,44 @@ root suite above passed. `git diff --check` passed. Before staging, the tracked 
 limited to the CMake source-list correction, unconditional runtime registration/cleanup, this
 verification record, and the native contract test.
 
-## 6. Repair round 2 — browser control must observe web raytracing capability
+## 6. Repair round 2 — browser control uses only standard WebGPU readiness
 
-The blocking browser-control finding was reproduced in the scene at
-`packages/runtime-native/conformance/scenes/shared/raytracing-refusal.js`: the old browser branch
-returned `{ target: "web", refused: false }` without consulting a browser API. That could render
-the surface and pass the browser capture while only the native branch had been exercised.
+The browser defect was reproduced in
+`packages/runtime-native/conformance/scenes/shared/raytracing-refusal.js`: the previous repair
+invented `"ray-tracing"` as a `GPUFeatureName` and requested it before `startVisualScene`. This
+Chromium adapter correctly rejected that non-standard feature, so the existing web surface never
+started.
 
-The browser branch now awaits an observable WebGPU probe before `startVisualScene`:
+The browser branch now performs an observable standard WebGPU control before rendering:
 
 - `navigator.gpu.requestAdapter()` must exist and return an adapter.
-- The adapter must advertise the `ray-tracing` feature.
-- `adapter.requestDevice({ requiredFeatures: ["ray-tracing"] })` must succeed.
-- Missing support throws `TN_WEB_RAYTRACING_UNAVAILABLE` and no surface capture is reported.
+- The adapter must expose standard `requestDevice()` and that request must succeed.
+- The temporary device is destroyed, and the control returns `{ target: "web", webGpuReady: true }`.
+- No browser ray-tracing feature or `requiredFeatures` claim is made; the returned detail does not
+  claim that web ray tracing exists.
 
-The focused contract command now has seven passing tests, including the red control that removes
-the `await` from the browser capability check and observes:
+The contract mutation is exact:
+
+```diff
+-      ? await assertBrowserWebGpuReadiness()
++      ? ({ target: "web", webGpuReady: true })
+```
+
+The mutation makes `assertBrowserWebGpuControl` fail with:
 
 ```text
-RED observed: browser raytracing capability is not checked before the surface
+RED observed: browser WebGPU readiness is not checked before the surface
+```
+
+Restored focused contract result:
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run tests/raytracing-contract.test.mjs
+```
+
+```text
+Test Files  1 passed (1)
+Tests       7 passed (7)
 ```
 
 Browser execution:
@@ -300,16 +319,13 @@ Browser execution:
 sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs \
   --target web \
   --only-tests 01-basic-cube,98-native-raytracing-refusal \
-  --out artifacts/prd-198-repair2-web-2026-08-23
+  --out artifacts/prd-198-repair2-fixed-web-2026-08-23
 ```
 
-Report: `packages/runtime-native/artifacts/prd-198-repair2-web-2026-08-23/report.json`.
-Exit `1`: `01-basic-cube` passed; `98-native-raytracing-refusal` failed closed before capture;
-67 unselected rows were blocked. The browser failure was:
-
-```text
-TN_WEB_RAYTRACING_UNAVAILABLE: browser WebGPU adapter does not expose the 'ray-tracing' feature; refusing to report the raytracing surface.
-```
+Report: `packages/runtime-native/artifacts/prd-198-repair2-fixed-web-2026-08-23/report.json`.
+Exit `2` with `pass: 2, fail: 0, blocked: 67`; both selected rows passed. The raytracing row
+completed the browser WebGPU control, started the existing visual surface, rendered a non-uniform
+1280×720 capture, and reported no page errors or GPU validation errors.
 
 Native desktop execution:
 
@@ -318,35 +334,28 @@ TN_RUNTIME="$PWD/packages/runtime-native/build/tn-linux/mystral" \
 sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs \
   --target desktop \
   --only-tests 01-basic-cube,98-native-raytracing-refusal \
-  --reference artifacts/prd-198-repair1-web-2026-08-23 \
-  --out artifacts/prd-198-repair2-desktop-2026-08-23
+  --reference artifacts/prd-198-repair2-fixed-web-2026-08-23 \
+  --out artifacts/prd-198-repair2-fixed-desktop-2026-08-23
 ```
 
-Report: `packages/runtime-native/artifacts/prd-198-repair2-desktop-2026-08-23/report.json`.
-Exit `2`: both selected rows passed; 67 unselected rows were blocked. The raytracing row ran the
-native game call and recorded:
+Report: `packages/runtime-native/artifacts/prd-198-repair2-fixed-desktop-2026-08-23/report.json`.
+Exit `2` with `pass: 2, fail: 0, blocked: 67`. The raytracing row made the native game call and
+recorded:
 
 ```text
 [ThreeNative conformance] native raytracing refusal: TN_NATIVE_RAYTRACING_UNAVAILABLE: native traceRays is unavailable until buffer-to-texture copy-out interop exists.
-Rendered 300 frames in 10714ms
+Rendered 300 frames in 9284ms
 TN_PRESENTS:300
 ```
 
 It completed with `nativeExit: 0`, `gpuValidationErrors: []`, pixel mismatch
-`0.00001736111111111111`, and perceptual delta E `0.0009414396421669794`. The desktop comparison
-used the existing `prd-198-repair1-web-2026-08-23` reference because the current browser row
-failed closed before producing a raytracing surface; this is native refusal evidence, not a claim
-that the browser raytracing row passed.
+`0.00001736111111111111`, and perceptual delta E `0.0009414396421669794`.
 
-Repair-round checks:
+Final checks:
 
 ```text
-pnpm typecheck -> exit 0
+pnpm typecheck -> exit 0 (rerun after the build completed)
 pnpm lint      -> exit 0 (291 pre-existing warnings; no errors)
-focused raytracing contract -> 7 tests passed
+pnpm build     -> exit 0
+pnpm test      -> exit 0 (198 test files, 1,884 tests passed)
 ```
-
-The root `pnpm test` command exited `1` in `@threenative/playtest`'s orphan-process probe before
-the workspace test suites ran. The probe found Chromium processes left by its own timeout test;
-the uniquely tagged probe profile was terminated and no tracked files were generated by the build
-phase. This is recorded as an environment-gate failure, not as a passing root test.
