@@ -7,6 +7,23 @@ import { onTestFinished } from "vitest";
 const processCleanupDirectories = new Set<string>();
 let processCleanupRegistered = false;
 
+/**
+ * Tags every directory this suite run creates, so the leak guard can count its own and nothing
+ * else. `/tmp` is shared: several agent lanes work this repository at once, and a guard that
+ * counted every `/tmp/threenative-*` failed whenever a sibling created or removed one mid-run —
+ * in both directions, which is what gave it away. Unset outside `scripts/run-test-suite.sh`,
+ * where the old whole-directory count still applies.
+ */
+function runTag(): string {
+  const tag = process.env.TN_TEST_TEMP_TAG;
+  return tag === undefined || tag === "" ? "" : `${tag}-`;
+}
+
+/** Joins the OS temp directory, the caller's prefix and this run's tag. */
+function taggedPrefix(prefix: string): string {
+  return join(tmpdir(), `${prefix}${runTag()}`);
+}
+
 function registerProcessCleanup(directory: string): void {
   processCleanupDirectories.add(directory);
   if (processCleanupRegistered) return;
@@ -20,7 +37,7 @@ function registerProcessCleanup(directory: string): void {
 
 /** Creates a test directory and removes it when the current test finishes. */
 export async function makeTempDir(prefix: string): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), prefix));
+  const directory = await mkdtemp(taggedPrefix(prefix));
   if (process.env.VITEST === "true") {
     try {
       onTestFinished(() => rm(directory, { force: true, recursive: true }));
@@ -38,7 +55,7 @@ export async function makeTempDir(prefix: string): Promise<string> {
 
 /** Creates a test directory synchronously and removes it when the current test finishes. */
 export function makeTempDirSync(prefix: string): string {
-  return makeTempDirSyncAt(join(tmpdir(), prefix));
+  return makeTempDirSyncAt(taggedPrefix(prefix));
 }
 
 /** Creates a test directory from an absolute prefix and registers its cleanup. */

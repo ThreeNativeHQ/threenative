@@ -47,6 +47,9 @@ if [[ "$resume_mode" -eq 1 && -z "$resume_phase" ]]; then
 fi
 
 suite_marker="$(mktemp /tmp/tn-suite-count.XXXXXX)"
+# Names this run so the temp-directory leak guard counts its own directories and not a concurrent
+# lane's. Read by test-support/temp-dir.ts and by orphan-cleanup.sh.
+export TN_TEST_TEMP_TAG="run${$}"
 lease_branch="$(git symbolic-ref -q HEAD || true)"
 lease_head="$(git rev-parse HEAD)"
 

@@ -5,8 +5,18 @@ script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "$script_directory/../../.." && pwd)"
 cd "$repository_root"
 
+# `/tmp` is shared by every agent lane working this repository, so counting every
+# `/tmp/threenative-*` made this guard report a sibling's directories as this run's leak — and, when
+# a sibling cleaned up mid-run, as this run's impossible negative leak. When the suite runner tags
+# its run, count only the directories carrying that tag; `test-support/temp-dir.ts` puts it there,
+# and PRD-135 already requires every temp directory to come from that helper. Without a tag the
+# whole-directory count stands, so an ad-hoc invocation still sees everything.
 count_temp_directories() {
-  ls -d /tmp/threenative-* 2>/dev/null | wc -l || true
+  if [[ -n "${TN_TEST_TEMP_TAG:-}" ]]; then
+    ls -d /tmp/threenative-*"${TN_TEST_TEMP_TAG}"* 2>/dev/null | wc -l || true
+  else
+    ls -d /tmp/threenative-* 2>/dev/null | wc -l || true
+  fi
 }
 
 case "${1:-}" in

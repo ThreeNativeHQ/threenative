@@ -654,7 +654,47 @@ endif()
 # Note: webp prebuilts are only available for desktop platforms (macOS, Linux, Windows)
 # iOS/Android cross-compilation would need webp built from source, which we skip for now
 set(WEBP_DIR ${THIRD_PARTY_DIR}/webp)
-if(EXISTS ${WEBP_DIR} AND NOT IOS AND NOT ANDROID)
+if(ANDROID)
+    # WebP prebuilts ship for desktop only, and games embed WebP textures in glTF
+    # (EXT_texture_webp) — a runtime without decode support prints "WebP format
+    # support: NO" at boot and GLTFLoader then drops every model texture, which
+    # renders as untextured white meshes (docs/bugs/android-ktx2-unsupported-2026-08-23.md
+    # records the sibling KTX2 failure; this is its texture cousin). Build the
+    # upstream source with the cross toolchain; provisioned by
+    # 'node scripts/download-deps.mjs --only webp-source'. The source tree is the
+    # extracted libwebp-<version>/ inside third_party/webp-source/ (its own
+    # destination, because the downloader's skip-if-exists guard is per directory).
+    set(WEBP_SOURCE_ROOT ${THIRD_PARTY_DIR}/webp-source)
+    file(GLOB WEBP_SOURCE_CANDIDATES ${WEBP_SOURCE_ROOT}/libwebp-*)
+    set(WEBP_SOURCE_DIR "")
+    foreach(WEBP_CANDIDATE ${WEBP_SOURCE_CANDIDATES})
+        if(EXISTS ${WEBP_CANDIDATE}/CMakeLists.txt AND NOT EXISTS ${WEBP_CANDIDATE}/lib)
+            set(WEBP_SOURCE_DIR ${WEBP_CANDIDATE})
+            break()
+        endif()
+    endforeach()
+    if(WEBP_SOURCE_DIR)
+        message(STATUS "Building libwebp from source: ${WEBP_SOURCE_DIR}")
+        set(WEBP_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        set(WEBP_LINK_STATIC ON CACHE BOOL "" FORCE)
+        set(WEBP_ENABLE_SIMD ON CACHE BOOL "" FORCE)
+        foreach(WEBP_TOOL WEBP_BUILD_ANIM_UTILS WEBP_BUILD_CWEBP WEBP_BUILD_DWEBP
+                          WEBP_BUILD_GIF2WEBP WEBP_BUILD_IMG2WEBP WEBP_BUILD_VWEBP
+                          WEBP_BUILD_WEBPINFO WEBP_BUILD_LIBWEBPMUX WEBP_BUILD_EXTRAS)
+            set(${WEBP_TOOL} OFF CACHE BOOL "" FORCE)
+        endforeach()
+        add_subdirectory(${WEBP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/libwebp-build EXCLUDE_FROM_ALL)
+        # The dependency link block below keys on these target names; alias the
+        # upstream targets so desktop and Android share one linkage path.
+        add_library(webp::webp ALIAS webp)
+        if(TARGET sharpyuv)
+            add_library(webp::sharpyuv ALIAS sharpyuv)
+        endif()
+        add_compile_definitions(MYSTRAL_HAS_WEBP)
+    else()
+        message(STATUS "libwebp not found - WebP texture support disabled. Run 'node scripts/download-deps.mjs --only webp-source' to enable.")
+    endif()
+elseif(EXISTS ${WEBP_DIR} AND NOT IOS)
     # libwebp prebuilt structure: webp/libwebp-{version}-{platform}/lib/libwebp.a
     file(GLOB WEBP_SUBDIRS ${WEBP_DIR}/libwebp-*)
     if(WEBP_SUBDIRS)

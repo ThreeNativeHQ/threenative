@@ -14,7 +14,7 @@
  *
  * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, webp, skia, swc
  * iOS deps: wgpu-ios, skia-ios (for cross-compilation from macOS)
- * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android
+ * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source
  */
 
 import { execFileSync, execSync } from 'child_process';
@@ -261,6 +261,22 @@ const DEPS = {
       return null;
     },
     extractTo: 'webp',
+  },
+  'webp-source': {
+    // libwebp upstream source, for platforms with no prebuilt release (Android,
+    // iOS). Games embed WebP textures in glTF (EXT_texture_webp); without this a
+    // native build silently reports "WebP format support: NO" and GLTFLoader
+    // drops every model texture, which renders as untextured white meshes.
+    // The runtime's CMakeLists builds the extracted tree with the cross toolchain.
+    // Same release line as the desktop prebuilts above; kept as a literal because
+    // DEPS cannot reference itself during construction.
+    version: '1.5.0',
+    getUrl: () => {
+      return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${DEPS['webp-source'].version}.tar.gz`;
+    },
+    // Its own directory, not webp/: the skip-if-exists guard is per destination,
+    // so sharing one would make whichever dep extracts first block the other.
+    extractTo: 'webp-source',
   },
   skia: {
     // Skia 2D graphics library for Canvas 2D implementation
@@ -1023,7 +1039,7 @@ async function main() {
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];
 
   // Android deps (only downloaded with --only or --android)
-  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android'];
+  const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'];
 
   // Windows-specific deps (only downloaded with --only)
   // skia-win-static: Static Skia+Dawn build from library-builder with /MT
