@@ -1,0 +1,434 @@
+# Mobile is not shippable: no UI, 18 fps, intermittent SIGSEGV, and a build lane nobody can run
+
+**Status:** open — 2 of 11 fixed and committed, 1 diagnosed to the wrong layer and corrected,
+8 recorded with evidence and not yet fixed
+**Severity:** blocker — a game built with this framework has no user interface on Android, runs at
+30% of the display's refresh rate, and its Android build cannot be produced from a clean install of
+the published packages
+**Reported:** 2026-08-23, from runs on a physical Pixel 8
+**Repository:** ThreeNative (`packages/assets`, `packages/runtime-native`, `packages/ui`,
+`packages/create-threenative`)
+**Full evidence:** `docs/verification/mobile-stability-2026-08-23.md`
+
+Device: Pixel 8 (`37251FDJH0037Z`), Mali-G715, Vulkan, V8, **60 Hz** display. Game:
+`sandbox/fps-framework` (Bayview), `com.threenative.bayview`. Every number below was executed on
+the physical device — no emulator, no simulator, no desktop substitute.
+
+---
+
+## Index
+
+| # | Bug | Severity | Layer | Status |
+| --- | --- | --- | --- | --- |
+| [1](#bug-1) | Health report kills any build using `EXT_texture_webp` | blocker | `packages/assets` | **fixed** `36831d96` |
+| [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | `packages/ui` + core | open, decided |
+| [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed |
+| [4](#bug-4) | Intermittent SIGSEGV, no tombstone | high | `packages/runtime-native` | open, hypothesis |
+| [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | open |
+| [6](#bug-6) | Published install cannot build for Android | high | `packages/runtime-native` | open |
+| [7](#bug-7) | `catalog:` specifiers leak into the published tarball | high | publishing | open |
+| [8](#bug-8) | 393 MB of GPU resources requested, 849 MB held | medium | game + driver | open |
+| [9](#bug-9) | Render loop keeps drawing with the screen off | medium | `packages/runtime-native` | open |
+| [10](#bug-10) | Preflight claims no libwebp; the runtime has it | low | `packages/runtime-native` | open |
+| [11](#bug-11) | Runtime could not report its own GPU memory | low | `packages/runtime-native` | **fixed** `d6e21511` |
+
+**Not a bug:** landscape orientation. `android:screenOrientation=0` is in the manifest and a live
+screencap is 2400×1080 landscape with the scene correct. My first capture was black and portrait
+because I took it before the surface had presented.
+
+---
+
+<a id="bug-1"></a>
+## Bug 1 — the asset health report kills any build using `EXT_texture_webp`
+
+**Severity:** blocker. **Status:** fixed, `36831d96`.
+
+### What happens
+
+`threenative build --target android` on a game whose model is an ordinary webp GLB compresses every
+texture, then exits 1:
+
+```
+TN_ASSETS_MODEL_UNREADABLE: could not parse 'models/enemy-terrorist.glb' for the health report:
+Missing required extension, "EXT_texture_webp".
+```
+
+No APK is produced.
+
+### Root cause
+
+`packages/assets/src/health.ts` built its reader with a bare `new NodeIO()`, while
+`packages/assets/src/passes/model.ts` registers `ALL_EXTENSIONS` through `createIo()`.
+glTF-Transform refuses any document whose `extensionsRequired` names an extension the reader was
+not told about.
+
+The report is advisory — it measures triangles, texture sizes and licences. It was deciding whether
+builds run.
+
+### Fix
+
+Register `ALL_EXTENSIONS` in `parseModel`. Red test at
+`packages/assets/__tests__/health.spec.ts:378`; green at 13/13, including the existing "refuse an
+unreadable model" case, so genuinely broken files still fail closed.
+
+---
+
+<a id="bug-2"></a>
+## Bug 2 — a native game has no user interface at all
+
+**Severity:** blocker. **Status:** open; fix layer decided this session.
+
+### What happens
+
+On Android the game renders its world correctly and shows **no HUD, no crosshair, no minimap, no
+loading screen and no touch controls**. The player has no readouts and, on a phone, no way to move.
+
+### Evidence
+
+Checked against the APK actually installed on the phone, pulled from `/data/app/…/base.apk`:
+
+```
+LOADING occurrences:    0
+createRoot occurrences: 0
+```
+
+### Root cause
+
+Structural, not a regression. `threenative.config.ts` sets `nativeEntry: "src/game.ts"`. Every UI
+piece — `Hud`, `DebugOverlay`, `GameCanvas`, `Minimap`, `TouchOverlay` — mounts from `src/main.ts`
+via React DOM, which the native host never executes. The loading readout is `Hud.tsx:243`.
+
+The build guard `TN_NATIVE_WEB_ONLY_UI` exists precisely to make this loud, and `PRD-051` chose it
+deliberately (candidate D: `@threenative/ui` stays web-only). `PRD-055` reopened the decision with a
+real game's evidence and is parked in `docs/PRDs/BLOCKED/requires-touch-evidence/`, recommending
+"**G now, E next**".
+
+### Why this is a bug and not a design choice
+
+`/AGENTS.md` states that a feature working on web only is unfinished. The UI is the part of a game
+a player reads. Today it works on exactly one of three targets.
+
+### Fix direction (decided by João, 2026-08-23)
+
+Framework work in `packages/`, **not** a per-game workaround — PRD-055 candidate **E**: the
+framework ships portable screen-space text and nothing else; games compose their own HUD from it.
+Rule 3 (never own the look) stays intact because the game supplies colour, size, layout and content.
+
+Prior art already in the tree: `templates/minimal/src/render/hud.ts`, 69 lines, a 5×7 bitmap font
+drawn as an `InstancedMesh` of quads — portable because it is geometry. Conformance rows
+`25-camera-parented-overlay`, `30-screen-space-text`, `31-hud-readout-updates` are all `implemented`
+and `required`.
+
+---
+
+<a id="bug-3"></a>
+## Bug 3 — 18.3 fps, and 68% of the frame is JavaScript outside the renderer
+
+**Severity:** blocker. **Status:** open, diagnosed.
+
+### What happens
+
+The game presents at **18.3 fps** on a 60 Hz display — 30% of refresh.
+
+It does **not** look like 18 fps to a person holding the phone, which is why this went unreported
+for so long. The compositor explains that: `droppedFrames = 0`, `jankyFrames = 0`. The pacing is
+perfectly even, so it reads as "soft" rather than "broken".
+
+### Evidence — two independent instruments
+
+| Instrument | Reading |
+| --- | --- |
+| `TN_PRESENTS_TICK` (engine) | 60 frames per 3.27 s → **18.3 fps** |
+| `dumpsys SurfaceFlinger --timestats` (compositor) | `totalFrames = 366` over ~20 s → **18.3 fps** |
+
+`frames` and `presents` match exactly at every tick under `fifo` vsync, so every counted frame
+reaches the screen.
+
+### Where the frame goes
+
+Built with `-PthreenativeJsProfile=true`, at 54.6 ms/frame:
+
+| Component | ms | share |
+| --- | --- | --- |
+| JS→native WebGPU bindings | ~5.5 | 10% |
+| Submit poll | ~0.7 | 1% |
+| Present wait (GPU) | ~10.9 | 20% |
+| **Unaccounted — JS/CPU outside the render bindings** | **~37** | **68%** |
+
+The game's own sections, logged on a device for the first time (`TN_FRAME_STATS`, 1799 frames):
+
+```json
+{"frames":1799,"p50":3.72,"p95":65.75,"p99":75.68,"worstMs":27489.89,
+ "spikes":395,"playSpikes":376,"playFrames":1709,
+ "sectionP99":{"effects":0.21,"audio":0.11,"player":0.12,"enemies":5.13,"state":0.07,
+               "gameFrame":5.72,"physics":1.25,"outsideGame":65.87}}
+```
+
+1. **`outsideGame` p99 = 65.87 ms vs `gameFrame` p99 = 5.72 ms.** The game's own code is not the
+   problem by an order of magnitude. `outsideGame` is the engine side — physics step, scene
+   projection, draw.
+2. **The distribution is bimodal**: p50 = 3.72 ms, p95 = 65.75 ms, 376 spikes in 1709 play frames
+   (**22%**). Mostly-fast frames punctuated by very slow ones.
+
+### Honest caveat
+
+`p50 = 3.72 ms` is below the 16.67 ms vsync floor, so `markFrame` runs more often than once per
+presented frame — most likely once per fixed-step simulation step (`maxSteps` defaults to 5). The
+*ratios between sections* are trustworthy; the absolute p50 is not a frame time. `worstMs: 27489.89`
+(a 27-second sample) also needs explaining before it is trusted. Both are open questions, not
+results.
+
+### Correction to an earlier line of attack
+
+I initially pursued GPU memory as the FPS cause and was heading toward texture compression. The
+profile says the frame is CPU-bound in JS, so that was the wrong lever. Recorded here so the next
+person does not repeat it.
+
+### Next action
+
+CPU-profile `outsideGame`. Not more texture work.
+
+---
+
+<a id="bug-4"></a>
+## Bug 4 — intermittent SIGSEGV with no tombstone
+
+**Severity:** high. **Status:** open; leading hypothesis only, **not proven**.
+
+### What happens
+
+`dumpsys activity exit-info` recorded three crashes, all `reason=2 (SIGNALED) status=11` (SIGSEGV):
+
+```
+18:32:41  pid 22109
+18:37:31  pid 22737   (49 s after launch)
+18:40:03  pid 23011   (93 s after launch)
+```
+
+A fourth exit at 18:34:56 was `reason=10 (USER REQUESTED)` carrying **`rss=2.3GB`**. No tombstone
+was written for any crash.
+
+### Hypotheses tested and rejected
+
+| Hypothesis | Test | Result |
+| --- | --- | --- |
+| Screen-off / surface destroyed | `KEYCODE_SLEEP`, 60 s with screen off | survived, no crash |
+| Growing memory leak | `GL mtrack` sampled repeatedly | bit-identical `848124` KB — one-time, not per-frame |
+| Round-clock restart | ran well past the 1:45 round | survived |
+
+A later unattended run survived **10 min 44 s** and died only to `am force-stop` (signal 9).
+
+### Leading hypothesis
+
+All three crashes happened while relaunching on top of a still-winding-down 1.5 GB instance. An
+unchecked native allocation failure under memory pressure produces exactly `SIGNALED/11` with no
+tombstone. Consistent with everything observed; **not demonstrated**.
+
+### Next action
+
+Audit unchecked allocation returns in the WebGPU bindings; reproduce under deliberate memory
+pressure.
+
+---
+
+<a id="bug-5"></a>
+## Bug 5 — the Android APK cannot be reproduced from this repository
+
+**Severity:** high. **Status:** open.
+
+### What happens
+
+Building the Android APK from the repo's own assets produces an app that dies at boot:
+
+```
+TN_NATIVE_START_FAILED: decodeAudioData could not decode the supplied audio.
+```
+
+### Evidence
+
+The `.ogg` files inside the **working installed** APK begin `52494646` — `RIFF`, i.e. WAV data under
+an `.ogg` extension. The repo's `public/` files begin `4f676753` — `OggS`, genuine Ogg.
+
+Someone hand-transcoded a staging copy that does not exist in the repository. The shipped app cannot
+be rebuilt from source.
+
+### Root cause
+
+`packages/runtime-native/scripts/asset-preflight.mjs` states outright that it "does not transcode" —
+it detects undecodable assets and prints `ffmpeg`/`gltf-transform` commands for a human to run. So a
+working Android build depends on a manual out-of-band step that is recorded nowhere.
+
+### Fix direction
+
+Either the pipeline stages and transcodes for the target, or the staging step becomes a recorded,
+runnable command. A build that only works after undocumented manual surgery is not a build lane.
+
+---
+
+<a id="bug-6"></a>
+## Bug 6 — a published install cannot build for Android at all
+
+**Severity:** high. **Status:** open. Related: PRD-196.
+
+### What happens
+
+In a sandbox that installs the packages the way a user's machine would:
+
+```
+Prebuilt release manifest fetch failed for 'android-arm64-v8a-runtime': HTTP 404.
+```
+
+### Root cause
+
+The installed `@threenative/runtime-native@0.2.0` contains **zero** occurrences of
+`THREENATIVE_RUNTIME_SOURCE`, so the source-checkout escape hatch added by PRD-196 is unreachable
+from a published install. The build falls through to downloading a GitHub release that has never
+been published — this repository has zero surviving releases across ten tags (PRD-078).
+
+### Workaround used this session
+
+Drive the engine's own `packages/runtime-native/scripts/package-android.mjs` directly with
+`THREENATIVE_RUNTIME_SOURCE` pointed at `packages/runtime-native`. Not available to a user.
+
+---
+
+<a id="bug-7"></a>
+## Bug 7 — `catalog:` specifiers leak into the published tarball
+
+**Severity:** high. **Status:** open.
+
+### What happens
+
+Packing the current `@threenative/runtime-native@0.3.0` from the engine and installing it into a
+non-workspace project fails. npm reports it plainly:
+
+```
+packages within the pnpm workspace may use catalogs. Usages of the catalog
+protocol are replaced with real specifiers on 'pnpm publish'.
+
+This is likely a bug in the publishing automation of this package.
+```
+
+`npm pack` does not perform the catalog substitution that `pnpm publish` does, so the tarball ships
+unresolvable specifiers. This is the second half of why bug 6 has no workaround: you cannot even
+hand-build a replacement package.
+
+---
+
+<a id="bug-8"></a>
+## Bug 8 — 393 MB of GPU resources requested, 849 MB held by the driver
+
+**Severity:** medium (contributes to bug 4, not to bug 3). **Status:** open.
+
+### Measurements
+
+| Source | Amount |
+| --- | --- |
+| Textures (72) | **379 MB** |
+| Buffers (2,976) | **14 MB** |
+| Game total | **393 MB** |
+| `GL mtrack` (driver) | **849 MB** |
+| Process RSS | 1.5–1.6 GB |
+
+Top buckets:
+
+| Bucket | n | MB |
+| --- | --- | --- |
+| `1536x1536x6 rgba8unorm-srgb` | 1 | 54 |
+| `1536x2048 rgba16float` | 2 | 48 |
+| `2048x2048 rgba8unorm-srgb mips12` | 2 | 42 |
+| `1024x1024 rgba8unorm mips11` | 8 | 42 |
+| `1024x1024 rgba8unorm-srgb mips11` | 7 | 37 |
+| `3072x1536 rgba8unorm-srgb mips12` | 1 | 23 |
+
+### Two distinct problems
+
+**(a) The game asks for too much.** `src/render/sky.ts` assigns one 3072×1536 equirect JPEG to both
+`scene.background` and `scene.environment`. That yields the 54 MB cubemap (background conversion)
+*and* 48 MB of `rgba16float` PMREM scratch (IBL). A further ~146 MB is uncompressed 1024²/2048²/512²
+textures that would be roughly 18 MB as ETC2/ASTC — the pipeline can already produce those, but
+these textures live in `public/` and never enter it.
+
+**(b) The driver more than doubles it**, 393 → 849 MB. That amplification is wgpu/Mali behaviour and
+warrants its own investigation.
+
+### Measured experiment
+
+Commenting out `scene.environment = environment` alone:
+
+| | baseline | IBL off |
+| --- | --- | --- |
+| FPS | 18.3 | **24.8** (+38%) |
+| Textures | 379 MB | 331 MB |
+| `GL mtrack` | 849 MB | 738 MB |
+
+This corrected an inference: the 54 MB cubemap **survives** with IBL off, so it is the background
+equirect→cubemap conversion, not PMREM.
+
+---
+
+<a id="bug-9"></a>
+## Bug 9 — the render loop keeps drawing with the screen off
+
+**Severity:** medium (battery). **Status:** open.
+
+`packages/runtime-native/src/` handles `SDL_EVENT_WINDOW_FOCUS_GAINED`, `WINDOW_RESIZED`,
+`WINDOW_RESTORED` and `WINDOW_SHOWN` — only the resume half. There is **no** handling of
+`WINDOW_HIDDEN`, `WINDOW_MINIMIZED`, `FOCUS_LOST`, `DID_ENTER_BACKGROUND` or `WINDOW_DESTROYED`.
+
+Confirmed on device: frames kept presenting for the full 60 s the screen was off.
+
+---
+
+<a id="bug-10"></a>
+## Bug 10 — preflight rejects webp claiming the runtime lacks libwebp
+
+**Severity:** low. **Status:** open.
+
+`asset-preflight.mjs` refuses a webp GLB for Android with "the android runtime is built without
+libwebp", while the same device logs:
+
+```
+[Mystral] WebP format support: YES
+```
+
+The check is stale relative to `62fac4d5`, and it fails a build closed on a false premise.
+
+---
+
+<a id="bug-11"></a>
+## Bug 11 — the runtime could not report its own GPU memory
+
+**Severity:** low (a gap, not a defect). **Status:** fixed, `d6e21511`.
+
+Nothing in `runtime-native` reported how much GPU memory a game holds, so "the process is using
+1.6 GB" had no answer inside the engine — it had to be inferred from `dumpsys meminfo` and
+arithmetic. Every texture and buffer the WebGPU bindings create is now measured and emitted beside
+the present tick, bucketed by dimensions/format and usage bits.
+
+Every number in bug 8 comes from this instrumentation. Package suite after the change: **356 passed,
+31 skipped, 0 failed** — that commit also repairs a pre-existing red where
+`runtime-next-contract.test.mjs` asserted an `androidDeps` array that `62fac4d5` had changed.
+
+---
+
+## Suggested order of work
+
+1. **Bug 3** — CPU-profile `outsideGame`. It is the blocker a player feels, and it is not where I
+   was originally looking.
+2. **Bug 2** — PRD-055 candidate E. Without it there is no shippable mobile game regardless of fps.
+3. **Bugs 5, 6, 7** — the build lane. These block everyone else's ability to reproduce anything
+   here, and they cost this session several hours.
+4. **Bug 4** — reproduce under deliberate memory pressure once bug 8 is reduced.
+5. **Bugs 8, 9, 10** — real, bounded, lower urgency.
+
+## Reproduction notes
+
+- Wi-Fi adb needs `adb tcpip 5555` over USB first; the cable can then be pulled.
+- `adb logcat -G 16M` before any session, or early markers evict.
+- A `WAKEUP` keyevent every few seconds stops the screen dozing mid-measurement.
+- `dumpsys activity exit-info <pkg>` gives the signal for a vanished process — better than hunting a
+  tombstone that may never have been written.
+- `dumpsys SurfaceFlinger --timestats -enable` / `-dump` is an fps source independent of the engine.
+- Temporary instrumentation lives in `sandbox/fps-framework/src/gpuMemoryProbe.ts`, registered in
+  `src/game.ts`. **Delete both when this closes.**
