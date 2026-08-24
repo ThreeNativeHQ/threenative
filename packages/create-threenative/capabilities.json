@@ -142,6 +142,24 @@
       "symbol": "defineGame"
     },
     {
+      "constraints": [
+        "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement"
+      ],
+      "example": "defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class FrameBudget { … }",
+      "situations": [
+        "find out why a game runs slowly on a phone",
+        "attribute a frame to present wait, simulation, three.js render, or overlay"
+      ],
+      "summary": "Read where the frame's milliseconds went, per presented frame, on any platform.",
+      "supersedes": [],
+      "symbol": "FrameBudget"
+    },
+    {
       "constraints": ["only use the returned platform facts; native globals are host-owned"],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",

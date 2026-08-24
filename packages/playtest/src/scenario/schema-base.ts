@@ -1,3 +1,4 @@
+import type { PlaytestFramePhase } from "../protocol.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -235,6 +236,13 @@ export interface IPlaytestPerformanceAssertion {
   maxDrawCalls?: number;
   maxFrameMsP95?: number;
   maxTriangles?: number;
+  /** Frame-budget floor: the median presented frame must sustain at least this many frames a second. */
+  minFps?: number;
+  /**
+   * Per-phase ceilings in milliseconds, nearest-rank p95 across the sampled frames. The phase
+   * names are the engine's frame-budget phases: hostGap, update, render, overlay, residual.
+   */
+  maxPhaseMsP95?: Readonly<Partial<Record<PlaytestFramePhase, number>>>;
 }
 
 export interface IPlaytestFramebufferCoverageAssertion {

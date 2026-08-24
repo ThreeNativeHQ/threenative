@@ -48,15 +48,20 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // desktop native, the Android emulator and a physical Pixel 8 — is
   // docs/verification/prd-209-2026-08-23.md; the before/after table is
   // docs/verification/instruction-budgets-2026-08-23.md.
-  defaultMaxWords: 2660,
+  // A second uniform bump, +22, re-measured on 2026-08-23 (PRD-214): the frame budget ships on
+  // by default and prints `TN_FRAME_BUDGET` on every platform, so the performance-default
+  // fragment now has to name the marker, its five phases and the `frameBudget: false` override
+  // — a convention missing from the templates' AGENTS.md does not exist. Measured worst case was
+  // platformer at 2981 against 2960. See docs/verification/prd-214-2026-08-23.md.
+  defaultMaxWords: 2682,
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
-    platformer: 2960,
+    platformer: 2982,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
-    minimal: 3413,
+    minimal: 3435,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
-    starter: 3775,
+    starter: 3797,
   },
 };
 

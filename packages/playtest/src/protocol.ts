@@ -105,9 +105,29 @@ export interface IPlaytestGameplayObservation {
 }
 
 /** Per-render samples shared by the browser and native playtest bridges. */
+/**
+ * The named parts of one presented frame. Closed on purpose: a budget naming anything else is a
+ * typo, and a typo that evaluated no bound would report green on a ceiling nobody checked.
+ */
+export const PLAYTEST_FRAME_BUDGET_PHASES = ["hostGap", "overlay", "render", "residual", "update"] as const;
+
+export type PlaytestFramePhase = (typeof PLAYTEST_FRAME_BUDGET_PHASES)[number];
+
+/**
+ * Where a frame's milliseconds went, by phase. Every phase optional so a producer that measures
+ * only some of them is describable; a ceiling on a phase the producer omitted fails naming the
+ * missing evidence rather than passing on nothing.
+ */
+export type PlaytestFramePhaseSample = Partial<Record<PlaytestFramePhase, number>>;
+
 export interface IPlaytestRuntimeDiagnosticsSample {
   drawCalls?: number;
   frameMs: number;
+  /**
+   * Supplied by an engine that measures its own frame — `@threenative/core` fills it from the
+   * frame budget. Absent for a plain Three.js bridge.
+   */
+  phases?: PlaytestFramePhaseSample;
   triangles?: number;
 }
 

@@ -132,6 +132,21 @@ export function defineGame<TState extends Record<string, unknown>, TPhysics = un
 const game = defineGame({ scenes: { Play } });
 ```
 
+### `FrameBudget`
+
+`class` — Read where the frame's milliseconds went, per presented frame, on any platform.
+
+```ts
+export class FrameBudget { … }
+```
+
+- **Use when:** find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay
+- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
+
+```ts
+defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
+```
+
 ### `getPlatform`
 
 `function` — Read the host platform without reaching for browser globals.

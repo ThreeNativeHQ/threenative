@@ -420,6 +420,9 @@ this?* If no, you are not finished.
 
 Refill scratch; pool objects.
 
-`{"performance":{"maxFrameMsP95":33}}`
+`TN_FRAME_BUDGET` prints `fps` and the frame split: `hostGap`, `update`, `render`, `overlay`,
+`residual`. `defineGame({ frameBudget: false })` silences it, not the measurement.
+
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12}}}`
 `agent-docs/assertion-reference.md#performance`
 <!-- /shared -->

@@ -8,6 +8,7 @@ import {
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
+import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "./frame-budget.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
@@ -52,6 +53,8 @@ export interface IGamePluginRuntime {
    * assertions, not for every frame of every game.
    */
   readonly enableRuntimeDiagnostics?: () => void;
+  /** The frame's cost attribution so far, or undefined when the game turned the budget off. */
+  readonly frameBudgetWindow?: () => IFrameBudgetWindow | undefined;
   /**
    * Hold the frame loop until `gate` settles, after the start scene has entered.
    *
@@ -144,6 +147,14 @@ export interface IGameConfig<
    * the browser menu over its canvas.
    */
   readonly contextMenu?: ContextMenuPolicy;
+  /**
+   * Per-frame cost attribution, on by default. Every `reportEvery` presented frames the game
+   * prints one `TN_FRAME_BUDGET` line naming where the frame went — present wait, simulation,
+   * three.js render, overlay, the rest — which is what a device lane reads instead of guessing.
+   * Pass `false` to silence the marker; the same numbers still reach a playtest `performance`
+   * assertion, because turning a convention off must not turn its measurement off.
+   */
+  readonly frameBudget?: IFrameBudgetOptions | false;
   readonly initialState?: TState;
   readonly inputTarget?: EventTarget;
   /**
@@ -298,6 +309,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #random: IRandom | undefined;
   #picker: ScenePicker | undefined;
   #scheduler: Scheduler | undefined;
+  #frameBudget: FrameBudget | undefined;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
   #pendingStart: Promise<void> | undefined;
@@ -544,7 +556,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         : platform.devToolsHost;
     this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
     this.#scene = new SceneType();
+    // Built here rather than inside the loop so `frameBudget: false` is a single decision with a
+    // single owner, and so the render phases below feed the same instrument the loop feeds.
+    const frameBudget =
+      this.#config.frameBudget === false
+        ? undefined
+        : new FrameBudget(this.#config.frameBudget ?? {});
+    this.#frameBudget = frameBudget;
+    const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
     const gameLoop = new FixedStepLoop({
+      ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
         for (const particle of this.#particles) {
@@ -569,13 +590,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no
           // second optional render path to leave untested.
+          const renderStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.render(this.#projection?.root ?? threeScene, camera);
+          frameBudget?.addRender(budgetNow() - renderStart);
           // Same entering-window rule as onUpdate: nothing of the incoming scene draws before enter().
           if (this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
         }
         if (canvasLayer.scene.children.length > 0) {
+          const overlayStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
+          frameBudget?.addOverlay(budgetNow() - overlayStart);
           if (!this.#renderMetricsEnabled) return undefined;
           const overlayMetrics = rendererPerformanceMetrics(renderer.raw);
           return worldMetrics === undefined
@@ -607,6 +632,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startGates: Promise<void>[] = [];
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      frameBudgetWindow: () => this.#frameBudget?.window(),
       enableRuntimeDiagnostics: () => {
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);
