@@ -17,12 +17,45 @@ function assertTimerContract(v8, quickjs, runtime) {
   assert.match(runtime, /executeTimerCallbacks\(\);/u);
 }
 
+function assertTimerExecutableFailsClosed(source) {
+  assert.match(source, /constexpr int kCompletionExitCode = [1-9]\d*;/u);
+  assert.match(source, /process\.exit\(timeoutCount === 1 && intervalCount === 3 \? 42 : 1\);/u);
+  assert.match(source, /bool timedOut = false;/u);
+  assert.match(
+    source,
+    /if \(std::chrono::steady_clock::now\(\) >= deadline\) \{\s*timedOut = true;\s*break;/u,
+  );
+  assert.match(source, /const int exitCode = runtime->getExitCode\(\);/u);
+  const completionCheck = source.indexOf("if (exitCode != kCompletionExitCode)");
+  const successLine = source.indexOf("native timer delivery contract passed");
+  assert.ok(completionCheck >= 0, "the executable must gate success on the completion sentinel");
+  assert.ok(successLine > completionCheck, "the success line must follow the failure gate");
+}
+
 test("native timers have one real runtime owner and no engine-level stubs", () => {
   const v8 = read("src/js/v8_engine.cpp");
   const quickjs = read("src/js/quickjs_engine.cpp");
   const runtime = read("src/runtime.cpp");
 
   assert.doesNotThrow(() => assertTimerContract(v8, quickjs, runtime));
+});
+
+test("timer executable fails closed when the completion callback never arrives", () => {
+  const source = read("tests/timer_delivery_test.cpp");
+  assert.doesNotThrow(() => assertTimerExecutableFailsClosed(source));
+});
+
+test("timer executable contract rejects the old timeout false-positive", () => {
+  const source = read("tests/timer_delivery_test.cpp");
+  const falsePositive = source
+    .replace("constexpr int kCompletionExitCode = 42;\n", "")
+    .replace(
+      "process.exit(timeoutCount === 1 && intervalCount === 3 ? 42 : 1);",
+      "process.exit(timeoutCount === 1 && intervalCount === 3 ? 0 : 1);",
+    )
+    .replace("if (exitCode != kCompletionExitCode)", "if (exitCode != 0)");
+
+  assert.throws(() => assertTimerExecutableFailsClosed(falsePositive));
 });
 
 test("timer contract rejects restoring an engine stub after the real owner", () => {

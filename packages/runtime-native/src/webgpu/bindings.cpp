@@ -4743,17 +4743,22 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                             bgDesc.entryCount = bindGroupEntries.size();
                             bgDesc.entries = bindGroupEntries.data();
 
+                            auto releaseAutoCreatedViews = [&autoCreatedViews]() {
+                                for (auto v : autoCreatedViews) {
+                                    wgpuTextureViewRelease(v);
+                                }
+                            };
+
                             WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(g_device, &bgDesc);
                             if (!bindGroup) {
+                                releaseAutoCreatedViews();
                                 g_engine->throwException("Failed to create bind group");
                                 return g_engine->newUndefined();
                             }
 
                             // Release auto-created texture views — Dawn holds its own
                             // internal references through the bind group
-                            for (auto v : autoCreatedViews) {
-                                wgpuTextureViewRelease(v);
-                            }
+                            releaseAutoCreatedViews();
 
                             auto jsBindGroup = g_engine->newObject();
                             g_engine->setPrivateData(jsBindGroup, bindGroup);

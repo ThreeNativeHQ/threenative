@@ -10,6 +10,8 @@
 
 namespace {
 
+constexpr int kCompletionExitCode = 42;
+
 constexpr const char* kScript = R"JS((() => {
   let timeoutCount = 0;
   let intervalCount = 0;
@@ -21,7 +23,7 @@ constexpr const char* kScript = R"JS((() => {
     if (intervalCount === 3) {
       clearInterval(intervalId);
       setTimeout(() => {
-        process.exit(timeoutCount === 1 && intervalCount === 3 ? 0 : 1);
+        process.exit(timeoutCount === 1 && intervalCount === 3 ? 42 : 1);
       }, 0);
     }
   }, 1);
@@ -47,13 +49,25 @@ int main() {
     }
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (runtime->pollEvents() && std::chrono::steady_clock::now() < deadline) {
+    bool timedOut = false;
+    while (runtime->pollEvents()) {
+        if (runtime->getExitCode() == kCompletionExitCode) {
+            break;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            timedOut = true;
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    if (runtime->getExitCode() != 0) {
-        std::cerr << "native timer delivery contract failed with exit " << runtime->getExitCode()
-                  << '\n';
+    const int exitCode = runtime->getExitCode();
+    if (exitCode != kCompletionExitCode) {
+        if (timedOut || exitCode == 0) {
+            std::cerr << "native timer delivery contract timed out before completion\n";
+        } else {
+            std::cerr << "native timer delivery contract failed with exit " << exitCode << '\n';
+        }
         return 1;
     }
 

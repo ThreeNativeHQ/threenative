@@ -39,9 +39,50 @@ function assertCreationChecks(candidate) {
   );
 }
 
+function assertBindGroupViewOwnership(candidate) {
+  const bindGroup = blockBetween(
+    candidate,
+    'g_engine->newFunction("createBindGroup"',
+    '// device.createPipelineLayout(descriptor)',
+  );
+
+  assert.match(
+    bindGroup,
+    /auto releaseAutoCreatedViews = \[&autoCreatedViews\]\(\) \{\s*for \(auto v : autoCreatedViews\) \{\s*wgpuTextureViewRelease\(v\);\s*\}\s*\};/u,
+    "createBindGroup must own its automatically created views locally",
+  );
+
+  const failureStart = bindGroup.indexOf("if (!bindGroup) {");
+  const failureRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureStart);
+  const failureReturn = bindGroup.indexOf("return g_engine->newUndefined();", failureStart);
+  const successRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureRelease + 1);
+  const wrapperCreation = bindGroup.indexOf("auto jsBindGroup = g_engine->newObject();");
+
+  assert.ok(failureStart >= 0, "createBindGroup must check the native handle");
+  assert.ok(failureRelease > failureStart, "the failure path must release every created view");
+  assert.ok(failureRelease < failureReturn, "view cleanup must precede the error return");
+  assert.ok(successRelease > failureReturn, "the successful path must retain its view cleanup");
+  assert.ok(successRelease < wrapperCreation, "successful ownership must be released before wrapping");
+}
+
 test("WebGPU creation bindings fail at creation for null native handles", () => {
   const source = read("src/webgpu/bindings.cpp");
   assert.doesNotThrow(() => assertCreationChecks(source));
+});
+
+test("bind-group creation releases automatically created views on failure and success", () => {
+  const source = read("src/webgpu/bindings.cpp");
+  assert.doesNotThrow(() => assertBindGroupViewOwnership(source));
+});
+
+test("bind-group ownership contract rejects removing failure-path view cleanup", () => {
+  const source = read("src/webgpu/bindings.cpp");
+  const withoutFailureCleanup = source.replace(
+    /if \(!bindGroup\) \{\n\s*releaseAutoCreatedViews\(\);/u,
+    "if (!bindGroup) {",
+  );
+
+  assert.throws(() => assertBindGroupViewOwnership(withoutFailureCleanup));
 });
 
 test("creation contract rejects deletion of either null-handle check", () => {
