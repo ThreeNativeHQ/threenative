@@ -22,7 +22,7 @@ export const loading = {
   progressColor: palette.accent,
   showStatus: false,
   trackColor: palette.skyHigh,
-  bar: { anchorX: 0.5, anchorY: 0.74, height: 10, maxWidth: 500, width: 0.58 },
+  bar: { anchorX: 0.5, anchorY: 0.74, height: 10, maxWidth: 500, minWidth: 1, width: 0.58 },
 } as const;
 /* END THREENATIVE LOADING APPEARANCE */
 
@@ -206,7 +206,7 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
     barY = safeY + safeHeight * loading.bar.anchorY;
     const worldX = (screenX: number): number => camera.left + screenX;
     const worldY = (screenY: number): number => camera.top - screenY;
-    const visibleWidth = Math.max(2, barWidth * progress);
+    const visibleWidth = Math.max(loading.bar.minWidth, barWidth * progress);
     backdrop.scale.set(width, height, 1);
     backdrop.position.set(worldX(width / 2), worldY(height / 2), 0);
     track.scale.set(barWidth, barHeight, 1);

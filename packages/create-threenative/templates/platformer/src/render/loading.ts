@@ -27,6 +27,7 @@ export const loading = {
     anchorY: 0.72,
     height: 12,
     maxWidth: 1200,
+    minWidth: 2,
     width: 0.62,
   },
 } as const;
@@ -212,7 +213,7 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
     barY = safeY + safeHeight * loading.bar.anchorY;
     const worldX = (screenX: number): number => camera.left + screenX;
     const worldY = (screenY: number): number => camera.top - screenY;
-    const visibleWidth = Math.max(2, barWidth * progress);
+    const visibleWidth = Math.max(loading.bar.minWidth, barWidth * progress);
     backdrop.scale.set(width, height, 1);
     backdrop.position.set(worldX(width / 2), worldY(height / 2), 0);
     track.scale.set(barWidth, barHeight, 1);

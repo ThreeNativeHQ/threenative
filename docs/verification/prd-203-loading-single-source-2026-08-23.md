@@ -171,3 +171,70 @@ The six declared appearance blocks total 90 lines (14 each for action-rpg, defen
 and starter; 20 for platformer). Thus the unique maintenance surface is 301 canonical structural
 lines plus 90 kit-specific appearance lines; stamped generated outputs remain full user source in
 each kit by design.
+
+## Repair round — 2026-08-23
+
+The prior review blockers are repaired in the existing lane at `f0172ad9`:
+
+- `pnpm stamp:template-loading` is the in-repo restamp command. It calls
+  `scripts/stamp-template-loading.ts`, which writes all six full copies from
+  `packages/create-threenative/template-assets/loading.ts` while retaining each declared
+  appearance block. `minimal` is intentionally excluded.
+- `loading.bar.minWidth` is now part of each appearance block: `1` px for action-rpg, defense,
+  racing, shooter, and starter; `2` px for platformer. The canonical layout reads that value, so
+  the previous zero/near-zero fill appearance is preserved.
+- The generated render files still have no `@threenative/*` imports.
+
+### Red controls
+
+1. Replaced the restamp write with `await writeFile(file, source)`. The focused suite failed in
+   `restamps all six tracked copies from a canonical edit` because action-rpg did not contain the
+   mutated `function restampReviewRoundMeshFor(`. Recorded result: `RED_RESTAMP_EXIT=1`.
+2. Temporarily changed the canonical layout to `Math.max(2, barWidth * progress)` and ran the
+   restamp command. The appearance test failed with `expected 2 to be 1` for the five 1px kits.
+   Recorded result: `RED_APPEARANCE_EXIT=1`.
+
+Both mutations were restored, and the six copies were re-stamped before the green checks.
+
+### Green checks
+
+```text
+pnpm stamp:template-loading
+stamped action-rpg: packages/create-threenative/templates/action-rpg/src/render/loading.ts
+stamped defense: packages/create-threenative/templates/defense/src/render/loading.ts
+stamped platformer: packages/create-threenative/templates/platformer/src/render/loading.ts
+stamped racing: packages/create-threenative/templates/racing/src/render/loading.ts
+stamped shooter: packages/create-threenative/templates/shooter/src/render/loading.ts
+stamped starter: packages/create-threenative/templates/starter/src/render/loading.ts
+
+pnpm exec vitest run --config vitest.config.ts packages/create-threenative/__tests__/loading-screen.spec.ts --reporter=dot
+Test Files  1 passed (1)
+Tests       21 passed (21)
+
+pnpm --filter create-threenative typecheck
+exit 0
+
+pnpm exec vitest run --config vitest.config.ts packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/template.spec.ts --reporter=dot
+Test Files  2 passed (2)
+Tests      48 passed (48)
+
+sh scripts/xvfb.sh pnpm exec tsx scripts/verify-one-template.ts starter
+starter: scaffolded playtests passed
+exit 0
+```
+
+### Visual gate boundary
+
+`pnpm visuals` completed structural inspection and captured non-blank WebGPU frames for all seven
+templates. The command then exited 1 at:
+
+```text
+TN_VISUAL_SCORE_FLOOR: action-rpg scored 3; floor is 4.
+```
+
+The tracked score file says it was model-scored on 2026-08-21, with parity scores left untouched
+because the parity pair was not re-captured. The command's generated PNGs were restored and are not
+part of this repair. Loading-screen pre/post pixel parity is therefore **UNVERIFIED**. The exact
+external prerequisite for that claim is a same-viewport pre-change and post-change loading-screen
+capture set, followed by an accepted visual score/baseline that clears the repository floor; this
+run did not produce that pair and makes no parity claim.

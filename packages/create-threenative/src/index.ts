@@ -54,6 +54,14 @@ export function templateRoot(): string {
 const LOADING_SOURCE_RELATIVE_PATH = path.join("src", "render", "loading.ts");
 const LOADING_APPEARANCE_BLOCK_PATTERN =
   /\/\* BEGIN THREENATIVE LOADING APPEARANCE \*\/[\s\S]*?\/\* END THREENATIVE LOADING APPEARANCE \*\//gu;
+export const FULL_LOADING_TEMPLATES = [
+  "action-rpg",
+  "defense",
+  "platformer",
+  "racing",
+  "shooter",
+  "starter",
+] as const;
 
 /** The canonical generated loading implementation ships beside, rather than inside, a kit. */
 export function canonicalLoadingPath(root = templateRoot()): string {
@@ -77,6 +85,21 @@ export function stampLoadingSource(canonical: string, template: string): string 
   const canonicalBlock = loadingAppearanceBlock(canonical, "canonical loading source");
   const templateBlock = loadingAppearanceBlock(template, "template loading source");
   return canonical.replace(canonicalBlock, templateBlock);
+}
+
+/** Re-stamps every tracked full kit from the canonical source, preserving each kit's appearance. */
+export async function restampTemplateLoadingCopies(
+  root = templateRoot(),
+): Promise<readonly string[]> {
+  const canonical = await readFile(canonicalLoadingPath(root), "utf8");
+  const stamped = [] as string[];
+  for (const template of FULL_LOADING_TEMPLATES) {
+    const file = path.join(root, template, LOADING_SOURCE_RELATIVE_PATH);
+    const source = await readFile(file, "utf8");
+    await writeFile(file, stampLoadingSource(canonical, source));
+    stamped.push(file);
+  }
+  return stamped;
 }
 
 async function stampTemplateLoading(target: string, template: string, root: string): Promise<void> {
