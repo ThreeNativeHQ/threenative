@@ -73,6 +73,21 @@ async function heapSize(page: import("@playwright/test").Page): Promise<number> 
   return heap;
 }
 
+async function advanceFixedTicks(
+  page: import("@playwright/test").Page,
+  ticks: number,
+): Promise<void> {
+  await page.evaluate(async (tickCount) => {
+    const advance = (
+      window as Window & {
+        __THREENATIVE_PLAYTEST_BRIDGE__?: { advance?: (ticks: number) => Promise<unknown> };
+      }
+    ).__THREENATIVE_PLAYTEST_BRIDGE__?.advance;
+    if (advance === undefined) throw new Error("Fixed-step playtest bridge was not observable.");
+    await advance(tickCount);
+  }, ticks);
+}
+
 async function waitForGrounded(page: import("@playwright/test").Page): Promise<void> {
   await page.waitForFunction(
     () => {
@@ -218,6 +233,7 @@ test("preserves starter state and stays flat across ten real HMR updates", async
 
   await page.keyboard.down("ArrowRight");
   try {
+    await advanceFixedTicks(page, 240);
     await page.waitForFunction(
       () => {
         const scoreLabel = [...document.querySelectorAll("div")].find(
