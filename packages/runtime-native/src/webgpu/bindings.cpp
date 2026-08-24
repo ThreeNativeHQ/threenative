@@ -61,6 +61,7 @@
 // Canvas 2D context (Skia-backed)
 #include "mystral/canvas/canvas2d.h"
 #include "bindings_state.h"
+#include "surface_texture_transaction.h"
 
 // Forward declaration for Canvas2D bindings
 namespace mystral {
@@ -102,46 +103,132 @@ BindingsState* createBindingsState() {
     return new BindingsState();
 }
 
-void destroyBindingsState(BindingsState* state) {
+void destroyBindingsState(BindingsState*& state) {
     if (!state) return;
-    if (state->engine) {
-        js::Engine* engine = state->engine;
-        state->engine = nullptr;
-        for (auto it = state->protectedHandles.rbegin();
-             it != state->protectedHandles.rend();
-             ++it) {
-            engine->unprotect(*it);
+    BindingsState* ownedState = state;
+    state = nullptr;
+    {
+        BindingsState* state = ownedState;
+        if (state->engine) {
+            js::Engine* engine = state->engine;
+            state->engine = nullptr;
+            for (auto it = state->protectedHandles.rbegin();
+                 it != state->protectedHandles.rend();
+                 ++it) {
+                engine->unprotect(*it);
+            }
+            state->protectedHandles.clear();
         }
-        state->protectedHandles.clear();
-    }
-    state->canvas2DContexts.clear();
+        state->canvas2DContexts.clear();
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
-    state->mainCanvas2DContext = nullptr;
-    if (state->canvas2DBindGroup) wgpuBindGroupRelease(state->canvas2DBindGroup);
-    if (state->canvas2DPipeline) wgpuRenderPipelineRelease(state->canvas2DPipeline);
-    if (state->canvas2DSampler) wgpuSamplerRelease(state->canvas2DSampler);
-    if (state->canvas2DTexture) {
-        wgpuTextureDestroy(state->canvas2DTexture);
-        wgpuTextureRelease(state->canvas2DTexture);
-    }
-    if (state->screenshotBuffer) {
-        wgpuBufferDestroy(state->screenshotBuffer);
-        wgpuBufferRelease(state->screenshotBuffer);
-    }
-    if (state->currentTextureView) wgpuTextureViewRelease(state->currentTextureView);
-    if (state->currentTexture && state->surface) wgpuTextureRelease(state->currentTexture);
-    if (state->srgbPresentationPipeline) wgpuRenderPipelineRelease(state->srgbPresentationPipeline);
-    if (state->srgbPresentationBindGroupLayout) {
-        wgpuBindGroupLayoutRelease(state->srgbPresentationBindGroupLayout);
-    }
+        while (!state->textureRegistry.empty()) {
+            releaseTextureRegistryEntry(state, state->textureRegistry.begin()->first);
+        }
+        while (!state->bufferRegistry.empty()) {
+            releaseBufferRegistryEntry(state, state->bufferRegistry.begin()->first);
+        }
+        while (!state->computePipelineRegistry.empty()) {
+            releaseComputePipelineRegistryEntry(
+                state, state->computePipelineRegistry.begin()->first);
+        }
+        while (!state->renderPipelineRegistry.empty()) {
+            releaseRenderPipelineRegistryEntry(
+                state, state->renderPipelineRegistry.begin()->first);
+        }
+        for (const auto& entry : state->encoderRenderPassMap) {
+            if (entry.second) {
+                wgpuRenderPassEncoderEnd(entry.second);
+                wgpuRenderPassEncoderRelease(entry.second);
+            }
+        }
+        state->encoderRenderPassMap.clear();
+        for (const auto& entry : state->encoderComputePassMap) {
+            if (entry.second) {
+                wgpuComputePassEncoderEnd(entry.second);
+                wgpuComputePassEncoderRelease(entry.second);
+            }
+        }
+        state->encoderComputePassMap.clear();
+        state->jsRenderPass = nullptr;
+        state->jsComputePass = nullptr;
+        if (state->jsCommandEncoder &&
+            state->commandEncoderRegistry.find(state->jsCommandEncoder) ==
+                state->commandEncoderRegistry.end()) {
+            wgpuCommandEncoderRelease(state->jsCommandEncoder);
+        }
+        for (const auto encoder : state->commandEncoderRegistry) {
+            if (encoder) wgpuCommandEncoderRelease(encoder);
+        }
+        state->commandEncoderRegistry.clear();
+        state->jsCommandEncoder = nullptr;
+        state->mainCanvas2DContext = nullptr;
+        if (state->canvas2DBindGroup) wgpuBindGroupRelease(state->canvas2DBindGroup);
+        if (state->canvas2DPipeline) wgpuRenderPipelineRelease(state->canvas2DPipeline);
+        if (state->canvas2DSampler) wgpuSamplerRelease(state->canvas2DSampler);
+        if (state->canvas2DTexture) {
+            wgpuTextureDestroy(state->canvas2DTexture);
+            wgpuTextureRelease(state->canvas2DTexture);
+        }
+        if (state->screenshotBuffer) {
+            wgpuBufferDestroy(state->screenshotBuffer);
+            wgpuBufferRelease(state->screenshotBuffer);
+        }
+        if (state->currentTextureView) wgpuTextureViewRelease(state->currentTextureView);
+        if (state->currentTexture && state->surface) {
+            wgpuTextureRelease(state->currentTexture);
+        }
+        if (state->srgbPresentationPipeline) {
+            wgpuRenderPipelineRelease(state->srgbPresentationPipeline);
+        }
+        if (state->srgbPresentationBindGroupLayout) {
+            wgpuBindGroupLayoutRelease(state->srgbPresentationBindGroupLayout);
+        }
 #endif
-    delete state;
+        delete state;
+    }
 }
 
 static void protectBindingHandle(BindingsState* state, js::JSValueHandle value) {
     if (!state || !state->engine || !value.ptr) return;
+    for (const auto& protectedHandle : state->protectedHandles) {
+        if (protectedHandle.ptr == value.ptr) return;
+    }
     state->engine->protect(value);
     state->protectedHandles.push_back(value);
+}
+
+static void unprotectBindingHandle(BindingsState* state, js::JSValueHandle value) {
+    if (!state || !state->engine || !value.ptr) return;
+    for (auto it = state->protectedHandles.begin(); it != state->protectedHandles.end(); ++it) {
+        if (it->ptr == value.ptr) {
+            state->engine->unprotect(*it);
+            state->protectedHandles.erase(it);
+            return;
+        }
+    }
+}
+
+static void rollbackOwnedCanvas2DContext(BindingsState* state, js::JSValueHandle context) {
+    if (!state || !state->engine || !context.ptr) return;
+    auto* nativeContext = static_cast<canvas::Canvas2DContext*>(state->engine->getPrivateData(context));
+    if (nativeContext) {
+        for (auto it = state->canvas2DContexts.begin(); it != state->canvas2DContexts.end(); ++it) {
+            if (it->get() == nativeContext) {
+                state->canvas2DContexts.erase(it);
+                break;
+            }
+        }
+    }
+    unprotectBindingHandle(state, context);
+}
+
+static void rollbackOffscreenCanvas(BindingsState* state, int canvasId, js::JSValueHandle element) {
+    if (!state || !state->engine) return;
+    state->offscreenCanvases.erase(canvasId);
+    if (state->nextOffscreenCanvasId == canvasId + 1) state->nextOffscreenCanvasId = canvasId;
+    const std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
+    state->engine->deleteProperty(state->engine->getGlobal(), globalName.c_str());
+    unprotectBindingHandle(state, element);
 }
 
 static js::JSValueHandle createOwnedCanvas2DContext(
@@ -566,6 +653,171 @@ static const char* formatToString(WGPUTextureFormat format) {
         case WGPUTextureFormat_Depth32Float: return "depth32float";
         default: return "bgra8unorm";  // Default
     }
+}
+
+static uint64_t textureMetricBytes(const TextureInfo& info) {
+    const double perTexel = textureBytesPerTexel(formatToString(info.format));
+    double texels = 0.0;
+    for (uint32_t level = 0; level < (info.mipLevelCount == 0 ? 1u : info.mipLevelCount);
+         level += 1) {
+        const double width = std::max(
+            1.0, std::floor(static_cast<double>(info.width) / std::pow(2.0, level)));
+        const double height = std::max(
+            1.0, std::floor(static_cast<double>(info.height) / std::pow(2.0, level)));
+        texels += width * height;
+    }
+    return static_cast<uint64_t>(
+        texels * static_cast<double>(info.depthOrArrayLayers == 0 ? 1u : info.depthOrArrayLayers) *
+        static_cast<double>(info.sampleCount == 0 ? 1u : info.sampleCount) * perTexel);
+}
+
+static std::string textureMetricBucket(const TextureInfo& info) {
+    std::ostringstream key;
+    key << info.width << "x" << info.height;
+    if (info.depthOrArrayLayers > 1) key << "x" << info.depthOrArrayLayers;
+    key << " " << formatToString(info.format);
+    if (info.mipLevelCount > 1) key << " mips" << info.mipLevelCount;
+    if (info.sampleCount > 1) key << " msaa" << info.sampleCount;
+    return key.str();
+}
+
+static void recordTextureDestroyed(BindingsState* state, const TextureInfo& info) {
+    if (!info.accounted) return;
+    const uint64_t bytes = textureMetricBytes(info);
+    state->textureBytesLive = state->textureBytesLive >= bytes
+        ? state->textureBytesLive - bytes
+        : 0;
+    if (state->textureCountLive > 0) state->textureCountLive -= 1;
+    const std::string bucketKey = textureMetricBucket(info);
+    auto bucket = state->textureBuckets.find(bucketKey);
+    if (bucket != state->textureBuckets.end()) {
+        if (bucket->second.first > 0) bucket->second.first -= 1;
+        bucket->second.second = bucket->second.second >= bytes
+            ? bucket->second.second - bytes
+            : 0;
+        if (bucket->second.first == 0) state->textureBuckets.erase(bucket);
+    }
+}
+
+static void recordBufferDestroyed(BindingsState* state, const BufferInfo& info) {
+    if (!info.accounted) return;
+    state->bufferBytesLive = state->bufferBytesLive >= info.size
+        ? state->bufferBytesLive - info.size
+        : 0;
+    if (state->bufferCountLive > 0) state->bufferCountLive -= 1;
+    const std::string bucketKey = bufferUsageLabel(static_cast<uint32_t>(info.usage));
+    auto bucket = state->bufferBuckets.find(bucketKey);
+    if (bucket != state->bufferBuckets.end()) {
+        if (bucket->second.first > 0) bucket->second.first -= 1;
+        bucket->second.second = bucket->second.second >= info.size
+            ? bucket->second.second - info.size
+            : 0;
+        if (bucket->second.first == 0) state->bufferBuckets.erase(bucket);
+    }
+}
+
+void releaseTextureRegistryEntry(BindingsState* state, uint64_t textureId) {
+    if (!state) return;
+    const auto it = state->textureRegistry.find(textureId);
+    if (it == state->textureRegistry.end()) return;
+    const TextureInfo info = it->second;
+    state->textureRegistry.erase(it);
+    recordTextureDestroyed(state, info);
+    if (state->currentSurfaceTextureId == textureId) state->currentSurfaceTextureId = 0;
+    if (info.ownsTexture && info.texture) {
+        wgpuTextureDestroy(info.texture);
+        wgpuTextureRelease(info.texture);
+    }
+    if (state->nextTextureId == textureId + 1) state->nextTextureId = textureId;
+}
+
+js::JSValueHandle acquireSurfaceTexture(
+    BindingsState* state,
+    const SurfaceTextureAcquire& acquire,
+    const SurfaceTextureWrapper& wrap,
+    const SurfaceTextureRelease& release) {
+    const WGPUTexture previousCurrentTexture = state->currentTexture;
+    const uint64_t previousSurfaceTextureId = state->currentSurfaceTextureId;
+    const uint64_t previousNextTextureId = state->nextTextureId;
+    const int previousFrameCount = state->frameCount;
+    WGPUTexture texture = state->currentTexture;
+    uint64_t textureId = state->currentSurfaceTextureId;
+    bool createdSurfaceTexture = false;
+    if (!texture || textureId == 0) {
+        texture = acquire(state);
+        if (!texture) {
+            state->engine->throwException("Failed to get current texture");
+            return state->engine->newUndefined();
+        }
+        state->currentTexture = texture;
+        if (state->frameCount++ < 3 && state->verboseLogging) {
+            std::cout << "[Canvas] Got texture: " << texture << std::endl;
+        }
+        textureId = state->nextTextureId++;
+        TextureInfo textureInfo;
+        textureInfo.texture = texture;
+        textureInfo.format = state->surfaceFormat;
+        textureInfo.width = state->canvasWidth;
+        textureInfo.height = state->canvasHeight;
+        textureInfo.ownsTexture = false;
+        state->textureRegistry[textureId] = textureInfo;
+        state->currentSurfaceTextureId = textureId;
+        createdSurfaceTexture = true;
+    }
+
+    const auto jsTexture = wrap(
+        state,
+        texture,
+        textureId,
+        state->canvasWidth,
+        state->canvasHeight,
+        formatToString(state->surfaceFormat),
+        createdSurfaceTexture);
+    if (createdSurfaceTexture && state->engine->isUndefined(jsTexture) &&
+        state->engine->hasException()) {
+        if (state->textureRegistry.find(textureId) != state->textureRegistry.end()) {
+            releaseTextureRegistryEntry(state, textureId);
+        }
+        state->currentTexture = previousCurrentTexture;
+        state->currentSurfaceTextureId = previousSurfaceTextureId;
+        state->nextTextureId = previousNextTextureId;
+        state->frameCount = previousFrameCount;
+        release(state, texture, previousCurrentTexture);
+    }
+    return jsTexture;
+}
+
+void releaseBufferRegistryEntry(BindingsState* state, uint64_t bufferId) {
+    if (!state) return;
+    const auto it = state->bufferRegistry.find(bufferId);
+    if (it == state->bufferRegistry.end()) return;
+    const BufferInfo info = it->second;
+    state->bufferRegistry.erase(it);
+    recordBufferDestroyed(state, info);
+    if (info.buffer) {
+        if (info.isMapped) wgpuBufferUnmap(info.buffer);
+        wgpuBufferDestroy(info.buffer);
+        wgpuBufferRelease(info.buffer);
+    }
+    if (state->nextBufferId == bufferId + 1) state->nextBufferId = bufferId;
+}
+
+void releaseComputePipelineRegistryEntry(BindingsState* state, uint64_t pipelineId) {
+    if (!state) return;
+    const auto it = state->computePipelineRegistry.find(pipelineId);
+    if (it == state->computePipelineRegistry.end()) return;
+    if (it->second) wgpuComputePipelineRelease(it->second);
+    state->computePipelineRegistry.erase(it);
+    if (state->nextComputePipelineId == pipelineId + 1) state->nextComputePipelineId = pipelineId;
+}
+
+void releaseRenderPipelineRegistryEntry(BindingsState* state, uint64_t pipelineId) {
+    if (!state) return;
+    const auto it = state->renderPipelineRegistry.find(pipelineId);
+    if (it == state->renderPipelineRegistry.end()) return;
+    if (it->second) wgpuRenderPipelineRelease(it->second);
+    state->renderPipelineRegistry.erase(it);
+    if (state->nextRenderPipelineId == pipelineId + 1) state->nextRenderPipelineId = pipelineId;
 }
 
 /**
@@ -1053,6 +1305,8 @@ static js::JSValueHandle getCurrentCanvasTexture(
     const std::vector<js::JSValueHandle>&,
     bool offscreen) {
     if (offscreen) {
+        const WGPUTexture previousCurrentTexture = state->currentTexture;
+        const uint64_t previousSurfaceTextureId = state->currentSurfaceTextureId;
         WGPUTexture texture = getCurrentSwapchainTexture(state);
         if (!texture) {
             state->engine->throwException("Failed to get current texture");
@@ -1061,15 +1315,13 @@ static js::JSValueHandle getCurrentCanvasTexture(
 
         state->currentTexture = texture;
         const uint64_t textureId = state->nextTextureId++;
-        state->textureRegistry[textureId] = {
-            texture,
-            state->surfaceFormat,
-            state->canvasWidth,
-            state->canvasHeight,
-            1,
-            1,
-            WGPUTextureDimension_2D,
-        };
+        TextureInfo textureInfo;
+        textureInfo.texture = texture;
+        textureInfo.format = state->surfaceFormat;
+        textureInfo.width = state->canvasWidth;
+        textureInfo.height = state->canvasHeight;
+        textureInfo.ownsTexture = false;
+        state->textureRegistry[textureId] = textureInfo;
         state->engine->suspendFrameTracking();
         auto jsTexture = createTextureWrapper(
             state,
@@ -1077,8 +1329,16 @@ static js::JSValueHandle getCurrentCanvasTexture(
             textureId,
             state->canvasWidth,
             state->canvasHeight,
-            formatToString(state->surfaceFormat));
+            formatToString(state->surfaceFormat),
+            true);
         state->engine->resumeFrameTracking();
+        if (state->engine->isUndefined(jsTexture) && state->engine->hasException()) {
+            state->currentTexture = previousCurrentTexture;
+            state->currentSurfaceTextureId = previousSurfaceTextureId;
+            if (state->surface && texture && texture != previousCurrentTexture) {
+                wgpuTextureRelease(texture);
+            }
+        }
         return jsTexture;
     }
 
@@ -1087,30 +1347,35 @@ static js::JSValueHandle getCurrentCanvasTexture(
         return state->engine->newUndefined();
     }
 
-    WGPUTexture texture = state->currentTexture;
-    uint64_t textureId = state->currentSurfaceTextureId;
-    if (!texture || textureId == 0) {
-        texture = getCurrentSwapchainTexture(state);
-        if (!texture) {
-            state->engine->throwException("Failed to get current texture");
-            return state->engine->newUndefined();
-        }
-        state->currentTexture = texture;
-        if (state->frameCount++ < 3 && state->verboseLogging) {
-            std::cout << "[Canvas] Got texture: " << texture << std::endl;
-        }
-        textureId = state->nextTextureId++;
-        state->textureRegistry[textureId] = {texture, state->surfaceFormat, state->canvasWidth, state->canvasHeight, 1, 1, WGPUTextureDimension_2D};
-        state->currentSurfaceTextureId = textureId;
-    }
-
-    return createTextureWrapper(
+    return acquireSurfaceTexture(
         state,
-        texture,
-        textureId,
-        state->canvasWidth,
-        state->canvasHeight,
-        formatToString(state->surfaceFormat));
+        [](BindingsState* state) {
+            WGPUTexture texture = getCurrentSwapchainTexture(state);
+            return texture;
+        },
+        [](BindingsState* currentState,
+           WGPUTexture texture,
+           uint64_t textureId,
+           uint32_t width,
+           uint32_t height,
+           const char* format,
+           bool createdSurfaceTexture) {
+            return createTextureWrapper(
+                currentState,
+                texture,
+                textureId,
+                width,
+                height,
+                format,
+                createdSurfaceTexture);
+        },
+        [](BindingsState* currentState,
+           WGPUTexture texture,
+           WGPUTexture previousCurrentTexture) {
+            if (currentState->surface && texture && texture != previousCurrentTexture) {
+                wgpuTextureRelease(texture);
+            }
+        });
 
 }
 
@@ -1198,7 +1463,10 @@ static js::JSValueHandle tnWebgpuHandler87(BindingsState* state, BindingDestinat
             if (!installBindingTable(state->engine, state, bindingTable({
                 {"HTMLCanvasElement", "getContext", 0, nullptr,
                 &tnWebgpuHandler88
-            , canvasWrapper}}))) return state->engine->newUndefined();
+            , canvasWrapper}}))) {
+                rollbackOwnedCanvas2DContext(state, ctx2d);
+                return state->engine->newUndefined();
+            }
             return canvasWrapper;
 }
 
@@ -1744,7 +2012,10 @@ static js::JSValueHandle tnWebgpuHandler72(BindingsState* state, BindingDestinat
                             // renderBundleEncoder.finish(descriptor?)
                                 {"GPURenderBundleEncoder", "finish", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &tnWebgpuHandler79)
-                            , jsEncoder}}))) return state->engine->newUndefined();
+                            , jsEncoder}}))) {
+                                wgpuRenderBundleEncoderRelease(bundleEncoder);
+                                return state->engine->newUndefined();
+                            }
                             if (state->verboseLogging) std::cout << "[WebGPU] Created render bundle encoder" << std::endl;
                             return jsEncoder;
 }
@@ -2184,9 +2455,11 @@ static js::JSValueHandle tnWebgpuHandler67(BindingsState* state, BindingDestinat
                             return jsSampler;
 }
 
-static js::JSValueHandle tnWebgpuHandler66(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
-                                    // TODO: Get texture from context and destroy
-                                    // Would need to look up by ID and call wgpuTextureDestroy
+static js::JSValueHandle tnWebgpuHandler66(
+    BindingsState* state,
+    uint64_t textureId,
+    const std::vector<js::JSValueHandle>&) {
+                                    releaseTextureRegistryEntry(state, textureId);
                                     return state->engine->newUndefined();
 }
 
@@ -2374,8 +2647,6 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
                                 state->engine->throwException("Failed to create texture");
                                 return state->engine->newUndefined();
                             }
-                            recordTextureCreated(state, width, height, depthOrArrayLayers, mipLevelCount,
-                                                 sampleCount, formatStr);
                             // Create JS wrapper
                             auto jsTexture = state->engine->newObject();
                             state->engine->setPrivateData(jsTexture, texture);
@@ -2388,7 +2659,18 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
                             state->engine->setProperty(jsTexture, "sampleCount", state->engine->newNumber(sampleCount));
                             // Register texture for lookup by createView
                             uint64_t textureId = state->nextTextureId++;
-                            state->textureRegistry[textureId] = {texture, format, width, height, depthOrArrayLayers, mipLevelCount, dimension};
+                            TextureInfo textureInfo;
+                            textureInfo.texture = texture;
+                            textureInfo.format = format;
+                            textureInfo.width = width;
+                            textureInfo.height = height;
+                            textureInfo.depthOrArrayLayers = depthOrArrayLayers;
+                            textureInfo.mipLevelCount = mipLevelCount;
+                            textureInfo.dimension = dimension;
+                            textureInfo.sampleCount = sampleCount;
+                            textureInfo.ownsTexture = true;
+                            textureInfo.accounted = false;
+                            state->textureRegistry[textureId] = textureInfo;
                             // Store texture ID for lookup
                             state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber((double)textureId));
                             // texture.createView(descriptor?) - Store texture ID for lookup
@@ -2400,8 +2682,14 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
                             , jsTexture},
                             // texture.destroy()
                                                             {"GPUTexture", "destroy", 0, nullptr,
-                                &tnWebgpuHandler66
-                            , jsTexture}}))) return state->engine->newUndefined();
+                                makeCapturedHandler(textureId, &tnWebgpuHandler66)
+                            , jsTexture}}))) {
+                                releaseTextureRegistryEntry(state, textureId);
+                                return state->engine->newUndefined();
+                            }
+                            recordTextureCreated(state, width, height, depthOrArrayLayers, mipLevelCount,
+                                                 sampleCount, formatStr);
+                            state->textureRegistry[textureId].accounted = true;
                             if (state->verboseLogging) std::cout << "[WebGPU] Created texture " << width << "x" << height << " format=" << formatStr << " (id=" << textureId << ")" << std::endl;
                             return jsTexture;
 }
@@ -2409,6 +2697,11 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
 static js::JSValueHandle tnWebgpuHandler63(BindingsState* state, WGPUCommandEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
                                     // Use captured encoder for this specific command encoder
                                     WGPUCommandEncoder encoderToFinish = capturedEncoder;
+                                    if (!encoderToFinish ||
+                                        state->commandEncoderRegistry.find(encoderToFinish) ==
+                                            state->commandEncoderRegistry.end()) {
+                                        return state->engine->newUndefined();
+                                    }
                                     // Auto-end any active render/compute passes for THIS encoder
                                     // Look up from per-encoder map, not global
                                     auto renderPassIt = state->encoderRenderPassMap.find(encoderToFinish);
@@ -2448,6 +2741,13 @@ static js::JSValueHandle tnWebgpuHandler63(BindingsState* state, WGPUCommandEnco
                                         // Clear global if it matches
                                         if (state->jsCommandEncoder == encoderToFinish) {
                                             state->jsCommandEncoder = nullptr;
+                                        }
+                                        state->commandEncoderRegistry.erase(encoderToFinish);
+                                        if (state->surfaceRenderEncoder == encoderToFinish) {
+                                            state->surfaceRenderEncoder = nullptr;
+                                        }
+                                        if (!state->jsCommandEncoder && !state->commandEncoderRegistry.empty()) {
+                                            state->jsCommandEncoder = *state->commandEncoderRegistry.begin();
                                         }
                                         if (state->verboseLogging) std::cout << "[WebGPU] Command encoder finished, buffer: " << cmdBuffer << std::endl;
                                     }
@@ -2637,11 +2937,20 @@ static js::JSValueHandle tnWebgpuHandler58(BindingsState* state, BindingDestinat
                                     return state->engine->newUndefined();
 }
 
-static js::JSValueHandle tnWebgpuHandler57(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
-                                            if (state->jsComputePass) {
-                                                wgpuComputePassEncoderEnd(state->jsComputePass);
-                                                wgpuComputePassEncoderRelease(state->jsComputePass);
-                                                state->jsComputePass = nullptr;
+static js::JSValueHandle tnWebgpuHandler57(
+    BindingsState* state,
+    WGPUCommandEncoder capturedEncoder,
+    WGPUComputePassEncoder capturedComputePass,
+    const std::vector<js::JSValueHandle>&) {
+                                            auto passIt = state->encoderComputePassMap.find(capturedEncoder);
+                                            if (capturedComputePass && passIt != state->encoderComputePassMap.end() &&
+                                                passIt->second == capturedComputePass) {
+                                                wgpuComputePassEncoderEnd(capturedComputePass);
+                                                wgpuComputePassEncoderRelease(capturedComputePass);
+                                                state->encoderComputePassMap.erase(passIt);
+                                                if (state->jsComputePass == capturedComputePass) {
+                                                    state->jsComputePass = nullptr;
+                                                }
                                             }
                                             return state->engine->newUndefined();
 }
@@ -2682,7 +2991,23 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                         return state->engine->newUndefined();
                                     }
                                     WGPUComputePassDescriptor computePassDesc = {};
-                                    state->jsComputePass = wgpuCommandEncoderBeginComputePass(state->jsCommandEncoder, &computePassDesc);
+                                    WGPUCommandEncoder capturedEncoder = state->jsCommandEncoder;
+                                    WGPUComputePassEncoder computePass =
+                                        wgpuCommandEncoderBeginComputePass(capturedEncoder, &computePassDesc);
+                                    if (!computePass) {
+                                        state->engine->throwException("Failed to begin compute pass");
+                                        return state->engine->newUndefined();
+                                    }
+                                    const WGPUComputePassEncoder previousJsComputePass =
+                                        state->jsComputePass;
+                                    const auto previousComputePassIt =
+                                        state->encoderComputePassMap.find(capturedEncoder);
+                                    const bool hadPreviousComputePass =
+                                        previousComputePassIt != state->encoderComputePassMap.end();
+                                    const WGPUComputePassEncoder previousComputePassForEncoder =
+                                        hadPreviousComputePass ? previousComputePassIt->second : nullptr;
+                                    state->jsComputePass = computePass;
+                                    state->encoderComputePassMap[capturedEncoder] = computePass;
                                     auto jsComputePass = state->engine->newObject();
                                     // computePass.setPipeline(pipeline)
                                     if (!installBindingTable(state->engine, state, bindingTable({
@@ -2699,8 +3024,24 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                     , jsComputePass},
                                     // computePass.end()
                                                                             {"GPUComputePassEncoder", "end", 0, nullptr,
-                                        &tnWebgpuHandler57
-                                    , jsComputePass}}))) return state->engine->newUndefined();
+                                        makeCapturedPairHandler(capturedEncoder, computePass, &tnWebgpuHandler57)
+                                    , jsComputePass}}))) {
+                                        wgpuComputePassEncoderEnd(computePass);
+                                        wgpuComputePassEncoderRelease(computePass);
+                                        auto it = state->encoderComputePassMap.find(capturedEncoder);
+                                        if (it != state->encoderComputePassMap.end() && it->second == computePass) {
+                                            if (hadPreviousComputePass) {
+                                                it->second = previousComputePassForEncoder;
+                                            } else {
+                                                state->encoderComputePassMap.erase(it);
+                                            }
+                                        } else if (hadPreviousComputePass) {
+                                            state->encoderComputePassMap[capturedEncoder] =
+                                                previousComputePassForEncoder;
+                                        }
+                                        state->jsComputePass = previousJsComputePass;
+                                        return state->engine->newUndefined();
+                                    }
                                     if (state->verboseLogging) std::cout << "[WebGPU] Compute pass started" << std::endl;
                                     return jsComputePass;
 }
@@ -2710,11 +3051,13 @@ static js::JSValueHandle tnWebgpuHandler52(
     WGPUCommandEncoder capturedEncoderForEnd,
     WGPURenderPassEncoder capturedRenderPass,
     const std::vector<js::JSValueHandle>& args) {
-                                            if (capturedRenderPass) {
+                                            auto passIt = state->encoderRenderPassMap.find(capturedEncoderForEnd);
+                                            if (capturedRenderPass && passIt != state->encoderRenderPassMap.end() &&
+                                                passIt->second == capturedRenderPass) {
                                                 wgpuRenderPassEncoderEnd(capturedRenderPass);
                                                 wgpuRenderPassEncoderRelease(capturedRenderPass);
                                                 // Remove from per-encoder map
-                                                state->encoderRenderPassMap.erase(capturedEncoderForEnd);
+                                                state->encoderRenderPassMap.erase(passIt);
                                                 // Clear global if it matches
                                                 if (state->jsRenderPass == capturedRenderPass) {
                                                     state->jsRenderPass = nullptr;
@@ -2956,6 +3299,16 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         return state->engine->newUndefined();
                                     }
                                     auto descriptor = args[0];
+                                    const WGPUCommandEncoder previousSurfaceRenderEncoder = state->surfaceRenderEncoder;
+                                    const bool previousSurfaceRenderPassEnded = state->surfaceRenderPassEnded;
+                                    const WGPURenderPassEncoder previousJsRenderPass =
+                                        state->jsRenderPass;
+                                    const auto previousRenderPassIt =
+                                        state->encoderRenderPassMap.find(encoderToUse);
+                                    const bool hadPreviousRenderPass =
+                                        previousRenderPassIt != state->encoderRenderPassMap.end();
+                                    const WGPURenderPassEncoder previousRenderPassForEncoder =
+                                        hadPreviousRenderPass ? previousRenderPassIt->second : nullptr;
                                     auto colorAttachments = state->engine->getProperty(descriptor, "colorAttachments");
                                     // Parse all color attachments (deferred renderer uses multiple)
                                     auto attachmentsLengthProp = state->engine->getProperty(colorAttachments, "length");
@@ -3071,6 +3424,12 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     }
                                     // Begin render pass on the captured encoder (not the global)
                                     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoderToUse, &renderPassDesc);
+                                    if (!renderPass) {
+                                        state->engine->throwException("Failed to begin render pass");
+                                        state->surfaceRenderEncoder = previousSurfaceRenderEncoder;
+                                        state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
+                                        return state->engine->newUndefined();
+                                    }
                                     // Store in per-encoder map (fixes issue with multiple encoders)
                                     state->encoderRenderPassMap[encoderToUse] = renderPass;
                                     // Also set global for backwards compatibility with render pass methods
@@ -3081,6 +3440,27 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     auto jsRenderPass = state->engine->newObject();
                                     state->engine->setPrivateData(jsRenderPass, renderPass);
                                     WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
+                                    const auto rollbackRenderPass = [&]() {
+                                        auto it = state->encoderRenderPassMap.find(encoderToUse);
+                                        if (it != state->encoderRenderPassMap.end() && it->second == renderPass) {
+                                            if (hadPreviousRenderPass) {
+                                                it->second = previousRenderPassForEncoder;
+                                            } else {
+                                                state->encoderRenderPassMap.erase(it);
+                                            }
+                                        } else if (hadPreviousRenderPass) {
+                                            state->encoderRenderPassMap[encoderToUse] =
+                                                previousRenderPassForEncoder;
+                                        }
+                                        state->jsRenderPass = previousJsRenderPass;
+                                        if (renderPass) {
+                                            wgpuRenderPassEncoderEnd(renderPass);
+                                            wgpuRenderPassEncoderRelease(renderPass);
+                                            renderPass = nullptr;
+                                        }
+                                        state->surfaceRenderEncoder = previousSurfaceRenderEncoder;
+                                        state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
+                                    };
                                     // renderPass.setPipeline(pipeline)
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
@@ -3130,6 +3510,7 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
                                         makeCapturedHandler(renderPass, &tnWebgpuHandler50)
                                     , jsRenderPass}}))) {
+                                        rollbackRenderPass();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
@@ -3140,6 +3521,7 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
                                         makeCapturedHandler(renderPass, &tnWebgpuHandler51)
                                     , jsRenderPass}}))) {
+                                        rollbackRenderPass();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
@@ -3148,6 +3530,7 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         {"GPURenderPassEncoder", "end", 0, nullptr,
                                         makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuHandler52)
                                     , jsRenderPass}}))) {
+                                        rollbackRenderPass();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
@@ -3156,12 +3539,51 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     return jsRenderPass;
 }
 
+static void rollbackCommandEncoder(
+    BindingsState* state,
+    WGPUCommandEncoder encoder,
+    WGPUCommandEncoder previousJsCommandEncoder) {
+    if (!state || !encoder) return;
+    auto renderIt = state->encoderRenderPassMap.find(encoder);
+    if (renderIt != state->encoderRenderPassMap.end()) {
+        if (renderIt->second) {
+            wgpuRenderPassEncoderEnd(renderIt->second);
+            wgpuRenderPassEncoderRelease(renderIt->second);
+        }
+        if (state->jsRenderPass == renderIt->second) state->jsRenderPass = nullptr;
+        state->encoderRenderPassMap.erase(renderIt);
+    }
+    auto computeIt = state->encoderComputePassMap.find(encoder);
+    if (computeIt != state->encoderComputePassMap.end()) {
+        if (computeIt->second) {
+            wgpuComputePassEncoderEnd(computeIt->second);
+            wgpuComputePassEncoderRelease(computeIt->second);
+        }
+        if (state->jsComputePass == computeIt->second) state->jsComputePass = nullptr;
+        state->encoderComputePassMap.erase(computeIt);
+    }
+    if (state->surfaceRenderEncoder == encoder) {
+        state->surfaceRenderEncoder = nullptr;
+        state->surfaceRenderPassEnded = true;
+    }
+    state->commandEncoderRegistry.erase(encoder);
+    state->jsCommandEncoder = previousJsCommandEncoder;
+    wgpuCommandEncoderRelease(encoder);
+}
+
 static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             WGPUCommandEncoderDescriptor desc = {};
                             WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &desc);
+                            if (!encoder) {
+                                state->engine->throwException("Failed to create command encoder");
+                                return state->engine->newUndefined();
+                            }
                             // Store in global for use by beginRenderPass
                             // Note: Multiple encoders are supported via per-encoder render pass tracking
+                            const WGPUCommandEncoder previousJsCommandEncoder =
+                                state->jsCommandEncoder;
                             state->jsCommandEncoder = encoder;
+                            state->commandEncoderRegistry.insert(encoder);
                             // Suspend frame tracking while creating encoder wrapper
                             // This prevents the wrapper's methods from being garbage collected at frame end
                             state->engine->suspendFrameTracking();
@@ -3174,6 +3596,7 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                                 {"GPUCommandEncoder", "beginRenderPass", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &tnWebgpuHandler38)
                             , jsEncoder}}))) {
+                                rollbackCommandEncoder(state, encoder, previousJsCommandEncoder);
                                 state->engine->resumeFrameTracking();
                                 return state->engine->newUndefined();
                             }
@@ -3182,6 +3605,7 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                                 {"GPUCommandEncoder", "beginComputePass", 0, nullptr,
                                 &tnWebgpuHandler53
                             , jsEncoder}}))) {
+                                rollbackCommandEncoder(state, encoder, previousJsCommandEncoder);
                                 state->engine->resumeFrameTracking();
                                 return state->engine->newUndefined();
                             }
@@ -3210,6 +3634,7 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                                 {"GPUCommandEncoder", "finish", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &tnWebgpuHandler63)
                             , jsEncoder}}))) {
+                                rollbackCommandEncoder(state, encoder, previousJsCommandEncoder);
                                 state->engine->resumeFrameTracking();
                                 return state->engine->newUndefined();
                             }
@@ -3271,6 +3696,10 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                                 state->engine->throwException("createRenderPipeline requires a descriptor");
                                 return state->engine->newUndefined();
                             }
+                            const size_t blendStatesBefore = state->blendStates.size();
+                            const auto rollbackBlendStates = [&]() {
+                                state->blendStates.resize(blendStatesBefore);
+                            };
                             auto descriptor = args[0];
                             // Get vertex stage
                             auto vertex = state->engine->getProperty(descriptor, "vertex");
@@ -3631,6 +4060,7 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                             // Create pipeline
                             WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(state->device, &pipelineDesc);
                             if (!pipeline) {
+                                rollbackBlendStates();
                                 state->engine->throwException("Failed to create render pipeline");
                                 return state->engine->newUndefined();
                             }
@@ -3638,6 +4068,7 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                             uint64_t pipelineId = state->nextRenderPipelineId++;
                             state->renderPipelineRegistry[pipelineId] = pipeline;
                             auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, true);
+                            if (state->engine->hasException()) rollbackBlendStates();
                             if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline created (id=" << pipelineId << ")" << std::endl;
                             return jsPipeline;
 }
@@ -3669,12 +4100,7 @@ static js::JSValueHandle tnWebgpuHandler34(BindingsState* state, BindingDestinat
 }
 
 static js::JSValueHandle tnWebgpuHandler33(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
-                                    auto it = state->bufferRegistry.find(bufferId);
-                                    if (it != state->bufferRegistry.end()) {
-                                        wgpuBufferDestroy(it->second.buffer);
-                                        wgpuBufferRelease(it->second.buffer);
-                                        state->bufferRegistry.erase(it);
-                                    }
+                                    releaseBufferRegistryEntry(state, bufferId);
                                     return state->engine->newUndefined();
 }
 
@@ -3834,12 +4260,20 @@ static js::JSValueHandle tnWebgpuHandler29(BindingsState* state, BindingDestinat
                                 state->engine->throwException("Failed to create buffer");
                                 return state->engine->newUndefined();
                             }
-                            recordBufferCreated(state, bufferDesc.size, (uint32_t)usage);
                             // Register buffer for mapping operations
                             uint64_t bufferId = state->nextBufferId++;
                             // mappedAtCreation buffers are mapped for write
                             WGPUMapMode initialMapMode = mappedAtCreation ? WGPUMapMode_Write : WGPUMapMode_None;
-                            state->bufferRegistry[bufferId] = {buffer, (uint64_t)size, (WGPUBufferUsage)(uint32_t)usage, mappedAtCreation, nullptr, 0, initialMapMode};
+                            BufferInfo bufferInfo;
+                            bufferInfo.buffer = buffer;
+                            bufferInfo.size = bufferDesc.size;
+                            bufferInfo.usage = bufferDesc.usage;
+                            bufferInfo.isMapped = mappedAtCreation;
+                            bufferInfo.mappedData = nullptr;
+                            bufferInfo.mappedSize = 0;
+                            bufferInfo.mapMode = initialMapMode;
+                            bufferInfo.accounted = false;
+                            state->bufferRegistry[bufferId] = bufferInfo;
                             auto jsBuffer = state->engine->newObject();
                             state->engine->setPrivateData(jsBuffer, buffer);
                             state->engine->setProperty(jsBuffer, "size", state->engine->newNumber(size));
@@ -3867,7 +4301,12 @@ static js::JSValueHandle tnWebgpuHandler29(BindingsState* state, BindingDestinat
                             // Capture bufferId in closure to identify the correct buffer
                                 {"GPUBuffer", "destroy", 0, nullptr,
                                 makeCapturedHandler(bufferId, &tnWebgpuHandler33)
-                            , jsBuffer}}))) return state->engine->newUndefined();
+                            , jsBuffer}}))) {
+                                releaseBufferRegistryEntry(state, bufferId);
+                                return state->engine->newUndefined();
+                            }
+                            recordBufferCreated(state, bufferDesc.size, (uint32_t)usage);
+                            state->bufferRegistry[bufferId].accounted = true;
                             return jsBuffer;
 }
 
@@ -4815,7 +5254,10 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
             , element},
                 {"HTMLElement", "removeEventListener", 0, nullptr,
                 &tnWebgpuHandler10
-            , element}}))) return state->engine->newUndefined();
+            , element}}))) {
+                unprotectBindingHandle(state, element);
+                return state->engine->newUndefined();
+            }
             // Special handling for canvas elements - add Canvas 2D support
             if (tagName == "canvas" || tagName == "CANVAS") {
                 // Three's renderer creates its surface through document.createElement('canvas'),
@@ -4835,7 +5277,10 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
                 , element},
                     {"HTMLCanvasElement", "requestPointerLock", 0, nullptr,
                     &tnWebgpuHandler14
-                , element}}))) return state->engine->newUndefined();
+                , element}}))) {
+                    unprotectBindingHandle(state, element);
+                    return state->engine->newUndefined();
+                }
                 // Create OffscreenCanvas struct to store state
                 int canvasId = state->nextOffscreenCanvasId++;
                 auto offscreenCanvas = std::make_unique<OffscreenCanvas>();
@@ -4857,7 +5302,10 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
                 if (!installBindingTable(state->engine, state, bindingTable({
                     {"HTMLCanvasElement", "getContext", 0, nullptr,
                     makeOffscreenCanvasGetContextHandler(canvasId)
-                , element}}))) return state->engine->newUndefined();
+                , element}}))) {
+                    rollbackOffscreenCanvas(state, canvasId, element);
+                    return state->engine->newUndefined();
+                }
                 if (state->verboseLogging) std::cout << "[Canvas] Created offscreen canvas " << canvasId << std::endl;
                 // toDataURL for compatibility (returns empty data URI)
                 if (!installBindingTable(state->engine, state, bindingTable({
@@ -4867,7 +5315,10 @@ static js::JSValueHandle tnWebgpuHandler05(BindingsState* state, BindingDestinat
                 // getBoundingClientRect - return canvas dimensions
                     {"HTMLCanvasElement", "getBoundingClientRect", 0, nullptr,
                     &tnWebgpuHandler17
-                , element}}))) return state->engine->newUndefined();
+                , element}}))) {
+                    rollbackOffscreenCanvas(state, canvasId, element);
+                    return state->engine->newUndefined();
+                }
             }
             return element;
 }
@@ -4896,6 +5347,10 @@ static js::JSValueHandle tnWebgpuHandler03(BindingsState* state, BindingDestinat
                 // Set reference back to canvas
                 auto canvas = state->engine->getGlobalProperty("canvas");
                 state->engine->setProperty(ctx2d, "canvas", canvas);
+                if (state->engine->hasException()) {
+                    rollbackOwnedCanvas2DContext(state, ctx2d);
+                    return state->engine->newUndefined();
+                }
                 // Store the native context for Canvas 2D to WebGPU compositing
                 state->mainCanvas2DContext = static_cast<canvas::Canvas2DContext*>(state->engine->getPrivateData(ctx2d));
                 if (state->verboseLogging) std::cout << "[Canvas] Main canvas using 2D context - will composite to WebGPU" << std::endl;

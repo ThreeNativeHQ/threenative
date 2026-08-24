@@ -248,10 +248,11 @@ bool installBindingTable(
     js::Engine* engine,
     BindingsState* state,
     const BindingTable& table) {
-    // A JavaScript caller may catch an exception raised by an earlier native binding. Clear the
-    // engine's host-side exception latch before starting a new installation; failures below set a
-    // fresh exception and keep it pending for the caller.
-    if (engine->hasException()) engine->getException();
+    // The exception latch is caller-visible state. A descriptor getter or another native
+    // operation may have failed immediately before this install, and consuming that latch here
+    // would turn a failed JavaScript call into a successful wrapper install. Callers that have
+    // intentionally handled a previous failure must consume it before starting a new transaction.
+    if (engine->hasException()) return false;
 
     const char* error = nullptr;
     if (!validateTable(table, &error)) {

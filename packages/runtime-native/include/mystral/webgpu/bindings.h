@@ -13,7 +13,10 @@ namespace webgpu {
 struct BindingsState;
 
 BindingsState* createBindingsState();
-void destroyBindingsState(BindingsState* state);
+// Takes ownership of the caller's state pointer and sets it to nullptr before cleanup. Callers
+// may safely invoke this function again with the same pointer variable; retained raw pointer
+// aliases are not valid after the first call.
+void destroyBindingsState(BindingsState*& state);
 
 bool initBindings(
     BindingsState* state,
@@ -51,6 +54,13 @@ void compositeCanvas2DToWebGPU(BindingsState* state);
 using VideoCaptureCallback = void (*)(void* texture, uint32_t width, uint32_t height, void* userData);
 void setVideoCaptureCallback(BindingsState* state, VideoCaptureCallback callback, void* userData);
 void clearVideoCaptureCallback(BindingsState* state);
+
+// Roll back a resource that was registered before its JavaScript wrapper finished installing.
+// Each helper removes exactly one matching registry entry and releases its native ownership.
+void releaseTextureRegistryEntry(BindingsState* state, uint64_t textureId);
+void releaseBufferRegistryEntry(BindingsState* state, uint64_t bufferId);
+void releaseComputePipelineRegistryEntry(BindingsState* state, uint64_t pipelineId);
+void releaseRenderPipelineRegistryEntry(BindingsState* state, uint64_t pipelineId);
 
 }  // namespace webgpu
 }  // namespace mystral

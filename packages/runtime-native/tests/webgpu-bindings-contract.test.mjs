@@ -459,6 +459,62 @@ test("QuickJS teardown does not execute pending binding callbacks", () => {
   assert.match(nativeControl, /queued QuickJS callback executed during runtime teardown/u);
 });
 
+test("wrapper rollback restores the exact active multi-encoder state", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(bindings, /previousJsComputePass/u);
+  assert.match(bindings, /previousComputePassForEncoder/u);
+  assert.match(bindings, /previousJsRenderPass/u);
+  assert.match(bindings, /previousRenderPassForEncoder/u);
+  assert.match(bindings, /previousJsCommandEncoder/u);
+  assert.doesNotMatch(
+    blockBetween(bindings, "static void rollbackCommandEncoder", "static js::JSValueHandle tnWebgpuHandler37"),
+    /commandEncoderRegistry\.begin\(\)/u,
+  );
+  assert.match(
+    nativeControl,
+    /checkWrapperRollbackRestoresActiveState[\s\S]*forced wrapper install failure[\s\S]*encoderComputePassMap != computeMapBefore[\s\S]*encoderRenderPassMap != renderMapBefore/u,
+  );
+});
+
+test("public bindings-state destruction uses a nulling owner contract", () => {
+  const header = read("include/mystral/webgpu/bindings.h");
+  const bindings = read("src/webgpu/bindings.cpp");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(header, /destroyBindingsState\(BindingsState\*& state\)/u);
+  assert.match(bindings, /BindingsState\*& state[\s\S]*state = nullptr/u);
+  assert.match(
+    nativeControl,
+    /destroyBindingsState\(state\);[\s\S]*if \(state != nullptr\)[\s\S]*destroyBindingsState\(state\);/u,
+  );
+});
+
+test("surface texture rollback covers both wrapper branches and restores frame count", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(bindings, /acquireSurfaceTexture\(/u);
+  assert.match(bindings, /previousFrameCount/u);
+  assert.match(bindings, /state->frameCount = previousFrameCount/u);
+  assert.match(bindings, /textureRegistry\.find\(textureId\)/u);
+  assert.match(nativeControl, /surface texture transaction/u);
+  assert.match(nativeControl, /createdSurfaceTexture/u);
+  assert.match(nativeControl, /frameCount/u);
+});
+
+test("QuickJS callback result tests cover transfer and protected duplication on both engines", () => {
+  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+
+  assert.match(nativeControl, /unprotected-result/u);
+  assert.match(nativeControl, /protected-result/u);
+  assert.match(
+    nativeControl,
+    /checkQuickJSCallbackResultOwnership\(\*first\)[\s\S]*checkQuickJSCallbackResultOwnership\(\*second\)/u,
+  );
+});
+
 test("QuickJS centrally replaces and clears owned exception values", () => {
   const quickjs = read("src/js/quickjs_engine.cpp");
   const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");

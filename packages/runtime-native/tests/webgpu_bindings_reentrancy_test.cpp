@@ -1,10 +1,15 @@
 #include <iostream>
+#include <cstdint>
 #include <limits>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "mystral/runtime.h"
+#include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/registration_table.h"
 #include "../src/webgpu/bindings_state.h"
+#include "../src/webgpu/surface_texture_transaction.h"
 
 namespace {
 
@@ -815,12 +820,32 @@ bool queueQuickJSTeardownProbe(mystral::Runtime& runtime) {
     if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
 
     const auto destination = engine->newObject();
+    engine->protect(destination);
+    if (!engine->setGlobalProperty("__tnTeardownDestination", destination) ||
+        !runtime.evalScript(R"JS(Object.defineProperty(
+            __tnTeardownDestination,
+            'queuedTrigger',
+            {configurable: true, set(value) {
+                Promise.resolve().then(() => value());
+            }}
+        );)JS", "webgpu-binding-teardown-queue-setup.js")) {
+        engine->unprotect(destination);
+        return false;
+    }
     const auto table = mystral::webgpu::bindingTable({
         {"TestSurface", "queuedAtTeardown", 0, nullptr, &teardownProbe, destination},
     });
     teardownProbeCalls = 0;
-    return table.valid && mystral::webgpu::installBindingTable(engine, state, table) &&
-           teardownProbeCalls == 0;
+    if (!table.valid || !mystral::webgpu::installBindingTable(engine, state, table)) {
+        engine->unprotect(destination);
+        return false;
+    }
+    const auto callback = engine->getProperty(destination, "queuedAtTeardown");
+    engine->protect(callback);
+    const bool queued = engine->setProperty(destination, "queuedTrigger", callback);
+    engine->unprotect(callback);
+    engine->unprotect(destination);
+    return queued && teardownProbeCalls == 0;
 }
 
 bool checkQuickJSExceptionReplacement(mystral::Runtime& runtime) {
@@ -934,6 +959,510 @@ bool checkBindingProtectionOwnership(mystral::Runtime& runtime) {
     return true;
 }
 
+bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    const size_t buffersBefore = state->bufferRegistry.size();
+    const size_t texturesBefore = state->textureRegistry.size();
+    const uint64_t bufferBytesBefore = state->bufferBytesLive;
+    const uint64_t textureBytesBefore = state->textureBytesLive;
+    const uint64_t bufferCountBefore = state->bufferCountLive;
+    const uint64_t textureCountBefore = state->textureCountLive;
+    const uint64_t textureBytesCreatedBefore = state->textureBytesCreated;
+    const uint64_t nextBufferIdBefore = state->nextBufferId;
+    const uint64_t nextTextureIdBefore = state->nextTextureId;
+    const size_t computePipelinesBefore = state->computePipelineRegistry.size();
+    const uint64_t nextComputePipelineIdBefore = state->nextComputePipelineId;
+    const size_t renderPipelinesBefore = state->renderPipelineRegistry.size();
+    const uint64_t nextRenderPipelineIdBefore = state->nextRenderPipelineId;
+    const size_t blendStatesBefore = state->blendStates.size();
+    const size_t commandEncodersBefore = state->commandEncoderRegistry.size();
+    const auto currentCommandEncoderBefore = state->jsCommandEncoder;
+    const size_t renderPassesBefore = state->encoderRenderPassMap.size();
+    const size_t computePassesBefore = state->encoderComputePassMap.size();
+    const auto currentComputePassBefore = state->jsComputePass;
+    if (!runtime.evalScript(R"JS((() => {
+        globalThis.__tnDynamicInstallDevice = navigator.gpu.requestAdapter().requestDevice();
+        globalThis.__tnDynamicInstallWorkingEncoder =
+            __tnDynamicInstallDevice.createCommandEncoder();
+        globalThis.__tnDynamicInstallShader = __tnDynamicInstallDevice.createShaderModule({
+            code: "@compute @workgroup_size(1) fn main() {}",
+        });
+        globalThis.__tnDynamicInstallBuffer = undefined;
+        globalThis.__tnDynamicInstallTexture = undefined;
+        globalThis.__tnDynamicInstallPipeline = undefined;
+        globalThis.__tnDynamicInstallRenderPipeline = undefined;
+        globalThis.__tnDynamicInstallPass = undefined;
+        globalThis.__tnDynamicInstallEncoder = undefined;
+        globalThis.__tnDynamicInstallBufferGetterCalls = 0;
+        globalThis.__tnDynamicInstallTextureGetterCalls = 0;
+        globalThis.__tnDynamicInstallBuffer = __tnDynamicInstallDevice.createBuffer({
+            size: 4,
+            usage: 8,
+            get mappedAtCreation() {
+                __tnDynamicInstallBufferGetterCalls += 1;
+                throw new Error("dynamic buffer getter failure");
+            },
+        });
+        globalThis.__tnDynamicInstallTexture = __tnDynamicInstallDevice.createTexture({
+            size: [1, 1, 1],
+            format: "rgba8unorm",
+            usage: 16,
+            get mipLevelCount() {
+                __tnDynamicInstallTextureGetterCalls += 1;
+                throw new Error("dynamic texture getter failure");
+            },
+        });
+        globalThis.__tnDynamicInstallPipeline = __tnDynamicInstallDevice.createComputePipeline({
+            layout: "auto",
+            compute: {module: __tnDynamicInstallShader, entryPoint: "main"},
+        });
+        globalThis.__tnDynamicInstallRenderShader = __tnDynamicInstallDevice.createShaderModule({
+            code: "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+                + "  var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));\n"
+                + "  return vec4f(p[i], 0.0, 1.0);\n"
+                + "}\n"
+                + "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(1.0); }",
+        });
+        globalThis.__tnDynamicInstallRenderPipeline = __tnDynamicInstallDevice.createRenderPipeline({
+            layout: "auto",
+            vertex: {module: __tnDynamicInstallRenderShader, entryPoint: "vs_main"},
+            fragment: {
+                module: __tnDynamicInstallRenderShader,
+                entryPoint: "fs_main",
+                targets: [{
+                    format: navigator.gpu.getPreferredCanvasFormat(),
+                    blend: {
+                        color: {srcFactor: "one", dstFactor: "zero", operation: "add"},
+                        alpha: {srcFactor: "one", dstFactor: "zero", operation: "add"},
+                    },
+                }],
+            },
+            get multisample() {
+                throw new Error("dynamic render pipeline getter failure");
+            },
+        });
+        globalThis.__tnDynamicInstallPass = __tnDynamicInstallWorkingEncoder.beginComputePass();
+        globalThis.__tnDynamicInstallEncoder = __tnDynamicInstallDevice.createCommandEncoder();
+    })())JS", "webgpu-binding-dynamic-install-unwind.js")) {
+        return false;
+    }
+    if (!engine->hasException()) {
+        std::cerr << "dynamic install unwind lost the getter exception" << std::endl;
+        return false;
+    }
+    const std::string exception = engine->getException();
+    if (exception.find("dynamic") == std::string::npos) {
+        std::cerr << "dynamic install unwind retained the wrong exception: " << exception
+                  << std::endl;
+        return false;
+    }
+    if (state->bufferRegistry.size() != buffersBefore ||
+        state->textureRegistry.size() != texturesBefore ||
+        state->bufferBytesLive != bufferBytesBefore || state->textureBytesLive != textureBytesBefore ||
+        state->bufferCountLive != bufferCountBefore || state->textureCountLive != textureCountBefore ||
+        state->textureBytesCreated != textureBytesCreatedBefore ||
+        state->nextBufferId != nextBufferIdBefore || state->nextTextureId != nextTextureIdBefore ||
+        state->computePipelineRegistry.size() != computePipelinesBefore ||
+        state->nextComputePipelineId != nextComputePipelineIdBefore ||
+        state->renderPipelineRegistry.size() != renderPipelinesBefore ||
+        state->nextRenderPipelineId != nextRenderPipelineIdBefore ||
+        state->blendStates.size() != blendStatesBefore ||
+        state->commandEncoderRegistry.size() != commandEncodersBefore + 1 ||
+        state->encoderRenderPassMap.size() != renderPassesBefore ||
+        state->encoderComputePassMap.size() != computePassesBefore ||
+        state->jsComputePass != currentComputePassBefore ||
+        !runtime.evalScript(
+            "if (__tnDynamicInstallBuffer !== undefined || "
+            "__tnDynamicInstallTexture !== undefined || "
+            "__tnDynamicInstallPipeline !== undefined || "
+            "__tnDynamicInstallRenderPipeline !== undefined || "
+            "__tnDynamicInstallPass !== undefined || "
+            "__tnDynamicInstallEncoder !== undefined || "
+            "__tnDynamicInstallBufferGetterCalls !== 1 || "
+            "__tnDynamicInstallTextureGetterCalls !== 1 || "
+            "typeof __tnDynamicInstallWorkingEncoder.finish !== 'function') "
+            "throw new Error('dynamic install did not fail closed'); "
+            "__tnDynamicInstallWorkingEncoder.finish();",
+            "webgpu-binding-dynamic-install-unwind-check.js")) {
+        std::cerr << "dynamic install unwind retained native state" << std::endl;
+        return false;
+    }
+    if (state->commandEncoderRegistry.size() != commandEncodersBefore ||
+        state->jsCommandEncoder != currentCommandEncoderBefore ||
+        state->encoderRenderPassMap.size() != renderPassesBefore ||
+        state->encoderComputePassMap.size() != computePassesBefore) {
+        std::cerr << "dynamic install encoder unwind retained native state" << std::endl;
+        return false;
+    }
+    if (!runtime.evalScript(R"JS((() => {
+        globalThis.__tnDynamicOlderEncoder = __tnDynamicInstallDevice.createCommandEncoder();
+        globalThis.__tnDynamicNewerEncoder = __tnDynamicInstallDevice.createCommandEncoder();
+        globalThis.__tnDynamicOlderBuffer = __tnDynamicOlderEncoder.finish();
+        if (!__tnDynamicOlderBuffer || typeof __tnDynamicOlderBuffer !== "object") {
+            throw new Error("an older command encoder was not independently finished");
+        }
+    })())JS", "webgpu-binding-multiple-encoder-finish.js")) {
+        std::cerr << "dynamic install encoder control did not finish the older encoder" << std::endl;
+        return false;
+    }
+    if (state->commandEncoderRegistry.size() != commandEncodersBefore + 1 ||
+        state->jsCommandEncoder == currentCommandEncoderBefore) {
+        std::cerr << "dynamic install encoder control retained the wrong current encoder" << std::endl;
+        return false;
+    }
+    if (!runtime.evalScript(
+            "__tnDynamicNewerEncoder.finish();",
+            "webgpu-binding-multiple-encoder-cleanup.js")) {
+        return false;
+    }
+    if (state->commandEncoderRegistry.size() != commandEncodersBefore ||
+        state->jsCommandEncoder != currentCommandEncoderBefore) {
+        std::cerr << "dynamic install encoder control retained a finished encoder" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool checkWrapperRollbackRestoresActiveState(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(
+        runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    const auto failed = [](const char* message) {
+        std::cerr << "wrapper rollback proof failed: " << message << std::endl;
+        return false;
+    };
+
+    if (!runtime.evalScript(R"JS((() => {
+        const adapter = navigator.gpu.requestAdapter();
+        const device = adapter.requestDevice();
+        globalThis.__tnRollbackDevice = device;
+        globalThis.__tnRollbackComputeEncoder = device.createCommandEncoder();
+        globalThis.__tnRollbackComputePass = __tnRollbackComputeEncoder.beginComputePass();
+        globalThis.__tnRollbackRenderEncoder = device.createCommandEncoder();
+        globalThis.__tnRollbackTexture = device.createTexture({
+            size: [1, 1, 1],
+            format: navigator.gpu.getPreferredCanvasFormat(),
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+        globalThis.__tnRollbackView = __tnRollbackTexture.createView();
+        globalThis.__tnRollbackRenderPass = __tnRollbackRenderEncoder.beginRenderPass({
+            colorAttachments: [{
+                view: __tnRollbackView,
+                loadOp: 'clear',
+                storeOp: 'store',
+                clearValue: {r: 0, g: 0, b: 0, a: 1},
+            }],
+        });
+        globalThis.__tnRollbackRenderFailureEncoder = device.createCommandEncoder();
+        globalThis.__tnRollbackComputeFailureEncoder = device.createCommandEncoder();
+    })())JS", "webgpu-binding-wrapper-rollback-setup.js")) {
+        return failed("active multi-encoder setup");
+    }
+
+    const auto computePassBefore = state->jsComputePass;
+    const auto renderPassBefore = state->jsRenderPass;
+    const auto commandEncoderBefore = state->jsCommandEncoder;
+    const auto computeMapBefore = state->encoderComputePassMap;
+    const auto renderMapBefore = state->encoderRenderPassMap;
+    const auto encoderRegistryBefore = state->commandEncoderRegistry;
+    const auto surfaceEncoderBefore = state->surfaceRenderEncoder;
+    const auto surfaceEndedBefore = state->surfaceRenderPassEnded;
+
+    const auto forceWrapperFailure = [&](const char* script, const char* filename,
+                                         const char* marker) {
+        engine->throwException("forced wrapper install failure");
+        (void)runtime.evalScript(script, filename);
+        if (!runtime.evalScript(
+                (std::string("if (!") + marker + ") throw new Error('wrapper call did not run');")
+                    .c_str(),
+                "webgpu-binding-wrapper-rollback-marker.js")) {
+            return false;
+        }
+        if (!engine->hasException()) return false;
+        const std::string exception = engine->getException();
+        return exception.find("forced wrapper install failure") != std::string::npos;
+    };
+
+    if (!forceWrapperFailure(
+            "globalThis.__tnRollbackComputeCall = true; "
+            "globalThis.__tnRollbackFailedCompute = "
+            "__tnRollbackComputeFailureEncoder.beginComputePass();",
+            "webgpu-binding-wrapper-rollback-compute.js",
+            "__tnRollbackComputeCall") ||
+        state->jsComputePass != computePassBefore ||
+        state->encoderComputePassMap != computeMapBefore ||
+        state->jsCommandEncoder != commandEncoderBefore ||
+        state->jsRenderPass != renderPassBefore ||
+        state->encoderRenderPassMap != renderMapBefore) {
+        return failed("compute pass pointer or map state was not restored");
+    }
+
+    if (!forceWrapperFailure(
+            "globalThis.__tnRollbackRenderCall = true; "
+            "globalThis.__tnRollbackFailedRender = "
+            "__tnRollbackRenderFailureEncoder.beginRenderPass({colorAttachments: [{"
+            "view: __tnRollbackView, loadOp: 'clear', storeOp: 'store', "
+            "clearValue: {r: 0, g: 0, b: 0, a: 1}}]});",
+            "webgpu-binding-wrapper-rollback-render.js",
+            "__tnRollbackRenderCall") ||
+        state->jsRenderPass != renderPassBefore ||
+        state->encoderRenderPassMap != renderMapBefore ||
+        state->jsCommandEncoder != commandEncoderBefore ||
+        state->jsComputePass != computePassBefore ||
+        state->encoderComputePassMap != computeMapBefore ||
+        state->surfaceRenderEncoder != surfaceEncoderBefore ||
+        state->surfaceRenderPassEnded != surfaceEndedBefore) {
+        return failed("render pass pointer, map, or surface state was not restored");
+    }
+
+    if (state->commandEncoderRegistry.size() < 2) {
+        return failed("multi-encoder control did not create enough encoders");
+    }
+    const auto firstRegistryEncoder = *state->commandEncoderRegistry.begin();
+    for (const auto encoder : state->commandEncoderRegistry) {
+        if (encoder != firstRegistryEncoder) {
+            state->jsCommandEncoder = encoder;
+            break;
+        }
+    }
+    const auto selectedCommandEncoderBefore = state->jsCommandEncoder;
+    if (!forceWrapperFailure(
+            "globalThis.__tnRollbackEncoderCall = true; "
+            "globalThis.__tnRollbackFailedEncoder = __tnRollbackDevice.createCommandEncoder();",
+            "webgpu-binding-wrapper-rollback-encoder.js",
+            "__tnRollbackEncoderCall") ||
+        state->jsCommandEncoder != selectedCommandEncoderBefore ||
+        state->commandEncoderRegistry != encoderRegistryBefore ||
+        state->jsComputePass != computePassBefore ||
+        state->encoderComputePassMap != computeMapBefore ||
+        state->jsRenderPass != renderPassBefore ||
+        state->encoderRenderPassMap != renderMapBefore) {
+        return failed("command encoder or pass state was not restored");
+    }
+
+    if (!runtime.evalScript(R"JS((() => {
+        __tnRollbackComputePass.end();
+        __tnRollbackRenderPass.end();
+        __tnRollbackComputeEncoder.finish();
+        __tnRollbackRenderEncoder.finish();
+        __tnRollbackComputeFailureEncoder.finish();
+        __tnRollbackRenderFailureEncoder.finish();
+        __tnRollbackTexture.destroy();
+    })())JS", "webgpu-binding-wrapper-rollback-cleanup.js")) {
+        return failed("control cleanup");
+    }
+    return true;
+}
+
+bool checkQuickJSCallbackResultOwnership(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(
+        runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
+
+    const auto host = engine->newObject();
+    engine->protect(host);
+    mystral::js::JSValueHandle protectedResult;
+    int unprotectedCalls = 0;
+    int protectedCalls = 0;
+    const auto unprotectedCallback = engine->newFunction(
+        "unprotectedResult",
+        [engine, &unprotectedCalls](
+            void*, const std::vector<mystral::js::JSValueHandle>&) {
+            ++unprotectedCalls;
+            return engine->newString("unprotected-result");
+        });
+    const auto protectedCallback = engine->newFunction(
+        "protectedResult",
+        [engine, &protectedResult, &protectedCalls](
+            void*, const std::vector<mystral::js::JSValueHandle>&) {
+            ++protectedCalls;
+            protectedResult = engine->newString("protected-result");
+            engine->protect(protectedResult);
+            return protectedResult;
+        });
+    if (!unprotectedCallback.ptr || !protectedCallback.ptr ||
+        !engine->setGlobalProperty("__tnCallbackOwnershipHost", host)) {
+        if (protectedResult.ptr) engine->unprotect(protectedResult);
+        engine->unprotect(host);
+        return false;
+    }
+    engine->protect(unprotectedCallback);
+    engine->protect(protectedCallback);
+    const bool installed =
+        engine->setProperty(host, "unprotected", unprotectedCallback) &&
+        engine->setProperty(host, "protected", protectedCallback);
+    engine->unprotect(protectedCallback);
+    engine->unprotect(unprotectedCallback);
+    if (!installed || !runtime.evalScript(R"JS((() => {
+        const unprotected = __tnCallbackOwnershipHost.unprotected();
+        const protectedValue = __tnCallbackOwnershipHost.protected();
+        if (unprotected !== 'unprotected-result' || protectedValue !== 'protected-result') {
+            throw new Error('QuickJS callback result handle was empty or corrupted');
+        }
+    })())JS", "quickjs-callback-result-ownership.js")) {
+        if (protectedResult.ptr) engine->unprotect(protectedResult);
+        engine->unprotect(host);
+        return false;
+    }
+    const bool complete = unprotectedCalls == 1 && protectedCalls == 1 && protectedResult.ptr;
+    if (protectedResult.ptr) engine->unprotect(protectedResult);
+    const auto global = engine->getGlobal();
+    engine->deleteProperty(global, "__tnCallbackOwnershipHost");
+    engine->unprotect(host);
+    if (!complete) {
+        std::cerr << "QuickJS callback result ownership proof failed" << std::endl;
+    }
+    return complete;
+}
+
+bool checkControllableSurfaceTextureTransaction(mystral::Runtime& runtime) {
+#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+    auto* engine = static_cast<mystral::webgpu::BindingsState*>(
+                       runtime.getWebGPUBindingsState())
+                       ->engine;
+    mystral::webgpu::BindingsState controlledState;
+    controlledState.engine = engine;
+    const auto failed = [](const char* message) {
+        std::cerr << "surface texture transaction proof failed: " << message << std::endl;
+        return false;
+    };
+
+    const auto firstTexture = reinterpret_cast<WGPUTexture>(static_cast<uintptr_t>(0x101));
+    const auto failingTexture = reinterpret_cast<WGPUTexture>(static_cast<uintptr_t>(0x202));
+    int acquireCalls = 0;
+    int releaseCalls = 0;
+    std::vector<bool> createdSurfaceTexture;
+    const auto acquire = [&](mystral::webgpu::BindingsState*) {
+        ++acquireCalls;
+        return acquireCalls == 1 ? firstTexture : failingTexture;
+    };
+    const auto wrap = [&](mystral::webgpu::BindingsState*, WGPUTexture, uint64_t,
+                          uint32_t, uint32_t, const char*, bool created) {
+        createdSurfaceTexture.push_back(created);
+        return engine->newObject();
+    };
+    const auto release = [&](mystral::webgpu::BindingsState*, WGPUTexture,
+                             WGPUTexture) { ++releaseCalls; };
+
+    controlledState.frameCount = 10;
+    controlledState.nextTextureId = 7;
+    const auto firstResult = mystral::webgpu::acquireSurfaceTexture(
+        &controlledState, acquire, wrap, release);
+    if (!firstResult.ptr || engine->isUndefined(firstResult) || acquireCalls != 1 ||
+        createdSurfaceTexture.size() != 1 || !createdSurfaceTexture.front() ||
+        controlledState.currentTexture != firstTexture ||
+        controlledState.currentSurfaceTextureId != 7 || controlledState.nextTextureId != 8 ||
+        controlledState.frameCount != 11 || controlledState.textureRegistry.size() != 1) {
+        return failed("new-entry success branch");
+    }
+
+    const auto existingFrameCount = controlledState.frameCount;
+    const auto existingId = controlledState.currentSurfaceTextureId;
+    const auto existingResult = mystral::webgpu::acquireSurfaceTexture(
+        &controlledState, acquire, wrap, release);
+    if (!existingResult.ptr || engine->isUndefined(existingResult) || acquireCalls != 1 ||
+        createdSurfaceTexture.size() != 2 || createdSurfaceTexture.back() ||
+        controlledState.currentSurfaceTextureId != existingId ||
+        controlledState.frameCount != existingFrameCount || controlledState.textureRegistry.size() != 1) {
+        return failed("existing-entry wrapper branch");
+    }
+
+    controlledState.currentTexture = nullptr;
+    controlledState.currentSurfaceTextureId = 0;
+    controlledState.nextTextureId = 19;
+    controlledState.frameCount = 31;
+    controlledState.textureRegistry.clear();
+    const auto previousFrameCount = controlledState.frameCount;
+    const auto previousNextTextureId = controlledState.nextTextureId;
+    const auto failedWrap = [&](mystral::webgpu::BindingsState*, WGPUTexture, uint64_t,
+                                uint32_t, uint32_t, const char*, bool created) {
+        if (!created) return engine->newObject();
+        engine->throwException("surface wrapper failure");
+        return engine->newUndefined();
+    };
+    const auto failedResult = mystral::webgpu::acquireSurfaceTexture(
+        &controlledState, acquire, failedWrap, release);
+    const bool failureObserved = engine->hasException();
+    if (failureObserved) engine->getException();
+    if (!engine->isUndefined(failedResult) || !failureObserved || acquireCalls != 2 ||
+        controlledState.currentTexture != nullptr || controlledState.currentSurfaceTextureId != 0 ||
+        controlledState.nextTextureId != previousNextTextureId ||
+        controlledState.frameCount != previousFrameCount ||
+        !controlledState.textureRegistry.empty() || releaseCalls != 1) {
+        return failed("new-entry failure cleanup");
+    }
+    return true;
+#else
+    (void)runtime;
+    return true;
+#endif
+}
+
+bool checkRepeatedBindingsStateDestroy() {
+    auto* state = mystral::webgpu::createBindingsState();
+    mystral::webgpu::destroyBindingsState(state);
+    if (state != nullptr) {
+        std::cerr << "bindings-state destruction did not clear the owner pointer" << std::endl;
+        return false;
+    }
+    mystral::webgpu::destroyBindingsState(state);
+    return true;
+}
+
+bool checkQuickJSCallbackLifetime(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    if (engine->getType() != mystral::js::EngineType::QuickJS) return true;
+
+    const auto destination = engine->newObject();
+    engine->protect(destination);
+    std::weak_ptr<int> weakLifetime;
+    {
+        auto lifetime = std::make_shared<int>(1);
+        weakLifetime = lifetime;
+        for (int index = 0; index < 64; ++index) {
+            const std::string name = "callback" + std::to_string(index);
+            const auto callback = engine->newFunction(
+                name.c_str(),
+                [lifetime](void*, const std::vector<mystral::js::JSValueHandle>&) {
+                    return mystral::js::JSValueHandle{};
+                });
+            if (!callback.ptr) {
+                std::cerr << "QuickJS callback creation failed at " << index << std::endl;
+                engine->unprotect(destination);
+                return false;
+            }
+            engine->protect(callback);
+            if (!engine->setProperty(destination, name.c_str(), callback)) {
+                std::cerr << "QuickJS callback property install failed at " << index << std::endl;
+                engine->unprotect(callback);
+                engine->unprotect(destination);
+                return false;
+            }
+            engine->unprotect(callback);
+        }
+    }
+
+    for (int index = 0; index < 64; ++index) {
+        const std::string name = "callback" + std::to_string(index);
+        if (!engine->deleteProperty(destination, name.c_str())) {
+            std::cerr << "QuickJS callback property delete failed at " << index << std::endl;
+            engine->unprotect(destination);
+            return false;
+        }
+    }
+    engine->gc();
+    engine->gc();
+    const bool released = weakLifetime.expired();
+    engine->unprotect(destination);
+    if (!released) {
+        std::cerr << "QuickJS retained callback allocations after wrapper GC" << std::endl;
+    }
+    return released;
+}
+
 bool createEngineLocalCanvasContext(mystral::Runtime& runtime, const char* filename) {
     return runtime.evalScript(R"JS((() => {
         const canvas = document.createElement("canvas");
@@ -990,6 +1519,15 @@ int main() {
     if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;
     if (!checkDynamicCanvasOwnership(*first)) return 1;
     if (!checkBindingProtectionOwnership(*first)) return 1;
+    if (!checkWrapperRollbackRestoresActiveState(*first)) return 1;
+    if (!checkControllableSurfaceTextureTransaction(*first)) return 1;
+    if (!checkDynamicInstallUnwind(*first)) return 1;
+    if (!checkQuickJSCallbackLifetime(*first)) return 1;
+    if (!checkQuickJSCallbackResultOwnership(*first) ||
+        !checkQuickJSCallbackResultOwnership(*second) ||
+        !checkQuickJSCallbackLifetime(*second)) {
+        return 1;
+    }
 
     // Create the second engine's context first so the first engine is the last creator. A
     // process-global callback engine would dangle when the first runtime is destroyed below.
@@ -1048,6 +1586,8 @@ int main() {
             "webgpu-bindings-reentrancy-after-replacement-destroy.js")) {
         return 1;
     }
+
+    if (!checkRepeatedBindingsStateDestroy()) return 1;
 
     std::cout << "native WebGPU bindings reentrancy passed" << std::endl;
     return 0;

@@ -5,6 +5,7 @@
 #include <webgpu/webgpu.h>
 
 #include "bindings_state.h"
+#include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/registration_table.h"
 
 namespace mystral::webgpu {
@@ -47,7 +48,7 @@ js::JSValueHandle destroyTextureBinding(
     BindingsState* state,
     uint64_t textureId,
     const std::vector<js::JSValueHandle>&) {
-    state->textureRegistry.erase(textureId);
+    releaseTextureRegistryEntry(state, textureId);
     return state->engine->newUndefined();
 }
 
@@ -116,7 +117,8 @@ js::JSValueHandle createTextureWrapper(
     uint64_t textureId,
     uint32_t width,
     uint32_t height,
-    const char* format) {
+    const char* format,
+    bool rollbackRegistryEntry) {
     const WGPUTexture texture = static_cast<WGPUTexture>(textureHandle);
     auto jsTexture = state->engine->newObject();
     state->engine->setPrivateData(jsTexture, texture);
@@ -131,7 +133,10 @@ js::JSValueHandle createTextureWrapper(
          makeTextureViewBinding(state, textureId), jsTexture},
         {"GPUTexture", "destroy", 0, nullptr,
          makeDestroyTextureBinding(state, textureId), jsTexture},
-    }))) return state->engine->newUndefined();
+    }))) {
+        if (rollbackRegistryEntry) releaseTextureRegistryEntry(state, textureId);
+        return state->engine->newUndefined();
+    }
     return jsTexture;
 }
 
@@ -151,7 +156,14 @@ js::JSValueHandle createPipelineWrapper(
     if (!installBindingTable(state->engine, state, bindingTable({
         {pipelineSurface, "getBindGroupLayout", 0, nullptr,
          makePipelineBindGroupLayoutBinding(state, pipelineId, renderPipeline), jsPipeline},
-    }))) return state->engine->newUndefined();
+    }))) {
+        if (renderPipeline) {
+            releaseRenderPipelineRegistryEntry(state, pipelineId);
+        } else {
+            releaseComputePipelineRegistryEntry(state, pipelineId);
+        }
+        return state->engine->newUndefined();
+    }
     return jsPipeline;
 }
 

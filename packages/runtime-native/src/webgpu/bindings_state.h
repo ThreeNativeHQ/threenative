@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "mystral/canvas/canvas2d.h"
@@ -35,6 +36,9 @@ struct TextureInfo {
     uint32_t depthOrArrayLayers = 1;
     uint32_t mipLevelCount = 1;
     WGPUTextureDimension dimension = WGPUTextureDimension_2D;
+    uint32_t sampleCount = 1;
+    bool ownsTexture = true;
+    bool accounted = false;
 };
 
 struct BufferInfo {
@@ -45,6 +49,7 @@ struct BufferInfo {
     void* mappedData = nullptr;
     uint64_t mappedSize = 0;
     WGPUMapMode mapMode = {};
+    bool accounted = false;
 };
 
 struct BufferMapData {
@@ -110,6 +115,7 @@ struct BindingsState {
     WGPURenderPassEncoder jsRenderPass = nullptr;
     WGPUComputePassEncoder jsComputePass = nullptr;
     WGPUCommandEncoder jsCommandEncoder = nullptr;
+    std::unordered_set<WGPUCommandEncoder> commandEncoderRegistry;
     std::unordered_map<WGPUCommandEncoder, WGPURenderPassEncoder> encoderRenderPassMap;
     std::unordered_map<WGPUCommandEncoder, WGPUComputePassEncoder> encoderComputePassMap;
     bool surfaceRenderPassEnded = false;

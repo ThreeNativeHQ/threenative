@@ -354,3 +354,174 @@ reproducible and no production change was made in response.
 
 Android, iOS, Apple JSC runtime execution, and browser-reference/pixel conformance remain
 unverified. No result claims those lanes.
+
+### Current closure repair: independent-review findings
+
+This section records the follow-up repair on branch `linchpin/prd-205-closure`, based at
+`13aad718`. The added controls were run before the implementation changes (red) and then rerun
+after the changes (green).
+
+The repair covers four failure classes:
+
+- `installBindingTable` now fails closed when the active JS call already owns an exception; it no
+  longer consumes that exception before a dynamic install.
+- Failed dynamic texture, buffer, pipeline, encoder, pass, canvas, registry, metric, and protected
+  handle paths roll back their native ownership and state once. `destroyBindingsState` also drains
+  the registries instead of relying on process teardown.
+- QuickJS callback data has a class finalizer, Engine-returned handles follow frame/protected
+  ownership, and callback results transfer or duplicate exactly one reference as appropriate.
+- Teardown queues an actual QuickJS Promise callback and checks that it cannot call destroyed
+  binding state; the proxy rollback and cross-row adversarial assertions remain active.
+
+The newly added native controls first failed as expected:
+
+The native commands below are shown from the repository root.
+
+    cmake --build packages/runtime-native/build/tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test -j2
+    ./packages/runtime-native/build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 1; dynamic install unwind lost the getter exception
+
+    cmake --build packages/runtime-native/build/tn-linux-quickjs \
+      --target threenative-webgpu-bindings-reentrancy-test -j2
+    ./packages/runtime-native/build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test
+    exit 1; dynamic install unwind lost the getter exception
+
+After the exception-latch fix, the same controls still failed on the next invariant, proving the
+resource/state assertions were independently exercising the missing cleanup:
+
+    ./packages/runtime-native/build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 1; dynamic install unwind retained native state
+
+    ./packages/runtime-native/build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test
+    exit 1; dynamic install unwind retained native state
+
+Final green controls:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs --reporter=dot
+    exit 0; Test Files 2 passed; Tests 30 passed
+
+    cmake --build packages/runtime-native/build/tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test -j2
+    exit 0
+    ./packages/runtime-native/build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 0; NVIDIA GeForce RTX 2080, Vulkan; native WebGPU bindings reentrancy passed
+
+    cmake --build packages/runtime-native/build/tn-linux-quickjs \
+      --target threenative-webgpu-bindings-reentrancy-test -j2
+    exit 0
+    ./packages/runtime-native/build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test
+    exit 0; NVIDIA GeForce RTX 2080, Vulkan; native WebGPU bindings reentrancy passed
+
+The source audit still reports all 38 checked install callers:
+
+    rg -n "installBindingTable\\(" packages/runtime-native/src/webgpu/bindings.cpp \
+      packages/runtime-native/src/webgpu/wrapper_factories.cpp | wc -l
+    38
+
+During the final package gate, the pre-existing QuickJS source contract also caught the required
+explicit protected-result duplication form:
+
+    pnpm --filter @threenative/runtime-native test
+    exit 1; tests/runtime-next-contract.test.mjs — native callback results must outlive their
+    temporary C++ handles
+
+The ownership helper was adjusted without changing the transfer path. The rerun is green:
+
+    pnpm --filter @threenative/runtime-native test
+    exit 0; Test Files 57 passed; Tests 401 passed, 33 skipped; physics parity 28 JS tests and
+    2 Rust tests passed; publint passed
+
+Repository gates after the repair are green:
+
+    pnpm typecheck
+    exit 0; Scope 16 of 17 workspace projects
+
+    pnpm lint
+    exit 0; Biome checked 1113 files; 381 warnings, no errors
+
+    pnpm --filter @threenative/playtest test
+    exit 0; no orphans; publint passed
+
+    pnpm test
+    exit 0; Test Files 197 passed, 1 skipped (198 total); Tests 1880 passed, 3 skipped (1883 total);
+    temporary directory count unchanged
+
+This repair was verified on Linux with the V8 and QuickJS native controls only. Android, iOS,
+Apple JSC runtime execution, and browser-reference/pixel conformance remain unverified.
+
+### Independent-review follow-up: five closure findings
+
+This follow-up started from `131cd5a094d4f8e4cb4d041c93eb21241b9f44fb` and preserves the controls
+above. It addresses the five findings from the independent review:
+
+1. Compute-pass, render-pass, and command-encoder wrapper rollback now snapshots and restores the
+   exact prior global pointers, per-encoder maps, surface-pass fields, and current encoder. The
+   native regression keeps active passes on separate encoders, then forces a later wrapper install
+   failure and compares the complete prior state.
+2. `destroyBindingsState(BindingsState*& state)` nulls the caller's owner before cleanup, making a
+   repeated call with the same owner variable safe. The header documents that retained raw aliases
+   are invalid after the first call; the native control calls destruction twice.
+3. Surface new-entry rollback now restores `frameCount` along with current texture, surface id,
+   next texture id, and registry ownership.
+4. `acquireSurfaceTexture` is exercised through controlled acquire/wrap/release callbacks with
+   fake handles and no window, display, or GPU-backend claim. The control covers a created entry,
+   an existing entry, and created-entry wrapper failure, including release and frame-count cleanup.
+5. QuickJS callback tests return non-empty strings through both unprotected transfer and protected
+   duplication paths. They run on both QuickJS runtime instances in the native binary when QuickJS
+   is enabled.
+
+Red before the production changes:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs --reporter=dot
+    exit 1; the new wrapper-rollback, destroy-owner, and surface-frame-count contracts failed
+
+    ./packages/runtime-native/build/tn-linux/threenative-webgpu-bindings-reentrancy-test
+    exit 1; wrapper rollback proof failed: compute pass pointer or map state was not restored
+
+    ./packages/runtime-native/build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test
+    exit 1; wrapper rollback proof failed: compute pass pointer or map state was not restored
+
+Green after the repair:
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs --reporter=dot
+    exit 0; Test Files 2 passed; Tests 34 passed
+
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/resize-attachment-invariant.test.mjs --reporter=dot
+    exit 0; Test Files 1 passed; Tests 2 passed
+
+    cmake --build packages/runtime-native/build/tn-linux \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel
+    ./packages/runtime-native/build/tn-linux/threenative-webgpu-bindings-reentrancy-test \
+      2>&1 | tail -n 4
+    exit 0; native WebGPU bindings reentrancy passed; V8; NVIDIA GeForce RTX 2080; Vulkan
+
+    cmake --build packages/runtime-native/build/tn-linux-quickjs \
+      --target threenative-webgpu-bindings-reentrancy-test --parallel
+    ./packages/runtime-native/build/tn-linux-quickjs/threenative-webgpu-bindings-reentrancy-test \
+      2>&1 | tail -n 4
+    exit 0; native WebGPU bindings reentrancy passed; QuickJS; NVIDIA GeForce RTX 2080; Vulkan
+
+    pnpm --filter @threenative/runtime-native test
+    exit 0; Test Files 57 passed; Tests 405 passed, 33 skipped; physics parity 28 JS tests and
+    2 Rust tests passed; publint passed
+
+    pnpm typecheck
+    exit 0; Scope 16 of 17 workspace projects
+
+    pnpm lint
+    exit 0; Biome checked 1113 files; 381 warnings, no errors
+
+    pnpm test
+    exit 0; Test Files 197 passed, 1 skipped (198 total); Tests 1880 passed, 3 skipped (1883 total);
+    temporary directory count unchanged
+
+    git diff --check
+    exit 0; no whitespace errors
+
+Android, iOS, Apple JSC runtime execution, browser-reference, pixel-conformance, and full desktop
+native verification were not run in this follow-up and remain unverified.

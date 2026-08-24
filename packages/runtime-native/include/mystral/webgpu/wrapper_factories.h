@@ -14,7 +14,8 @@ js::JSValueHandle createTextureWrapper(
     uint64_t textureId,
     uint32_t width,
     uint32_t height,
-    const char* format);
+    const char* format,
+    bool rollbackRegistryEntry);
 
 js::JSValueHandle createPipelineWrapper(
     BindingsState* state,
