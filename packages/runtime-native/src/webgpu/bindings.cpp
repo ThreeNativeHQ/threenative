@@ -1085,7 +1085,7 @@ static void installCanvasContextBindings(
     BindingsState* state,
     js::JSValueHandle canvasContext,
     bool offscreen) {
-    const BindingRegistration registrations[] = {
+    installBindingTable(state->engine, state, bindingTable(canvasContext, {
         {"GPUCanvasContext", "configure", 1, "configure requires a descriptor", &configureCanvasContext},
         {"GPUCanvasContext", "unconfigure", 0, nullptr,
          [offscreen](BindingsState* state, const std::vector<js::JSValueHandle>&) {
@@ -1096,13 +1096,7 @@ static void installCanvasContextBindings(
          [offscreen](BindingsState* state, const std::vector<js::JSValueHandle>& args) {
              return getCurrentCanvasTexture(state, args, offscreen);
          }},
-    };
-    installBindingTable(
-        state->engine,
-        state,
-        canvasContext,
-        registrations,
-        sizeof(registrations) / sizeof(registrations[0]));
+    }));
 }
 
 /** Install the table-driven WebGPU surfaces after state has been initialized. */
@@ -1120,19 +1114,18 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // ========================================================================
     auto parentElement = engine->newObject();
     engine->setProperty(parentElement, "style", engine->newObject());
-    installBindingTable(state->engine, state, parentElement, {
-        {"WebGPU", "appendChild", 0, nullptr,
+    installBindingTable(state->engine, state, bindingTable(parentElement, {
+        {"HTMLElement", "appendChild", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             // No-op in native runtime
             return args.empty() ? state->engine->newUndefined() : args[0];
         }
-    }});
-    installBindingTable(state->engine, state, parentElement, {
-        {"WebGPU", "removeChild", 0, nullptr,
+    },
+        {"HTMLElement", "removeChild", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             return args.empty() ? state->engine->newUndefined() : args[0];
         }
-    }});
+    }}));
 
     // ========================================================================
     // Get existing canvas from runtime.cpp's document.getElementById
@@ -1167,8 +1160,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
     // canvas.getContext('webgpu') -> GPUCanvasContext
     // This is the WebGPU-specific method we add to the existing canvas
-    installBindingTable(state->engine, state, canvasObject, {
-        {"WebGPU", "getContext", 0, nullptr,
+    installBindingTable(state->engine, state, bindingTable(canvasObject, {
+        {"HTMLCanvasElement", "getContext", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             if (args.empty()) {
                 return state->engine->newNull();
@@ -1212,7 +1205,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
             if (state->verboseLogging) std::cout << "[Canvas] WebGPU context created" << std::endl;
             return canvasContext;
         }
-    }});
+    }}));
 
     // Set global canvas - this is the SAME object as document.getElementById('canvas')
     // so it now has both WebGPU getContext AND event listener support
@@ -1224,8 +1217,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // ========================================================================
 
     // Add querySelector to existing document (if not present)
-    installBindingTable(state->engine, state, existingDocument, {
-        {"WebGPU", "querySelector", 0, nullptr,
+    installBindingTable(state->engine, state, bindingTable(existingDocument, {
+        {"Document", "querySelector", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             // Check if querying for canvas
             if (!args.empty()) {
@@ -1236,13 +1229,12 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
             }
             return state->engine->newNull();
         }
-    }});
+    },
 
     // Add createElement to existing document
     // NOTE: runtime.cpp sets up a createElement with canvas support (toDataURL) for @loaders.gl WebP detection
     // We ALWAYS override it here to add proper Canvas 2D support for offscreen canvases
-    installBindingTable(state->engine, state, existingDocument, {
-        {"WebGPU", "createElement", 0, nullptr,
+        {"Document", "createElement", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             auto element = state->engine->newObject();
 
@@ -1258,38 +1250,34 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
             state->engine->setProperty(element, "innerHTML", state->engine->newString(""));
             state->engine->setProperty(element, "textContent", state->engine->newString(""));
             state->engine->setProperty(element, "tagName", state->engine->newString(tagName.c_str()));
-            installBindingTable(state->engine, state, element, {
-                {"WebGPU", "appendChild", 0, nullptr,
+            installBindingTable(state->engine, state, bindingTable(element, {
+                {"HTMLElement", "appendChild", 0, nullptr,
                 [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                     return a.empty() ? state->engine->newUndefined() : a[0];
                 }
-            }});
-            installBindingTable(state->engine, state, element, {
-                {"WebGPU", "removeChild", 0, nullptr,
+            },
+                {"HTMLElement", "removeChild", 0, nullptr,
                 [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                     return a.empty() ? state->engine->newUndefined() : a[0];
                 }
-            }});
-            installBindingTable(state->engine, state, element, {
-                {"WebGPU", "remove", 0, nullptr,
+            },
+                {"HTMLElement", "remove", 0, nullptr,
                 [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                     // No-op in native runtime - element is not attached to DOM
                     return state->engine->newUndefined();
                 }
-            }});
-            installBindingTable(state->engine, state, element, {
-                {"WebGPU", "addEventListener", 0, nullptr,
+            },
+                {"HTMLElement", "addEventListener", 0, nullptr,
                 [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                     // No-op in native runtime
                     return state->engine->newUndefined();
                 }
-            }});
-            installBindingTable(state->engine, state, element, {
-                {"WebGPU", "removeEventListener", 0, nullptr,
+            },
+                {"HTMLElement", "removeEventListener", 0, nullptr,
                 [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                     return state->engine->newUndefined();
                 }
-            }});
+            }}));
 
             // Special handling for canvas elements - add Canvas 2D support
             if (tagName == "canvas" || tagName == "CANVAS") {
@@ -1298,29 +1286,26 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                 // document.getElementById('canvas'). Forward the event surface so a renderer
                 // canvas receives the same pointer and pointer-lock events on native.
                 const auto mainCanvas = state->engine->getGlobalProperty("canvas");
-                installBindingTable(state->engine, state, element, {
-                    {"WebGPU", "addEventListener", 0, nullptr,
+                installBindingTable(state->engine, state, bindingTable(element, {
+                    {"HTMLCanvasElement", "addEventListener", 0, nullptr,
                     [mainCanvas, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                         const auto add = state->engine->getProperty(mainCanvas, "addEventListener");
                         return state->engine->call(add, mainCanvas, args);
                     }
-                }});
-                installBindingTable(state->engine, state, element, {
-                    {"WebGPU", "removeEventListener", 0, nullptr,
+                },
+                    {"HTMLCanvasElement", "removeEventListener", 0, nullptr,
                     [mainCanvas, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                         const auto remove = state->engine->getProperty(mainCanvas, "removeEventListener");
                         return state->engine->call(remove, mainCanvas, args);
                     }
-                }});
-                installBindingTable(state->engine, state, element, {
-                    {"WebGPU", "dispatchEvent", 0, nullptr,
+                },
+                    {"HTMLCanvasElement", "dispatchEvent", 0, nullptr,
                     [mainCanvas, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                         const auto dispatch = state->engine->getProperty(mainCanvas, "dispatchEvent");
                         return state->engine->call(dispatch, mainCanvas, args);
                     }
-                }});
-                installBindingTable(state->engine, state, element, {
-                    {"WebGPU", "requestPointerLock", 0, nullptr,
+                },
+                    {"HTMLCanvasElement", "requestPointerLock", 0, nullptr,
                     [mainCanvas, element, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                         const auto request = state->engine->getProperty(mainCanvas, "requestPointerLock");
                         const auto result = state->engine->call(request, mainCanvas, args);
@@ -1332,7 +1317,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                         state->engine->call(dispatch, document, {event});
                         return result;
                     }
-                }});
+                }}));
 
                 // Create OffscreenCanvas struct to store state
                 int canvasId = state->nextOffscreenCanvasId++;
@@ -1357,8 +1342,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                 // Create getContext function
                 // Capture canvasId to ensure each canvas element's getContext uses its own canvas
                 // This fixes the bug where all canvases shared the same context
-                installBindingTable(state->engine, state, element, {
-                    {"WebGPU", "getContext", 0, nullptr,
+                installBindingTable(state->engine, state, bindingTable(element, {
+                    {"HTMLCanvasElement", "getContext", 0, nullptr,
                     [canvasId, canvasPtr, state](BindingsState* c, const std::vector<js::JSValueHandle>& contextArgs) {
                     if (contextArgs.empty()) {
                         return state->engine->newNull();
@@ -1437,12 +1422,12 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     std::cerr << "[Canvas] Unsupported context type: " << contextType << std::endl;
                     return state->engine->newNull();
                 }
-                }});
+                }}));
                 if (state->verboseLogging) std::cout << "[Canvas] Created offscreen canvas " << canvasId << std::endl;
 
                 // toDataURL for compatibility (returns empty data URI)
-                installBindingTable(state->engine, state, element, {
-                    {"WebGPU", "toDataURL", 0, nullptr,
+                installBindingTable(state->engine, state, bindingTable(element, {
+                    {"HTMLCanvasElement", "toDataURL", 0, nullptr,
                     [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                         std::string mimeType = "image/png";
                         if (!a.empty()) {
@@ -1454,11 +1439,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                         }
                         return state->engine->newString("data:image/png;base64,");
                     }
-                }});
+                },
 
                 // getBoundingClientRect - return canvas dimensions
-                installBindingTable(state->engine, state, element, {
-                    {"WebGPU", "getBoundingClientRect", 0, nullptr,
+                    {"HTMLCanvasElement", "getBoundingClientRect", 0, nullptr,
                     [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                         // Get dimensions from the main canvas if available
                         auto rect = state->engine->newObject();
@@ -1472,12 +1456,12 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                         state->engine->setProperty(rect, "bottom", state->engine->newNumber(state->canvasHeight));
                         return rect;
                     }
-                }});
+                }}));
             }
 
             return element;
         }
-    }});
+    }}));
 
     // Add document.body if not present, or enhance existing body with required methods
     auto existingBody = engine->getProperty(existingDocument, "body");
@@ -1487,18 +1471,17 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     }
     // Always add/update these methods on body
     engine->setProperty(existingBody, "style", engine->newObject());
-    installBindingTable(state->engine, state, existingBody, {
-        {"WebGPU", "appendChild", 0, nullptr,
+    installBindingTable(state->engine, state, bindingTable(existingBody, {
+        {"HTMLElement", "appendChild", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             return args.empty() ? state->engine->newUndefined() : args[0];
         }
-    }});
-    installBindingTable(state->engine, state, existingBody, {
-        {"WebGPU", "removeChild", 0, nullptr,
+    },
+        {"HTMLElement", "removeChild", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             return args.empty() ? state->engine->newUndefined() : args[0];
         }
-    }});
+    }}));
 
     // ========================================================================
     // Navigator object
@@ -1527,15 +1510,15 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // ========================================================================
     // navigator.gpu.requestAdapter()
     // ========================================================================
-    installBindingTable(state->engine, state, gpuObject, {
-        {"WebGPU", "requestAdapter", 0, nullptr,
+    installBindingTable(state->engine, state, bindingTable(gpuObject, {
+        {"GPU", "requestAdapter", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             // In native runtime, we already have an adapter, so just return a mock adapter object
             auto adapter = state->engine->newObject();
 
             // adapter.requestDevice()
-            installBindingTable(state->engine, state, adapter, {
-                {"WebGPU", "requestDevice", 0, nullptr,
+            installBindingTable(state->engine, state, bindingTable(adapter, {
+                {"GPUAdapter", "requestDevice", 0, nullptr,
                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                     // Return a device object wrapping our native device
                     auto device = state->engine->newObject();
@@ -1546,8 +1529,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     state->engine->setPrivateData(queue, state->queue);
 
                     // queue.submit(commandBuffers)
-                    installBindingTable(state->engine, state, queue, {
-                        {"WebGPU", "submit", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(queue, {
+                        {"GPUQueue", "submit", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 return state->engine->newUndefined();
@@ -1644,11 +1627,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                             return state->engine->newUndefined();
                         }
-                    }});
+                    },
 
                     // queue.writeBuffer(buffer, offset, data, dataOffset?, size?)
-                    installBindingTable(state->engine, state, queue, {
-                        {"WebGPU", "writeBuffer", 0, nullptr,
+                                            {"GPUQueue", "writeBuffer", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.size() < 3) {
                                 state->engine->throwException("writeBuffer requires buffer, offset, and data");
@@ -1717,11 +1699,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                             return state->engine->newUndefined();
                         }
-                    }});
+                    },
 
                     // queue.writeTexture(destination, data, dataLayout, size)
-                    installBindingTable(state->engine, state, queue, {
-                        {"WebGPU", "writeTexture", 0, nullptr,
+                                            {"GPUQueue", "writeTexture", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.size() < 4) {
                                 state->engine->throwException("writeTexture requires destination, data, dataLayout, and size");
@@ -1823,12 +1804,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                             return state->engine->newUndefined();
                         }
-                    }});
+                    },
 
                     // queue.copyExternalImageToTexture(source, destination, copySize)
                     // Standard WebGPU way to upload ImageBitmap to texture
-                    installBindingTable(state->engine, state, queue, {
-                        {"WebGPU", "copyExternalImageToTexture", 0, nullptr,
+                                            {"GPUQueue", "copyExternalImageToTexture", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.size() < 3) {
                                 state->engine->throwException("copyExternalImageToTexture requires source, destination, and copySize");
@@ -2063,11 +2043,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                             return state->engine->newUndefined();
                         }
-                    }});
+                    },
 
                     // queue.onSubmittedWorkDone() - returns Promise that resolves when GPU work is done
-                    installBindingTable(state->engine, state, queue, {
-                        {"WebGPU", "onSubmittedWorkDone", 0, nullptr,
+                                            {"GPUQueue", "onSubmittedWorkDone", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             auto* data = new QueueWorkDoneData();
 #if WGPU_USES_CALLBACK_INFO_PATTERN
@@ -2098,7 +2077,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             }
                             return resolvedPromise(state, "undefined", "onSubmittedWorkDone-success");
                         }
-                    }});
+                    }}));
 
                     state->engine->setProperty(device, "queue", queue);
 
@@ -2108,14 +2087,14 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     // end of an otherwise successful run. Releasing the wgpu device here would pull
                     // the surface out from under a host that may still be presenting, so this
                     // reports the call and lets the host own the lifetime.
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "destroy", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(device, {
+                        {"GPUDevice", "destroy", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>&) {
                             std::cout << "[WebGPU] device.destroy(): teardown is owned by the host"
                                       << std::endl;
                             return state->engine->newUndefined();
                         }
-                    }});
+                    }}));
 
                     // device.limits - expose device limits
                     auto deviceLimits = state->engine->newObject();
@@ -2139,8 +2118,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     // real device so consumers (three's KTX2Loader.detectSupport among them)
                     // pick transcode targets from actual hardware capability.
                     auto deviceFeatures = state->engine->newArray(0);
-                    installBindingTable(state->engine, state, deviceFeatures, {
-                        {"WebGPU", "has", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(deviceFeatures, {
+                        {"GPUSupportedFeatures", "has", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) return state->engine->newBoolean(false);
                             std::string featureName = state->engine->toString(args[0]);
@@ -2158,12 +2137,12 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (feature == static_cast<WGPUFeatureName>(0)) return state->engine->newBoolean(false);
                             return state->engine->newBoolean(wgpuDeviceHasFeature(state->device, feature) != 0);
                         }
-                    }});
+                    }}));
                     state->engine->setProperty(device, "features", deviceFeatures);
 
                     // device.createBuffer(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createBuffer", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(device, {
+                        {"GPUDevice", "createBuffer", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createBuffer requires a descriptor");
@@ -2207,8 +2186,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                             // buffer.mapAsync(mode, offset?, size?) -> Promise
                             // Returns a Promise that resolves when the buffer is mapped
-                            installBindingTable(state->engine, state, jsBuffer, {
-                                {"WebGPU", "mapAsync", 0, nullptr,
+                            installBindingTable(state->engine, state, bindingTable(jsBuffer, {
+                                {"GPUBuffer", "mapAsync", 0, nullptr,
                                 [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     auto it = state->bufferRegistry.find(bufferId);
                                     if (it == state->bufferRegistry.end()) {
@@ -2307,12 +2286,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                         return state->engine->evalWithResult("Promise.reject(new Error('Buffer map failed'))", "mapAsync-failed");
                                     }
                                 }
-                            }});
+                            },
 
                             // buffer.getMappedRange(offset?, size?) -> ArrayBuffer
                             // Capture bufferId in closure to identify the correct buffer
-                            installBindingTable(state->engine, state, jsBuffer, {
-                                {"WebGPU", "getMappedRange", 0, nullptr,
+                                                            {"GPUBuffer", "getMappedRange", 0, nullptr,
                                 [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     // Look up this specific buffer by its ID
                                     auto it = state->bufferRegistry.find(bufferId);
@@ -2349,12 +2327,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: GetMappedRange returned null for buffer " << bufferId << std::endl;
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // buffer.unmap()
                             // Capture bufferId in closure to identify the correct buffer
-                            installBindingTable(state->engine, state, jsBuffer, {
-                                {"WebGPU", "unmap", 0, nullptr,
+                                                            {"GPUBuffer", "unmap", 0, nullptr,
                                 [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     // Look up this specific buffer by its ID
                                     auto it = state->bufferRegistry.find(bufferId);
@@ -2372,12 +2349,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // buffer.destroy()
                             // Capture bufferId in closure to identify the correct buffer
-                            installBindingTable(state->engine, state, jsBuffer, {
-                                {"WebGPU", "destroy", 0, nullptr,
+                                                            {"GPUBuffer", "destroy", 0, nullptr,
                                 [bufferId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     auto it = state->bufferRegistry.find(bufferId);
                                     if (it != state->bufferRegistry.end()) {
@@ -2387,15 +2363,15 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            }}));
 
                             return jsBuffer;
                         }
-                    }});
+                    }}));
 
                     // device.createShaderModule(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createShaderModule", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(device, {
+                        {"GPUDevice", "createShaderModule", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createShaderModule requires a descriptor");
@@ -2426,11 +2402,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                             return jsShader;
                         }
-                    }});
+                    },
 
                     // device.createRenderPipeline(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createRenderPipeline", 0, nullptr,
+                                            {"GPUDevice", "createRenderPipeline", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createRenderPipeline requires a descriptor");
@@ -2855,11 +2830,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline created (id=" << pipelineId << ")" << std::endl;
                             return jsPipeline;
                         }
-                    }});
+                    },
 
                     // device.createComputePipeline(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createComputePipeline", 0, nullptr,
+                                            {"GPUDevice", "createComputePipeline", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createComputePipeline requires a descriptor");
@@ -2916,7 +2890,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (state->verboseLogging) std::cout << "[WebGPU] Compute pipeline created (id=" << pipelineId << ")" << std::endl;
                             return jsPipeline;
                         }
-                    }});
+                    }}));
 
                     // device.createRenderPipelineAsync / createComputePipelineAsync
                     //
@@ -2964,8 +2938,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     }
 
                     // device.createCommandEncoder(descriptor?)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createCommandEncoder", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(device, {
+                        {"GPUDevice", "createCommandEncoder", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             WGPUCommandEncoderDescriptor desc = {};
                             WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &desc);
@@ -2985,8 +2959,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             WGPUCommandEncoder capturedEncoder = encoder;
 
                             // encoder.beginRenderPass(descriptor)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "beginRenderPass", 0, nullptr,
+                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
+                                {"GPUCommandEncoder", "beginRenderPass", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty()) {
                                         state->engine->throwException("beginRenderPass requires a descriptor");
@@ -3152,8 +3126,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
 
                                     // renderPass.setPipeline(pipeline)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setPipeline", 0, nullptr,
+                                    installBindingTable(state->engine, state, bindingTable(jsRenderPass, {
+                                        {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return state->engine->newUndefined();
 
@@ -3171,11 +3145,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.setBindGroup(index, bindGroup, dynamicOffsets?)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setBindGroup", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "setBindGroup", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) {
                                                 state->engine->throwException("setBindGroup requires index and bindGroup");
@@ -3199,11 +3172,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "draw", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "draw", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return state->engine->newUndefined();
 
@@ -3225,11 +3197,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.setVertexBuffer(slot, buffer, offset?, size?)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setVertexBuffer", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "setVertexBuffer", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return state->engine->newUndefined();
 
@@ -3251,11 +3222,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.setIndexBuffer(buffer, format, offset?, size?)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setIndexBuffer", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "setIndexBuffer", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return state->engine->newUndefined();
 
@@ -3281,11 +3251,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "drawIndexed", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "drawIndexed", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return state->engine->newUndefined();
 
@@ -3308,11 +3277,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.drawIndirect(indirectBuffer, indirectOffset)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "drawIndirect", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "drawIndirect", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return state->engine->newUndefined();
 
@@ -3326,11 +3294,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.drawIndexedIndirect(indirectBuffer, indirectOffset)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "drawIndexedIndirect", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "drawIndexedIndirect", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return state->engine->newUndefined();
 
@@ -3344,11 +3311,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.setViewport(x, y, width, height, minDepth, maxDepth)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setViewport", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "setViewport", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 6) return state->engine->newUndefined();
 
@@ -3366,11 +3332,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.setScissorRect(x, y, width, height)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setScissorRect", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "setScissorRect", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 4) return state->engine->newUndefined();
 
@@ -3386,11 +3351,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.setBlendConstant(color)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setBlendConstant", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "setBlendConstant", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return state->engine->newUndefined();
 
@@ -3414,11 +3378,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // renderPass.setStencilReference(reference)
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "setStencilReference", 0, nullptr,
+                                                                            {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
                                         [capturedRenderPassForCommands, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return state->engine->newUndefined();
 
@@ -3429,13 +3392,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    }}));
 
                                     // renderPass.executeBundles(bundles)
                                     // Used by Three.js for mipmap generation
                                     WGPURenderPassEncoder capturedRenderPassForBundles = renderPass;
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "executeBundles", 0, nullptr,
+                                    installBindingTable(state->engine, state, bindingTable(jsRenderPass, {
+                                        {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
                                         [capturedRenderPassForBundles, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty() || !capturedRenderPassForBundles) return state->engine->newUndefined();
 
@@ -3458,13 +3421,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    }}));
 
                                     // renderPass.end() - capture encoder and render pass for cleanup
                                     WGPUCommandEncoder capturedEncoderForEnd = encoderToUse;
                                     WGPURenderPassEncoder capturedRenderPass = renderPass;
-                                    installBindingTable(state->engine, state, jsRenderPass, {
-                                        {"WebGPU", "end", 0, nullptr,
+                                    installBindingTable(state->engine, state, bindingTable(jsRenderPass, {
+                                        {"GPURenderPassEncoder", "end", 0, nullptr,
                                         [capturedEncoderForEnd, capturedRenderPass, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (capturedRenderPass) {
                                                 wgpuRenderPassEncoderEnd(capturedRenderPass);
@@ -3486,18 +3449,18 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                             }
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    }}));
 
                                     // Resume frame tracking
                                     state->engine->resumeFrameTracking();
 
                                     return jsRenderPass;
                                 }
-                            }});
+                            }}));
 
                             // encoder.beginComputePass(descriptor?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "beginComputePass", 0, nullptr,
+                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
+                                {"GPUCommandEncoder", "beginComputePass", 0, nullptr,
                                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (!state->jsCommandEncoder) {
                                         state->engine->throwException("No command encoder");
@@ -3510,8 +3473,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     auto jsComputePass = state->engine->newObject();
 
                                     // computePass.setPipeline(pipeline)
-                                    installBindingTable(state->engine, state, jsComputePass, {
-                                        {"WebGPU", "setPipeline", 0, nullptr,
+                                    installBindingTable(state->engine, state, bindingTable(jsComputePass, {
+                                        {"GPUComputePassEncoder", "setPipeline", 0, nullptr,
                                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return state->engine->newUndefined();
                                             WGPUComputePipeline pipeline = (WGPUComputePipeline)state->engine->getPrivateData(args[0]);
@@ -3520,11 +3483,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                             }
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // computePass.setBindGroup(index, bindGroup, dynamicOffsets?)
-                                    installBindingTable(state->engine, state, jsComputePass, {
-                                        {"WebGPU", "setBindGroup", 0, nullptr,
+                                                                            {"GPUComputePassEncoder", "setBindGroup", 0, nullptr,
                                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return state->engine->newUndefined();
                                             uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
@@ -3534,11 +3496,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                             }
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // computePass.dispatchWorkgroups(countX, countY?, countZ?)
-                                    installBindingTable(state->engine, state, jsComputePass, {
-                                        {"WebGPU", "dispatchWorkgroups", 0, nullptr,
+                                                                            {"GPUComputePassEncoder", "dispatchWorkgroups", 0, nullptr,
                                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty()) return state->engine->newUndefined();
                                             uint32_t countX = (uint32_t)state->engine->toNumber(args[0]);
@@ -3549,11 +3510,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                             }
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    },
 
                                     // computePass.end()
-                                    installBindingTable(state->engine, state, jsComputePass, {
-                                        {"WebGPU", "end", 0, nullptr,
+                                                                            {"GPUComputePassEncoder", "end", 0, nullptr,
                                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                             if (state->jsComputePass) {
                                                 wgpuComputePassEncoderEnd(state->jsComputePass);
@@ -3562,16 +3522,16 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                             }
                                             return state->engine->newUndefined();
                                         }
-                                    }});
+                                    }}));
 
                                     if (state->verboseLogging) std::cout << "[WebGPU] Compute pass started" << std::endl;
                                     return jsComputePass;
                                 }
-                            }});
+                            }}));
 
                             // encoder.copyBufferToBuffer(source, sourceOffset, destination, destinationOffset, size)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "copyBufferToBuffer", 0, nullptr,
+                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
+                                {"GPUCommandEncoder", "copyBufferToBuffer", 0, nullptr,
                                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.size() < 5 || !state->jsCommandEncoder) return state->engine->newUndefined();
 
@@ -3586,11 +3546,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // encoder.copyBufferToTexture(source, destination, copySize)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "copyBufferToTexture", 0, nullptr,
+                                                            {"GPUCommandEncoder", "copyBufferToTexture", 0, nullptr,
                                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
 
@@ -3638,11 +3597,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // encoder.copyTextureToBuffer(source, destination, copySize)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "copyTextureToBuffer", 0, nullptr,
+                                                            {"GPUCommandEncoder", "copyTextureToBuffer", 0, nullptr,
                                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
 
@@ -3708,11 +3666,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // encoder.copyTextureToTexture(source, destination, copySize)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "copyTextureToTexture", 0, nullptr,
+                                                            {"GPUCommandEncoder", "copyTextureToTexture", 0, nullptr,
                                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.size() < 3 || !state->jsCommandEncoder) return state->engine->newUndefined();
 
@@ -3777,11 +3734,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // encoder.clearBuffer(buffer, offset?, size?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "clearBuffer", 0, nullptr,
+                                                            {"GPUCommandEncoder", "clearBuffer", 0, nullptr,
                                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty() || !state->jsCommandEncoder) return state->engine->newUndefined();
 
@@ -3794,11 +3750,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     }
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // encoder.finish(descriptor?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "finish", 0, nullptr,
+                                                            {"GPUCommandEncoder", "finish", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     // Use captured encoder for this specific command encoder
                                     WGPUCommandEncoder encoderToFinish = capturedEncoder;
@@ -3859,18 +3814,18 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                     return jsCommandBuffer;
                                 }
-                            }});
+                            }}));
 
                             // Resume frame tracking now that encoder wrapper is created
                             state->engine->resumeFrameTracking();
 
                             return jsEncoder;
                         }
-                    }});
+                    }}));
 
                     // device.createTexture(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createTexture", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(device, {
+                        {"GPUDevice", "createTexture", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createTexture requires a descriptor");
@@ -3976,8 +3931,8 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             // We store the textureId to look up the texture later since callbacks don't have 'this'
                             state->engine->setProperty(jsTexture, "_createViewTextureId", state->engine->newNumber((double)textureId));
 
-                            installBindingTable(state->engine, state, jsTexture, {
-                                {"WebGPU", "createView", 0, nullptr,
+                            installBindingTable(state->engine, state, bindingTable(jsTexture, {
+                                {"GPUTexture", "createView", 0, nullptr,
                                 [textureId, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     // Look up texture from registry using captured textureId
                                     auto it = state->textureRegistry.find(textureId);
@@ -4110,26 +4065,25 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
                                     return jsView;
                                 }
-                            }});
+                            },
 
                             // texture.destroy()
-                            installBindingTable(state->engine, state, jsTexture, {
-                                {"WebGPU", "destroy", 0, nullptr,
+                                                            {"GPUTexture", "destroy", 0, nullptr,
                                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     // TODO: Get texture from context and destroy
                                     // Would need to look up by ID and call wgpuTextureDestroy
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            }}));
 
                             if (state->verboseLogging) std::cout << "[WebGPU] Created texture " << width << "x" << height << " format=" << formatStr << " (id=" << textureId << ")" << std::endl;
                             return jsTexture;
                         }
-                    }});
+                    }}));
 
                     // device.createSampler(descriptor?)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createSampler", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(device, {
+                        {"GPUDevice", "createSampler", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             WGPUSamplerDescriptor samplerDesc = {};
 
@@ -4225,11 +4179,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (state->verboseLogging) std::cout << "[WebGPU] Created sampler" << std::endl;
                             return jsSampler;
                         }
-                    }});
+                    },
 
                     // device.createBindGroupLayout(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createBindGroupLayout", 0, nullptr,
+                                            {"GPUDevice", "createBindGroupLayout", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createBindGroupLayout requires a descriptor");
@@ -4357,11 +4310,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (state->verboseLogging) std::cout << "[WebGPU] Created bind group layout with " << entryCount << " entries" << std::endl;
                             return jsLayout;
                         }
-                    }});
+                    },
 
                     // device.createBindGroup(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createBindGroup", 0, nullptr,
+                                            {"GPUDevice", "createBindGroup", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createBindGroup requires a descriptor");
@@ -4501,11 +4453,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (state->verboseLogging) std::cout << "[WebGPU] Created bind group with " << entryCount << " entries" << std::endl;
                             return jsBindGroup;
                         }
-                    }});
+                    },
 
                     // device.createPipelineLayout(descriptor)
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createPipelineLayout", 0, nullptr,
+                                            {"GPUDevice", "createPipelineLayout", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createPipelineLayout requires a descriptor");
@@ -4538,12 +4489,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (state->verboseLogging) std::cout << "[WebGPU] Created pipeline layout with " << layoutCount << " bind group layouts" << std::endl;
                             return jsLayout;
                         }
-                    }});
+                    },
 
                     // device.createTextureView(texture, descriptor?) - Non-standard helper
                     // Workaround because texture.createView() can't easily access 'this'
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createTextureView", 0, nullptr,
+                                            {"GPUDevice", "createTextureView", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createTextureView requires a texture");
@@ -4656,12 +4606,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             if (state->verboseLogging) std::cout << "[WebGPU] Created texture view" << std::endl;
                             return jsView;
                         }
-                    }});
+                    },
 
                     // device.createRenderBundleEncoder(descriptor)
                     // Used by Three.js for mipmap generation
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "createRenderBundleEncoder", 0, nullptr,
+                                            {"GPUDevice", "createRenderBundleEncoder", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createRenderBundleEncoder requires a descriptor");
@@ -4718,19 +4667,18 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             WGPURenderBundleEncoder capturedEncoder = bundleEncoder;
 
                             // renderBundleEncoder.setPipeline(pipeline)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "setPipeline", 0, nullptr,
+                            installBindingTable(state->engine, state, bindingTable(jsEncoder, {
+                                {"GPURenderBundleEncoder", "setPipeline", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty()) return state->engine->newUndefined();
                                     WGPURenderPipeline pipeline = (WGPURenderPipeline)state->engine->getPrivateData(args[0]);
                                     wgpuRenderBundleEncoderSetPipeline(capturedEncoder, pipeline);
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // renderBundleEncoder.setVertexBuffer(slot, buffer, offset?, size?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "setVertexBuffer", 0, nullptr,
+                                                            {"GPURenderBundleEncoder", "setVertexBuffer", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.size() < 2) return state->engine->newUndefined();
                                     uint32_t slot = (uint32_t)state->engine->toNumber(args[0]);
@@ -4740,11 +4688,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     wgpuRenderBundleEncoderSetVertexBuffer(capturedEncoder, slot, buffer, offset, size);
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // renderBundleEncoder.setIndexBuffer(buffer, format, offset?, size?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "setIndexBuffer", 0, nullptr,
+                                                            {"GPURenderBundleEncoder", "setIndexBuffer", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.size() < 2) return state->engine->newUndefined();
                                     WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
@@ -4755,11 +4702,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     wgpuRenderBundleEncoderSetIndexBuffer(capturedEncoder, buffer, format, offset, size);
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // renderBundleEncoder.setBindGroup(index, bindGroup, dynamicOffsets?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "setBindGroup", 0, nullptr,
+                                                            {"GPURenderBundleEncoder", "setBindGroup", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.size() < 2) return state->engine->newUndefined();
                                     uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
@@ -4779,11 +4725,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     wgpuRenderBundleEncoderSetBindGroup(capturedEncoder, index, bindGroup, dynamicOffsets.size(), dynamicOffsets.data());
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // renderBundleEncoder.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "draw", 0, nullptr,
+                                                            {"GPURenderBundleEncoder", "draw", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty()) return state->engine->newUndefined();
                                     uint32_t vertexCount = (uint32_t)state->engine->toNumber(args[0]);
@@ -4793,11 +4738,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     wgpuRenderBundleEncoderDraw(capturedEncoder, vertexCount, instanceCount, firstVertex, firstInstance);
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // renderBundleEncoder.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "drawIndexed", 0, nullptr,
+                                                            {"GPURenderBundleEncoder", "drawIndexed", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty()) return state->engine->newUndefined();
                                     uint32_t indexCount = (uint32_t)state->engine->toNumber(args[0]);
@@ -4808,11 +4752,10 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     wgpuRenderBundleEncoderDrawIndexed(capturedEncoder, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
                                     return state->engine->newUndefined();
                                 }
-                            }});
+                            },
 
                             // renderBundleEncoder.finish(descriptor?)
-                            installBindingTable(state->engine, state, jsEncoder, {
-                                {"WebGPU", "finish", 0, nullptr,
+                                                            {"GPURenderBundleEncoder", "finish", 0, nullptr,
                                 [capturedEncoder, state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                                     WGPURenderBundleDescriptor desc = {};
                                     WGPURenderBundle bundle = wgpuRenderBundleEncoderFinish(capturedEncoder, &desc);
@@ -4824,17 +4767,17 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                     if (state->verboseLogging) std::cout << "[WebGPU] Render bundle finished" << std::endl;
                                     return jsBundle;
                                 }
-                            }});
+                            }}));
 
                             if (state->verboseLogging) std::cout << "[WebGPU] Created render bundle encoder" << std::endl;
                             return jsEncoder;
                         }
-                    }});
+                    }}));
 
                     // device.pushErrorScope(filter) - Push an error scope for validation/OOM/internal errors
                     // Used by Three.js for error handling during pipeline creation
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "pushErrorScope", 0, nullptr,
+                    installBindingTable(state->engine, state, bindingTable(device, {
+                        {"GPUDevice", "pushErrorScope", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             const std::string filterName = args.empty() ? "validation" : state->engine->toString(args[0]);
                             WGPUErrorFilter filter;
@@ -4851,12 +4794,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                             }
                             return state->engine->newUndefined();
                         }
-                    }});
+                    },
 
                     // device.popErrorScope() - Pop an error scope and return Promise<GPUError | null>
                     // Returns Promise<GPUError | null>
-                    installBindingTable(state->engine, state, device, {
-                        {"WebGPU", "popErrorScope", 0, nullptr,
+                                            {"GPUDevice", "popErrorScope", 0, nullptr,
                         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                             if (state->verboseLogging) {
                                 std::cout << "[WebGPU] popErrorScope" << std::endl;
@@ -4901,7 +4843,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                                 + ", message: " + jsStringLiteral(errorMessage) + " }";
                             return resolvedPromise(state, errorExpression, "popErrorScope-observed");
                         }
-                    }});
+                    }}));
 
                     // device.lost - Promise that resolves when the device is lost
                     // Required by Three.js WebGPU renderer during init
@@ -4916,15 +4858,15 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     // await on a non-Promise just returns the value
                     return device;
                 }
-            }});
+            }}));
 
             // adapter.features - Set-like object that is also iterable
             // We use an array for iteration support with a has() method added
             // Dawn supports indirect-first-instance on Metal which is required for indirect draws
             // with non-zero firstInstance values
             auto features = state->engine->newArray(0);
-            installBindingTable(state->engine, state, features, {
-                {"WebGPU", "has", 0, nullptr,
+            installBindingTable(state->engine, state, bindingTable(features, {
+                {"GPUSupportedFeatures", "has", 0, nullptr,
                 [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
                     if (args.empty()) return state->engine->newBoolean(false);
                     std::string featureName = state->engine->toString(args[0]);
@@ -4943,7 +4885,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
                     if (feature == static_cast<WGPUFeatureName>(0)) return state->engine->newBoolean(false);
                     return state->engine->newBoolean(wgpuAdapterHasFeature(state->adapter, feature) != 0);
                 }
-            }});
+            }}));
             state->engine->setProperty(features, "size", state->engine->newNumber(1));
             state->engine->setProperty(adapter, "features", features);
 
@@ -4969,15 +4911,15 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
             // This works whether we return a Promise or the adapter directly
             return adapter;
         }
-    }});
+    }}));
 
     // navigator.gpu.getPreferredCanvasFormat()
-    installBindingTable(state->engine, state, gpuObject, {
-        {"WebGPU", "getPreferredCanvasFormat", 0, nullptr,
+    installBindingTable(state->engine, state, bindingTable(gpuObject, {
+        {"GPU", "getPreferredCanvasFormat", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             return state->engine->newString(formatToString(state->surfaceFormat));
         }
-    }});
+    }}));
 
     // Set navigator.gpu
     engine->setProperty(navigatorHandle, "gpu", gpuObject);
@@ -5027,7 +4969,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     // Note: PNG/JPEG supported via stb_image. WebP supported via libwebp (when MYSTRAL_HAS_WEBP defined).
 
     // Native helper that decodes image data synchronously
-    installBindingTable(state->engine, state, state->engine->getGlobal(), {
+    installBindingTable(state->engine, state, bindingTable(state->engine->getGlobal(), {
         {"WebGPU", "__decodeImageData", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             if (args.empty()) {
@@ -5106,7 +5048,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 
             return result;
         }
-    }});
+    }}));
 
     // JavaScript polyfill for createImageBitmap
     const char* imageBitmapPolyfill = R"(
@@ -5205,7 +5147,7 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // Mystral.loadGLTF() - deprecated native GLTF/GLB file loader
     // =========================================================================
     // Default builds intentionally do not expose this; use upstream Three.js GLTFLoader.
-    installBindingTable(state->engine, state, mystralNamespace, {
+    installBindingTable(state->engine, state, bindingTable(mystralNamespace, {
         {"WebGPU", "loadGLTF", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             if (args.empty()) {
@@ -5437,7 +5379,7 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
 
             return result;
         }
-    }});
+    }}));
 #endif
 
     engine->setGlobalProperty("Mystral", mystralNamespace);
@@ -5446,7 +5388,7 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // Native helper for offscreen canvas getContext('2d')
     // Called by the JS closure created in createElement('canvas')
     // ========================================================================
-    installBindingTable(state->engine, state, state->engine->getGlobal(), {
+    installBindingTable(state->engine, state, bindingTable(state->engine->getGlobal(), {
         {"WebGPU", "__nativeGetContext2D", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             if (args.size() < 2) {
@@ -5496,7 +5438,7 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
             state->engine->protect(canvas->context2d);
             return canvas->context2d;
         }
-    }});
+    },
 
     // ========================================================================
     // Global createOffscreenCanvas2D(width, height) helper
@@ -5504,8 +5446,7 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     // This is easier to use than document.createElement('canvas').getContext('2d')
     // since it handles dimensions correctly
     // ========================================================================
-    installBindingTable(state->engine, state, state->engine->getGlobal(), {
-        {"WebGPU", "createOffscreenCanvas2D", 0, nullptr,
+            {"WebGPU", "createOffscreenCanvas2D", 0, nullptr,
         [state](BindingsState* ctx, const std::vector<js::JSValueHandle>& args) {
             int width = 800;
             int height = 600;
@@ -5529,18 +5470,18 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
             state->engine->setProperty(canvasWrapper, "_context", ctx2d);
 
             // getContext('2d') returns the pre-created context
-            installBindingTable(state->engine, state, canvasWrapper, {
-                {"WebGPU", "getContext", 0, nullptr,
+            installBindingTable(state->engine, state, bindingTable(canvasWrapper, {
+                {"HTMLCanvasElement", "getContext", 0, nullptr,
                 [state](BindingsState* c, const std::vector<js::JSValueHandle>& a) {
                     // Get the stored context from the global (we need a way to access it)
                     // For now, return null and let callers use the _context directly
                     return state->engine->newNull();
                 }
-            }});
+            }}));
 
             return canvasWrapper;
         }
-    }});
+    }}));
 
 
     if (state->verboseLogging) {

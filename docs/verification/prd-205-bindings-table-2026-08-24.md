@@ -1,155 +1,134 @@
-# PRD-205 — WebGPU bindings table and explicit state
+# PRD-205 — WebGPU bindings-table closure
 
 Date: 2026-08-24
-Lane: `lane-205`
-Status: **verified on Linux desktop; desktop multitouch remains the registry-declared host block**
+Lane: linchpin/prd-205-closure
+Status: verified on Linux desktop; mobile execution unverified
 
-## Implementation
+## Repairs
 
-- `packages/runtime-native/src/webgpu/bindings.cpp` contains 89 table-dispatch call sites and 91
-  registration rows, including the canvas table and repeated methods on different WebGPU objects.
-  `installWebGPUBindingSurfaces` is now a wrapper; the migrated registrations live in the adjacent
-  table unit and dispatch through `installBindingTable`.
-- The contract test enumerates the migrated DOM, GPU, adapter, device, queue, command encoder,
-  render pass, compute pass, render bundle, and global families. It retains the supplementary
-  71/71 registration-name and 43/43 error-string census.
-- `BindingsState` owns blend-state storage. Feature arrays are automatic per-call state in
-  `context.cpp`. The native reentrancy executable creates two real `Runtime` instances, interleaves
-  calls, and verifies markers, preferred formats, and buffers remain isolated.
-- GPU video fallback now requires an owning binding state. The public factory has an explicit
-  four-argument signature, the CLI passes the runtime state, and missing state is rejected before
-  callback registration.
-- Biome no longer ignores runtime-native `.js` or `.mjs` files package-wide. Generated, build,
-  vendor, artifact, and JSON paths remain excluded individually; the package check inspected 174
-  files with no errors.
+1. registration_table.cpp:37 now dispatches each row through its row-owned destination
+   resolver. bindingTable(owner, rows) installs the resolver, while the shared dispatcher
+   rejects a missing, null, or undefined destination before calling setProperty. Mixed-surface
+   rows clear their resolver during table construction and therefore fail closed. The installer
+   no longer accepts a separate owner, so a surface cannot silently use another table's owner.
+   Adjacent registrations for the same owner are consolidated into one table.
+2. wrapper_factories.cpp:25 routes texture createView/destroy and render/compute pipeline
+   getBindGroupLayout through the same table dispatcher. The file has no direct newFunction
+   WebGPU registration path left.
+3. webgpu-bindings-contract.test.mjs:289 inventories exact (surface, name) pairs. The
+   regression mutation deleting GPUComputePassEncoder.setPipeline fails the census, proving that
+   the compute-pass family is not counted by method name alone. The final census is 86/86 pairs and
+   43/43 error strings.
+4. bindings.cpp was consolidated instead of relaxing the size criterion. The final mandated
+   subtotal is net-negative against the actual pre-lane baseline.
 
-## Size check
+## Red/green evidence
 
-```text
-baseline packages/runtime-native/src/webgpu/bindings.cpp: 6190 lines
-current  packages/runtime-native/src/webgpu/bindings.cpp: 6275 lines
-registration_table.h + bindings_state.h: 206 lines
-pnpm tsx scripts/count-loc.ts: exit 0
-suggested framework normalised baseline: 432 (current baseline 441)
-platformer template LOC: 1891
-```
+The focused contract/trace command was run before the repair and produced the required red
+baseline:
 
-## Red/green controls
+    pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+      tests/webgpu-bindings-contract.test.mjs tests/webgpu-bindings-trace.test.mjs
+    Test Files  2 failed (2)
+    Tests       5 failed | 12 passed (17)
 
-Each temporary mutation was restored before the final gates:
+The five red assertions covered row-owned destinations, migrated surface/name pairs, the shared
+wrapper-factory path, render-pass trace coverage, and the supplementary census. The LOC red
+observation was:
 
-- Deleting the `GPUQueue.submit` row made the contract test fail with `queue.submit must be a
-  table row`.
-- Making `blendStates` static or a required feature array static made the state contract fail.
-- Removing the missing-state video guard made its source contract fail.
-- Mutating one stored post-repair trace result made the trace test fail on the pre/post deep
-  comparison.
-- Adding invalid syntax to the covered `.mjs` fixture made Biome exit 1 with three parse errors.
+    prior lane bindings.cpp: 6275
+    new-header accounting:    287
+    prior subtotal:          6562
+    pre-lane baseline:       6510
+    net:                       +52
 
-Focused green result:
+After the four repairs and the trace extension, the focused command was green:
 
-```text
-Test Files  3 passed (3)
-Tests       34 passed (34)
-```
+    Test Files  2 passed (2)
+    Tests       17 passed (17)
 
-## JavaScript-side call-trace parity
+The exact trace regression was also red before extension (trace must include
+render-pass.setPipeline) and green after regeneration:
 
-`tests/fixtures/webgpu-bindings-call-trace.js` exercises 32 representative JS-visible calls. The
-pre-repair executable is `/tmp/mystral-prd205-pre-repair`; the final rebuilt executable is
-`packages/runtime-native/build/tn-linux/mystral`. The harness records surface/name, argument shape,
-and exactly one result or error shape for every call.
+    pre/post trace matches: 62 calls, 52 results, 10 errors
 
-```text
-pre/post trace matches stored fixture: 32 calls
-supplementary registration census: 71/71
-supplementary error census: 43/43
-```
+## LOC accounting
+
+The baseline command and final command were measured directly; the criterion remains the
+bindings.cpp plus new-header subtotal:
+
+    git show efa71954:packages/runtime-native/src/webgpu/bindings.cpp | wc -l
+    6510
+
+    wc -l packages/runtime-native/src/webgpu/bindings.cpp \
+      packages/runtime-native/include/mystral/webgpu/bindings.h \
+      packages/runtime-native/include/mystral/webgpu/registration_table.h \
+      packages/runtime-native/include/mystral/webgpu/wrapper_factories.h \
+      packages/runtime-native/src/webgpu/bindings_state.h
+      6216 packages/runtime-native/src/webgpu/bindings.cpp
+        56 packages/runtime-native/include/mystral/webgpu/bindings.h
+        40 packages/runtime-native/include/mystral/webgpu/registration_table.h
+        25 packages/runtime-native/include/mystral/webgpu/wrapper_factories.h
+       166 packages/runtime-native/src/webgpu/bindings_state.h
+      6503 total
+
+Arithmetic: 6216 + 56 + 40 + 25 + 166 = 6503; 6503 - 6510 = -7 lines.
+
+The repository LOC command also passed:
+
+    pnpm tsx scripts/count-loc.ts: exit 0
+    suggested framework normalised baseline: 432 (current baseline 441)
+    platformer template LOC: 1891
+
+## Trace fixtures
+
+webgpu-bindings-call-trace.js now covers every migrated family, including DOM, canvas, GPU,
+adapter/features, device, queue, buffer, texture, command encoder, render pass, compute pass,
+render-bundle encoder, and global helpers. It preserves argument shape and records exactly one
+result or error shape per call. The pre-repair executable was
+/tmp/mystral-prd205-pre-repair; the final executable was
+packages/runtime-native/build/tn-linux/mystral. The stored pre/post fixtures compare exactly.
 
 ## Native proof
 
-```sh
-cd packages/runtime-native
-cmake -S . -B build/tn-linux -DTN_ENABLE_VIDEO=OFF
-cmake --build build/tn-linux --target mystral threenative-webgpu-bindings-reentrancy-test -j2
-./build/tn-linux/threenative-webgpu-bindings-reentrancy-test
-```
+    pnpm native:build: exit 0
+    native WebGPU bindings reentrancy passed
 
-Result: the build completed and the executable printed `native WebGPU bindings reentrancy passed`.
+The reentrancy executable ran on an NVIDIA GeForce RTX 2080 through Vulkan. The desktop gate was
+also green with the host's required dummy audio driver:
 
-The video seam proof was built with `-DTN_ENABLE_VIDEO=ON` and printed:
-
-```text
-[VideoRecorder] GPU fallback requires an owning WebGPU bindings state
-native video recorder missing-state guard passed
-```
+    SDL_AUDIODRIVER=dummy pnpm native:verify:desktop: exit 0
+    desktop audio decodeAudioData Promise proof passed on V8
+    desktop core gate passed: 300 frames, 1280x720
+    desktop physics actuation bindings proof passed
+    desktop physics playtest proof passed: 14 assertions
+    desktop physics query proof passed
 
 ## Browser/native conformance
 
-Browser reference:
+The browser reference capture completed with:
 
-```sh
-cd packages/runtime-native
-sh ../../scripts/xvfb.sh node conformance/browser-reference/capture.mjs \
-  --registry conformance/registry.json --out artifacts/conformance/web
-```
+    target: web
+    pass: 68, fail: 0, blocked: 0
 
-Result: `pass: 68`, `fail: 0`, `blocked: 0`.
+The named desktop comparison completed with:
 
-Final desktop comparison:
+    target: desktop
+    pass: 67, fail: 0, blocked: 1
+    report: packages/runtime-native/artifacts/conformance/prd205-desktop-final/report.json
 
-```sh
-cd packages/runtime-native
-sh ../../scripts/xvfb.sh node conformance/run-conformance.mjs \
-  --target desktop --reference artifacts/conformance/web \
-  --out artifacts/conformance/prd205-desktop-final
-```
-
-Result: `pass: 67`, `fail: 0`, `blocked: 1`. The blocked row is the existing `90-multitouch-input`
-desktop exclusion: this Xvfb host has no evdev input backend. Every executable rendering row ran
-300 frames with no failure. The report observed NVIDIA GeForce RTX 2080 through Vulkan.
-
-## Desktop verification
-
-The first run exposed the host ALSA device as `Host is down`. The same gate passed with the explicit
-headless audio driver required by this Linux host:
-
-```sh
-cd packages/runtime-native
-SDL_AUDIODRIVER=dummy pnpm native:verify:desktop
-```
-
-Results:
-
-```text
-desktop audio decodeAudioData Promise proof passed on V8
-desktop core gate passed: 300 frames, 1280x720
-desktop physics actuation bindings proof passed
-desktop physics playtest proof passed: 14 assertions
-desktop physics query proof passed
-```
-
-Mobile execution is unavailable on this host: neither `adb` nor `xcrun` is installed, so no Android
-device/emulator or iOS simulator/physical-device result is claimed.
+The one blocked row is the registry-declared 90-multitouch-input host exclusion; the Xvfb host
+has no evdev input backend. No Android or iOS execution is claimed: neither adb nor xcrun is
+installed on this host.
 
 ## Repository gates
 
-Final results after this document was updated:
+    pnpm typecheck && pnpm lint && pnpm test: exit 0
+      typecheck: Scope 16 of 17 workspace projects
+      lint: 380 warnings, no errors
+      test: 198 files passed; 1883 tests passed
 
-```sh
-pnpm typecheck && pnpm lint && pnpm test
-pnpm budgets
-pnpm quality
-git diff --check
-```
-
-```text
-pnpm typecheck: exit 0; Scope: 16 of 17 workspace projects
-pnpm lint: exit 0; Checked 1113 files; Found 380 warnings; no errors
-pnpm test: exit 0; 198 files passed; 1883 tests passed
-runtime-native package suite: 57 files passed; 386 tests passed; 33 skipped
-runtime-native Biome check: 174 files; 89 warnings; no errors
-pnpm budgets: exit 0; 18376/15000 framework LOC review trigger, no hard budget failure
-pnpm quality: exit 0; 70 findings (11 new, 9 grew, 50 inherited)
-git diff --check: exit 0
-```
+    runtime-native unit suite: 57 files passed; 388 tests passed; 33 skipped
+    pnpm budgets: exit 0; 18376/15000 framework LOC review trigger, no hard failure
+    pnpm quality: exit 0; 70 findings (11 new, 9 grew, 50 inherited)
+    git diff --check: exit 0

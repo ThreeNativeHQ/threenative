@@ -8,12 +8,20 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFileSync(join(root, path), "utf8");
 
 function collectJsVisibleRegistrations(source) {
-  return new Set([
-    ...[...source.matchAll(/\{"(?:WebGPU|GPUCanvasContext)",\s*"([^"]+)"/gu)].map(
-      (match) => match[1],
-    ),
-    ...[...source.matchAll(/newFunction\(\s*"([^"]+)"/gu)].map((match) => match[1]),
+  const surfaces =
+    "Document|HTMLElement|HTMLCanvasElement|GPUCanvasContext|GPU|GPUAdapter|GPUSupportedFeatures|GPUDevice|GPUQueue|GPUBuffer|GPUCommandEncoder|GPURenderPassEncoder|GPUComputePassEncoder|GPURenderBundleEncoder|GPUTexture|GPURenderPipeline|GPUComputePipeline|WebGPU";
+  const registrations = new Set([
+    ...[
+      ...source.matchAll(
+        new RegExp(`\\{"(${surfaces})",\\s*"([^"]+)"`, "gu"),
+      ),
+    ].map((match) => `${match[1]}.${match[2]}`),
   ]);
+  if (source.includes('const char* pipelineSurface = renderPipeline ? "GPURenderPipeline" : "GPUComputePipeline"')) {
+    registrations.add("GPURenderPipeline.getBindGroupLayout");
+    registrations.add("GPUComputePipeline.getBindGroupLayout");
+  }
+  return registrations;
 }
 
 function assertCallTrace(trace, side) {
@@ -40,26 +48,33 @@ test("pre-refactor and post-refactor JS call traces are identical", () => {
   assertCallTrace(post, "post-refactor");
   assert.deepEqual(post, pre);
 
-  const families = new Set(pre.map((entry) => entry.surface));
-  for (const family of [
-    "Document",
-    "HTMLCanvasElement",
-    "GPUCanvasContext",
-    "GPU",
-    "GPUAdapter",
-    "GPUDevice",
-    "GPUQueue",
-    "GPUBuffer",
-    "GPUCommandEncoder",
-    "WebGPU",
-  ]) {
-    assert.ok(families.has(family), `trace must include ${family}`);
+  const calls = new Set(pre.map((entry) => `${entry.surface}.${entry.name}`));
+  const requiredFamilies = {
+    "render-pass": ["setPipeline", "setBindGroup", "draw", "end"],
+    "compute-pass": ["setPipeline", "setBindGroup", "dispatchWorkgroups", "end"],
+    "render-bundle": ["setPipeline", "setVertexBuffer", "setBindGroup", "draw", "finish"],
+  };
+  for (const [family, methods] of Object.entries(requiredFamilies)) {
+    for (const method of methods) {
+      assert.ok(
+        calls.has(
+          `${
+            family === "render-pass"
+              ? "GPURenderPassEncoder"
+              : family === "compute-pass"
+                ? "GPUComputePassEncoder"
+                : "GPURenderBundleEncoder"
+          }.${method}`,
+        ),
+        `trace must include ${family}.${method}`,
+      );
+    }
   }
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /function record\(/u);
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /TN_WEBGPU_CALL_TRACE:/u);
 });
 
-test("the supplementary 71/71 registration and 43/43 error census stays green", () => {
+test("the supplementary surface/name registration and 43/43 error census stays green", () => {
   const trace = JSON.parse(read("tests/fixtures/webgpu-bindings-trace.json"));
   const source = [
     read("src/webgpu/bindings.cpp"),
@@ -72,6 +87,6 @@ test("the supplementary 71/71 registration and 43/43 error census stays green", 
   for (const error of trace.errors) {
     assert.ok(source.includes(error), `missing JS-visible error trace: ${error}`);
   }
-  assert.equal(registrations.length, 71);
+  assert.equal(registrations.length, trace.registrations.length);
   assert.equal(trace.errors.length, 43);
 });

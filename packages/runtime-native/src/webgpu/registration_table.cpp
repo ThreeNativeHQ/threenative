@@ -1,6 +1,9 @@
 #include "mystral/webgpu/registration_table.h"
 
 #include <string>
+#include <string_view>
+#include <utility>
+
 #include "bindings_state.h"
 
 namespace mystral::webgpu {
@@ -34,14 +37,39 @@ js::JSValueHandle dispatch(
 
 }  // namespace
 
+BindingTable bindingTable(
+    js::JSValueHandle owner,
+    std::initializer_list<BindingRegistration> registrations) {
+    BindingTable table;
+    table.registrations.reserve(registrations.size());
+    const char* expectedSurface =
+        registrations.size() == 0 ? nullptr : registrations.begin()->surface;
+    for (auto registration : registrations) {
+        if (expectedSurface == nullptr || registration.surface == nullptr ||
+            std::string_view(registration.surface) != expectedSurface) {
+            registration.owner = {};
+        } else {
+            registration.owner = [owner](BindingsState*) { return owner; };
+        }
+        table.registrations.push_back(std::move(registration));
+    }
+    return table;
+}
+
 void installBindingTable(
     js::Engine* engine,
     BindingsState* state,
-    js::JSValueHandle owner,
-    const BindingRegistration* registrations,
-    size_t count) {
-    for (size_t index = 0; index < count; ++index) {
-        const auto& registration = registrations[index];
+    const BindingTable& table) {
+    for (const auto& registration : table.registrations) {
+        if (!registration.owner) {
+            fail(engine, "WebGPU binding row has no destination");
+            continue;
+        }
+        const auto owner = registration.owner(state);
+        if (engine->isNull(owner) || engine->isUndefined(owner)) {
+            fail(engine, "WebGPU binding row resolved an invalid destination");
+            continue;
+        }
         engine->setProperty(
             owner,
             registration.name,
@@ -53,14 +81,6 @@ void installBindingTable(
                     return dispatch(engine, state, registration, args);
                 }));
     }
-}
-
-void installBindingTable(
-    js::Engine* engine,
-    BindingsState* state,
-    js::JSValueHandle owner,
-    std::initializer_list<BindingRegistration> registrations) {
-    installBindingTable(engine, state, owner, registrations.begin(), registrations.size());
 }
 
 }  // namespace mystral::webgpu

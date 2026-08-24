@@ -28,12 +28,15 @@ function resultShape(value) {
 function record(surface, name, args, call) {
   const entry = { surface, name, args: args.map(argumentShape) };
   console.log(`TN_WEBGPU_CALL:${surface}.${name}`);
+  let value;
   try {
-    entry.result = resultShape(call());
+    value = call();
+    entry.result = resultShape(value);
   } catch (error) {
     entry.error = String(error?.message ? error.message : error);
   }
   trace.push(entry);
+  return value;
 }
 
 const canvas = document.getElementById("canvas");
@@ -75,13 +78,79 @@ record("GPUDevice", "createRenderPipeline", [], () => device.createRenderPipelin
 record("GPUDevice", "createComputePipeline", [], () => device.createComputePipeline());
 const encoder = device.createCommandEncoder();
 record("GPUDevice", "createCommandEncoder", [], () => encoder);
-record("GPUCommandEncoder", "beginRenderPass", [], () => encoder.beginRenderPass());
-record("GPUCommandEncoder", "beginComputePass", [], () => {
-  const pass = encoder.beginComputePass();
-  pass.end();
-  return pass;
-});
+record("GPUCanvasContext", "configure", [{ format }], () => context.configure({ format }));
+const currentTexture = record("GPUCanvasContext", "getCurrentTexture", [], () =>
+  context.getCurrentTexture(),
+);
+const currentView = currentTexture
+  ? record("GPUTexture", "createView", [], () => currentTexture.createView())
+  : undefined;
+const renderPass = currentView
+  ? record(
+      "GPUCommandEncoder",
+      "beginRenderPass",
+      [{ colorAttachments: [{ view: currentView }] }],
+      () =>
+        encoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: currentView,
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: "clear",
+              storeOp: "store",
+            },
+          ],
+        }),
+    )
+  : undefined;
+if (renderPass) {
+  record("GPURenderPassEncoder", "setPipeline", [], () => renderPass.setPipeline());
+  record("GPURenderPassEncoder", "setBindGroup", [], () => renderPass.setBindGroup());
+  record("GPURenderPassEncoder", "draw", [], () => renderPass.draw());
+  record("GPURenderPassEncoder", "setVertexBuffer", [], () => renderPass.setVertexBuffer());
+  record("GPURenderPassEncoder", "setIndexBuffer", [], () => renderPass.setIndexBuffer());
+  record("GPURenderPassEncoder", "drawIndexed", [], () => renderPass.drawIndexed());
+  record("GPURenderPassEncoder", "drawIndirect", [], () => renderPass.drawIndirect());
+  record("GPURenderPassEncoder", "drawIndexedIndirect", [], () => renderPass.drawIndexedIndirect());
+  record("GPURenderPassEncoder", "setViewport", [], () => renderPass.setViewport());
+  record("GPURenderPassEncoder", "setScissorRect", [], () => renderPass.setScissorRect());
+  record("GPURenderPassEncoder", "setBlendConstant", [{}], () =>
+    renderPass.setBlendConstant({}),
+  );
+  record("GPURenderPassEncoder", "setStencilReference", [0], () =>
+    renderPass.setStencilReference(0),
+  );
+  record("GPURenderPassEncoder", "executeBundles", [[]], () => renderPass.executeBundles([]));
+  record("GPURenderPassEncoder", "end", [], () => renderPass.end());
+}
+const computePass = record("GPUCommandEncoder", "beginComputePass", [], () =>
+  encoder.beginComputePass(),
+);
+if (computePass) {
+  record("GPUComputePassEncoder", "setPipeline", [], () => computePass.setPipeline());
+  record("GPUComputePassEncoder", "setBindGroup", [], () => computePass.setBindGroup());
+  record("GPUComputePassEncoder", "dispatchWorkgroups", [1, 1, 1], () =>
+    computePass.dispatchWorkgroups(1, 1, 1),
+  );
+  record("GPUComputePassEncoder", "end", [], () => computePass.end());
+}
+const bundleEncoder = record(
+  "GPUDevice",
+  "createRenderBundleEncoder",
+  [{ colorFormats: [format] }],
+  () => device.createRenderBundleEncoder({ colorFormats: [format] }),
+);
+if (bundleEncoder) {
+  record("GPURenderBundleEncoder", "setPipeline", [], () => bundleEncoder.setPipeline());
+  record("GPURenderBundleEncoder", "setVertexBuffer", [], () => bundleEncoder.setVertexBuffer());
+  record("GPURenderBundleEncoder", "setIndexBuffer", [], () => bundleEncoder.setIndexBuffer());
+  record("GPURenderBundleEncoder", "setBindGroup", [], () => bundleEncoder.setBindGroup());
+  record("GPURenderBundleEncoder", "draw", [], () => bundleEncoder.draw());
+  record("GPURenderBundleEncoder", "drawIndexed", [], () => bundleEncoder.drawIndexed());
+  record("GPURenderBundleEncoder", "finish", [], () => bundleEncoder.finish());
+}
 record("GPUCommandEncoder", "finish", [], () => encoder.finish());
+if (currentTexture) record("GPUTexture", "destroy", [], () => currentTexture.destroy());
 record("GPUDevice", "createTextureView", [], () => device.createTextureView());
 record("GPUDevice", "createBindGroup", [], () => device.createBindGroup());
 record("GPUDevice", "createSampler", [{}], () => device.createSampler({}));

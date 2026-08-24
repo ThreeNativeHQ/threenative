@@ -126,10 +126,122 @@
     "result": "object"
   },
   {
+    "surface": "GPUCanvasContext",
+    "name": "configure",
+    "args": [
+      "object(format)"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUCanvasContext",
+    "name": "getCurrentTexture",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUTexture",
+    "name": "createView",
+    "args": [],
+    "result": "object"
+  },
+  {
     "surface": "GPUCommandEncoder",
     "name": "beginRenderPass",
+    "args": [
+      "object(colorAttachments)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setPipeline",
     "args": [],
-    "error": "beginRenderPass requires a descriptor"
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setBindGroup",
+    "args": [],
+    "error": "setBindGroup requires index and bindGroup"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "draw",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setVertexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setIndexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "drawIndexed",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "drawIndirect",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "drawIndexedIndirect",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setViewport",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setScissorRect",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setBlendConstant",
+    "args": [
+      "object()"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setStencilReference",
+    "args": [
+      "number"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "executeBundles",
+    "args": [
+      "array(0)"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "end",
+    "args": [],
+    "result": "undefined"
   },
   {
     "surface": "GPUCommandEncoder",
@@ -138,10 +250,94 @@
     "result": "object"
   },
   {
+    "surface": "GPUComputePassEncoder",
+    "name": "setPipeline",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUComputePassEncoder",
+    "name": "setBindGroup",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUComputePassEncoder",
+    "name": "dispatchWorkgroups",
+    "args": [
+      "number",
+      "number",
+      "number"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUComputePassEncoder",
+    "name": "end",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createRenderBundleEncoder",
+    "args": [
+      "object(colorFormats)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setPipeline",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setVertexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setIndexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setBindGroup",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "draw",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "drawIndexed",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "finish",
+    "args": [],
+    "result": "object"
+  },
+  {
     "surface": "GPUCommandEncoder",
     "name": "finish",
     "args": [],
     "result": "object"
+  },
+  {
+    "surface": "GPUTexture",
+    "name": "destroy",
+    "args": [],
+    "result": "undefined"
   },
   {
     "surface": "GPUDevice",

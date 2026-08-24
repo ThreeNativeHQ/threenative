@@ -185,16 +185,47 @@ test("the native null-handle proof is wired as a display-free bindings executabl
 function assertCanvasRegistrationTable(candidate) {
   assert.match(
     candidate,
-    /const BindingRegistration registrations\[\] = \{[\s\S]*\{"GPUCanvasContext", "configure"[\s\S]*\{"GPUCanvasContext", "unconfigure"[\s\S]*\{"GPUCanvasContext", "getCurrentTexture"/u,
+    /bindingTable\(canvasContext, \{[\s\S]*\{"GPUCanvasContext", "configure"[\s\S]*\{"GPUCanvasContext", "unconfigure"[\s\S]*\{"GPUCanvasContext", "getCurrentTexture"/u,
     "canvas context API surface must be represented by one registration table",
   );
-  assert.match(candidate, /installBindingTable\(\s*state->engine,\s*state,\s*canvasContext/u);
+  assert.match(candidate, /installBindingTable\(\s*state->engine,\s*state,\s*bindingTable\(canvasContext/u);
 }
+
+function assertRowOwnedDestinations(header, implementation) {
+  assert.match(header, /using BindingOwnerResolver = std::function<js::JSValueHandle\(/u);
+  assert.match(header, /BindingOwnerResolver owner;/u);
+  assert.doesNotMatch(
+    header,
+    /js::JSValueHandle owner,\s*const BindingRegistration\*/u,
+  );
+  assert.match(implementation, /const auto owner = registration\.owner\(state\);/u);
+  assert.match(
+    implementation,
+    /if \(engine->isNull\(owner\) \|\| engine->isUndefined\(owner\)\)/u,
+  );
+  assert.match(implementation, /std::string_view\(registration\.surface\)/u);
+  assert.match(implementation, /registration\.owner = \{\};/u);
+  assert.match(implementation, /engine->setProperty\(\s*owner,/u);
+}
+
+test("each binding row owns its destination and mismatches fail closed", () => {
+  const header = read("include/mystral/webgpu/registration_table.h");
+  const implementation = read("src/webgpu/registration_table.cpp");
+  assert.doesNotThrow(() => assertRowOwnedDestinations(header, implementation));
+
+  const withoutRowResolver = implementation.replace(
+    "registration.owner(state)",
+    "engine->getGlobal()",
+  );
+  assert.throws(
+    () => assertRowOwnedDestinations(header, withoutRowResolver),
+  );
+});
 
 test("canvas context registration is table-driven and deletion is a red mutation", () => {
   const bindings = read("src/webgpu/bindings.cpp");
   const table = read("src/webgpu/registration_table.cpp");
-  assert.match(table, /for \(size_t index = 0; index < count; \+\+index\)/u);
+  assert.match(table, /for \(const auto& registration : table\.registrations\)/u);
   assert.match(table, /\[engine, state, registration\]/u);
   assert.match(table, /bool requireArguments\(/u);
   assert.doesNotThrow(() => assertCanvasRegistrationTable(bindings));
@@ -207,13 +238,16 @@ test("canvas context registration is table-driven and deletion is a red mutation
 });
 
 const migratedRegistrationFamilies = {
-  dom: [
+  Document: ["querySelector", "createElement"],
+  HTMLElement: [
     "appendChild",
     "removeChild",
-    "getContext",
-    "querySelector",
-    "createElement",
     "remove",
+    "addEventListener",
+    "removeEventListener",
+  ],
+  HTMLCanvasElement: [
+    "getContext",
     "addEventListener",
     "removeEventListener",
     "dispatchEvent",
@@ -221,9 +255,10 @@ const migratedRegistrationFamilies = {
     "toDataURL",
     "getBoundingClientRect",
   ],
-  gpu: ["requestAdapter", "getPreferredCanvasFormat"],
-  adapter: ["requestDevice", "has"],
-  device: [
+  GPU: ["requestAdapter", "getPreferredCanvasFormat"],
+  GPUAdapter: ["requestDevice"],
+  GPUSupportedFeatures: ["has"],
+  GPUDevice: [
     "destroy",
     "createBuffer",
     "createShaderModule",
@@ -240,14 +275,15 @@ const migratedRegistrationFamilies = {
     "pushErrorScope",
     "popErrorScope",
   ],
-  queue: [
+  GPUQueue: [
     "submit",
     "writeBuffer",
     "writeTexture",
     "copyExternalImageToTexture",
     "onSubmittedWorkDone",
   ],
-  commandEncoder: [
+  GPUBuffer: ["mapAsync", "getMappedRange", "unmap", "destroy"],
+  GPUCommandEncoder: [
     "beginRenderPass",
     "beginComputePass",
     "copyBufferToBuffer",
@@ -257,7 +293,7 @@ const migratedRegistrationFamilies = {
     "clearBuffer",
     "finish",
   ],
-  renderPass: [
+  GPURenderPassEncoder: [
     "setPipeline",
     "setBindGroup",
     "draw",
@@ -273,8 +309,8 @@ const migratedRegistrationFamilies = {
     "executeBundles",
     "end",
   ],
-  computePass: ["setPipeline", "setBindGroup", "dispatchWorkgroups", "end"],
-  renderBundle: [
+  GPUComputePassEncoder: ["setPipeline", "setBindGroup", "dispatchWorkgroups", "end"],
+  GPURenderBundleEncoder: [
     "setPipeline",
     "setVertexBuffer",
     "setIndexBuffer",
@@ -283,18 +319,21 @@ const migratedRegistrationFamilies = {
     "drawIndexed",
     "finish",
   ],
-  globals: ["__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D", "loadGLTF"],
+  GPUTexture: ["createView", "destroy"],
+  WebGPU: ["__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D", "loadGLTF"],
 };
 
 function assertMigratedRegistrationRows(candidate) {
-  const rowNames = new Set(
-    [...candidate.matchAll(/\{"(?:WebGPU|GPUCanvasContext)",\s*"([^"]+)"/gu)].map(
-      (match) => match[1],
-    ),
+  const rowKeys = new Set(
+    [
+      ...candidate.matchAll(
+        /\{"(Document|HTMLElement|HTMLCanvasElement|GPU|GPUAdapter|GPUSupportedFeatures|GPUDevice|GPUQueue|GPUBuffer|GPUCommandEncoder|GPUCanvasContext|GPURenderPassEncoder|GPUComputePassEncoder|GPURenderBundleEncoder|GPUTexture|WebGPU)",\s*"([^"]+)"/gu,
+      ),
+    ].map((match) => `${match[1]}.${match[2]}`),
   );
-  for (const [family, names] of Object.entries(migratedRegistrationFamilies)) {
+  for (const [surface, names] of Object.entries(migratedRegistrationFamilies)) {
     for (const name of names) {
-      assert.ok(rowNames.has(name), `${family}.${name} must be a table row`);
+      assert.ok(rowKeys.has(`${surface}.${name}`), `${surface}.${name} must be a table row`);
     }
   }
   assert.match(candidate, /installBindingTable\(\s*state->engine/u);
@@ -322,8 +361,38 @@ test("all migrated WebGPU registration families use the shared table dispatcher"
   assertSurfaceInstallerDelegates(bindings);
   assertMigratedRegistrationRows(bindings);
 
-  const withoutQueueSubmit = bindings.replace('{"WebGPU", "submit"', '{"WebGPU", "removedSubmit"');
-  assert.throws(() => assertMigratedRegistrationRows(withoutQueueSubmit), /queue\.submit/u);
+  const withoutComputePipeline = bindings.replace(
+    /\{"GPUComputePassEncoder", "setPipeline", 0, nullptr,[\s\S]*?wgpuComputePassEncoderSetPipeline[\s\S]*?\n\s*\}\}\)\);/u,
+    "",
+  );
+  assert.throws(
+    () => assertMigratedRegistrationRows(withoutComputePipeline),
+    /GPUComputePassEncoder\.setPipeline/u,
+  );
+});
+
+test("texture and pipeline wrapper factories use the shared table dispatcher", () => {
+  const factories = read("src/webgpu/wrapper_factories.cpp");
+  assert.match(factories, /#include "mystral\/webgpu\/registration_table\.h"/u);
+  assert.match(factories, /installBindingTable\(/u);
+  for (const key of [
+    '"GPUTexture", "createView"',
+    '"GPUTexture", "destroy"',
+  ]) {
+    assert.match(factories, new RegExp(`\\{${key}`, "u"));
+  }
+  assert.match(
+    factories,
+    /const char\* pipelineSurface = renderPipeline \? "GPURenderPipeline" : "GPUComputePipeline"/u,
+  );
+  assert.match(factories, /\{pipelineSurface, "getBindGroupLayout"/u);
+  assert.doesNotMatch(factories, /newFunction\(/u);
+
+  const directRegistration = factories.replaceAll("installBindingTable(", "directRegistration(");
+  assert.throws(
+    () => assert.match(directRegistration, /installBindingTable\(/u),
+    /installBindingTable/u,
+  );
 });
 
 test("windowed and offscreen wrappers share factories", () => {

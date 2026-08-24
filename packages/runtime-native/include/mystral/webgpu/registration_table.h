@@ -16,25 +16,25 @@ using BindingHandler = std::function<js::JSValueHandle(
     BindingsState* state,
     const std::vector<js::JSValueHandle>& args)>;
 
+using BindingOwnerResolver = std::function<js::JSValueHandle(BindingsState* state)>;
+
 struct BindingRegistration {
     const char* surface;
     const char* name;
     uint8_t minimumArity;
     const char* arityError;
     BindingHandler handler;
+    BindingOwnerResolver owner;
 };
 
-void installBindingTable(
-    js::Engine* engine,
-    BindingsState* state,
-    js::JSValueHandle owner,
-    const BindingRegistration* registrations,
-    size_t count);
+struct BindingTable {
+    std::vector<BindingRegistration> registrations;
+};
 
+BindingTable bindingTable(
+    js::JSValueHandle owner, std::initializer_list<BindingRegistration> registrations);
 void installBindingTable(
-    js::Engine* engine,
-    BindingsState* state,
-    js::JSValueHandle owner,
-    std::initializer_list<BindingRegistration> registrations);
+    js::Engine* engine, BindingsState* state,
+    const BindingTable& table);
 
 }  // namespace mystral::webgpu
