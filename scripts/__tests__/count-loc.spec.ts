@@ -9,6 +9,7 @@ import {
   classifyVanillaLine,
   collectLoc,
   countLines,
+  countNativeReactHudLoc,
   countPlatformerTemplateLoc,
   normaliseSource,
   renderLocTable,
@@ -93,5 +94,11 @@ describe("count-loc", () => {
 
   it("reports the platformer template LOC without capping it", () => {
     expect(countPlatformerTemplateLoc()).toBeGreaterThan(0);
+  });
+
+  it("prices the generated native-only React HUD path against the geometry HUD", () => {
+    const comparison = countNativeReactHudLoc();
+
+    expect(comparison.nativeReact).toBeLessThanOrEqual(comparison.geometry);
   });
 });

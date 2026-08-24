@@ -146,7 +146,12 @@ async function runDevicePlaytestInternal(
     ), target.name);
   }
   const endpoint = config.endpoint ?? "http://127.0.0.1:41777/playtest";
-  const transport = target.transport ?? createDeviceTransport(target.driver, endpoint, target.mailboxPaths);
+  const transport = target.transport ?? createDeviceTransport(
+    target.driver,
+    endpoint,
+    target.mailboxPaths,
+    config.timeoutMs,
+  );
   let bridge: IPlaytestBridgeClient | undefined;
   let coverageRecordingStarted = false;
   let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
@@ -449,6 +454,7 @@ function createDeviceTransport(
   driver: IDevicePlaytestDriver,
   endpoint: string,
   paths: ReturnType<typeof androidMailboxPaths>,
+  operationTimeoutMs: number,
 ): IDevicePlaytestTransport {
   if (isMailboxDriver(driver)) {
     const mailbox: IDeviceMailbox = {
@@ -456,7 +462,7 @@ function createDeviceTransport(
       remove: (path) => driver.removeFile(path),
       write: (path, contents) => driver.writeFile(path, contents),
     };
-    return new DeviceMailboxTransport(mailbox, paths);
+    return new DeviceMailboxTransport(mailbox, paths, operationTimeoutMs);
   }
   return new DeviceBridgeTransport(endpoint);
 }

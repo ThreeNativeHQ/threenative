@@ -5,6 +5,7 @@ import { rapier } from "@threenative/physics";
 import config from "../threenative.config.js";
 import { Play } from "./scenes/Play.js";
 import type { GameState } from "./state.js";
+import { nativeUiPlugin } from "./ui/NativeHud.js";
 
 // game.state is the single store: the fixed-step loop writes it, and React/playtests read it.
 const game = defineGame<GameState, IPhysicsContext>({
@@ -20,7 +21,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     jump: { buttons: [0], keys: ["Space"] },
     restart: { keys: ["KeyR"] },
   },
-  plugins: [rapier(), replay(), playtest()],
+  plugins: [rapier(), replay(), playtest(), nativeUiPlugin],
   render: config.renderer,
   scenes: { play: Play },
   seed: 90210,

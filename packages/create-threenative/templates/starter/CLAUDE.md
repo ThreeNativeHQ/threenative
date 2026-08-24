@@ -162,17 +162,10 @@ until published scenarios migrate.)
 Four host differences break there, and `@threenative/physics/navigation` is a separate
 browser-only boundary under the current native portability rule:
 
-1. **The native host has no DOM and does not run React.** Native builds ship `src/scenes/`
-   and `src/render/` without `src/ui/`; gameplay, scoring and state transitions live in the
-   scene, so a desktop build still ends its runs — just without the React banner. Pause is
-   genuinely web-only here (`game.pause()` from the React menu): a native build cannot pause.
-
-   **So `src/ui/Hud.tsx` draws nothing on native** — a shipped Android build showed its world
-   and no HUD at all. Shipping to native means drawing the HUD as camera-parented Three.js
-   geometry instead: scaffold `--template minimal` and lift its 69-line `src/render/hud.ts`,
-   which renders identical text on web, desktop and Android with no per-target branch and
-   costs the scene three statements. Not a `CanvasTexture` readout — it samples black
-   natively. Then stop drawing those values from `src/ui/`, or both layers render on web.
+1. **The native host has no DOM.** `src/main.ts` and `react-dom` stay web-only. The portable
+   entry may import React plus `@threenative/core/react`, as `src/ui/NativeHud.tsx` does, to render
+   shared components into `ctx.canvasLayer` without a WebView. Gameplay and state transitions
+   still live outside UI. Pause remains web-only until a generated native control calls it.
 2. **No `document`, `window`, or `localStorage` reach outside the canvas.** Use `ctx` and
    Three.js. Save games go through your own JSON, not `window.localStorage` directly.
 3. **No dynamic `import()`.** The native build is one bundled file.
@@ -181,6 +174,23 @@ browser-only boundary under the current native portability rule:
 
 Writing against `ctx`, `three`, and the Godot-named physics nodes keeps all four host differences
 correct without thinking about it. If you only ever ship to the web, ignore this section.
+
+## Native React layout — the complete supported subset
+
+Native React has exactly two primitives: `View` (a rectangle/layout node) and `Text` (one bitmap
+glyph run). Style units are framebuffer pixels. Children are absolute unless their parent sets
+`direction: "row" | "column"`; flow additionally supports `gap` and cross-axis
+`align: "start" | "center" | "end"`.
+
+The complete style-key list is: `left`, `right`, `top`, `bottom`, `centerX`, `centerY`, `width`,
+`height`, `padding`, `direction`, `gap`, `align`, `background`, `color`, `opacity`, `fontSize`,
+`letterSpacing`, `textAlign`, and `zIndex`. `textAlign` is `left | center | right`. Colours are
+`#rgb`, `#rrggbb`, or `0xrrggbb`. There is no CSS, Tailwind, flex grow/wrap, borders, radius,
+transforms, images, SVG, or event handler surface. Unknown keys and glyphs throw named errors.
+
+Share component structure and state, then supply platform primitives as `HudContent.tsx` does:
+DOM/Tailwind on web, `View`/`Text` on native. Appearance belongs in these generated `src/ui/`
+adapters; never move colours, sizes, or layout decisions into a package.
 
 ## The game this ships with
 

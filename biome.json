@@ -79,6 +79,10 @@
       }
     },
     {
+      "include": ["packages/core/src/react-glyphs.ts"],
+      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+    },
+    {
       "include": ["packages/playtest/**"],
       "formatter": { "enabled": false },
       "organizeImports": { "enabled": false },

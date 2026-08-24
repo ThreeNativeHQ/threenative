@@ -137,6 +137,11 @@ describe("capability documentation gate", () => {
           packageName: "@threenative/physics",
           subpath: "./navigation",
         }),
+        expect.objectContaining({
+          name: "createReactOverlay",
+          packageName: "@threenative/core",
+          subpath: "./react",
+        }),
       ]),
     );
   }, 15_000);

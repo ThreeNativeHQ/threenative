@@ -374,12 +374,24 @@ importers:
       '@threenative/playtest':
         specifier: workspace:*
         version: link:../playtest
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.0
+      '@types/react-reconciler':
+        specifier: 0.32.1
+        version: 0.32.1(@types/react@19.2.0)
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
       publint:
         specifier: 0.3.22
         version: 0.3.22
+      react:
+        specifier: 'catalog:'
+        version: 19.2.0
+      react-reconciler:
+        specifier: 0.33.0
+        version: 0.33.0(react@19.2.0)
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
@@ -1667,6 +1679,11 @@ packages:
     peerDependencies:
       '@types/react': ^19.2.0
 
+  '@types/react-reconciler@0.32.1':
+    resolution: {integrity: sha512-RsqPttsBQ+6af0nATFXJJpemYQH7kL9+xLNm1z+0MjQFDKBZDM2R6SBrjdvRmHu9i9fM6povACj57Ft+pKRNOA==}
+    peerDependencies:
+      '@types/react': '*'
+
   '@types/react-test-renderer@19.1.0':
     resolution: {integrity: sha512-XD0WZrHqjNrxA/MaR9O22w/RNidWR9YZmBdRGI7wcnWGrv/3dA8wKCJ8m63Sn+tLJhcjmuhOi629N66W6kgWzQ==}
 
@@ -2160,6 +2177,12 @@ packages:
 
   react-is@19.2.8:
     resolution: {integrity: sha512-s5un28nYxKJw5gvUHyW5PCC28CvBqLu9r3cWgzHT4Vo/5fqqkFcdRYsGcKf50WMPpjjFZS5d76fn3YCo2njKwQ==}
+
+  react-reconciler@0.33.0:
+    resolution: {integrity: sha512-KetWRytFv1epdpJc3J4G75I4WrplZE5jOL7Yq0p34+OVOKF4Se7WrdIdVC45XsSSmUTlht2FM/fM1FZb1mfQeA==}
+    engines: {node: '>=0.10.0'}
+    peerDependencies:
+      react: ^19.2.0
 
   react-test-renderer@19.2.0:
     resolution: {integrity: sha512-zLCFMHFE9vy/w3AxO0zNxy6aAupnCuLSVOJYDe/Tp+ayGI1f2PLQsFVPANSD42gdSbmYx5oN+1VWDhcXtq7hAQ==}
@@ -3164,6 +3187,10 @@ snapshots:
     dependencies:
       '@types/react': 19.2.0
 
+  '@types/react-reconciler@0.32.1(@types/react@19.2.0)':
+    dependencies:
+      '@types/react': 19.2.0
+
   '@types/react-test-renderer@19.1.0':
     dependencies:
       '@types/react': 19.2.0
@@ -3646,6 +3673,11 @@ snapshots:
       scheduler: 0.27.0
 
   react-is@19.2.8: {}
+
+  react-reconciler@0.33.0(react@19.2.0):
+    dependencies:
+      react: 19.2.0
+      scheduler: 0.27.0
 
   react-test-renderer@19.2.0(react@19.2.0):
     dependencies:

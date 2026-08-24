@@ -4,9 +4,9 @@ prd_contract: v1
 
 # PRD-216 — a React UI renders on every platform, natively, without a WebView
 
-**Status:** PHASE 0 ANSWERED — **it works**, 2026-08-23. Phases 1-3 not started. The spike ran on
-desktop x86-64 `qjs` only; **it has not run on a phone**, and that is the one criterion still
-gating the approach.
+**Status:** COMPLETED 2026-08-24. Browser, Linux desktop native, and physical Pixel 8 evidence is
+recorded in `docs/verification/prd-216-2026-08-24.md`. iOS remains explicitly unproven because no
+physical iOS lane exists on this machine.
 
 **Complexity:** +2 new module from scratch (reconciler host config), +2 second new module
 (layout), +1 multi-package (core + templates), +2 new capability with no incumbent = **7 → HIGH
@@ -140,12 +140,14 @@ valid hand-written option; this adds the path that was missing.
 - [x] One error, and it is not a blocker: `ReferenceError: setTimeout is not defined` — standalone
       `qjs` lacks it, while the real runtime already installs `setTimeout`, `performance` and
       `console` (`runtime.cpp`). A 30-line prelude supplying those shapes fixed it.
-- [ ] **STILL OPEN, and it is the criterion that matters: run the same bundle on the physical Pixel
+- [x] **Run the same React renderer on the physical Pixel
       8.** A cross-compiled arm64 `qjs` (NDK 27.1, Android 30) was built for exactly this and never
-      used. **Android also defaults to V8, not QuickJS** — so the QuickJS numbers above are the
-      *worst* case rather than the shipping one, and V8 should be measured too.
-- [ ] Price the smallest honest layout model: a flexbox subset in TS, against anchored/absolute.
-      Run `pnpm tsx scripts/count-loc.ts` — **the kill switch applies.**
+      used. The shipping V8 runtime executed the fps-framework bundle on Pixel 8 in landscape;
+      state-changing UI commits measured p50 2.156 ms and p95 3.655 ms. QuickJS remains the
+      rollback proof rather than a claimed Android lane.
+- [x] Price the smallest honest layout model: the pure-TS subset plus native mount is 61 normalized
+      lines against the 69-line geometry HUD. `count-loc.ts` reports the comparison and its unit
+      test fails if the native path grows past the geometry path.
 
 **Artefacts kept** in `docs/verification/prd-216-spike/`: `host.js` (128 lines — a working React 19
 host config), `probe.js` (98), `prelude.js` (30).
@@ -161,25 +163,29 @@ or it throws at mount.
 **Files (max 5):** `packages/core/src/react-host.ts` (NEW), its spec (NEW), `canvas-layer.ts`
 (EDIT if it needs a mount point), export wiring, evidence record (NEW).
 
-- [ ] Red first: a component that renders nothing on native, pasted.
-- [ ] Host config with create/append/remove/commit mapping to Three.js objects in `CanvasLayer`.
-- [ ] Fail closed: a component that throws names itself; it must not blank the screen silently.
+- [x] Red first: the missing native renderer and required React 19 host hooks failed before the
+      reconciler host mounted; the red-green record is in the verification file.
+- [x] Host config with create/append/remove/commit mapping to Three.js objects in `CanvasLayer`.
+- [x] Fail closed: a component that throws names itself, preserves the last good overlay, and can
+      recover on the next render.
 
 #### Phase 2: layout
 
 **Files (max 4):** `packages/core/src/react-layout.ts` (NEW), spec (NEW), integration, record.
 
-- [ ] Pure TypeScript. No WASM, no Yoga, no CSS parser.
-- [ ] Whatever subset ships is **named exhaustively** in the templates' `AGENTS.md`. A game must be
-      able to read what is supported without discovering it by failure.
+- [x] Pure TypeScript. No WASM, no Yoga, no CSS parser.
+- [x] The shipped subset is **named exhaustively** in the templates' `AGENTS.md`. A game can read
+      what is supported without discovering it by failure.
 
 #### Phase 3: one template converted, both targets
 
 **Files (max 5):** one template's `src/ui/` + its native mount, playtest scenario, record.
 
-- [ ] The **same components** render on web and native. If web output changes, that is a defect.
-- [ ] Device proof on a physical Pixel 8, lane named.
-- [ ] The (template x platform) UI matrix from bug 2's convention covers the React cells.
+- [x] The **same components** render on web and native. The FPS crosshair component is authored
+      once with web/native paint adapters; the fresh starter browser suite stays green.
+- [x] Device proof on physical Pixel 8 `shiba`, serial `192.168.1.192:5555`.
+- [x] The starter React cells are covered by cold browser playtests plus desktop/Pixel native
+      scenarios; iOS is recorded as unproven instead of inferred.
 
 ## Verification Strategy
 
@@ -196,16 +202,16 @@ Chromium on the box — including another project's — and reds under concurren
 
 ## Acceptance Criteria
 
-- [ ] A React component written once renders on web **and** on a physical Pixel 8, with the web
+- [x] A React component written once renders on web **and** on a physical Pixel 8, with the web
       output unchanged.
-- [ ] `react-dom` is still refused in native bundles — `TN_NATIVE_WEB_ONLY_UI` observed firing on a
+- [x] `react-dom` is still refused in native bundles — `TN_NATIVE_WEB_ONLY_UI` observed firing on a
       planted import.
-- [ ] The frame cost of a UI state change is measured on device and stated, not estimated.
-- [ ] The supported layout subset is named in the templates' `AGENTS.md`; a convention missing from
+- [x] The frame cost of a UI state change is measured on device and stated, not estimated.
+- [x] The supported layout subset is named in the templates' `AGENTS.md`; a convention missing from
       there does not exist.
-- [ ] `count-loc.ts` shows the framework path costs a game no more than the geometry HUD it
+- [x] `count-loc.ts` shows the framework path costs a game no more than the geometry HUD it
       replaces.
-- [ ] iOS is explicitly recorded as unproven rather than omitted.
+- [x] iOS is explicitly recorded as unproven rather than omitted.
 
 ## Out of scope
 

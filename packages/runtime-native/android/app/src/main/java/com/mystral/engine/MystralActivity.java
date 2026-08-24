@@ -74,17 +74,34 @@ public class MystralActivity extends SDLActivity {
      */
     private void applyOrientation(Bundle metadata) {
         String orientation = metadata == null ? null : metadata.getString("TN_ORIENTATION");
-        if (orientation == null) return;
-        switch (orientation) {
-            case "landscape":
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-                break;
-            case "portrait":
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-                break;
-            default:
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-                break;
+        if (!applyFixedOrientation(orientation)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        }
+    }
+
+    private boolean applyFixedOrientation(String orientation) {
+        if ("landscape".equals(orientation)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            return true;
+        }
+        if ("portrait".equals(orientation)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * SDL3 calls this again when it creates or resizes its window. With no SDL orientation hint a
+     * resizable window becomes FULL_USER, overwriting the game metadata applied in onCreate. Keep
+     * a fixed game orientation authoritative; sensor games retain SDL's normal policy.
+     */
+    @Override
+    public void setOrientationBis(int width, int height, boolean resizable, String hint) {
+        Bundle metadata = applicationMetadata();
+        String orientation = metadata == null ? null : metadata.getString("TN_ORIENTATION");
+        if (!applyFixedOrientation(orientation)) {
+            super.setOrientationBis(width, height, resizable, hint);
         }
     }
 

@@ -97,10 +97,14 @@ const config = {
   trackSchedulerEvent: () => undefined,
   resolveEventType: () => null,
   resolveEventTimeStamp: () => -1.1,
+  // biome-ignore lint/style/useNamingConvention: exact React reconciler host API name.
   NotPendingTransition: null,
+  // biome-ignore lint/style/useNamingConvention: exact React reconciler host API name.
   HostTransitionContext: {
     $$typeof: Symbol.for("react.context"),
+    // biome-ignore lint/style/useNamingConvention: exact React context API name.
     Provider: null,
+    // biome-ignore lint/style/useNamingConvention: exact React context API name.
     Consumer: null,
     _currentValue: null,
     _currentValue2: null,

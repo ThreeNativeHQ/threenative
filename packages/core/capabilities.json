@@ -536,6 +536,93 @@
       "symbol": "playtest"
     },
     {
+      "constraints": [
+        "styling is the `style` prop; Tailwind class names are CSS and cannot cross",
+        "import `react`, never `react-dom`, from the portable native entry",
+        "import `react`, never `react-dom`, from a native entry"
+      ],
+      "example": "const overlay = createReactOverlay({ canvasLayer: ctx.canvasLayer });",
+      "importPath": "@threenative/core/react",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createReactOverlay(options: IReactOverlayOptions): IReactOverlay { … }",
+      "situations": [
+        "render a React HUD on Android or iOS without a WebView",
+        "show the same React component on web and on a phone",
+        "show a React HUD on Android, iOS or desktop native",
+        "render the same React component on web and on a phone without a WebView"
+      ],
+      "summary": "`@threenative/core/react` — React that renders on a phone, with no DOM and no WebView. A subpath on purpose. `react` and `react-reconciler` are **optional** peers, and nothing in `@threenative/core`'s main entry imports either of them, so a game that never mounts a React overlay pays nothing and core stays consumable from React Three Fiber. Importing this module is the opt-in. The element vocabulary is two components, borrowed from React Native rather than invented: {@link View} is a rectangle, {@link Text} is a run of glyphs. They are components and not lowercase intrinsics because `view` and `text` are already SVG tags in `@types/react`, and a HUD element that silently means `<svg:text>` on one platform is exactly the kind of quiet divergence this path exists to end.",
+      "supersedes": [],
+      "symbol": "createReactOverlay"
+    },
+    {
+      "constraints": [],
+      "example": "const scoreWidth = measureText(\"SCORE 10\", 24)",
+      "importPath": "@threenative/core/react",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function measureText(text: string, fontSize: number, letterSpacing = 0): number { … }",
+      "situations": ["measure native React HUD text before laying it out"],
+      "summary": "Width in pixels of a glyph run at a given cell height.",
+      "supersedes": [],
+      "symbol": "measureText"
+    },
+    {
+      "constraints": [],
+      "example": "supportedGlyphs().includes(\"A\")",
+      "importPath": "@threenative/core/react",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function supportedGlyphs(): string { … }",
+      "situations": ["discover which characters a native React HUD can draw"],
+      "summary": "Every character this glyph set can draw, for error messages and for the templates' AGENTS.md.",
+      "supersedes": [],
+      "symbol": "supportedGlyphs"
+    },
+    {
+      "constraints": [],
+      "example": "supportedStyleKeys().includes(\"centerX\")",
+      "importPath": "@threenative/core/react",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function supportedStyleKeys(): readonly string[] { … }",
+      "situations": ["discover which React HUD style properties work on native"],
+      "summary": "Every style key the overlay implements, for the templates' AGENTS.md and for error messages.",
+      "supersedes": [],
+      "symbol": "supportedStyleKeys"
+    },
+    {
+      "constraints": [],
+      "example": "<Text style={{ color: \"#ffffff\", fontSize: 24 }}>SCORE 10</Text>",
+      "importPath": "@threenative/core/react",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function Text(props: ITextProps): ReactNode { … }",
+      "situations": ["show text in a native React HUD without a DOM"],
+      "summary": "A run of bitmap glyphs, drawn as one instanced quad per lit pixel.",
+      "supersedes": [],
+      "symbol": "Text"
+    },
+    {
+      "constraints": [],
+      "example": "<View style={{ centerX: 0, top: 24 }}><Text>READY</Text></View>",
+      "importPath": "@threenative/core/react",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function View(props: IViewProps): ReactNode { … }",
+      "situations": ["group and position native React HUD elements"],
+      "summary": "A rectangle. Paints when its style has a `background`; otherwise it only positions children.",
+      "supersedes": [],
+      "symbol": "View"
+    },
+    {
       "constraints": ["add the area to the physics context before stepping the world"],
       "example": "const area = new Area3D({ context, shape });",
       "importPath": "@threenative/physics",

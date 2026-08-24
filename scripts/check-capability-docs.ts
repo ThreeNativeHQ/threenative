@@ -5,7 +5,7 @@ import * as ts from "typescript";
 
 export interface ICapabilityExport {
   readonly packageName: "@threenative/core" | "@threenative/physics";
-  readonly subpath: "." | "./hot" | "./navigation" | "./playtest";
+  readonly subpath: "." | "./hot" | "./navigation" | "./playtest" | "./react";
   readonly name: string;
   readonly entry: string;
 }
@@ -127,7 +127,8 @@ async function packageEntries(
       subpath !== "." &&
       subpath !== "./hot" &&
       subpath !== "./navigation" &&
-      subpath !== "./playtest"
+      subpath !== "./playtest" &&
+      subpath !== "./react"
     ) {
       throw new Error(`CAPABILITY_DOCS_UNSUPPORTED_SUBPATH: ${spec.name}${subpath}`);
     }

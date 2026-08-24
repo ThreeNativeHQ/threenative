@@ -1,30 +1,26 @@
 // Minimal host globals the ThreeNative native runtime already installs (runtime.cpp registers
 // console, performance, setTimeout, setInterval, requestAnimationFrame). qjs standalone has none
 // of them, so the probe supplies the same shapes and nothing more.
-(function () {
-  var timers = [];
-  var id = 1;
-  globalThis.setTimeout = function (fn, ms) {
-    timers.push({ id: id, fn: fn, at: ms || 0 });
+(() => {
+  let timers = [];
+  let id = 1;
+  globalThis.setTimeout = (fn, ms) => {
+    timers.push({ id, fn, at: ms || 0 });
     return id++;
   };
-  globalThis.clearTimeout = function (handle) {
-    timers = timers.filter(function (t) {
-      return t.id !== handle;
-    });
+  globalThis.clearTimeout = (handle) => {
+    timers = timers.filter((timer) => timer.id !== handle);
   };
-  globalThis.__drainTimers = function () {
-    var pending = timers;
+  globalThis.__drainTimers = () => {
+    const pending = timers;
     timers = [];
-    for (var i = 0; i < pending.length; i++) pending[i].fn();
+    for (const timer of pending) timer.fn();
     return pending.length;
   };
   if (typeof performance === "undefined") {
-    var origin = Date.now();
+    const origin = Date.now();
     globalThis.performance = {
-      now: function () {
-        return Date.now() - origin;
-      },
+      now: () => Date.now() - origin,
     };
   }
 })();

@@ -162,6 +162,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   constructor(
     private readonly mailbox: IDeviceMailbox,
     private readonly paths: IDeviceMailboxPaths,
+    private readonly operationTimeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
   ) {}
 
   async start(): Promise<void> {
@@ -211,7 +212,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   }
 
   private async waitForResponse(id: string): Promise<IPlaytestDeviceResponse> {
-    const deadline = Date.now() + PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs;
+    const deadline = Date.now() + this.operationTimeoutMs;
     while (!this.closed && Date.now() < deadline) {
       const response = await this.readResponse();
       if (response !== undefined) {
@@ -223,7 +224,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     }
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OPERATION_TIMEOUT",
-      `Device mailbox operation '${id}' exceeded ${PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs}ms.`,
+      `Device mailbox operation '${id}' exceeded ${this.operationTimeoutMs}ms.`,
       "Confirm the app is running and its native mailbox is polling the configured files.",
     ));
   }

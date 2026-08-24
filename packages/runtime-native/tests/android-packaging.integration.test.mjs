@@ -197,6 +197,7 @@ public final class ActivityInfo {
   public static final int SCREEN_ORIENTATION_UNSPECIFIED = -1;
   public static final int SCREEN_ORIENTATION_SENSOR_LANDSCAPE = 6;
   public static final int SCREEN_ORIENTATION_SENSOR_PORTRAIT = 7;
+  public static final int SCREEN_ORIENTATION_FULL_USER = 13;
 }
 `,
     'org/libsdl/app/SDLActivity.java': `package org.libsdl.app;
@@ -224,6 +225,9 @@ public class SDLActivity {
   public File getFilesDir() { return new File(System.getProperty("java.io.tmpdir")); }
   public int requestedOrientation = Integer.MIN_VALUE;
   public void setRequestedOrientation(int orientation) { requestedOrientation = orientation; }
+  public void setOrientationBis(int width, int height, boolean resizable, String hint) {
+    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
+  }
   public void configureMetadata(Bundle metadata) { packageManager = new PackageManager(metadata); }
 }
 `,
@@ -238,6 +242,7 @@ public final class MetadataProbe {
   private static final class ProbeActivity extends MystralActivity {
     public void create() { onCreate(null); }
     public String[] arguments() { return getArguments(); }
+    public void applySdlOrientation() { setOrientationBis(1080, 2400, true, ""); }
   }
 
   private static void require(boolean value, String message) {
@@ -268,6 +273,9 @@ public final class MetadataProbe {
     // is the belt to the manifest property's braces; this asserts that it happens.
     require(activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
       "declared landscape orientation was not re-requested in onCreate");
+    activity.applySdlOrientation();
+    require(activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+      "SDL window creation overwrote the declared landscape orientation");
   }
 }
 `,

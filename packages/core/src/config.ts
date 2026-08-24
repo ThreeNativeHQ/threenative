@@ -37,6 +37,25 @@ export interface IThreeNativeTexturesConfig {
   readonly quality?: number;
 }
 
+/** Model optimization sub-pass switches; absent means every pass runs. */
+export interface IThreeNativeModelPassesConfig {
+  readonly dedup?: boolean;
+  readonly meshopt?: boolean;
+  readonly prune?: boolean;
+  readonly quantize?: boolean;
+  readonly reorder?: boolean;
+}
+
+/** Model optimization options for the asset compile step; `"none"` ships sources verbatim. */
+export interface IThreeNativeModelsConfig {
+  readonly passes?: IThreeNativeModelPassesConfig;
+  readonly quantize?: {
+    readonly normalBits?: number;
+    readonly positionBits?: number;
+    readonly uvBits?: number;
+  };
+}
+
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -68,6 +87,7 @@ export interface IThreeNativeConfig {
     readonly resizable?: boolean;
   };
   readonly assets?: {
+    readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;
     readonly targets?: {

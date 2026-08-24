@@ -65,12 +65,16 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   defaultMaxWords: 2716,
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
-    platformer: 3016,
+    // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
+    platformer: 3092,
+    // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
+    shooter: 2780,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
     minimal: 3469,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
-    starter: 3831,
+    // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
+    starter: 3891,
   },
 };
 

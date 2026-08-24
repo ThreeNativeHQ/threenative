@@ -6,6 +6,8 @@ questions in §11.1, and §5b splits mechanism from appearance. The kill switch 
 closed list (§2) are unchanged.
 **Amended 2026-08-22:** §1 and §11 — performance is a shipped default bounded by §5b, §11.2 and
 §10a, not a tuning pass left to each game.
+**Amended 2026-08-24:** §4 and §6b — React UI may opt into the isolated `@threenative/core/react`
+subpath; the vanilla main entry and scene graph remain React-free.
 **Supersedes:** `~/projects/threejs-to-bevy` (abandoned 2026-08-02, ~790k lines, 7 weeks).
 
 ---
@@ -194,7 +196,12 @@ safe to answer generously.
 
 ## 4. Substrate: vanilla Three.js core
 
-**Decision: vanilla core. Zero React dependency in `@threenative/core`.**
+**Decision: vanilla core. Zero React reach from `@threenative/core`'s main entry.**
+
+React UI is the opt-in exception: `@threenative/core/react` carries optional React peers and maps
+generated game components to `CanvasLayer`. A game that never imports that subpath loads no React,
+and React never owns the scene graph or loop. This preserves the one-way door below while supplying
+platform plumbing a game cannot write portably.
 
 1. **React's render model fights game loops.** Reconciliation is for state changes;
    games mutate 60×/sec. R3F's answer is `useFrame` + refs — imperative Three.js
@@ -412,12 +419,12 @@ the same split Bone Tide shipped: a shared TypeScript engine, with only the UI i
 
 | Web | Desktop / Mobile |
 |---|---|
-| React 19 + react-dom | OPEN |
-| Tailwind 4 | OPEN |
+| React 19 + react-dom | React 19 + `@threenative/core/react` → `CanvasLayer` |
+| Tailwind 4 | Generated `View`/`Text` style adapters; no CSS or WebView |
 
-**The native UI stack is an open question, not a decision.** The runtime (§7) is a host
-with no DOM and no React Native layer, so neither `react-dom` nor NativeWind applies, and
-no HUD has yet been rendered on it by any means. The store rule below is host-independent
+Native React is an optional UI renderer, not a scene-graph architecture. Generated components
+share structure and state across platform adapters; Tailwind remains web-only, while native styles
+are explicit game-owned source. The store rule below is host-independent
 and holds on every target.
 
 **The 60fps problem.** React must never re-render on the game loop. The bridge is a

@@ -78,7 +78,11 @@ export async function runDesktopPlaytest(
       executable,
       mailboxRoot: root,
     });
-    transport = dependencies.transport ?? new DeviceMailboxTransport(new LocalDeviceMailbox(), paths);
+    transport = dependencies.transport ?? new DeviceMailboxTransport(
+      new LocalDeviceMailbox(),
+      paths,
+      config.timeoutMs,
+    );
     report = await runDevicePlaytest({ ...config, mailboxRoot }, {
       driver,
       mailboxPaths: paths,

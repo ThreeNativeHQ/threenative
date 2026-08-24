@@ -246,37 +246,37 @@ export async function createKtx2Loader(options: {
 export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoader {
   const basePath = options.basePath ?? "";
   const manifestUrl = resolvePath(basePath, options.manifest ?? "assets.manifest.json");
-  // Detection runs once, here, even before any asset request: defineGame awaits `ready` during
-  // boot so an unsupported target fails at construction. The attached no-op catches keep an
-  // unobserved rejection from crashing a game that never touches a compressed texture.
+  let manifestRequest: Promise<IAssetManifest | undefined> | undefined;
+  const manifestOnce = (): Promise<IAssetManifest | undefined> => {
+    if (manifestRequest === undefined) manifestRequest = readManifest(manifestUrl);
+    return manifestRequest;
+  };
+  // Detection still runs exactly once, but `ready` only makes unsupported compressed textures a
+  // boot error when this build actually published KTX2 output. Native-safe manifests and the
+  // no-manifest fallback must not fail merely because a renderer exposes no compressed format.
   const compressedTextures =
     options.renderer === undefined
       ? undefined
       : (() => {
           const loader = createKtx2Loader({ basePath, renderer: options.renderer });
-          const ready = loader.then(
-            () => undefined,
-            (error: unknown) => {
-              throw error;
-            },
-          );
+          const ready = manifestOnce().then(async (manifest) => {
+            const requiresKtx2 = Object.values(manifest?.entries ?? {}).some(
+              (entry) =>
+                isRecord(entry) &&
+                typeof entry.output === "string" &&
+                /\.ktx2$/iu.test(entry.output),
+            );
+            if (requiresKtx2) await loader;
+          });
           loader.catch(() => undefined);
           ready.catch(() => undefined);
           return { loader, ready };
         })();
-  let manifestRequest: Promise<IAssetManifest | undefined> | undefined;
   const cache = new Map<string, IAssetEntry>();
   const disposed: IResourceDisposalSets = {
     geometries: new WeakSet(),
     surfaces: new WeakSet(),
     textures: new WeakSet(),
-  };
-
-  // Fetched once, lazily, on the first asset request. The memoised promise also carries the
-  // no-manifest decision, so a game served no manifest never probes for it again.
-  const manifestOnce = (): Promise<IAssetManifest | undefined> => {
-    if (manifestRequest === undefined) manifestRequest = readManifest(manifestUrl);
-    return manifestRequest;
   };
 
   // Cache keys stay on the logical path so `release` matches whatever was loaded with or
@@ -355,7 +355,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         const loader = new GLTFLoader();
         // Models carrying KHR_texture_basisu textures transcode through the same shared,
         // support-detected instance `texture()` uses — never a second detection pass.
-        if (compressedTextures !== undefined) {
+        if (compressedTextures !== undefined && extensions.has("KHR_texture_basisu")) {
           const shared = await compressedTextures.loader;
           if (shared !== undefined) {
             loader.setKTX2Loader(shared as unknown as Parameters<typeof loader.setKTX2Loader>[0]);

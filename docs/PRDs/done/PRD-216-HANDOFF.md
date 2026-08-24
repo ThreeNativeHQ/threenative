@@ -1,12 +1,18 @@
-# PRD-216 handoff — React UI on native. What is left.
+# PRD-216 handoff — React UI on native. Closed 2026-08-24.
 
-**Written 2026-08-23 under a usage cutoff. Read `docs/PRDs/PRD-216-react-ui-renders-on-every-platform.md` first — this file is only the remaining work.**
+**Written 2026-08-23 under a usage cutoff and retained as recovery history. The remaining work was
+completed on 2026-08-24; see `docs/verification/prd-216-2026-08-24.md`.**
 
 ## Goal, owner's words
 
 > "run on my phone, fps-framework in landscape, I want to see the same react UI that web has, but on native."
 
-## State: the approach is PROVEN, the device screenshot is NOT taken
+## Final state: shipped and proven on the physical device
+
+The recovered branch now contains the React host, pure-TS layout, generated starter integration,
+fail-closed diagnostics, device-transport repairs, and Android orientation repair. Browser,
+desktop native, and physical Pixel 8 evidence is green. The final Pixel screenshot is 2400x1080,
+the UI-update p50/p95 is 2.156/3.655 ms, and iOS is explicitly unproven.
 
 **Phase 0 executed and passed.** `react@19.2.0` + `react-reconciler@0.33.0` mount, update and
 unmount under the vendored QuickJS 0.11.0 — **on desktop x86-64 `qjs`, not on a phone**.

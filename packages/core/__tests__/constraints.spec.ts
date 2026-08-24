@@ -20,6 +20,7 @@ describe("core constraints", () => {
           file !== "projection-apply.ts" &&
           file !== "renderProjection.ts" &&
           file !== "renderer.ts" &&
+          file !== "react-host.ts" &&
           file !== "tracers.ts",
       )
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
@@ -29,6 +30,19 @@ describe("core constraints", () => {
 
     // `config.ts` is exempted on the same terms: it declares option NAMES a game types
     // (`assets.targets.maxMaterials`), measures nothing, and originates no visual concern.
+
+    // `react-host.ts` is exempted on the same terms as particles, and needs to be: a renderer that
+    // draws nothing has to construct the one material its quads are drawn with. What it must never
+    // do is decide what that material looks like. Every colour it sets is read off the game's own
+    // `style` prop, the geometry is a unit plane the game never sees, and the two constants below
+    // are the fallback white for a missing colour and the red of the failure banner — diagnostics,
+    // in the same category as `DebugOverlay`, not an appearance the framework is choosing.
+    const reactHost = readFileSync(path.join(sourceDirectory, "react-host.ts"), "utf8");
+    expect(reactHost).not.toMatch(/new\s+\w*Light|tonemapping|postprocessing|\.wgsl/iu);
+    expect([...new Set(reactHost.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu))]).toEqual([
+      "0xffffff",
+      "#ff5f4d",
+    ]);
 
     const particles = readFileSync(path.join(sourceDirectory, "particles.ts"), "utf8");
     expect(particles).not.toMatch(

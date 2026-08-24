@@ -319,9 +319,37 @@ describe("IAssetLoader compressed textures", () => {
 
   const S3TC = { WEBGL_compressed_texture_s3tc: true };
 
+  it("should not reject an unsupported renderer when the manifest has no KTX2 output", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "rock.png": { output: "rock.a1b2c3d4.png" },
+          },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
+
+    await expect(assets.compressedTextures?.ready).resolves.toBeUndefined();
+  });
+
   it("should throw when no compressed format is supported", async () => {
-    // Nothing reports a compressed-texture extension: the loader must reject at construction,
-    // naming the renderer kind, rather than let three silently transcode to RGBA32 later.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "rock.png": { output: "rock.a1b2c3d4.ktx2" },
+          },
+        }),
+      ),
+    );
+    // Nothing reports a compressed-texture extension: a build that actually publishes KTX2
+    // must reject at construction rather than let three silently transcode to RGBA32 later.
     const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
 
     await expect(assets.compressedTextures?.ready).rejects.toThrow(/TN_ASSETS_KTX2_UNSUPPORTED/u);
@@ -441,7 +469,9 @@ describe("IAssetLoader compressed textures", () => {
       "fetch",
       vi.fn(async (url: string | URL | RequestInfo) =>
         String(url).endsWith(".glb")
-          ? new Response(new Uint8Array(0))
+          ? new Response(
+              JSON.stringify({ asset: { version: "2.0" }, extensionsUsed: ["KHR_texture_basisu"] }),
+            )
           : manifestResponse({
               version: 1,
               entries: {
@@ -464,6 +494,34 @@ describe("IAssetLoader compressed textures", () => {
     expect(setKtx2Spy).toHaveBeenCalledTimes(1);
     expect(setKtx2Spy.mock.calls[0]?.[0]).toBe(shared);
     expect(detectSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not require KTX2 support for a model that does not declare Basis textures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | RequestInfo) =>
+        String(url).endsWith(".glb")
+          ? new Response(JSON.stringify({ asset: { version: "2.0" } }))
+          : manifestResponse({
+              version: 1,
+              entries: {
+                "b.glb": { output: "b.22222222.glb", kind: "model", bytes: 9, passes: [] },
+              },
+            }),
+      ),
+    );
+    vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+      this: GLTFLoader,
+      _data: ArrayBuffer,
+      _path: string,
+      onLoad: never,
+    ) {
+      (onLoad as (value: unknown) => void)({ url: "loaded.glb" });
+      return this;
+    } as never);
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
+
+    await expect(assets.model("b.glb")).resolves.toEqual({ url: "loaded.glb" });
   });
 });
 

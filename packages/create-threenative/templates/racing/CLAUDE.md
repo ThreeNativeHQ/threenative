@@ -2,6 +2,15 @@
 
 # AGENTS.md — __PROJECT_NAME__ racing
 
+## Native React layout — complete subset
+
+Use `View` and `Text` from `@threenative/core/react`; `react-dom` stays web-only. Units are pixels;
+children are absolute unless `direction` is `row` or `column`. The complete keys are `left`,
+`right`, `top`, `bottom`, `centerX`, `centerY`, `width`, `height`, `padding`, `direction`, `gap`,
+`align`, `background`, `color`, `opacity`, `fontSize`, `letterSpacing`, `textAlign`, and `zIndex`.
+Unknown keys/glyphs throw. CSS, Tailwind, flex grow/wrap, borders, radius, transforms, images, SVG,
+and events do not exist natively. Share components/state; keep appearance in `src/ui/` adapters.
+
 This project is an editable Three.js circuit-racing starter. The framework owns the loop,
 input, renderer, physics bindings, and playtest bridge; this repository owns the car feel,
 track, race rules, rescue, HUD, and look.

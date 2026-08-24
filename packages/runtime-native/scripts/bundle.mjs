@@ -247,6 +247,11 @@ async function bundleProject(project, entryPoint, outputPath, target) {
   const absoluteProject = resolve(project);
   const absoluteEntry = resolve(absoluteProject, entryPoint);
   const absoluteOutput = resolve(outputPath);
+  // Vite's CLI supplies this default; its JavaScript API does not. Native bundling uses the API,
+  // so without an explicit default CommonJS packages such as React select their development
+  // builds and every game has to repeat this platform seam in vite.config.ts. Preserve an
+  // explicitly selected development mode for diagnostics while making shipping builds honest.
+  process.env.NODE_ENV ??= 'production';
   const require = createRequire(join(absoluteProject, 'package.json'));
   let viteEntry;
   try {
@@ -336,6 +341,7 @@ void game.start().catch((error) => console.error(
   mkdirSync(dirname(absoluteOutput), { recursive: true });
   await build({
     root: absoluteProject,
+    define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV) },
     plugins:
       target === 'desktop'
         ? [importMetaPlugin, nativeEntryPlugin]

@@ -281,6 +281,22 @@ export function countPlatformerTemplateLoc(rootDirectory = process.cwd()): numbe
   );
 }
 
+/** Native-only generated React source versus the geometry HUD it replaces on that platform. */
+export function countNativeReactHudLoc(rootDirectory = process.cwd()): {
+  readonly geometry: number;
+  readonly nativeReact: number;
+} {
+  const root = resolve(rootDirectory);
+  const count = (relativePath: string): number => {
+    const path = join(root, relativePath);
+    return lineCount(normaliseSource(readFileSync(path, "utf8"), path, root));
+  };
+  return {
+    geometry: count("packages/create-threenative/templates/minimal/src/render/hud.ts"),
+    nativeReact: count("packages/create-threenative/templates/starter/src/ui/NativeHud.tsx"),
+  };
+}
+
 function summary(rows: readonly LocCount[], arm: BenchmarkArm): LocCount {
   const selected = rows.filter((row) => row.arm === arm);
   return {
@@ -404,4 +420,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   // Reported, not capped: the template LOC caps were retired by owner decision 2026-08-09.
   process.stdout.write(`platformer template LOC: ${countPlatformerTemplateLoc(root)}\n`);
+  const hud = countNativeReactHudLoc(root);
+  process.stdout.write(`native React HUD LOC: ${hud.nativeReact} (geometry HUD ${hud.geometry})\n`);
 }

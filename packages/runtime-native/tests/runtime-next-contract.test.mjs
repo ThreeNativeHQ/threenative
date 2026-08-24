@@ -96,6 +96,19 @@ test('native host publishes explicit platform facts before the game bundle', () 
   assert.match(smoke, /TN_NATIVE_PLATFORM:/u);
 });
 
+test('native project bundling defaults dependency selection to production mode', () => {
+  const bundler = read('scripts/bundle.mjs');
+  const defaultMode = bundler.indexOf("process.env.NODE_ENV ??= 'production';");
+  const viteBuild = bundler.indexOf('await build({', defaultMode);
+  assert.ok(defaultMode >= 0, 'native bundling must default NODE_ENV so React links its production build');
+  assert.ok(viteBuild > defaultMode, 'the production default must be installed before Vite loads dependencies');
+  assert.match(
+    bundler.slice(viteBuild),
+    /define:\s*\{\s*'process\.env\.NODE_ENV': JSON\.stringify\(process\.env\.NODE_ENV\)\s*\}/u,
+    'the Vite API must inline NODE_ENV; setting the parent process alone leaves both React builds in the bundle',
+  );
+});
+
 test('Win32 window creation does not require a Vulkan-capable host', () => {
   const windowSource = read('src/platform/window.cpp');
   assert.match(windowSource, /#elif !defined\(_WIN32\)[\s\S]*?SDL_WINDOW_VULKAN/u);

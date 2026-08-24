@@ -2,6 +2,15 @@
 
 # AGENTS.md — __PROJECT_NAME__ defense
 
+## Native React
+
+Import `View` and `Text` from `@threenative/core/react`; `react-dom` is web-only. Pixels are
+absolute; `row`/`column` enable flow. Keys: `left`,
+`right`, `top`, `bottom`, `centerX`, `centerY`, `width`, `height`, `padding`, `direction`, `gap`,
+`align`, `background`, `color`, `opacity`, `fontSize`, `letterSpacing`, `textAlign`, and `zIndex`.
+Unknown keys/glyphs throw. CSS, Tailwind, flex grow/wrap, borders, radius, transforms, images, SVG,
+and events. Share state/components; adapt appearance in `src/ui/`.
+
 This project is an editable Three.js tower-defense starter. The framework owns the loop,
 renderer, physics bindings and playtest bridge; this repository owns the route, attackers,
 towers, economy, waves and look.
