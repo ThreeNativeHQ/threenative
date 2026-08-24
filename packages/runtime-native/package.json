@@ -23,6 +23,7 @@
     "android/gradle/wrapper/gradle-wrapper.properties",
     "android/gradlew",
     "android/settings.gradle.kts",
+    "scripts/asset-preflight.mjs",
     "scripts/bundle.mjs",
     "scripts/install-prebuilt.mjs",
     "scripts/package-android.mjs",

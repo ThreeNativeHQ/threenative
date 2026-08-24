@@ -1512,7 +1512,17 @@ function positiveInteger(value, flag) {
 }
 
 if (process.argv[1] && new URL(`file://${process.argv[1]}`).pathname === new URL(import.meta.url).pathname) {
-  const { createGateRecorder } = await import('../../../scripts/gate-records.mjs');
+  // Gate records are an engine-repository artefact, not something a published install owns. A
+  // package-relative specifier here would ship inside the tarball and die ERR_MODULE_NOT_FOUND on
+  // an installed copy, so the path is resolved against the checkout and its absence is named.
+  const gateRecords = resolve(scriptDirectory, '../../../scripts/gate-records.mjs');
+  if (!existsSync(gateRecords)) {
+    throw new ProductionEvidenceError(
+      'TN_PROD_GATE_RECORDS_MISSING',
+      `pnpm profile:production records its gate phases through ${gateRecords}, which does not exist. This command runs from a ThreeNative engine checkout, not from an installed @threenative/runtime-native.`,
+    );
+  }
+  const { createGateRecorder } = await import(pathToFileURL(gateRecords).href);
   const gateRecorder = await createGateRecorder({
     phase: 'profile-production',
     command: ['pnpm profile:production', ...process.argv.slice(2)].join(' '),

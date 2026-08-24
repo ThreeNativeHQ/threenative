@@ -129,7 +129,7 @@ async function main(argv: readonly string[]): Promise<void> {
   for (const [index, name] of order.entries())
     process.stdout.write(`  ${index + 1}. ${name}@${versions.get(name)}\n`);
 
-  const report = checkPublishState({ repo: REPO });
+  const report = await checkPublishState({ repo: REPO });
   process.stdout.write(`\n${formatPublishReport(report)}`);
   if (report.exitCode !== 0)
     throw new Error("TN_RELEASE_PREFLIGHT_RED: pnpm publish:check refused this tree.");

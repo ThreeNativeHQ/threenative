@@ -12,6 +12,7 @@
  *  - has any package's `src/` moved since the version it still carries was published?
  *  - did a `catalog:` or `workspace:` specifier survive into a manifest that ships?
  *  - does every publishable package carry a README that its own `files` list would include?
+ *  - does every relative import of every shipped script resolve inside the packed tarball?
  *
  * A registry it cannot reach is not a pass. It exits `2` — `pnpm alpha:bar` uses the same rank,
  * where `2` means the question was never answered.
@@ -19,7 +20,9 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { init, parse } from "es-module-lexer";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -159,7 +162,7 @@ export function unresolvedTemplateSpecifiers(repo: string): readonly IPublishFin
 /**
  * A package page is only useful when its README exists and the package's own `files` list carries
  * it. Packages without an explicit list use npm's default inclusion rules, so existence is enough
- * for them. This stays manifest-based and offline: the tarball gate proves the same contract later.
+ * for them. This stays manifest-based; `unresolvableTarballImports` proves the packed contract.
  */
 export function missingPackageReadmes(
   packages: readonly IPublishPackage[],
@@ -277,6 +280,152 @@ export function staleInternalPeerRanges(
   return findings;
 }
 
+/**
+ * A packed tarball is what a stranger actually installs. `files` lists are hand-maintained and
+ * drift from the imports the scripts really make: HEAD ships `package-android.mjs`, which imports
+ * `./asset-preflight.mjs`, and that file is not in the list — so `build --target android` from a
+ * published install dies `ERR_MODULE_NOT_FOUND` before it reaches a single fetch. Nothing in the
+ * workspace can see that, because in the workspace the file is simply there.
+ */
+export interface ITarballContents {
+  /** Every shipped path, relative to the package root. */
+  readonly entries: readonly string[];
+  /** Contents of the shipped paths these gates read; binary and asset entries are not read. */
+  readonly text: ReadonlyMap<string, string>;
+}
+
+export type TarballReader = (item: IPublishPackage) => ITarballContents;
+
+const READABLE = /\.(?:mjs|cjs|js|json)$/u;
+
+/** Packs a package exactly as `pnpm publish` would and reads back what came out. */
+export function pnpmPackReader(): TarballReader {
+  return (item) => {
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), "threenative-pack-"));
+    try {
+      execFileSync("pnpm", ["pack", "--pack-destination", destination], {
+        cwd: item.directory,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const packed = fs.readdirSync(destination).filter((name) => name.endsWith(".tgz"));
+      if (packed.length !== 1)
+        throw new Error(
+          `TN_PUBLISH_PACK_FAILED: packing ${item.name} produced ${packed.length} tarball(s); expected exactly one.`,
+        );
+      const extracted = path.join(destination, "extracted");
+      fs.mkdirSync(extracted);
+      execFileSync("tar", ["-xzf", path.join(destination, packed[0] as string), "-C", extracted], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return readPackageTree(path.join(extracted, "package"));
+    } finally {
+      fs.rmSync(destination, { force: true, recursive: true });
+    }
+  };
+}
+
+function readPackageTree(root: string): ITarballContents {
+  const entries: string[] = [];
+  const text = new Map<string, string>();
+  const walk = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+        continue;
+      }
+      const relative = path.relative(root, absolute).split(path.sep).join("/");
+      entries.push(relative);
+      if (READABLE.test(relative)) text.set(relative, fs.readFileSync(absolute, "utf8"));
+    }
+  };
+  walk(root);
+  return { entries: entries.sort(), text };
+}
+
+/**
+ * `pnpm pack` rewrites `catalog:` and `workspace:` into real ranges; `npm pack` does not, and the
+ * tarball it produces installs nowhere — `EUNSUPPORTEDPROTOCOL` on the stranger's machine and
+ * nowhere else. CI only ever runs `pnpm -r publish`, so this cannot detect a policy breach in
+ * advance; it makes one visible in the artifact instead of in a user's install log.
+ */
+export function unresolvedTarballSpecifiers(
+  item: IPublishPackage,
+  contents: ITarballContents,
+): readonly IPublishFinding[] {
+  const manifest = contents.text.get("package.json");
+  if (manifest === undefined)
+    return [
+      {
+        detail: `${item.name} packs a tarball with no package.json, so what it would publish cannot be read.`,
+        package: item.name,
+        severity: "blocked",
+      },
+    ];
+  const parsed = JSON.parse(manifest) as Record<string, unknown>;
+  const findings: IPublishFinding[] = [];
+  for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+    const block = parsed[field];
+    if (typeof block !== "object" || block === null) continue;
+    for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>))
+      if (typeof specifier === "string" && UNRESOLVED.test(specifier))
+        findings.push({
+          detail: `${item.name} packs ${field}.${dependency} as '${specifier}', a workspace protocol npm cannot install. The tarball was not produced by \`pnpm pack\`.`,
+          package: item.name,
+          severity: "fail",
+        });
+  }
+  return findings;
+}
+
+/**
+ * Relative specifiers a shipped script imports. Parsed rather than pattern-matched: this file's
+ * first draft used regexes and reported `./game.js` as missing from the runtime-native tarball,
+ * because `profile-production.mjs` writes that import *into a generated bundle* as a string. A
+ * gate whose failures are half fiction gets suppressed rather than fixed.
+ *
+ * Dynamic forms count. `profile-production.mjs` reaches `../../../scripts/gate-records.mjs` from
+ * under a CLI guard; that still fails on an installed copy, just later and further from the cause.
+ */
+export async function relativeSpecifiers(file: string, source: string): Promise<readonly string[]> {
+  await init;
+  let parsed: ReturnType<typeof parse>[0];
+  try {
+    [parsed] = parse(source, file);
+  } catch (error) {
+    throw new Error(
+      `TN_PUBLISH_MODULE_UNREADABLE: ${file} is shipped but could not be parsed as a module, so its imports cannot be checked: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const found = new Set<string>();
+  for (const item of parsed) if (item.n?.startsWith(".") === true) found.add(item.n);
+  return [...found].sort();
+}
+
+/** Every relative import of every shipped script must resolve to something else that shipped. */
+export async function unresolvableTarballImports(
+  item: IPublishPackage,
+  contents: ITarballContents,
+): Promise<readonly IPublishFinding[]> {
+  const shipped = new Set(contents.entries);
+  const findings: IPublishFinding[] = [];
+  for (const [file, source] of contents.text) {
+    if (file.endsWith(".json")) continue;
+    for (const specifier of await relativeSpecifiers(file, source)) {
+      const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
+      if (shipped.has(resolved)) continue;
+      findings.push({
+        detail: `${item.name} ships ${file}, which imports '${specifier}', but ${resolved} is not in the tarball. Loading it fails ERR_MODULE_NOT_FOUND on an installed copy.`,
+        package: item.name,
+        severity: "fail",
+      });
+    }
+  }
+  return findings;
+}
+
 export const RELEASE_WORKFLOW = ".github/workflows/npm-release.yml";
 
 /**
@@ -311,6 +460,7 @@ export interface ICheckPublishOptions {
   readonly lookup?: RegistryLookup;
   readonly repo?: string;
   readonly sourceCommits?: SourceCommits;
+  readonly tarballs?: TarballReader;
 }
 
 function versionFinding(
@@ -343,7 +493,9 @@ function versionFinding(
   };
 }
 
-export function checkPublishState(options: ICheckPublishOptions = {}): IPublishReport {
+export async function checkPublishState(
+  options: ICheckPublishOptions = {},
+): Promise<IPublishReport> {
   const repo = options.repo ?? REPO;
   const lookup = options.lookup ?? npmLookup(repo);
   const commits = options.sourceCommits ?? gitSourceCommits(repo);
@@ -357,6 +509,12 @@ export function checkPublishState(options: ICheckPublishOptions = {}): IPublishR
   findings.push(...staleInternalPeerRanges(packages));
   findings.push(...missingFromReleaseWorkflow(repo, packages));
   findings.push(...unresolvedTemplateSpecifiers(repo));
+  const readTarball = options.tarballs ?? pnpmPackReader();
+  for (const item of packages) {
+    const contents = readTarball(item);
+    findings.push(...unresolvedTarballSpecifiers(item, contents));
+    findings.push(...(await unresolvableTarballImports(item, contents)));
+  }
   const blocked = findings.some((finding) => finding.severity === "blocked");
   return {
     checked: packages.map((item) => item.name),
@@ -377,10 +535,15 @@ export function formatPublishReport(report: IPublishReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-function main(): void {
-  const report = checkPublishState();
+async function main(): Promise<void> {
+  const report = await checkPublishState();
   process.stdout.write(formatPublishReport(report));
   process.exitCode = report.exitCode;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (import.meta.url === `file://${process.argv[1]}`)
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    // A question this preflight could not answer is never a pass; 2 is the blocked rank.
+    process.exitCode = 2;
+  });

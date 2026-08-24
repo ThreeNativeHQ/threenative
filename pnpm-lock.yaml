@@ -36,6 +36,9 @@ catalogs:
     '@vitejs/plugin-react':
       specifier: 6.0.5
       version: 6.0.5
+    es-module-lexer:
+      specifier: 2.3.1
+      version: 2.3.1
     esbuild:
       specifier: 0.27.0
       version: 0.27.0
@@ -107,6 +110,9 @@ importers:
       draco3dgltf:
         specifier: ^1.5.7
         version: 1.5.7
+      es-module-lexer:
+        specifier: 'catalog:'
+        version: 2.3.1
       meshoptimizer:
         specifier: 1.1.1
         version: 1.1.1

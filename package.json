@@ -65,6 +65,7 @@
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
     "draco3dgltf": "^1.5.7",
+    "es-module-lexer": "catalog:",
     "meshoptimizer": "1.1.1",
     "pngjs": "7.0.0",
     "tsx": "4.23.5",
