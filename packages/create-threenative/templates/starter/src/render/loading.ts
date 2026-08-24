@@ -11,6 +11,7 @@ import {
 } from "three";
 import { palette } from "./palette.js";
 
+/* BEGIN THREENATIVE LOADING APPEARANCE */
 /** Edit these source constants for the starter's loading look. */
 export const loading = {
   backgroundColor: palette.skyLow,
@@ -23,8 +24,9 @@ export const loading = {
   trackColor: palette.skyHigh,
   bar: { anchorX: 0.5, anchorY: 0.72, height: 12, maxWidth: 520, width: 0.62 },
 } as const;
+/* END THREENATIVE LOADING APPEARANCE */
 
-interface LoadingHost {
+interface ILoadingHost {
   readonly assets?: { texture(path: string): Promise<Texture> };
   readonly camera: Camera;
   readonly canvasLayer: {
@@ -38,6 +40,28 @@ interface LoadingHost {
   readonly viewport?: {
     readonly safeArea: { height: number; width: number; x: number; y: number };
   };
+}
+
+interface ILoadingController {
+  update(): void;
+  finish(): void;
+}
+
+function noOp(layer: ILoadingHost["canvasLayer"]): ILoadingController {
+  layer.opaque = false;
+  return { finish: () => undefined, update: () => undefined };
+}
+
+function meshFor(
+  layer: ILoadingHost["canvasLayer"],
+  material: MeshBasicMaterial,
+  renderOrder: number,
+): Mesh<PlaneGeometry, MeshBasicMaterial> {
+  const mesh = new Mesh(new PlaneGeometry(1, 1), material);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = renderOrder;
+  layer.scene.add(mesh);
+  return mesh;
 }
 
 function imageAspect(texture: Texture | null | undefined): number {
@@ -82,7 +106,7 @@ function coverUv(
 }
 
 function statusMesh(
-  layer: LoadingHost["canvasLayer"],
+  layer: ILoadingHost["canvasLayer"],
 ):
   | { mesh: Mesh<PlaneGeometry, MeshBasicMaterial>; texture: Texture; update(value: number): void }
   | undefined {
@@ -93,13 +117,11 @@ function statusMesh(
   const context = canvas.getContext("2d");
   if (context === null) return undefined;
   const texture = new CanvasTexture(canvas);
-  const mesh = new Mesh(
-    new PlaneGeometry(1, 1),
+  const mesh = meshFor(
+    layer,
     new MeshBasicMaterial({ depthTest: false, depthWrite: false, map: texture, transparent: true }),
+    4,
   );
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 4;
-  layer.scene.add(mesh);
   const update = (value: number): void => {
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#ffffff";
@@ -113,37 +135,53 @@ function statusMesh(
   return { mesh, texture, update };
 }
 
-export function createLoadingScreen(host: LoadingHost) {
+export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   const layer = host.canvasLayer;
-  if (!loading.enabled) {
-    layer.opaque = false;
-    return { finish: () => undefined, update: () => undefined };
-  }
-  const mesh = (color: number, order: number): Mesh<PlaneGeometry, MeshBasicMaterial> => {
-    const value = new Mesh(
-      new PlaneGeometry(1, 1),
-      new MeshBasicMaterial({ color, depthTest: false, depthWrite: false }),
-    );
-    value.frustumCulled = false;
-    value.renderOrder = order;
-    layer.scene.add(value);
-    return value;
-  };
-  const backdrop = mesh(loading.backgroundColor, 0);
-  const track = mesh(loading.trackColor, 1);
-  const fill = mesh(loading.progressColor, 2);
-  const logo = mesh(0xffffff, 3);
-  logo.visible = false;
-  const status = statusMesh(layer);
-  const parts = [backdrop, track, fill, logo, ...(status === undefined ? [] : [status.mesh])];
-  const ownedTextures = new Set<Texture>(status === undefined ? [] : [status.texture]);
+  if (!loading.enabled) return noOp(layer);
+  const camera = layer.camera;
+  const backdrop = meshFor(
+    layer,
+    new MeshBasicMaterial({ color: loading.backgroundColor, depthTest: false, depthWrite: false }),
+    0,
+  );
+  const track = meshFor(
+    layer,
+    new MeshBasicMaterial({ color: loading.trackColor, depthTest: false, depthWrite: false }),
+    1,
+  );
+  const fill = meshFor(
+    layer,
+    new MeshBasicMaterial({ color: loading.progressColor, depthTest: false, depthWrite: false }),
+    2,
+  );
   const fillBaseU = Array.from({ length: fill.geometry.getAttribute("uv").count }, (_, index) =>
     fill.geometry.getAttribute("uv").getX(index),
   );
   const fillBaseV = Array.from({ length: fill.geometry.getAttribute("uv").count }, (_, index) =>
     fill.geometry.getAttribute("uv").getY(index),
   );
-  const camera = layer.camera;
+  const logo =
+    loading.logoImage === undefined
+      ? undefined
+      : meshFor(
+          layer,
+          new MeshBasicMaterial({
+            color: 0xffffff,
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+          }),
+          3,
+        );
+  const status = statusMesh(layer);
+  const parts = [
+    backdrop,
+    track,
+    fill,
+    ...(logo === undefined ? [] : [logo]),
+    ...(status === undefined ? [] : [status.mesh]),
+  ];
+  const ownedTextures = new Set<Texture>(status === undefined ? [] : [status.texture]);
   let width = 1;
   let height = 1;
   let barWidth = 1;
@@ -153,38 +191,36 @@ export function createLoadingScreen(host: LoadingHost) {
   let progress = 0;
   let done = false;
   let backdropTexture: Texture | undefined;
+
   const layout = (): void => {
     width = Math.max(1, camera.right - camera.left);
     height = Math.max(1, camera.top - camera.bottom);
     const safe = host.viewport?.safeArea ?? { height, width, x: 0, y: 0 };
     const safeWidth = Math.max(1, Math.min(width, safe.width));
     const safeHeight = Math.max(1, Math.min(height, safe.height));
-    const x = Math.max(0, Math.min(width - safeWidth, safe.x));
-    const y = Math.max(0, Math.min(height - safeHeight, safe.y));
+    const safeX = Math.max(0, Math.min(width - safeWidth, safe.x));
+    const safeY = Math.max(0, Math.min(height - safeHeight, safe.y));
     barWidth = Math.max(2, Math.min(loading.bar.maxWidth, safeWidth * loading.bar.width));
     barHeight = Math.max(2, Math.min(loading.bar.height, safeHeight * 0.05));
-    barX = x + safeWidth * loading.bar.anchorX;
-    barY = y + safeHeight * loading.bar.anchorY;
-    const worldX = (value: number): number => camera.left + value;
-    const worldY = (value: number): number => camera.top - value;
+    barX = safeX + safeWidth * loading.bar.anchorX;
+    barY = safeY + safeHeight * loading.bar.anchorY;
+    const worldX = (screenX: number): number => camera.left + screenX;
+    const worldY = (screenY: number): number => camera.top - screenY;
+    const visibleWidth = Math.max(2, barWidth * progress);
     backdrop.scale.set(width, height, 1);
     backdrop.position.set(worldX(width / 2), worldY(height / 2), 0);
     track.scale.set(barWidth, barHeight, 1);
     track.position.set(worldX(barX), worldY(barY), 0);
-    fill.scale.set(Math.max(1, barWidth * progress), barHeight, 1);
-    fill.position.set(
-      worldX(barX - barWidth / 2 + Math.max(1, barWidth * progress) / 2),
-      worldY(barY),
-      0,
-    );
-    if (logo.visible) {
-      const logoWidth = Math.min(280, safeWidth * 0.42);
+    fill.scale.set(visibleWidth, barHeight, 1);
+    fill.position.set(worldX(barX - barWidth / 2 + visibleWidth / 2), worldY(barY), 0);
+    if (logo?.visible) {
+      const logoWidth = Math.min(safeWidth * 0.42, 280);
       logo.scale.set(
         logoWidth,
         Math.min(logoWidth / imageAspect(logo.material.map), safeHeight * 0.22),
         1,
       );
-      logo.position.set(worldX(barX), worldY(Math.max(y, barY - safeHeight * 0.2)), 0);
+      logo.position.set(worldX(barX), worldY(Math.max(safeY, barY - safeHeight * 0.2)), 0);
     }
     if (status !== undefined) {
       status.mesh.scale.set(Math.min(180, safeWidth * 0.32), 48, 1);
@@ -193,36 +229,36 @@ export function createLoadingScreen(host: LoadingHost) {
     if (backdropTexture !== undefined)
       coverUv(backdrop.geometry, backdropTexture, width, height, fillBaseU, fillBaseV);
   };
+
   const updateProgress = (value: number): void => {
     progress = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
     setFillUv(fill.geometry, progress, fillBaseU);
     status?.update(progress);
     layout();
   };
-  const attach = (target: Mesh<PlaneGeometry, MeshBasicMaterial>, texture: Texture): void => {
+
+  const attachTexture = (mesh: Mesh<PlaneGeometry, MeshBasicMaterial>, texture: Texture): void => {
     if (done) return;
     configureTexture(texture);
-    target.material.map = texture;
-    target.material.color.set(0xffffff);
-    target.material.needsUpdate = true;
+    mesh.material.map = texture;
+    mesh.material.color.set(0xffffff);
+    mesh.material.needsUpdate = true;
     ownedTextures.add(texture);
-    if (target === backdrop) backdropTexture = texture;
+    if (mesh === backdrop) backdropTexture = texture;
     layout();
     updateProgress(progress);
   };
-  const load = (
-    source: string | undefined,
-    target: Mesh<PlaneGeometry, MeshBasicMaterial>,
-  ): void => {
+
+  const load = (source: string | undefined, mesh: Mesh<PlaneGeometry, MeshBasicMaterial>): void => {
     if (source === undefined || host.assets === undefined) return;
     void host.assets
       .texture(source)
-      .then((texture) => attach(target, texture))
+      .then((texture) => attachTexture(mesh, texture))
       .catch(() => undefined);
   };
   load(loading.backgroundImage, backdrop);
   load(loading.fillImage, fill);
-  if (loading.logoImage !== undefined && host.assets !== undefined) {
+  if (logo !== undefined && loading.logoImage !== undefined && host.assets !== undefined) {
     void host.assets
       .texture(loading.logoImage)
       .then((texture) => {
@@ -236,20 +272,23 @@ export function createLoadingScreen(host: LoadingHost) {
       })
       .catch(() => undefined);
   }
+
   layer.opaque = true;
   layout();
   updateProgress(0);
+
   const finish = (): void => {
     if (done) return;
     done = true;
-    for (const value of parts) {
-      value.removeFromParent();
-      value.geometry.dispose();
-      value.material.dispose();
+    for (const mesh of parts) {
+      mesh.removeFromParent();
+      mesh.geometry.dispose();
+      mesh.material.dispose();
     }
     for (const texture of ownedTextures) texture.dispose();
     layer.opaque = false;
   };
+
   void (async () => {
     await host.startup.whenReady();
     if (done) return;
@@ -266,6 +305,7 @@ export function createLoadingScreen(host: LoadingHost) {
     }
     finish();
   })();
+
   return {
     finish,
     update(): void {

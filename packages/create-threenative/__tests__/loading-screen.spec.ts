@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   type Mesh,
   MeshBasicMaterial,
@@ -7,7 +9,13 @@ import {
   Texture,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { canonicalLoadingPath, stampLoadingSource } from "../src/index.js";
 import { createLoadingScreen, loading } from "../templates/platformer/src/render/loading.js";
+
+const templateRoot = path.resolve("packages/create-threenative/templates");
+const stampedTemplates = ["action-rpg", "defense", "platformer", "racing", "shooter", "starter"];
+const loadingPath = (template: string): string =>
+  path.join(templateRoot, template, "src/render/loading.ts");
 
 /**
  * The loading screen is generated user source, but every scaffolded project starts from this copy,
@@ -56,6 +64,40 @@ function resizeCanvas(camera: OrthographicCamera, width: number, height: number)
 }
 
 describe("template loading screen", () => {
+  it("requires every full kit to ship the loading source", async () => {
+    for (const template of stampedTemplates) {
+      await expect(readFile(loadingPath(template), "utf8"), template).resolves.toContain(
+        "export function createLoadingScreen",
+      );
+    }
+  });
+
+  it("keeps every full kit stamped from the one canonical implementation", async () => {
+    const canonicalPath = canonicalLoadingPath(templateRoot);
+    const canonical = await readFile(canonicalPath, "utf8");
+    expect(canonicalPath).toContain("template-assets/loading.ts");
+    expect(canonical).toContain("BEGIN THREENATIVE LOADING APPEARANCE");
+
+    for (const template of stampedTemplates) {
+      const source = await readFile(loadingPath(template), "utf8");
+      expect(stampLoadingSource(canonical, source), template).toBe(source);
+      expect(source, template).not.toMatch(/@threenative\//u);
+      expect(source, template).not.toMatch(/function createStatus|const create\s*=/u);
+      expect(source.match(/export function createLoadingScreen/gu), template).toHaveLength(1);
+      expect(source.match(/function meshFor/gu), template).toHaveLength(1);
+      expect(source.match(/function statusMesh/gu), template).toHaveLength(1);
+    }
+  });
+
+  it("restamps a canonical structural edit while retaining each kit's appearance block", async () => {
+    const canonical = await readFile(canonicalLoadingPath(templateRoot), "utf8");
+    const source = await readFile(loadingPath("platformer"), "utf8");
+    const edited = canonical.replace("function meshFor(", "function canonicalMeshFor(");
+
+    expect(stampLoadingSource(edited, source)).toContain("function canonicalMeshFor(");
+    expect(stampLoadingSource(edited, source)).toContain("maxWidth: 1200");
+  });
+
   it("draws opaque quads only in the independent canvas layer", () => {
     const source = host();
     const worldChildren = [...source.scene.children];

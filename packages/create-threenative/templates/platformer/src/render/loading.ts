@@ -11,6 +11,7 @@ import {
 } from "three";
 import { palette } from "./palette.js";
 
+/* BEGIN THREENATIVE LOADING APPEARANCE */
 /** The five authoring points for this screen stay in this generated file. */
 export const loading = {
   backgroundColor: palette.skyLow,
@@ -29,8 +30,9 @@ export const loading = {
     width: 0.62,
   },
 } as const;
+/* END THREENATIVE LOADING APPEARANCE */
 
-export interface LoadingHost {
+interface ILoadingHost {
   readonly assets?: { texture(path: string): Promise<Texture> };
   readonly camera: Camera;
   readonly canvasLayer: {
@@ -42,12 +44,7 @@ export interface LoadingHost {
   readonly scene: Scene;
   readonly startup: { readonly progress: number; whenReady(): Promise<void> };
   readonly viewport?: {
-    readonly safeArea: {
-      readonly height: number;
-      readonly width: number;
-      readonly x: number;
-      readonly y: number;
-    };
+    readonly safeArea: { height: number; width: number; x: number; y: number };
   };
 }
 
@@ -56,13 +53,13 @@ interface ILoadingController {
   finish(): void;
 }
 
-function noOp(layer: LoadingHost["canvasLayer"]): ILoadingController {
+function noOp(layer: ILoadingHost["canvasLayer"]): ILoadingController {
   layer.opaque = false;
   return { finish: () => undefined, update: () => undefined };
 }
 
 function meshFor(
-  layer: LoadingHost["canvasLayer"],
+  layer: ILoadingHost["canvasLayer"],
   material: MeshBasicMaterial,
   renderOrder: number,
 ): Mesh<PlaneGeometry, MeshBasicMaterial> {
@@ -71,12 +68,6 @@ function meshFor(
   mesh.renderOrder = renderOrder;
   layer.scene.add(mesh);
   return mesh;
-}
-
-function setFillUv(geometry: PlaneGeometry, progress: number, base: readonly number[]): void {
-  const uv = geometry.getAttribute("uv");
-  for (let index = 0; index < uv.count; index += 1) uv.setX(index, (base[index] ?? 0) * progress);
-  uv.needsUpdate = true;
 }
 
 function imageAspect(texture: Texture | null | undefined): number {
@@ -90,6 +81,12 @@ function configureTexture(texture: Texture): void {
   texture.wrapS = ClampToEdgeWrapping;
   texture.wrapT = ClampToEdgeWrapping;
   texture.needsUpdate = true;
+}
+
+function setFillUv(geometry: PlaneGeometry, progress: number, base: readonly number[]): void {
+  const uv = geometry.getAttribute("uv");
+  for (let index = 0; index < uv.count; index += 1) uv.setX(index, (base[index] ?? 0) * progress);
+  uv.needsUpdate = true;
 }
 
 function coverUv(
@@ -115,9 +112,9 @@ function coverUv(
 }
 
 function statusMesh(
-  layer: LoadingHost["canvasLayer"],
+  layer: ILoadingHost["canvasLayer"],
 ):
-  | { mesh: Mesh<PlaneGeometry, MeshBasicMaterial>; update(value: number): void; texture: Texture }
+  | { mesh: Mesh<PlaneGeometry, MeshBasicMaterial>; texture: Texture; update(value: number): void }
   | undefined {
   if (!loading.showStatus || typeof document === "undefined") return undefined;
   const canvas = document.createElement("canvas");
@@ -144,7 +141,7 @@ function statusMesh(
   return { mesh, texture, update };
 }
 
-export function createLoadingScreen(host: LoadingHost): ILoadingController {
+export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   const layer = host.canvasLayer;
   if (!loading.enabled) return noOp(layer);
   const camera = layer.camera;
@@ -191,19 +188,15 @@ export function createLoadingScreen(host: LoadingHost): ILoadingController {
     ...(status === undefined ? [] : [status.mesh]),
   ];
   const ownedTextures = new Set<Texture>(status === undefined ? [] : [status.texture]);
-  layer.opaque = true;
-
   let width = 1;
   let height = 1;
   let barWidth = 1;
   let barHeight: number = loading.bar.height;
   let barX = 0;
   let barY = 0;
-  let lastProgress = 0;
-  let laidOutWidth = -1;
-  let laidOutHeight = -1;
-  let backdropTexture: Texture | undefined;
+  let progress = 0;
   let done = false;
+  let backdropTexture: Texture | undefined;
 
   const layout = (): void => {
     width = Math.max(1, camera.right - camera.left);
@@ -219,12 +212,13 @@ export function createLoadingScreen(host: LoadingHost): ILoadingController {
     barY = safeY + safeHeight * loading.bar.anchorY;
     const worldX = (screenX: number): number => camera.left + screenX;
     const worldY = (screenY: number): number => camera.top - screenY;
+    const visibleWidth = Math.max(2, barWidth * progress);
     backdrop.scale.set(width, height, 1);
     backdrop.position.set(worldX(width / 2), worldY(height / 2), 0);
     track.scale.set(barWidth, barHeight, 1);
     track.position.set(worldX(barX), worldY(barY), 0);
-    fill.position.set(worldX(barX - barWidth / 2), worldY(barY), 0);
-    fill.scale.set(Math.max(2, barWidth * lastProgress), barHeight, 1);
+    fill.scale.set(visibleWidth, barHeight, 1);
+    fill.position.set(worldX(barX - barWidth / 2 + visibleWidth / 2), worldY(barY), 0);
     if (logo?.visible) {
       const logoWidth = Math.min(safeWidth * 0.42, 280);
       logo.scale.set(
@@ -238,20 +232,15 @@ export function createLoadingScreen(host: LoadingHost): ILoadingController {
       status.mesh.scale.set(Math.min(180, safeWidth * 0.32), 48, 1);
       status.mesh.position.set(worldX(barX), worldY(Math.min(height, barY + barHeight * 2.5)), 0);
     }
-    laidOutWidth = width;
-    laidOutHeight = height;
-    if (backdropTexture !== undefined) {
+    if (backdropTexture !== undefined)
       coverUv(backdrop.geometry, backdropTexture, width, height, fillBaseU, fillBaseV);
-    }
   };
 
-  const setProgress = (value: number): void => {
-    lastProgress = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
-    const visibleWidth = Math.max(2, barWidth * lastProgress);
-    fill.scale.x = visibleWidth;
-    fill.position.x = camera.left + barX - barWidth / 2 + visibleWidth / 2;
-    setFillUv(fill.geometry, lastProgress, fillBaseU);
-    status?.update(lastProgress);
+  const updateProgress = (value: number): void => {
+    progress = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    setFillUv(fill.geometry, progress, fillBaseU);
+    status?.update(progress);
+    layout();
   };
 
   const attachTexture = (mesh: Mesh<PlaneGeometry, MeshBasicMaterial>, texture: Texture): void => {
@@ -263,13 +252,13 @@ export function createLoadingScreen(host: LoadingHost): ILoadingController {
     ownedTextures.add(texture);
     if (mesh === backdrop) backdropTexture = texture;
     layout();
-    setProgress(lastProgress);
+    updateProgress(progress);
   };
 
-  const load = (path: string | undefined, mesh: Mesh<PlaneGeometry, MeshBasicMaterial>): void => {
-    if (path === undefined || host.assets === undefined) return;
+  const load = (source: string | undefined, mesh: Mesh<PlaneGeometry, MeshBasicMaterial>): void => {
+    if (source === undefined || host.assets === undefined) return;
     void host.assets
-      .texture(path)
+      .texture(source)
       .then((texture) => attachTexture(mesh, texture))
       .catch(() => undefined);
   };
@@ -290,8 +279,9 @@ export function createLoadingScreen(host: LoadingHost): ILoadingController {
       .catch(() => undefined);
   }
 
+  layer.opaque = true;
   layout();
-  setProgress(0);
+  updateProgress(0);
 
   const finish = (): void => {
     if (done) return;
@@ -325,14 +315,7 @@ export function createLoadingScreen(host: LoadingHost): ILoadingController {
   return {
     finish,
     update(): void {
-      if (done) return;
-      if (
-        camera.right - camera.left !== laidOutWidth ||
-        camera.top - camera.bottom !== laidOutHeight
-      ) {
-        layout();
-      }
-      setProgress(host.startup.progress);
+      if (!done) updateProgress(host.startup.progress);
     },
   };
 }
