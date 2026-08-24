@@ -394,10 +394,28 @@ bool Context::initializeHeadless() {
     wgpuAdapterGetLimits(adapter_, &adapterLimits);
     WGPULimits requiredLimits = adapterLimits;
     deviceDesc.requiredLimits = &requiredLimits;
-    // Android emulator Vulkan can advertise IndirectFirstInstance through
-    // WebGPU while rejecting it when the HAL opens the device.
-    deviceDesc.requiredFeatureCount = 0;
-    deviceDesc.requiredFeatures = nullptr;
+    // The emulator workaround stays scoped to the feature it names: Android
+    // emulator Vulkan can advertise IndirectFirstInstance through WebGPU while
+    // rejecting it when the HAL opens the device. Dropping every feature was
+    // collateral damage — three's KTX2Loader saw no compressed format and
+    // createAssetLoader threw TN_ASSETS_KTX2_UNSUPPORTED at boot on physical
+    // devices too (docs/bugs/android-ktx2-unsupported-2026-08-23.md).
+    // Compression features are requested when the adapter advertises them,
+    // mirroring the non-Android branches below; a format the hardware lacks
+    // stays unrequested and truthfully absent from the device's feature set.
+    static WGPUFeatureName requiredFeaturesAndroid[3];
+    size_t featureCount = 0;
+    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
+                                        WGPUFeatureName_TextureCompressionETC2,
+                                        WGPUFeatureName_TextureCompressionASTC}) {
+        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
+                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
+        if (wgpuAdapterHasFeature(adapter_, compression)) {
+            requiredFeaturesAndroid[featureCount++] = compression;
+        }
+    }
+    deviceDesc.requiredFeatureCount = featureCount;
+    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesAndroid : nullptr;
     hasIndirectFirstInstance_ = false;
 #elif defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
     WGPULimits adapterLimits = {};
@@ -444,6 +462,12 @@ bool Context::initializeHeadless() {
                                         WGPUFeatureName_TextureCompressionETC2,
                                         WGPUFeatureName_TextureCompressionASTC}) {
         if (featureCount >= 4) break;
+        // The Dawn branch has always printed this; the wgpu branch did not, and wgpu is the
+        // Android and iOS backend. When a device reported no compressed format at all, the log
+        // said only that the renderer supported none — never whether the adapter advertised one
+        // and the request dropped it, or the adapter never advertised it. Print it on both paths.
+        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
+                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
         if (wgpuAdapterHasFeature(adapter_, compression)) {
             requiredFeaturesWGPU[featureCount++] = compression;
         }
@@ -691,8 +715,28 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
         requiredLimits.maxColorAttachmentBytesPerSample = neededBytesPerSample;
     }
     deviceDesc.requiredLimits = &requiredLimits;
-    deviceDesc.requiredFeatureCount = 0;
-    deviceDesc.requiredFeatures = nullptr;
+    // The emulator workaround stays scoped to the feature it names: Android
+    // emulator Vulkan can advertise IndirectFirstInstance through WebGPU while
+    // rejecting it when the HAL opens the device. Dropping every feature was
+    // collateral damage — three's KTX2Loader saw no compressed format and
+    // createAssetLoader threw TN_ASSETS_KTX2_UNSUPPORTED at boot on physical
+    // devices too (docs/bugs/android-ktx2-unsupported-2026-08-23.md).
+    // Compression features are requested when the adapter advertises them,
+    // mirroring the non-Android branches below; a format the hardware lacks
+    // stays unrequested and truthfully absent from the device's feature set.
+    static WGPUFeatureName requiredFeaturesAndroid[3];
+    size_t featureCount = 0;
+    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
+                                        WGPUFeatureName_TextureCompressionETC2,
+                                        WGPUFeatureName_TextureCompressionASTC}) {
+        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
+                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
+        if (wgpuAdapterHasFeature(adapter_, compression)) {
+            requiredFeaturesAndroid[featureCount++] = compression;
+        }
+    }
+    deviceDesc.requiredFeatureCount = featureCount;
+    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesAndroid : nullptr;
     hasIndirectFirstInstance_ = false;
 #elif defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
     // Dawn uses WGPULimits directly
@@ -918,8 +962,28 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         requiredLimits.maxColorAttachmentBytesPerSample = neededBytesPerSample;
     }
     deviceDesc.requiredLimits = &requiredLimits;
-    deviceDesc.requiredFeatureCount = 0;
-    deviceDesc.requiredFeatures = nullptr;
+    // The emulator workaround stays scoped to the feature it names: Android
+    // emulator Vulkan can advertise IndirectFirstInstance through WebGPU while
+    // rejecting it when the HAL opens the device. Dropping every feature was
+    // collateral damage — three's KTX2Loader saw no compressed format and
+    // createAssetLoader threw TN_ASSETS_KTX2_UNSUPPORTED at boot on physical
+    // devices too (docs/bugs/android-ktx2-unsupported-2026-08-23.md).
+    // Compression features are requested when the adapter advertises them,
+    // mirroring the non-Android branches below; a format the hardware lacks
+    // stays unrequested and truthfully absent from the device's feature set.
+    static WGPUFeatureName requiredFeaturesAndroid[3];
+    size_t featureCount = 0;
+    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
+                                        WGPUFeatureName_TextureCompressionETC2,
+                                        WGPUFeatureName_TextureCompressionASTC}) {
+        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
+                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
+        if (wgpuAdapterHasFeature(adapter_, compression)) {
+            requiredFeaturesAndroid[featureCount++] = compression;
+        }
+    }
+    deviceDesc.requiredFeatureCount = featureCount;
+    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesAndroid : nullptr;
     hasIndirectFirstInstance_ = false;
 #elif defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
     WGPULimits adapterLimits = {};
