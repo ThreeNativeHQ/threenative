@@ -70,5 +70,17 @@ void setUiHitRegions(const std::vector<float>& regions);
 /** Tear the desktop overlay down. Safe when nothing is attached. */
 void detachDesktopUiOverlay();
 
+#if defined(__APPLE__)
+/**
+ * The iOS overlay, in `ios/ui_overlay_ios.mm`.
+ *
+ * **UNPROVEN.** Never compiled, launched or touched — this repository has no macOS host. PRD-217's
+ * acceptance criterion 6 asks for iOS to be proven or stated unproven, and this is the statement.
+ */
+bool attachIosUiOverlay(const std::string& uiRoot);
+void detachIosUiOverlay();
+bool postIosUiMessage(const std::string& frame);
+#endif
+
 }  // namespace platform
 }  // namespace mystral

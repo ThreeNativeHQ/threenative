@@ -7,6 +7,10 @@
 
 #include <cstdio>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #if TN_ENABLE_UI_OVERLAY
 extern "C" {
 int tn_ui_overlay_attach(unsigned long parent, const char* url, uint32_t width, uint32_t height);
@@ -164,6 +168,9 @@ void detachDesktopUiOverlay() {}
 bool postUiMessage(const std::string& frame) {
 #if TN_ENABLE_UI_OVERLAY
     if (uiOverlayAttached()) return tn_ui_overlay_post(frame.c_str()) == 0;
+#endif
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    if (uiOverlayAttached()) return postIosUiMessage(frame);
 #endif
 #if defined(__ANDROID__)
     if (!uiOverlayAttached()) return false;

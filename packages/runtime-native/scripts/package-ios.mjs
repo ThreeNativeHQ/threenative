@@ -329,9 +329,47 @@ function stageIosLaunchAssets(output, backgroundColor, compileAssets = compileIo
   }
 }
 
+/**
+ * Stage the built UI bundle into the app bundle, where `WKURLSchemeHandler` serves it.
+ *
+ * Same two refusals as Android and desktop, because the same two mistakes are possible: a `web`
+ * game with no built UI would launch and show nothing over a working game, and a `native` game must
+ * carry no bundle at all.
+ *
+ * **The iOS host that would read this has never run.** See `ios/ui_overlay_ios.mm`.
+ */
+export function stageIosUi(ui, renderer, destination) {
+  rmSync(destination, { force: true, recursive: true });
+  if (renderer !== 'web') {
+    if (ui) {
+      throw new Error(
+        `TN_UI_BUNDLE_UNEXPECTED: a UI bundle was staged for a game whose ui.renderer is '${renderer}'. ` +
+          'The native renderer ships no web view; remove the bundle or set ui.renderer to "web".',
+      );
+    }
+    return [];
+  }
+  if (!ui || !existsSync(ui)) {
+    throw new Error(
+      `TN_UI_BUNDLE_MISSING: ui.renderer is "web" but no built UI was found at ${ui ?? '(not provided)'}. ` +
+        'Build the UI before packaging, or set ui.renderer to "native".',
+    );
+  }
+  if (!statSync(ui).isDirectory()) throw new Error(`TN_UI_BUNDLE_MISSING: not a directory: ${ui}`);
+  if (!existsSync(join(ui, 'index.html'))) {
+    throw new Error(
+      `TN_UI_BUNDLE_MISSING: ${ui} has no index.html, which is the page the overlay loads.`,
+    );
+  }
+  mkdirSync(destination, { recursive: true });
+  cpSync(ui, destination, { recursive: true });
+  return listFiles(destination);
+}
+
 export function stageIosSimulatorApp({
   assets,
   bundle,
+  ui = undefined,
   output,
   templateApp,
   orientation = undefined,
@@ -359,6 +397,7 @@ export function stageIosSimulatorApp({
   const game = join(output, 'game');
   rmSync(game, { force: true, recursive: true });
   mkdirSync(game, { recursive: true });
+  stageIosUi(ui, declared.ui?.renderer === 'web' ? 'web' : 'native', join(output, 'ui'));
   const plist = join(output, 'Info.plist');
   writeFileSync(plist, renderIosInfoPlist(readFileSync(plist, 'utf8'), declared));
   const iosVariants = declared.app.icons?.ios ?? {};
@@ -478,6 +517,7 @@ export async function packageIosSimulator(options) {
 export function parseIosPackageArgs(args) {
   return {
     assets: args.includes('--assets') ? valueAfter(args, '--assets') : undefined,
+    ui: args.includes('--ui') ? valueAfter(args, '--ui') : undefined,
     bundle: valueAfter(args, '--bundle'),
     output: valueAfter(args, '--output'),
     config: args.includes('--config') ? valueAfter(args, '--config') : undefined,

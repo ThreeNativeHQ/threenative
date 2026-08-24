@@ -6,6 +6,7 @@ import { afterEach, test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { renderAndroidManifest, stageAndroidUi } from '../scripts/package-android.mjs';
 import { stageDesktopUi } from '../scripts/package-desktop.mjs';
+import { stageIosUi } from '../scripts/package-ios.mjs';
 
 const androidManifest = readFileSync(
   new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url),
@@ -101,4 +102,19 @@ test('desktop stages a web-renderer UI and refuses both mismatches', () => {
 
   assert.throws(() => stageDesktopUi(undefined, 'web', join(root, 'a')), /TN_UI_BUNDLE_MISSING/u);
   assert.throws(() => stageDesktopUi(ui, 'native', join(root, 'b')), /TN_UI_BUNDLE_UNEXPECTED/u);
+});
+
+// iOS stages the bundle into the app, where WKURLSchemeHandler serves it. The host that reads it
+// has never run — see ios/ui_overlay_ios.mm — so this covers the packaging half only, and says so.
+test('iOS stages a web-renderer UI and refuses both mismatches', () => {
+  const root = temp('threenative-ui-ios-');
+  const ui = join(root, 'ui');
+  mkdirSync(ui, { recursive: true });
+  writeFileSync(join(ui, 'index.html'), '<!doctype html><div id="tn-ui"></div>');
+
+  assert.deepEqual(stageIosUi(ui, 'web', join(root, 'out')), ['index.html']);
+  assert.deepEqual(stageIosUi(undefined, 'native', join(root, 'none')), []);
+  assert.equal(existsSync(join(root, 'none')), false);
+  assert.throws(() => stageIosUi(undefined, 'web', join(root, 'a')), /TN_UI_BUNDLE_MISSING/u);
+  assert.throws(() => stageIosUi(ui, 'native', join(root, 'b')), /TN_UI_BUNDLE_UNEXPECTED/u);
 });

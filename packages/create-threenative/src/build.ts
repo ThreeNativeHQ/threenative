@@ -402,6 +402,7 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        ...(ui === undefined ? [] : ["--ui", ui]),
         "--orientation",
         orientation,
         "--config",

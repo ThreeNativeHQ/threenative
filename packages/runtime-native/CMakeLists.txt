@@ -1813,6 +1813,9 @@ if(MYSTRAL_PLATFORM STREQUAL "ios")
     endif()
     add_executable(threenative-ios MACOSX_BUNDLE
         ios/main.mm
+        # The UI layer, whose contract is the same one Android and desktop implement. UNPROVEN:
+        # this repository has no macOS host, so no part of it has been compiled or run.
+        ios/ui_overlay_ios.mm
         "${THREENATIVE_IOS_PROOF_BUNDLE}"
     )
     set_source_files_properties("${THREENATIVE_IOS_PROOF_BUNDLE}" PROPERTIES
@@ -1823,7 +1826,7 @@ if(MYSTRAL_PLATFORM STREQUAL "ios")
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "dev.threenative.runtime"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
     )
-    target_link_libraries(threenative-ios PRIVATE mystral-runtime)
+    target_link_libraries(threenative-ios PRIVATE mystral-runtime "-framework WebKit")
     if(SDL3_STATIC_TARGET)
         target_link_libraries(threenative-ios PRIVATE ${SDL3_STATIC_TARGET})
     elseif(TARGET SDL3::SDL3-static)
