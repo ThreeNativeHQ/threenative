@@ -223,6 +223,8 @@ async function runStarterLookScenario(artifacts: string, port: number): Promise<
       "--browser-recipe",
       "webgpu",
       "--headed",
+      // GitHub Actions' Xvfb has no hardware adapter; keep this scaffold smoke deterministic there.
+      ...(process.env.CI === "true" ? ["--allow-software"] : []),
     ],
     { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
   );

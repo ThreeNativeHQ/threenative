@@ -23,6 +23,16 @@ describe("root Playwright lane contracts", () => {
     expect(benchmark).toContain('globalSetup: "./test-support/benchmark-playwright-setup.ts"');
   });
 
+  it("allows the CI software adapter for the starter-look smoke runner", async () => {
+    const browser = await readFile(path.join(repo, "playwright.config.ts"), "utf8");
+    const start = browser.indexOf("async function runStarterLookScenario");
+    const end = browser.indexOf("async function assertStarterScreenshot");
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(browser.slice(start, end)).toContain('"--allow-software"');
+  });
+
   it("rejects a cached scaffold when a package source moves but keeps its basename", () => {
     const sourcePath = "/tmp/packages-a/threenative-core-0.1.0.tgz";
     const movedSourcePath = "/tmp/packages-b/threenative-core-0.1.0.tgz";
