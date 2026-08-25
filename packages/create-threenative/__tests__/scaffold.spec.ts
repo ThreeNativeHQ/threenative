@@ -216,6 +216,7 @@ describe("create-threenative", () => {
         "mobile-memory-budget.md",
         "sculpt-from-a-reference.md",
         "visual-baseline.md",
+        "webview-ui.md",
       ]);
       for (const file of shipped) {
         const page = await readFile(path.join(bundleDirectory, file), "utf8");

@@ -86,6 +86,7 @@ rules. The step-by-step recipes are separate searchable pages shipped into this 
 
 - `agent-docs/finding-assets.md` — the full asset-MCP loop: sources, licenses, downloads, ZIPs.
 - `agent-docs/sculpt-from-a-reference.md` — the sculpt gate loop and branch definitions.
+- `agent-docs/webview-ui.md` — the web-view UI layer: state, intents, hit regions.
 - `agent-docs/capture-the-frame.md` — how to screenshot a WebGPU game that actually renders.
 - `agent-docs/ctx-cookbook.md` — `ctx.raycast()`, scene rebuild, and seeded-randomness recipes.
 - `agent-docs/gameplay-recipes.md` — movement mapping, gamepad bindings, physics-step timing.
@@ -189,10 +190,10 @@ const send = useUiIntent();
 ```
 
 **`data-tn-interactive` marks every element the player touches** — the one thing a UI must do
-differently from a web page. The host publishes those rectangles and decides on pointer-down
-whether a touch is the UI's or the game's; unmarked elements are scenery a touch passes through.
-`pointer-events: none` is not that mechanism: the platform hands the gesture to the web view before
-any CSS runs. `ui: { renderer: "native" }` draws `View`/`Text` quads in the frame instead.
+differently from a web page. The host decides on pointer-down whether a touch is
+the UI's or the game's; unmarked elements are scenery a touch passes through.
+`pointer-events: none` is not that mechanism, and `agent-docs/webview-ui.md` says why.
+`ui: { renderer: "native" }` draws `View`/`Text` quads in the frame instead.
 
 ## The game this ships with
 

@@ -62,15 +62,21 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // `scene.environment`, which costs an extra 1536x2048 rgba16float pair on a Pixel 8, and no
   // amount of reading the code tells you that. Measured before/after per template in
   // docs/verification/instruction-budgets-2026-08-23.md.
-  defaultMaxWords: 2716,
+  // PRD-217 adds one shared pointer line to the reference index, naming the web-view UI page
+  // (`agent-docs/webview-ui.md`): +11 rendered words in every template, measured. It is in the
+  // shared fragment rather than per template because the page ships to all seven, and a page the
+  // instructions never name does not exist. Four templates sat exactly at their cap and carry the
+  // increment here; `action-rpg`, `racing` and `starter` absorbed it inside existing headroom,
+  // starter after trimming a `data-tn-interactive` sentence the new page states in full.
+  defaultMaxWords: 2727,
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
-    platformer: 3092,
+    platformer: 3103,
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
-    shooter: 2780,
+    shooter: 2791,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
-    minimal: 3469,
+    minimal: 3480,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).

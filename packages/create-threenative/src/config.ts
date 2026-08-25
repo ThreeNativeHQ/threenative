@@ -383,9 +383,12 @@ async function importConfig(cwd: string): Promise<Record<string, unknown> | unde
       loadingContext(
         cwd,
         sourcePath,
-        `run pnpm add -D vite in '${cwd}' and rerun ${CONFIG_BUILD_COMMAND}`,
+        `run pnpm add -D esbuild in '${cwd}' and rerun ${CONFIG_BUILD_COMMAND}`,
       ),
-      "threenative.config.ts needs project-resolved esbuild; install Vite or esbuild.",
+      // Not "install Vite": Vite 8 dropped esbuild for rolldown, so a project on it satisfies the
+      // old advice and still lands here. The templates ship esbuild explicitly for this reason;
+      // projects scaffolded before that do not.
+      "threenative.config.ts needs project-resolved esbuild; install esbuild.",
     );
   }
 

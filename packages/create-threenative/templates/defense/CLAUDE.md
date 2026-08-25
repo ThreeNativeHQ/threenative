@@ -88,6 +88,7 @@ rules. The step-by-step recipes are separate searchable pages shipped into this 
 
 - `agent-docs/finding-assets.md` — the full asset-MCP loop: sources, licenses, downloads, ZIPs.
 - `agent-docs/sculpt-from-a-reference.md` — the sculpt gate loop and branch definitions.
+- `agent-docs/webview-ui.md` — the web-view UI layer: state, intents, hit regions.
 - `agent-docs/capture-the-frame.md` — how to screenshot a WebGPU game that actually renders.
 - `agent-docs/ctx-cookbook.md` — `ctx.raycast()`, scene rebuild, and seeded-randomness recipes.
 - `agent-docs/gameplay-recipes.md` — movement mapping, gamepad bindings, physics-step timing.
