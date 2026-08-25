@@ -18,6 +18,11 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
 
+test('Android packaging allows AGP to strip native debug symbols', () => {
+  const gradle = readFileSync(new URL('../android/app/build.gradle.kts', import.meta.url), 'utf8');
+  assert.doesNotMatch(gradle, /keepDebugSymbols/u);
+});
+
 function copyRuntimeFile(runtime, relative) {
   const destination = join(runtime, relative);
   mkdirSync(dirname(destination), { recursive: true });
