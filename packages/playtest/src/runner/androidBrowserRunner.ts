@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { chromium, type Browser, type BrowserContext } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 import { discoverAdb } from "./android.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
@@ -49,10 +49,12 @@ export function androidBrowserUrl(source: string): { port: number; url: string }
 }
 
 export class AndroidChromeBrowserSession {
+  private readonly baselinePages = new Set<Page>();
   private browser?: Browser;
   private cdpPort?: number;
   private cdpForwardCreated = false;
   private chromeOwnedPid?: string;
+  private defaultContext?: BrowserContext;
   private metrics?: DeviceMetricsRecorder;
   private reversePort?: number;
   private reverseCreated = false;
@@ -86,11 +88,10 @@ export class AndroidChromeBrowserSession {
       await adb(["forward", "--no-rebind", `tcp:${this.cdpPort}`, "localabstract:chrome_devtools_remote"]);
       this.cdpForwardCreated = true;
       const chromeWasRunning = (await adb(["shell", "pidof", CHROME_PACKAGE])).trim().length > 0;
+      if (chromeWasRunning) await this.connectAndSnapshot();
       await adb([
         "shell", "am", "start", "-W",
-        "-a", "android.intent.action.VIEW",
         "-n", CHROME_COMPONENT,
-        "-d", device.url,
       ]);
       if (!chromeWasRunning) {
         const pid = (await adb(["shell", "pidof", CHROME_PACKAGE])).trim();
@@ -103,19 +104,14 @@ export class AndroidChromeBrowserSession {
   }
 
   async connect(): Promise<Browser> {
-    const serial = this.requiredSerial();
-    if (this.cdpPort === undefined) throw deviceFailure(serial, "CDP forward was not prepared");
-    try {
-      this.browser = await this.dependencies.connectOverCDP(`http://127.0.0.1:${this.cdpPort}`);
-      return this.browser;
-    } catch (error) {
-      throw deviceFailure(serial, `Chrome CDP was unreachable: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    if (this.browser === undefined) await this.connectBrowser();
+    return this.browser!;
   }
 
   async context(browser: Browser): Promise<BrowserContext> {
-    const context = browser.contexts()[0];
+    const context = this.defaultContext ?? browser.contexts()[0];
     if (context === undefined) throw deviceFailure(this.requiredSerial(), "Chrome CDP exposed no default browser context");
+    this.defaultContext = context;
     return context;
   }
 
@@ -137,6 +133,9 @@ export class AndroidChromeBrowserSession {
     const adbPath = this.config.adbPath ?? discoverAdb();
     const adb = (args: readonly string[]) => this.dependencies.execAdb(adbPath, serial, args);
     // Remove exactly the mappings and Chrome process this run owns. Other adb users survive.
+    for (const page of this.defaultContext?.pages() ?? []) {
+      if (!this.baselinePages.has(page)) await page.close().catch(() => undefined);
+    }
     if (this.chromeOwnedPid !== undefined) {
       const currentPid = await adb(["shell", "pidof", CHROME_PACKAGE]).catch(() => "");
       if (currentPid.trim() === this.chromeOwnedPid) {
@@ -154,6 +153,25 @@ export class AndroidChromeBrowserSession {
       this.reverseCreated = false;
     }
     this.reversePort = undefined;
+  }
+
+  private async connectAndSnapshot(): Promise<void> {
+    const browser = await this.connectBrowser();
+    const context = browser.contexts()[0];
+    if (context === undefined) throw deviceFailure(this.requiredSerial(), "Chrome CDP exposed no default browser context");
+    this.defaultContext = context;
+    for (const page of context.pages()) this.baselinePages.add(page);
+  }
+
+  private async connectBrowser(): Promise<Browser> {
+    const serial = this.requiredSerial();
+    if (this.cdpPort === undefined) throw deviceFailure(serial, "CDP forward was not prepared");
+    try {
+      this.browser = await this.dependencies.connectOverCDP(`http://127.0.0.1:${this.cdpPort}`);
+      return this.browser;
+    } catch (error) {
+      throw deviceFailure(serial, `Chrome CDP was unreachable: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private requiredSerial(): string {
