@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-222 — every platform has a frame-rate target, and a gate that fails when it is missed
 
-**Status:** NOT STARTED — filed 2026-08-25 as a standing benchmark contract. This PRD is written
+**Status:** PARTIAL — Phase 0 measured 2026-08-25; native/browser parity is 0.319 on the physical
+Pixel 8, so Phase 1 gates and Phase 2 engine work are next. This PRD is written
 to be executed by an agent looping until the bar is met, so every target below names the command
 that decides it and the evidence that closes it.
 **Complexity:** +3 measurement across five platform lanes, +2 complex performance work,
@@ -36,12 +37,14 @@ Rows marked **pre-fix** were taken before the material-keyed batch lane landed (
 | **native Android, 1200×540** | bayview | **30.1 → 34.5** | — / 32.4 → 25.0 ms | 31.4 → 21.6 ms | post-fix matched-warm A/B pair (~36 °C both arms): pre-fix declined at 30.1 fps, post-fix folded 13 batches at 34.5 |
 | native Android, 2400×1080 | starter | **59.99** | 8.47 ms | 7.88 ms | light scene, same host, same phone |
 | browser desktop (Vulkan) | bayview | ~69 | 14.5 ms p95 | — | `frame-smoothness.playtest.json`, 1302 frames, 0 spikes |
-| browser Android (Chrome 151) | bayview | **unmeasured** | — | — | **the missing number this PRD exists to get** |
+| **browser Android (Chrome 151)** | bayview | **59.99** | 9.5 / — ms | 10.1 ms p95 | Phase 0, physical Pixel 8, same build/thermal window as native; full record below |
 
 The post-fix device rows come from the bug file's device record
 (`docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md`, commit `ba78ce42`),
 which this PRD named as the first measurement to collect. The headline floor is still missed at
 native resolution: 20.1 against a 30 fps Floor — but the margin math below says it is close.
+Phase 0's matched browser/native run is in `docs/verification/prd-222-2026-08-25.md`: Chrome
+measured 59.99 fps and native 19.15 fps, for 0.319 fps parity and 0.301 inverted render-p95 parity.
 
 Three things follow, and they shape every target below.
 
@@ -283,12 +286,17 @@ by hand, and a bar that lived in one person's head.
 
 **This phase decides every target that follows. Do it first and do not skip it.**
 
-- [ ] Build the Android browser lane (ledger row 1), or drive Chrome by hand once and record it as
+- [x] Build the Android browser lane (ledger row 1), or drive Chrome by hand once and record it as
       a hand-driven run.
-- [ ] Same scene, same phone, same thermal window, twice: Chrome 151 on the Pixel 8, then the
+- [x] Same scene, same phone, same thermal window, twice: Chrome 151 on the Pixel 8, then the
       native APK. Both with `TN_FRAME_BUDGET` and `deviceMetrics`.
-- [ ] Compute `parity`. Write the answer into `docs/verification/prd-222-<date>.md` **before**
+- [x] Compute `parity`. Write the answer into `docs/verification/prd-222-<date>.md` **before**
       touching any engine code.
+
+Phase 0 result: **0.319 fps parity and 0.301 inverted render-p95 parity** on serial
+`192.168.1.192:5555`, not thermally confounded. This routes the next measured lever to engine work.
+The hand-driven browser fallback recorded pre/post device probes because the browser-device runner
+lane does not yet produce `observations.deviceMetrics`; building that lane remains Phase 1 work.
 
 The result splits the work and must be stated plainly:
 
@@ -364,11 +372,12 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
 - **Never claim a gate you did not run.** "Unverified" is an acceptable answer and the only honest
   one for a row nobody measured.
 
-**Named unverified at proposal time:** every Tier 1 row except native Android; every Tier 2 row
-(no parity run has ever been taken); every Tier 4 row (the 2026-08-24 heat numbers are a soak that
+**Named unverified at proposal time:** every Tier 1 row except native Android; every Tier 2 row;
+every Tier 4 row (the 2026-08-24 heat numbers are a soak that
 happened, not a run against these thresholds); iOS entirely (no lane, excluded by standing rule);
 Windows and macOS desktop (no host). *Taken since filing:* bayview's post-batch-fix device number
 — measured 2026-08-25, recorded in
 `docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md` and in the table and
-findings above; what that scene still owes this PRD is its Tier 4 sustained run and its
-browser-on-Pixel arm (Phase 0).
+findings above; the Phase 0 browser/native Pixel pair is recorded in
+`docs/verification/prd-222-2026-08-25.md`. What that scene still owes this PRD is its Tier 4
+sustained run and green Phase 2/3 gates.
