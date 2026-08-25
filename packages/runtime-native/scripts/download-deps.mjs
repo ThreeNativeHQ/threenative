@@ -233,8 +233,8 @@ const DEPS = {
       // Ogg Vorbis decode for `decodeAudioData`. The runtime carried no Vorbis decoder at all —
       // `decodeAudioFile` was one call to `SDL_LoadWAV_IO` — so every native target rejected the
       // `.ogg` files the web half of the same source plays, and an APK built from a repository's
-      // own assets died at startup. `stb_vorbis.c` is the same vendored single-file precedent as
-      // stb_image and cgltf; `src/audio/vorbis_impl.c` is the one translation unit that compiles it.
+      // own assets died at startup. `stb_vorbis.c` follows the same vendored single-file precedent
+      // as stb_image above; `src/audio/vorbis_impl.c` is the one translation unit that compiles it.
       'stb_vorbis.c',
     ],
   },

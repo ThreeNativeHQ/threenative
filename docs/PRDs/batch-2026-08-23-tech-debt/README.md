@@ -1,6 +1,7 @@
 # Batch — pay down the tech-debt scan, 2026-08-23
 
-**Status:** NOT STARTED. Twelve PRDs filed from
+**Status:** PARTIAL — 197, 205 and 207 are done (archived to `docs/PRDs/done/`); the other nine
+have not started. Twelve PRDs filed from
 `docs/audits/tech-debt-scan-2026-08-23.md` (checkout `62fac4d5`, anchors re-verified at
 HEAD `36831d96` before filing). Every numbered finding in the scan maps to exactly one
 PRD; nothing is filed twice.
@@ -15,7 +16,7 @@ Tier-4 sweep.
 
 | PRD | Outcome | Scan items | Complexity | Depends on |
 | --- | --- | --- | --- | --- |
-| [197](./PRD-197-native-host-fails-loudly-at-creation.md) | TLS verifies peers by default; bind groups/samplers throw at creation; no phantom timer stubs | #1, #7, #15 | 5 → MEDIUM | none |
+| [197](../done/PRD-197-native-host-fails-loudly-at-creation.md) **(done)** | TLS verifies peers by default; bind groups/samplers throw at creation; no phantom timer stubs | #1, #7, #15 | 5 → MEDIUM | none |
 | [198](./PRD-198-raytracing-surface-stays-dark-until-results-exist.md) | Raytracing is gated off instead of resolving success on a result nothing can read | #2 | 5 → MEDIUM | none |
 | [199](./PRD-199-parity-scenario-validation-fails-closed.md) | Malformed parity animation/resources and wrong-typed viewports throw at load | #3, #16 | 3 → LOW | none |
 | [200](./PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) | Triviality guard has one definition; `buildReport` takes an options object; movement-evidence splits | #5, #6, #13 | 6 → MEDIUM | none |
@@ -23,9 +24,9 @@ Tier-4 sweep.
 | [202](./PRD-202-runner-lanes-share-one-implementation.md) | Device and browser lanes run identical helper code; distance math cannot diverge; sampling splits | #8, #14 | 6 → MEDIUM | none |
 | [203](./PRD-203-template-loading-screens-stop-drifting.md) | One canonical `loading.ts` is stamped at scaffold time; drift is a failing test | #9 | 5 → MEDIUM | none |
 | [204](./PRD-204-assertion-validators-are-generated-from-the-registry.md) | Assertion validators are generated from the registry that already generates the docs | #11 | 6 → MEDIUM | none |
-| [205](./PRD-205-webgpu-bindings-register-from-a-table-and-get-linted.md) | Table-driven registration replaces 100 nested lambdas; Biome covers runtime-native | #10, #12 | 8 → HIGH | after 197 |
+| [205](../done/PRD-205-webgpu-bindings-register-from-a-table-and-get-linted.md) **(done)** | Table-driven registration replaces 100 nested lambdas; Biome covers runtime-native | #10, #12 | 8 → HIGH | after 197 |
 | [206](./PRD-206-shared-behaviours-have-one-definition.md) | Input, pointer math, error contract, reachability and teardown each collapse to one definition | #18, #20, #21, #22, #23 | 5 → MEDIUM | none |
-| [207](./PRD-207-native-internals-shed-their-shortcuts.md) | Build tools leave the runtime binary; embedded JS shrinks; handles own their lifetime; polls become fences | #17, #27, #28, #29 | 8 → HIGH | after 205 starts, coordinates |
+| [207](../done/PRD-207-native-internals-shed-their-shortcuts.md) **(done)** | Build tools leave the runtime binary; embedded JS shrinks; handles own their lifetime; polls become fences | #17, #27, #28, #29 | 8 → HIGH | after 205 starts, coordinates |
 | [208](./PRD-208-tier-four-hygiene-sweep.md) | Dead API deleted, stale anchors re-anchored, mirrored constants single-sourced | Tier 4 | 5 → MEDIUM | none |
 
 ## Order

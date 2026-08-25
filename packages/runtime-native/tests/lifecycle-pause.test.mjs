@@ -48,7 +48,7 @@ test("the paused loop runs no JavaScript and presents no frame", () => {
   assert.match(body, /countAndDropDueTimers\(\);/u);
   assert.match(body, /return running_;/u, "the paused branch must return before any frame work");
   // The gate has to sit ahead of the frame work, or a paused loop still presents.
-  for (const call of ["beginFrame()", "executeAnimationFrameCallbacks()", "endDawnFrame()"])
+  for (const call of ["beginFrame()", "executeAnimationFrameCallbacks()", "endDawnFrame(bindingsState_)"])
     assert.ok(
       runtime.indexOf(call, gate) > gate + body.indexOf("return running_;"),
       `${call} must be downstream of the paused gate`,
@@ -148,19 +148,19 @@ test("resume rebuilds the surface Android destroyed, and republishes it", () => 
   );
   assert.match(
     runtime,
-    /webgpu::republishSurface\(webgpu_->getSurface\(\)/u,
-    "bindings read g_surface for every present; a host-only rebuild fixes nothing",
+    /webgpu::republishSurface\(bindingsState_, webgpu_->getSurface\(\)/u,
+    "the bindings read their own surface for every present; a host-only rebuild fixes nothing",
   );
   // Ahead of the frame work, or the first frame after resume draws to the dead surface.
   const revalidate = runtime.indexOf("platform::takeSurfaceRevalidationRequest()");
-  for (const call of ["beginFrame()", "executeAnimationFrameCallbacks()", "endDawnFrame()"])
+  for (const call of ["beginFrame()", "executeAnimationFrameCallbacks()", "endDawnFrame(bindingsState_)"])
     assert.ok(runtime.indexOf(call, revalidate) > revalidate, `${call} must be downstream of the rebuild`);
 
   const bindings = read("src/webgpu/bindings.cpp");
   assert.match(bindings, /void republishSurface\(/u);
   assert.match(
     bindings,
-    /void detachSurfaceForRebuild\(\)[\s\S]*?g_surface = nullptr;/u,
+    /void detachSurfaceForRebuild\(BindingsState\* state\)[\s\S]*?state->surface = nullptr;/u,
     "an acquired-but-unpresented swapchain image must be released before the surface goes away",
   );
   assert.match(read("include/mystral/webgpu/context.h"), /bool rebuildSurface\(void\* nativeHandle, int platformType\);/u);

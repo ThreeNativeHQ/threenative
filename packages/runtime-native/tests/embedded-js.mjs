@@ -3,15 +3,25 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 /**
- * Shared harness for the behavioral tests of runtime.cpp's embedded JavaScript
- * shims. The host evals each `const char* <name> = R"<DELIM>(...) <DELIM>";`
- * block into the game's JS engine at startup; every global those blocks install
- * is part of the host surface TypeScript framework code may rely on (see
- * AGENTS.md, "The host surface is a contract"). These helpers extract a block
- * straight out of runtime.cpp so the tests exercise exactly what ships, and
- * fail closed when a block is renamed or deleted instead of silently covering
- * nothing.
+ * Shared harness for the behavioral tests of the runtime's JavaScript shims.
+ * The host evals each script into the game's JS engine at startup; every global
+ * those scripts install is part of the host surface TypeScript framework code
+ * may rely on (see AGENTS.md, "The host surface is a contract"). PRD-207 moved
+ * the sources out of `runtime.cpp` raw-string literals into
+ * `src/runtime-scripts/*.js`, so these helpers read the shipped file and still
+ * fail closed when runtime.cpp stops loading it.
  */
+
+/** C++ block name -> the runtime script that now carries that source. */
+const SCRIPT_FOR_BLOCK = {
+  createElementSetup: "create-element-setup",
+  eventConstructorsSetup: "event-constructors-setup",
+  fetchPolyfill: "fetch-polyfill",
+  imageSupportInit: "image-support-init",
+  storagePolyfill: "storage-polyfill",
+  streamsPolyfill: "streams-polyfill",
+  urlPolyfill: "url-worker-polyfill",
+};
 
 export function readRuntimeCpp() {
   return readFileSync(
@@ -20,18 +30,31 @@ export function readRuntimeCpp() {
   );
 }
 
-/** Extracts one embedded raw-string block by its C++ variable name. */
+/**
+ * Reads one shim's source by its historical C++ block name.
+ *
+ * `source` is runtime.cpp: the script only ships if the host still evals it, so
+ * a shim that was renamed or dropped from the bootstrap fails here rather than
+ * leaving the owning tests silently covering nothing.
+ */
 export function extractEmbeddedJs(source, blockName) {
-  const match = source.match(
-    new RegExp(`const char\\* ${blockName} = R"([A-Za-z]*)\\(([\\s\\S]*?)\\)\\1";`, "u"),
-  );
-  if (!match) {
+  const script = SCRIPT_FOR_BLOCK[blockName];
+  if (!script) {
     throw new Error(
-      `runtime.cpp no longer embeds a raw-string block named "${blockName}" — ` +
+      `no runtime script is mapped to the shim "${blockName}" — ` +
+        "add it to SCRIPT_FOR_BLOCK or update the owning tests",
+    );
+  }
+  if (!source.includes(`evalRuntimeScript(*jsEngine_, "${script}"`)) {
+    throw new Error(
+      `runtime.cpp no longer loads the runtime script "${script}" — ` +
         "the shim was renamed or removed; update the owning tests",
     );
   }
-  return match[2];
+  return readFileSync(
+    fileURLToPath(new URL(`../src/runtime-scripts/${script}.js`, import.meta.url)),
+    "utf8",
+  );
 }
 
 /**

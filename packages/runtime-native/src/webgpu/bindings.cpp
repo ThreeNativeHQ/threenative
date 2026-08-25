@@ -2136,9 +2136,8 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                                             WGPUTexture tex = (WGPUTexture)resourcePtr;
                                             WGPUTextureViewDescriptor viewDesc = {};
                                             WGPUTextureView view = wgpuTextureCreateView(tex, &viewDesc);
-                                            if (!view) {
-                                                reportNullHandle("device.createBindGroup/autoTextureView",
-                                                                 "binding=" + std::to_string(bgEntry.binding));
+                                            if (!requireHandle(state->engine, view, "device.createBindGroup/autoTextureView",
+                                                               "binding=" + std::to_string(bgEntry.binding))) {
                                                 return failResource("texture view", "native handle is null after automatic creation", bgEntry.binding);
                                             }
                                             autoCreatedViews.push_back(view);
@@ -2160,9 +2159,12 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                             bgDesc.entries = bindGroupEntries.data();
                             WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(state->device, &bgDesc);
                             if (!bindGroup) {
-                                reportNullHandle("device.createBindGroup",
-                                                 "entries=" + std::to_string(bindGroupEntries.size()));
                                 releaseAutoCreatedViews();
+                                // Name the operation in the platform log — logcat is the only place a
+                                // phone crash can be read from — then fail closed with this binding's
+                                // own message.
+                                requireHandle(state->engine, bindGroup, "device.createBindGroup",
+                                              "entries=" + std::to_string(bindGroupEntries.size()));
                                 state->engine->throwException("Failed to create bind group");
                                 return state->engine->newUndefined();
                             }
@@ -2484,11 +2486,11 @@ static js::JSValueHandle tnWebgpuHandler65(BindingsState* state, uint64_t textur
                                         if (viewDesc.arrayLayerCount < 6) viewDesc.arrayLayerCount = 6;
                                     }
                                     WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
-                                    if (!view) {
-                                        reportNullHandle("texture.createView", "textureId=" + std::to_string(textureId));
-                                        std::cerr << "[WebGPU] createView: Failed to create texture view" << std::endl;
+                                    // PRD-207 routes the offscreen-canvas texture through the same wrapper, so
+                                    // this one site is what main's `offscreenTexture.createView` guarded as well.
+                                    if (!requireHandle(state->engine, view, "texture.createView",
+                                                       "textureId=" + std::to_string(textureId)))
                                         return state->engine->newUndefined();
-                                    }
                                     auto jsView = state->engine->newObject();
                                     state->engine->setPrivateData(jsView, view);
                                     state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
@@ -2916,11 +2918,8 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                     WGPUCommandEncoder capturedEncoder = state->jsCommandEncoder;
                                     WGPUComputePassEncoder computePass =
                                         wgpuCommandEncoderBeginComputePass(capturedEncoder, &computePassDesc);
-                                    if (!computePass) {
-                                        reportNullHandle("commandEncoder.beginComputePass", "");
-                                        state->engine->throwException("Failed to begin compute pass");
+                                    if (!requireHandle(state->engine, computePass, "commandEncoder.beginComputePass"))
                                         return state->engine->newUndefined();
-                                    }
                                     const WGPUComputePassEncoder previousJsComputePass =
                                         state->jsComputePass;
                                     const auto previousComputePassIt =
@@ -3347,10 +3346,8 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     }
                                     // Begin render pass on the captured encoder (not the global)
                                     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoderToUse, &renderPassDesc);
-                                    if (!renderPass) {
-                                        reportNullHandle("commandEncoder.beginRenderPass",
-                                                         "colorAttachments=" + std::to_string(numAttachments));
-                                        state->engine->throwException("Failed to begin render pass");
+                                    if (!requireHandle(state->engine, renderPass, "commandEncoder.beginRenderPass",
+                                                       "colorAttachments=" + std::to_string(numAttachments))) {
                                         state->surfaceRenderEncoder = previousSurfaceRenderEncoder;
                                         state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
                                         return state->engine->newUndefined();
@@ -3499,11 +3496,8 @@ static void rollbackCommandEncoder(
 static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             WGPUCommandEncoderDescriptor desc = {};
                             WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &desc);
-                            if (!encoder) {
-                                reportNullHandle("device.createCommandEncoder", "");
-                                state->engine->throwException("Failed to create command encoder");
+                            if (!requireHandle(state->engine, encoder, "device.createCommandEncoder"))
                                 return state->engine->newUndefined();
-                            }
                             // Store in global for use by beginRenderPass
                             // Note: Multiple encoders are supported via per-encoder render pass tracking
                             const WGPUCommandEncoder previousJsCommandEncoder =

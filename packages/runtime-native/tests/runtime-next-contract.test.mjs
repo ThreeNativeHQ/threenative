@@ -21,7 +21,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'streams-polyfill.js': '134957d3cb3154f4e27b95b611af510b55c4e0e48a56c3785444ca0b31d45901',
   'url-worker-polyfill.js': '1eb2015e202ca7e039e854aa68099bbc167d4f385f014c6acaa8cfd7ef2d850b',
   'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
-  'event-constructors-setup.js': '9f69ab661c4926863e5ce59e5a83504ea9a8457ed95f58c69058ee6702dcd5e0',
+  'event-constructors-setup.js': 'e74c0d5a0307b8d66b2557a92f47e5250ca2828dd0e2b495b368243d64a327d2',
   'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
   'install-async-pipelines.js': '9100a90ee38e89f53e8d92ae84156916c5c779d11bbedbf11e8b7c7f6ff44331',

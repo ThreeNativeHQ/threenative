@@ -76,7 +76,9 @@
                 "requireAscii": false
               }
             },
-            "useDefaultParameterLast": "warn"
+            "useDefaultParameterLast": "warn",
+            "useTemplate": "warn",
+            "noUnusedTemplateLiteral": "warn"
           },
           "performance": { "noDelete": "warn" }
         }

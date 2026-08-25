@@ -56,9 +56,9 @@ test("existing engine globals are not overwritten by the shims", () => {
   // V8 desktop ships TextDecoder natively; the guards must leave it alone.
   const source = readRuntimeCpp();
   const block = extractEmbeddedJs(source, "fetchPolyfill");
-  assert.match(block, /if \(typeof TextDecoder === 'undefined'\)/u);
-  assert.match(block, /if \(typeof TextEncoder === 'undefined'\)/u);
-  assert.match(block, /if \(typeof AbortSignal === 'undefined'\)/u);
+  assert.match(block, /if \(typeof TextDecoder === ["']undefined["']\)/u);
+  assert.match(block, /if \(typeof TextEncoder === ["']undefined["']\)/u);
+  assert.match(block, /if \(typeof AbortSignal === ["']undefined["']\)/u);
 });
 
 test("AbortController signals fire listeners exactly once and throwIfAborted carries the reason", async () => {
