@@ -14,7 +14,7 @@ async function main() {
 
     const limits = await page.evaluate(async () => {
         if (!navigator.gpu) {
-            return { error: 'WebGPU not available - navigator.gpu is ' + typeof navigator.gpu };
+            return { error: `WebGPU not available - navigator.gpu is ${typeof navigator.gpu}` };
         }
 
         const adapter = await navigator.gpu.requestAdapter();

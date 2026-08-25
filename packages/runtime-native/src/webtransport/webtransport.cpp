@@ -15,6 +15,7 @@
 #if defined(MYSTRAL_HAS_QUICHE)
 
 #include "mystral/js/engine.h"
+#include "runtime_scripts.h"
 
 #include <quiche.h>
 
@@ -95,6 +96,11 @@ constexpr uint64_t SETTINGS_WT_MAX_SESSIONS = 0xc671706a;                  // dr
 
 constexpr size_t MAX_DATAGRAM_SIZE = 1350;
 constexpr size_t STREAM_READ_CHUNK = 64 * 1024;
+constexpr const char* kInsecurePeerVerificationEnv = "MYSTRAL_WEBTRANSPORT_INSECURE";
+
+bool isTruthyEnvironmentValue(const char* value) {
+    return value != nullptr && std::string(value) == "1";
+}
 
 // ---------------------------------------------------------------------------
 // Varint helpers (QUIC variable-length integer encoding, RFC 9000 §16)
@@ -787,7 +793,20 @@ uint32_t connectSession(const std::string& url) {
     quiche_config_set_initial_max_streams_bidi(s->config, 100);
     quiche_config_set_initial_max_streams_uni(s->config, 100);
     quiche_config_set_disable_active_migration(s->config, true);
-    quiche_config_verify_peer(s->config, false);  // TODO: serverCertificateHashes
+    const char* insecurePeerVerificationValue = std::getenv(kInsecurePeerVerificationEnv);
+    const bool allowInsecurePeerVerification =
+        isTruthyEnvironmentValue(insecurePeerVerificationValue);
+    std::cerr << "[WebTransport] TLS peer verification mode: "
+              << (allowInsecurePeerVerification ? "insecure-override" : "verify-peer")
+              << " (parsed from " << kInsecurePeerVerificationEnv << "="
+              << (insecurePeerVerificationValue ? insecurePeerVerificationValue : "<unset>")
+              << ")" << std::endl;
+    if (allowInsecurePeerVerification) {
+        std::cerr << "[WebTransport] WARNING: TLS peer verification disabled by "
+                  << kInsecurePeerVerificationEnv << "=1 (development only)" << std::endl;
+    }
+    // Certificate hashes are not implemented yet, so verification remains the secure default.
+    quiche_config_verify_peer(s->config, !allowInsecurePeerVerification);
     // Disable GREASE: quiche would otherwise open an extra unidirectional stream
     // with a reserved type and then close it. That stream consumes the first WT
     // unidirectional stream id, so reusing it later fails (the id is "collected").
@@ -1062,7 +1081,7 @@ void shutdown() {
     }
     g_sessions.clear();  // Session dtors close sockets and free quiche objects
     if (g_hasDispatch && g_engine) {
-        g_engine->unprotect(g_dispatch);
+        g_engine->freeHandle(g_dispatch);
         g_hasDispatch = false;
     }
 #ifdef _WIN32
@@ -1151,17 +1170,17 @@ bool initBindings(js::Engine* engine) {
             return g_engine->newUndefined();
         }));
 
-    // Register the JS dispatcher target. The polyfill (below) defines
-    // globalThis.__wtDispatch; we grab and protect it after eval.
-    extern const char* kWebTransportPolyfill;
-    if (!engine->eval(kWebTransportPolyfill, "<webtransport-polyfill>")) {
+    // Register the JS dispatcher target. The embedded polyfill defines
+    // globalThis.__wtDispatch; we freeze it after eval.
+    const auto script = runtime_scripts::find("webtransport-polyfill");
+    if (!script.data || !engine->eval(std::string(script.data, script.size).c_str(), "webtransport-polyfill.js")) {
         std::cerr << "[WebTransport] polyfill eval failed: " << engine->getException() << std::endl;
         return false;
     }
 
     g_dispatch = engine->getGlobalProperty("__wtDispatch");
     if (engine->isFunction(g_dispatch)) {
-        engine->protect(g_dispatch);
+        engine->freezeHandle(g_dispatch);
         g_hasDispatch = true;
     } else {
         std::cerr << "[WebTransport] __wtDispatch not defined by polyfill" << std::endl;
@@ -1180,6 +1199,7 @@ bool initBindings(js::Engine* engine) {
 // ---------------------------------------------------------------------------
 
 #include "mystral/js/engine.h"
+#include "runtime_scripts.h"
 
 namespace mystral {
 namespace webtransport {
@@ -1192,20 +1212,10 @@ bool hasActiveSessions() { return false; }
 bool initBindings(js::Engine* engine) {
     // Provide a WebTransport that always rejects so feature-detecting code can
     // handle the absence gracefully.
-    const char* stub = R"JS(
-globalThis.WebTransport = class WebTransport {
-  constructor() {
-    const err = new Error('WebTransport is not supported in this build (quiche not compiled in)');
-    this.ready = Promise.reject(err);
-    this.closed = Promise.reject(err);
-    this.ready.catch(() => {});
-    this.closed.catch(() => {});
-  }
-  close() {}
-};
-)JS";
-    engine->eval(stub, "<webtransport-stub>");
-    return true;
+    const auto script = runtime_scripts::find("webtransport-stub");
+    if (!script.data) return false;
+    const std::string source(script.data, script.size);
+    return engine->eval(source.c_str(), "webtransport-stub.js");
 }
 
 }  // namespace webtransport

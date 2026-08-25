@@ -12,6 +12,7 @@
 #include <functional>
 #include <vector>
 #include <cstdint>
+#include <cstddef>
 
 namespace mystral {
 namespace js {
@@ -23,6 +24,26 @@ namespace js {
 struct JSValueHandle {
     void* ptr = nullptr;
     void* ctx = nullptr;  // Context needed for some operations
+};
+
+enum class JSPropertyKind {
+    Missing,
+    Data,
+    Accessor,
+};
+
+/**
+ * A property description resolved from an object through its prototype chain without invoking
+ * accessors. Proxy descriptor and getPrototypeOf traps may run and may have side effects. A data
+ * value is an owned snapshot that remains valid until releasePropertyInfo() is called.
+ */
+struct JSPropertyInfo {
+    JSPropertyKind kind = JSPropertyKind::Missing;
+    bool own = false;
+    bool writable = false;
+    bool enumerable = false;
+    bool configurable = false;
+    JSValueHandle value;
 };
 
 /**
@@ -200,10 +221,18 @@ public:
     virtual bool isFunction(JSValueHandle value) = 0;
 
     /**
-     * Compare two values using the engine's identity semantics.
+     * Return true only for a side-effect-free binding destination owned by this engine.
+     * Implementations accept ordinary objects created by newObject(), and reject global objects,
+     * proxies, other exotic objects, foreign-engine handles, and mutated prototype chains.
+     */
+    virtual bool isBindingDestination(JSValueHandle value) = 0;
+
+    /**
+     * Compare two values using ECMAScript SameValue (Object.is) semantics.
      *
      * Native DOM shims use this for browser-style callback identity, where two
-     * handles for the same JavaScript function must compare equal.
+     * handles for the same JavaScript function must compare equal. Unlike strict
+     * equality, NaN equals NaN and negative zero differs from positive zero.
      */
     virtual bool isSameValue(JSValueHandle left, JSValueHandle right) = 0;
 
@@ -213,6 +242,17 @@ public:
 
     virtual bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) = 0;
     virtual JSValueHandle getProperty(JSValueHandle obj, const char* name) = 0;
+    /**
+     * Inspect the first descriptor in the object/prototype chain without invoking accessors.
+     * Proxy descriptor and getPrototypeOf traps are observable and exceptions are latched.
+     */
+    virtual bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) = 0;
+    /** Release the owned data snapshot populated by getPropertyInfo(). */
+    virtual void releasePropertyInfo(JSPropertyInfo& info) = 0;
+    /** Check whether a property is present on an object or its prototype chain. */
+    virtual bool hasProperty(JSValueHandle obj, const char* name) = 0;
+    /** Delete a property, returning false for a non-configurable property or exception. */
+    virtual bool deleteProperty(JSValueHandle obj, const char* name) = 0;
     virtual bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) = 0;
     virtual JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) = 0;
 
@@ -230,15 +270,22 @@ public:
     // ========================================================================
 
     /**
-     * Protect a value from garbage collection
-     * Must call unprotect() when done
+     * Keep a value alive beyond the current frame.
      */
-    virtual void protect(JSValueHandle value) = 0;
+    virtual void freezeHandle(JSValueHandle value) = 0;
 
     /**
-     * Allow a value to be garbage collected
+     * Release one handle owned by this Engine.
      */
-    virtual void unprotect(JSValueHandle value) = 0;
+    virtual void freeHandle(JSValueHandle value) = 0;
+
+    /** Return the number of live handles owned by this Engine. */
+    virtual size_t outstandingHandleCount() const = 0;
+
+    // Compatibility names for embedders that still use the old vocabulary. New code should use
+    // freezeHandle/freeHandle so ownership is explicit at the call site.
+    virtual void protect(JSValueHandle value) { freezeHandle(value); }
+    virtual void unprotect(JSValueHandle value) { freeHandle(value); }
 
     /**
      * Run garbage collection (if supported)
@@ -332,6 +379,59 @@ public:
      * - JSC: JSGlobalContextRef
      */
     virtual void* getRawContext() = 0;
+};
+
+/**
+ * Move-only owner for one Engine handle.
+ *
+ * A guard releases its value at scope exit. Use release() only when ownership is intentionally
+ * transferred to another owner or to a JavaScript API that takes the handle lifetime over.
+ */
+class JSValueGuard {
+public:
+    JSValueGuard(Engine& engine, JSValueHandle value) noexcept
+        : engine_(&engine), value_(value) {}
+
+    ~JSValueGuard() { reset(); }
+
+    JSValueGuard(const JSValueGuard&) = delete;
+    JSValueGuard& operator=(const JSValueGuard&) = delete;
+
+    JSValueGuard(JSValueGuard&& other) noexcept
+        : engine_(other.engine_), value_(other.value_) {
+        other.engine_ = nullptr;
+        other.value_ = {};
+    }
+
+    JSValueGuard& operator=(JSValueGuard&& other) noexcept {
+        if (this == &other) return *this;
+        reset();
+        engine_ = other.engine_;
+        value_ = other.value_;
+        other.engine_ = nullptr;
+        other.value_ = {};
+        return *this;
+    }
+
+    JSValueHandle get() const noexcept { return value_; }
+    operator bool() const noexcept { return value_.ptr != nullptr; }
+
+    JSValueHandle release() noexcept {
+        const JSValueHandle released = value_;
+        engine_ = nullptr;
+        value_ = {};
+        return released;
+    }
+
+    void reset(JSValueHandle value = {}) noexcept {
+        if (value_.ptr == value.ptr) return;
+        if (engine_ && value_.ptr) engine_->freeHandle(value_);
+        value_ = value;
+    }
+
+private:
+    Engine* engine_ = nullptr;
+    JSValueHandle value_;
 };
 
 /**

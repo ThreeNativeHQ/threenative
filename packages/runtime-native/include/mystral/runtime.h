@@ -23,6 +23,8 @@ struct RuntimeConfig {
     bool noSdl = false;  // Run without SDL (headless GPU mode, no window)
     bool watch = false;  // Watch mode: reload script on file changes
     bool debug = false;  // Enable verbose debug logging
+    // Test-only seam: install timers after JS engine creation. Production callers leave this false.
+    bool testEngineFirstTimers = false;
     // `display.backgroundMode`. Default pauses the loop off-screen; "continue" is the named
     // override, and it turns pausing off without turning the lifecycle markers off.
     platform::BackgroundMode backgroundMode = platform::BackgroundMode::Pause;
@@ -191,6 +193,13 @@ public:
      * @return true on success
      */
     virtual bool captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, uint32_t& outHeight) = 0;
+
+    /**
+     * Return the number of frames presented by this runtime's WebGPU binding state.
+     */
+    virtual uint64_t getPresentCount() const = 0;
+
+    virtual void* getWebGPUBindingsState() const = 0;
 
 protected:
     Runtime() = default;

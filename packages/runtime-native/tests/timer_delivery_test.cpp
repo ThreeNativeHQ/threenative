@@ -1,0 +1,86 @@
+// The native timer host must deliver timeout and interval callbacks through Runtime::pollEvents.
+// The default target proves Runtime::create's scheduler-first bootstrap; the engine-first target
+// selects the documented test seam and proves installation after engine creation. Neither target
+// polls between creation and evalScript(), so the timeout and interval are the first work handed
+// to Runtime::pollEvents(). If post-engine installation is skipped, evalScript() fails because
+// setTimeout is absent instead of allowing a false-positive completion.
+
+#include "mystral/runtime.h"
+
+#include <chrono>
+#include <iostream>
+#include <thread>
+
+namespace {
+
+constexpr int kCompletionExitCode = 42;
+
+constexpr const char* kScript = R"JS((() => {
+  let timeoutCount = 0;
+  let intervalCount = 0;
+  let intervalId = 0;
+
+  setTimeout(() => { timeoutCount += 1; }, 0);
+  intervalId = setInterval(() => {
+    intervalCount += 1;
+    if (intervalCount === 3) {
+      clearInterval(intervalId);
+      setTimeout(() => {
+        process.exit(timeoutCount === 1 && intervalCount === 3 ? 42 : 1);
+      }, 0);
+    }
+  }, 1);
+})())JS";
+
+}  // namespace
+
+int main() {
+    mystral::RuntimeConfig config;
+    config.width = 1;
+    config.height = 1;
+    config.noSdl = true;
+#ifdef TN_TIMER_ENGINE_FIRST_TEST
+    config.testEngineFirstTimers = true;
+#endif
+
+    auto runtime = mystral::Runtime::create(config);
+    if (!runtime) {
+        std::cerr << "could not create headless native runtime\n";
+        return 1;
+    }
+
+    if (!runtime->evalScript(kScript, "timer_delivery_test.js")) {
+        std::cerr << "could not schedule native timer contract\n";
+        return 1;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    bool timedOut = false;
+    while (runtime->pollEvents()) {
+        if (runtime->getExitCode() == kCompletionExitCode) {
+            break;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            timedOut = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    const int exitCode = runtime->getExitCode();
+    if (exitCode != kCompletionExitCode) {
+        if (timedOut || exitCode == 0) {
+            std::cerr << "native timer delivery contract timed out before completion\n";
+        } else {
+            std::cerr << "native timer delivery contract failed with exit " << exitCode << '\n';
+        }
+        return 1;
+    }
+
+#ifdef TN_TIMER_ENGINE_FIRST_TEST
+    std::cout << "native engine-first timer delivery contract passed\n";
+#else
+    std::cout << "native timer delivery contract passed\n";
+#endif
+    return 0;
+}

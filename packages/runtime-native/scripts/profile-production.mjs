@@ -936,7 +936,6 @@ function parsePlaytestReport(stdout) {
       try {
         return JSON.parse(line);
       } catch {
-        continue;
       }
     }
   }
@@ -967,7 +966,6 @@ function frameSeriesFromReport(report) {
       const batch = JSON.parse(line.slice(offset + prefix.length));
       if (Array.isArray(batch)) series.push(...batch);
     } catch {
-      continue;
     }
   }
   return series.length === 0 ? undefined : series;

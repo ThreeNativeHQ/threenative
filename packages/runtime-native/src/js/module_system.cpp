@@ -239,19 +239,19 @@ JSValueHandle ModuleSystem::executeCjsModule(const ResolvedModule& resolved,
     JSValueHandle moduleObj = engine_->newObject();
     engine_->setProperty(moduleObj, "exports", exportsObj);
 
-    engine_->protect(exportsObj);
+    engine_->freezeHandle(exportsObj);
     cjsCache_[resolved.resolved.path] = exportsObj;
 
     JSValueHandle requireFn = createRequireFunction(resolved.resolved.path);
-    engine_->protect(requireFn);
+    engine_->freezeHandle(requireFn);
 
     std::string wrapped = makeCjsWrapper(code, resolved.resolved.path);
     JSValueHandle wrapperFn = engine_->evalScriptWithResult(wrapped.c_str(), resolved.resolved.path.c_str());
     if (!wrapperFn.ptr) {
         std::cerr << "[Modules] Failed to compile module: " << resolved.resolved.path << std::endl;
-        engine_->unprotect(requireFn);
-        engine_->unprotect(exportsObj);
-        engine_->unprotect(moduleObj);
+        engine_->freeHandle(requireFn);
+        engine_->freeHandle(exportsObj);
+        engine_->freeHandle(moduleObj);
         cjsCache_.erase(resolved.resolved.path);
         loading_.erase(resolved.resolved.path);
         return engine_->newUndefined();
@@ -271,28 +271,28 @@ JSValueHandle ModuleSystem::executeCjsModule(const ResolvedModule& resolved,
     if (moduleExports.ptr) {
         auto cached = cjsCache_.find(resolved.resolved.path);
         if (cached != cjsCache_.end()) {
-            engine_->unprotect(cached->second);
+            engine_->freeHandle(cached->second);
         }
-        engine_->protect(moduleExports);
+        engine_->freezeHandle(moduleExports);
         cjsCache_[resolved.resolved.path] = moduleExports;
     }
 
     if (callResult.ptr) {
-        engine_->unprotect(callResult);
+        engine_->freeHandle(callResult);
     }
     if (wrapperFn.ptr) {
-        engine_->unprotect(wrapperFn);
+        engine_->freeHandle(wrapperFn);
     }
     if (filenameVal.ptr) {
-        engine_->unprotect(filenameVal);
+        engine_->freeHandle(filenameVal);
     }
     if (dirnameVal.ptr) {
-        engine_->unprotect(dirnameVal);
+        engine_->freeHandle(dirnameVal);
     }
     if (moduleObj.ptr) {
-        engine_->unprotect(moduleObj);
+        engine_->freeHandle(moduleObj);
     }
-    engine_->unprotect(requireFn);
+    engine_->freeHandle(requireFn);
     loading_.erase(resolved.resolved.path);
     return moduleExports.ptr ? moduleExports : exportsObj;
 }
@@ -579,7 +579,7 @@ const std::unordered_set<std::string>& ModuleSystem::loadedPaths() const {
 
 void ModuleSystem::clearCaches() {
     for (auto& entry : cjsCache_) {
-        engine_->unprotect(entry.second);
+        engine_->freeHandle(entry.second);
     }
     cjsCache_.clear();
     loading_.clear();

@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-197 — The native host fails loudly at creation
 
-**Status:** NOT STARTED
+**Status:** COMPLETED 2026-08-24. WebTransport verifies peers by default, bind-group and sampler
+creation throws at the call that creates the handle, and the phantom timer stubs are gone; the
+record is `docs/verification/prd-197-native-fails-loudly-2026-08-23.md`.
 
 **Complexity:** +2 for 6–10 files, +2 for C++ backend-sensitive state, +1 for a config
 surface (the TLS override) = **5 → MEDIUM mode**.

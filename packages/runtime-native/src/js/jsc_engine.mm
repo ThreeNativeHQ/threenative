@@ -8,8 +8,12 @@
 #include "mystral/js/engine.h"
 #include <iostream>
 #include <sstream>
+#include <cstring>
+#include <cmath>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
+#include <utility>
 
 #if defined(MYSTRAL_JS_JSC) && defined(__APPLE__)
 
@@ -19,11 +23,14 @@
 namespace mystral {
 namespace js {
 
-// Store native function callbacks (since we can't capture lambdas in JSC callbacks)
-static std::unordered_map<void*, NativeFunction> g_nativeFunctions;
-
 class JSCEngine : public Engine {
 public:
+    struct NativeFunctionData {
+        NativeFunction callback;
+        JSGlobalContextRef owner;
+        JSCEngine* engine;
+    };
+
     JSCEngine() {
         std::cout << "[JSC] Creating JavaScriptCore engine..." << std::endl;
 
@@ -36,6 +43,19 @@ public:
             return;
         }
 
+        JSClassDefinition ordinaryObjectDefinition = kJSClassDefinitionEmpty;
+        ordinaryObjectDefinition.className = "ThreeNativeOrdinaryObject";
+        ordinaryObjectDefinition.attributes = kJSClassAttributeNoAutomaticPrototype;
+        ordinaryObjectClass_ = JSClassCreate(&ordinaryObjectDefinition);
+
+        JSClassDefinition nativeFunctionDefinition = kJSClassDefinitionEmpty;
+        nativeFunctionDefinition.className = "ThreeNativeNativeFunction";
+        nativeFunctionDefinition.finalize = &finalizeNativeFunction;
+        nativeFunctionDefinition.callAsFunction = &nativeCallback;
+        nativeFunctionClass_ = JSClassCreate(&nativeFunctionDefinition);
+
+        cacheIntrinsics();
+
         // Set up standard globals
         setupGlobals();
 
@@ -46,8 +66,30 @@ public:
         std::cout << "[JSC] Destroying engine..." << std::endl;
 
         if (context_) {
+            clearLastException();
+            for (const auto& [value, count] : frameHandleRefs_) {
+                for (size_t index = 0; index < count; ++index) {
+                    JSValueUnprotect(context_, value);
+                }
+            }
+            for (const auto& [value, count] : protectedHandleRefs_) {
+                for (size_t index = 0; index < count; ++index) {
+                    JSValueUnprotect(context_, value);
+                }
+            }
+            frameHandleRefs_.clear();
+            protectedHandleRefs_.clear();
+            outstandingHandles_ = 0;
+            if (functionPrototype_) JSValueUnprotect(context_, functionPrototype_);
+            if (objectPrototype_) JSValueUnprotect(context_, objectPrototype_);
+            if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
+            if (reflectHas_) JSValueUnprotect(context_, reflectHas_);
+            if (reflectSet_) JSValueUnprotect(context_, reflectSet_);
+            if (reflectGetPrototypeOf_) JSValueUnprotect(context_, reflectGetPrototypeOf_);
             JSGlobalContextRelease(context_);
         }
+        if (nativeFunctionClass_) JSClassRelease(nativeFunctionClass_);
+        if (ordinaryObjectClass_) JSClassRelease(ordinaryObjectClass_);
         if (contextGroup_) {
             JSContextGroupRelease(contextGroup_);
         }
@@ -76,12 +118,11 @@ public:
         if (sourceURL) JSStringRelease(sourceURL);
 
         if (exception) {
-            lastException_ = exception;
-            reportException(exception);
+            recordException(exception);
             return {nullptr, context_};
         }
 
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     bool evalScript(const char* code, const char* filename) override {
@@ -98,18 +139,15 @@ public:
 
     JSValueHandle getGlobal() override {
         JSObjectRef global = JSContextGetGlobalObject(context_);
-        return {(void*)global, context_};
+        return storeHandle((JSValueRef)global);
     }
 
     bool setGlobalProperty(const char* name, JSValueHandle value) override {
         JSObjectRef global = JSContextGetGlobalObject(context_);
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
-
-        JSValueRef exception = nullptr;
-        JSObjectSetProperty(context_, global, nameStr, (JSValueRef)value.ptr, 0, &exception);
-
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
         JSStringRelease(nameStr);
-        return exception == nullptr;
+        return setPropertyWithReflect(global, propertyName, (JSValueRef)value.ptr);
     }
 
     JSValueHandle getGlobalProperty(const char* name) override {
@@ -120,7 +158,11 @@ public:
         JSValueRef result = JSObjectGetProperty(context_, global, nameStr, &exception);
 
         JSStringRelease(nameStr);
-        return {(void*)result, context_};
+        if (exception != nullptr) {
+            recordException(exception);
+            result = JSValueMakeUndefined(context_);
+        }
+        return storeHandle(result);
     }
 
     // ========================================================================
@@ -128,36 +170,40 @@ public:
     // ========================================================================
 
     JSValueHandle newUndefined() override {
-        return {(void*)JSValueMakeUndefined(context_), context_};
+        return storeHandle(JSValueMakeUndefined(context_));
     }
 
     JSValueHandle newNull() override {
-        return {(void*)JSValueMakeNull(context_), context_};
+        return storeHandle(JSValueMakeNull(context_));
     }
 
     JSValueHandle newBoolean(bool value) override {
-        return {(void*)JSValueMakeBoolean(context_, value), context_};
+        return storeHandle(JSValueMakeBoolean(context_, value));
     }
 
     JSValueHandle newNumber(double value) override {
-        return {(void*)JSValueMakeNumber(context_, value), context_};
+        return storeHandle(JSValueMakeNumber(context_, value));
     }
 
     JSValueHandle newString(const char* value) override {
         JSStringRef str = JSStringCreateWithUTF8CString(value);
         JSValueRef result = JSValueMakeString(context_, str);
         JSStringRelease(str);
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     JSValueHandle newObject() override {
-        return {(void*)JSObjectMake(context_, nullptr, nullptr), context_};
+        JSObjectRef object = JSObjectMake(context_, ordinaryObjectClass_, nullptr);
+        if (objectPrototype_) {
+            JSObjectSetPrototype(context_, object, objectPrototype_);
+        }
+        return storeHandle((JSValueRef)object);
     }
 
     JSValueHandle newArray(size_t length) override {
         JSValueRef exception = nullptr;
         JSObjectRef arr = JSObjectMakeArray(context_, 0, nullptr, &exception);
-        return {(void*)arr, context_};
+        return storeHandle((JSValueRef)arr);
     }
 
     JSValueHandle newArrayBuffer(const uint8_t* data, size_t length) override {
@@ -193,7 +239,7 @@ public:
             return {nullptr, context_};
         }
 
-        return {(void*)arrayBuffer, context_};
+        return storeHandle((JSValueRef)arrayBuffer);
     }
 
     JSValueHandle newArrayBufferExternal(void* data, size_t length) override {
@@ -213,7 +259,7 @@ public:
             return {nullptr, context_};
         }
 
-        return {(void*)arrayBuffer, context_};
+        return storeHandle((JSValueRef)arrayBuffer);
     }
 
     void* getArrayBufferData(JSValueHandle value, size_t* size) override {
@@ -273,7 +319,7 @@ public:
             context_, kJSTypedArrayTypeFloat32Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle createFloat32ArrayView(float* data, size_t count) override {
@@ -296,7 +342,7 @@ public:
             context_, kJSTypedArrayTypeFloat32Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle createUint32Array(const uint32_t* data, size_t count) override {
@@ -321,7 +367,7 @@ public:
             context_, kJSTypedArrayTypeUint32Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle createUint8Array(const uint8_t* data, size_t count) override {
@@ -344,21 +390,26 @@ public:
             context_, kJSTypedArrayTypeUint8Array, arrayBuffer, &exception
         );
 
-        return {(void*)typedArray, context_};
+        return storeHandle((JSValueRef)typedArray);
     }
 
     JSValueHandle newFunction(const char* name, NativeFunction fn) override {
+        JSObjectRef funcObj = JSObjectMake(
+            context_, nativeFunctionClass_,
+            new NativeFunctionData{std::move(fn), context_, this});
+        if (functionPrototype_) {
+            JSObjectSetPrototype(context_, funcObj, functionPrototype_);
+        }
+        JSStringRef propertyName = JSStringCreateWithUTF8CString("name");
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
-
-        // We need to store the callback somewhere JSC can access it
-        // Use a static map with the function object pointer as key
-        JSObjectRef funcObj = JSObjectMakeFunctionWithCallback(context_, nameStr, &nativeCallback);
-
-        // Store the native function with the object pointer as key
-        g_nativeFunctions[(void*)funcObj] = fn;
-
+        JSObjectSetProperty(
+            context_, funcObj, propertyName, JSValueMakeString(context_, nameStr),
+            static_cast<JSPropertyAttributes>(
+                kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum),
+            nullptr);
+        JSStringRelease(propertyName);
         JSStringRelease(nameStr);
-        return {(void*)funcObj, context_};
+        return storeHandle((JSValueRef)funcObj);
     }
 
     // ========================================================================
@@ -421,9 +472,35 @@ public:
                JSObjectIsFunction(context_, (JSObjectRef)value.ptr);
     }
 
+    bool isBindingDestination(JSValueHandle value) override {
+        if (!value.ptr || value.ctx != context_ ||
+            !JSValueIsObject(context_, (JSValueRef)value.ptr)) {
+            return false;
+        }
+        JSObjectRef object = (JSObjectRef)value.ptr;
+        if (!ordinaryObjectClass_ ||
+            !JSValueIsObjectOfClass(context_, object, ordinaryObjectClass_)) {
+            return false;
+        }
+        JSValueRef prototype = JSObjectGetPrototype(context_, object);
+        return objectPrototype_ && prototype &&
+               JSValueIsStrictEqual(context_, prototype, objectPrototype_);
+    }
+
     bool isSameValue(JSValueHandle left, JSValueHandle right) override {
         if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
-        return JSValueIsStrictEqual(context_, (JSValueRef)left.ptr, (JSValueRef)right.ptr);
+        JSValueRef leftValue = (JSValueRef)left.ptr;
+        JSValueRef rightValue = (JSValueRef)right.ptr;
+        if (JSValueIsNumber(context_, leftValue) &&
+            JSValueIsNumber(context_, rightValue)) {
+            const double leftNumber = JSValueToNumber(context_, leftValue, nullptr);
+            const double rightNumber = JSValueToNumber(context_, rightValue, nullptr);
+            if (std::isnan(leftNumber) && std::isnan(rightNumber)) return true;
+            if (leftNumber == 0.0 && rightNumber == 0.0) {
+                return std::signbit(leftNumber) == std::signbit(rightNumber);
+            }
+        }
+        return JSValueIsStrictEqual(context_, leftValue, rightValue);
     }
 
     // ========================================================================
@@ -432,10 +509,10 @@ public:
 
     bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) override {
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
-        JSValueRef exception = nullptr;
-        JSObjectSetProperty(context_, (JSObjectRef)obj.ptr, nameStr, (JSValueRef)value.ptr, 0, &exception);
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
         JSStringRelease(nameStr);
-        return exception == nullptr;
+        return setPropertyWithReflect(
+            (JSObjectRef)obj.ptr, propertyName, (JSValueRef)value.ptr);
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -443,19 +520,185 @@ public:
         JSValueRef exception = nullptr;
         JSValueRef result = JSObjectGetProperty(context_, (JSObjectRef)obj.ptr, nameStr, &exception);
         JSStringRelease(nameStr);
-        return {(void*)result, context_};
+        if (exception != nullptr) {
+            recordException(exception);
+            result = JSValueMakeUndefined(context_);
+        }
+        return storeHandle(result);
+    }
+
+    bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) override {
+        if (!getOwnPropertyDescriptor_) {
+            throwException("JavaScriptCore property descriptor intrinsic is unavailable");
+            return false;
+        }
+
+        JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
+        JSStringRelease(nameStr);
+        JSValueProtect(context_, propertyName);
+        JSObjectRef current = (JSObjectRef)obj.ptr;
+        bool own = true;
+        std::vector<JSObjectRef> visited;
+        const auto releaseTraversal = [&]() {
+            for (const auto& value : visited) JSValueUnprotect(context_, value);
+            visited.clear();
+            JSValueUnprotect(context_, propertyName);
+        };
+
+        while (current) {
+            for (const auto& seen : visited) {
+                if (JSValueIsStrictEqual(context_, current, seen)) {
+                    releaseTraversal();
+                    throwException(
+                        "JavaScript property prototype traversal detected a cycle");
+                    return false;
+                }
+            }
+            JSValueProtect(context_, current);
+            visited.push_back(current);
+
+            JSValueRef args[] = {(JSValueRef)current, propertyName};
+            JSValueRef exception = nullptr;
+            JSValueRef descriptor = JSObjectCallAsFunction(
+                context_, getOwnPropertyDescriptor_, nullptr, 2, args, &exception);
+            if (exception != nullptr) {
+                recordException(exception);
+                releaseTraversal();
+                return false;
+            }
+            if (!JSValueIsUndefined(context_, descriptor)) {
+                JSValueProtect(context_, descriptor);
+                JSStringRef valueName = JSStringCreateWithUTF8CString("value");
+                JSValueRef valueNameValue = JSValueMakeString(context_, valueName);
+                JSStringRelease(valueName);
+                JSValueRef valueDescriptorArgs[] = {descriptor, valueNameValue};
+                JSValueRef valueDescriptorException = nullptr;
+                JSValueRef valueDescriptor = JSObjectCallAsFunction(
+                    context_, getOwnPropertyDescriptor_, nullptr, 2,
+                    valueDescriptorArgs, &valueDescriptorException);
+                if (valueDescriptorException != nullptr) {
+                    recordException(valueDescriptorException);
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
+                    return false;
+                }
+                const bool hasValue = !JSValueIsUndefined(context_, valueDescriptor);
+
+                info.own = own;
+                if (!getBooleanProperty(
+                        (JSObjectRef)descriptor, "enumerable", info.enumerable) ||
+                    !getBooleanProperty(
+                        (JSObjectRef)descriptor, "configurable", info.configurable)) {
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
+                    return false;
+                }
+                if (!hasValue) {
+                    info.kind = JSPropertyKind::Accessor;
+                    info.writable = false;
+                    info.value = {};
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
+                    return true;
+                }
+
+                if (!getBooleanProperty(
+                        (JSObjectRef)descriptor, "writable", info.writable)) {
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
+                    return false;
+                }
+                JSStringRef valuePropertyName = JSStringCreateWithUTF8CString("value");
+                JSValueRef value = JSObjectGetProperty(
+                    context_, (JSObjectRef)descriptor, valuePropertyName, &exception);
+                JSStringRelease(valuePropertyName);
+                if (exception != nullptr) {
+                    recordException(exception);
+                    JSValueUnprotect(context_, descriptor);
+                    releaseTraversal();
+                    return false;
+                }
+                info.kind = JSPropertyKind::Data;
+                info.value = {(void*)value, context_};
+                JSValueProtect(context_, value);
+                JSValueUnprotect(context_, descriptor);
+                releaseTraversal();
+                return true;
+            }
+
+            if (!reflectGetPrototypeOf_) {
+                releaseTraversal();
+                throwException("JavaScriptCore Reflect.getPrototypeOf intrinsic is unavailable");
+                return false;
+            }
+            JSValueRef prototypeArgs[] = {(JSValueRef)current};
+            JSValueRef prototype = JSObjectCallAsFunction(
+                context_, reflectGetPrototypeOf_, nullptr, 1, prototypeArgs, &exception);
+            if (exception != nullptr) {
+                recordException(exception);
+                releaseTraversal();
+                return false;
+            }
+            if (!prototype || !JSValueIsObject(context_, prototype)) break;
+            current = (JSObjectRef)prototype;
+            own = false;
+        }
+
+        info = {};
+        releaseTraversal();
+        return true;
+    }
+
+    void releasePropertyInfo(JSPropertyInfo& info) override {
+        if (info.kind == JSPropertyKind::Data && info.value.ptr) {
+            JSValueUnprotect(context_, (JSValueRef)info.value.ptr);
+        }
+        info = {};
+    }
+
+    bool hasProperty(JSValueHandle obj, const char* name) override {
+        if (!reflectHas_) {
+            throwException("JavaScriptCore Reflect.has intrinsic is unavailable");
+            return false;
+        }
+        JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
+        JSValueRef propertyName = JSValueMakeString(context_, nameStr);
+        JSStringRelease(nameStr);
+        JSValueRef args[] = {(JSValueRef)obj.ptr, propertyName};
+        JSValueRef exception = nullptr;
+        JSValueRef result = JSObjectCallAsFunction(
+            context_, reflectHas_, nullptr, 2, args, &exception);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        return JSValueToBoolean(context_, result);
+    }
+
+    bool deleteProperty(JSValueHandle obj, const char* name) override {
+        JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
+        JSValueRef exception = nullptr;
+        const bool result = JSObjectDeleteProperty(context_, (JSObjectRef)obj.ptr, nameStr, &exception);
+        JSStringRelease(nameStr);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        return result;
     }
 
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
-        JSValueRef exception = nullptr;
-        JSObjectSetPropertyAtIndex(context_, (JSObjectRef)arr.ptr, index, (JSValueRef)value.ptr, &exception);
-        return exception == nullptr;
+        return setPropertyWithReflect(
+            (JSObjectRef)arr.ptr,
+            JSValueMakeNumber(context_, static_cast<double>(index)),
+            (JSValueRef)value.ptr);
     }
 
     JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) override {
         JSValueRef exception = nullptr;
         JSValueRef result = JSObjectGetPropertyAtIndex(context_, (JSObjectRef)arr.ptr, index, &exception);
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     JSValueHandle call(JSValueHandle func, JSValueHandle thisArg, const std::vector<JSValueHandle>& args) override {
@@ -476,22 +719,62 @@ public:
         );
 
         if (exception) {
-            lastException_ = exception;
+            recordException(exception);
+            result = JSValueMakeUndefined(context_);
         }
 
-        return {(void*)result, context_};
+        return storeHandle(result);
     }
 
     // ========================================================================
     // Memory Management
     // ========================================================================
 
-    void protect(JSValueHandle value) override {
-        JSValueProtect(context_, (JSValueRef)value.ptr);
+    void freezeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
+        const JSValueRef rawValue = (JSValueRef)value.ptr;
+        const auto frame = frameHandleRefs_.find(rawValue);
+        if (frame != frameHandleRefs_.end()) {
+            if (--frame->second == 0) frameHandleRefs_.erase(frame);
+            ++protectedHandleRefs_[rawValue];
+            return;
+        }
+        ++protectedHandleRefs_[rawValue];
+        ++outstandingHandles_;
+        JSValueProtect(context_, rawValue);
     }
 
-    void unprotect(JSValueHandle value) override {
-        JSValueUnprotect(context_, (JSValueRef)value.ptr);
+    void freeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
+        const JSValueRef rawValue = (JSValueRef)value.ptr;
+        const auto persistent = protectedHandleRefs_.find(rawValue);
+        if (persistent != protectedHandleRefs_.end()) {
+            if (--persistent->second == 0) protectedHandleRefs_.erase(persistent);
+            --outstandingHandles_;
+            JSValueUnprotect(context_, rawValue);
+            return;
+        }
+        const auto frame = frameHandleRefs_.find(rawValue);
+        if (frame != frameHandleRefs_.end()) {
+            if (--frame->second == 0) frameHandleRefs_.erase(frame);
+            --outstandingHandles_;
+            JSValueUnprotect(context_, rawValue);
+        }
+    }
+
+    void protect(JSValueHandle value) override { freezeHandle(value); }
+    void unprotect(JSValueHandle value) override { freeHandle(value); }
+
+    size_t outstandingHandleCount() const override { return outstandingHandles_; }
+
+    void clearFrameHandles() override {
+        for (const auto& [value, count] : frameHandleRefs_) {
+            for (size_t index = 0; index < count; ++index) {
+                JSValueUnprotect(context_, value);
+            }
+            outstandingHandles_ -= count;
+        }
+        frameHandleRefs_.clear();
     }
 
     void gc() override {
@@ -509,8 +792,11 @@ public:
     std::string getException() override {
         if (!lastException_) return "";
 
-        std::string result = toString({(void*)lastException_, context_});
+        JSValueRef exception = lastException_;
         lastException_ = nullptr;
+        std::string result = toString({(void*)exception, context_});
+        JSValueUnprotect(context_, exception);
+        exceptionFromNativeCallback_ = false;
         return result;
     }
 
@@ -518,6 +804,7 @@ public:
         JSStringRef msgStr = JSStringCreateWithUTF8CString(message);
         JSValueRef msgVal = JSValueMakeString(context_, msgStr);
         JSStringRelease(msgStr);
+        JSValueProtect(context_, msgVal);
 
         // Create Error object
         JSValueRef args[] = {msgVal};
@@ -528,7 +815,9 @@ public:
 
         JSValueRef exception = nullptr;
         JSObjectRef error = JSObjectCallAsConstructor(context_, errorConstructor, 1, args, &exception);
-        lastException_ = error ? error : msgVal;
+        replaceLastException(exception ? exception : (error ? error : msgVal));
+        JSValueUnprotect(context_, msgVal);
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
     }
 
     // ========================================================================
@@ -556,6 +845,124 @@ public:
     }
 
 private:
+    void cacheIntrinsics() {
+        JSObjectRef global = JSContextGetGlobalObject(context_);
+        JSStringRef objectName = JSStringCreateWithUTF8CString("Object");
+        JSValueRef objectValue = JSObjectGetProperty(context_, global, objectName, nullptr);
+        JSStringRelease(objectName);
+        if (!objectValue || !JSValueIsObject(context_, objectValue)) return;
+
+        JSStringRef prototypeName = JSStringCreateWithUTF8CString("prototype");
+        JSValueRef objectPrototype = JSObjectGetProperty(
+            context_, (JSObjectRef)objectValue, prototypeName, nullptr);
+        if (objectPrototype && JSValueIsObject(context_, objectPrototype)) {
+            objectPrototype_ = (JSObjectRef)objectPrototype;
+            JSValueProtect(context_, objectPrototype_);
+        }
+
+        JSStringRef functionName = JSStringCreateWithUTF8CString("Function");
+        JSValueRef functionValue = JSObjectGetProperty(
+            context_, global, functionName, nullptr);
+        JSStringRelease(functionName);
+        if (functionValue && JSValueIsObject(context_, functionValue)) {
+            JSValueRef functionPrototype = JSObjectGetProperty(
+                context_, (JSObjectRef)functionValue, prototypeName, nullptr);
+            if (functionPrototype && JSValueIsObject(context_, functionPrototype)) {
+                functionPrototype_ = (JSObjectRef)functionPrototype;
+                JSValueProtect(context_, functionPrototype_);
+            }
+        }
+        JSStringRelease(prototypeName);
+
+        JSStringRef descriptorName = JSStringCreateWithUTF8CString("getOwnPropertyDescriptor");
+        JSValueRef descriptorValue = JSObjectGetProperty(
+            context_, (JSObjectRef)objectValue, descriptorName, nullptr);
+        JSStringRelease(descriptorName);
+        if (descriptorValue && JSValueIsObject(context_, descriptorValue)) {
+            getOwnPropertyDescriptor_ = (JSObjectRef)descriptorValue;
+            JSValueProtect(context_, getOwnPropertyDescriptor_);
+        }
+
+        JSStringRef reflectName = JSStringCreateWithUTF8CString("Reflect");
+        JSValueRef reflectValue = JSObjectGetProperty(context_, global, reflectName, nullptr);
+        JSStringRelease(reflectName);
+        if (!reflectValue || !JSValueIsObject(context_, reflectValue)) return;
+        JSStringRef hasName = JSStringCreateWithUTF8CString("has");
+        JSValueRef hasValue = JSObjectGetProperty(
+            context_, (JSObjectRef)reflectValue, hasName, nullptr);
+        JSStringRelease(hasName);
+        if (hasValue && JSValueIsObject(context_, hasValue)) {
+            reflectHas_ = (JSObjectRef)hasValue;
+            JSValueProtect(context_, reflectHas_);
+        }
+        JSStringRef setName = JSStringCreateWithUTF8CString("set");
+        JSValueRef setValue = JSObjectGetProperty(
+            context_, (JSObjectRef)reflectValue, setName, nullptr);
+        JSStringRelease(setName);
+        if (setValue && JSValueIsObject(context_, setValue)) {
+            reflectSet_ = (JSObjectRef)setValue;
+            JSValueProtect(context_, reflectSet_);
+        }
+        JSStringRef getPrototypeOfName = JSStringCreateWithUTF8CString("getPrototypeOf");
+        JSValueRef getPrototypeOfValue = JSObjectGetProperty(
+            context_, (JSObjectRef)reflectValue, getPrototypeOfName, nullptr);
+        JSStringRelease(getPrototypeOfName);
+        if (getPrototypeOfValue && JSValueIsObject(context_, getPrototypeOfValue)) {
+            reflectGetPrototypeOf_ = (JSObjectRef)getPrototypeOfValue;
+            JSValueProtect(context_, reflectGetPrototypeOf_);
+        }
+    }
+
+    bool setPropertyWithReflect(
+        JSObjectRef object,
+        JSValueRef property,
+        JSValueRef value) {
+        if (!reflectSet_) {
+            throwException("JavaScriptCore Reflect.set intrinsic is unavailable");
+            return false;
+        }
+        JSValueRef args[] = {object, property, value};
+        JSValueRef exception = nullptr;
+        JSValueRef result = JSObjectCallAsFunction(
+            context_, reflectSet_, nullptr, 3, args, &exception);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        return JSValueToBoolean(context_, result);
+    }
+
+    bool getBooleanProperty(JSObjectRef object, const char* name, bool& result) {
+        JSStringRef propertyName = JSStringCreateWithUTF8CString(name);
+        JSValueRef exception = nullptr;
+        JSValueRef value = JSObjectGetProperty(
+            context_, object, propertyName, &exception);
+        JSStringRelease(propertyName);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        result = JSValueToBoolean(context_, value);
+        return true;
+    }
+
+    void clearLastException() {
+        if (!lastException_) return;
+        JSValueUnprotect(context_, lastException_);
+        lastException_ = nullptr;
+    }
+
+    void replaceLastException(JSValueRef exception) {
+        if (exception) JSValueProtect(context_, exception);
+        clearLastException();
+        lastException_ = exception;
+    }
+
+    void recordException(JSValueRef exception) {
+        replaceLastException(exception);
+        reportException(exception);
+    }
+
     void setupGlobals() {
         // console.log / console.warn / console.error
         JSObjectRef console = JSObjectMake(context_, nullptr, nullptr);
@@ -603,22 +1010,9 @@ private:
             })
         );
 
-        // setTimeout / setInterval (basic implementation)
-        // Note: Full implementation requires integration with the event loop
-        setGlobalProperty("setTimeout",
-            newFunction("setTimeout", [](void* ctx, const std::vector<JSValueHandle>& args) {
-                // TODO: Implement proper timer scheduling
-                static int nextId = 1;
-                return JSValueHandle{(void*)JSValueMakeNumber((JSGlobalContextRef)ctx, nextId++), ctx};
-            })
-        );
-
-        setGlobalProperty("clearTimeout",
-            newFunction("clearTimeout", [](void* ctx, const std::vector<JSValueHandle>& args) {
-                // TODO: Implement timer cancellation
-                return JSValueHandle{(void*)JSValueMakeUndefined((JSGlobalContextRef)ctx), ctx};
-            })
-        );
+        // Timers are deliberately absent until Runtime::setupTimers() installs
+        // the scheduler backed by the host event loop. An engine-only JSC
+        // context must not expose an ID-returning stub that claims delivery.
     }
 
     void reportException(JSValueRef exception) {
@@ -626,15 +1020,36 @@ private:
         std::cerr << "[JSC] Error: " << msg << std::endl;
     }
 
+    JSValueHandle storeHandle(JSValueRef value) {
+        if (!value) return {nullptr, context_};
+        ++frameHandleRefs_[value];
+        ++outstandingHandles_;
+        JSValueProtect(context_, value);
+        return {(void*)value, context_};
+    }
+
+    static void finalizeNativeFunction(JSObjectRef object) {
+        delete static_cast<NativeFunctionData*>(JSObjectGetPrivate(object));
+    }
+
     static JSValueRef nativeCallback(JSContextRef ctx, JSObjectRef function,
                                      JSObjectRef thisObject, size_t argumentCount,
                                      const JSValueRef arguments[], JSValueRef* exception) {
-        // Find the native function for this JS function
-        auto it = g_nativeFunctions.find((void*)function);
-        if (it == g_nativeFunctions.end()) {
-            std::cerr << "[JSC] Native function not found for callback" << std::endl;
+        auto* callbackData = static_cast<NativeFunctionData*>(
+            JSObjectGetPrivate(function));
+        if (!callbackData ||
+            callbackData->owner != JSContextGetGlobalContext(ctx)) {
+            std::cerr << "[JSC] Native function owner not found for callback" << std::endl;
             return JSValueMakeUndefined(ctx);
         }
+        // A native callback may have thrown an exception that JavaScript caught. Keep the
+        // host-side exception latch aligned with the next callback boundary.
+        if (callbackData->engine && callbackData->engine->nativeCallbackDepth_ == 0 &&
+            callbackData->engine->exceptionFromNativeCallback_ &&
+            callbackData->engine->hasException()) {
+            callbackData->engine->getException();
+        }
+        if (callbackData->engine) callbackData->engine->nativeCallbackDepth_ += 1;
 
         // Convert arguments
         std::vector<JSValueHandle> args;
@@ -644,14 +1059,35 @@ private:
         }
 
         // Call the native function
-        JSValueHandle result = it->second((void*)ctx, args);
+        JSValueHandle result = callbackData->callback((void*)ctx, args);
+        if (callbackData->engine) callbackData->engine->nativeCallbackDepth_ -= 1;
+        if (callbackData->engine && result.ptr &&
+            callbackData->engine->protectedHandleRefs_.find((JSValueRef)result.ptr) ==
+                callbackData->engine->protectedHandleRefs_.end()) {
+            // The JavaScript call now owns the returned value. Release the temporary Engine
+            // handle without touching borrowed callback arguments.
+            callbackData->engine->freeHandle(result);
+        }
         return (JSValueRef)result.ptr;
     }
 
     JSContextGroupRef contextGroup_ = nullptr;
     JSGlobalContextRef context_ = nullptr;
+    JSObjectRef getOwnPropertyDescriptor_ = nullptr;
+    JSObjectRef reflectHas_ = nullptr;
+    JSObjectRef reflectSet_ = nullptr;
+    JSObjectRef reflectGetPrototypeOf_ = nullptr;
+    JSObjectRef objectPrototype_ = nullptr;
+    JSObjectRef functionPrototype_ = nullptr;
+    JSClassRef ordinaryObjectClass_ = nullptr;
+    JSClassRef nativeFunctionClass_ = nullptr;
     JSValueRef lastException_ = nullptr;
+    int nativeCallbackDepth_ = 0;
+    bool exceptionFromNativeCallback_ = false;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
+    std::unordered_map<JSValueRef, size_t> frameHandleRefs_;
+    std::unordered_map<JSValueRef, size_t> protectedHandleRefs_;
+    size_t outstandingHandles_ = 0;
     std::chrono::high_resolution_clock::time_point startTime_;
 };
 

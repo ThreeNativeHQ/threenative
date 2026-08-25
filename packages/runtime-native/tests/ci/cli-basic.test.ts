@@ -39,10 +39,7 @@ describe("CLI Basic", () => {
 
   it("should fail with nonexistent script", async ({ skip }) => {
     requireFiles(skip, binaryRequirement);
-    const { exitCode, stderr } = await runCommand(runtimeBinary, [
-      "run",
-      "nonexistent-file.js",
-    ]);
+    const { exitCode, stderr } = await runCommand(runtimeBinary, ["run", "nonexistent-file.js"]);
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Cannot open file");

@@ -45,8 +45,15 @@ export declare class DevicePreflightError extends Error {
   details: Record<string, unknown>;
   exitCode: number;
 }
-export declare function parseBatteryState(output: string): Omit<IDeviceCondition, "provisional" | "screenOn" | "serial" | "thermalStatus" | "thermalStatusCode">;
-export declare function parseThermalState(output: string): Pick<IDeviceCondition, "thermalStatus" | "thermalStatusCode">;
+export declare function parseBatteryState(
+  output: string,
+): Omit<
+  IDeviceCondition,
+  "provisional" | "screenOn" | "serial" | "thermalStatus" | "thermalStatusCode"
+>;
+export declare function parseThermalState(
+  output: string,
+): Pick<IDeviceCondition, "thermalStatus" | "thermalStatusCode">;
 export declare function parseScreenState(output: string): Pick<IDeviceCondition, "screenOn">;
 export declare function assertDeviceReady(
   serial: string,

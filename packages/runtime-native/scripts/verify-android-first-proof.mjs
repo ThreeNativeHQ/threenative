@@ -328,14 +328,12 @@ export function assertEngine(log, expected) {
   const engine = engineFromLog(log);
   if (engine === null) {
     throw new GateError(
-      `Expected the ${expected} engine but the process never reported one. ` +
-        'Either it died before creating an engine, or this build does not log "JS engine created".',
+      `Expected the ${expected} engine but the process never reported one. Either it died before creating an engine, or this build does not log "JS engine created".`,
     );
   }
   if (engine.toLowerCase() !== expected.toLowerCase()) {
     throw new GateError(
-      `Engine mismatch: asked for ${expected}, the running process reported ${engine}. ` +
-        'The installed APK is not the engine this gate is measuring.',
+      `Engine mismatch: asked for ${expected}, the running process reported ${engine}. The installed APK is not the engine this gate is measuring.`,
     );
   }
   return { engine, expected, matched: true };

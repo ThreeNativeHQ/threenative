@@ -33,9 +33,6 @@ static bool g_initialized = false;
 // Store native function callbacks
 static std::unordered_map<void*, NativeFunction> g_nativeFunctions;
 
-// Global set of protected handles that should not be deleted by nativeCallback cleanup
-static std::unordered_set<void*> g_protectedHandles;
-
 /**
  * Initialize V8 (call once at startup)
  */
@@ -122,10 +119,20 @@ public:
         v8::Local<v8::Private> privateKey = v8::Private::ForApi(isolate_,
             v8::String::NewFromUtf8(isolate_, "__mystral_private__").ToLocalChecked());
         privateKey_.Reset(isolate_, privateKey);
+        bindingDestinationKey_.Reset(isolate_, v8::Private::New(isolate_));
 
         // Set up globals
         {
             v8::Context::Scope context_scope(context);
+            v8::Local<v8::Object> ordinaryObject = v8::Object::New(isolate_);
+#if V8_MAJOR_VERSION >= 12
+            bindingDestinationPrototype_.Reset(
+                isolate_, ordinaryObject->GetPrototypeV2());
+#else
+            bindingDestinationPrototype_.Reset(
+                isolate_, ordinaryObject->GetPrototype());
+#endif
+            cacheIntrinsics(context);
             setupGlobals();
         }
 
@@ -140,6 +147,7 @@ public:
             delete handle;
         }
         frameHandles_.clear();
+        protectedHandles_.clear();
         for (auto* ref : nativeFunctionRefs_) {
             ref->persistent.Reset();
             delete ref->function;
@@ -150,6 +158,10 @@ public:
             entry.second.Reset();
         }
         moduleCache_.clear();
+        reflectSet_.Reset();
+        reflectGetPrototypeOf_.Reset();
+        bindingDestinationPrototype_.Reset();
+        bindingDestinationKey_.Reset();
         privateKey_.Reset();
         context_.Reset();
         isolate_->Dispose();
@@ -364,9 +376,11 @@ public:
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         v8::Local<v8::Value> val = persistent->Get(isolate_);
 
-        return global->Set(context,
+        return setPropertyWithReflect(
+            context,
+            global,
             v8::String::NewFromUtf8(isolate_, name).ToLocalChecked(),
-            val).FromMaybe(false);
+            val);
     }
 
     JSValueHandle getGlobalProperty(const char* name) override {
@@ -434,7 +448,13 @@ public:
         v8::HandleScope handle_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         v8::Context::Scope context_scope(context);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, v8::Object::New(isolate_));
+        v8::Local<v8::Object> object = v8::Object::New(isolate_);
+        object->SetPrivate(
+            context,
+            bindingDestinationKey_.Get(isolate_),
+            v8::True(isolate_)).Check();
+        v8::Persistent<v8::Value>* persistent =
+            new v8::Persistent<v8::Value>(isolate_, object);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -722,13 +742,36 @@ public:
         return persistent->Get(isolate_)->IsFunction();
     }
 
+    bool isBindingDestination(JSValueHandle value) override {
+        if (!value.ptr || value.ctx != isolate_) return false;
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+        auto* persistent = static_cast<v8::Persistent<v8::Value>*>(value.ptr);
+        v8::Local<v8::Value> local = persistent->Get(isolate_);
+        if (!local->IsObject()) return false;
+        if (local->IsProxy()) return false;
+        v8::Local<v8::Object> object = local.As<v8::Object>();
+        if (!object->HasPrivate(
+                context, bindingDestinationKey_.Get(isolate_)).FromMaybe(false)) {
+            return false;
+        }
+#if V8_MAJOR_VERSION >= 12
+        v8::Local<v8::Value> prototype = object->GetPrototypeV2();
+#else
+        v8::Local<v8::Value> prototype = object->GetPrototype();
+#endif
+        return prototype->StrictEquals(bindingDestinationPrototype_.Get(isolate_));
+    }
+
     bool isSameValue(JSValueHandle left, JSValueHandle right) override {
         if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
         auto* leftPersistent = (v8::Persistent<v8::Value>*)left.ptr;
         auto* rightPersistent = (v8::Persistent<v8::Value>*)right.ptr;
-        return leftPersistent->Get(isolate_)->StrictEquals(rightPersistent->Get(isolate_));
+        return leftPersistent->Get(isolate_)->SameValue(rightPersistent->Get(isolate_));
     }
 
     // ========================================================================
@@ -745,9 +788,10 @@ public:
         v8::Persistent<v8::Value>* valPersistent = (v8::Persistent<v8::Value>*)value.ptr;
 
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
-        return objLocal->Set(context,
-            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked(),
-            valPersistent->Get(isolate_)).FromMaybe(false);
+        v8::Local<v8::String> key =
+            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked();
+        return setPropertyWithReflect(
+            context, objLocal, key, valPersistent->Get(isolate_));
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -759,12 +803,170 @@ public:
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
 
+        v8::TryCatch try_catch(isolate_);
         v8::Local<v8::Value> result;
-        objLocal->Get(context, v8::String::NewFromUtf8(isolate_, name).ToLocalChecked()).ToLocal(&result);
+        if (!objLocal->Get(
+                context,
+                v8::String::NewFromUtf8(isolate_, name).ToLocalChecked())
+                 .ToLocal(&result)) {
+            reportException(try_catch);
+            result = v8::Undefined(isolate_);
+        }
 
         v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
+    }
+
+    bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) override {
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+        v8::TryCatch try_catch(isolate_);
+
+        auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
+        v8::Local<v8::Object> current = objPersistent->Get(isolate_).As<v8::Object>();
+        v8::Local<v8::String> key =
+            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked();
+        bool own = true;
+        std::vector<v8::Local<v8::Object>> visited;
+
+        while (!current.IsEmpty()) {
+            for (const auto& seen : visited) {
+                if (current->StrictEquals(seen)) {
+                    throwException(
+                        "JavaScript property prototype traversal detected a cycle");
+                    return false;
+                }
+            }
+            visited.push_back(current);
+
+            v8::Local<v8::Value> descriptor;
+            if (!current->GetOwnPropertyDescriptor(context, key).ToLocal(&descriptor)) {
+                reportException(try_catch);
+                return false;
+            }
+            if (!descriptor->IsUndefined()) {
+                v8::Local<v8::Object> descriptorObject = descriptor.As<v8::Object>();
+                const auto hasValue = descriptorObject->HasOwnProperty(
+                    context,
+                    v8::String::NewFromUtf8(isolate_, "value").ToLocalChecked());
+                if (hasValue.IsNothing()) {
+                    reportException(try_catch);
+                    return false;
+                }
+
+                info.own = own;
+                const auto readBoolean = [&](const char* field, bool& output) {
+                    v8::Local<v8::Value> value;
+                    if (!descriptorObject->Get(
+                            context,
+                            v8::String::NewFromUtf8(isolate_, field).ToLocalChecked())
+                             .ToLocal(&value)) {
+                        reportException(try_catch);
+                        return false;
+                    }
+                    output = value->BooleanValue(isolate_);
+                    return true;
+                };
+                if (!readBoolean("enumerable", info.enumerable) ||
+                    !readBoolean("configurable", info.configurable)) {
+                    return false;
+                }
+                if (!hasValue.FromJust()) {
+                    info.kind = JSPropertyKind::Accessor;
+                    info.writable = false;
+                    info.value = {};
+                    return true;
+                }
+
+                v8::Local<v8::Value> value;
+                if (!descriptorObject->Get(
+                        context,
+                        v8::String::NewFromUtf8(isolate_, "value").ToLocalChecked())
+                         .ToLocal(&value)) {
+                    reportException(try_catch);
+                    return false;
+                }
+                if (!readBoolean("writable", info.writable)) return false;
+                auto* persistent = new v8::Persistent<v8::Value>(isolate_, value);
+                frameHandles_.insert(persistent);
+                info.kind = JSPropertyKind::Data;
+                info.value = {persistent, isolate_};
+                return true;
+            }
+
+            if (reflectGetPrototypeOf_.IsEmpty()) {
+                throwException("V8 Reflect.getPrototypeOf intrinsic is unavailable");
+                return false;
+            }
+            v8::Local<v8::Function> getPrototypeOf =
+                reflectGetPrototypeOf_.Get(isolate_);
+            v8::Local<v8::Value> args[] = {current};
+            v8::Local<v8::Value> prototype;
+            if (!getPrototypeOf->Call(
+                    context, v8::Undefined(isolate_), 1, args)
+                     .ToLocal(&prototype)) {
+                reportException(try_catch);
+                return false;
+            }
+            if (!prototype->IsObject()) break;
+            current = prototype.As<v8::Object>();
+            own = false;
+        }
+
+        info = {};
+        return true;
+    }
+
+    void releasePropertyInfo(JSPropertyInfo& info) override {
+        if (info.kind == JSPropertyKind::Data && info.value.ptr) {
+            auto* persistent =
+                static_cast<v8::Persistent<v8::Value>*>(info.value.ptr);
+            frameHandles_.erase(persistent);
+            persistent->Reset();
+            delete persistent;
+        }
+        info = {};
+    }
+
+    bool hasProperty(JSValueHandle obj, const char* name) override {
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+
+        auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
+        v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
+        v8::TryCatch try_catch(isolate_);
+        const auto result = objLocal->Has(
+            context,
+            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked());
+        if (result.IsNothing()) {
+            reportException(try_catch);
+            return false;
+        }
+        return result.FromJust();
+    }
+
+    bool deleteProperty(JSValueHandle obj, const char* name) override {
+        v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
+
+        auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
+        v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
+        v8::TryCatch try_catch(isolate_);
+        const auto result = objLocal->Delete(
+            context,
+            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked());
+        if (result.IsNothing()) {
+            reportException(try_catch);
+            return false;
+        }
+        return result.FromJust();
     }
 
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
@@ -837,20 +1039,29 @@ public:
     // Memory Management
     // ========================================================================
 
-    void protect(JSValueHandle value) override {
-        // Mark this handle as protected in the global set.
-        // nativeCallback will check this set and skip deletion for protected handles.
-        g_protectedHandles.insert(value.ptr);
+    void freezeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
+        // Mark this handle as protected in this engine's set. nativeCallback will check it
+        // and skip deletion for protected handles.
+        protectedHandles_.insert(value.ptr);
+        frameHandles_.insert(static_cast<v8::Persistent<v8::Value>*>(value.ptr));
     }
 
-    void unprotect(JSValueHandle value) override {
-        // Remove from protected set, frame handles, and delete
-        g_protectedHandles.erase(value.ptr);
-        frameHandles_.erase((v8::Persistent<v8::Value>*)value.ptr);
+    void freeHandle(JSValueHandle value) override {
+        if (!value.ptr) return;
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
+        const auto it = frameHandles_.find(persistent);
+        if (it == frameHandles_.end()) return;
+        protectedHandles_.erase(value.ptr);
+        frameHandles_.erase(it);
         persistent->Reset();
         delete persistent;
     }
+
+    void protect(JSValueHandle value) override { freezeHandle(value); }
+    void unprotect(JSValueHandle value) override { freeHandle(value); }
+
+    size_t outstandingHandleCount() const override { return frameHandles_.size(); }
 
     void gc() override {
         isolate_->LowMemoryNotification();
@@ -872,13 +1083,16 @@ public:
     }
 
     void clearFrameHandles() override {
-        for (auto* handle : frameHandles_) {
-            if (g_protectedHandles.find(handle) == g_protectedHandles.end()) {
+        for (auto it = frameHandles_.begin(); it != frameHandles_.end();) {
+            auto* handle = *it;
+            if (protectedHandles_.find(handle) == protectedHandles_.end()) {
                 handle->Reset();
                 delete handle;
+                it = frameHandles_.erase(it);
+            } else {
+                ++it;
             }
         }
-        frameHandles_.clear();
 
         inFrame_ = false;
 
@@ -937,14 +1151,19 @@ public:
     std::string getException() override {
         std::string result = lastException_;
         lastException_.clear();
+        exceptionFromNativeCallback_ = false;
         return result;
     }
 
     void throwException(const char* message) override {
         v8::Isolate::Scope isolate_scope(isolate_);
+        v8::HandleScope handle_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope context_scope(context);
         isolate_->ThrowException(
             v8::String::NewFromUtf8(isolate_, message).ToLocalChecked());
         lastException_ = message;
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
     }
 
     // ========================================================================
@@ -993,6 +1212,58 @@ public:
     }
 
 private:
+    void cacheIntrinsics(v8::Local<v8::Context> context) {
+        v8::Local<v8::Value> reflectValue;
+        if (!context->Global()
+                 ->Get(
+                     context,
+                     v8::String::NewFromUtf8(isolate_, "Reflect").ToLocalChecked())
+                 .ToLocal(&reflectValue) ||
+            !reflectValue->IsObject()) {
+            return;
+        }
+        v8::Local<v8::Object> reflect = reflectValue.As<v8::Object>();
+        v8::Local<v8::Value> getPrototypeOf;
+        if (reflect
+                ->Get(
+                    context,
+                    v8::String::NewFromUtf8(isolate_, "getPrototypeOf").ToLocalChecked())
+                .ToLocal(&getPrototypeOf) &&
+            getPrototypeOf->IsFunction()) {
+            reflectGetPrototypeOf_.Reset(isolate_, getPrototypeOf.As<v8::Function>());
+        }
+        v8::Local<v8::Value> set;
+        if (reflect
+                ->Get(
+                    context,
+                    v8::String::NewFromUtf8(isolate_, "set").ToLocalChecked())
+                .ToLocal(&set) &&
+            set->IsFunction()) {
+            reflectSet_.Reset(isolate_, set.As<v8::Function>());
+        }
+    }
+
+    bool setPropertyWithReflect(
+        v8::Local<v8::Context> context,
+        v8::Local<v8::Object> object,
+        v8::Local<v8::Value> property,
+        v8::Local<v8::Value> value) {
+        if (reflectSet_.IsEmpty()) {
+            throwException("V8 Reflect.set intrinsic is unavailable");
+            return false;
+        }
+        v8::TryCatch try_catch(isolate_);
+        v8::Local<v8::Value> args[] = {object, property, value};
+        v8::Local<v8::Value> result;
+        if (!reflectSet_.Get(isolate_)
+                 ->Call(context, v8::Undefined(isolate_), 3, args)
+                 .ToLocal(&result)) {
+            reportException(try_catch);
+            return false;
+        }
+        return result->BooleanValue(isolate_);
+    }
+
     static std::string toStdString(v8::Isolate* isolate, v8::Local<v8::Value> value) {
         v8::String::Utf8Value utf8(isolate, value);
         if (*utf8) {
@@ -1133,19 +1404,6 @@ private:
         performance->Set(context, v8::String::NewFromUtf8(isolate_, "now").ToLocalChecked(), nowFn).Check();
         context->Global()->Set(context, v8::String::NewFromUtf8(isolate_, "performance").ToLocalChecked(), performance).Check();
 
-        // setTimeout / clearTimeout (basic stubs)
-        v8::Local<v8::Function> setTimeoutFn = v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
-            static int nextId = 1;
-            info.GetReturnValue().Set(nextId++);
-        })->GetFunction(context).ToLocalChecked();
-
-        v8::Local<v8::Function> clearTimeoutFn = v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
-            // No-op for now
-        })->GetFunction(context).ToLocalChecked();
-
-        context->Global()->Set(context, v8::String::NewFromUtf8(isolate_, "setTimeout").ToLocalChecked(), setTimeoutFn).Check();
-        context->Global()->Set(context, v8::String::NewFromUtf8(isolate_, "clearTimeout").ToLocalChecked(), clearTimeoutFn).Check();
-
         // Intl stub (V8 was built without ICU, so Intl is not available)
         // Libraries like PixiJS check for Intl?.Segmenter and fall back gracefully
         v8::Local<v8::Object> intl = v8::Object::New(isolate_);
@@ -1188,10 +1446,20 @@ private:
 
         // Get engine for frame handle tracking
         auto* engine = static_cast<V8Engine*>(isolate->GetData(0));
+        // A native callback may have thrown an exception that JavaScript caught. The host-side
+        // latch must follow JavaScript control flow, or a later binding transaction will reject a
+        // valid install even though the pending JS exception is gone.
+        if (engine && engine->nativeCallbackDepth_ == 0 &&
+            engine->exceptionFromNativeCallback_ && engine->hasException() &&
+            !isolate->HasPendingException()) {
+            engine->getException();
+        }
 
         // Get the native function from external data
         v8::Local<v8::External> external = info.Data().As<v8::External>();
         NativeFunction* fn = static_cast<NativeFunction*>(external->Value());
+
+        if (engine) engine->nativeCallbackDepth_ += 1;
 
         // Convert arguments
         std::vector<JSValueHandle> args;
@@ -1213,7 +1481,7 @@ private:
         // Clean up argument handles (but skip protected ones and the result if it's an arg)
         for (auto& arg : args) {
             // Check if this handle was protected by the native function
-            if (g_protectedHandles.find(arg.ptr) != g_protectedHandles.end()) {
+            if (engine && engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end()) {
                 // Skip - the native function wants to keep this handle
                 continue;
             }
@@ -1226,7 +1494,10 @@ private:
             delete persistent;
         }
 
-        // Clean up result handle if it wasn't one of the args
+        // Clean up result handle if it wasn't one of the args. An argument handle is also a
+        // temporary Persistent: setting the Local return value transfers the JavaScript value,
+        // not the Persistent allocation, so release that allocation unless the native callback
+        // explicitly froze it.
         bool resultWasArg = false;
         for (auto& arg : args) {
             if (arg.ptr == result.ptr) {
@@ -1234,7 +1505,14 @@ private:
                 break;
             }
         }
-        if (result.ptr && !resultWasArg && g_protectedHandles.find(result.ptr) == g_protectedHandles.end()) {
+        if (result.ptr && resultWasArg &&
+            (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
+            auto* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
+            if (engine) engine->frameHandles_.erase(resPersistent);
+            resPersistent->Reset();
+            delete resPersistent;
+        } else if (result.ptr && !resultWasArg &&
+            (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
             v8::Persistent<v8::Value>* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
             // Remove from frame handles to avoid double-free in clearFrameHandles()
             if (engine) {
@@ -1243,6 +1521,7 @@ private:
             resPersistent->Reset();
             delete resPersistent;
         }
+        if (engine) engine->nativeCallbackDepth_ -= 1;
     }
 
     // Weak reference data for GC-triggered Dawn resource cleanup
@@ -1255,15 +1534,22 @@ private:
     v8::Isolate* isolate_ = nullptr;
     v8::ArrayBuffer::Allocator* allocator_ = nullptr;
     v8::Global<v8::Context> context_;
+    v8::Global<v8::Function> reflectSet_;
+    v8::Global<v8::Function> reflectGetPrototypeOf_;
+    v8::Global<v8::Value> bindingDestinationPrototype_;
+    v8::Global<v8::Private> bindingDestinationKey_;
     v8::Global<v8::Private> privateKey_;  // Cached private key to avoid string allocation per call
     std::string lastException_;
     std::chrono::high_resolution_clock::time_point startTime_;
     std::unordered_map<std::string, v8::Global<v8::Module>> moduleCache_;
     std::unordered_map<int, std::string> moduleIdToPath_;  // Reverse lookup: module hash -> path
     std::unordered_set<v8::Persistent<v8::Value>*> frameHandles_;  // Handles to free at end of frame
+    std::unordered_set<void*> protectedHandles_;
     std::unordered_set<NativeFunctionRef*> nativeFunctionRefs_;
     bool inFrame_ = false;  // True during animation frame execution
     bool frameTrackingSuspended_ = false;  // When true, skip frame tracking for new allocations
+    int nativeCallbackDepth_ = 0;
+    bool exceptionFromNativeCallback_ = false;
 };
 
 // Factory function

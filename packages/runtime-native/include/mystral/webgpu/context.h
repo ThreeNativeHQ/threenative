@@ -13,6 +13,8 @@ typedef struct WGPUQueueImpl* WGPUQueue;
 namespace mystral {
 namespace webgpu {
 
+struct BindingsState;
+
 /**
  * WebGPU Context
  *
@@ -143,6 +145,8 @@ public:
      */
     void clearFrameScreenshotReady();
 
+    void setBindingsState(BindingsState* state) { bindingsState_ = state; }
+
     /**
      * Capture the current frame as RGBA pixel data
      * @param outData Output vector to receive RGBA data (width * height * 4 bytes)
@@ -209,6 +213,7 @@ private:
     // Offscreen rendering (for headless mode)
     void* offscreenTexture_ = nullptr;  // WGPUTexture
     void* offscreenTextureView_ = nullptr;  // WGPUTextureView
+    BindingsState* bindingsState_ = nullptr;
 };
 
 }  // namespace webgpu
