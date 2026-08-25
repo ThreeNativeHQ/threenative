@@ -187,11 +187,11 @@ export function summarise(frames) {
   // that is not a defect. Those cover a few percent; scene geometry breaking through covers much
   // more. The threshold sits above the one and far below the other, and the frames are kept so
   // the claim can be checked by eye rather than trusted.
-  const LEAK = 0.05;
+  const leak = 0.05;
   const leaks = [];
   for (let index = from; index <= to; index += 1) {
     const frame = frames[index];
-    if (frame.backdrop > 0.2 && frame.foreign > LEAK) {
+    if (frame.backdrop > 0.2 && frame.foreign > leak) {
       leaks.push({ index, foreign: frame.foreign, backdrop: frame.backdrop, kind: "area" });
     }
   }
@@ -257,7 +257,7 @@ export function assertLaunchFrameSequence(frames) {
   let previousRank = 0;
   const phases = frames.map((frame, index) => {
     if (frame === null || typeof frame !== "object") {
-      throw new InspectError("TN_LAUNCH_SEQUENCE_INVALID_FRAME:index=" + index, 1);
+      throw new InspectError(`TN_LAUNCH_SEQUENCE_INVALID_FRAME:index=${index}`, 1);
     }
     const brand = String(frame.brand ?? "").toLowerCase();
     if (
@@ -267,7 +267,7 @@ export function assertLaunchFrameSequence(frames) {
       brand === "generic" ||
       brand === "magenta"
     ) {
-      throw new InspectError("TN_LAUNCH_SEQUENCE_OFF_BRAND:index=" + index, 1);
+      throw new InspectError(`TN_LAUNCH_SEQUENCE_OFF_BRAND:index=${index}`, 1);
     }
     let phase = frame.phase;
     if (phase === undefined) {
@@ -275,13 +275,13 @@ export function assertLaunchFrameSequence(frames) {
     }
     if (!phaseNames.has(phase)) {
       throw new InspectError(
-        "TN_LAUNCH_SEQUENCE_PHASE_INVALID:index=" + index + ":" + String(phase),
+        `TN_LAUNCH_SEQUENCE_PHASE_INVALID:index=${index}:${String(phase)}`,
         1,
       );
     }
     const rank = phase === "platform-splash" ? 0 : phase === "loading" ? 1 : 2;
     if (rank < previousRank) {
-      throw new InspectError("TN_LAUNCH_SEQUENCE_ORDER:index=" + index + ":phase=" + phase, 1);
+      throw new InspectError(`TN_LAUNCH_SEQUENCE_ORDER:index=${index}:phase=${phase}`, 1);
     }
     previousRank = rank;
     if (phase === "loading") {

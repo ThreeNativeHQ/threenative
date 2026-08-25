@@ -55,7 +55,10 @@ test("row 50 advances only through three requestAnimationFrame callbacks", async
   const requested = [];
   const scheduleFrame = (callback) => {
     requested.push(callback);
-    queueMicrotask(() => callback((timestamp += 16)));
+    queueMicrotask(() => {
+      timestamp += 16;
+      callback(timestamp);
+    });
   };
   const samples = await advanceRotationWithRaf(subject, scheduleFrame);
   assert.equal(requested.length, 3);

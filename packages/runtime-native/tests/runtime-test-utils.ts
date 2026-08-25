@@ -27,10 +27,11 @@ export function requireFiles(
 export async function runCommand(
   command: string,
   args: readonly string[],
-  options: { cwd?: string; timeoutMs?: number } = {},
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): Promise<{ exitCode: number | null; stderr: string; stdout: string }> {
   const child = spawn(command, [...args], {
     cwd: options.cwd,
+    env: options.env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stderr = "";

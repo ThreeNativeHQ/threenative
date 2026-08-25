@@ -12,17 +12,17 @@
  *   node scripts/download-deps.mjs --only skia-ios  # Download only iOS Skia
  *   node scripts/download-deps.mjs --force      # Re-download even if exists
  *
- * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, webp, skia, swc
+ * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, webp, skia, swc
  * iOS deps: wgpu-ios, skia-ios (for cross-compilation from macOS)
  * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source
  */
 
-import { execFileSync, execSync } from 'child_process';
-import { createHash } from 'crypto';
-import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync } from 'fs';
-import { pipeline } from 'stream/promises';
-import { join, dirname, relative, resolve } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { execFileSync, execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { join, dirname, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -117,9 +117,9 @@ const DEPS = {
         // macos-latest = arm64, macos-15-intel = x64
         const variant = ARCH === 'arm64' ? 'macos-latest' : 'macos-15-intel';
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-${variant}-Release.tar.gz`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-ubuntu-latest-Release.tar.gz`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-windows-latest-Release.tar.gz`;
       }
       console.warn(`Dawn prebuilts not available for ${platformName}-${archName}`);
@@ -141,10 +141,10 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x64';
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_macOS_${arch}.tar.xz`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         // Only x64 available for Linux
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_Linux_x64.tar.xz`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         // Only x64 available for Windows (7z format)
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_Windows_x64.7z`;
       }
@@ -167,7 +167,7 @@ const DEPS = {
   quiche: {
     // Cloudflare quiche - QUIC + HTTP/3 (native backend for the WebTransport API).
     // Prebuilt static libs (libquiche.a / quiche.lib + patched quiche.h, BoringSSL
-    // bundled) come from mystralengine/library-builder, exactly like libuv/draco/swc.
+    // bundled) come from mystralengine/library-builder, exactly like libuv/swc.
     // The library is built there (build-quiche.py + build-quiche.yml) so the engine
     // repo never compiles Rust/BoringSSL itself. If no prebuilt exists for this
     // platform/arch, the C++ build compiles a WebTransport stub (MYSTRAL_HAS_QUICHE off).
@@ -178,13 +178,13 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/quiche-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         if (ARCH !== 'x64') {
           console.warn(`quiche prebuilts not available for ${platformName}-${archName}`);
           return null;
         }
         return `${baseUrl}/quiche-linux-x64.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         if (ARCH !== 'x64') {
           console.warn(`quiche prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -238,21 +238,10 @@ const DEPS = {
       // Ogg Vorbis decode for `decodeAudioData`. The runtime carried no Vorbis decoder at all —
       // `decodeAudioFile` was one call to `SDL_LoadWAV_IO` — so every native target rejected the
       // `.ogg` files the web half of the same source plays, and an APK built from a repository's
-      // own assets died at startup. `stb_vorbis.c` is the same vendored single-file precedent as
-      // stb_image and cgltf; `src/audio/vorbis_impl.c` is the one translation unit that compiles it.
+      // own assets died at startup. `stb_vorbis.c` follows the same vendored single-file precedent
+      // as stb_image above; `src/audio/vorbis_impl.c` is the one translation unit that compiles it.
       'stb_vorbis.c',
     ],
-  },
-  cgltf: {
-    // cgltf single-header GLTF loader from jkuhlmann/cgltf
-    version: 'v1.14',
-    // Single header download like stb
-    getUrl: () => null,  // Special handling below
-    extractTo: 'cgltf',
-    headers: [
-      'cgltf.h',
-    ],
-    rawUrl: 'https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.14/cgltf.h',
   },
   webp: {
     // libwebp for WebP image decoding (used by GLTF EXT_texture_webp extension)
@@ -263,9 +252,9 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86-64';
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-mac-${arch}.tar.gz`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-linux-x86-64.tar.gz`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-windows-x64.zip`;
       }
       console.warn(`libwebp prebuilts not available for ${platformName}-${archName}`);
@@ -308,9 +297,9 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/skia-build-mac-${arch}-gpu-release.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         return `${baseUrl}/skia-build-linux-x64-gpu-release.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         return `${baseUrl}/skia-build-win-x64-gpu-release.zip`;
       }
       console.warn(`Skia prebuilts not available for ${platformName}-${archName}`);
@@ -325,13 +314,13 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/swc-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         if (ARCH !== 'x64') {
           console.warn(`SWC prebuilts not available for ${platformName}-${archName}`);
           return null;
         }
         return `${baseUrl}/swc-linux-x64.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         if (ARCH !== 'x64') {
           console.warn(`SWC prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -353,13 +342,13 @@ const DEPS = {
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/libuv-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
+      }if (platformName === 'linux') {
         if (ARCH !== 'x64') {
           console.warn(`libuv prebuilts not available for ${platformName}-${archName}`);
           return null;
         }
         return `${baseUrl}/libuv-linux-x64.zip`;
-      } else if (platformName === 'windows') {
+      }if (platformName === 'windows') {
         if (ARCH !== 'x64') {
           console.warn(`libuv prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -370,34 +359,6 @@ const DEPS = {
       return null;
     },
     extractTo: 'libuv',
-  },
-  draco: {
-    // Draco mesh compression library for native C++ decoding
-    // Bypasses WASM/Worker entirely for Draco-compressed glTF meshes
-    // https://github.com/mystralengine/library-builder/releases
-    version: 'draco-1.5.7-2',
-    getUrl: () => {
-      const baseUrl = 'https://github.com/mystralengine/library-builder/releases/download/draco-1.5.7-2';
-      if (platformName === 'macos') {
-        const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
-        return `${baseUrl}/draco-mac-${arch}.zip`;
-      } else if (platformName === 'linux') {
-        if (ARCH !== 'x64') {
-          console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
-          return null;
-        }
-        return `${baseUrl}/draco-linux-x64.zip`;
-      } else if (platformName === 'windows') {
-        if (ARCH !== 'x64') {
-          console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
-          return null;
-        }
-        return `${baseUrl}/draco-win-x64.zip`;
-      }
-      console.warn(`Draco prebuilts not available for ${platformName}-${archName}`);
-      return null;
-    },
-    extractTo: 'draco',
   },
   'skia-win-static': {
     // Static Skia + Dawn for Windows from mystralengine/library-builder
@@ -434,8 +395,8 @@ const DEPS = {
     },
     extractTo: 'skia-ios',
     archives: {
-      device: `https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-device-arm64-gpu-release.zip`,
-      simulator: `https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-simulator-arm64-x86_64-gpu-release.zip`,
+      device: "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-device-arm64-gpu-release.zip",
+      simulator: "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-simulator-arm64-x86_64-gpu-release.zip",
     },
   },
   // ============================================================================
@@ -810,29 +771,6 @@ async function downloadDep(name) {
     }
   }
 
-  // Special handling for cgltf (single header with specific rawUrl)
-  if (name === 'cgltf' && dep.rawUrl) {
-    if (existsSync(destDir)) {
-      console.log(`${name} already exists at ${destDir}`);
-      if (!process.argv.includes('--force')) {
-        console.log('Skipping (use --force to re-download)');
-        return true;
-      }
-      rmSync(destDir, { recursive: true });
-    }
-
-    mkdirSync(destDir, { recursive: true });
-    try {
-      const destPath = join(destDir, 'cgltf.h');
-      await downloadFile(dep.rawUrl, destPath);
-      console.log(`Successfully installed ${name}`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to download ${name}:`, error.message);
-      return false;
-    }
-  }
-
   const url = dep.getUrl();
   if (!url) {
     console.warn(`Skipping ${name} - no prebuilt available for this platform`);
@@ -913,7 +851,7 @@ async function downloadDep(name) {
       const versionFile = join(destDir, 'quickjs-2024-01-13', 'version');
       const versionFileNew = join(destDir, 'quickjs-2024-01-13', 'VERSION.txt');
       try {
-        const { renameSync, existsSync: exists } = await import('fs');
+        const { renameSync, existsSync: exists } = await import('node:fs');
         if (exists(versionFile)) {
           renameSync(versionFile, versionFileNew);
           console.log('Renamed version -> VERSION.txt (C++ header conflict fix)');
@@ -957,7 +895,7 @@ async function downloadDep(name) {
 
     // Extract AAR if needed (SDL3 Android)
     if (dep.needsAarExtraction) {
-      const aarFiles = await import('fs/promises').then(fs => fs.readdir(destDir));
+      const aarFiles = await import('node:fs/promises').then(fs => fs.readdir(destDir));
       const aarFile = aarFiles.find(f => f.endsWith('.aar'));
       if (aarFile) {
         const aarPath = join(destDir, aarFile);
@@ -1053,7 +991,7 @@ async function main() {
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
   // Desktop deps (downloaded by default)
-  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'draco', 'quiche'];
+  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];

@@ -11,12 +11,12 @@ const bindingsSource = readFileSync(
 function assertResizeAttachmentContract(source) {
   assert.match(
     source,
-    /static bool readCanvasDimension\([\s\S]*?getProperty\(canvas, propertyName\)/u,
+    /static bool readCanvasDimension\([\s\S]*?BindingsState\* state,[\s\S]*?getProperty\(canvas, propertyName\)/u,
     "surface synchronization must read the canvas backing dimensions",
   );
   assert.match(
     source,
-    /static bool syncSurfaceSizeToCanvas\([\s\S]*?config\.width = width;[\s\S]*?config\.height = height;[\s\S]*?wgpuSurfaceConfigure\(g_surface, &config\)/u,
+    /static bool syncSurfaceSizeToCanvas\([\s\S]*?config\.width = width;[\s\S]*?config\.height = height;[\s\S]*?wgpuSurfaceConfigure\(state->surface, &config\)/u,
     "canvas backing dimensions must reconfigure the native surface before acquisition",
   );
   const mainCanvasContext = source.slice(
@@ -28,21 +28,26 @@ function assertResizeAttachmentContract(source) {
   // surface is reconfigured to the canvas size before anything acquires an image from it.
   assert.match(
     mainCanvasContext,
-    /syncSurfaceSizeToCanvas\(g_engine->getGlobalProperty\("canvas"\)\)[\s\S]*?texture = getCurrentSwapchainTexture\(\)/u,
-    "the main canvas must synchronize before it obtains the color attachment",
+    /installCanvasContextBindings\(state, canvasContext(?:, false)?\)/u,
+    "the main canvas must use the shared context binding implementation",
+  );
+  assert.match(
+    source,
+    /syncSurfaceSizeToCanvas\(state, state->engine->getGlobalProperty\("canvas"\)\)[\s\S]*?texture = getCurrentSwapchainTexture\(state\)/u,
+    "the shared canvas binding must synchronize before it obtains the color attachment",
   );
 
   // Bounded by the capture function's own end. This slice used to end at a comment that no longer
   // exists, so indexOf returned -1 and it silently searched the rest of the file -- the assertion
   // still passed while scoping nothing.
-  const captureStart = source.indexOf("static void captureFrameScreenshot()");
+  const captureStart = source.indexOf("static void captureFrameScreenshot(BindingsState* state)");
   assert.notEqual(captureStart, -1, "screenshot capture must live in captureFrameScreenshot()");
-  const captureEnd = source.indexOf("static void presentPendingSurface()", captureStart);
+  const captureEnd = source.indexOf("static void presentPendingSurface(BindingsState* state)", captureStart);
   assert.notEqual(captureEnd, -1, "captureFrameScreenshot() must precede presentPendingSurface()");
   const screenshotCapture = source.slice(captureStart, captureEnd);
   assert.match(
     screenshotCapture,
-    /g_screenshotBufferSize = requiredSize;[\s\S]*?\}\s*g_screenshotBytesPerRow = bytesPerRow;/u,
+    /state->screenshotBufferSize = requiredSize;[\s\S]*?\}\s*state->screenshotBytesPerRow = bytesPerRow;/u,
     "screenshot readback must refresh its row stride for every canvas size",
   );
 }
@@ -53,7 +58,7 @@ test("native canvas resize keeps surface color and depth attachments the same si
 
 test("native surface acquisition cannot bypass canvas resize propagation", () => {
   const withoutResizeSync = bindingsSource.replace(
-    'syncSurfaceSizeToCanvas(g_engine->getGlobalProperty("canvas"))',
+    'syncSurfaceSizeToCanvas(state, state->engine->getGlobalProperty("canvas"))',
     "// resize synchronization removed",
   );
   assert.throws(() => assertResizeAttachmentContract(withoutResizeSync));

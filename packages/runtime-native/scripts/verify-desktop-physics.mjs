@@ -243,18 +243,26 @@ function runActuationBindingsProof() {
 function main() {
   const { desktop } = readPhysicsPlaytestPair();
   buildPhysicsBundle();
+  let proofError;
+  let bundleImportError;
   try {
-    runActuationBindingsProof();
-    console.info("desktop physics actuation bindings proof passed");
-    const result = runDesktopPhysics(desktop);
-    console.info(`desktop physics playtest proof passed: ${result.assertionCount} assertions`);
-    console.info(`desktop physics query proof passed: ${JSON.stringify(result.query)}`);
+    try {
+      runActuationBindingsProof();
+      console.info("desktop physics actuation bindings proof passed");
+      const result = runDesktopPhysics(desktop);
+      console.info(`desktop physics playtest proof passed: ${result.assertionCount} assertions`);
+      console.info(`desktop physics query proof passed: ${JSON.stringify(result.query)}`);
+    } catch (error) {
+      proofError = error;
+    }
   } finally {
     buildSmokeBundle();
     const bundleSource = readFileSync(bundle, "utf8");
     if (/^\s*import\s+/mu.test(bundleSource) || /\bimport\s*\(/u.test(bundleSource))
-      throw new Error("restored native smoke bundle contains a runtime import");
+      bundleImportError = new Error("restored native smoke bundle contains a runtime import");
   }
+  if (bundleImportError) throw bundleImportError;
+  if (proofError) throw proofError;
 }
 
 main();

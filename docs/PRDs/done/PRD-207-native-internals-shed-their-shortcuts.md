@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-207 — Native internals shed their shortcuts
 
-**Status:** NOT STARTED
+**Status:** COMPLETED 2026-08-25. Build tools left the runtime binary, the embedded JavaScript
+moved to hash-checked script files, handles own their lifetime and the polls became waits; the
+record is `docs/verification/prd-207-native-internals-2026-08-24.md`.
 
 **Complexity:** +3 for 10+ files across the C++ host, +2 for the ownership API change
 (`engine.h`), +2 for concurrency-sensitive rework, +1 for build-tool extraction = **8 →

@@ -6,11 +6,14 @@
  */
 
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu/bindings.h"
 #include <iostream>
 #include <cstring>
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -403,7 +406,7 @@ bool Context::initializeHeadless() {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[3];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -427,7 +430,7 @@ bool Context::initializeHeadless() {
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -452,7 +455,7 @@ bool Context::initializeHeadless() {
     requiredLimits.limits = adapterLimits.limits;
     deviceDesc.requiredLimits = &requiredLimits;
 
-    static WGPUFeatureName requiredFeaturesWGPU[4];
+    WGPUFeatureName requiredFeaturesWGPU[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -732,7 +735,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[3];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -767,7 +770,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // This feature allows instance_index in shaders to include firstInstance offset
     // Compression features are likewise requested when supported so JS-side consumers
     // (three's KTX2Loader.detectSupport among them) see what this GPU can upload.
-    static WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -807,7 +810,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
 
     // Check if IndirectFirstInstance is supported before requesting it
     // This feature allows instance_index in shaders to include firstInstance offset
-    static WGPUFeatureName requiredFeaturesWGPU[1];
+    WGPUFeatureName requiredFeaturesWGPU[1];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;
@@ -979,7 +982,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[3];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -1007,7 +1010,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    static WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[4];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -1034,7 +1037,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     }
     deviceDesc.requiredLimits = &requiredLimits;
 
-    static WGPUFeatureName requiredFeaturesWGPU[1];
+    WGPUFeatureName requiredFeaturesWGPU[1];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;
@@ -1259,35 +1262,43 @@ struct BufferMapData {
     uint8_t _pad1[7] = {};
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
     uint8_t _pad2[12] = {};
+    std::mutex waitMutex;
+    std::condition_variable waitCondition;
 };
 
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
 // Dawn buffer map callback
 static void onBufferMapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2) {
     auto* data = static_cast<BufferMapData*>(userdata1);
-    data->status = status;
-    data->completed = true;
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->completed = true;
+    }
+    data->waitCondition.notify_all();
 }
 #else
 // wgpu-native buffer map callback
 static void onBufferMapped(WGPUBufferMapAsyncStatus status, void* userdata) {
     auto* data = static_cast<BufferMapData*>(userdata);
-    data->status = status;
-    data->completed = true;
+    {
+        std::lock_guard<std::mutex> lock(data->waitMutex);
+        data->status = status;
+        data->completed = true;
+    }
+    data->waitCondition.notify_all();
 }
 #endif
 
-// Forward declarations for bindings.cpp functions
-void* getCurrentRenderedTexture();
-uint32_t getCurrentTextureWidth();
-uint32_t getCurrentTextureHeight();
-void* getScreenshotBuffer();
-size_t getScreenshotBufferSize();
-uint32_t getScreenshotBytesPerRow();
-uint32_t getScreenshotFormat();
-bool isScreenshotReady();
-void clearScreenshotReady();
-void requestFrameScreenshot();
+static bool bufferMapCompleted(BufferMapData& data) {
+    std::lock_guard<std::mutex> lock(data.waitMutex);
+    return data.completed;
+}
+
+static WGPUBufferMapAsyncStatus_Compat bufferMapStatus(BufferMapData& data) {
+    std::lock_guard<std::mutex> lock(data.waitMutex);
+    return data.status;
+}
 
 static bool copyScreenshotPixels(
     const uint8_t* source,
@@ -1321,15 +1332,15 @@ static bool copyScreenshotPixels(
 
 void Context::requestFrameScreenshot() {
     // Qualified: the member name shadows the mystral::webgpu free function.
-    mystral::webgpu::requestFrameScreenshot();
+    mystral::webgpu::requestFrameScreenshot(bindingsState_);
 }
 
 bool Context::isFrameScreenshotReady() {
-    return mystral::webgpu::isScreenshotReady();
+    return mystral::webgpu::isScreenshotReady(bindingsState_);
 }
 
 void Context::clearFrameScreenshotReady() {
-    mystral::webgpu::clearScreenshotReady();
+    mystral::webgpu::clearScreenshotReady(bindingsState_);
 }
 
 bool Context::saveScreenshot(const char* filename) {
@@ -1339,23 +1350,23 @@ bool Context::saveScreenshot(const char* filename) {
     }
 
     // Check if screenshot buffer is ready (populated during queue.submit)
-    if (!isScreenshotReady()) {
+    if (!mystral::webgpu::isScreenshotReady(bindingsState_)) {
         std::cerr << "[Screenshot] No rendered frame available yet" << std::endl;
         return false;
     }
 
-    WGPUBuffer screenshotBuffer = (WGPUBuffer)getScreenshotBuffer();
+    WGPUBuffer screenshotBuffer = (WGPUBuffer)mystral::webgpu::getScreenshotBuffer(bindingsState_);
     if (!screenshotBuffer) {
         std::cerr << "[Screenshot] Screenshot buffer not available" << std::endl;
         return false;
     }
 
     // Get dimensions for screenshot
-    uint32_t width = getCurrentTextureWidth();
-    uint32_t height = getCurrentTextureHeight();
-    uint32_t bytesPerRow = getScreenshotBytesPerRow();
-    size_t bufferSize = getScreenshotBufferSize();
-    TN_CONTEXT_LOGI("renderer capture map begin %ux%u format=%u bytes=%zu", width, height, getScreenshotFormat(), bufferSize);
+    uint32_t width = mystral::webgpu::getCurrentTextureWidth(bindingsState_);
+    uint32_t height = mystral::webgpu::getCurrentTextureHeight(bindingsState_);
+    uint32_t bytesPerRow = mystral::webgpu::getScreenshotBytesPerRow(bindingsState_);
+    size_t bufferSize = mystral::webgpu::getScreenshotBufferSize(bindingsState_);
+    TN_CONTEXT_LOGI("renderer capture map begin %ux%u format=%u bytes=%zu", width, height, mystral::webgpu::getScreenshotFormat(bindingsState_), bufferSize);
 
     // Map the screenshot buffer (it was already populated during submit)
     BufferMapData mapData;
@@ -1376,28 +1387,31 @@ bool Context::saveScreenshot(const char* filename) {
     // Use wgpuDevicePoll/Tick to wait for the buffer mapping to complete
 #if defined(MYSTRAL_WEBGPU_WGPU)
     int maxIterations = 100;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDevicePoll(device_, true, nullptr);
     }
 #else
     // Dawn: Use device tick and instance process events
     int maxIterations = 5000;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDeviceTick(device_);
         wgpuInstanceProcessEvents(instance_);
-        if (!mapData.completed && maxIterations % 100 == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!bufferMapCompleted(mapData) && maxIterations % 100 == 0) {
+            std::unique_lock<std::mutex> lock(mapData.waitMutex);
+            mapData.waitCondition.wait_for(lock, std::chrono::milliseconds(1), [&mapData]() {
+                return mapData.completed;
+            });
         }
     }
 #endif
 
-    if (!mapData.completed) {
+    if (!bufferMapCompleted(mapData)) {
         std::cerr << "[Screenshot] Buffer mapping timed out" << std::endl;
         return false;
     }
 
-    if (mapData.status != WGPUBufferMapAsyncStatus_Success_Compat) {
-        std::cerr << "[Screenshot] Buffer map failed with status: " << mapData.status << std::endl;
+    if (bufferMapStatus(mapData) != WGPUBufferMapAsyncStatus_Success_Compat) {
+        std::cerr << "[Screenshot] Buffer map failed with status: " << bufferMapStatus(mapData) << std::endl;
         return false;
     }
     TN_CONTEXT_LOGI("renderer capture map complete");
@@ -1432,9 +1446,9 @@ bool Context::saveScreenshot(const char* filename) {
             width,
             height,
             bytesPerRow,
-            getScreenshotFormat(),
+            mystral::webgpu::getScreenshotFormat(bindingsState_),
             rgbaData)) {
-        std::cerr << "[Screenshot] Unsupported surface format: " << getScreenshotFormat() << std::endl;
+        std::cerr << "[Screenshot] Unsupported surface format: " << mystral::webgpu::getScreenshotFormat(bindingsState_) << std::endl;
         wgpuBufferUnmap(screenshotBuffer);
         return false;
     }
@@ -1461,20 +1475,20 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
     }
 
     // Check if screenshot buffer is ready (populated during queue.submit)
-    if (!isScreenshotReady()) {
+    if (!mystral::webgpu::isScreenshotReady(bindingsState_)) {
         return false;
     }
 
-    WGPUBuffer screenshotBuffer = (WGPUBuffer)getScreenshotBuffer();
+    WGPUBuffer screenshotBuffer = (WGPUBuffer)mystral::webgpu::getScreenshotBuffer(bindingsState_);
     if (!screenshotBuffer) {
         return false;
     }
 
     // Get dimensions
-    outWidth = getCurrentTextureWidth();
-    outHeight = getCurrentTextureHeight();
-    uint32_t bytesPerRow = getScreenshotBytesPerRow();
-    size_t bufferSize = getScreenshotBufferSize();
+    outWidth = mystral::webgpu::getCurrentTextureWidth(bindingsState_);
+    outHeight = mystral::webgpu::getCurrentTextureHeight(bindingsState_);
+    uint32_t bytesPerRow = mystral::webgpu::getScreenshotBytesPerRow(bindingsState_);
+    size_t bufferSize = mystral::webgpu::getScreenshotBufferSize(bindingsState_);
 
     // Map the screenshot buffer
     BufferMapData mapData;
@@ -1492,21 +1506,25 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
 
 #if defined(MYSTRAL_WEBGPU_WGPU)
     int maxIterations = 100;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDevicePoll(device_, true, nullptr);
     }
 #else
     int maxIterations = 5000;
-    while (!mapData.completed && maxIterations-- > 0) {
+    while (!bufferMapCompleted(mapData) && maxIterations-- > 0) {
         wgpuDeviceTick(device_);
         wgpuInstanceProcessEvents(instance_);
-        if (!mapData.completed && maxIterations % 100 == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!bufferMapCompleted(mapData) && maxIterations % 100 == 0) {
+            std::unique_lock<std::mutex> lock(mapData.waitMutex);
+            mapData.waitCondition.wait_for(lock, std::chrono::milliseconds(1), [&mapData]() {
+                return mapData.completed;
+            });
         }
     }
 #endif
 
-    if (!mapData.completed || mapData.status != WGPUBufferMapAsyncStatus_Success_Compat) {
+    if (!bufferMapCompleted(mapData) ||
+        bufferMapStatus(mapData) != WGPUBufferMapAsyncStatus_Success_Compat) {
         return false;
     }
 
@@ -1522,7 +1540,7 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
             outWidth,
             outHeight,
             bytesPerRow,
-            getScreenshotFormat(),
+            mystral::webgpu::getScreenshotFormat(bindingsState_),
             outData)) {
         wgpuBufferUnmap(screenshotBuffer);
         return false;

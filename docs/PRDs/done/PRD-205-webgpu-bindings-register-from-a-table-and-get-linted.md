@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-205 — WebGPU bindings register from a table and get linted
 
-**Status:** NOT STARTED
+**Status:** COMPLETED 2026-08-24. WebGPU bindings register from a table, Biome covers
+runtime-native, and the record is `docs/verification/prd-205-bindings-table-2026-08-24.md`.
 
 **Complexity:** +3 for 10+ files touched across the pass, +2 for a new registration
 system, +2 for reentrancy/state-ownership change = **7 → HIGH mode**. Checkpoint review

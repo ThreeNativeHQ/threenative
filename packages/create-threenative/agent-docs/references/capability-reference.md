@@ -452,6 +452,20 @@ const tracers = new TracerPool3D(ctx.scene, tracerOptions);
 tracers.spawn(muzzle, shotDirection, hit.distance);
 ```
 
+### `warmUpScene`
+
+`function` — Warms up `scene` for `camera`, in slices, presenting a frame between each. Fail closed on a nonsensical slice size rather than quietly choosing one: a zero or negative slice would loop forever, and a caller that passed it has a bug worth seeing now.
+
+```ts
+export async function warmUpScene( renderer: IWarmUpRenderer, scene: Object3D, camera: Camera, options: IWarmUpOptions = { … }
+```
+
+- **Use when:** compile a scene's shaders during the loading screen instead of on the first frame · stop a native launch freezing for seconds inside its first rendered frame
+
+```ts
+await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) });
+```
+
 ## `@threenative/core/hot`
 
 ### `acceptHotUpdate`
@@ -885,6 +899,36 @@ export function assertJsonSafe(value: unknown, path = "$"): asserts value is Jso
 assertJsonSafe({ score: 10 });
 ```
 
+### `DeviceMetricsError`
+
+`class` — Measure and judge device thermal, power and battery state around a device playtest run.
+
+```ts
+export class DeviceMetricsError extends Error { … }
+```
+
+- **Use when:** find out whether an Android run was throttled or started hot · read battery temperature, current draw or per-rail power for a run
+- **Constraints:** a reading the device does not expose reports unavailable, never zero · a run that started hot or whose thermal status rose is flagged as confounded
+
+```ts
+const verdict = summarizeDeviceMetrics(observation.samples);
+```
+
+### `DeviceMetricsRecorder`
+
+`class` — Measure and judge device thermal, power and battery state around a device playtest run.
+
+```ts
+export class DeviceMetricsRecorder { … }
+```
+
+- **Use when:** find out whether an Android run was throttled or started hot · read battery temperature, current draw or per-rail power for a run
+- **Constraints:** a reading the device does not expose reports unavailable, never zero · a run that started hot or whose thermal status rose is flagged as confounded
+
+```ts
+const verdict = summarizeDeviceMetrics(observation.samples);
+```
+
 ### `evaluateRichPlaytestAssertions`
 
 `function` — Evaluate rich semantic assertions against captured observations.
@@ -957,6 +1001,66 @@ export function missingPlaytestCapabilities(required: readonly string[], availab
 
 ```ts
 const missing = missingPlaytestCapabilities(required, available);
+```
+
+### `parseDeviceBattery`
+
+`function` — Measure and judge device thermal, power and battery state around a device playtest run.
+
+```ts
+export function parseDeviceBattery(output: string): IPlaytestDeviceBattery { … }
+```
+
+- **Use when:** find out whether an Android run was throttled or started hot · read battery temperature, current draw or per-rail power for a run
+- **Constraints:** a reading the device does not expose reports unavailable, never zero · a run that started hot or whose thermal status rose is flagged as confounded
+
+```ts
+const verdict = summarizeDeviceMetrics(observation.samples);
+```
+
+### `parseDeviceCurrent`
+
+`function` — Measure and judge device thermal, power and battery state around a device playtest run.
+
+```ts
+export function parseDeviceCurrent(output: string): PlaytestDeviceMeasurement<number> { … }
+```
+
+- **Use when:** find out whether an Android run was throttled or started hot · read battery temperature, current draw or per-rail power for a run
+- **Constraints:** a reading the device does not expose reports unavailable, never zero · a run that started hot or whose thermal status rose is flagged as confounded
+
+```ts
+const verdict = summarizeDeviceMetrics(observation.samples);
+```
+
+### `parseDevicePowerRails`
+
+`function` — Measure and judge device thermal, power and battery state around a device playtest run.
+
+```ts
+export function parseDevicePowerRails(output: string): PlaytestDevicePowerRails { … }
+```
+
+- **Use when:** find out whether an Android run was throttled or started hot · read battery temperature, current draw or per-rail power for a run
+- **Constraints:** a reading the device does not expose reports unavailable, never zero · a run that started hot or whose thermal status rose is flagged as confounded
+
+```ts
+const verdict = summarizeDeviceMetrics(observation.samples);
+```
+
+### `parseDeviceThermal`
+
+`function` — Measure and judge device thermal, power and battery state around a device playtest run.
+
+```ts
+export function parseDeviceThermal(output: string): IPlaytestDeviceThermal { … }
+```
+
+- **Use when:** find out whether an Android run was throttled or started hot · read battery temperature, current draw or per-rail power for a run
+- **Constraints:** a reading the device does not expose reports unavailable, never zero · a run that started hot or whose thermal status rose is flagged as confounded
+
+```ts
+const verdict = summarizeDeviceMetrics(observation.samples);
 ```
 
 ### `playtestDiagnostic`
@@ -1061,6 +1165,21 @@ export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion 
 
 ```ts
 const policy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
+```
+
+### `summarizeDeviceMetrics`
+
+`function` — Measure and judge device thermal, power and battery state around a device playtest run.
+
+```ts
+export function summarizeDeviceMetrics( samples: readonly IPlaytestDeviceMetricsSample[], ): IPlaytestDeviceMetricsVerdict { … }
+```
+
+- **Use when:** find out whether an Android run was throttled or started hot · read battery temperature, current draw or per-rail power for a run
+- **Constraints:** a reading the device does not expose reports unavailable, never zero · a run that started hot or whose thermal status rose is flagged as confounded
+
+```ts
+const verdict = summarizeDeviceMetrics(observation.samples);
 ```
 
 ### `unknownPlaytestCapabilities`

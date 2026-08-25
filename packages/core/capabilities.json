@@ -961,6 +961,44 @@
       "symbol": "assertJsonSafe"
     },
     {
+      "constraints": [
+        "a reading the device does not expose reports unavailable, never zero",
+        "a run that started hot or whose thermal status rose is flagged as confounded"
+      ],
+      "example": "const verdict = summarizeDeviceMetrics(observation.samples);",
+      "importPath": "@threenative/playtest",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class DeviceMetricsError extends Error { … }",
+      "situations": [
+        "find out whether an Android run was throttled or started hot",
+        "read battery temperature, current draw or per-rail power for a run"
+      ],
+      "summary": "Measure and judge device thermal, power and battery state around a device playtest run.",
+      "supersedes": [],
+      "symbol": "DeviceMetricsError"
+    },
+    {
+      "constraints": [
+        "a reading the device does not expose reports unavailable, never zero",
+        "a run that started hot or whose thermal status rose is flagged as confounded"
+      ],
+      "example": "const verdict = summarizeDeviceMetrics(observation.samples);",
+      "importPath": "@threenative/playtest",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export class DeviceMetricsRecorder { … }",
+      "situations": [
+        "find out whether an Android run was throttled or started hot",
+        "read battery temperature, current draw or per-rail power for a run"
+      ],
+      "summary": "Measure and judge device thermal, power and battery state around a device playtest run.",
+      "supersedes": [],
+      "symbol": "DeviceMetricsRecorder"
+    },
+    {
       "constraints": ["malformed or empty assertions fail closed"],
       "example": "const result = evaluateRichPlaytestAssertions(input);",
       "importPath": "@threenative/playtest",
@@ -1040,6 +1078,82 @@
       "summary": "Validate and inspect playtest capability declarations.",
       "supersedes": [],
       "symbol": "missingPlaytestCapabilities"
+    },
+    {
+      "constraints": [
+        "a reading the device does not expose reports unavailable, never zero",
+        "a run that started hot or whose thermal status rose is flagged as confounded"
+      ],
+      "example": "const verdict = summarizeDeviceMetrics(observation.samples);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseDeviceBattery(output: string): IPlaytestDeviceBattery { … }",
+      "situations": [
+        "find out whether an Android run was throttled or started hot",
+        "read battery temperature, current draw or per-rail power for a run"
+      ],
+      "summary": "Measure and judge device thermal, power and battery state around a device playtest run.",
+      "supersedes": [],
+      "symbol": "parseDeviceBattery"
+    },
+    {
+      "constraints": [
+        "a reading the device does not expose reports unavailable, never zero",
+        "a run that started hot or whose thermal status rose is flagged as confounded"
+      ],
+      "example": "const verdict = summarizeDeviceMetrics(observation.samples);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseDeviceCurrent(output: string): PlaytestDeviceMeasurement<number> { … }",
+      "situations": [
+        "find out whether an Android run was throttled or started hot",
+        "read battery temperature, current draw or per-rail power for a run"
+      ],
+      "summary": "Measure and judge device thermal, power and battery state around a device playtest run.",
+      "supersedes": [],
+      "symbol": "parseDeviceCurrent"
+    },
+    {
+      "constraints": [
+        "a reading the device does not expose reports unavailable, never zero",
+        "a run that started hot or whose thermal status rose is flagged as confounded"
+      ],
+      "example": "const verdict = summarizeDeviceMetrics(observation.samples);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseDevicePowerRails(output: string): PlaytestDevicePowerRails { … }",
+      "situations": [
+        "find out whether an Android run was throttled or started hot",
+        "read battery temperature, current draw or per-rail power for a run"
+      ],
+      "summary": "Measure and judge device thermal, power and battery state around a device playtest run.",
+      "supersedes": [],
+      "symbol": "parseDevicePowerRails"
+    },
+    {
+      "constraints": [
+        "a reading the device does not expose reports unavailable, never zero",
+        "a run that started hot or whose thermal status rose is flagged as confounded"
+      ],
+      "example": "const verdict = summarizeDeviceMetrics(observation.samples);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseDeviceThermal(output: string): IPlaytestDeviceThermal { … }",
+      "situations": [
+        "find out whether an Android run was throttled or started hot",
+        "read battery temperature, current draw or per-rail power for a run"
+      ],
+      "summary": "Measure and judge device thermal, power and battery state around a device playtest run.",
+      "supersedes": [],
+      "symbol": "parseDeviceThermal"
     },
     {
       "constraints": [],
@@ -1149,6 +1263,25 @@
       "summary": "Resolve the effective diagnostics policy for a run, with fail-closed defaults applied.",
       "supersedes": [],
       "symbol": "resolveDiagnosticsPolicy"
+    },
+    {
+      "constraints": [
+        "a reading the device does not expose reports unavailable, never zero",
+        "a run that started hot or whose thermal status rose is flagged as confounded"
+      ],
+      "example": "const verdict = summarizeDeviceMetrics(observation.samples);",
+      "importPath": "@threenative/playtest",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function summarizeDeviceMetrics( samples: readonly IPlaytestDeviceMetricsSample[], ): IPlaytestDeviceMetricsVerdict { … }",
+      "situations": [
+        "find out whether an Android run was throttled or started hot",
+        "read battery temperature, current draw or per-rail power for a run"
+      ],
+      "summary": "Measure and judge device thermal, power and battery state around a device playtest run.",
+      "supersedes": [],
+      "symbol": "summarizeDeviceMetrics"
     },
     {
       "constraints": [],

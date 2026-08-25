@@ -21,7 +21,7 @@ function iosVersion(runtime) {
  */
 export function selectIosSimulator(listing) {
   const devices = /** @type {Record<string, unknown>} */ (
-    /** @type {{ devices?: unknown }} */ (listing ?? {}).devices ?? {}
+    /** @type {{ devices?: unknown }} */ listing?.devices ?? {}
   );
   const candidates = [];
   for (const [runtime, entries] of Object.entries(devices)) {

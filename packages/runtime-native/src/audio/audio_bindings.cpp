@@ -6,7 +6,10 @@
 
 #include "mystral/audio/audio_context.h"
 #include "mystral/js/engine.h"
+#include "runtime_scripts.h"
 #include <iostream>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace mystral {
@@ -21,6 +24,21 @@ static std::unordered_map<void*, std::unique_ptr<GainNode>> g_gainNodes;
 static std::unordered_map<void*, std::unique_ptr<PannerNode>> g_pannerNodes;
 
 static js::Engine* g_jsEngine = nullptr;
+
+static bool evalAudioScript(js::Engine& engine, std::string_view name, const char* filename) {
+    const auto script = runtime_scripts::find(name);
+    if (!script.data) {
+        std::cerr << "[Audio] Embedded runtime script not found: " << name << std::endl;
+        return false;
+    }
+    const std::string source(script.data, script.size);
+    if (!engine.eval(source.c_str(), filename)) {
+        std::cerr << "[Audio] Failed to evaluate " << filename << ": " << engine.getException()
+                  << std::endl;
+        return false;
+    }
+    return true;
+}
 
 // A real Promise settled with a value that already exists as a live JS handle. `Promise.resolve`
 // is read off the global rather than built with `evalWithResult` because the settled value is an
@@ -205,20 +223,7 @@ js::JSValueHandle createSourceNodeJS(js::Engine* engine, AudioBufferSourceNode* 
     engine->setProperty(jsNode, "playbackRate", createPassiveAudioParamJS(engine, 1.0f));
 
     engine->setGlobalProperty("__tnAudioSourceTemp", jsNode);
-    engine->eval(R"(
-        (function(source) {
-            var buffer = null;
-            var loop = false;
-            Object.defineProperty(source, 'buffer', {
-                get: function() { return buffer; },
-                set: function(value) { buffer = value; source._setBuffer(value); }
-            });
-            Object.defineProperty(source, 'loop', {
-                get: function() { return loop; },
-                set: function(value) { loop = Boolean(value); source._setLoop(loop); }
-            });
-        })(__tnAudioSourceTemp);
-    )", "audio-source-properties");
+    evalAudioScript(*engine, "audio-source-properties", "audio-source-properties.js");
 
     return jsNode;
 }
@@ -277,24 +282,7 @@ js::JSValueHandle createGainNodeJS(js::Engine* engine, GainNode* nodePtr, js::JS
         })
     );
     engine->setGlobalProperty("__tnAudioGainParamTemp", gainParam);
-    engine->eval(R"(
-        (function(param) {
-            var value = 1.0;
-            Object.defineProperty(param, 'value', {
-                get: function() { return value; },
-                set: function(next) { value = Number(next); param._setValue(value); }
-            });
-            param.setTargetAtTime = function(next, time, constant) {
-                value = Number(next); param._setTargetAtTime(value, time, constant); return param;
-            };
-            param.setValueAtTime = function(next, time) {
-                value = Number(next); param._setValueAtTime(value, time); return param;
-            };
-            param.linearRampToValueAtTime = function(next, time) {
-                value = Number(next); param._linearRampToValueAtTime(value, time); return param;
-            };
-        })(__tnAudioGainParamTemp);
-    )", "audio-gain-param");
+    evalAudioScript(*engine, "audio-gain-param", "audio-gain-param.js");
     engine->setProperty(jsNode, "gain", gainParam);
 
     return jsNode;
@@ -350,32 +338,7 @@ js::JSValueHandle createPannerNodeJS(js::Engine* engine, PannerNode* nodePtr,
         })
     );
     engine->setGlobalProperty("__tnAudioPannerTemp", jsNode);
-    engine->eval(R"(
-        (function(panner) {
-            function numberProperty(name, initial, setter) {
-                var value = initial;
-                Object.defineProperty(panner, name, {
-                    get: function() { return value; },
-                    set: function(next) { value = Number(next); panner[setter](value); }
-                });
-            }
-            numberProperty('refDistance', 1.0, '_setRefDistance');
-            numberProperty('maxDistance', 10000.0, '_setMaxDistance');
-            numberProperty('rolloffFactor', 1.0, '_setRolloffFactor');
-            var distanceModel = 'inverse';
-            Object.defineProperty(panner, 'distanceModel', {
-                get: function() { return distanceModel; },
-                set: function(next) {
-                    distanceModel = String(next);
-                    panner._setDistanceModel(distanceModel);
-                }
-            });
-            panner.panningModel = 'equalpower';
-            panner.coneInnerAngle = 360;
-            panner.coneOuterAngle = 360;
-            panner.coneOuterGain = 0;
-        })(__tnAudioPannerTemp);
-    )", "audio-panner-properties");
+    evalAudioScript(*engine, "audio-panner-properties", "audio-panner-properties.js");
     return jsNode;
 }
 
@@ -461,7 +424,7 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
             // Pass undefined for context (not needed for our implementation)
             auto jsNode = createSourceNodeJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
             g_sourceNodes[jsNode.ptr] = std::move(node);
-            g_jsEngine->protect(jsNode);
+            g_jsEngine->freezeHandle(jsNode);
             g_sourceHandles[jsNode.ptr] = jsNode;
 
             return jsNode;
@@ -611,14 +574,7 @@ void initializeAudioBindings(js::Engine* engine) {
     // constructor receiver. Copy the native context surface onto a JavaScript
     // receiver so Three.js gets the browser constructor contract on every engine.
     engine->setGlobalProperty("__tnCreateAudioContext", audioContextCtor);
-    if (!engine->evalScript(
-            "globalThis.AudioContext = function AudioContext() { "
-            "var native = globalThis.__tnCreateAudioContext(); "
-            "Object.defineProperties(this, Object.getOwnPropertyDescriptors(native)); "
-            "Object.defineProperty(this, 'currentTime', { get: function() { "
-            "return this._getCurrentTime(); } }); return this; }; "
-            "globalThis.webkitAudioContext = globalThis.AudioContext;",
-            "audio-context-constructor.js")) {
+    if (!evalAudioScript(*engine, "audio-context-constructor", "audio-context-constructor.js")) {
         std::cerr << "[Audio] Failed to install AudioContext constructor" << std::endl;
     }
 
@@ -642,7 +598,7 @@ void processAudioEvents() {
                           << g_jsEngine->getException() << std::endl;
             }
         }
-        g_jsEngine->unprotect(handle->second);
+        g_jsEngine->freeHandle(handle->second);
         completed.push_back(key);
     }
     for (void* key : completed) g_sourceHandles.erase(key);
@@ -658,7 +614,7 @@ void cleanupAudioBindings() {
 
     // Stop callbacks from retaining source pointers before source storage is released.
     for (auto& pair : g_audioContexts) pair.second->detachSources();
-    for (auto& pair : g_sourceHandles) g_jsEngine->unprotect(pair.second);
+    for (auto& pair : g_sourceHandles) g_jsEngine->freeHandle(pair.second);
     g_sourceHandles.clear();
 
     // Release audio contexts without destroying them (which calls SDL_DestroyAudioStream)

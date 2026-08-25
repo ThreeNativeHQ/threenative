@@ -21,7 +21,7 @@ namespace video {
 std::unique_ptr<VideoRecorder> createScreenCaptureKitRecorder();
 std::unique_ptr<VideoRecorder> createWindowsGraphicsCaptureRecorder();
 std::unique_ptr<VideoRecorder> createGPUReadbackRecorder(
-    WGPUDevice device, WGPUQueue queue, WGPUInstance instance);
+    WGPUDevice device, WGPUQueue queue, WGPUInstance instance, void* bindingsState);
 
 // Forward declarations of availability check functions
 bool isScreenCaptureKitAvailableCheck();
@@ -31,7 +31,8 @@ bool isWindowsGraphicsCaptureAvailableCheck();
 std::unique_ptr<VideoRecorder> VideoRecorder::create(
     WGPUDevice device,
     WGPUQueue queue,
-    WGPUInstance instance
+    WGPUInstance instance,
+    void* bindingsState
 ) {
 #if defined(__APPLE__) && TARGET_OS_MAC && !TARGET_OS_IPHONE
     // macOS: Try ScreenCaptureKit first
@@ -57,8 +58,12 @@ std::unique_ptr<VideoRecorder> VideoRecorder::create(
 
     // Fallback: GPU Readback recorder (works on all platforms with WebGPU)
     if (device && queue && instance) {
+        if (!bindingsState) {
+            std::cerr << "[VideoRecorder] GPU fallback requires an owning WebGPU bindings state" << std::endl;
+            return nullptr;
+        }
         std::cout << "[VideoRecorder] Using GPU Readback recorder (WebGPU fallback)" << std::endl;
-        return createGPUReadbackRecorder(device, queue, instance);
+        return createGPUReadbackRecorder(device, queue, instance, bindingsState);
     }
 
     std::cerr << "[VideoRecorder] No suitable recorder available" << std::endl;

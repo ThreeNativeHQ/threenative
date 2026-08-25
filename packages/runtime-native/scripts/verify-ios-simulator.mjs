@@ -160,7 +160,6 @@ run('pnpm', ['--filter', '@threenative/playtest', 'build']);
 run(process.execPath, ['scripts/download-deps.mjs', '--only', 'sdl3'], { cwd: runtimeRoot });
 run(process.execPath, ['scripts/download-deps.mjs', '--only', 'wgpu-ios'], { cwd: runtimeRoot });
 run(process.execPath, ['scripts/download-deps.mjs', '--only', 'stb'], { cwd: runtimeRoot });
-run(process.execPath, ['scripts/download-deps.mjs', '--only', 'cgltf'], { cwd: runtimeRoot });
 run(process.execPath, ['scripts/build-native-physics.mjs', '--ios-simulator'], { cwd: runtimeRoot });
 run('cmake', [
   '-S', runtimeRoot,

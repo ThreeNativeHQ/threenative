@@ -1,32 +1,17 @@
 /**
  * WebTransport JavaScript polyfill.
  *
- * Defines the W3C WebTransport API surface (WebTransport, WebTransportError,
- * WebTransportDatagramDuplexStream-shaped object, send/receive streams) on top
- * of the low-level `__wt*` native bridge functions registered by
- * webtransport.cpp. It also installs `globalThis.__wtDispatch`, the single entry
- * point the native layer calls (on the main thread) to deliver events.
- *
- * Streams are backed by the runtime's real WHATWG ReadableStream/WritableStream
- * (installed by the streams polyfill in runtime.cpp), so they support the full
- * surface real WebTransport code expects: getReader().read() / getWriter()
- * .write()/close()/abort(), plus pipeTo(), pipeThrough(), tee() and async
- * iteration (for await...of). Datagrams and incoming streams are fed by stashing
- * each stream's controller and pushing native events into it.
+ * Defines the W3C WebTransport API surface on top of the low-level `__wt*` native bridge
+ * functions registered by webtransport.cpp. Streams are backed by the runtime's WHATWG streams
+ * polyfill, and native events enter through the single `globalThis.__wtDispatch` function.
  */
-
-namespace mystral {
-namespace webtransport {
-
-const char* kWebTransportPolyfill = R"JS(
-(function () {
+(() => {
   if (typeof globalThis.WebTransport !== 'undefined' && globalThis.__wtSessions) {
     return; // already installed
   }
 
   if (typeof globalThis.ReadableStream === 'undefined' ||
       typeof globalThis.WritableStream === 'undefined') {
-    // The streams polyfill (runtime.cpp) must run first.
     console.error('[WebTransport] Web Streams not available; WebTransport disabled.');
     return;
   }
@@ -34,13 +19,12 @@ const char* kWebTransportPolyfill = R"JS(
   const sessions = new Map();
   globalThis.__wtSessions = sessions;
 
-  // --- WebTransportError ---------------------------------------------------
   class WebTransportError extends Error {
     constructor(message, options) {
       super(message || 'WebTransport error');
       this.name = 'WebTransportError';
-      this.source = (options && options.source) || 'session';
-      this.streamErrorCode = (options && options.streamErrorCode) ?? null;
+      this.source = options?.source || 'session';
+      this.streamErrorCode = options?.streamErrorCode ?? null;
     }
   }
   globalThis.WebTransportError = WebTransportError;
@@ -54,15 +38,12 @@ const char* kWebTransportPolyfill = R"JS(
     return new Uint8Array(chunk);
   }
 
-  // A readable backed by a controller we stash so native events can push into
-  // it. Returns { stream, controller }.
   function makeReadable() {
     const box = {};
     box.stream = new ReadableStream({ start(c) { box.controller = c; } });
     return box;
   }
 
-  // A WebTransportSendStream: a WritableStream that writes to a QUIC stream.
   function makeSendStream(sessionId, streamId) {
     return new WritableStream({
       write(chunk) {
@@ -71,7 +52,6 @@ const char* kWebTransportPolyfill = R"JS(
         if (n < 0) throw new WebTransportError('Failed to write to stream', { source: 'stream' });
       },
       close() {
-        // Send an empty frame with FIN to half-close.
         __wtStreamWrite(sessionId, streamId, new Uint8Array(0), true);
       },
       abort() {
@@ -80,33 +60,30 @@ const char* kWebTransportPolyfill = R"JS(
     });
   }
 
-  // A datagram WritableStream (writes unreliable datagrams).
   function makeDatagramWritable(sessionId) {
     return new WritableStream({
       write(chunk) {
         const bytes = toBytes(chunk);
-        const r = __wtSendDatagram(sessionId, bytes);
-        if (r < 0) {
-          // Datagrams are unreliable; a full queue is not a fatal error.
-        }
+        __wtSendDatagram(sessionId, bytes);
       },
     });
   }
 
-  // --- WebTransport --------------------------------------------------------
   class WebTransport {
     constructor(url, options) {
       this._url = url;
 
-      let readyResolve, readyReject, closedResolve, closedReject;
+      let readyResolve;
+      let readyReject;
+      let closedResolve;
+      let closedReject;
       this.ready = new Promise((res, rej) => { readyResolve = res; readyReject = rej; });
       this.closed = new Promise((res, rej) => { closedResolve = res; closedReject = rej; });
-      // Avoid unhandled-rejection noise if the caller doesn't await closed.
       this.closed.catch(() => {});
 
       const id = __wtConnect(String(url));
       if (!id || id <= 0) {
-        const err = new WebTransportError('Failed to initiate WebTransport connection to ' + url);
+        const err = new WebTransportError(`Failed to initiate WebTransport connection to ${url}`);
         readyReject(err);
         closedReject(err);
         this._state = null;
@@ -134,7 +111,7 @@ const char* kWebTransportPolyfill = R"JS(
         id,
         readyResolve, readyReject, closedResolve, closedReject,
         dgramReadable, incomingUni, incomingBidi,
-        streams: new Map(),  // streamId -> { readable: box }
+        streams: new Map(),
         ready: false,
         closedFlag: false,
         lastError: null,
@@ -165,15 +142,14 @@ const char* kWebTransportPolyfill = R"JS(
     close(closeInfo) {
       const st = this._state;
       if (!st) return;
-      const code = (closeInfo && closeInfo.closeCode) || 0;
-      const reason = (closeInfo && closeInfo.reason) || '';
+      const code = closeInfo?.closeCode || 0;
+      const reason = closeInfo?.reason || '';
       __wtClose(st.id, code, reason);
     }
   }
   globalThis.WebTransport = WebTransport;
 
-  // --- Native -> JS dispatch ----------------------------------------------
-  globalThis.__wtDispatch = function (sessionId, type, a, b, c) {
+  globalThis.__wtDispatch = (sessionId, type, a, b, c) => {
     const st = sessions.get(sessionId);
     if (!st) return;
 
@@ -210,38 +186,38 @@ const char* kWebTransportPolyfill = R"JS(
       }
 
       case 'datagram':
-        try { st.dgramReadable.controller.enqueue(a); } catch (e) {}  // a: Uint8Array
+        try { st.dgramReadable.controller.enqueue(a); } catch (e) {}
         break;
 
       case 'incomingUni': {
         const readable = makeReadable();
-        st.streams.set(a, { readable });   // a: streamId
+        st.streams.set(a, { readable });
         try { st.incomingUni.controller.enqueue(readable.stream); } catch (e) {}
         break;
       }
 
       case 'incomingBidi': {
         const readable = makeReadable();
-        const writable = makeSendStream(st.id, a);  // a: streamId
+        const writable = makeSendStream(st.id, a);
         st.streams.set(a, { readable });
         try { st.incomingBidi.controller.enqueue({ readable: readable.stream, writable }); } catch (e) {}
         break;
       }
 
       case 'streamData': {
-        const s = st.streams.get(a);  // a: streamId, b: Uint8Array, c: fin
-        if (s && s.readable) {
-          if (b && b.length) { try { s.readable.controller.enqueue(b); } catch (e) {} }
+        const s = st.streams.get(a);
+        if (s?.readable) {
+          if (b?.length) { try { s.readable.controller.enqueue(b); } catch (e) {} }
           if (c) { try { s.readable.controller.close(); } catch (e) {} }
         }
         break;
       }
 
       case 'streamReset': {
-        const s = st.streams.get(a);  // a: streamId, b: error code
-        if (s && s.readable) {
+        const s = st.streams.get(a);
+        if (s?.readable) {
           try {
-            s.readable.controller.error(new WebTransportError('Stream reset (code ' + b + ')', { source: 'stream', streamErrorCode: b }));
+            s.readable.controller.error(new WebTransportError(`Stream reset (code ${b})`, { source: 'stream', streamErrorCode: b }));
           } catch (e) {}
         }
         st.streams.delete(a);
@@ -250,7 +226,3 @@ const char* kWebTransportPolyfill = R"JS(
     }
   };
 })();
-)JS";
-
-}  // namespace webtransport
-}  // namespace mystral

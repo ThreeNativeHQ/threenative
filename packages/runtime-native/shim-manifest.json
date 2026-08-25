@@ -1,162 +1,45 @@
 {
   "version": 1,
   "shims": [
-    {
-      "name": "AbortController",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "AbortSignal",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "Blob",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "Event",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "HTMLCanvasElement",
-      "evidence": "packages/runtime-native/src/webgpu/bindings.cpp"
-    },
-    {
-      "name": "Headers",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "KeyboardEvent",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "OffscreenCanvas",
-      "evidence": "packages/runtime-native/src/webgpu/bindings.cpp"
-    },
-    {
-      "name": "PointerEvent",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "ReadableStream",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "Request",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "Response",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "TextDecoder",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "TextDecoderStream",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "TextEncoder",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "TextEncoderStream",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "TouchEvent",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "TransformStream",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "URL",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "URLSearchParams",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "Worker",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "WritableStream",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "cancelAnimationFrame",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "clearInterval",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "clearTimeout",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "console",
-      "evidence": "packages/runtime-native/src/js/v8_engine.cpp and packages/runtime-native/src/js/quickjs_engine.cpp"
-    },
-    {
-      "name": "createImageBitmap",
-      "evidence": "packages/runtime-native/src/webgpu/bindings.cpp"
-    },
-    {
-      "name": "document",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "fetch",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "localStorage",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "navigator",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "performance",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "requestAnimationFrame",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "scheduler",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "self",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "sessionStorage",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "setInterval",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "setTimeout",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    },
-    {
-      "name": "window",
-      "evidence": "packages/runtime-native/src/runtime.cpp"
-    }
+    { "name": "AbortController", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "AbortSignal", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "Blob", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "console", "evidence": "packages/runtime-native/src/js/v8_engine.cpp and packages/runtime-native/src/js/quickjs_engine.cpp" },
+    { "name": "Event", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
+    { "name": "Headers", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "HTMLCanvasElement", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
+    { "name": "KeyboardEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
+    { "name": "OffscreenCanvas", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
+    { "name": "PointerEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
+    { "name": "ReadableStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
+    { "name": "Request", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "Response", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "TextDecoder", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "TextDecoderStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
+    { "name": "TextEncoder", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "TextEncoderStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
+    { "name": "TouchEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
+    { "name": "TransformStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
+    { "name": "URL", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
+    { "name": "URLSearchParams", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
+    { "name": "Worker", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
+    { "name": "WritableStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
+    { "name": "cancelAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "clearInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "clearTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "createImageBitmap", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
+    { "name": "document", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "fetch", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
+    { "name": "localStorage", "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js" },
+    { "name": "navigator", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "performance", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "requestAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "self", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "sessionStorage", "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js" },
+    { "name": "scheduler", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "setInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "setTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "window", "evidence": "packages/runtime-native/src/runtime.cpp" }
   ],
   "allowlist": [
     {

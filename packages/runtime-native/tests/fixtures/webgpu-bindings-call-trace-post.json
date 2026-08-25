@@ -1,0 +1,523 @@
+[
+  {
+    "surface": "HTMLElement",
+    "name": "appendChild",
+    "args": [
+      "object(addEventListener,clientHeight,clientWidth,dispatchEvent,getBoundingClientRect,getContext,height,id,parentElement,releasePointerCapture,removeEventListener,requestPointerLock,setPointerCapture,style,tagName,toDataURL,width)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "Document",
+    "name": "querySelector",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "addEventListener",
+    "args": [
+      "string",
+      "function"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "Document",
+    "name": "createElement",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "Document",
+    "name": "createElement",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLElement",
+    "name": "addEventListener",
+    "args": [
+      "string",
+      "function"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "HTMLCanvasElement",
+    "name": "getContext",
+    "args": [
+      "string"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPU",
+    "name": "getPreferredCanvasFormat",
+    "args": [],
+    "result": "string(bgra8unorm)"
+  },
+  {
+    "surface": "GPUCanvasContext",
+    "name": "configure",
+    "args": [
+      "object(format)"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUCanvasContext",
+    "name": "unconfigure",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPU",
+    "name": "requestAdapter",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUAdapter",
+    "name": "features.has",
+    "args": [
+      "string"
+    ],
+    "result": "boolean"
+  },
+  {
+    "surface": "GPUAdapter",
+    "name": "requestDevice",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createBuffer",
+    "args": [
+      "object(size,usage)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUQueue",
+    "name": "submit",
+    "args": [
+      "array(0)"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUQueue",
+    "name": "writeBuffer",
+    "args": [
+      "object(_bufferId,destroy,getMappedRange,mapAsync,mapState,size,unmap,usage)",
+      "number",
+      "ArrayBuffer"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUQueue",
+    "name": "onSubmittedWorkDone",
+    "args": [],
+    "result": "promise"
+  },
+  {
+    "surface": "GPUBuffer",
+    "name": "getMappedRange",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUBuffer",
+    "name": "destroy",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createShaderModule",
+    "args": [
+      "object(code)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createRenderPipeline",
+    "args": [
+      "object(fragment,layout,vertex)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPURenderPipeline",
+    "name": "getBindGroupLayout",
+    "args": [
+      "number"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createComputePipeline",
+    "args": [
+      "object(compute,layout)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUComputePipeline",
+    "name": "getBindGroupLayout",
+    "args": [
+      "number"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createRenderPipeline",
+    "args": [],
+    "error": "createRenderPipeline requires a descriptor"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createComputePipeline",
+    "args": [],
+    "error": "createComputePipeline requires a descriptor"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createCommandEncoder",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUCanvasContext",
+    "name": "configure",
+    "args": [
+      "object(format)"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUCanvasContext",
+    "name": "getCurrentTexture",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUTexture",
+    "name": "createView",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUCommandEncoder",
+    "name": "beginRenderPass",
+    "args": [
+      "object(colorAttachments)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setPipeline",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setBindGroup",
+    "args": [],
+    "error": "setBindGroup requires index and bindGroup"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "draw",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setVertexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setIndexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "drawIndexed",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "drawIndirect",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "drawIndexedIndirect",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setViewport",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setScissorRect",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setBlendConstant",
+    "args": [
+      "object()"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "setStencilReference",
+    "args": [
+      "number"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "executeBundles",
+    "args": [
+      "array(0)"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderPassEncoder",
+    "name": "end",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUCommandEncoder",
+    "name": "beginComputePass",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUComputePassEncoder",
+    "name": "setPipeline",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUComputePassEncoder",
+    "name": "setBindGroup",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUComputePassEncoder",
+    "name": "dispatchWorkgroups",
+    "args": [
+      "number",
+      "number",
+      "number"
+    ],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUComputePassEncoder",
+    "name": "end",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createRenderBundleEncoder",
+    "args": [
+      "object(colorFormats)"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setPipeline",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setVertexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setIndexBuffer",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "setBindGroup",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "draw",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "drawIndexed",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPURenderBundleEncoder",
+    "name": "finish",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUCommandEncoder",
+    "name": "finish",
+    "args": [],
+    "result": "object"
+  },
+  {
+    "surface": "GPUTexture",
+    "name": "destroy",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createTextureView",
+    "args": [],
+    "error": "createTextureView requires a texture"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createBindGroup",
+    "args": [],
+    "error": "createBindGroup requires a descriptor"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createSampler",
+    "args": [
+      "object()"
+    ],
+    "result": "object"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createBindGroupLayout",
+    "args": [],
+    "error": "createBindGroupLayout requires a descriptor"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createPipelineLayout",
+    "args": [],
+    "error": "createPipelineLayout requires a descriptor"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "createRenderBundleEncoder",
+    "args": [],
+    "error": "createRenderBundleEncoder requires a descriptor"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "pushErrorScope",
+    "args": [
+      "string"
+    ],
+    "error": "GPUDevice.pushErrorScope received an unknown filter"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "popErrorScope",
+    "args": [],
+    "result": "promise"
+  },
+  {
+    "surface": "GPUDevice",
+    "name": "destroy",
+    "args": [],
+    "result": "undefined"
+  },
+  {
+    "surface": "WebGPU",
+    "name": "__decodeImageData",
+    "args": [
+      "ArrayBuffer"
+    ],
+    "error": "__decodeImageData: invalid ArrayBuffer"
+  },
+  {
+    "surface": "WebGPU",
+    "name": "createOffscreenCanvas2D",
+    "args": [
+      "string",
+      "string"
+    ],
+    "result": "object"
+  }
+]

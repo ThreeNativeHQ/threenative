@@ -230,14 +230,20 @@ function runRow(version, binary, reportPath, tools) {
     ],
     { env: { TN_RUNTIME: binary }, requireSuccess: false },
   );
-  reportPath = join(desktopRoot, 'report.json');
-  if (!existsSync(reportPath)) {
+  const desktopReportPath = join(desktopRoot, 'report.json');
+  if (!existsSync(desktopReportPath)) {
     throw new Error(`${version}: desktop conformance runner produced no report\n${result.stderr || result.stdout || ''}`);
   }
-  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  const report = JSON.parse(readFileSync(desktopReportPath, 'utf8'));
   const row = report.results?.find(({ id }) => id === ROW_ID);
   if (!row) throw new Error(`${version}: conformance report omitted ${ROW_ID}`);
-  return { exitCode: result.status, row, reportPath, stdout: result.stdout, stderr: result.stderr };
+  return {
+    exitCode: result.status,
+    row,
+    reportPath: desktopReportPath,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
 
 async function executeVersion(version, options, tools) {

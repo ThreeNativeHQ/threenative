@@ -59,6 +59,7 @@ public:
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -272,6 +273,7 @@ public:
 
         // Signal encoder thread to finish
         encodingDone_ = true;
+        frameCondition_.notify_all();
         if (encoderThread_.joinable()) {
             encoderThread_.join();
         }
@@ -371,6 +373,7 @@ private:
                     droppedFrames_++;
                 }
             }
+            frameCondition_.notify_one();
 
         } catch (const wrt::hresult_error& e) {
             std::cerr << "[WindowsGraphicsCapture] Frame capture error: "
@@ -446,24 +449,18 @@ private:
     }
 
     void encoderThreadFunc() {
-        while (!encodingDone_ || !frameQueue_.empty()) {
+        while (true) {
             CapturedFrameData frame;
-            bool hasFrame = false;
-
             {
-                std::lock_guard<std::mutex> lock(frameMutex_);
-                if (!frameQueue_.empty()) {
-                    frame = std::move(frameQueue_.front());
-                    frameQueue_.pop();
-                    hasFrame = true;
-                }
+                std::unique_lock<std::mutex> lock(frameMutex_);
+                frameCondition_.wait(lock, [this]() {
+                    return encodingDone_.load(std::memory_order_acquire) || !frameQueue_.empty();
+                });
+                if (frameQueue_.empty() && encodingDone_.load(std::memory_order_acquire)) break;
+                frame = std::move(frameQueue_.front());
+                frameQueue_.pop();
             }
-
-            if (hasFrame) {
-                encodeFrame(frame);
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
+            encodeFrame(frame);
         }
     }
 
@@ -574,6 +571,7 @@ private:
     // Frame queue
     std::queue<CapturedFrameData> frameQueue_;
     std::mutex frameMutex_;
+    std::condition_variable frameCondition_;
     std::thread encoderThread_;
 };
 

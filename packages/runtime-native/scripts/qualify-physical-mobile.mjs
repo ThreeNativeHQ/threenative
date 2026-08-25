@@ -833,7 +833,7 @@ function collectSampledAndroidValue({
     const frame = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "gfxinfo", ANDROID_APPLICATION_ID, "framestats"]);
     const frameIntervals = frame.status === 0 ? parseGfxinfoFrameIntervals(frame.stdout) : [];
     if (frameIntervals.length === 0) errors.frame.push(frame.stderr || `no frame intervals at ${at}`);
-    else frameIntervals.forEach((value) => frameSamples.push({ at, value }));
+    else for (const value of frameIntervals) frameSamples.push({ at, value });
 
     const memory = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "meminfo", ANDROID_APPLICATION_ID]);
     const memoryKb = /TOTAL\s+(\d+)/iu.exec(memory.stdout)?.[1];

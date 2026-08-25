@@ -17,12 +17,7 @@
 import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import {
-  requireFiles,
-  runCommand,
-  runtimeBinary,
-  runtimeRoot,
-} from "../runtime-test-utils.js";
+import { requireFiles, runCommand, runtimeBinary, runtimeRoot } from "../runtime-test-utils.js";
 
 const EXAMPLE = join(runtimeRoot, "examples/threejs-gltf.js");
 const OUTPUT_DIR = join(runtimeRoot, ".test-output");

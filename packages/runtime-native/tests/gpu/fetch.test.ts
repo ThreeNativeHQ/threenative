@@ -29,7 +29,7 @@ describe("Fetch API", () => {
     // Create test JSON file
     writeFileSync(
       join(TEST_DIR, "test.json"),
-      JSON.stringify({ message: "Hello from test", value: 42 })
+      JSON.stringify({ message: "Hello from test", value: 42 }),
     );
 
     // Create test text file

@@ -46,13 +46,14 @@ test("every ranked create/begin/finish site is checked before its handle is used
     "device.createBindGroup",
     "device.createPipelineLayout",
     "device.createTextureView",
+    // PRD-207 routes the offscreen-canvas texture through the same `createTextureWrapper`, so
+    // `texture.createView` is now the single site that main guarded as two.
     "texture.createView",
-    "offscreenTexture.createView",
   ];
   for (const operation of operations)
     assert.match(
       source,
-      new RegExp(`requireHandle\\(g_engine, [^;]*"${operation.replace(/\./gu, "\\.")}"`, "u"),
+      new RegExp(`requireHandle\\(state->engine, [^;]*"${operation.replace(/\./gu, "\\.")}"`, "u"),
       `${operation} must check its handle before anything uses it`,
     );
 });
