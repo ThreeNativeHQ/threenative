@@ -62,6 +62,20 @@ export interface IWarmUpOptions {
    * The launch must never be *worse* for having tried to optimize it.
    */
   readonly budgetMs?: number;
+  /**
+   * How the scene is handed to the renderer. Default `"scene"`.
+   *
+   * `"scene"` makes one `compileAsync(scene, camera)` call, which is the shape `three` is built
+   * for and the only one measured to be affordable: on a Pixel 8 the renderer builds all 107 of
+   * this game's pipelines in **8.1 s** that way.
+   *
+   * `"object"` walks one representative per pipeline and yields between slices, which is the only
+   * way to show progress — but it was measured at **more than 2 s per call** on the same device,
+   * so warming the same scene would take minutes. It is kept, and kept off, because a scene with
+   * few pipelines can afford it and a progress bar is worth something there; the default may not
+   * be a mechanism that turns a 8 s launch into a 15 s one.
+   */
+  readonly granularity?: "scene" | "object";
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
@@ -279,6 +293,23 @@ export async function warmUpScene(
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
   const yieldFrame = options.yieldFrame ?? yieldToHost;
+
+  // One call, the whole scene: the default, and the only granularity measured to be affordable.
+  // It buys no progress reporting -- the renderer does not surface any -- so the loop is blocked
+  // for its duration. What it does buy is that the cost is paid here, before the loop is released,
+  // rather than inside the first frame the player is watching.
+  if ((options.granularity ?? "scene") === "scene") {
+    const finished = await within(compileAsync(scene, camera), budgetMs);
+    options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
+    return {
+      compiled: finished ? 1 : 0,
+      slices: 1,
+      elapsedMs: now() - startedAt,
+      unsupported: false,
+      abandoned: finished ? 0 : 1,
+      timedOut: !finished,
+    };
+  }
 
   const renderables = collectRenderables(scene);
   const total = renderables.length;

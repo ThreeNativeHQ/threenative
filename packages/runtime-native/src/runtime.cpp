@@ -4304,6 +4304,48 @@ globalThis.__mystralNativeDecodeDracoAsync = function(buffer, attrs) {
         // In browsers, 'self' refers to the global object (same as 'this' at global scope)
         jsEngine_->setGlobalProperty("self", window);
 
+        // scheduler.yield() -- the cooperative yield three.js looks for before it falls back to
+        // a whole animation frame.
+        //
+        // `three`'s `yieldToMain()` (src/utils.js) probes `self.scheduler.yield` and, not finding
+        // it, returns `new Promise(resolve => requestAnimationFrame(resolve))`. Every async node
+        // build awaits that once per node (`NodeBuilder.buildAsync`), and the deferred build queue
+        // the render path uses (`NodeManager.getForRenderDeferred`) goes through the same call. So
+        // on this host, where `self` was shimmed but `scheduler` never was, **building one node's
+        // shader cost one fully rendered frame** -- measured at 50 ms and up during play on a
+        // Pixel 8, paid per node, which is what a player feels when a new material first appears.
+        //
+        // A macrotask is the honest implementation: `scheduler.yield()` yields to the event loop,
+        // and on this runtime one `setTimeout(0)` is exactly one loop iteration, resolving at the
+        // top of it rather than a whole frame later inside the animation-frame phase. It is not a
+        // microtask, because a yield that never lets the loop run would defeat the reason three
+        // calls it.
+        //
+        // Installed only if absent, so a host or polyfill that already provides the real
+        // scheduler API keeps it.
+        {
+            const char* installScheduler = R"JS(
+(function () {
+  const scope = globalThis;
+  const existing = scope.scheduler;
+  if (existing !== undefined && typeof existing.yield === "function") return true;
+  const scheduler = existing === undefined || existing === null ? {} : existing;
+  scheduler.yield = function () {
+    return new Promise(function (resolve) { setTimeout(resolve, 0); });
+  };
+  scope.scheduler = scheduler;
+  return typeof scope.scheduler.yield === "function" &&
+    typeof scope.self === "object" && scope.self.scheduler === scheduler;
+})
+)JS";
+            auto installer = jsEngine_->evalScriptWithResult(installScheduler, "install-scheduler");
+            auto installed = jsEngine_->call(installer, jsEngine_->newUndefined(), {});
+            // Fail loudly rather than let three quietly go back to a frame per node build.
+            if (!jsEngine_->toBoolean(installed)) {
+                std::cerr << "[Mystral] failed to install scheduler.yield" << std::endl;
+            }
+        }
+
         // Also set document as window.document (browsers have both)
         jsEngine_->setProperty(window, "document", document);
 

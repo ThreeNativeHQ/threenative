@@ -160,21 +160,28 @@ export interface IGameConfig<
   readonly frameBudget?: IFrameBudgetOptions | false;
   readonly initialState?: TState;
   /**
-   * Shader warm-up before the first frame, on by default.
+   * Shader warm-up before the first frame. **Off by default, on the evidence below.**
    *
-   * Every distinct pipeline is otherwise built the first time something using it is drawn, which
-   * is inside the first rendered frame of a fully built scene. On a Pixel 8 that was one frame
-   * lasting **24.5 seconds across 107 compiles** — a launch the player reads as a hang, with the
-   * loading screen frozen mid-animation because the loop presented nothing for the whole span.
-   * The warm-up cuts the same work into slices with a presented frame between them, so the screen
-   * keeps moving and `onProgress` is a number a HUD can show.
+   * Every distinct pipeline is otherwise built the first time something using it is drawn, inside
+   * the first rendered frame of a fully built scene. On a Pixel 8 that frame lasted **12.0 s, of
+   * which 8.0 s was 105 pipeline compiles** — a launch the player reads as a hang, because the
+   * loop presents nothing for the whole span. Warming those pipelines while the loading screen is
+   * up is the obvious fix, and it is the one this option exists for.
    *
-   * It does not make the compiling cheaper; the same pipelines are built either way. Pass `false`
-   * to skip it, and the launch goes back to paying for all of them inside the first frame — the
-   * measurement still reports what happened, because turning a convention off must not turn its
-   * measurement off.
+   * It is off because on the native host it currently cannot work: **`renderer.compileAsync()`
+   * never resolves there**. Measured on the same device, both granularities were abandoned by
+   * their own budget having compiled nothing —
+   * `TN_WARMUP:{"compiled":0,"abandoned":1,"timedOut":true,"elapsedMs":15325}` for one
+   * whole-scene call, and 6 of 490 in 15 s for the per-object walk — while the first frame
+   * compiled the identical pipelines synchronously in 8.0 s. Turning this on today buys nothing
+   * and spends the budget waiting, so the default may not be on until the host resolves that
+   * promise; the seam is the async-pipeline shim in `runtime-native`'s WebGPU bindings.
+   *
+   * Set it to `{}` or an options object to enable it — on web, where `compileAsync` does resolve,
+   * it does what it says. Either way `TN_WARMUP` reports what happened, because turning a
+   * convention off must not turn its measurement off.
    */
-  readonly warmUp?: IWarmUpOptions | false;
+  readonly warmUp?: IWarmUpOptions | false | true;
   readonly inputTarget?: EventTarget;
   /**
    * Maximum simulation steps per rendered frame. Default 5. Caps the catch-up burst after a
@@ -787,7 +794,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // The scene is built and the loop is still held, which is the only window where compiling can
     // cost frames nobody is playing. Warming up here rather than letting the first real frame do
     // it is what keeps a launch from freezing inside one 24-second frame. PRD-218.
-    if (this.#config.warmUp !== false && this.#renderer !== undefined) {
+    if (
+      this.#config.warmUp !== undefined &&
+      this.#config.warmUp !== false &&
+      this.#renderer !== undefined
+    ) {
       // Never fatal, and never able to hang the launch. This block sits between "the scene is
       // built" and "the game may start", so anything it does wrong is something the player
       // experiences as the game not starting -- which is exactly what the first version did: a
@@ -798,7 +809,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       let report: IWarmUpReport | undefined;
       let failure: string | undefined;
       try {
-        report = await warmUpScene(this.#renderer, threeScene, camera, this.#config.warmUp ?? {});
+        report = await warmUpScene(
+          this.#renderer,
+          threeScene,
+          camera,
+          this.#config.warmUp === true ? {} : this.#config.warmUp,
+        );
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }

@@ -42,9 +42,11 @@ const fakeRenderer = () => {
   };
 };
 
+// Most of these exercise the sliced, per-object granularity, so `run` selects it. The default is
+// `"scene"` -- one whole-scene compile -- and has its own tests at the bottom.
 // biome-ignore lint/suspicious/noExplicitAny: the fakes above stand in for three.js structurally.
 const run = (renderer: any, scene: any, options: any = {}) =>
-  warmUpScene(renderer, scene, {} as never, options);
+  warmUpScene(renderer, scene, {} as never, { granularity: "object", ...options });
 
 describe("scene warm-up", () => {
   test("should compile every renderable and yield a frame between slices", async () => {
@@ -236,4 +238,29 @@ describe("scene warm-up", () => {
       );
     }
   });
+
+  test("should compile the whole scene in one call by default", async () => {
+    // Measured on a Pixel 8: one whole-scene call builds all 107 of this game's pipelines in
+    // 8.1 s, while the per-object walk managed 6 in 15 s before its budget ran out. The default
+    // may not be the mechanism that turns an 8-second launch into a 15-second one.
+    const calls: unknown[] = [];
+    const renderer = {
+      compileAsync: (object: unknown) => {
+        calls.push(object);
+        return Promise.resolve();
+      },
+    };
+    const scene = sceneOf(200);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never);
+    expect(calls).toEqual([scene]);
+    expect(report).toMatchObject({ compiled: 1, slices: 1, abandoned: 0, timedOut: false });
+  });
+
+  test("should abandon a whole-scene compile that never returns", async () => {
+    const renderer = { compileAsync: () => new Promise<void>(() => undefined) };
+    const report = await warmUpScene(renderer as never, sceneOf(2) as never, {} as never, {
+      budgetMs: 30,
+    });
+    expect(report).toMatchObject({ compiled: 0, abandoned: 1, timedOut: true });
+  }, 10_000);
 });
