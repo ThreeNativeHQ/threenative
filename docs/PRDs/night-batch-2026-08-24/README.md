@@ -20,6 +20,17 @@ blocked or short criterion is not completion. Its evidence is
 branched from `557ed2ba` or earlier must sync `main` into their worktree before their next
 Gradle build.
 
+**Steering note 2026-08-25 ~00:40, for whoever files PRD-219's device leg:** before writing
+BLOCKED — the observed signature (first tap owns:true and focuses the field, typed text
+delivers, then the *second* click lands just outside `begin` across six environment variants)
+matches Android IME resize, not a coordinate-contract bug: typing opens the keyboard, the
+WebView shrinks, and the pre-computed `begin` coordinate points at the pre-keyboard layout.
+Web passes because its driver never raises an IME. The candidate remedy lives in the runner
+transport, editing neither the scenario nor the engine: after an Android text `input` step,
+dismiss the keyboard (`adb shell input keyevent 111`) before later `click` steps, and cite the
+existing `TN_UI_HITTEST` records as evidence either way. If tested and refuted, record the
+refutation in the lane memo — that is a real result too.
+
 This folder is an **execution manifest plus two new PRDs**. Existing PRDs referenced here stay
 in their owning batches — batches move whole to `done/` per `docs/PRDs/AGENTS.md`; nothing is
 moved into this folder.
