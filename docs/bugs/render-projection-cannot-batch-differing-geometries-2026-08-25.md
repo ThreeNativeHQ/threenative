@@ -1,7 +1,9 @@
 # The render projection batches nothing on a real scene: 835 candidates, 835 draws
 
-**Status:** fix landed — unit red/green and browser reproduction done (commit `385fd50e`,
-2026-08-25); **device before/after on the Pixel 8 is still owed** before this file can be closed.
+**Status:** fix landed and device-measured — unit red/green, browser reproduction and Pixel 8
+before/after all recorded below (commits `385fd50e`, this record, 2026-08-25). Improvement is
+−35 % frame cost at native resolution; the scene is not yet at 60 fps, so PRD-level follow-ons
+(GPU command pressure per sub-draw, game-side enemy AI cost) remain open levers.
 **Severity:** high — it is the top frame-time lever on mobile and the thermal-headroom lever for
 the whole device lane. A physical Pixel 8 holds 17–19 fps on a 60 Hz display with the phone cool
 (31 °C, thermal status 0), so this is real cost and not throttling.
@@ -55,11 +57,44 @@ walks one `BatchedMesh` as one render object (one pipeline/bind-group setup, one
 still issues a `drawIndexed` per packed sub-draw. The claimed win is the per-object CPU walk and
 shared state, and the arbiter for what that buys in frames and heat is the device run below.
 
-## Still owed
+## Device record (2026-08-25, physical Pixel 8, `shiba` 37251FDJH0037Z)
 
-A device run on the physical Pixel 8 with `observations.deviceMetrics` thermally clean, before
-and after, fps and the `render` phase from `TN_FRAME_BUDGET`. The before column exists in this
-file's cost section; only the after run remains.
+Wi-Fi adb, discharging, APK marker-verified (`materialBatches` grepped inside the installed
+bundle) and launch-verified (`com.threenative.bayview`, not the conformance harness). Three layers
+of evidence, hottest last; every number is a full 300-frame `TN_FRAME_BUDGET` window.
+
+**Matched-cool pair at native resolution** — the after arm ran from ~29 °C battery, thermal
+status 0, the same conditions as this file's before table:
+
+| 2400×1080 | fps | frame mean | render mean |
+| --- | --- | --- | --- |
+| before (declined) | 17.3 | 51.8 ms | 41.7 ms |
+| **after (13 material batches)** | **20.1** | **33.7 ms** | **28.5 ms** |
+
+Frame cost −35 %, render phase −32 %, windows 4 and 5 agreed within 0.04 fps.
+
+**Matched-warm pair at 1200×540** — both arms back-to-back at ~36 °C battery (the phone would not
+shed below ~34 that hour), so only the relative delta is claimed:
+
+| 1200×540 | projecting | fps | frame mean | render mean |
+| --- | --- | --- | --- | --- |
+| pre-fix core | false · notWorthwhile | 30.1 | 32.4 ms | 31.4 ms |
+| **after** | true · 13 batches | **34.5** | **25.0 ms** | **21.6 ms** |
+
+**Thermally confounded, reported anyway:** a later fixed-build window at 36 °C read 16.9 fps /
+50.8 ms — at that soak throttling dominates and the two builds converge. Comparability claims
+above rest on the pairs, not on any single hot window.
+
+On-device `TN_RENDER_PROJECTION` matched the browser line exactly: `projecting:true`,
+835 → 561 candidates, 13 material batches folding 287 sources.
+
+Honest ceiling: ~34 fps at ¼ pixels, ~20 at native — better, not fixed to 60. r185's WebGPU
+backend still issues one GPU command per packed sub-draw; the lane removed the per-object CPU
+walk and the per-mesh state churn, which is a third of the frame, not all of it.
+
+An intermittent physics-bridge SIGSEGV met during this session is A/B-proven pre-existing and is
+filed separately:
+`docs/bugs/physics-simulation-callback-segv-flaky-2026-08-25.md`.
 
 ---
 
