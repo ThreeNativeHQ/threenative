@@ -193,6 +193,27 @@ export interface IStandalonePlaytestRunOptions {
   };
 }
 
+export async function teardownBrowserSession(
+  page: Pick<Page, "close"> | undefined,
+  context: Pick<BrowserContext, "close"> | undefined,
+  browser: Pick<Browser, "close"> | undefined,
+  browserLaunch: Promise<Browser> | undefined,
+  remoteBrowser: { close(): Promise<void> } | undefined,
+): Promise<void> {
+  if (remoteBrowser !== undefined) {
+    // CDP attaches to the user's default Android Chrome context. Closing that context or the
+    // connected Browser shuts down pre-existing tabs and the Chrome process; this run owns only
+    // the page it created and its adb plumbing.
+    await boundedTeardownStep(page?.close(), 5_000);
+    await settledTeardownValue(browserLaunch, 10_000);
+    await boundedTeardownStep(remoteBrowser.close(), 10_000);
+    return;
+  }
+  await boundedTeardownStep(context?.close(), 5_000);
+  const launched = browser ?? (await settledTeardownValue(browserLaunch, 10_000));
+  await boundedTeardownStep(launched?.close(), 10_000);
+}
+
 export async function runStandalonePlaytest(
   config: IStandalonePlaytestConfig,
   options: IStandalonePlaytestRunOptions = {},
@@ -215,6 +236,7 @@ export async function runStandalonePlaytest(
   server = options.managedServer;
   let browser: Browser | undefined;
   let browserLaunch: Promise<Browser> | undefined;
+  let context: BrowserContext | undefined;
   let page: Page | undefined;
   let teardownPromise: Promise<void> | undefined;
   let serverTeardownPromise: Promise<void> | undefined;
@@ -232,7 +254,6 @@ export async function runStandalonePlaytest(
   };
   const teardown = async (stopManagedServerOnTeardown = ownsServer): Promise<void> => {
     teardownPromise ??= (async () => {
-      await boundedTeardownStep(page?.context().close(), 5_000);
       // Chromium does not always exit when asked — under a virtual display with a live GPU
       // process it can sit in close() forever. The report is already written by this point, so
       // teardown gives up rather than holding the run open; the CLI then exits explicitly.
@@ -240,9 +261,7 @@ export async function runStandalonePlaytest(
       // yet assigned. Closing only the assigned handle would close nothing and exit the process
       // over a live Chromium, stranding it and its profile directory — which is the orphan the
       // suite gate catches. Wait for the launch to settle, then close whatever it produced.
-      const launched = browser ?? (await settledTeardownValue(browserLaunch, 10_000));
-      await boundedTeardownStep(launched?.close(), 10_000);
-      await boundedTeardownStep(options.remoteBrowser?.close(), 10_000);
+      await teardownBrowserSession(page, context, browser, browserLaunch, options.remoteBrowser);
     })();
     await teardownPromise.catch(() => undefined);
     if (stopManagedServerOnTeardown) await stopServer();
@@ -286,7 +305,7 @@ export async function runStandalonePlaytest(
     if (options.remoteBrowser === undefined && server !== undefined && options.managedServer === undefined) {
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
-    const context = options.remoteBrowser === undefined
+    context = options.remoteBrowser === undefined
       ? await browser.newContext({ viewport: scenario.viewport })
       : await options.remoteBrowser.context(browser);
     if (activeConfig.trace) {
@@ -565,7 +584,8 @@ export async function runStandalonePlaytest(
       network: networkEntries,
       runtimeTrace: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
     });
-    await context.close();
+    if (options.remoteBrowser === undefined) await context.close();
+    else await page.close();
     return addPreflightDiagnostic(report, preflight);
   } catch (error) {
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {

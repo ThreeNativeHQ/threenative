@@ -3,6 +3,7 @@ import { expect, test, vi } from "vitest";
 import { AndroidChromeBrowserSession, androidBrowserUrl } from "../src/runner/androidBrowserRunner.js";
 import { classifyRunnerError, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs } from "../src/runner/config.js";
+import { teardownBrowserSession } from "../src/runner/runner.js";
 
 test("browser plus device selects the serial-bound Android Chrome lane, never local Chromium", async () => {
   const config = parseStandalonePlaytestArgs([
@@ -86,8 +87,8 @@ test("Android Chrome session owns exact adb mappings, Chrome component and defau
   const metrics = await session.finish();
   await session.close();
 
-  expect(calls).toContainEqual(["pixel-8", "reverse", "tcp:5173", "tcp:5173"]);
-  expect(calls).toContainEqual(["pixel-8", "forward", "tcp:39221", "localabstract:chrome_devtools_remote"]);
+  expect(calls).toContainEqual(["pixel-8", "reverse", "--no-rebind", "tcp:5173", "tcp:5173"]);
+  expect(calls).toContainEqual(["pixel-8", "forward", "--no-rebind", "tcp:39221", "localabstract:chrome_devtools_remote"]);
   expect(calls).toContainEqual([
     "pixel-8", "shell", "am", "start", "-W", "-a", "android.intent.action.VIEW",
     "-n", "com.android.chrome/com.google.android.apps.chrome.Main",
@@ -108,3 +109,69 @@ test("unreachable device and dead app port retain distinct named exit-2 diagnost
     code: "TN_PLAYTEST_PAGE_UNREACHABLE",
   });
 });
+
+test("a pre-existing reverse is rejected and never removed or rebound", async () => {
+  const calls: string[][] = [];
+  const session = ownershipSession(calls, {
+    reverseList: "pixel-8 tcp:5173 tcp:6000\n",
+    chromePid: "",
+  });
+
+  await expect(session.prepare({ url: "http://localhost:5173/game" } as never))
+    .rejects.toThrow(/TN_PLAYTEST_DEVICE_FAILED.*reverse.*5173.*already exists/u);
+
+  expect(calls).not.toContainEqual(["pixel-8", "reverse", "--remove", "tcp:5173"]);
+  expect(calls.some((call) => call.includes("--no-rebind"))).toBe(false);
+  expect(calls.some((call) => call.includes("am") && call.includes("start"))).toBe(false);
+});
+
+test("a pre-existing Chrome process and default context survive remote cleanup", async () => {
+  const calls: string[][] = [];
+  const session = ownershipSession(calls, { reverseList: "", chromePid: "4412\n" });
+  await session.prepare({ url: "http://localhost:5173/game" } as never);
+  await session.close();
+
+  expect(calls.some((call) => call.includes("force-stop"))).toBe(false);
+  expect(calls).toContainEqual(["pixel-8", "forward", "--remove", "tcp:39221"]);
+  expect(calls).toContainEqual(["pixel-8", "reverse", "--remove", "tcp:5173"]);
+
+  const page = { close: vi.fn() };
+  const context = { close: vi.fn() };
+  const browser = { close: vi.fn() };
+  const remote = { close: vi.fn() };
+  await teardownBrowserSession(page as never, context as never, browser as never, undefined, remote);
+  expect(page.close).toHaveBeenCalledOnce();
+  expect(context.close).not.toHaveBeenCalled();
+  expect(browser.close).not.toHaveBeenCalled();
+  expect(remote.close).toHaveBeenCalledOnce();
+});
+
+function ownershipSession(
+  calls: string[][],
+  state: { chromePid: string; reverseList: string },
+): AndroidChromeBrowserSession {
+  return new AndroidChromeBrowserSession({
+    adbPath: "/sdk/adb",
+    artifactDirectory: "/artifacts",
+    device: "pixel-8",
+    headless: true,
+    projectPath: "/project",
+    scenarioPath: "scenario.json",
+    timeoutMs: 1000,
+    trace: false,
+    url: "http://localhost:5173/game",
+  }, {
+    connectOverCDP: vi.fn(),
+    execAdb: async (_adb, serial, args) => {
+      calls.push([serial, ...args]);
+      if (args[0] === "get-state") return "device\n";
+      if (args[0] === "reverse" && args[1] === "--list") return state.reverseList;
+      if (args.includes("pidof")) return state.chromePid;
+      if (args.includes("battery")) return "AC powered: false\nUSB powered: false\nWireless powered: false\nstatus: 3\nlevel: 80\ntemperature: 320\n";
+      if (args.includes("thermalservice")) return "Thermal Status: 0\n";
+      if (args.includes("current_now")) return "-1000\n";
+      return "";
+    },
+    findFreePort: async () => 39221,
+  });
+}

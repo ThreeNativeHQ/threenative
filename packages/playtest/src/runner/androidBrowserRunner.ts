@@ -51,8 +51,11 @@ export function androidBrowserUrl(source: string): { port: number; url: string }
 export class AndroidChromeBrowserSession {
   private browser?: Browser;
   private cdpPort?: number;
+  private cdpForwardCreated = false;
+  private chromeOwnedPid?: string;
   private metrics?: DeviceMetricsRecorder;
   private reversePort?: number;
+  private reverseCreated = false;
 
   constructor(
     private readonly config: IStandalonePlaytestConfig,
@@ -71,17 +74,28 @@ export class AndroidChromeBrowserSession {
       this.metrics.start();
 
       const device = androidBrowserUrl(activeConfig.url);
+      const localReverse = `tcp:${device.port}`;
+      const reverseList = await adb(["reverse", "--list"]);
+      if (reverseList.split("\n").some((line) => line.trim().split(/\s+/u)[1] === localReverse)) {
+        throw new Error(`adb reverse for device port ${device.port} already exists; refusing to replace a mapping this run does not own`);
+      }
+      await adb(["reverse", "--no-rebind", localReverse, localReverse]);
       this.reversePort = device.port;
-      await adb(["reverse", `tcp:${device.port}`, `tcp:${device.port}`]);
+      this.reverseCreated = true;
       this.cdpPort = await this.dependencies.findFreePort();
-      await adb(["forward", `tcp:${this.cdpPort}`, "localabstract:chrome_devtools_remote"]);
-      await adb(["shell", "am", "force-stop", CHROME_PACKAGE]);
+      await adb(["forward", "--no-rebind", `tcp:${this.cdpPort}`, "localabstract:chrome_devtools_remote"]);
+      this.cdpForwardCreated = true;
+      const chromeWasRunning = (await adb(["shell", "pidof", CHROME_PACKAGE])).trim().length > 0;
       await adb([
         "shell", "am", "start", "-W",
         "-a", "android.intent.action.VIEW",
         "-n", CHROME_COMPONENT,
         "-d", device.url,
       ]);
+      if (!chromeWasRunning) {
+        const pid = (await adb(["shell", "pidof", CHROME_PACKAGE])).trim();
+        if (pid.length > 0) this.chromeOwnedPid = pid;
+      }
     } catch (error) {
       await this.close();
       throw deviceFailure(serial, error);
@@ -119,15 +133,23 @@ export class AndroidChromeBrowserSession {
     const adbPath = this.config.adbPath ?? discoverAdb();
     const adb = (args: readonly string[]) => this.dependencies.execAdb(adbPath, serial, args);
     // Remove exactly the mappings and Chrome process this run owns. Other adb users survive.
-    await adb(["shell", "am", "force-stop", CHROME_PACKAGE]).catch(() => undefined);
-    if (this.cdpPort !== undefined) {
+    if (this.chromeOwnedPid !== undefined) {
+      const currentPid = await adb(["shell", "pidof", CHROME_PACKAGE]).catch(() => "");
+      if (currentPid.trim() === this.chromeOwnedPid) {
+        await adb(["shell", "am", "force-stop", CHROME_PACKAGE]).catch(() => undefined);
+      }
+      this.chromeOwnedPid = undefined;
+    }
+    if (this.cdpPort !== undefined && this.cdpForwardCreated) {
       await adb(["forward", "--remove", `tcp:${this.cdpPort}`]).catch(() => undefined);
-      this.cdpPort = undefined;
+      this.cdpForwardCreated = false;
     }
-    if (this.reversePort !== undefined) {
+    this.cdpPort = undefined;
+    if (this.reversePort !== undefined && this.reverseCreated) {
       await adb(["reverse", "--remove", `tcp:${this.reversePort}`]).catch(() => undefined);
-      this.reversePort = undefined;
+      this.reverseCreated = false;
     }
+    this.reversePort = undefined;
   }
 
   private requiredSerial(): string {
