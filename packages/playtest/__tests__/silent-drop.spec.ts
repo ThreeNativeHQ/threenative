@@ -1,6 +1,7 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import type { Page } from "playwright";
 
@@ -13,6 +14,8 @@ import {
 } from "../src/index.js";
 import { connectPlaytestBridge, PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 
+const fixtureDirectory = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
+
 // CHARTER.md §8. A wrong-typed assertion value used to be dropped on the floor:
 // the validator returned undefined and the caller filtered it out. The scenario
 // then ran with zero assertions of that kind and reported green. A harness that
@@ -21,12 +24,17 @@ import { connectPlaytestBridge, PlaytestBridgeError } from "../src/runner/bridge
 // These tests were observed RED against the pre-fix parser: loadPlaytestScenario
 // resolved instead of throwing for the first three.
 
-async function writeScenario(assert: unknown, steps: IPlaytestStep[] = [{ release: true, waitFrames: 1 }]): Promise<string> {
+async function writeScenario(
+  assert: unknown,
+  steps: IPlaytestStep[] = [{ release: true, waitFrames: 1 }],
+  fields: Record<string, unknown> = {},
+): Promise<string> {
   const directory = await makeTempDir("playtest-silent-drop-");
   await writeFile(
     join(directory, "scenario.json"),
     JSON.stringify({
       assert,
+      ...fields,
       name: "silent-drop",
       schemaVersion: 1,
       steps,
@@ -35,8 +43,8 @@ async function writeScenario(assert: unknown, steps: IPlaytestStep[] = [{ releas
   return directory;
 }
 
-async function loadError(assert: unknown): Promise<unknown> {
-  const directory = await writeScenario(assert);
+async function loadError(assert: unknown, fields: Record<string, unknown> = {}): Promise<unknown> {
+  const directory = await writeScenario(assert, undefined, fields);
   try {
     await loadPlaytestScenario(directory, "scenario.json");
   } catch (error) {
@@ -83,6 +91,63 @@ test("rejects an optional key that is present but wrong-typed", async () => {
 
   expect(error).toBeInstanceOf(PlaytestScenarioError);
   expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/tags\[0\]\.count/u);
+});
+
+test("rejects the malformed parity animation fixture instead of shrinking the comparison", async () => {
+  await expect(loadPlaytestScenario(fixtureDirectory, "parity-mistyped.playtest.json")).rejects.toThrow(
+    /parity\.animation\[0\]\.entity/u,
+  );
+});
+
+test.each([
+  ["a non-string resource id", { resources: ["GameState", 7] }, /parity\.resources\[1\]/u],
+  ["an unknown parity target", { targets: ["web", "android"] }, /parity\.targets\[1\]/u],
+  ["a non-string animation name", { animation: [{ entity: "player", clip: 7 }] }, /parity\.animation\[0\]\.clip/u],
+  ["an unknown animation target", { animation: [{ entity: "player", requiredOn: ["android"] }] }, /parity\.animation\[0\]\.requiredOn\[0\]/u],
+  ["a non-string compare resource id", { compare: { resources: [7] } }, /parity\.compare\.resources\[0\]/u],
+  ["a malformed compare animation", { compare: { animation: [{ entity: 7 }] } }, /parity\.compare\.animation\[0\]\.entity/u],
+] as const)("rejects %s at load", async (_label, parity, message) => {
+  const error = await loadError({ states: [{ entity: "player", equals: "alive" }] }, { parity });
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(message);
+});
+
+test("preserves valid parity fields unchanged", async () => {
+  const directory = await writeScenario(
+    { states: [{ entity: "player", equals: "alive" }] },
+    undefined,
+    {
+      parity: {
+        animation: [{ clip: "run", entity: "player", requiredOn: ["web", "desktop"] }],
+        resources: ["GameState"],
+        targets: ["web", "desktop"],
+      },
+    },
+  );
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.parity).toEqual({
+    animation: [{ clip: "run", entity: "player", requiredOn: ["web", "desktop"] }],
+    resources: ["GameState"],
+    targets: ["web", "desktop"],
+  });
+});
+
+test("rejects a wrong-typed present viewport and defaults only when viewport is absent", async () => {
+  const error = await loadError(
+    { states: [{ entity: "player", equals: "alive" }] },
+    { viewport: { height: 720, width: "1280" } },
+  );
+
+  expect(error).toBeInstanceOf(PlaytestScenarioError);
+  expect((error as PlaytestScenarioError).diagnostic.message).toMatch(/viewport\.width/u);
+
+  const directory = await writeScenario({ states: [{ entity: "player", equals: "alive" }] });
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.viewport).toEqual({ height: 720, width: 1280 });
 });
 
 test("still accepts a valid assertion unchanged", async () => {
