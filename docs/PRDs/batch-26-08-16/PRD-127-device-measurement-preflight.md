@@ -4,8 +4,12 @@ prd_contract: v1
 
 # PRD-127 — One device lane checks the phone's condition and three do not
 
-**Status:** PROPOSED, 2026-08-16. Nothing below has executed. No device number is revised by this
-file, and no mobile readiness is claimed by it.
+**Status: PARTIAL, reconciled 2026-08-24.** The header below said "PROPOSED — nothing has
+executed"; that stopped being true the same day: the code landed on all four device lanes (per
+this batch's README), while every physical criterion stayed UNVERIFIED and the device lanes
+observed red on the phone. No device number is revised by this file, and no mobile readiness is
+claimed by it; the open physical criteria are queued as Lane C device tails in the night batch of
+2026-08-24.
 
 **Outcome:** the device-condition gate that already works in the engine load test becomes the
 gate every device measurement passes through, and it covers thermal state and charging as well as
