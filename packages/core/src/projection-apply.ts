@@ -1,4 +1,5 @@
 import {
+  BatchedMesh,
   type BufferGeometry,
   type Color,
   InstancedMesh,
@@ -18,10 +19,11 @@ import {
   type SpriteMaterial,
 } from "three";
 
-import { isLight } from "./projection-plan.js";
+import { MIN_BATCH_MEMBERS, isLight } from "./projection-plan.js";
 import type {
   IProjectionBatchGroup,
   IProjectionExactEntry,
+  IProjectionMaterialGroup,
   IProjectionProjectPlan,
 } from "./projection-plan.js";
 import type { ProjectionExactReason } from "./renderProjection.js";
@@ -72,6 +74,31 @@ interface IBatch {
   capacity: number;
 }
 
+/**
+ * The material-keyed batch: many distinct geometries packed under one material.
+ *
+ * Unlike `IBatch` this owns copies of vertex data — that is what lets it fold geometries the
+ * instanced lane cannot — and so it carries the obligations a copy brings: budgets sized from the
+ * whole group before anything is built, a rebuild whenever the group's geometry set changes
+ * (`builtRevision` against the group's), and the scan's stream watch demoting any geometry whose
+ * versions move after admission. Slots are instance ids exactly as on the instanced lane: hidden
+ * rather than deleted when released, so the free list recycles them without touching the batch.
+ */
+interface IBatched {
+  readonly mesh: BatchedMesh;
+  readonly group: IProjectionMaterialGroup;
+  readonly material: Material;
+  /** Source geometry to its packed sub-geometry id. */
+  readonly geometries: Map<BufferGeometry, number>;
+  /** Source object per instance slot, so a released slot can be reused rather than leaked. */
+  readonly instances: Map<Object3D, number>;
+  readonly free: number[];
+  /** Instance ids handed out so far, which is also where the next unused one begins. */
+  used: number;
+  capacity: number;
+  builtRevision: number;
+}
+
 /** What the mirror last knew about a source, so an unchanged source costs a compare and no work. */
 interface ISourceState {
   readonly matrixWorld: Matrix4;
@@ -79,7 +106,7 @@ interface ISourceState {
   geometry: BufferGeometry | undefined;
   material: Material | Material[] | undefined;
   /** The batch this source is an instance of, so a lane change releases the old slot directly. */
-  batch: IBatch;
+  batch: IBatch | IBatched;
 }
 
 /** Element-wise equality, which is what "did this object move" reduces to. */
@@ -173,6 +200,7 @@ export class ProjectionMirror {
   /** Handed to the renderer whenever the projection is faithful. Never shown to the game. */
   readonly scene = new Scene();
   readonly #batches = new Map<IProjectionBatchGroup, IBatch>();
+  readonly #materialBatches = new Map<IProjectionMaterialGroup, IBatched>();
   readonly #state = new Map<Object3D, ISourceState>();
   /** Exact-lane stand-ins, keyed by the source they mirror. */
   readonly #proxies = new Map<Object3D, Object3D>();
@@ -192,7 +220,17 @@ export class ProjectionMirror {
   }
 
   get batchCount(): number {
+    return this.#batches.size + this.#materialBatches.size;
+  }
+
+  /** Batches on the instanced lane — one shared geometry instance folded into an `InstancedMesh`. */
+  get instancedBatchCount(): number {
     return this.#batches.size;
+  }
+
+  /** Batches on the material lane — differing geometries packed into one `BatchedMesh` per material. */
+  get materialBatchCount(): number {
+    return this.#materialBatches.size;
   }
 
   get proxyCount(): number {
@@ -265,6 +303,7 @@ export class ProjectionMirror {
         this.#appendExact(mesh, reason);
       }
     }
+    this.#applyMaterialGroups(plan);
     for (let index = 0; index < this.#exactLaneCount; index += 1) {
       const entry = this.#exactLane[index] as IProjectionExactEntry;
       const object = exactObject(entry);
@@ -296,6 +335,47 @@ export class ProjectionMirror {
     this.#exact.set(reason, count + 1);
   }
 
+  /**
+   * Applies the plan's material-keyed groups: one `BatchedMesh` per group, its members as packed
+   * instances.
+   *
+   * `BatchedMesh.setMatrixAt` does not support negatively scaled matrices — a mirrored source
+   * would draw inside-out under front-face culling. The scan reads no world matrices by design,
+   * so the gate lives here where they are fresh. Counting viable members before building keeps
+   * the invariant that a projected frame never hands the renderer more draw candidates than the
+   * authored scene has: a group that cannot fill a batch never builds one.
+   */
+  #applyMaterialGroups(plan: IProjectionProjectPlan): void {
+    for (let index = 0; index < plan.materialGroupCount; index += 1) {
+      const group = plan.materialGroups[index] as IProjectionMaterialGroup;
+      let viableCount = 0;
+      for (let member = 0; member < group.memberCount; member += 1) {
+        if ((group.members[member] as Mesh).matrixWorld.determinant() > 0) viableCount += 1;
+      }
+      const attempted = viableCount >= MIN_BATCH_MEMBERS;
+      const batch = attempted ? this.#ensureBatched(group) : undefined;
+      for (let member = 0; member < group.memberCount; member += 1) {
+        const mesh = group.members[member] as Mesh;
+        const mirrored = mesh.matrixWorld.determinant() <= 0;
+        if (batch !== undefined && !mirrored && this.#syncBatchedMaterial(batch, mesh)) {
+          this.#projectedObjects += 1;
+          continue;
+        }
+        // The same report discipline as the instanced loop: each refusal names its own cause,
+        // and every refused mesh keeps a draw of its own.
+        const reason = mirrored
+          ? "negativeScale"
+          : !attempted
+            ? "tooFewToBatch"
+            : batch === undefined
+              ? "unsupportedGeometry"
+              : "batchOverflow";
+        this.#release(mesh);
+        this.#appendExact(mesh, reason);
+      }
+    }
+  }
+
   /** Drops sources that have left the authored scene, so nothing draws what the game removed. */
   #retire(
     seen: { has(object: Object3D): boolean },
@@ -303,6 +383,7 @@ export class ProjectionMirror {
     lightCount: number,
   ): void {
     this.#retireBatches(seen);
+    this.#retireMaterialBatches(seen);
     this.#retireProxies(seen);
     this.#retireLights(lights, lightCount);
     this.#retireState(seen);
@@ -323,6 +404,21 @@ export class ProjectionMirror {
         this.#state.delete(object);
       }
       if (batch.instances.size === 0) this.#disposeBatch(batch);
+    }
+  }
+
+  /** Retires material-keyed batches on the same hidden-not-deleted free-list discipline. */
+  #retireMaterialBatches(seen: { has(object: Object3D): boolean }): void {
+    for (const batch of this.#materialBatches.values()) {
+      for (const object of batch.instances.keys()) {
+        if (seen.has(object)) continue;
+        const slot = batch.instances.get(object) as number;
+        batch.mesh.setVisibleAt(slot, false);
+        batch.instances.delete(object);
+        batch.free.push(slot);
+        this.#state.delete(object);
+      }
+      if (batch.instances.size === 0) this.#disposeBatched(batch);
     }
   }
 
@@ -551,6 +647,141 @@ export class ProjectionMirror {
     return batch;
   }
 
+  /**
+   * The batch for one material group, rebuilt whenever the group's geometry set or size outgrows it.
+   *
+   * `BatchedMesh` rather than a second instancing pass, and that is the whole point of the lane:
+   * it holds *many geometries* under *one material*, which is what a town of unique buildings over
+   * shared surfaces needs and what an `InstancedMesh` cannot hold. On three's WebGPU backend the
+   * batch is walked as one render object — one pipeline and bind-group setup, one sort entry, no
+   * per-source matrix pass — with a `drawIndexed` per packed sub-geometry inside it. The draw-count
+   * win is counted from the scene the renderer walks, which is what `resultDrawCandidates` has
+   * always measured.
+   *
+   * Unlike the instanced lane, the packed copies are obligations: budgets are summed from every
+   * distinct geometry before construction so nothing overflows mid-build, and the scan's stream
+   * watch demotes any geometry whose versions move — so a copy never outlives the data it was made
+   * from by even one frame.
+   */
+  #ensureBatched(group: IProjectionMaterialGroup): IBatched | undefined {
+    const startedAt = globalThis.performance?.now() ?? 0;
+    const existing = this.#materialBatches.get(group);
+    if (
+      existing !== undefined &&
+      existing.builtRevision === group.revision &&
+      existing.capacity >= group.memberCount
+    ) {
+      return existing;
+    }
+    if (existing !== undefined) this.#disposeBatched(existing);
+    const capacity = Math.max(BATCH_MIN_SLOTS, Math.ceil(group.memberCount * BATCH_GROWTH));
+    // Sized from the whole group before anything is built; an overflow throw mid-build would
+    // otherwise leave a half-packed batch to dispose around.
+    let vertexBudget = 0;
+    let indexBudget = 0;
+    for (const geometry of group.geometries.keys()) {
+      const position = geometry.getAttribute("position");
+      const vertices = position === undefined ? 0 : position.count;
+      vertexBudget += vertices;
+      const index = geometry.getIndex();
+      indexBudget += index === null ? vertices : index.count;
+    }
+    const reference = group.members[0] as Mesh;
+    const indexed = reference.geometry.getIndex() !== null;
+    let mesh: BatchedMesh;
+    try {
+      mesh = new BatchedMesh(
+        capacity,
+        Math.ceil(vertexBudget * BATCH_GROWTH),
+        indexed ? Math.ceil(indexBudget * BATCH_GROWTH) : 0,
+        group.material,
+      );
+    } catch {
+      return undefined;
+    }
+    mesh.perObjectFrustumCulled = false;
+    mesh.sortObjects = false;
+    mesh.frustumCulled = false;
+    // Carried from the sources, exactly as the instanced lane carries them: every member agreed,
+    // because the flags are part of what keyed the group.
+    mesh.castShadow = reference.castShadow;
+    mesh.receiveShadow = reference.receiveShadow;
+    mesh.layers.mask = reference.layers.mask;
+    const batch: IBatched = {
+      mesh,
+      group,
+      material: group.material,
+      geometries: new Map(),
+      instances: new Map(),
+      free: [],
+      used: 0,
+      capacity,
+      builtRevision: group.revision,
+    };
+    try {
+      for (const geometry of group.geometries.keys()) {
+        batch.geometries.set(geometry, mesh.addGeometry(geometry));
+      }
+    } catch {
+      mesh.dispose();
+      return undefined;
+    }
+    this.#materialBatches.set(group, batch);
+    this.scene.add(mesh);
+    this.#compileMs += (globalThis.performance?.now() ?? 0) - startedAt;
+    return batch;
+  }
+
+  /**
+   * Puts an eligible mesh into its material-keyed batch and keeps it there, in step with its
+   * source. Slot bookkeeping is the instanced lane's exactly — allocate once, then per-frame
+   * matrix and visibility compares — with `setVisibleAt` doing natively what a collapsed matrix
+   * does on the other lane.
+   */
+  #syncBatchedMaterial(target: IBatched, mesh: Mesh): boolean {
+    const previous = this.#state.get(mesh);
+    if (previous !== undefined && previous.batch !== target) this.#release(mesh);
+    this.#releaseProxy(mesh);
+
+    let slot = target.instances.get(mesh);
+    if (slot === undefined) {
+      if (target.used >= target.capacity) return false;
+      const geometryId = target.geometries.get(mesh.geometry);
+      // A geometry that joined the group after this batch was built cannot be packed into it
+      // here; the revision bump routes the whole group through a rebuild next frame.
+      if (geometryId === undefined) return false;
+      try {
+        slot = target.mesh.addInstance(geometryId);
+      } catch {
+        return false;
+      }
+      target.used += 1;
+      target.instances.set(mesh, slot);
+      this.#state.set(mesh, {
+        // Deliberately unequal to anything real, so the first reconcile below writes the matrix
+        // and the visibility rather than assuming the new slot already carries them.
+        matrixWorld: new Matrix4().multiplyScalar(0),
+        visible: !mesh.visible,
+        geometry: mesh.geometry,
+        material: mesh.material,
+        batch: target,
+      });
+    }
+
+    const state = this.#state.get(mesh) as ISourceState;
+    const visible = this.#visibleInWorld(mesh);
+    if (visible !== state.visible || !matrixEquals(state.matrixWorld, mesh.matrixWorld)) {
+      state.matrixWorld.copy(mesh.matrixWorld);
+      state.visible = visible;
+      target.mesh.setMatrixAt(slot, mesh.matrixWorld);
+      target.mesh.setVisibleAt(slot, visible);
+    }
+    state.geometry = mesh.geometry;
+    state.material = mesh.material;
+    state.batch = target;
+    return true;
+  }
+
   /** Removes a batch from the mirror and releases the buffers it owns. */
   #disposeBatch(batch: IBatch): void {
     this.scene.remove(batch.mesh);
@@ -559,6 +790,19 @@ export class ProjectionMirror {
     batch.mesh.dispose();
     for (const object of batch.instances.keys()) this.#state.delete(object);
     this.#batches.delete(batch.group);
+  }
+
+  /**
+   * Removes a material-keyed batch from the mirror.
+   *
+   * `BatchedMesh.dispose()` releases the packed vertex/index copies and the instance textures the
+   * batch owns; the source geometries were only read from, never adopted, and stay the game's.
+   */
+  #disposeBatched(batch: IBatched): void {
+    this.scene.remove(batch.mesh);
+    batch.mesh.dispose();
+    for (const object of batch.instances.keys()) this.#state.delete(object);
+    this.#materialBatches.delete(batch.group);
   }
 
   /**
@@ -627,11 +871,15 @@ export class ProjectionMirror {
     const batch = state === undefined ? undefined : state.batch;
     const slot = batch?.instances.get(object);
     if (batch !== undefined && slot !== undefined) {
-      // Collapsed before the slot is handed back, so a freed slot draws nothing until something
-      // else claims it. Reusing slots rather than rebuilding the batch is what keeps a level that
-      // streams objects in and out from rebuilding its draws every time it does.
-      batch.mesh.setMatrixAt(slot, ZERO_MATRIX);
-      batch.mesh.instanceMatrix.needsUpdate = true;
+      // Hidden or collapsed before the slot is handed back, so a freed slot draws nothing until
+      // something else claims it. Reusing slots rather than rebuilding the batch is what keeps a
+      // level that streams objects in and out from rebuilding its draws every time it does.
+      if ((batch as IBatch).mesh.isInstancedMesh === true) {
+        (batch as IBatch).mesh.setMatrixAt(slot, ZERO_MATRIX);
+        (batch as IBatch).mesh.instanceMatrix.needsUpdate = true;
+      } else {
+        (batch as IBatched).mesh.setVisibleAt(slot, false);
+      }
       batch.instances.delete(object);
       batch.free.push(slot);
     }
@@ -686,6 +934,11 @@ export class ProjectionMirror {
       batch.mesh.dispose();
     }
     this.#batches.clear();
+    for (const batch of this.#materialBatches.values()) {
+      this.scene.remove(batch.mesh);
+      batch.mesh.dispose();
+    }
+    this.#materialBatches.clear();
     for (const proxy of this.#proxies.values()) this.scene.remove(proxy);
     this.#proxies.clear();
     for (const proxy of this.#lightProxies.values()) this.scene.remove(proxy);
@@ -722,6 +975,7 @@ export class ProjectionMirror {
     const slot = batch?.instances.get(object);
     if (batch === undefined || slot === undefined) return undefined;
     const matrixWorld = new Matrix4();
+    // Both lanes answer the same way; which primitive backs the batch is not the caller's business.
     batch.mesh.getMatrixAt(slot, matrixWorld);
     return { lane: "batched", matrixWorld, visible: state.visible };
   }
@@ -729,6 +983,9 @@ export class ProjectionMirror {
   /** True when some batch in the mirror draws with this exact material instance. */
   drawsWith(material: Material): boolean {
     for (const batch of this.#batches.values()) {
+      if (batch.material === material) return true;
+    }
+    for (const batch of this.#materialBatches.values()) {
       if (batch.material === material) return true;
     }
     for (const proxy of this.#proxies.values()) {

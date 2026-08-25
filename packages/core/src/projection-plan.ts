@@ -1,4 +1,13 @@
-import type { BufferGeometry, Light, Material, Mesh, Object3D, Scene } from "three";
+import type {
+  BufferAttribute,
+  BufferGeometry,
+  InterleavedBufferAttribute,
+  Light,
+  Material,
+  Mesh,
+  Object3D,
+  Scene,
+} from "three";
 
 import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjection.js";
 
@@ -21,8 +30,12 @@ import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjec
  * own geometry — which is most games that build geometry procedurally, and every game that has
  * already merged its own scene — produces nothing but one-member groups, so batching it converts a
  * cheap scene into an expensive one that draws the same number of times.
+ *
+ * The same floor applies to a material-keyed batch: folding four distinct geometries under one
+ * material saves three draws but costs a packed copy of all of them, and below that the copies
+ * cost more than the draws they replace.
  */
-const MIN_BATCH_MEMBERS = 4;
+export const MIN_BATCH_MEMBERS = 4;
 
 /**
  * The projection must be meaningfully better than doing nothing, or it does nothing.
@@ -185,6 +198,41 @@ export interface IProjectionBatchGroup {
   activeScan: number;
 }
 
+/**
+ * A reusable group of meshes that share a material but not a geometry.
+ *
+ * This is the second grouping the instanced lane cannot express: a `BatchedMesh` holds many
+ * distinct geometries under one material, which is the shape of a real town — hundreds of unique
+ * buildings over a handful of surface types. Members are meshes whose own (geometry, material,
+ * flags) group fell below the member floor, so a mesh that can still instance-batch keeps doing
+ * so and never reaches here.
+ *
+ * Keyed on (material identity, batch flags, attribute signature). The signature — attribute names
+ * with item sizes, plus index presence — is what three's `BatchedMesh._validateGeometry` refuses
+ * to mix, so geometries that disagree about their attribute sets can never land in one batch.
+ * It is keyed on material *identity*, never on material value: a plain property write does not
+ * bump `material.version`, so a value key could not be invalidated cheaply and siblings would
+ * silently draw with a stale representative.
+ */
+export interface IProjectionMaterialGroup {
+  readonly material: Material;
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
+  readonly layersMask: number;
+  /** High-water member storage; only the first `memberCount` slots belong to the current scan. */
+  readonly members: Array<Mesh | undefined>;
+  memberCount: number;
+  activeScan: number;
+  /**
+   * Each distinct geometry with the attribute-version sum it was last seen carrying. A geometry
+   * whose sum moves after admission is game-owned live data — its copies inside a packed batch
+   * would silently go stale — so it is demoted out of the lane rather than re-copied.
+   */
+  readonly geometries: Map<BufferGeometry, { sum: number; scan: number }>;
+  /** Bumped whenever the distinct-geometry set changes, so a built batch knows to rebuild. */
+  revision: number;
+}
+
 /** All scan-owned storage. It never escapes the synchronous reconcile that owns it. */
 export interface IProjectionScanWorkspace {
   readonly seen: IProjectionSeenWorkspace;
@@ -197,6 +245,10 @@ export interface IProjectionScanWorkspace {
   lightCount: number;
   readonly batchGroups: Array<IProjectionBatchGroup | undefined>;
   batchGroupCount: number;
+  readonly materialGroups: Array<IProjectionMaterialGroup | undefined>;
+  materialGroupCount: number;
+  readonly activeMaterialGroups: Array<IProjectionMaterialGroup | undefined>;
+  activeMaterialGroupCount: number;
   readonly belowFloor: Array<Mesh | undefined>;
   belowFloorCount: number;
   readonly activeGroups: Array<IProjectionBatchGroup | undefined>;
@@ -207,6 +259,21 @@ export interface IProjectionScanWorkspace {
     BufferGeometry,
     WeakMap<Material, Map<number, IProjectionBatchGroup>>
   >;
+  readonly groupsByMaterial: WeakMap<Material, Map<number, Map<string, IProjectionMaterialGroup>>>;
+  /** Attribute signature per geometry, computed once and interned so group lookup stays pointer-cheap. */
+  readonly geometrySignatures: WeakMap<BufferGeometry, string>;
+  /**
+   * Members claimed by a material group that made the batching floor this scan, stamped with the
+   * scan that claimed them. Their below-floor geometry groups must not also file them onto the
+   * exact lane — a mesh released into a batch and into a proxy in the same frame draws twice.
+   */
+  readonly materialClaims: WeakMap<Object3D, number>;
+  /**
+   * Geometries caught changing after admission to a material group. Their vertex data is
+   * game-owned live — the instanced lane references it, a packed copy cannot — so they are barred
+   * from the material lane for good and their meshes fall back to instance-or-exact.
+   */
+  readonly streamedGeometries: WeakSet<BufferGeometry>;
   scanNumber: number;
 }
 
@@ -223,6 +290,9 @@ export interface IProjectionProjectPlan {
   /** Groups worth batching, sized before anything is built. */
   readonly batchGroups: readonly (IProjectionBatchGroup | undefined)[];
   readonly batchGroupCount: number;
+  /** Material-keyed groups worth batching across differing geometries, sized before anything is built. */
+  readonly materialGroups: readonly (IProjectionMaterialGroup | undefined)[];
+  readonly materialGroupCount: number;
   /** Group members below the batching floor: released from batches, drawn on the exact lane. */
   readonly belowFloor: readonly (Mesh | undefined)[];
   readonly belowFloorCount: number;
@@ -261,6 +331,10 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     lightCount: 0,
     batchGroups: [],
     batchGroupCount: 0,
+    materialGroups: [],
+    materialGroupCount: 0,
+    activeMaterialGroups: [],
+    activeMaterialGroupCount: 0,
     belowFloor: [],
     belowFloorCount: 0,
     activeGroups: [],
@@ -268,6 +342,10 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     walkStack: [],
     walkStackCount: 0,
     groupsByGeometry: new WeakMap(),
+    groupsByMaterial: new WeakMap(),
+    geometrySignatures: new WeakMap(),
+    materialClaims: new WeakMap(),
+    streamedGeometries: new WeakSet(),
     scanNumber: 0,
   };
 }
@@ -280,6 +358,27 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
  * store churn; keeping those members in an inactive group or pooled exact entry would make a
  * streamed scene retain every mesh it had ever contained.
  */
+/**
+ * Releases one active material group's members and stale geometry baselines.
+ *
+ * A geometry that no longer has a member this scan has stopped participating; its baseline is
+ * dropped so the watch does not sum versions forever for data nothing draws. The entry is
+ * re-established with a fresh baseline if the geometry comes back, which is correct — the batch
+ * is built from whatever the vertex data carries at that point.
+ */
+function releaseActiveMaterialGroup(
+  workspace: IProjectionScanWorkspace,
+  group: IProjectionMaterialGroup,
+): void {
+  for (let member = 0; member < group.memberCount; member += 1) {
+    group.members[member] = undefined;
+  }
+  group.memberCount = 0;
+  for (const [geometry, record] of group.geometries) {
+    if (record.scan !== workspace.scanNumber) group.geometries.delete(geometry);
+  }
+}
+
 export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspace): void {
   for (let index = 0; index < workspace.exactEntryPool.length; index += 1) {
     const entry = workspace.exactEntryPool[index] as IProjectionExactEntry;
@@ -292,6 +391,13 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
     }
     group.memberCount = 0;
     workspace.activeGroups[index] = undefined;
+  }
+  for (let index = 0; index < workspace.activeMaterialGroupCount; index += 1) {
+    releaseActiveMaterialGroup(
+      workspace,
+      workspace.activeMaterialGroups[index] as IProjectionMaterialGroup,
+    );
+    workspace.activeMaterialGroups[index] = undefined;
   }
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
     workspace.eligible[index] = undefined;
@@ -306,6 +412,9 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
   for (let index = 0; index < workspace.batchGroupCount; index += 1) {
     workspace.batchGroups[index] = undefined;
   }
+  for (let index = 0; index < workspace.materialGroupCount; index += 1) {
+    workspace.materialGroups[index] = undefined;
+  }
   for (let index = 0; index < workspace.belowFloorCount; index += 1) {
     workspace.belowFloor[index] = undefined;
   }
@@ -316,6 +425,8 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
   workspace.exactLaneCount = 0;
   workspace.lightCount = 0;
   workspace.batchGroupCount = 0;
+  workspace.materialGroupCount = 0;
+  workspace.activeMaterialGroupCount = 0;
   workspace.belowFloorCount = 0;
   workspace.activeGroupCount = 0;
   workspace.walkStackCount = 0;
@@ -385,6 +496,159 @@ function addToBatchGroup(
   group.memberCount += 1;
 }
 
+/**
+ * What three's `BatchedMesh._validateGeometry` refuses to mix, as one interned string.
+ *
+ * Index presence plus every attribute name with its item size and normalization. Cached per
+ * geometry, so a steady frame pays one WeakMap lookup; only a geometry's first sighting builds
+ * the string. Two geometries that disagree here cannot share a packed batch, so the signature is
+ * part of the material-group key rather than a check applied after grouping.
+ */
+function geometrySignatureOf(
+  workspace: IProjectionScanWorkspace,
+  geometry: BufferGeometry,
+): string {
+  const cached = workspace.geometrySignatures.get(geometry);
+  if (cached !== undefined) return cached;
+  const names = Object.keys(geometry.attributes).sort();
+  let signature = geometry.getIndex() === null ? "n" : "i";
+  for (let index = 0; index < names.length; index += 1) {
+    const name = names[index] as string;
+    const attribute = geometry.getAttribute(name);
+    if (attribute === undefined) continue;
+    signature += ` ${name}:${attribute.itemSize}:${attribute.normalized ? 1 : 0}`;
+  }
+  workspace.geometrySignatures.set(geometry, signature);
+  return signature;
+}
+
+/** Versions only ever increase, so an attribute's version is a usable change signal. */
+function attributeVersionOf(attribute: BufferAttribute | InterleavedBufferAttribute): number {
+  // An interleaved attribute's version lives on the shared buffer it slices into.
+  if ("isInterleavedBufferAttribute" in attribute) return attribute.data.version;
+  return attribute.version;
+}
+
+/**
+ * Sums every attribute version, plus the index's, into one number.
+ *
+ * Versions only ever increase, so the sum does too: any single `needsUpdate` write moves it. This
+ * is how the lane learns that a game streams into vertex data it had admitted — the one thing a
+ * packed copy cannot follow that the instanced lane's shared reference can.
+ */
+function geometryVersionSum(geometry: BufferGeometry): number {
+  let sum = 0;
+  for (const name in geometry.attributes) {
+    if (!Object.hasOwn(geometry.attributes, name)) continue;
+    const attribute = geometry.getAttribute(name);
+    if (attribute !== undefined) sum += attributeVersionOf(attribute);
+  }
+  const index = geometry.getIndex();
+  return index === null ? sum : sum + attributeVersionOf(index);
+}
+
+function addToMaterialGroup(
+  workspace: IProjectionScanWorkspace,
+  mesh: Mesh,
+  scanNumber: number,
+): void {
+  const geometry = mesh.geometry;
+  // Barred for good: this geometry was caught changing under a built batch once already, and a
+  // packed copy would go stale again. The instanced lane still references it live when it has
+  // twins; alone it draws on the exact lane.
+  if (workspace.streamedGeometries.has(geometry)) return;
+  const material = mesh.material as Material;
+  const flags = batchFlagsOf(mesh);
+  const signature = geometrySignatureOf(workspace, geometry);
+  let byFlags = workspace.groupsByMaterial.get(material);
+  if (byFlags === undefined) {
+    byFlags = new Map();
+    workspace.groupsByMaterial.set(material, byFlags);
+  }
+  let bySignature = byFlags.get(flags);
+  if (bySignature === undefined) {
+    bySignature = new Map();
+    byFlags.set(flags, bySignature);
+  }
+  let group = bySignature.get(signature);
+  if (group === undefined) {
+    group = {
+      material,
+      castShadow: mesh.castShadow,
+      receiveShadow: mesh.receiveShadow,
+      layersMask: mesh.layers.mask,
+      members: [],
+      memberCount: 0,
+      activeScan: 0,
+      geometries: new Map(),
+      revision: 0,
+    };
+    bySignature.set(signature, group);
+  }
+  if (group.activeScan !== scanNumber) {
+    group.activeScan = scanNumber;
+    group.memberCount = 0;
+    workspace.activeMaterialGroups[workspace.activeMaterialGroupCount] = group;
+    workspace.activeMaterialGroupCount += 1;
+  }
+  const record = group.geometries.get(geometry);
+  if (record === undefined) {
+    group.geometries.set(geometry, { sum: geometryVersionSum(geometry), scan: scanNumber });
+    group.revision += 1;
+  } else {
+    record.scan = scanNumber;
+  }
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
+}
+
+/**
+ * Compacts one geometry's members out of a material group.
+ *
+ * They are not pushed anywhere: every member here came from a below-floor geometry group and is
+ * still listed in it, so the below-floor sweep hands them to the exact lane exactly once. What
+ * this removes them from is the batch they can no longer honestly join.
+ */
+function evictGeometryMembers(
+  workspace: IProjectionScanWorkspace,
+  group: IProjectionMaterialGroup,
+  geometry: BufferGeometry,
+): void {
+  let writeIndex = 0;
+  for (let readIndex = 0; readIndex < group.memberCount; readIndex += 1) {
+    const member = group.members[readIndex] as Mesh;
+    if (member.geometry === geometry) continue;
+    group.members[writeIndex] = member;
+    writeIndex += 1;
+  }
+  for (let slot = writeIndex; slot < group.memberCount; slot += 1) {
+    group.members[slot] = undefined;
+  }
+  group.memberCount = writeIndex;
+}
+
+/**
+ * Watches the vertex data of everything admitted to a material group.
+ *
+ * Runs after routing, on the same frame the data would be copied: a version-sum move demotes the
+ * geometry before this frame's plan is built, so no frame ever renders from a stale copy — the
+ * meshes fall to the exact lane with their live references instead. Steady frames compare sums
+ * and touch nothing.
+ */
+function watchMaterialGroupGeometries(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.activeMaterialGroupCount; index += 1) {
+    const group = workspace.activeMaterialGroups[index] as IProjectionMaterialGroup;
+    for (const [geometry, record] of group.geometries) {
+      const sum = geometryVersionSum(geometry);
+      if (sum === record.sum) continue;
+      workspace.streamedGeometries.add(geometry);
+      group.geometries.delete(geometry);
+      group.revision += 1;
+      evictGeometryMembers(workspace, group, geometry);
+    }
+  }
+}
+
 interface IProjectionWalkState {
   renderables: number;
   blocked?: { code: ProjectionReasonCode; reason: string };
@@ -448,6 +712,18 @@ function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: nu
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
     addToBatchGroup(workspace, workspace.eligible[index] as Mesh, scanNumber);
   }
+  // Meshes whose own (geometry, material, flags) group is too small to instance-batch are exactly
+  // the population a material-keyed batch exists for — distinct geometries over a shared
+  // surface. A mesh whose geometry group made the floor never reaches here; instancing stays its
+  // lane, and it references its geometry live rather than through a packed copy.
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      addToMaterialGroup(workspace, group.members[member] as Mesh, scanNumber);
+    }
+  }
+  watchMaterialGroupGeometries(workspace);
 }
 
 function predictDraws(workspace: IProjectionScanWorkspace): number {
@@ -461,6 +737,22 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
       predictedDraws += 1;
     }
   }
+  // A material group is one draw however many geometries it folds — that prediction is what
+  // makes a town of unique buildings worth projecting at all. Its members were each already
+  // counted once by their own below-floor geometry groups, so making the group batch *nets* its
+  // members out and adds the one draw back; a group below the floor changes nothing.
+  for (let index = 0; index < workspace.activeMaterialGroupCount; index += 1) {
+    const group = workspace.activeMaterialGroups[index] as IProjectionMaterialGroup;
+    if (group.memberCount < MIN_BATCH_MEMBERS) continue;
+    // Claim the members while counting them: their own below-floor geometry groups would
+    // otherwise sweep them onto the exact lane this same frame.
+    for (let member = 0; member < group.memberCount; member += 1) {
+      workspace.materialClaims.set(group.members[member] as Mesh, workspace.scanNumber);
+    }
+    workspace.materialGroups[workspace.materialGroupCount] = group;
+    workspace.materialGroupCount += 1;
+    predictedDraws += 1 - group.memberCount;
+  }
   return predictedDraws;
 }
 
@@ -469,7 +761,14 @@ function collectBelowFloor(workspace: IProjectionScanWorkspace): void {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
     for (let member = 0; member < group.memberCount; member += 1) {
-      workspace.belowFloor[workspace.belowFloorCount] = group.members[member] as Mesh;
+      const mesh = group.members[member] as Mesh;
+      // Claimed by a batched material group this scan: it is already an instance inside a batch,
+      // not below the floor. Everything else here — including members evicted from a material
+      // group by the stream watch, whose geometry groups are always below the floor — keeps its
+      // own draw. A material group needs no sweep of its own: every one of its members came from
+      // a below-floor geometry group, so this loop already reaches each of them exactly once.
+      if (workspace.materialClaims.get(mesh) === workspace.scanNumber) continue;
+      workspace.belowFloor[workspace.belowFloorCount] = mesh;
       workspace.belowFloorCount += 1;
     }
   }
@@ -544,6 +843,8 @@ export function scanProjection(
       action: "project",
       batchGroups: workspace.batchGroups,
       batchGroupCount: workspace.batchGroupCount,
+      materialGroups: workspace.materialGroups,
+      materialGroupCount: workspace.materialGroupCount,
       belowFloor: workspace.belowFloor,
       belowFloorCount: workspace.belowFloorCount,
       exactLane: workspace.exactLane,
