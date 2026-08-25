@@ -1994,6 +1994,21 @@ export function substituteManagedPort(command: string, port: number): string { �
 const report = await runStandalonePlaytest(options);
 ```
 
+### `touchRotationFromWindowDump`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function touchRotationFromWindowDump(dump: string): number | undefined { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
+```
+
 ### `validateDeviceEndpoint`
 
 `function` — Resolve a native device transport and its mailbox paths.
@@ -2007,6 +2022,36 @@ export function validateDeviceEndpoint(value: string): URL { … }
 
 ```ts
 const paths = deviceMailboxPaths(projectRoot);
+```
+
+### `viewportPresentationCommands`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function viewportPresentationCommands( viewport: { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
+```
+
+### `viewportRestoreCommands`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function viewportRestoreCommands(): string[][] { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
 ```
 
 ### `writeCaptureProvenance`

@@ -2160,6 +2160,22 @@
       "symbol": "substituteManagedPort"
     },
     {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function touchRotationFromWindowDump(dump: string): number | undefined { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "touchRotationFromWindowDump"
+    },
+    {
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",
@@ -2174,6 +2190,38 @@
       "summary": "Resolve a native device transport and its mailbox paths.",
       "supersedes": [],
       "symbol": "validateDeviceEndpoint"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function viewportPresentationCommands( viewport: { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "viewportPresentationCommands"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function viewportRestoreCommands(): string[][] { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "viewportRestoreCommands"
     },
     {
       "constraints": ["missing observations and malformed assertions fail closed"],

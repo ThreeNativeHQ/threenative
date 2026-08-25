@@ -20,6 +20,15 @@ blocked or short criterion is not completion. Its evidence is
 branched from `557ed2ba` or earlier must sync `main` into their worktree before their next
 Gradle build.
 
+**Steering note 2026-08-25 ~00:40 — TESTED AND REFUTED 2026-08-25 ~07:00.** The IME-resize
+hypothesis below is wrong: `TnUiOverlay` logs its own width and height with every pointer-down,
+and they are identical across the first and second click in all eight recorded two-click
+variants, so the WebView never shrank and no keyboard dismissal is in the fix. The real cause was
+that the Android target never presented the scenario's declared viewport — the UI laid out at
+914x411 CSS pixels instead of 1280x720, and the second click landed in the dead gap between the
+name field and `begin`. Full account in
+`docs/verification/prd-219-android-menu-flow-2026-08-25.md`. The original note follows.
+
 **Steering note 2026-08-25 ~00:40, for whoever files PRD-219's device leg:** before writing
 BLOCKED — the observed signature (first tap owns:true and focuses the field, typed text
 delivers, then the *second* click lands just outside `begin` across six environment variants)
@@ -64,7 +73,7 @@ moved into this folder.
 | Lane | Device | Queue | Why tonight |
 | --- | --- | --- | --- |
 | A — honesty debt | none (unit gates) | [PRD-199 — done](../done/PRD-199-parity-scenario-validation-fails-closed.md) → [PRD-201 — done](../done/PRD-201-scaffolder-derives-what-it-ships.md) → [PRD-197 — done](../done/PRD-197-native-host-fails-loudly-at-creation.md) → [PRD-198 — done](../done/PRD-198-raytracing-surface-stays-dark-until-results-exist.md) → [PRD-200 phases 1–2](../batch-2026-08-23-tech-debt/PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) → **hygiene tail** (see below) → **PRD-218 remainder rows 1 and 4** (see below) | Pre-scoped red-green-in-hours work; fail-closed honesty is the house's top rule. Start with 199/201 (zero file overlap with the device-metrics lane); 197 landed with the PRD-205/207 squash; 198 begins only after step 0's WIP has landed (it touches `runtime-native`). 200 phase 3 waits for PRD-202 — out of scope tonight |
-| B — menu flow on Android | `emulator-5554` | [PRD-219](./PRD-219-android-proof-of-the-menu-flow-starter.md) (new) | Today's headline convention proved web-only; the house rule says web-only is unfinished |
+| B — menu flow on Android | `emulator-5554` | [PRD-219 — done 2026-08-25](../done/PRD-219-android-proof-of-the-menu-flow-starter.md) | Today's headline convention proved web-only; the house rule says web-only is unfinished. Delivered on the emulator: the unmodified starter scenario passes under `--target android` with its carry-removal red control, after fixing three harness defects (viewport never presented, touch rotation read from the wrong source, WebView internals counted as the game's console). Physical-Pixel stretch not run. Evidence: `docs/verification/prd-219-android-menu-flow-2026-08-25.md` |
 | C — physical Pixel 8 | `192.168.1.192:5555` | Finish [PRD-217](../PRD-217-webview-ui-layer.md) criterion 3 + Phase 3B, then [PRD-214 Phase 0](../batch-2026-08-23-mobile-stability/PRD-214-render-js-owns-the-mobile-frame.md), then **PRD-218 remainder rows 1–3** (see below, one session), then **device tails** (see below) | 217 died at 39.8 °C / 13 % battery mid-capture — overnight is the thermal reset. Then the 19 FPS ceiling bisect, sequenced last by its own batch because the lanes above were needed first |
 | D — distribution | local Gradle build | [PRD-220 — done 2026-08-25, `4ade82c7`](../done/PRD-220-apk-size-is-attributed.md) | The fps-framework APK measured 379 MB; nobody can name where the bytes are. Attributed: packaging residue + unstripped native debug symbols; clean rebuild 173,572,580 bytes (`docs/verification/apk-size-2026-08-25.md`) |
 | E — stretch, time-boxed | emulator + local build | [PRD-221](../BLOCKED/requires-v8-source-toolchain/PRD-221-android-v8-is-16kb-clean.md) (BLOCKED) | `libv8android.so` is the one library still failing Play's 16 KB rule; Phase 0 memo is mandatory, ending BLOCKED-with-a-name is an acceptable close |

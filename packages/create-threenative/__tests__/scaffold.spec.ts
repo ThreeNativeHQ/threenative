@@ -28,14 +28,18 @@ const ENGINE_MCP = "threenative-engine-mcp";
 const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 
+// Refreshed by PRD-219, in the commit that changed the bytes. Two shipped things moved: the
+// starter's menu proof became cross-target (`noNetworkErrors` is a reasoned opt-out, because the
+// browser is the only target with a CDP network observer), and the capability manifest every
+// template embeds gained the three Android viewport/rotation helpers that proof needed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "abda912141053b7c53b8b96f51b6df8d42558e38d5cb4dc0401c63b3218a9581",
-  defense: "f240a0adfc9ab98fe43439fea6c336365764cc9f19944cdd1249c7eb07625722",
-  minimal: "23f9e48b7b7df47fedac073d3d41b5f56aaa0c12a3076abfd0b4efcd1d397816",
-  platformer: "e8a2a70b7199e86a9fe3cd5c52002e968fe379cf4eb6512d7bf8f8c5ebd3d560",
-  racing: "9c6257b58344e42c8680d2697b15178e0fa31ade7607ee2815aefcee53978942",
-  shooter: "c9a25969e353372ce3198c5e1785151fa4e2d83fb6a20ef3f476549de75f3a18",
-  starter: "76db43bb89d75c4bc789e77da15e701d5db7ed3f6fae70ef61bcbdec9f5d2e53",
+  "action-rpg": "d25f8066673dd91d7b32733630f6579599507bfc2ca19243486dab5b1853a100",
+  defense: "2885d55734caed4bf917bf5147d99a71f918589357515d0fae155ad7dd9088ed",
+  minimal: "b79e45fa20c38aad6a97a83c4782075c110d60c11b701ff65e2cc05c8cf9022f",
+  platformer: "b01e0ded679b2b6db0e62ce1557f7f3b394b5ea4e86787125c5c64b470675984",
+  racing: "4ad740e4438c6157f49e4e010b924c2674490a661c619ea228ccd87ec2cb456f",
+  shooter: "993523fd18f06a2f93ac178a0177a683811f5b7a718f221eac4cf76b67cc6edb",
+  starter: "83543149033fda7d44940313caca1c7b5f50e179c6ee84d4186ee74a6ccbdba9",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

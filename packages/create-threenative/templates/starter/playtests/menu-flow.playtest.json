@@ -37,7 +37,8 @@
   "assert": {
     "diagnostics": {
       "noConsoleErrors": true,
-      "noNetworkErrors": true,
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "This menu proof runs on every target, and only the browser has a CDP network observer; the screen transition and the carried name are asserted through resources, which all four targets observe.",
       "runtimeReady": true
     },
     "resources": [

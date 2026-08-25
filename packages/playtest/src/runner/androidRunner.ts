@@ -48,7 +48,11 @@ export interface IDevicePlaytestDriver {
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
   deviceSerial?(): string | undefined;
   isAlive(): Promise<boolean>;
-  prepare(endpoint: string, mailboxRoot?: string): Promise<void>;
+  prepare(
+    endpoint: string,
+    mailboxRoot?: string,
+    viewport?: { height: number; width: number },
+  ): Promise<void>;
   readFile?(path: string): Promise<string | undefined>;
   removeFile?(path: string): Promise<void>;
   runAdb?(args: readonly string[]): Promise<string>;
@@ -173,7 +177,7 @@ async function runDevicePlaytestInternal(
     // only point at which the device's pre-launch thermal baseline is still readable.
     await metrics?.sampleNow("before").catch(() => undefined);
     metrics?.start();
-    await target.driver.prepare(endpoint, config.mailboxRoot);
+    await target.driver.prepare(endpoint, config.mailboxRoot, scenario.viewport);
     await throwIfAborted(target);
     bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs);
     await throwIfAborted(target);

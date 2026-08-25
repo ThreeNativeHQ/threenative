@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-219 — The starter's menu flow proves itself on Android
 
-**Status:** NOT STARTED — filed 2026-08-24 for the night batch.
+**Status:** DELIVERED 2026-08-25 — criteria 1, 2, 3 and 4 met on `emulator-5554`; the Phase 3
+physical-Pixel stretch did not run (Lane C owned the phone). Evidence:
+`docs/verification/prd-219-android-menu-flow-2026-08-25.md`.
 **Complexity:** +2 multi-package (playtest, create-threenative), +1 platform seam (webview
 pointer transport) = **3 → LOW/MEDIUM**, checkpoint after every phase.
 
@@ -67,7 +69,7 @@ flowchart LR
 
 #### Phase 0: name the input path
 
-- [ ] Read PRD-217's lane + `runner/androidRunner.ts`: can the runner already deliver a tap to
+- [x] Read PRD-217's lane + `runner/androidRunner.ts`: can the runner already deliver a tap to
       the webview (instrumented bridge, `adb shell input tap`, CDP-over-devtools-socket)?
       Write the answer, with the chosen mechanism, into `docs/verification/prd-219-<date>.md`
       before writing code. One paragraph; no implementation yet.
@@ -77,22 +79,22 @@ flowchart LR
 **Files (max 5):** `packages/playtest/src/runner/deviceTransport.ts`, `runner/androidRunner.ts`,
 `__tests__/` red-first; template docs only if the contract changes.
 
-- [ ] Red unit test: a `click` step on `--target android` without a transport fails
+- [x] Red unit test: a `click` step on `--target android` without a transport fails
       `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` (wrong-typed case still throws at load per house rule).
-- [ ] Implement injection through the chosen Phase 0 mechanism; coordinates in viewport pixels,
+- [x] Implement injection through the chosen Phase 0 mechanism; coordinates in viewport pixels,
       same semantics as web.
-- [ ] Green: unit test passes; the misspelled-step-kind guard still throws at load.
+- [x] Green: unit test passes; the misspelled-step-kind guard still throws at load.
 
 #### Phase 2: the starter's menu scenario on the emulator
 
-- [ ] Scaffold the starter fresh, build the debug APK (JDK 17 toolchain per the Android lane),
+- [x] Scaffold the starter fresh, build the debug APK (JDK 17 toolchain per the Android lane),
       install on `emulator-5554`.
-- [ ] Run `menu-flow.playtest.json --target android` unmodified: green, asserting
+- [x] Run `menu-flow.playtest.json --target android` unmodified: green, asserting
       `screen` transition and carried `characterName` through `resources`.
-- [ ] Mutation (red control): remove `carry` from the scaffold's start-game handler → the same
+- [x] Mutation (red control): remove `carry` from the scaffold's start-game handler → the same
       scenario goes red on device; paste both reports.
 
-#### Phase 3: stretch — physical Pixel rung (only if Lane C has released the device)
+#### Phase 3: stretch — physical Pixel rung — NOT RUN (Lane C held the device all night)
 
 - [ ] Same scenario, same assertions, physical Pixel 8, `observations.deviceMetrics`
       comparability verdict recorded. Emulator results never upgrade to device claims; each
@@ -110,6 +112,18 @@ flowchart LR
    protocol (bridge log or instrumentation), not a focus/Enter shortcut.
 4. **House gates stay green:** `pnpm typecheck && pnpm lint && pnpm test`, `pnpm budgets`,
    `pnpm sync:agents --check`.
+
+**What the delivered work actually changed.** The pointer transport landed as specified, and
+proving it exposed three harness defects that the six-variant calibration had been reading as
+noise: the Android target never presented the scenario's declared viewport (so a viewport-pixel
+coordinate pointed at a differently-laid-out UI — the `begin` click landed in the 40-pixel gap
+between the two controls), the touch rotation was read from two sources that do not describe the
+game's window, and `noConsoleErrors` counted the WebView's own C++ diagnostics as the game's
+console. The IME-resize hypothesis in the night README's 00:40 steering note was tested and
+**refuted** — the host's own hit-test trace shows the overlay's dimensions unchanged across both
+clicks in every variant. The shipped scenario also carried a browser-only `noNetworkErrors`
+assertion, which moved to a reasoned opt-out so the same file means the same thing on all four
+targets.
 
 **Named unverified at proposal time:** iOS (no lane — excluded by standing rule); physical
 Pixel execution unless the Phase 3 stretch ran; frame-rate anything (functional assertions
