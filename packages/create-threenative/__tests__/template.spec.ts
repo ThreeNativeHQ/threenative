@@ -650,6 +650,40 @@ describe("template contracts", () => {
     }
   });
 
+  it("should render every platform performance target into every template", async () => {
+    const expectedTargets = [
+      "|1|Starter/browser-desktop|60fps|display-refresh|",
+      "|1|Starter/browser-Android|30fps|58fps|",
+      "|1|Starter/native-desktop|60fps|display-refresh|",
+      "|1|Starter/native-Android|55fps|58fps|",
+      "|1|Starter/native-iOS|unverified|no-number|",
+      "|2|Same-device-fps-parity|.85|.95|",
+      "|2|Inverted-render-p95-parity|.80|.95|",
+      "|3|Light|55fps|58fps|",
+      "|3|Medium|30fps|58fps|",
+      "|3|Heavy|30fps|58fps|",
+      "|4|Sustained-duration|10min|10min|",
+      "|4|Final/opening-fps|.75|.90|",
+      "|4|Last-minute-heavy|25fps|50fps|",
+      "|4|Peak-battery-temperature|≤45C|≤40C|",
+      "|4|Thermal-status|≤2|≤1|",
+    ] as const;
+    const fragment = await readFile(path.join(agentDocsRoot, "performance-default.md"), "utf8");
+    expect(fragment).toContain("Unexecuted platforms stay unverified");
+    expect(fragment).toContain("Withdraw thermally-confounded comparisons");
+    for (const target of expectedTargets) expect(fragment).toContain(target);
+
+    for (const template of await templateNames()) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents, `${template}/unexecuted`).toContain("Unexecuted platforms stay unverified");
+      expect(agents, `${template}/thermal-confound`).toContain(
+        "Withdraw thermally-confounded comparisons",
+      );
+      for (const target of expectedTargets)
+        expect(agents, `${template}/${target}`).toContain(target);
+    }
+  });
+
   // P2-2: the same checker the scripts-side spec exercises on fixtures, run over the real
   // template tree. A template that grows past its measured word budget, drops a mandatory
   // inline section, names a reference page the bundle does not ship, or whose CLAUDE.md
