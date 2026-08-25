@@ -11,7 +11,11 @@ UNVERIFIED/BLOCKED after six red device variants whose causes it could not name.
 named below, and the six variants were a symptom of three separate harness defects, none of them
 in the game.
 
-## The steering note's hypothesis is refuted
+## The steering note: refuted on the emulator, vindicated on hardware
+
+> Read this section with its scope. Everything below is about `emulator-5554`, where the note's
+> mechanism genuinely does not occur. On the physical Pixel 8 it does, and the note's remedy is
+> what the fix ended up being — see **F** under Phase 3.
 
 The night README's 00:40 note proposed Android IME resize: typing opens the keyboard, the WebView
 shrinks, and the pre-computed `begin` coordinate points at the pre-keyboard layout. The remedy it
@@ -29,7 +33,9 @@ green-rotation3  {"x":1200.0,"y":547.48145,"w":2400,"h":1080,"regions":2,"owns":
                  {"x":1200.0,"y":641.9756 ,"w":2400,"h":1080,"regions":2,"owns":false}
 ```
 
-The view never resized. No keyboard dismissal was needed, and none is in the fix.
+The view never resized, because the emulator takes hardware-keyboard input and raises no IME at
+all. On this target no keyboard dismissal was needed. That is a fact about the emulator, not about
+Android: the phone reflows exactly as the note described.
 
 `green-rotation3` also refutes the second natural guess. There the touch arrived at normalized
 (0.5000, 0.59442) against a request of (0.5, 0.59444) — delivered essentially exactly — and the
