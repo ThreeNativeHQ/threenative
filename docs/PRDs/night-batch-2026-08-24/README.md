@@ -42,9 +42,23 @@ nothing executed") with its batch README ("code landed on four lanes"); reconcil
 `studio-hosting/README.md` ("nothing in 103/104/105 has run") with PRD-103's own passing-probe
 record; add a re-scope note to PRD-066 Phases 2–5 flagging that PRD-130's V8 flip predates them.
 
-**Lane C device tails**, only after 214 Phase 0: PRD-130's missing V8 conformance row on the
-Pixel (dismiss the test-app dialog, one clean run — it is executed everywhere else and can be
-archived); PRD-127's physical-device preflight criteria observed red.
+**Lane A blocked-retry audit tail** (the `BLOCKED/` house rule: attempt the blocked step once
+and record what actually happened). For each candidate below: run the blocked step **once**,
+append the dated outcome to the BLOCKED folder, and move nothing unless it genuinely went
+green — a still-red attempt is recorded, not retried all night. In scope (cheap machine work):
+[PRD-112](../BLOCKED/requires-packed-gate/PRD-112-golden-path-from-packed-artifacts.md) (run the
+packed seven-template gate once), [PRD-113](../BLOCKED/requires-sealed-proof/PRD-113-sealed-brief-naming-contract.md)
+(positive behavior-based sealed proof, one attempt), [PRD-088](../BLOCKED/requires-ray-measurement/PRD-088-physics-spatial-queries.md)
+(the authoritative ray measurement is itself the deliverable — do it, then re-file).
+Out of scope, and why: PRD-054 cannot exit clean while PRD-077 keeps a blocked row on desktop
+(and 077 needs the `input` group — owner call); PRD-056/058 are Tier-2 physical campaigns,
+parked by owner decision, not one-night attempts.
+
+**Lane C device tails**, only after 214 Phase 0, each a single capture pair that closes a
+PRD or criterion outright: PRD-130's missing V8 conformance row (dismiss the test-app dialog,
+one clean run — executed everywhere else); PRD-127's physical-device preflight criteria
+observed red; [PRD-075](../PRD-075-loading-scene-separation.md)'s exact physical-Pixel perf
+comparison (Phases 0–2 are green on browser + emulator; only this capture is open).
 
 ## Device contention rules
 
