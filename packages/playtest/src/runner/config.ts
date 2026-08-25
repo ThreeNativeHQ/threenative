@@ -100,6 +100,8 @@ export function formatUsage(): string {
     "Commands:",
     "  doctor                check this machine can run a playtest at all",
     "                        --url <url> also reports the running scene at a glance",
+    "                        --device <serial> also reports whether that Android device is",
+    "                        cool enough, charged enough and discharging to measure on",
     "                        --text prints either as a human-readable report;",
     "                        --browser-arg extends the WebGPU recipe, repeatable",
     "  init                  create a starter playtest configuration",

@@ -107,6 +107,7 @@ pnpm --filter <example> dev                # there is no root `pnpm dev`
 # device — ask the machine and the project first
 node packages/playtest/dist/runner/cli.js doctor --text
 node packages/playtest/dist/runner/cli.js doctor --url <url> --text   # + the scene at a glance
+node packages/playtest/dist/runner/cli.js doctor --device <serial> --text  # + is the phone cool enough
 npx threenative doctor --text              # inside a generated project
 
 # prove one game — usually the sandbox game you are working on, not an in-repo example

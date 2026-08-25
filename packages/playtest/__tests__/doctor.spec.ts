@@ -68,6 +68,20 @@ describe("playtest doctor", () => {
     expect(report.pass).toBe(true);
   });
 
+  /**
+   * `doctor --device` reaches a phone through the SDK path the Android driver discovers, not
+   * through PATH. Reporting "adb is not on PATH, so --target android cannot run here" directly
+   * above "device: <serial> is online" is one report telling an operator two things.
+   */
+  it("reports the discovered SDK adb rather than claiming android cannot run", () => {
+    const report = diagnoseHarness(environment({
+      discoverAdbPath: () => "/home/agent/Android/Sdk/platform-tools/adb",
+      hasCommand: (command) => command !== "adb",
+    }));
+    expect(check(report, "adb").status).toBe("ok");
+    expect(check(report, "adb").detail).toContain("/home/agent/Android/Sdk/platform-tools/adb");
+  });
+
   it("fails a node old enough to break the runner", () => {
     const report = diagnoseHarness(environment({ nodeVersion: "18.19.0" }));
     expect(check(report, "node").status).toBe("fail");

@@ -92,10 +92,21 @@ Scenarios assert on it with `deviceMetrics`: `notThermallyConfounded`, `maxTempe
 not expose (per-rail power off Pixel hardware, `current_now` where the sysfs node is absent)
 reports `{ available: false, reason }`; **nothing here ever reports an unmeasured zero**.
 
+Ask *before* spending a run: `doctor --device <serial>` reports the phone's battery temperature,
+thermal status, charge level and charging state next to the machine checks. It warns — a hot
+phone is a run that will not be comparable, not a broken machine — and only fails on a device
+that is unreachable or a probe that cannot be parsed.
+
+```sh
+node packages/playtest/dist/runner/cli.js doctor --device <serial> --text
+```
+
 Parsers and verdict live in `runner/deviceMetrics.ts` and are unit-tested against captured device
 output in `__tests__/fixtures/device-metrics/`. Add real captures there rather than inventing a
-`dumpsys` format. This lane observes only; the pre-run gate that *refuses* a hot or charging
-device is `packages/runtime-native/scripts/device-preflight.mjs`, and the two stay separate.
+`dumpsys` format. Both the observation lane and `doctor --device` only report; the gate that
+*refuses* a hot or charging device before a benchmark is
+`packages/runtime-native/scripts/device-preflight.mjs`, and they share the same battery floor so
+an operator is never told two different stories.
 
 ## Scenario-controlled spawn & aim
 

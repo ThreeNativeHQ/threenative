@@ -12,7 +12,7 @@ import {
 } from "./config.js";
 import { WEBGPU_BROWSER_ARGS } from "./browser.js";
 import { CaptureLockTimeoutError, formatLockTimeoutLine } from "./captureLock.js";
-import { diagnoseHarness, formatDoctorReport, readHarnessEnvironment } from "./doctor.js";
+import { diagnoseDevice, diagnoseHarness, formatDoctorReport, readDeviceProbe, readHarnessEnvironment } from "./doctor.js";
 import { formatSceneOverview, observeScene, summariseScene } from "./sceneOverview.js";
 import { initStandalonePlaytest } from "./init.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
@@ -115,24 +115,30 @@ export function classifyRunnerError(
 }
 
 /**
- * `doctor` answers "can this machine run a playtest", and `doctor --url` additionally answers
- * "and what is actually in the game running there" — the second question is the one asked while
- * staring at a screenshot that looks wrong.
+ * `doctor` answers "can this machine run a playtest", `doctor --url` additionally answers "and
+ * what is actually in the game running there" — the question asked while staring at a screenshot
+ * that looks wrong — and `doctor --device` answers "is the phone cool enough to measure on",
+ * which `observations.deviceMetrics` can only answer once the run is already spent.
  */
 export interface IDoctorArgs {
   readonly browserArgs: readonly string[];
+  readonly device: string | undefined;
   readonly text: boolean;
   readonly url: string | undefined;
 }
 
 export function parseDoctorArgs(argv: readonly string[]): IDoctorArgs {
   const browserArgs: string[] = [];
+  let device: string | undefined;
   let text = false;
   let url: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--text") text = true;
-    else if (flag === "--url") {
+    else if (flag === "--device") {
+      device = argv[index + 1];
+      index += 1;
+    } else if (flag === "--url") {
       url = argv[index + 1];
       index += 1;
     } else if (flag === "--browser-arg") {
@@ -141,7 +147,7 @@ export function parseDoctorArgs(argv: readonly string[]): IDoctorArgs {
       index += 1;
     }
   }
-  return { browserArgs, text, url };
+  return { browserArgs, device, text, url };
 }
 
 /** Extra arguments extend the WebGPU recipe; replacing it would silently reintroduce SwiftShader. */
@@ -150,8 +156,19 @@ export function doctorBrowserArgs(extra: readonly string[]): string[] {
 }
 
 export async function doctorCommand(argv: readonly string[]): Promise<number> {
-  const { browserArgs, text, url } = parseDoctorArgs(argv);
-  const report = diagnoseHarness(readHarnessEnvironment());
+  const { browserArgs, device, text, url } = parseDoctorArgs(argv);
+  const machine = diagnoseHarness(readHarnessEnvironment());
+  // The device's own condition is reported next to the machine's, as one report: an operator
+  // deciding whether to start a measurement asks both questions at the same moment.
+  const deviceReport = device === undefined
+    ? undefined
+    : await diagnoseDevice(device, readDeviceProbe(device));
+  const report = deviceReport === undefined
+    ? machine
+    : {
+        checks: [...machine.checks, ...deviceReport.checks],
+        pass: machine.pass && deviceReport.pass,
+      };
   if (url === undefined) {
     process.stdout.write(text ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`);
     process.exitCode = report.pass ? 0 : 1;
