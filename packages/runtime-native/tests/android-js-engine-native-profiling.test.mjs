@@ -63,12 +63,15 @@ test("native profiling reports direct and bundled render commands per submit", (
     "engine",
     "calls",
     "commands",
+    "commandNs",
     "setPipeline",
     "setBindGroup",
     "draw",
     "drawIndexed",
     "bundleDrawIndexed",
     "executeBundles",
+    "writeBuffer",
+    "endRenderPass",
     "bundlesExecuted",
     "setVertexBuffer",
     "setIndexBuffer",
@@ -81,8 +84,8 @@ test("native profiling reports direct and bundled render commands per submit", (
   assert.match(bindings, /state->androidJsNativeProfile = \{\};/u);
   assert.equal(
     (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
-    8,
-    "the six direct wrappers plus bundle encoding and execution must be timed",
+    10,
+    "render commands, queue uploads, and render-pass finalization must be timed independently",
   );
   assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
 });

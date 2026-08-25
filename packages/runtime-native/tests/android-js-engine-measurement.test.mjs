@@ -36,6 +36,32 @@ const subject = {
   warmupFrames: 60,
 };
 
+const nativeCommands = {
+  bundleDrawIndexed: 0,
+  draw: 1,
+  drawIndexed: 1,
+  endRenderPass: 0,
+  executeBundles: 0,
+  setBindGroup: 1,
+  setIndexBuffer: 436,
+  setPipeline: 1,
+  setVertexBuffer: 1,
+  writeBuffer: 0,
+};
+
+const nativeCommandNs = {
+  bundleDrawIndexed: 0,
+  draw: 0,
+  drawIndexed: 0,
+  endRenderPass: 0,
+  executeBundles: 0,
+  setBindGroup: 0,
+  setIndexBuffer: 200_000,
+  setPipeline: 0,
+  setVertexBuffer: 0,
+  writeBuffer: 0,
+};
+
 function nativeLibrary(apkEntry, abi, packagedSha256, sha256, sizes) {
   return {
     abi,
@@ -63,16 +89,8 @@ function cleanLog(overrides = {}, submits = 300) {
     bindingNs: 200_000,
     bundlesExecuted: 0,
     calls: 441,
-    commands: {
-      bundleDrawIndexed: 0,
-      draw: 1,
-      drawIndexed: 1,
-      executeBundles: 0,
-      setBindGroup: 1,
-      setIndexBuffer: 436,
-      setPipeline: 1,
-      setVertexBuffer: 1,
-    },
+    commandNs: nativeCommandNs,
+    commands: nativeCommands,
     engine: "QuickJS",
     presentNs: 50_000,
     submitPollNs: 100_000,
@@ -96,6 +114,7 @@ test("measurement parser splits a complete frame and records engine identity", (
   assert.equal(result.native.callsPerSubmit, 441);
   assert.equal(result.native.callsPerFrame, 441);
   assert.equal(result.native.commandsPerFrame.drawIndexed, 1);
+  assert.equal(result.native.commandMsPerFrame.setIndexBuffer, 0.2);
   assert.equal(result.native.bundlesExecutedPerFrame, 0);
   assert.equal(result.split.boundaryMsPerFrame, 0.2);
   // 300 identical submits with no frame tag: run-length dedupe counts one present event, so the
@@ -126,6 +145,10 @@ test("engine identity and subject configuration cannot silently drift", () => {
     /COMMAND_SCHEMA_MISMATCH/u,
   );
   assert.throws(
+    () => analyzeMeasurementLog(cleanLog({ commandNs: { draw: 200_000 } }), subject),
+    /COMMAND_TIME_SCHEMA_MISMATCH/u,
+  );
+  assert.throws(
     () =>
       analyzeMeasurementLog(
         cleanLog({
@@ -133,11 +156,13 @@ test("engine identity and subject configuration cannot silently drift", () => {
             bundleDrawIndexed: 0,
             draw: 1,
             drawIndexed: 1,
+            endRenderPass: 0,
             executeBundles: 0,
             setBindGroup: 1,
             setIndexBuffer: 435,
             setPipeline: 1,
             setVertexBuffer: 1,
+            writeBuffer: 0,
           },
         }),
         subject,
@@ -578,16 +603,8 @@ test("present time counts once per frame when the host tags each submit with its
     bindingNs: 200_000,
     bundlesExecuted: 0,
     calls: 441,
-    commands: {
-      bundleDrawIndexed: 0,
-      draw: 1,
-      drawIndexed: 1,
-      executeBundles: 0,
-      setBindGroup: 1,
-      setIndexBuffer: 436,
-      setPipeline: 1,
-      setVertexBuffer: 1,
-    },
+    commandNs: nativeCommandNs,
+    commands: nativeCommands,
     engine: "V8",
     submitPollNs: 100_000,
   };
@@ -616,16 +633,8 @@ test("legacy logs without a frame tag count a run of identical present values as
     bindingNs: 200_000,
     bundlesExecuted: 0,
     calls: 441,
-    commands: {
-      bundleDrawIndexed: 0,
-      draw: 1,
-      drawIndexed: 1,
-      executeBundles: 0,
-      setBindGroup: 1,
-      setIndexBuffer: 436,
-      setPipeline: 1,
-      setVertexBuffer: 1,
-    },
+    commandNs: nativeCommandNs,
+    commands: nativeCommands,
     engine: "QuickJS",
     submitPollNs: 100_000,
   };

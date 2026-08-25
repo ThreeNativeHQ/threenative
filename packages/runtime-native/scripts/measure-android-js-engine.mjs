@@ -574,13 +574,16 @@ export function analyzeMeasurementLog(log, expected = {}) {
     "bundleDrawIndexed",
     "draw",
     "drawIndexed",
+    "endRenderPass",
     "executeBundles",
     "setBindGroup",
     "setIndexBuffer",
     "setPipeline",
     "setVertexBuffer",
+    "writeBuffer",
   ];
   const commandTotals = Object.fromEntries(commandFields.map((field) => [field, 0]));
+  const commandTimeTotals = Object.fromEntries(commandFields.map((field) => [field, 0]));
   const engines = new Set();
   for (const sample of native) {
     for (const field of fields) totals[field] += finiteNonNegative(sample[field], `native.${field}`);
@@ -599,6 +602,22 @@ export function analyzeMeasurementLog(log, expected = {}) {
     }
     if (commandCalls !== sample.calls) {
       throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_COMMAND_TOTAL_MISMATCH");
+    }
+    if (
+      sample.commandNs === null ||
+      typeof sample.commandNs !== "object" ||
+      JSON.stringify(Object.keys(sample.commandNs).sort()) !== JSON.stringify(commandFields)
+    ) {
+      throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_COMMAND_TIME_SCHEMA_MISMATCH");
+    }
+    let commandTime = 0;
+    for (const field of commandFields) {
+      const value = finiteNonNegative(sample.commandNs[field], `native.commandNs.${field}`);
+      commandTimeTotals[field] += value;
+      commandTime += value;
+    }
+    if (commandTime !== sample.bindingNs) {
+      throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_COMMAND_TIME_TOTAL_MISMATCH");
     }
     if (typeof sample.engine !== "string" || sample.engine.length === 0) {
       throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_ENGINE_IDENTITY_MISSING");
@@ -652,6 +671,9 @@ export function analyzeMeasurementLog(log, expected = {}) {
       bundlesExecutedPerFrame: totals.bundlesExecuted / frame.frames,
       callsPerFrame: totals.calls / frame.frames,
       callsPerSubmit: totals.calls / sampleCount,
+      commandMsPerFrame: Object.fromEntries(
+        commandFields.map((field) => [field, commandTimeTotals[field] / frame.frames / 1_000_000]),
+      ),
       commandsPerFrame: Object.fromEntries(
         commandFields.map((field) => [field, commandTotals[field] / frame.frames]),
       ),

@@ -371,13 +371,17 @@ static void endProfiledBinding(
     uint64_t count = 1
 ) {
     const auto elapsed = std::chrono::steady_clock::now() - start;
-    state->androidJsNativeProfile.counts[static_cast<size_t>(command)] += count;
-    state->androidJsNativeProfile.bindingNs +=
+    const auto elapsedNs =
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
+    const auto index = static_cast<size_t>(command);
+    state->androidJsNativeProfile.counts[index] += count;
+    state->androidJsNativeProfile.commandNs[index] += elapsedNs;
+    state->androidJsNativeProfile.bindingNs += elapsedNs;
 }
 
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
     const auto& counts = state->androidJsNativeProfile.counts;
+    const auto& commandNs = state->androidJsNativeProfile.commandNs;
     uint64_t calls = 0;
     for (size_t i = 0; i < static_cast<size_t>(ProfiledRenderCommand::Count); i++) {
         calls += counts[i];
@@ -398,6 +402,18 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"executeBundles\":" << counts[static_cast<size_t>(ProfiledRenderCommand::ExecuteBundles)]
            << ",\"setVertexBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetVertexBuffer)]
            << ",\"setIndexBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetIndexBuffer)]
+           << ",\"writeBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::WriteBuffer)]
+           << ",\"endRenderPass\":" << counts[static_cast<size_t>(ProfiledRenderCommand::EndRenderPass)]
+           << "},\"commandNs\":{\"setPipeline\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::SetPipeline)]
+           << ",\"setBindGroup\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::SetBindGroup)]
+           << ",\"draw\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::Draw)]
+           << ",\"drawIndexed\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::DrawIndexed)]
+           << ",\"bundleDrawIndexed\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::BundleDrawIndexed)]
+           << ",\"executeBundles\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::ExecuteBundles)]
+           << ",\"setVertexBuffer\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::SetVertexBuffer)]
+           << ",\"setIndexBuffer\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::SetIndexBuffer)]
+           << ",\"writeBuffer\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::WriteBuffer)]
+           << ",\"endRenderPass\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::EndRenderPass)]
            << "}}";
     const std::string marker = output.str();
     std::cout << marker << std::endl;
@@ -3033,6 +3049,9 @@ static js::JSValueHandle tnWebgpuHandler52(
     WGPUCommandEncoder capturedEncoderForEnd,
     WGPURenderPassEncoder capturedRenderPass,
     const std::vector<js::JSValueHandle>& args) {
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             auto passIt = state->encoderRenderPassMap.find(capturedEncoderForEnd);
                                             if (capturedRenderPass && passIt != state->encoderRenderPassMap.end() &&
                                                 passIt->second == capturedRenderPass) {
@@ -3050,6 +3069,9 @@ static js::JSValueHandle tnWebgpuHandler52(
                                                 }
                                                 if (state->verboseLogging) std::cout << "[WebGPU] Render pass ended" << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, profileStart);
+#endif
                                             return state->engine->newUndefined();
 }
 
@@ -4678,6 +4700,9 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                                 state->engine->throwException("writeBuffer requires buffer, offset, and data");
                                 return state->engine->newUndefined();
                             }
+#if TN_ANDROID_JS_PROFILE
+                            const auto profileStart = beginProfiledBinding();
+#endif
                             WGPUBuffer buffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
                             const double offsetValue = state->engine->toNumber(args[1]);
                             if (!std::isfinite(offsetValue) || offsetValue < 0 || std::floor(offsetValue) != offsetValue ||
@@ -4732,6 +4757,9 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                                     wgpuQueueWriteBuffer(state->queue, buffer, offset, alignedData.data(), alignedData.size());
                                 }
                             }
+#if TN_ANDROID_JS_PROFILE
+                            endProfiledBinding(state, ProfiledRenderCommand::WriteBuffer, profileStart);
+#endif
                             return state->engine->newUndefined();
 }
 
