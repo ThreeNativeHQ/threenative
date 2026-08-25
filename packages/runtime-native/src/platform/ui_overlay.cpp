@@ -1,5 +1,7 @@
 #include "mystral/platform/ui_overlay.h"
 
+#include "mystral/cold_start.h"
+
 #include <atomic>
 #include <deque>
 #include <iostream>
@@ -73,7 +75,15 @@ uint64_t droppedUiMessages() { return g_dropped.load(std::memory_order_relaxed);
 bool uiOverlayAttached() { return g_attached.load(std::memory_order_relaxed); }
 
 void setUiOverlayAttached(bool attached) {
-    g_attached.store(attached, std::memory_order_relaxed);
+    const bool was = g_attached.exchange(attached, std::memory_order_relaxed);
+    // Stamped on the cold-start clock, on every platform, because "the overlay never came up" and
+    // "the overlay came up and the game could not talk to it" look identical in a screenshot and
+    // are different bugs. PRD-218 needed to tell a 12-second HUD freeze caused by a late WebView
+    // apart from one caused by a main loop too busy to drain its messages; only this timestamp,
+    // against the frame markers on the same clock, separates them.
+    if (was == attached) return;
+    if (attached) mystral::coldStartMark("ui_overlay_attached");
+    else mystral::coldStartMark("ui_overlay_detached");
 }
 
 #if TN_ENABLE_UI_OVERLAY

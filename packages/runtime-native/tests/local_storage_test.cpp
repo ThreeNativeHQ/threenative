@@ -224,6 +224,71 @@ int main() {
         expect(!LocalStorage::getStorageDirectory().empty(), "platform storage dir resolves");
     }
 
+    // --- Storage root, per platform, from any platform ------------------------
+    //
+    // A physical Pixel 8 logged this on every cold launch of com.threenative.bayview:
+    //
+    //   [Storage] Failed to create directory "/data/.local/share/mystral/storage":
+    //   Permission denied
+    //   [Mystral] localStorage initialized: /data/.local/share/mystral/storage/default.json
+    //
+    // Android sets neither HOME nor XDG_DATA_HOME, so the POSIX arm fell through to
+    // `getpwuid()->pw_dir`, which on Android is "/data" — owned by the system. The store reported
+    // itself initialised at a path it had just failed to create, so every saved setting was lost
+    // between runs and nothing failed loudly. PRD-218.
+    //
+    // The resolution is a pure function precisely so this arm can be proven from a Linux host with
+    // no phone, no display and no GPU.
+    {
+        using Platform = LocalStorage::Platform;
+        LocalStorage::Environment android;
+        android.androidInternalPath = "/data/user/0/com.threenative.bayview/files";
+        expectEq(LocalStorage::resolveStorageDirectory(Platform::Android, android),
+                 "/data/user/0/com.threenative.bayview/files/mystral/storage",
+                 "Android resolves under the app's own internal files directory");
+
+        // The negative control: the arm Android used to take, reproduced on purpose. If this ever
+        // matches what Platform::Android returns, the fix has been reverted.
+        LocalStorage::Environment androidLikePosix;
+        androidLikePosix.home = "/data";
+        const std::string broken =
+            LocalStorage::resolveStorageDirectory(Platform::Posix, androidLikePosix);
+        expectEq(broken, "/data/.local/share/mystral/storage",
+                 "the POSIX arm still reproduces the unwritable path Android used to get");
+        expect(LocalStorage::resolveStorageDirectory(Platform::Android, android) != broken,
+               "Android must not resolve to the system-owned /data path");
+
+        // No app path is a soft landing in the process's own directory, never the system tree.
+        LocalStorage::Environment androidNoPath;
+        expectEq(LocalStorage::resolveStorageDirectory(Platform::Android, androidNoPath),
+                 "./mystral/storage", "Android with no app path falls back to the working dir");
+        LocalStorage::Environment androidEmptyPath;
+        androidEmptyPath.androidInternalPath = "";
+        expectEq(LocalStorage::resolveStorageDirectory(Platform::Android, androidEmptyPath),
+                 "./mystral/storage", "an empty app path is treated as absent, not joined");
+
+        // The other three arms, unchanged, so this refactor cannot have moved them quietly.
+        LocalStorage::Environment posix;
+        posix.home = "/home/player";
+        expectEq(LocalStorage::resolveStorageDirectory(Platform::Posix, posix),
+                 "/home/player/.local/share/mystral/storage", "Linux uses ~/.local/share");
+        posix.xdgDataHome = "/xdg";
+        expectEq(LocalStorage::resolveStorageDirectory(Platform::Posix, posix),
+                 "/xdg/mystral/storage", "XDG_DATA_HOME wins over HOME when set");
+
+        LocalStorage::Environment apple;
+        apple.home = "/Users/player";
+        expectEq(LocalStorage::resolveStorageDirectory(Platform::Apple, apple),
+                 "/Users/player/Library/Application Support/Mystral/storage",
+                 "macOS uses Application Support");
+
+        LocalStorage::Environment windows;
+        windows.appData = "C:\\Users\\player\\AppData\\Roaming";
+        expectEq(LocalStorage::resolveStorageDirectory(Platform::Windows, windows),
+                 "C:\\Users\\player\\AppData\\Roaming\\Mystral\\storage",
+                 "Windows uses %APPDATA%");
+    }
+
     if (failures > 0) {
         std::cerr << failures << " local-storage assertion(s) failed\n";
         return 1;

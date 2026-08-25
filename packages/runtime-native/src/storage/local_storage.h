@@ -9,6 +9,7 @@
  *   macOS:   ~/Library/Application Support/Mystral/storage/
  *   Linux:   ~/.local/share/mystral/storage/
  *   Windows: %APPDATA%\Mystral\storage\
+ *   Android: <app internal files>/mystral/storage/  (app-scoped; the process can write nowhere else)
  */
 
 #pragma once
@@ -78,9 +79,40 @@ public:
      * Get the platform-specific base storage directory.
      *   macOS:   ~/Library/Application Support/Mystral/storage/
      *   Linux:   ~/.local/share/mystral/storage/
+     *   Android: <app internal files>/mystral/storage/
      *   Windows: %APPDATA%\Mystral\storage\
      */
     static std::string getStorageDirectory();
+
+    /**
+     * Which platform's convention a storage root follows.
+     *
+     * Named rather than compiled-in so the resolution can be tested for every platform from any
+     * one of them. The Android arm existed only inside an `#ifdef` until PRD-218, which meant the
+     * bug it now fixes — an app-unwritable `/data/.local/share/mystral/storage`, reported as
+     * initialised — could not be caught by any test that did not run on a phone.
+     */
+    enum class Platform { Android, Windows, Apple, Posix };
+
+    /**
+     * The environment a storage root is derived from. A null field means the platform did not
+     * provide that value.
+     */
+    struct Environment {
+        /** Android: the app's internal files directory. The only writable root an app has. */
+        const char* androidInternalPath = nullptr;
+        /** Windows: `%APPDATA%`. */
+        const char* appData = nullptr;
+        /** POSIX and Apple: `$HOME`, or the passwd entry when the variable is unset. */
+        const char* home = nullptr;
+        /** Linux: `$XDG_DATA_HOME`, preferred over `home` when set. */
+        const char* xdgDataHome = nullptr;
+    };
+
+    /**
+     * Resolve the storage root for one platform from one environment. Pure: no getenv, no syscall.
+     */
+    static std::string resolveStorageDirectory(Platform platform, const Environment& environment);
 
     /**
      * Derive a safe filename from an identifier string (e.g., cwd stem).

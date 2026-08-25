@@ -15,6 +15,10 @@
 #include <pwd.h>
 #endif
 
+#ifdef __ANDROID__
+#include <SDL3/SDL.h>
+#endif
+
 namespace mystral {
 namespace storage {
 
@@ -155,44 +159,78 @@ static std::string toJson(const std::map<std::string, std::string>& data,
 // Platform storage directory
 // ============================================================================
 
-std::string LocalStorage::getStorageDirectory() {
-    std::string base;
+std::string LocalStorage::resolveStorageDirectory(Platform platform,
+                                                  const Environment& environment) {
+    switch (platform) {
+        case Platform::Android: {
+            // Android: the app's own internal files directory, which is the only place the process
+            // can write. Android sets no HOME and no XDG_DATA_HOME, so this used to fall through
+            // to the POSIX arm below, where `getpwuid()->pw_dir` is the literal string "/data" — a
+            // system-owned directory an app cannot create under. Every launch logged
+            // `[Storage] Failed to create directory "/data/.local/share/mystral/storage":
+            // Permission denied` and then reported localStorage as initialised at a path that did
+            // not exist, so a game's saved settings vanished silently between runs. PRD-218.
+            //
+            // Fail soft, not into the system tree: with no app path the process's own working
+            // directory is at least writable, and `init` logs where the file landed.
+            const bool usable =
+                environment.androidInternalPath != nullptr && environment.androidInternalPath[0] != '\0';
+            return (usable ? std::string(environment.androidInternalPath) : std::string(".")) +
+                   "/mystral/storage";
+        }
+        case Platform::Windows: {
+            // Windows: %APPDATA%\Mystral\storage
+            const bool usable = environment.appData != nullptr && environment.appData[0] != '\0';
+            return (usable ? std::string(environment.appData) : std::string(".")) +
+                   "\\Mystral\\storage";
+        }
+        case Platform::Apple: {
+            // macOS: ~/Library/Application Support/Mystral/storage
+            const char* home = environment.home != nullptr ? environment.home : ".";
+            return std::string(home) + "/Library/Application Support/Mystral/storage";
+        }
+        case Platform::Posix:
+        default: {
+            // Linux: $XDG_DATA_HOME/mystral/storage, else ~/.local/share/mystral/storage
+            if (environment.xdgDataHome != nullptr && environment.xdgDataHome[0] != '\0') {
+                return std::string(environment.xdgDataHome) + "/mystral/storage";
+            }
+            const char* home = environment.home != nullptr ? environment.home : ".";
+            return std::string(home) + "/.local/share/mystral/storage";
+        }
+    }
+}
 
-#ifdef _WIN32
-    // Windows: %APPDATA%\Mystral\storage
+std::string LocalStorage::getStorageDirectory() {
+    Environment environment;
+
+#if defined(__ANDROID__)
+    // SDL owns this answer because it already holds the Java activity; asking it costs no JNI here
+    // and keeps one path for both JavaScript engines.
+    environment.androidInternalPath = SDL_GetAndroidInternalStoragePath();
+    return resolveStorageDirectory(Platform::Android, environment);
+#elif defined(_WIN32)
     char* appdata = nullptr;
     size_t len = 0;
-    if (_dupenv_s(&appdata, &len, "APPDATA") == 0 && appdata) {
-        base = std::string(appdata);
-        free(appdata);
-    } else {
-        base = ".";
-    }
-    base += "\\Mystral\\storage";
-#elif defined(__APPLE__)
-    // macOS: ~/Library/Application Support/Mystral/storage
+    const bool haveAppData = _dupenv_s(&appdata, &len, "APPDATA") == 0 && appdata;
+    environment.appData = haveAppData ? appdata : nullptr;
+    const std::string resolved = resolveStorageDirectory(Platform::Windows, environment);
+    if (haveAppData) free(appdata);
+    return resolved;
+#else
     const char* home = getenv("HOME");
     if (!home) {
         struct passwd* pw = getpwuid(getuid());
         home = pw ? pw->pw_dir : ".";
     }
-    base = std::string(home) + "/Library/Application Support/Mystral/storage";
+    environment.home = home;
+#if defined(__APPLE__)
+    return resolveStorageDirectory(Platform::Apple, environment);
 #else
-    // Linux: ~/.local/share/mystral/storage
-    const char* xdgData = getenv("XDG_DATA_HOME");
-    if (xdgData && xdgData[0] != '\0') {
-        base = std::string(xdgData) + "/mystral/storage";
-    } else {
-        const char* home = getenv("HOME");
-        if (!home) {
-            struct passwd* pw = getpwuid(getuid());
-            home = pw ? pw->pw_dir : ".";
-        }
-        base = std::string(home) + "/.local/share/mystral/storage";
-    }
+    environment.xdgDataHome = getenv("XDG_DATA_HOME");
+    return resolveStorageDirectory(Platform::Posix, environment);
 #endif
-
-    return base;
+#endif
 }
 
 std::string LocalStorage::deriveStorageFilename(const std::string& identifier) {

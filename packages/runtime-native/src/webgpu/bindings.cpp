@@ -20,6 +20,7 @@
 
 #include "mystral/js/engine.h"
 #include "mystral/cold_start.h"
+#include "mystral/stall_budget.h"
 #include "mystral/webgpu/checked_handle.h"
 #include <iostream>
 #include <vector>
@@ -287,6 +288,54 @@ static bool g_presentReportedSinceLastPresent = false;
 #endif
 // One present per frame is the invariant the overlay pass depends on; the desktop gate asserts it.
 static uint64_t g_presentCount = 0;
+
+// ---------------------------------------------------------------------------
+// Presentation ceiling (PRD-218)
+// ---------------------------------------------------------------------------
+//
+// A convention that ships on: a game presents at most `g_presentationCapHz` frames a second, and
+// runs uncapped only when it asks to.
+//
+// The measurement that bought this: on a Pixel 8, a build whose whole scene was a static dark
+// screen with three textures held **119.8 presents per second, indefinitely**. `fifo` vsync was
+// the only ceiling in the runtime, so on a 120 Hz panel a loading screen, a pause menu or a game
+// that has finished drawing burns the SoC at the panel's rate for no visible benefit -- the phone
+// warms and the battery drains to present the same pixels twice. Nothing in the frame was
+// expensive; that was exactly the problem.
+//
+// 60 Hz is the default because it is the rate every game in this repository was authored against
+// and half of the common high-refresh panel, so a frame is presented on every second vsync
+// interval rather than at an unrelated period that would judder against it.
+//
+// Honesty when overridden is part of the convention, not a nicety: the effective cap rides along
+// in every `TN_PRESENTS_TICK`, so a probe that reads 120 presents a second can tell "the game
+// opted out" from "the cap is broken" without reading the game's source.
+static uint32_t g_presentationCapHz = 60;
+
+/** The pacing deadline for the next present. Zero until the first paced frame. */
+static std::chrono::steady_clock::time_point g_nextPresentDeadline{};
+
+/**
+ * Holds the loop back to the presentation ceiling, after a frame that actually presented.
+ *
+ * Only after a present, and never during startup: the launch stall this same PRD measures has no
+ * presents in it at all, and pacing an unpresented loop would add sleep to the twelve seconds a
+ * player already waits. A frame that misses its deadline resets the schedule instead of trying to
+ * catch up, because a game running below the cap must not then be asked to present a burst.
+ */
+static void paceToPresentationCap() {
+    if (g_presentationCapHz == 0) return;
+    using clock = std::chrono::steady_clock;
+    const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
+    const auto now = clock::now();
+    if (g_nextPresentDeadline == clock::time_point{} || now > g_nextPresentDeadline + interval) {
+        // First paced frame, or the loop fell far enough behind that the old schedule is stale.
+        g_nextPresentDeadline = now + interval;
+        return;
+    }
+    if (now < g_nextPresentDeadline) std::this_thread::sleep_until(g_nextPresentDeadline);
+    g_nextPresentDeadline += interval;
+}
 
 // GPU texture accounting. Nothing in this runtime has ever reported how much texture memory a
 // game holds, so "the process is using 1.6 GB" has never had an answer inside the engine — it had
@@ -1862,6 +1911,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // queue.submit(commandBuffers)
                     g_engine->setProperty(queue, "submit",
                         g_engine->newFunction("submit", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::QueueSubmit);
                             if (args.empty()) {
                                 return g_engine->newUndefined();
                             }
@@ -1966,6 +2016,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // queue.writeBuffer(buffer, offset, data, dataOffset?, size?)
                     g_engine->setProperty(queue, "writeBuffer",
                         g_engine->newFunction("writeBuffer", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::BufferUpload);
                             if (args.size() < 3) {
                                 g_engine->throwException("writeBuffer requires buffer, offset, and data");
                                 return g_engine->newUndefined();
@@ -2038,6 +2089,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // queue.writeTexture(destination, data, dataLayout, size)
                     g_engine->setProperty(queue, "writeTexture",
                         g_engine->newFunction("writeTexture", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::TextureUpload);
                             if (args.size() < 4) {
                                 g_engine->throwException("writeTexture requires destination, data, dataLayout, and size");
                                 return g_engine->newUndefined();
@@ -2475,6 +2527,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // device.createBuffer(descriptor)
                     g_engine->setProperty(device, "createBuffer",
                         g_engine->newFunction("createBuffer", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::BufferUpload);
                             if (args.empty()) {
                                 g_engine->throwException("createBuffer requires a descriptor");
                                 return g_engine->newUndefined();
@@ -2702,6 +2755,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // device.createShaderModule(descriptor)
                     g_engine->setProperty(device, "createShaderModule",
                         g_engine->newFunction("createShaderModule", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::ShaderCompile);
                             if (args.empty()) {
                                 g_engine->throwException("createShaderModule requires a descriptor");
                                 return g_engine->newUndefined();
@@ -2739,6 +2793,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // device.createRenderPipeline(descriptor)
                     g_engine->setProperty(device, "createRenderPipeline",
                         g_engine->newFunction("createRenderPipeline", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::PipelineCompile);
                             if (args.empty()) {
                                 g_engine->throwException("createRenderPipeline requires a descriptor");
                                 return g_engine->newUndefined();
@@ -3196,6 +3251,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // device.createComputePipeline(descriptor)
                     g_engine->setProperty(device, "createComputePipeline",
                         g_engine->newFunction("createComputePipeline", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::PipelineCompile);
                             if (args.empty()) {
                                 g_engine->throwException("createComputePipeline requires a descriptor");
                                 return g_engine->newUndefined();
@@ -4219,6 +4275,7 @@ bool initBindings(js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void
                     // device.createTexture(descriptor)
                     g_engine->setProperty(device, "createTexture",
                         g_engine->newFunction("createTexture", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::TextureUpload);
                             if (args.empty()) {
                                 g_engine->throwException("createTexture requires a descriptor");
                                 return g_engine->newUndefined();
@@ -5747,6 +5804,33 @@ globalThis.OffscreenCanvas = OffscreenCanvas;
     engine->setGlobalProperty("Mystral", mystralNamespace);
 
     // ========================================================================
+    // Presentation ceiling — the named override for the convention (PRD-218)
+    // ========================================================================
+    //
+    // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
+    // presents above the ceiling. `@threenative/core` wraps this as the game-facing name; the
+    // global is the host half of the contract and is recorded in shim-manifest.json.
+    //
+    // Fail closed on a rate the runtime cannot honour: a game that asks for -1 or 5000 has a bug,
+    // and silently clamping it would make the next frame-rate measurement a fiction.
+    engine->setGlobalProperty("__tnPresentationCap",
+        engine->newFunction("__tnPresentationCap", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            if (args.empty()) return g_engine->newNumber(static_cast<double>(g_presentationCapHz));
+            const double requested = g_engine->toNumber(args[0]);
+            const int32_t hz = static_cast<int32_t>(requested);
+            if (!(requested >= 0.0) || requested > 1000.0 || static_cast<double>(hz) != requested) {
+                g_engine->throwException(
+                    "TN_PRESENTATION_CAP_INVALID: the presentation cap is a whole number of frames "
+                    "per second between 0 (uncapped) and 1000.");
+                return g_engine->newUndefined();
+            }
+            g_presentationCapHz = static_cast<uint32_t>(hz);
+            g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
+            return g_engine->newNumber(static_cast<double>(g_presentationCapHz));
+        })
+    );
+
+    // ========================================================================
     // Native helper for offscreen canvas getContext('2d')
     // Called by the JS closure created in createElement('canvas')
     // ========================================================================
@@ -6483,6 +6567,9 @@ static void presentPendingSurface() {
         if (!firstPresentReported) {
             firstPresentReported = true;
             mystral::coldStartMark("first_frame");
+            // Same clock, same instant: the attribution for everything that happened before this
+            // present, reported against the gap the player just sat through. PRD-218.
+            mystral::stallBudget().report(mystral::coldStartNowMs());
         }
         // Hitches are what the player feels after launch, and they are invisible to a mean.
         mystral::frameHitches().record();
@@ -6526,7 +6613,8 @@ static void reportPresentTick(uint64_t frames) {
     output << "TN_PRESENTS_TICK:{\"frames\":" << frames << ",\"presents\":" << g_presentCount
            << ",\"textureMB\":" << (g_textureBytesLive / 1048576)
            << ",\"textures\":" << g_textureCountLive
-           << ",\"bufferMB\":" << (g_bufferBytesLive / 1048576) << "}";
+           << ",\"bufferMB\":" << (g_bufferBytesLive / 1048576)
+           << ",\"capHz\":" << g_presentationCapHz << "}";
     const std::string marker = output.str();
     std::cout << marker << std::endl;
 #if defined(__ANDROID__)
@@ -6592,7 +6680,10 @@ void endDawnFrame() {
     compositeCanvas2DToWebGPU();
 
     // Every pass this frame has been submitted; put the one image on screen.
+    const uint64_t presentsBefore = g_presentCount;
     presentPendingSurface();
+    // Only a frame that reached the display is paced. See paceToPresentationCap().
+    if (g_presentCount != presentsBefore) paceToPresentationCap();
 
     // One line a second, by the clock and not by the frame count.
     //
