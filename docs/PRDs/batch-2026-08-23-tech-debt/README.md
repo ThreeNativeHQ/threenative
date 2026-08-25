@@ -18,7 +18,7 @@ Tier-4 sweep.
 | --- | --- | --- | --- | --- |
 | [197](../done/PRD-197-native-host-fails-loudly-at-creation.md) **(done)** | TLS verifies peers by default; bind groups/samplers throw at creation; no phantom timer stubs | #1, #7, #15 | 5 → MEDIUM | none |
 | [198](./PRD-198-raytracing-surface-stays-dark-until-results-exist.md) | Raytracing is gated off instead of resolving success on a result nothing can read | #2 | 5 → MEDIUM | none |
-| [199](./PRD-199-parity-scenario-validation-fails-closed.md) | Malformed parity animation/resources and wrong-typed viewports throw at load | #3, #16 | 3 → LOW | none |
+| [199](../done/PRD-199-parity-scenario-validation-fails-closed.md) **(done)** | Malformed parity animation/resources and wrong-typed viewports throw at load | #3, #16 | 3 → LOW | none |
 | [200](./PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) | Triviality guard has one definition; `buildReport` takes an options object; movement-evidence splits | #5, #6, #13 | 6 → MEDIUM | none |
 | [201](./PRD-201-scaffolder-derives-what-it-ships.md) | Template list, package list, substitution loop, textures config and PNG parsing each have one definition | #4, #25, #26, #19, #24 | 5 → MEDIUM | none |
 | [202](./PRD-202-runner-lanes-share-one-implementation.md) | Device and browser lanes run identical helper code; distance math cannot diverge; sampling splits | #8, #14 | 6 → MEDIUM | none |
