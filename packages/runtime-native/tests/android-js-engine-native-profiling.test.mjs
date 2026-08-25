@@ -76,6 +76,8 @@ test("native profiling reports direct and bundled render commands per submit", (
     "writeBufferDuplicateCalls",
     "writeBufferDuplicateBytes",
     "writeBufferDuplicateNs",
+    "writeBufferMergedRanges",
+    "writeBufferMergedBytes",
     "writeBufferSmallCalls",
     "writeBufferSmallNs",
     "writeBufferMediumCalls",

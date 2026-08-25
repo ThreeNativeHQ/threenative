@@ -83,6 +83,11 @@ struct ProfiledBufferWrite {
     uint64_t hash = 0;
 };
 
+struct ProfiledBufferRange {
+    uint64_t start = 0;
+    uint64_t end = 0;
+};
+
 struct AndroidJsNativeProfile {
     uint64_t counts[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t commandNs[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
@@ -100,6 +105,7 @@ struct AndroidJsNativeProfile {
     uint64_t writeBufferDuplicateNs = 0;
     std::unordered_set<WGPUBuffer> writeBufferTargets;
     std::unordered_map<WGPUBuffer, ProfiledBufferWrite> writeBufferLastWrites;
+    std::unordered_map<WGPUBuffer, std::vector<ProfiledBufferRange>> writeBufferMergedRanges;
 };
 #endif
 

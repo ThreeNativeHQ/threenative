@@ -373,6 +373,21 @@ static uint64_t hashProfiledBufferWrite(const uint8_t* data, size_t size) {
     return hash;
 }
 
+static void mergeProfiledBufferWriteRange(BindingsState* state, WGPUBuffer buffer, uint64_t offset, size_t size) {
+    ProfiledBufferRange merged = {offset, offset + size};
+    auto& ranges = state->androidJsNativeProfile.writeBufferMergedRanges[buffer];
+    for (auto range = ranges.begin(); range != ranges.end();) {
+        if (range->end < merged.start || merged.end < range->start) {
+            ++range;
+            continue;
+        }
+        merged.start = std::min(merged.start, range->start);
+        merged.end = std::max(merged.end, range->end);
+        range = ranges.erase(range);
+    }
+    ranges.push_back(merged);
+}
+
 static uint64_t endProfiledBinding(
     BindingsState* state,
     ProfiledRenderCommand command,
@@ -396,6 +411,14 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
     for (size_t i = 0; i < static_cast<size_t>(ProfiledRenderCommand::Count); i++) {
         calls += counts[i];
     }
+    uint64_t writeBufferMergedRanges = 0;
+    uint64_t writeBufferMergedBytes = 0;
+    for (const auto& [_, ranges] : state->androidJsNativeProfile.writeBufferMergedRanges) {
+        writeBufferMergedRanges += ranges.size();
+        for (const auto& range : ranges) {
+            writeBufferMergedBytes += range.end - range.start;
+        }
+    }
     std::ostringstream output;
     output << "TN_ANDROID_JS_NATIVE:{\"engine\":\"" << state->engine->getName()
            << "\",\"calls\":" << calls
@@ -406,6 +429,8 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"writeBufferDuplicateCalls\":" << state->androidJsNativeProfile.writeBufferDuplicateCalls
            << ",\"writeBufferDuplicateBytes\":" << state->androidJsNativeProfile.writeBufferDuplicateBytes
            << ",\"writeBufferDuplicateNs\":" << state->androidJsNativeProfile.writeBufferDuplicateNs
+           << ",\"writeBufferMergedRanges\":" << writeBufferMergedRanges
+           << ",\"writeBufferMergedBytes\":" << writeBufferMergedBytes
            << ",\"writeBufferSmallCalls\":" << state->androidJsNativeProfile.writeBufferSmallCalls
            << ",\"writeBufferSmallNs\":" << state->androidJsNativeProfile.writeBufferSmallNs
            << ",\"writeBufferMediumCalls\":" << state->androidJsNativeProfile.writeBufferMediumCalls
@@ -4784,6 +4809,7 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                             if (buffer && state->queue) {
                                 state->androidJsNativeProfile.writeBufferBytes += writeSize;
                                 state->androidJsNativeProfile.writeBufferTargets.insert(buffer);
+                                mergeProfiledBufferWriteRange(state, buffer, offset, writeSize);
                                 const ProfiledBufferWrite currentWrite = {
                                     offset,
                                     writeSize,
