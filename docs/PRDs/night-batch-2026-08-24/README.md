@@ -11,6 +11,15 @@ short, one not met — so that batch cannot move to `done/` and the work below i
 blocked or short criterion is not completion. Its evidence is
 `docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`.
 
+**Amended 2026-08-24 ~23:25 (device lanes, read before any APK build):** the 22:18 squash
+(`0d6417f9`) left `main` failing every Android APK build —
+`v8_engine.cpp:1454:23: error: no member named 'HasPendingException' in 'v8::Isolate'`
+(desktop V8 13 has it, the Android V8 11 prebuilt does not). Fixed in `00d3020e` with a
+`V8_MAJOR_VERSION` guard; both CMake toolchains verified green; evidence in
+`docs/verification/squash-followup-v8-android-hasPendingException-2026-08-24.md`. Lanes that
+branched from `557ed2ba` or earlier must sync `main` into their worktree before their next
+Gradle build.
+
 This folder is an **execution manifest plus two new PRDs**. Existing PRDs referenced here stay
 in their owning batches — batches move whole to `done/` per `docs/PRDs/AGENTS.md`; nothing is
 moved into this folder.
