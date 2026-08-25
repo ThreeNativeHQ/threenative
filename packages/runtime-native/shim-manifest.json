@@ -36,7 +36,7 @@
     { "name": "requestAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "self", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "sessionStorage", "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js" },
-    { "name": "scheduler", "evidence": "packages/runtime-native/src/runtime.cpp" },
+    { "name": "scheduler", "evidence": "packages/runtime-native/src/runtime-scripts/scheduler-yield.js" },
     { "name": "setInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "setTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "window", "evidence": "packages/runtime-native/src/runtime.cpp" }

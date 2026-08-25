@@ -98,6 +98,55 @@ WGPUBool wgpuDevicePoll(WGPUDevice device, WGPUBool wait, WGPUWrappedSubmissionI
 namespace mystral {
 namespace webgpu {
 
+
+// ---------------------------------------------------------------------------
+// Presentation ceiling (PRD-218)
+// ---------------------------------------------------------------------------
+//
+// A convention that ships on: a game presents at most `g_presentationCapHz` frames a second, and
+// runs uncapped only when it asks to.
+//
+// The measurement that bought this: on a Pixel 8, a build whose whole scene was a static dark
+// screen with three textures held **119.8 presents per second, indefinitely**. `fifo` vsync was
+// the only ceiling in the runtime, so on a 120 Hz panel a loading screen, a pause menu or a game
+// that has finished drawing burns the SoC at the panel's rate for no visible benefit -- the phone
+// warms and the battery drains to present the same pixels twice. Nothing in the frame was
+// expensive; that was exactly the problem.
+//
+// 60 Hz is the default because it is the rate every game in this repository was authored against
+// and half of the common high-refresh panel, so a frame is presented on every second vsync
+// interval rather than at an unrelated period that would judder against it.
+//
+// Honesty when overridden is part of the convention, not a nicety: the effective cap rides along
+// in every `TN_PRESENTS_TICK`, so a probe that reads 120 presents a second can tell "the game
+// opted out" from "the cap is broken" without reading the game's source.
+static uint32_t g_presentationCapHz = 60;
+
+/** The pacing deadline for the next present. Zero until the first paced frame. */
+static std::chrono::steady_clock::time_point g_nextPresentDeadline{};
+
+/**
+ * Holds the loop back to the presentation ceiling, after a frame that actually presented.
+ *
+ * Only after a present, and never during startup: the launch stall this same PRD measures has no
+ * presents in it at all, and pacing an unpresented loop would add sleep to the twelve seconds a
+ * player already waits. A frame that misses its deadline resets the schedule instead of trying to
+ * catch up, because a game running below the cap must not then be asked to present a burst.
+ */
+static void paceToPresentationCap() {
+    if (g_presentationCapHz == 0) return;
+    using clock = std::chrono::steady_clock;
+    const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
+    const auto now = clock::now();
+    if (g_nextPresentDeadline == clock::time_point{} || now > g_nextPresentDeadline + interval) {
+        // First paced frame, or the loop fell far enough behind that the old schedule is stale.
+        g_nextPresentDeadline = now + interval;
+        return;
+    }
+    if (now < g_nextPresentDeadline) std::this_thread::sleep_until(g_nextPresentDeadline);
+    g_nextPresentDeadline += interval;
+}
+
 static js::JSValueHandle evalEmbeddedRuntimeScriptWithResult(
     js::Engine& engine, std::string_view name, const char* filename) {
     const auto script = runtime_scripts::find(name);
@@ -367,54 +416,6 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
 // submits/frame. Cleared by each present so the next frame's first submit reports it.
 #endif
 // One present per frame is the invariant the overlay pass depends on; the desktop gate asserts it.
-
-// ---------------------------------------------------------------------------
-// Presentation ceiling (PRD-218)
-// ---------------------------------------------------------------------------
-//
-// A convention that ships on: a game presents at most `g_presentationCapHz` frames a second, and
-// runs uncapped only when it asks to.
-//
-// The measurement that bought this: on a Pixel 8, a build whose whole scene was a static dark
-// screen with three textures held **119.8 presents per second, indefinitely**. `fifo` vsync was
-// the only ceiling in the runtime, so on a 120 Hz panel a loading screen, a pause menu or a game
-// that has finished drawing burns the SoC at the panel's rate for no visible benefit -- the phone
-// warms and the battery drains to present the same pixels twice. Nothing in the frame was
-// expensive; that was exactly the problem.
-//
-// 60 Hz is the default because it is the rate every game in this repository was authored against
-// and half of the common high-refresh panel, so a frame is presented on every second vsync
-// interval rather than at an unrelated period that would judder against it.
-//
-// Honesty when overridden is part of the convention, not a nicety: the effective cap rides along
-// in every `TN_PRESENTS_TICK`, so a probe that reads 120 presents a second can tell "the game
-// opted out" from "the cap is broken" without reading the game's source.
-static uint32_t g_presentationCapHz = 60;
-
-/** The pacing deadline for the next present. Zero until the first paced frame. */
-static std::chrono::steady_clock::time_point g_nextPresentDeadline{};
-
-/**
- * Holds the loop back to the presentation ceiling, after a frame that actually presented.
- *
- * Only after a present, and never during startup: the launch stall this same PRD measures has no
- * presents in it at all, and pacing an unpresented loop would add sleep to the twelve seconds a
- * player already waits. A frame that misses its deadline resets the schedule instead of trying to
- * catch up, because a game running below the cap must not then be asked to present a burst.
- */
-static void paceToPresentationCap() {
-    if (g_presentationCapHz == 0) return;
-    using clock = std::chrono::steady_clock;
-    const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
-    const auto now = clock::now();
-    if (g_nextPresentDeadline == clock::time_point{} || now > g_nextPresentDeadline + interval) {
-        // First paced frame, or the loop fell far enough behind that the old schedule is stale.
-        g_nextPresentDeadline = now + interval;
-        return;
-    }
-    if (now < g_nextPresentDeadline) std::this_thread::sleep_until(g_nextPresentDeadline);
-    g_nextPresentDeadline += interval;
-}
 
 // GPU texture accounting. Nothing in this runtime has ever reported how much texture memory a
 // game holds, so "the process is using 1.6 GB" has never had an answer inside the engine — it had
@@ -2072,438 +2073,6 @@ static js::JSValueHandle tnWebgpuHandler71(BindingsState* state, BindingDestinat
                             return jsView;
 }
 
-    // Add missing methods to the existing document (from runtime.cpp)
-    // We DON'T create a new document - just augment the existing one
-    // ========================================================================
-
-    // Add querySelector to existing document (if not present)
-    engine->setProperty(existingDocument, "querySelector",
-        engine->newFunction("querySelector", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-            // Check if querying for canvas
-            if (!args.empty()) {
-                std::string selector = g_engine->toString(args[0]);
-                if (selector == "canvas" || selector.find("canvas") != std::string::npos) {
-                    return g_engine->getGlobalProperty("canvas");
-                }
-            }
-            return g_engine->newNull();
-        })
-    );
-
-    // Add createElement to existing document
-    // NOTE: runtime.cpp sets up a createElement with canvas support (toDataURL) for @loaders.gl WebP detection
-    // We ALWAYS override it here to add proper Canvas 2D support for offscreen canvases
-    engine->setProperty(existingDocument, "createElement",
-        engine->newFunction("createElement", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-            auto element = g_engine->newObject();
-
-            // Get tag name if provided
-            std::string tagName = "";
-            if (!args.empty()) {
-                tagName = g_engine->toString(args[0]);
-            }
-
-            // Add basic DOM element properties
-            g_engine->setProperty(element, "style", g_engine->newObject());
-            g_engine->setProperty(element, "className", g_engine->newString(""));
-            g_engine->setProperty(element, "innerHTML", g_engine->newString(""));
-            g_engine->setProperty(element, "textContent", g_engine->newString(""));
-            g_engine->setProperty(element, "tagName", g_engine->newString(tagName.c_str()));
-            g_engine->setProperty(element, "appendChild",
-                g_engine->newFunction("appendChild", [](void* c, const std::vector<js::JSValueHandle>& a) {
-                    return a.empty() ? g_engine->newUndefined() : a[0];
-                })
-            );
-            g_engine->setProperty(element, "removeChild",
-                g_engine->newFunction("removeChild", [](void* c, const std::vector<js::JSValueHandle>& a) {
-                    return a.empty() ? g_engine->newUndefined() : a[0];
-                })
-            );
-            g_engine->setProperty(element, "remove",
-                g_engine->newFunction("remove", [](void* c, const std::vector<js::JSValueHandle>& a) {
-                    // No-op in native runtime - element is not attached to DOM
-                    return g_engine->newUndefined();
-                })
-            );
-            g_engine->setProperty(element, "addEventListener",
-                g_engine->newFunction("addEventListener", [](void* c, const std::vector<js::JSValueHandle>& a) {
-                    // No-op in native runtime
-                    return g_engine->newUndefined();
-                })
-            );
-            g_engine->setProperty(element, "removeEventListener",
-                g_engine->newFunction("removeEventListener", [](void* c, const std::vector<js::JSValueHandle>& a) {
-                    return g_engine->newUndefined();
-                })
-            );
-
-            // Special handling for canvas elements - add Canvas 2D support
-            if (tagName == "canvas" || tagName == "CANVAS") {
-                // Three's renderer creates its surface through document.createElement('canvas'),
-                // while the runtime's SDL input dispatches to the main canvas exposed by
-                // document.getElementById('canvas'). Forward the event surface so a renderer
-                // canvas receives the same pointer and pointer-lock events on native.
-                const auto mainCanvas = g_engine->getGlobalProperty("canvas");
-                g_engine->setProperty(element, "addEventListener",
-                    g_engine->newFunction("addEventListener", [mainCanvas](void*, const std::vector<js::JSValueHandle>& args) {
-                        const auto add = g_engine->getProperty(mainCanvas, "addEventListener");
-                        return g_engine->call(add, mainCanvas, args);
-                    })
-                );
-                g_engine->setProperty(element, "removeEventListener",
-                    g_engine->newFunction("removeEventListener", [mainCanvas](void*, const std::vector<js::JSValueHandle>& args) {
-                        const auto remove = g_engine->getProperty(mainCanvas, "removeEventListener");
-                        return g_engine->call(remove, mainCanvas, args);
-                    })
-                );
-                g_engine->setProperty(element, "dispatchEvent",
-                    g_engine->newFunction("dispatchEvent", [mainCanvas](void*, const std::vector<js::JSValueHandle>& args) {
-                        const auto dispatch = g_engine->getProperty(mainCanvas, "dispatchEvent");
-                        return g_engine->call(dispatch, mainCanvas, args);
-                    })
-                );
-                g_engine->setProperty(element, "requestPointerLock",
-                    g_engine->newFunction("requestPointerLock", [mainCanvas, element](void*, const std::vector<js::JSValueHandle>& args) {
-                        const auto request = g_engine->getProperty(mainCanvas, "requestPointerLock");
-                        const auto result = g_engine->call(request, mainCanvas, args);
-                        const auto document = g_engine->getGlobalProperty("document");
-                        g_engine->setProperty(document, "pointerLockElement", element);
-                        const auto event = g_engine->newObject();
-                        g_engine->setProperty(event, "type", g_engine->newString("pointerlockchange"));
-                        const auto dispatch = g_engine->getProperty(document, "dispatchEvent");
-                        g_engine->call(dispatch, document, {event});
-                        return result;
-                    })
-                );
-
-                // Create OffscreenCanvas struct to store state
-                int canvasId = g_nextOffscreenCanvasId++;
-                auto offscreenCanvas = std::make_unique<OffscreenCanvas>();
-                OffscreenCanvas* canvasPtr = offscreenCanvas.get();
-                g_offscreenCanvases[canvasId] = std::move(offscreenCanvas);
-
-                // Store the canvas ID as private data for getContext lookup
-                g_engine->setPrivateData(element, reinterpret_cast<void*>(static_cast<intptr_t>(canvasId)));
-
-                // Also store as property for debugging
-                g_engine->setProperty(element, "_offscreenCanvasId", g_engine->newNumber(canvasId));
-
-                // Default canvas dimensions (stored in struct)
-                g_engine->setProperty(element, "width", g_engine->newNumber(canvasPtr->width));
-                g_engine->setProperty(element, "height", g_engine->newNumber(canvasPtr->height));
-
-                // Store reference to element globally so getContext can find it
-                std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
-                g_engine->setGlobalProperty(globalName.c_str(), element);
-
-                // Create getContext function
-                // Capture canvasId to ensure each canvas element's getContext uses its own canvas
-                // This fixes the bug where all canvases shared the same context
-                auto getContextFn = g_engine->newFunction("getContext", [canvasId, canvasPtr](void* c, const std::vector<js::JSValueHandle>& contextArgs) {
-                    if (contextArgs.empty()) {
-                        return g_engine->newNull();
-                    }
-
-                    std::string contextType = g_engine->toString(contextArgs[0]);
-
-                    // Use the captured canvasId to find the correct canvas
-                    // This ensures each canvas element's getContext returns its own context
-                    auto it = g_offscreenCanvases.find(canvasId);
-                    if (it == g_offscreenCanvases.end()) {
-                        std::cerr << "[Canvas] Canvas not found: " << canvasId << std::endl;
-                        return g_engine->newNull();
-                    }
-
-                    OffscreenCanvas* canvas = it->second.get();
-
-                    if (contextType == "2d") {
-                        // Return cached context if already created
-                        if (canvas->hasContext2d) {
-                            return canvas->context2d;
-                        }
-
-                        // Get current dimensions from the canvas element (in case they were changed)
-                        std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
-                        auto canvasElement = g_engine->getGlobalProperty(globalName.c_str());
-                        if (!g_engine->isNull(canvasElement) && !g_engine->isUndefined(canvasElement)) {
-                            auto widthProp = g_engine->getProperty(canvasElement, "width");
-                            auto heightProp = g_engine->getProperty(canvasElement, "height");
-                            if (!g_engine->isUndefined(widthProp)) {
-                                canvas->width = static_cast<int>(g_engine->toNumber(widthProp));
-                            }
-                            if (!g_engine->isUndefined(heightProp)) {
-                                canvas->height = static_cast<int>(g_engine->toNumber(heightProp));
-                            }
-                        }
-
-                        // Create Canvas 2D context
-                        if (g_verboseLogging) std::cout << "[Canvas] Creating offscreen 2D context (" << canvas->width << "x" << canvas->height << ")" << std::endl;
-                        canvas->context2d = canvas::createCanvas2DContext(g_engine, canvas->width, canvas->height);
-                        canvas->hasContext2d = true;
-                        g_engine->protect(canvas->context2d);
-                        return canvas->context2d;
-                    }
-
-                    if (contextType == "webgpu") {
-                        // Create GPUCanvasContext for offscreen canvas
-                        // This shares the main surface/device for simplicity
-                        if (g_verboseLogging) std::cout << "[Canvas] Creating offscreen WebGPU context" << std::endl;
-
-                        // Suspend frame tracking - this context persists across frames
-                        g_engine->suspendFrameTracking();
-
-                        auto canvasContext = g_engine->newObject();
-
-                        // Store reference to our surface
-                        g_engine->setPrivateData(canvasContext, g_surface);
-
-                        // context.canvas - reference back to canvas element
-                        std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
-                        auto canvasElement = g_engine->getGlobalProperty(globalName.c_str());
-                        g_engine->setProperty(canvasContext, "canvas", canvasElement);
-
-                        // context.configure({ device, format, alphaMode })
-                        g_engine->setProperty(canvasContext, "configure",
-                            g_engine->newFunction("configure", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                                if (args.empty()) {
-                                    g_engine->throwException("configure requires a descriptor");
-                                    return g_engine->newUndefined();
-                                }
-                                auto descriptor = args[0];
-                                std::string format = g_engine->toString(g_engine->getProperty(descriptor, "format"));
-                                const WGPUTextureFormat configuredFormat = stringToFormat(format);
-                                if (g_requiresSrgbPresentationBridge &&
-                                    configuredFormat != linearSurfaceFormat(g_nativeSurfaceFormat)) {
-                                    g_engine->throwException(
-                                        "GPUCanvasContext.configure format does not match the native presentation bridge"
-                                    );
-                                    return g_engine->newUndefined();
-                                }
-                                g_surfaceFormat = configuredFormat;
-                                g_contextConfigured = true;
-                                if (g_verboseLogging) std::cout << "[Canvas] Offscreen context configured with format: " << format << std::endl;
-                                return g_engine->newUndefined();
-                            })
-                        );
-
-                        // context.unconfigure()
-                        g_engine->setProperty(canvasContext, "unconfigure",
-                            g_engine->newFunction("unconfigure", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                                return g_engine->newUndefined();
-                            })
-                        );
-
-                        // context.getCurrentTexture() -> GPUTexture
-                        g_engine->setProperty(canvasContext, "getCurrentTexture",
-                            g_engine->newFunction("getCurrentTexture", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                                WGPUTexture texture = getCurrentSwapchainTexture();
-                                if (!texture) {
-                                    g_engine->throwException("Failed to get current texture");
-                                    return g_engine->newUndefined();
-                                }
-                                g_currentTexture = texture;
-                                if (g_verboseLogging) std::cout << "[Canvas] Offscreen got texture: " << (void*)texture << std::endl;
-
-                                // Register in texture registry so createView can find it
-                                uint64_t textureId = g_nextTextureId++;
-                                g_textureRegistry[textureId] = {texture, g_surfaceFormat, g_canvasWidth, g_canvasHeight, 1, 1, WGPUTextureDimension_2D};
-
-                                // Suspend frame tracking for texture wrapper (persists until next frame)
-                                g_engine->suspendFrameTracking();
-
-                                // Create JS wrapper for texture
-                                auto jsTexture = g_engine->newObject();
-                                g_engine->setPrivateData(jsTexture, texture);
-
-                                // texture.width / height / depthOrArrayLayers
-                                g_engine->setProperty(jsTexture, "width", g_engine->newNumber(g_canvasWidth));
-                                g_engine->setProperty(jsTexture, "height", g_engine->newNumber(g_canvasHeight));
-                                g_engine->setProperty(jsTexture, "depthOrArrayLayers", g_engine->newNumber(1));
-
-                                // texture.format
-                                g_engine->setProperty(jsTexture, "format", g_engine->newString(formatToString(g_surfaceFormat)));
-                                g_engine->setProperty(jsTexture, "_textureId", g_engine->newNumber((double)textureId));
-
-                                // texture.createView(descriptor?) -> GPUTextureView
-                                // Capture textureId to look up the correct texture (not g_currentTexture which may change)
-                                g_engine->setProperty(jsTexture, "createView",
-                                    g_engine->newFunction("createView", [textureId](void* c, const std::vector<js::JSValueHandle>& a) {
-                                        // Look up texture from registry using captured textureId
-                                        auto it = g_textureRegistry.find(textureId);
-                                        if (it == g_textureRegistry.end()) {
-                                            std::cerr << "[WebGPU] Offscreen createView: Texture " << textureId << " not found in registry" << std::endl;
-                                            g_engine->throwException("Texture not found in registry");
-                                            return g_engine->newUndefined();
-                                        }
-
-                                        WGPUTexture texture = it->second.texture;
-                                        if (!texture) {
-                                            g_engine->throwException("No current texture");
-                                            return g_engine->newUndefined();
-                                        }
-
-                                        WGPUTextureViewDescriptor viewDesc = {};
-                                        viewDesc.format = it->second.format;
-                                        viewDesc.dimension = WGPUTextureViewDimension_2D;
-                                        viewDesc.baseMipLevel = 0;
-                                        viewDesc.mipLevelCount = 1;
-                                        viewDesc.baseArrayLayer = 0;
-                                        viewDesc.arrayLayerCount = 1;
-                                        viewDesc.aspect = WGPUTextureAspect_All;
-
-                                        WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
-                                        if (!requireHandle(g_engine, view, "offscreenTexture.createView"))
-                                            return g_engine->newUndefined();
-                                        g_currentTextureView = view;
-                                        g_currentViewSourceTexture = texture;  // Track which texture the view was created from
-                                        if (g_verboseLogging) std::cout << "[Canvas] Offscreen createView: texture=" << (void*)texture
-                                                  << ", view=" << (void*)view << std::endl;
-
-                                        auto jsView = g_engine->newObject();
-                                        g_engine->setPrivateData(jsView, view);
-                                        g_engine->setProperty(jsView, "_type", g_engine->newString("textureView"));
-
-                                        return jsView;
-                                    })
-                                );
-
-                                // texture.destroy()
-                                g_engine->setProperty(jsTexture, "destroy",
-                                    g_engine->newFunction("destroy", [textureId](void* c, const std::vector<js::JSValueHandle>& a) {
-                                        // Swapchain textures are managed by the surface, but remove from registry
-                                        g_textureRegistry.erase(textureId);
-                                        return g_engine->newUndefined();
-                                    })
-                                );
-
-                                // Resume frame tracking for texture
-                                g_engine->resumeFrameTracking();
-
-                                return jsTexture;
-                            })
-                        );
-
-                        // Resume frame tracking
-                        g_engine->resumeFrameTracking();
-
-                        return canvasContext;
-                    }
-
-                    // Ignore webgl requests silently (PixiJS feature detection)
-                    if (contextType == "webgl" || contextType == "webgl2" || contextType == "experimental-webgl") {
-                        return g_engine->newNull();
-                    }
-
-                    std::cerr << "[Canvas] Unsupported context type: " << contextType << std::endl;
-                    return g_engine->newNull();
-                });
-
-                g_engine->setProperty(element, "getContext", getContextFn);
-                if (g_verboseLogging) std::cout << "[Canvas] Created offscreen canvas " << canvasId << std::endl;
-
-                // toDataURL for compatibility (returns empty data URI)
-                g_engine->setProperty(element, "toDataURL",
-                    g_engine->newFunction("toDataURL", [](void* c, const std::vector<js::JSValueHandle>& a) {
-                        std::string mimeType = "image/png";
-                        if (!a.empty()) {
-                            mimeType = g_engine->toString(a[0]);
-                        }
-                        // Return a minimal data URI (for @loaders.gl WebP detection)
-                        if (mimeType.find("webp") != std::string::npos) {
-                            return g_engine->newString("data:image/webp;base64,");
-                        }
-                        return g_engine->newString("data:image/png;base64,");
-                    })
-                );
-
-                // getBoundingClientRect - return canvas dimensions
-                g_engine->setProperty(element, "getBoundingClientRect",
-                    g_engine->newFunction("getBoundingClientRect", [](void* c, const std::vector<js::JSValueHandle>& a) {
-                        // Get dimensions from the main canvas if available
-                        auto rect = g_engine->newObject();
-                        g_engine->setProperty(rect, "x", g_engine->newNumber(0));
-                        g_engine->setProperty(rect, "y", g_engine->newNumber(0));
-                        g_engine->setProperty(rect, "width", g_engine->newNumber(g_canvasWidth));
-                        g_engine->setProperty(rect, "height", g_engine->newNumber(g_canvasHeight));
-                        g_engine->setProperty(rect, "top", g_engine->newNumber(0));
-                        g_engine->setProperty(rect, "left", g_engine->newNumber(0));
-                        g_engine->setProperty(rect, "right", g_engine->newNumber(g_canvasWidth));
-                        g_engine->setProperty(rect, "bottom", g_engine->newNumber(g_canvasHeight));
-                        return rect;
-                    })
-                );
-            }
-
-            return element;
-        })
-    );
-
-    // Add document.body if not present, or enhance existing body with required methods
-    auto existingBody = engine->getProperty(existingDocument, "body");
-    if (engine->isUndefined(existingBody) || engine->isNull(existingBody)) {
-        existingBody = engine->newObject();
-        engine->setProperty(existingDocument, "body", existingBody);
-    }
-    // Always add/update these methods on body
-    engine->setProperty(existingBody, "style", engine->newObject());
-    engine->setProperty(existingBody, "appendChild",
-        engine->newFunction("appendChild", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-            return args.empty() ? g_engine->newUndefined() : args[0];
-        })
-    );
-    engine->setProperty(existingBody, "removeChild",
-        engine->newFunction("removeChild", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-            return args.empty() ? g_engine->newUndefined() : args[0];
-        })
-    );
-
-    // ========================================================================
-    // Navigator object
-    // ========================================================================
-    auto navigatorHandle = engine->getGlobalProperty("navigator");
-    if (engine->isUndefined(navigatorHandle)) {
-        navigatorHandle = engine->newObject();
-        engine->setGlobalProperty("navigator", navigatorHandle);
-    }
-
-    // Add common navigator properties for browser compatibility
-    // PixiJS and other libraries check these for feature detection
-    engine->setProperty(navigatorHandle, "userAgent",
-        engine->newString("Mozilla/5.0 (Macintosh; MystralNative/0.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"));
-    engine->setProperty(navigatorHandle, "platform", engine->newString("MystralNative"));
-    engine->setProperty(navigatorHandle, "vendor", engine->newString("Mystral Engine"));
-    engine->setProperty(navigatorHandle, "language", engine->newString("en-US"));
-    engine->setProperty(navigatorHandle, "languages", engine->newArray(1));  // ["en-US"]
-    engine->setProperty(navigatorHandle, "onLine", engine->newBoolean(true));
-    engine->setProperty(navigatorHandle, "hardwareConcurrency", engine->newNumber(8));
-    engine->setProperty(navigatorHandle, "maxTouchPoints", engine->newNumber(0));
-
-    // Create navigator.gpu object
-    auto gpuObject = engine->newObject();
-
-    // ========================================================================
-    // navigator.gpu.requestAdapter()
-    // ========================================================================
-    engine->setProperty(gpuObject, "requestAdapter",
-        engine->newFunction("requestAdapter", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-            // In native runtime, we already have an adapter, so just return a mock adapter object
-            auto adapter = g_engine->newObject();
-
-            // adapter.requestDevice()
-            g_engine->setProperty(adapter, "requestDevice",
-                g_engine->newFunction("requestDevice", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                    // Return a device object wrapping our native device
-                    auto device = g_engine->newObject();
-                    g_engine->setPrivateData(device, g_device);
-
-                    // device.queue
-                    auto queue = g_engine->newObject();
-                    g_engine->setPrivateData(queue, g_queue);
-
-                    // queue.submit(commandBuffers)
-                    g_engine->setProperty(queue, "submit",
-                        g_engine->newFunction("submit", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-=======
 static js::JSValueHandle tnWebgpuHandler70(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) {
                                 state->engine->throwException("createPipelineLayout requires a descriptor");
@@ -5149,6 +4718,7 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
 }
 
 static js::JSValueHandle tnWebgpuHandler22(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            mystral::StallScope stall(mystral::StallSegment::QueueSubmit);
                             if (args.empty()) {
                                 return state->engine->newUndefined();
                             }
@@ -5795,6 +5365,27 @@ static js::JSValueHandle tnWebgpuHandler01(BindingsState* state, BindingDestinat
             // No-op in native runtime
             return args.empty() ? state->engine->newUndefined() : args[0];
 }/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
+static js::JSValueHandle tnWebgpuHandler89(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
+    // presents above the ceiling. `@threenative/core` wraps this as the game-facing name; the
+    // global is the host half of the contract and is recorded in shim-manifest.json.
+    //
+    // Fail closed on a rate the runtime cannot honour: a game that asks for -1 or 5000 has a bug,
+    // and silently clamping it would make the next frame-rate measurement a fiction.
+    if (args.empty()) return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
+    const double requested = state->engine->toNumber(args[0]);
+    const int32_t hz = static_cast<int32_t>(requested);
+    if (!(requested >= 0.0) || requested > 1000.0 || static_cast<double>(hz) != requested) {
+        state->engine->throwException(
+            "TN_PRESENTATION_CAP_INVALID: the presentation cap is a whole number of frames "
+            "per second between 0 (uncapped) and 1000.");
+        return state->engine->newUndefined();
+    }
+    g_presentationCapHz = static_cast<uint32_t>(hz);
+    g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
+    return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
+}
+
 static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {
     const auto globalBindingHost = engine->newObject();
     engine->freezeHandle(globalBindingHost);
@@ -5999,6 +5590,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     //
     // Note: PNG/JPEG supported via stb_image. WebP supported via libwebp (when MYSTRAL_HAS_WEBP defined).
 
+    // The presentation ceiling's named override (PRD-218).
+    if (!installBindingTable(state->engine, state, bindingTable({
+        {"WebGPU", "__tnPresentationCap", 0, nullptr,
+        &tnWebgpuHandler89
+    , globalBindingHost}})) ||
+        !copyGlobalBinding(globalBindingHost, "__tnPresentationCap")) return false;
+
     // Native helper that decodes image data synchronously
     if (!installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "__decodeImageData", 0, nullptr,
@@ -6014,33 +5612,6 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     auto mystralNamespace = engine->newObject();
 
     engine->setGlobalProperty("Mystral", mystralNamespace);
-
-    // ========================================================================
-    // Presentation ceiling — the named override for the convention (PRD-218)
-    // ========================================================================
-    //
-    // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
-    // presents above the ceiling. `@threenative/core` wraps this as the game-facing name; the
-    // global is the host half of the contract and is recorded in shim-manifest.json.
-    //
-    // Fail closed on a rate the runtime cannot honour: a game that asks for -1 or 5000 has a bug,
-    // and silently clamping it would make the next frame-rate measurement a fiction.
-    engine->setGlobalProperty("__tnPresentationCap",
-        engine->newFunction("__tnPresentationCap", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-            if (args.empty()) return g_engine->newNumber(static_cast<double>(g_presentationCapHz));
-            const double requested = g_engine->toNumber(args[0]);
-            const int32_t hz = static_cast<int32_t>(requested);
-            if (!(requested >= 0.0) || requested > 1000.0 || static_cast<double>(hz) != requested) {
-                g_engine->throwException(
-                    "TN_PRESENTATION_CAP_INVALID: the presentation cap is a whole number of frames "
-                    "per second between 0 (uncapped) and 1000.");
-                return g_engine->newUndefined();
-            }
-            g_presentationCapHz = static_cast<uint32_t>(hz);
-            g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
-            return g_engine->newNumber(static_cast<double>(g_presentationCapHz));
-        })
-    );
 
     // ========================================================================
     // Native helper for offscreen canvas getContext('2d')

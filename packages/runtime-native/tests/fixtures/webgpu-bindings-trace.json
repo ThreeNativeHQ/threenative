@@ -84,6 +84,7 @@
     "HTMLElement.removeEventListener",
     "WebGPU.__decodeImageData",
     "WebGPU.__nativeGetContext2D",
+    "WebGPU.__tnPresentationCap",
     "WebGPU.createOffscreenCanvas2D"
   ],
   "errors": [

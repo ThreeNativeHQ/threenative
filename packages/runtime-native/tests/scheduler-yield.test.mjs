@@ -12,10 +12,11 @@
 // always failed and every async node build cost **one fully rendered frame** — 50 ms and up during
 // play on a Pixel 8, paid per node, which is what a player feels when a new material first appears.
 //
-// These assertions execute the installer exactly as the runtime ships it: the snippet is read out
-// of `runtime.cpp` rather than retyped, so a test cannot pass against a copy that has drifted from
-// the source. That is the whole point — a hand-copied snippet would keep passing after someone
-// edited the real one.
+// These assertions execute the installer exactly as the runtime ships it: the script is read from
+// `src/runtime-scripts/scheduler-yield.js` rather than retyped, so a test cannot pass against a
+// copy that has drifted from the source. That is the whole point — a hand-copied snippet would
+// keep passing after someone edited the real one. PRD-207 moved every shim out of `runtime.cpp`
+// raw-string literals into that directory, so the bootstrap is asserted separately below.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -26,15 +27,14 @@ import { test } from "vitest";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const runtimeSource = readFileSync(join(root, "src/runtime.cpp"), "utf8");
 
-/** Pulls the installer out of the C++ raw string literal it ships inside. */
+/** Reads the installer as it ships, and fails closed if the bootstrap stopped loading it. */
 function installerSource() {
-  const marker = "const char* installScheduler = R\"JS(";
-  const start = runtimeSource.indexOf(marker);
-  assert.notEqual(start, -1, "runtime.cpp must still declare installScheduler");
-  const from = start + marker.length;
-  const end = runtimeSource.indexOf(')JS"', from);
-  assert.notEqual(end, -1, "the installScheduler raw string must be terminated");
-  return runtimeSource.slice(from, end);
+  assert.match(
+    runtimeSource,
+    /evalRuntimeScriptWithResult\(\s*\*jsEngine_, "scheduler-yield"/u,
+    "runtime.cpp must still load the scheduler-yield runtime script",
+  );
+  return readFileSync(join(root, "src/runtime-scripts/scheduler-yield.js"), "utf8");
 }
 
 /** Builds a fake global scope, installs the shim into it, and returns the scope. */
@@ -123,5 +123,5 @@ test("the shim is recorded in the host-surface manifest", () => {
   const manifest = JSON.parse(readFileSync(join(root, "shim-manifest.json"), "utf8"));
   const entry = manifest.shims.find((shim) => shim.name === "scheduler");
   assert.ok(entry, "shim-manifest.json must record the scheduler global");
-  assert.match(entry.evidence, /runtime\.cpp/u);
+  assert.match(entry.evidence, /runtime-scripts\/scheduler-yield\.js/u);
 });

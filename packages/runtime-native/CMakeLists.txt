@@ -1115,6 +1115,7 @@ set(TN_RUNTIME_SCRIPT_NAMES
     url-worker-polyfill
     create-element-setup
     event-constructors-setup
+    scheduler-yield
     image-support-init
     onload-trigger
     install-async-pipelines

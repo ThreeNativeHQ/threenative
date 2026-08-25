@@ -11,6 +11,7 @@
       ".mcp.json",
       "packages/runtime-native/.runtime/**",
       "packages/runtime-native/build/**",
+      "packages/runtime-native/**/build/**",
       "packages/runtime-native/third_party/**",
       "packages/runtime-native/**/*.json",
       "test-results/**",

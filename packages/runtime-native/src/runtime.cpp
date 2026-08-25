@@ -101,6 +101,17 @@ static bool evalRuntimeScript(js::Engine& engine, std::string_view name, const c
     return engine.eval(source.c_str(), filename);
 }
 
+static js::JSValueHandle evalRuntimeScriptWithResult(
+    js::Engine& engine, std::string_view name, const char* filename) {
+    const runtime_scripts::ScriptView script = runtime_scripts::find(name);
+    if (!script.data) {
+        std::cerr << "[Mystral] Embedded runtime script not found: " << name << std::endl;
+        return {};
+    }
+    const std::string source(script.data, script.size);
+    return engine.evalScriptWithResult(source.c_str(), filename);
+}
+
 static std::string resolveFetchFilePath(std::string path) {
     const bool fileUrl = path.rfind("file://", 0) == 0;
     if (fileUrl) {
@@ -2706,21 +2717,8 @@ private:
         // Installed only if absent, so a host or polyfill that already provides the real
         // scheduler API keeps it.
         {
-            const char* installScheduler = R"JS(
-(function () {
-  const scope = globalThis;
-  const existing = scope.scheduler;
-  if (existing !== undefined && typeof existing.yield === "function") return true;
-  const scheduler = existing === undefined || existing === null ? {} : existing;
-  scheduler.yield = function () {
-    return new Promise(function (resolve) { setTimeout(resolve, 0); });
-  };
-  scope.scheduler = scheduler;
-  return typeof scope.scheduler.yield === "function" &&
-    typeof scope.self === "object" && scope.self.scheduler === scheduler;
-})
-)JS";
-            auto installer = jsEngine_->evalScriptWithResult(installScheduler, "install-scheduler");
+            auto installer = evalRuntimeScriptWithResult(
+                *jsEngine_, "scheduler-yield", "scheduler-yield.js");
             auto installed = jsEngine_->call(installer, jsEngine_->newUndefined(), {});
             // Fail loudly rather than let three quietly go back to a frame per node build.
             if (!jsEngine_->toBoolean(installed)) {
