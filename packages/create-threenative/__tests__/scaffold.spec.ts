@@ -28,14 +28,17 @@ const ENGINE_MCP = "threenative-engine-mcp";
 const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 
+// Refreshed by the stride-sync convention: AnimationPlayer now matches a travelling clip's rate
+// to the ground the body covers, which the capability manifest and every template's AGENTS.md
+// carry into the shipped scaffold.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "abda912141053b7c53b8b96f51b6df8d42558e38d5cb4dc0401c63b3218a9581",
-  defense: "f240a0adfc9ab98fe43439fea6c336365764cc9f19944cdd1249c7eb07625722",
-  minimal: "23f9e48b7b7df47fedac073d3d41b5f56aaa0c12a3076abfd0b4efcd1d397816",
-  platformer: "e8a2a70b7199e86a9fe3cd5c52002e968fe379cf4eb6512d7bf8f8c5ebd3d560",
-  racing: "9c6257b58344e42c8680d2697b15178e0fa31ade7607ee2815aefcee53978942",
-  shooter: "c9a25969e353372ce3198c5e1785151fa4e2d83fb6a20ef3f476549de75f3a18",
-  starter: "76db43bb89d75c4bc789e77da15e701d5db7ed3f6fae70ef61bcbdec9f5d2e53",
+  "action-rpg": "8bf4ba23cfd99cf8ff86e536067beafaa8016d2da96ebded4af4deb02ffad12a",
+  defense: "89633723d309e1fa6a8143bb1aa06ab83f51dc46890ebcdba9db808e3c44eaf6",
+  minimal: "272dae61c30b15bc7d0d9766f1b5558ad9408bcf03efbdd15fa089d666e3b95e",
+  platformer: "a82c5a0896efaa7aeac8177d93680fc8056cbd5c61be1bb0a02352be546ff39a",
+  racing: "b12e1ded12c93e818100300785649ac839dca5a184217b0f2b5fa97eae8846cf",
+  shooter: "0c8d6b515372baccef2159b066eadd8350d3cb2b40a4dbad843e44686efc435c",
+  starter: "70a2c106f8c693e764bb722667bb414ba340a1f5e34e154d6d2c1fc85d2301cf",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

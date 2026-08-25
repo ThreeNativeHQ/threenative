@@ -1,4 +1,4 @@
-import { AnimationClip, NumberKeyframeTrack, Object3D } from "three";
+import { AnimationClip, NumberKeyframeTrack, Object3D, VectorKeyframeTrack } from "three";
 import { describe, expect, it } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 
@@ -198,5 +198,99 @@ describe("AnimationPlayer", () => {
 
     expect(player.finished).toBe(false);
     expect(root.position.x).toBeCloseTo(0.1);
+  });
+});
+
+/**
+ * Stride sync — the convention that a walking model covers the ground its feet cover.
+ *
+ * Measured in `sandbox/fps-framework` on 2026-08-25: a soldier patrolling at 2.31 m/s against a
+ * walk clip that carries the body 1.31 m/s was played at rate 1.77, and on every patrol pause the
+ * clip was switched to idle while the body was still sliding to a stop. Both halves read as wrong
+ * to a player — feet spinning faster than the ground, then feet frozen while the body drifts —
+ * and both are the same missing mechanism, hand-rolled in that game and in every other one.
+ */
+describe("AnimationPlayer stride sync", () => {
+  const walkClip = () =>
+    new AnimationClip("walk", 2, [
+      // Two seconds carrying the rig two metres along +z: one metre per clip second.
+      new VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 0, 0, 2]),
+    ]);
+
+  /**
+   * The shape a real character has: a body the game moves, with the animated rig parented under
+   * it. Measuring the rig itself would read the clip's own root track back as if the body had
+   * travelled, which is why `strideRoot` exists.
+   */
+  const character = (options: { strideSync?: boolean; clips: AnimationClip[] }) => {
+    const body = new Object3D();
+    const rig = new Object3D();
+    body.add(rig);
+    const player = new AnimationPlayer({
+      clips: options.clips,
+      root: rig,
+      strideRoot: body,
+      ...(options.strideSync === undefined ? {} : { strideSync: options.strideSync }),
+    });
+    return { body, player };
+  };
+
+  it("measures a clip's own ground speed from its root track", () => {
+    const { player } = character({ clips: [walkClip()] });
+    player.play("walk");
+    expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 3);
+  });
+
+  it("matches playback rate to the ground the body actually covers", () => {
+    const { body, player } = character({ clips: [walkClip()] });
+    player.play("walk");
+    player.update(1 / 60);
+    // Two metres per second over a clip that carries one: the feet have to cycle twice as fast.
+    body.position.z += 2 * (1 / 60);
+    player.update(1 / 60);
+    expect(player.stride.groundSpeed).toBeCloseTo(2, 1);
+    expect(player.stride.rate).toBeCloseTo(2, 1);
+    expect(player.mixer.clipAction(player.clip("walk")).getEffectiveTimeScale()).toBeCloseTo(2, 1);
+  });
+
+  it("leaves a clip that carries no ground alone", () => {
+    const idle = new AnimationClip("idle", 1, [
+      new VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 0, 0, 0]),
+    ]);
+    const { body, player } = character({ clips: [idle] });
+    player.play("idle");
+    player.update(1 / 60);
+    body.position.z += 2 * (1 / 60);
+    player.update(1 / 60);
+    // An idle is not locomotion, so nothing about it is warped by how the body is moving.
+    expect(player.stride.synced).toBe(false);
+    expect(player.mixer.clipAction(idle).getEffectiveTimeScale()).toBe(1);
+  });
+
+  /**
+   * "Turning a convention off must not turn its measurement off, and honest reporting when
+   * overridden" — the house rule this class has to satisfy to ship the convention on by default.
+   */
+  it("keeps measuring, and says so, when a game turns it off", () => {
+    const { body, player } = character({ clips: [walkClip()], strideSync: false });
+    player.play("walk");
+    player.update(1 / 60);
+    body.position.z += 2 * (1 / 60);
+    player.update(1 / 60);
+    expect(player.stride.groundSpeed).toBeCloseTo(2, 1);
+    expect(player.stride.rate).toBeCloseTo(2, 1);
+    expect(player.stride.synced).toBe(false);
+    expect(player.stride.overridden).toBe(true);
+    // The rate is measured and reported, and deliberately not applied.
+    expect(player.mixer.clipAction(player.clip("walk")).getEffectiveTimeScale()).toBe(1);
+  });
+
+  it("holds the clip at its slowest honest rate rather than freezing a stopped body", () => {
+    const { player } = character({ clips: [walkClip()] });
+    player.play("walk");
+    player.update(1 / 60);
+    player.update(1 / 60); // the body did not move at all
+    expect(player.stride.rate).toBeGreaterThan(0);
+    expect(player.stride.rate).toBeLessThan(1);
   });
 });

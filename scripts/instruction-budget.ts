@@ -68,20 +68,29 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // instructions never name does not exist. Four templates sat exactly at their cap and carry the
   // increment here; `action-rpg`, `racing` and `starter` absorbed it inside existing headroom,
   // starter after trimming a `data-tn-interactive` sentence the new page states in full.
-  defaultMaxWords: 2727,
+  // And a uniform +26 on 2026-08-25: `AnimationPlayer` gained stride sync — a travelling clip's
+  // playback rate is matched to the ground the body covers, on by default. A convention missing
+  // from the templates' AGENTS.md does not exist, and this one has to name its override or a game
+  // cannot turn it off, so the line charges the mechanism, the `strideRoot` argument and the
+  // `strideSync` override and nothing else. Measured: `defense`, the template sitting exactly at
+  // the cap, renders 2753 against 2727.
+  defaultMaxWords: 2753,
+  // The same measured +26 rides every override below — +27 on `platformer` and `shooter`, whose
+  // own wrapping splits one more word — because the stride-sync line is in the shared fragment, so all seven
+  // templates carry it and none of them absorbed it in headroom.
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
-    platformer: 3103,
+    platformer: 3130,
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
-    shooter: 2791,
+    shooter: 2818,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
-    minimal: 3480,
+    minimal: 3506,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
     // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
-    starter: 3950,
+    starter: 3976,
   },
 };
 

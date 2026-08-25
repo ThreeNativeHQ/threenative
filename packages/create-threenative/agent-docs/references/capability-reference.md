@@ -12,16 +12,18 @@ MCP server is available.
 
 ### `AnimationPlayer`
 
-`class` — Play a skinned or sprite animation from game code.
+`class` — Play a skinned or sprite animation from game code. A travelling clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it.
 
 ```ts
 export class AnimationPlayer { … }
 ```
 
-- **Use when:** play an animation on a character · switch a character between idle and attack clips
+- **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving
+- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it
+- **Overrides:** strideSync controls whether the matched rate is applied while stride is still measured
 
 ```ts
-const player = new AnimationPlayer(model);
+const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
 ```
 
 ### `attachToBone`

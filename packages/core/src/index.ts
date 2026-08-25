@@ -10,11 +10,25 @@ export const version = "0.3.0";
 
 /**
  * Play a skinned or sprite animation from game code.
+ *
+ * A travelling clip's playback rate is matched to the ground the body actually covers, so feet
+ * do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and
+ * `player.stride` reports the measurement either way. Name the body a game moves as
+ * `strideRoot` when the rig is a child of it.
  * @situation play an animation on a character
  * @situation switch a character between idle and attack clips
- * @example const player = new AnimationPlayer(model);
+ * @situation stop a walking character's feet from sliding or spinning
+ * @situation match a walk or run cycle to how fast a character is moving
+ * @constraint name the body a game moves as strideRoot when the animated rig is a child of it
+ * @override strideSync controls whether the matched rate is applied while stride is still measured
+ * @example const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
  */
 export { AnimationPlayer } from "./animation.js";
+export type {
+  IAnimationPlayerOptions,
+  IAnimationPlayOptions,
+  IStrideReport,
+} from "./animation.js";
 /**
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
