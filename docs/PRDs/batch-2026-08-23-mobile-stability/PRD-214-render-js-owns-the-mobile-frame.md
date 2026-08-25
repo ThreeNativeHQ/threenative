@@ -136,6 +136,37 @@ asserts fps floor on device → a regression names its subsystem instead of "it'
 | Resolution / fill rate | **refuted** | quartering the pixels does not reduce render CPU |
 | Fixed per-call setup a cache could absorb | **refuted** | same double-render result |
 | Engine plumbing (loop, physics dispatch, present wait) | **refuted, re-confirmed** | `hostGap` p50 0.94–5.00 ms and `residual` p50 ≤ 0.03 ms in every rung |
+| Material-keyed `BatchedMesh` lane (differing geometries, one material) | **new, filed by PRD-218 2026-08-24** | bayview submits 835 of 835 candidates as individual draws; the decline is arithmetic, not a bad threshold — see below |
+
+**Filed by PRD-218, 2026-08-24 — why bayview's 835 candidates decline, and the lever it names.**
+
+`TN_RENDER_PROJECTION` on a physical Pixel 8 reports
+`{"projecting":false,"reasonCode":"notWorthwhile","reason":"projecting would draw 835 of 835
+candidates, which is not worth its own cost","sourceRenderables":835,"batches":0}`.
+
+Read against `packages/core/src/projection-plan.ts`, **declining is correct for the mechanism the
+projection has**, and the threshold is not the problem. `addToBatchGroup` keys a group on
+*(geometry identity, material identity, batch flags)* and `predictDraws` collapses a group to one
+draw only at `MIN_BATCH_MEMBERS` (4) or more. That key is `InstancedMesh`-shaped: it requires the
+same **geometry** as well as the same material. Bayview's town is 835 distinct building geometries
+sharing a handful of materials, so every group holds exactly one member, `predictedDraws` equals
+`renderables`, and the `WORTHWHILE_DRAW_RATIO` (0.75) test declines an optimization that would
+genuinely save nothing.
+
+So the lever is neither the ratio nor the device class. It is a **second grouping keyed on material
+identity across differing geometries**, emitting three's `BatchedMesh` — exactly the case
+`InstancedMesh` cannot express, and the shape the fox-native handoff measured at 21.8 → 59.7 fps.
+
+Why it ranks high here: PRD-218 measured the cost on both rails, not just frame time. Those 835
+per-frame draws hold `SDLThread` at 93.6–110 % and lift the GPU rail `S2S_VDD_G3D` from **2.2 mW
+idle to 423.7 mW**, against 1.0 GB of resident graphics memory. Whole-device draw goes from
+−217 mA idle to −611 mA (peaks −1327 mA), and the phone heat-soaks 35.4 → 43.2 °C into thermal
+status 2 — at which point every other measurement on the device becomes unreliable. This lever is
+therefore also the thermal-headroom lever for the whole lane. Full numbers:
+`docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`.
+
+It sits beside the existing first-ranked lever rather than replacing it: per-material-instance work
+and per-draw submission cost are different halves of the same 835 objects.
 
 #### Phase 1–2: the winning levers (shaped after Phase 0)
 

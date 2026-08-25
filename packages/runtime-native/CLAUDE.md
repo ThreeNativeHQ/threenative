@@ -138,6 +138,15 @@ Report what ran, per platform, and never write mobile-ready while a row below is
 
 ## Device lanes, before you record one as unavailable
 
+**Confirm which package you are about to launch.** A game's applicationId comes from its
+`threenative.config.ts` (`app.id`), not from its directory name, and a device that has been used for
+this work usually carries several ThreeNative installs — conformance harnesses, first-proof builds
+and real games, each under its own package. Launching the wrong one does not fail: it renders a
+plausible scene at a plausible frame rate and answers a question you did not ask. Read `app.id`, or
+`aapt dump badging` the APK you just built, before `am start`; and after installing, verify the APK
+actually carries your change (`strings` the packaged `.so` for a native marker, grep the staged
+bundle for a JS one) rather than trusting that the build recompiled.
+
 `adb` and the Android SDK are frequently installed but off `PATH`; export `ANDROID_HOME` and call
 the SDK's `platform-tools/adb` directly before concluding a device lane cannot run here. Wi-Fi ADB
 (`adb tcpip 5555`) is how a device stays **discharging** while you drive it, which the benchmark

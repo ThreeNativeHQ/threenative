@@ -4,7 +4,30 @@ prd_contract: v1
 
 # PRD-218 — fps-framework native: the loading screen hides a 12–14 s synchronous stall, the frame is one saturated thread, and cheap frames present uncapped
 
-**Status:** NOT STARTED — filed 2026-08-24 from a live probe on the physical Pixel 8.
+**Status:** PARTIAL — worked 2026-08-24 on the physical Pixel 8. Evidence:
+`docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`.
+
+| criterion | state |
+| --- | --- |
+| 1. Stall named | **short** — the stall is named and reproducible (`pipelineCompile` 8,038 ms across 105 calls, 67.5 % of an 11.7 s gap) but attribution is **73.5 %**, under the required 80 %. The 3.3 s residual is JS inside the first frame and is reported as residual, not absorbed. |
+| 2. Load time ≤ 8 s, live overlay | **not met** — launch unchanged at ~14.3 s. Root cause chain found (see below); the ordering fix is outstanding. |
+| 3. No uncapped idle presentation | **met at the mechanism** — 119.8 presents/s red, 60 Hz convention with `__tnPresentationCap` override and `capHz` in every tick. The forced-cheap-frame re-reading after the cap landed was not re-taken. |
+| 4. Batching decided by measurement | **met** — declining is arithmetically correct for an `InstancedMesh`-shaped key against 835 unique geometries; the material-keyed `BatchedMesh` lever is filed into PRD-214's lever list. |
+| 5. Guard-rails | **partial** — storage root fixed with a bindings-level red-green needing no device; applicationId documented in both AGENTS chains. The 32 `map: undefined` material warnings are still unattributed. |
+
+**The finding that matters most, and that invalidates advice this framework already ships:**
+`renderer.compileAsync()` does not work on the native host. `packages/core/src/renderer.ts`
+documents it as the fix for exactly this stall; measured, it warms nothing and spends its whole
+budget. Three layers: `three`'s `yieldToMain()` fell back to a whole rendered frame because the
+host shimmed `self` and never shimmed `scheduler` (**fixed**, `scheduler.yield` now installed and
+recorded in `shim-manifest.json`); and beneath that, `#boot` starts a held loop that still renders
+the world, so the first world render compiles everything in 8 s and starves the warm-up it runs
+beside. **Remaining Phase 1 work is that ordering fix**, not more scheduling.
+
+`warmUp` therefore ships **off by default** with the measurement recorded on the option. An earlier
+version of it held the launch open forever (loop held, `substeps mean 0`, no error anywhere) and
+briefly reached the user as an enemy stuck in bind pose; it is now bounded per compile and overall,
+never rethrows, and always reports.
 Evidence: `docs/verification/fps-framework-mobile-perf-2026-08-24.md` (three cold launches of
 `com.threenative.bayview`, logcat markers, `top -H` thread sampling, screencaps).
 
