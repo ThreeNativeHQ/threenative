@@ -73,11 +73,9 @@ test("native profiling reports direct and bundled render commands per submit", (
     "writeBuffer",
     "writeBufferBytes",
     "writeBufferDistinctTargets",
-    "writeBufferDuplicateCalls",
-    "writeBufferDuplicateBytes",
-    "writeBufferDuplicateNs",
-    "writeBufferMergedRanges",
-    "writeBufferMergedBytes",
+    "writeBufferUsage",
+    "writeBufferFullCalls",
+    "writeBufferPartialCalls",
     "writeBufferSmallCalls",
     "writeBufferSmallNs",
     "writeBufferMediumCalls",
@@ -95,6 +93,7 @@ test("native profiling reports direct and bundled render commands per submit", (
     assert.ok(marker.includes(`\\\"${field}\\\"`), `profile marker must contain ${field}`);
   }
   assert.match(bindings, /state->androidJsNativeProfile = \{\};/u);
+  assert.match(bindings, /androidJsProfileBufferRegistry/u);
   assert.equal(
     (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
     10,

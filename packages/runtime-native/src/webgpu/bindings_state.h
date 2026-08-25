@@ -77,15 +77,13 @@ enum class ProfiledRenderCommand : size_t {
     Count
 };
 
-struct ProfiledBufferWrite {
-    uint64_t offset = 0;
-    size_t size = 0;
-    uint64_t hash = 0;
-};
-
-struct ProfiledBufferRange {
-    uint64_t start = 0;
-    uint64_t end = 0;
+enum class ProfiledBufferUsage : size_t {
+    Uniform,
+    Storage,
+    Vertex,
+    Index,
+    Other,
+    Count
 };
 
 struct AndroidJsNativeProfile {
@@ -100,12 +98,12 @@ struct AndroidJsNativeProfile {
     uint64_t writeBufferMediumNs = 0;
     uint64_t writeBufferLargeCalls = 0;
     uint64_t writeBufferLargeNs = 0;
-    uint64_t writeBufferDuplicateCalls = 0;
-    uint64_t writeBufferDuplicateBytes = 0;
-    uint64_t writeBufferDuplicateNs = 0;
+    uint64_t writeBufferUsageCalls[static_cast<size_t>(ProfiledBufferUsage::Count)] = {};
+    uint64_t writeBufferUsageBytes[static_cast<size_t>(ProfiledBufferUsage::Count)] = {};
+    uint64_t writeBufferUsageNs[static_cast<size_t>(ProfiledBufferUsage::Count)] = {};
+    uint64_t writeBufferFullCalls = 0;
+    uint64_t writeBufferPartialCalls = 0;
     std::unordered_set<WGPUBuffer> writeBufferTargets;
-    std::unordered_map<WGPUBuffer, ProfiledBufferWrite> writeBufferLastWrites;
-    std::unordered_map<WGPUBuffer, std::vector<ProfiledBufferRange>> writeBufferMergedRanges;
 };
 #endif
 
@@ -172,6 +170,9 @@ struct BindingsState {
     std::unordered_map<uint64_t, TextureInfo> textureRegistry;
     uint64_t nextTextureId = 1;
     std::unordered_map<uint64_t, BufferInfo> bufferRegistry;
+#if TN_ANDROID_JS_PROFILE
+    std::unordered_map<WGPUBuffer, BufferInfo> androidJsProfileBufferRegistry;
+#endif
     uint64_t nextBufferId = 1;
     std::unordered_map<uint64_t, WGPUComputePipeline> computePipelineRegistry;
     uint64_t nextComputePipelineId = 1;
