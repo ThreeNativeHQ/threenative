@@ -32,9 +32,16 @@ Rows marked **pre-fix** were taken before the material-keyed batch lane landed (
 | --- | --- | --- | --- | --- | --- |
 | native Android, 2400×1080 | bayview | **17.3** | 51.8 ms | 41.7 ms | pre-fix, cool: 31 °C, thermal 0 |
 | native Android, 1200×540 | bayview | **23.1** | 41.5 ms | 35.2 ms | pre-fix; ¼ the pixels buys 15% of render |
+| **native Android, 2400×1080** | bayview | **20.1** | 34.9 / 33.7 ms | 28.5 ms | post-fix (`385fd50e`), cool ~29 °C start, thermal 0 — full record in the bug file below |
+| **native Android, 1200×540** | bayview | **30.1 → 34.5** | — / 32.4 → 25.0 ms | 31.4 → 21.6 ms | post-fix matched-warm A/B pair (~36 °C both arms): pre-fix declined at 30.1 fps, post-fix folded 13 batches at 34.5 |
 | native Android, 2400×1080 | starter | **59.99** | 8.47 ms | 7.88 ms | light scene, same host, same phone |
 | browser desktop (Vulkan) | bayview | ~69 | 14.5 ms p95 | — | `frame-smoothness.playtest.json`, 1302 frames, 0 spikes |
 | browser Android (Chrome 151) | bayview | **unmeasured** | — | — | **the missing number this PRD exists to get** |
+
+The post-fix device rows come from the bug file's device record
+(`docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md`, commit `ba78ce42`),
+which this PRD named as the first measurement to collect. The headline floor is still missed at
+native resolution: 20.1 against a 30 fps Floor — but the margin math below says it is close.
 
 Three things follow, and they shape every target below.
 
@@ -73,8 +80,13 @@ flowchart TD
 
 ## The targets
 
-Three tiers. A lane is **red** below Floor, **amber** between Floor and Target, **green** at or
+Four tiers. A lane is **red** below Floor, **amber** between Floor and Target, **green** at or
 above Target. The loop's job is to take every lane to green and keep it there.
+
+Tiers 1–3 are measured on a cool phone and answer *"is this faster"*. Tier 4 is measured on a
+phone nobody is cooling and answers *"is this shippable"*. A green in the first three and a red in
+the fourth is a game that demos well and cannot be played, so none of them substitutes for
+another.
 
 ### Tier 1 — overhead, on the starter template
 
@@ -123,9 +135,43 @@ The absolute floor a real game must clear on the reference phone before it is ca
 **bayview is the hard case on purpose.** It is 17.3 fps pre-fix. Getting it to 30 is this PRD's
 headline, and to 58 is the stretch.
 
+### Tier 4 — sustained, on a phone nobody is cooling
+
+Every tier above is measured on a cool device, because a comparison against a varying thermal
+state measures the weather rather than the code. That is right for *"is my change faster"* and it
+is **not enough to ship on**, because a player has no fan. A game that holds 58 fps for ninety
+seconds and then throttles to 25 is broken, and Tiers 1–3 would call it green forever.
+
+So one lane deliberately does not cool the phone. It starts cool, runs long, and reports what the
+player actually gets.
+
+| measure | Floor | **Target** |
+| --- | --- | --- |
+| run length | 10 min continuous, no cooling, no charger | **10 min** |
+| fps in the **last** minute ÷ fps in the first | 0.75 | **0.90** |
+| absolute fps in the last minute, heavy scene | 25 fps | **50 fps** |
+| peak battery temperature | ≤ 45 °C | **≤ 40 °C** |
+| peak thermal status | ≤ 2 (MODERATE) | **≤ 1 (LIGHT)** |
+| whole-device current, steady state | — | **report it, do not gate it yet** |
+
+**This is the tier bayview currently fails and the others would hide.** Measured 2026-08-24
+(`docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`): the phone heat-soaked
+35.4 → **43.2 °C into thermal status 2**, the GPU rail `S2S_VDD_G3D` went 2.2 mW idle to
+**423.7 mW**, and whole-device draw went −217 mA to −611 mA with peaks at −1327 mA. Past status 2
+every other measurement on the device becomes unreliable, which is the second reason this tier
+matters: it is the lane that tells you the rest of the lanes are still trustworthy.
+
+A Tier 4 run is the one run that is **never** discarded for being thermally confounded — being
+thermally confounded is the thing it measures. It is reported in full, always.
+
+Sustained runs are expensive: they cost ten minutes of phone time plus the cooling before them,
+and they drain the battery toward the preflight floor. Run one per lever that lands, not one per
+change.
+
 ### Thermal and power, on every device run
 
-Frame rate measured on a hot phone is not a measurement. These bound the run, not the game:
+These bound Tiers 1–3, where frame rate measured on a hot phone is not a measurement. **They do
+not apply to Tier 4**, whose whole subject is what happens as the phone heats:
 
 | measure | limit |
 | --- | --- |
@@ -240,6 +286,8 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
       thing to take).
 - [ ] Every Tier 1 row to Floor.
 - [ ] Every Tier 3 row to Floor.
+- [ ] One Tier 4 sustained run per lever that lands — the cool number and the ten-minute number
+      move independently, and a lever that buys frames while costing heat has not helped a player.
 
 #### Phase 3 — take the lanes to Target, and hold them
 
@@ -250,7 +298,7 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
 
 ## Acceptance criteria
 
-1. **Every platform has a number.** Each row of Tiers 1–3 is measured or explicitly named
+1. **Every platform has a number.** Each row of Tiers 1–4 is measured or explicitly named
    unverified with the reason. No row is blank.
 2. **Parity is measured on the same device, not across devices.** Each parity claim names its
    serial, both builds, and its thermal verdict; a `thermallyConfounded` run is re-taken.
@@ -258,9 +306,12 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
    reports pasted.
 4. **bayview clears 30 fps on the physical Pixel 8** in a thermally clean run — the Tier 3 heavy
    Floor.
-5. **No result claims a platform it did not execute.** Emulator numbers are never a device claim;
+5. **bayview survives ten minutes without a fan** — the Tier 4 Floor: it still renders 25 fps in
+   the last minute, having retained 0.75 of its opening frame rate, and never passes thermal
+   status 2. A cool-only green is not a shipped game.
+6. **No result claims a platform it did not execute.** Emulator numbers are never a device claim;
    the emulator's software GL claims no performance at all and is functional-only.
-6. **House gates stay green:** `pnpm typecheck && pnpm lint && pnpm test`, `pnpm budgets`,
+7. **House gates stay green:** `pnpm typecheck && pnpm lint && pnpm test`, `pnpm budgets`,
    `pnpm sync:agents --check`.
 
 ## For the agent looping on this
@@ -271,6 +322,9 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
   neither is attributed.
 - **Record refutations.** A lever that does nothing is a result and belongs in the verification
   file — resolution and fill rate are already refuted twice; do not spend a fourth run on them.
+- **Cool for comparison, hot for shipping.** Both numbers are real and they answer different
+  questions. Never let a cool green stand in for a sustained one, and never compare two runs that
+  started at different temperatures.
 - **The phone is the bottleneck of the loop, not the code.** It needs to cool between runs, and it
   has a battery floor. Batch the questions you ask it: instrument on the host, then take one
   capture that answers several rows.
@@ -278,7 +332,8 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
   one for a row nobody measured.
 
 **Named unverified at proposal time:** every Tier 1 row except native Android; every Tier 2 row
-(no parity run has ever been taken); iOS entirely (no lane, excluded by standing rule); Windows and
+(no parity run has ever been taken); every Tier 4 row (the 2026-08-24 heat numbers are a soak that
+happened, not a run against these thresholds); iOS entirely (no lane, excluded by standing rule); Windows and
 macOS desktop (no host); and bayview's post-batch-fix device number, which is owed by
 `docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md` and is the first
 measurement this PRD should collect.
