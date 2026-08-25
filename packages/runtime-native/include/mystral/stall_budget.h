@@ -90,6 +90,27 @@ class StallBudget {
     bool reported() const { return reported_; }
 
     /**
+     * Marks the instant the first frame's work began, and snapshots the counters at it.
+     *
+     * Everything before this instant is honest launch cost — process start, bundle evaluation,
+     * asset load — and the game already reports it as `TN_FPS_BOOT_MS`. The stall is what happens
+     * *after* the loop starts a frame and before that frame reaches the display, which is the span
+     * `TN_FRAME_HITCH` reports as `gapMs` and the span this budget has to explain. Attributing
+     * against the whole launch instead would credit the named segments with load time they did not
+     * spend and, worse, would let a genuinely unexplained stall hide behind a slow asset read.
+     *
+     * Idempotent: only the first call counts.
+     */
+    void markFirstFrameBegan() {
+        if (firstFrameBeganMs_ >= 0.0 || reported_) return;
+        firstFrameBeganMs_ = coldStartNowMs();
+        for (int index = 0; index < kStallSegmentCount; index += 1) {
+            beforeFrame_[index] = totals_[index];
+            beforeFrameCalls_[index] = calls_[index];
+        }
+    }
+
+    /**
      * Emits the attribution for the launch, once, from the first present.
      *
      * `toFirstFrameMs` is the same clock `TN_COLD_START first_frame` stamps, so a reader can line
@@ -99,22 +120,38 @@ class StallBudget {
         if (reported_) return;
         reported_ = true;
 
+        // The span this budget owes an explanation for: the first frame's own duration, which is
+        // what the player sat through after the loading screen stopped moving. A launch that never
+        // reached markFirstFrameBegan attributes against the whole launch, which is the honest
+        // fallback and says so by reporting `frameBeganAtMs` as -1.
+        const bool haveFrameStart = firstFrameBeganMs_ >= 0.0;
+        const double gapMs = haveFrameStart ? toFirstFrameMs - firstFrameBeganMs_ : toFirstFrameMs;
+
         double attributed = 0.0;
-        for (int index = 0; index < kStallSegmentCount; index += 1) attributed += totals_[index];
+        double inGap[kStallSegmentCount] = {};
+        unsigned long long gapCalls[kStallSegmentCount] = {};
+        for (int index = 0; index < kStallSegmentCount; index += 1) {
+            inGap[index] = haveFrameStart ? totals_[index] - beforeFrame_[index] : totals_[index];
+            gapCalls[index] =
+                haveFrameStart ? calls_[index] - beforeFrameCalls_[index] : calls_[index];
+            attributed += inGap[index];
+        }
         // Subtraction, not a sixth counter: the residual is by definition what the named segments
         // failed to explain, and a counter for it would be a claim rather than a remainder.
-        const double residual = toFirstFrameMs - attributed;
-        const double share = toFirstFrameMs > 0.0 ? attributed / toFirstFrameMs : 0.0;
+        const double residual = gapMs - attributed;
+        const double share = gapMs > 0.0 ? attributed / gapMs : 0.0;
 
-        char line[1024];
-        int written = std::snprintf(line, sizeof(line),
-                                    "TN_STALL_SEGMENTS:{\"toFirstFrameMs\":%.3f,\"segments\":{",
-                                    toFirstFrameMs);
+        char line[1400];
+        int written = std::snprintf(
+            line, sizeof(line),
+            "TN_STALL_SEGMENTS:{\"toFirstFrameMs\":%.3f,\"frameBeganAtMs\":%.3f,\"gapMs\":%.3f,"
+            "\"segments\":{",
+            toFirstFrameMs, haveFrameStart ? firstFrameBeganMs_ : -1.0, gapMs);
         for (int index = 0; index < kStallSegmentCount && written > 0; index += 1) {
             written += std::snprintf(line + written, sizeof(line) - static_cast<size_t>(written),
                                      "%s\"%s\":{\"ms\":%.3f,\"calls\":%llu}", index == 0 ? "" : ",",
-                                     kStallSegmentNames[static_cast<size_t>(index)], totals_[index],
-                                     static_cast<unsigned long long>(calls_[index]));
+                                     kStallSegmentNames[static_cast<size_t>(index)], inGap[index],
+                                     gapCalls[index]);
         }
         if (written > 0) {
             std::snprintf(line + written, sizeof(line) - static_cast<size_t>(written),
@@ -133,6 +170,9 @@ class StallBudget {
   private:
     double totals_[kStallSegmentCount] = {};
     unsigned long long calls_[kStallSegmentCount] = {};
+    double beforeFrame_[kStallSegmentCount] = {};
+    unsigned long long beforeFrameCalls_[kStallSegmentCount] = {};
+    double firstFrameBeganMs_ = -1.0;
     bool reported_ = false;
 };
 

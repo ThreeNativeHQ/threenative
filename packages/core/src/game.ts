@@ -26,6 +26,7 @@ import { type GameStore, createGameStore } from "./state.js";
 import { type IUiBridge, UI_READY_INTENT, connectUiBridge } from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
 import { type IViewportOptions, Viewport } from "./viewport.js";
+import { type IWarmUpOptions, warmUpScene } from "./warmup.js";
 
 export type PluginCleanup = () => void;
 
@@ -158,6 +159,22 @@ export interface IGameConfig<
    */
   readonly frameBudget?: IFrameBudgetOptions | false;
   readonly initialState?: TState;
+  /**
+   * Shader warm-up before the first frame, on by default.
+   *
+   * Every distinct pipeline is otherwise built the first time something using it is drawn, which
+   * is inside the first rendered frame of a fully built scene. On a Pixel 8 that was one frame
+   * lasting **24.5 seconds across 107 compiles** — a launch the player reads as a hang, with the
+   * loading screen frozen mid-animation because the loop presented nothing for the whole span.
+   * The warm-up cuts the same work into slices with a presented frame between them, so the screen
+   * keeps moving and `onProgress` is a number a HUD can show.
+   *
+   * It does not make the compiling cheaper; the same pipelines are built either way. Pass `false`
+   * to skip it, and the launch goes back to paying for all of them inside the first frame — the
+   * measurement still reports what happened, because turning a convention off must not turn its
+   * measurement off.
+   */
+  readonly warmUp?: IWarmUpOptions | false;
   readonly inputTarget?: EventTarget;
   /**
    * Maximum simulation steps per rendered frame. Default 5. Caps the catch-up burst after a
@@ -766,6 +783,36 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#aborted) {
       this.#teardown(ctx);
       return;
+    }
+    // The scene is built and the loop is still held, which is the only window where compiling can
+    // cost frames nobody is playing. Warming up here rather than letting the first real frame do
+    // it is what keeps a launch from freezing inside one 24-second frame. PRD-218.
+    if (this.#config.warmUp !== false && this.#renderer !== undefined) {
+      try {
+        const report = await warmUpScene(
+          this.#renderer,
+          threeScene,
+          camera,
+          this.#config.warmUp ?? {},
+        );
+        // One greppable line on every platform, so a device lane reads what the warm-up did
+        // without instrumenting anything -- including the case where it could do nothing.
+        console.log(
+          `TN_WARMUP:${JSON.stringify({
+            compiled: report.compiled,
+            slices: report.slices,
+            elapsedMs: Math.round(report.elapsedMs),
+            unsupported: report.unsupported,
+          })}`,
+        );
+      } catch (error) {
+        this.#teardown(ctx);
+        throw error;
+      }
+      if (this.#aborted) {
+        this.#teardown(ctx);
+        return;
+      }
     }
     // Plugins that must not let the game step before something external arrives wait here, with
     // the scene entered and every capability registered, and with the loop still stopped.

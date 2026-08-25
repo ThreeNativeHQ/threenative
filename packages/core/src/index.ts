@@ -91,6 +91,13 @@ export type {
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
+export { warmUpScene } from "./warmup.js";
+export type {
+  IWarmUpOptions,
+  IWarmUpProgress,
+  IWarmUpRenderer,
+  IWarmUpReport,
+} from "./warmup.js";
 export type {
   IGame,
   IGameObservationContribution,

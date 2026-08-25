@@ -21,6 +21,7 @@ describe("core constraints", () => {
           file !== "renderProjection.ts" &&
           file !== "renderer.ts" &&
           file !== "react-host.ts" &&
+          file !== "warmup.ts" &&
           file !== "tracers.ts",
       )
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
@@ -30,6 +31,16 @@ describe("core constraints", () => {
 
     // `config.ts` is exempted on the same terms: it declares option NAMES a game types
     // (`assets.targets.maxMaterials`), measures nothing, and originates no visual concern.
+
+    // `warmup.ts` is exempted on the same terms as the projection files: it reads a material's
+    // *identity* to tell one pipeline from another, so that compiling one wall warms every wall
+    // sharing its material. It never constructs a material, never configures one, and never reads
+    // a property that describes how anything looks. The assertions below are what keep that true:
+    // the moment it makes an appearance decision, this fails.
+    const warmup = readFileSync(path.join(sourceDirectory, "warmup.ts"), "utf8");
+    expect(warmup).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
+    expect(warmup).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(warmup.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `react-host.ts` is exempted on the same terms as particles, and needs to be: a renderer that
     // draws nothing has to construct the one material its quads are drawn with. What it must never

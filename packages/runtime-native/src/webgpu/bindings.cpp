@@ -6071,7 +6071,12 @@ void setOffscreenTexture(void* texture, void* textureView) {
 }
 
 void beginDawnFrame() {
-    // No-op: Dawn resource cleanup is handled by V8 weak callbacks
+    // The launch stall is measured from here: this is the first instant the loop is inside a
+    // frame rather than still loading, so everything after it and before the first present is the
+    // gap the player watches a frozen loading screen through. PRD-218.
+    mystral::stallBudget().markFirstFrameBegan();
+
+    // Otherwise a no-op: Dawn resource cleanup is handled by V8 weak callbacks
     // via Engine::registerRelease() — resources are released when
     // their JS wrapper objects are garbage collected.
 }
