@@ -332,7 +332,9 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
 - [ ] Each lane to its Target column.
 - [ ] The gates run in the lane every later change re-runs, so a regression is red rather than
       anecdotal.
-- [ ] The table lands in the templates' AGENTS.md (ledger row 4).
+- [x] The table lands in the templates' AGENTS.md (ledger row 4). The shared target fragment and
+      all seven template/mirror pairs passed a fresh Gauntlet critic after two red-green repairs;
+      contract evidence is in commits `427a0527`, `3cec79f0`, and `47d83589`.
 
 ## Acceptance criteria
 
