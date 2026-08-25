@@ -657,6 +657,10 @@ describe("template contracts", () => {
       "|1|Starter/native-desktop|60fps|display-refresh|",
       "|1|Starter/native-Android|55fps|58fps|",
       "|1|Starter/native-iOS|unverified|no-number|",
+      "|1|All-platform/hostGap-p95|—|≤4ms|",
+      "|1|All-platform/update-p95|—|≤2ms|",
+      "|1|All-platform/residual-p95|—|≤0.5ms|",
+      "|1|All-platform/overlay-p95|—|≤1ms|",
       "|2|Same-device-fps-parity|.85|.95|",
       "|2|Inverted-render-p95-parity|.80|.95|",
       "|3|Light|55fps|58fps|",
@@ -667,6 +671,7 @@ describe("template contracts", () => {
       "|4|Last-minute-heavy|25fps|50fps|",
       "|4|Peak-battery-temperature|≤45C|≤40C|",
       "|4|Thermal-status|≤2|≤1|",
+      "|4|Whole-device-current|—|report;not-gated|",
     ] as const;
     const fragment = await readFile(path.join(agentDocsRoot, "performance-default.md"), "utf8");
     expect(fragment).toContain("Unexecuted platforms stay unverified");
