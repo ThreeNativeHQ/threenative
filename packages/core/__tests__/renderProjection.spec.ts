@@ -431,6 +431,8 @@ describe("SceneRenderProjection", () => {
       "exactLane",
       "lights",
       "batchGroups",
+      "materialGroups",
+      "activeMaterialGroups",
       "belowFloor",
       "activeGroups",
       "walkStack",
@@ -1146,23 +1148,29 @@ describe("SceneRenderProjection exact lane corpus", () => {
  * at the time, because none of them compared the result against the input.
  */
 describe("SceneRenderProjection refuses to make a scene worse", () => {
-  it("hands back a scene whose meshes each carry their own geometry", () => {
+  it("folds an every-geometry-unique scene by material instead of refusing it", () => {
+    // Superseded by docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md.
+    // This row once asserted a decline here: with only the instanced lane, unique geometry per
+    // mesh meant nothing could batch, and refusing was arithmetically right. The material lane is
+    // the grouping that was missing — what must still hold is the rule this describe exists for:
+    // never make the scene worse than the game authored it.
     const scene = new Scene();
     const material = new MeshStandardMaterial();
-    // The shape of an already-optimized or procedurally-built level: unique geometry per mesh, so
-    // every group has exactly one member and batching can save nothing.
     for (let index = 0; index < 300; index += 1) {
       scene.add(new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material));
     }
+    const before = graphSnapshot(scene);
 
     const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
     projection.reconcile();
 
-    expect(projection.deoptimized).toBe(true);
-    expect(projection.report.reasonCode).toBe("notWorthwhile");
-    // The renderer is handed the game's own scene, and nothing was built to discover that.
-    expect(projection.root).toBe(scene);
-    expect(projection.report.batches).toBe(0);
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.batches).toBe(1);
+    expect(projection.report.resultDrawCandidates).toBeLessThanOrEqual(
+      projection.report.sourceRenderables,
+    );
+    // And the authored graph is still bit-for-bit the graph the game authored.
+    expect(graphSnapshot(scene)).toBe(before);
   });
 
   it("still projects a scene where batching genuinely wins", () => {
@@ -1289,6 +1297,140 @@ describe("SceneRenderProjection refuses to make a scene worse", () => {
     // And the authored scene never changed shape of its own accord.
     expect(graphSnapshot(scene)).not.toBe(beforeGraph);
     for (const mesh of meshes) expect(mesh.geometry.getAttribute("position")).toBeDefined();
+  });
+});
+
+/**
+ * docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md. The instanced lane
+ * only folds meshes sharing one geometry instance, and a town of distinct buildings shares
+ * materials instead — 835 candidates went out as 835 draws because every group held one member.
+ * The material lane is the missing grouping: meshes whose geometry keeps them out of an instanced
+ * group fold into one `BatchedMesh` draw per material.
+ */
+describe("SceneRenderProjection batches across differing geometries", () => {
+  /** N meshes, each with its own geometry, all sharing one material — the bayview shape. */
+  function town(scene: Scene, material: MeshStandardMaterial, count: number): Mesh[] {
+    const meshes: Mesh[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
+      mesh.position.set(index % 20, Math.floor(index / 20) * 3, 0);
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
+    return meshes;
+  }
+
+  it("folds meshes that differ only in geometry into one draw per material", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    town(scene, material, 300);
+
+    const projection = projected(scene, 2);
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.batches).toBe(1);
+    expect(projection.report.projectedObjects).toBe(300);
+    expect(projection.report.resultDrawCandidates).toBe(1);
+    expect(drawCandidates(projection.root).length).toBe(1);
+    // The game's own material instance, so recolouring it recolours what draws.
+    expect((drawCandidates(projection.root)[0] as Mesh).material).toBe(material);
+  });
+
+  it("keeps a material-lane batch in step with sources that move and hide", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const meshes = town(scene, material, 300);
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    const mover = meshes[5] as Mesh;
+    mover.position.set(500, 0, 0);
+    const hidden = meshes[9] as Mesh;
+    hidden.visible = false;
+    projection.reconcile();
+
+    // Both reconciled on the batched lane, exactly as the instanced lane reconciles its members.
+    expect(projection.inspect(mover)?.lane).toBe("batched");
+    expect(projection.inspect(mover)?.matrixWorld.elements[12]).toBe(500);
+    expect(projection.inspect(hidden)?.visible).toBe(false);
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("demotes a geometry the game streams into instead of drawing a stale copy", () => {
+    // The material lane packs vertex copies, so a game writing into its own attribute after
+    // admission is the one way it could silently draw yesterday's data. The scan watches
+    // attribute versions and demotes the geometry before the frame is planned — the mesh falls
+    // to the exact lane, where the draw references the live array.
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const streamed = new BoxGeometry(1, 2, 1);
+    const meshes: Mesh[] = [];
+    for (let index = 0; index < 300; index += 1) {
+      const mesh = new Mesh(
+        index === 0 ? streamed : new BoxGeometry(1, 1 + index * 0.001, 1),
+        material,
+      );
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
+    const projection = projected(scene, 600);
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.inspect(meshes[0] as Mesh)?.lane).toBe("batched");
+
+    const position = streamed.getAttribute("position");
+    position.setXYZ(0, 50, 50, 50);
+    position.needsUpdate = true;
+    projection.reconcile();
+
+    expect(projection.inspect(meshes[0] as Mesh)?.lane).toBe("exact");
+    const proxy = drawCandidates(projection.root).find(
+      (object) => (object as Mesh).geometry === streamed,
+    ) as Mesh | undefined;
+    expect(proxy?.geometry.getAttribute("position").getX(0)).toBe(50);
+    // The rest of the town stays folded, and the frame keeps being projected throughout.
+    expect(projection.report.batches).toBe(1);
+    expect(projection.report.projectedObjects).toBe(299);
+    expect(projection.deoptimized).toBe(false);
+  });
+
+  it("keeps a mirrored source off the packed batch and names why", () => {
+    // `BatchedMesh.setMatrixAt` does not support negatively scaled matrices — a mirrored source
+    // would draw inside-out. It keeps its own draw with its own transform instead, and the rest
+    // of its material group still folds.
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const meshes = town(scene, material, 300);
+    const mirrored = meshes[7] as Mesh;
+    mirrored.scale.x = -1;
+
+    const projection = projected(scene, 2);
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.exact.negativeScale).toBe(1);
+    expect(projection.inspect(mirrored)?.lane).toBe("exact");
+    expect(projection.inspect(mirrored)?.matrixWorld.elements[0]).toBe(-1);
+    expect(projection.report.batches).toBe(1);
+    expect(projection.report.projectedObjects).toBe(299);
+  });
+
+  it("still declines when nothing is shared, not even the material", () => {
+    const scene = new Scene();
+    for (let index = 0; index < 300; index += 1) {
+      scene.add(
+        new Mesh(
+          new BoxGeometry(1, 1 + index * 0.001, 1),
+          new MeshStandardMaterial({ color: index }),
+        ),
+      );
+    }
+
+    const projection = projected(scene, 2);
+
+    // Nothing collapses when neither a geometry nor a material repeats: batching would draw the
+    // same count plus its own overhead. This is the worthwhile ratio still doing its job.
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.report.reasonCode).toBe("notWorthwhile");
+    expect(projection.root).toBe(scene);
   });
 });
 

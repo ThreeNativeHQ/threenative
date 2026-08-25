@@ -62,6 +62,7 @@ export type ProjectionExactReason =
   | "renderOrder"
   | "tooFewToBatch"
   | "batchOverflow"
+  | "negativeScale"
   | "unsupportedGeometry";
 
 export interface IRenderProjectionReport {
@@ -81,6 +82,9 @@ export interface IRenderProjectionReport {
   /** Sources folded into batched draws, and the number of draws they became. */
   readonly projectedObjects: number;
   readonly batches: number;
+  /** The batch split by lane, so a report reader can tell which grouping did the folding. */
+  readonly instancedBatches: number;
+  readonly materialBatches: number;
   /** Sources that kept a draw of their own, with the reason each one did. */
   readonly exactObjects: number;
   readonly exact: Partial<Record<ProjectionExactReason, number>>;
@@ -246,6 +250,8 @@ export class SceneRenderProjection {
           sourceRenderables: r.sourceRenderables,
           resultDrawCandidates: r.resultDrawCandidates,
           batches: r.batches,
+          instancedBatches: r.instancedBatches,
+          materialBatches: r.materialBatches,
           projectedObjects: r.projectedObjects,
           exactObjects: r.exactObjects,
           exact: r.exact,
@@ -277,6 +283,8 @@ export class SceneRenderProjection {
       resultDrawCandidates,
       projectedObjects: this.#deoptimized ? 0 : this.#mirror.projectedObjects,
       batches: this.#deoptimized ? 0 : this.#mirror.batchCount,
+      instancedBatches: this.#deoptimized ? 0 : this.#mirror.instancedBatchCount,
+      materialBatches: this.#deoptimized ? 0 : this.#mirror.materialBatchCount,
       exactObjects: this.#deoptimized ? 0 : this.#mirror.proxyCount,
       exact,
       timings: {
