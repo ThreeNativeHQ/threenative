@@ -31,6 +31,13 @@ dismiss the keyboard (`adb shell input keyevent 111`) before later `click` steps
 existing `TN_UI_HITTEST` records as evidence either way. If tested and refuted, record the
 refutation in the lane memo — that is a real result too.
 
+**Steering note 2026-08-25 ~00:56, for the Gradle lanes (220, and any later APK build):** if
+Gradle dies with a bare `26.0.2`, that is JDK 26 being selected — this machine's Gradle/Kotlin
+lane wants **JDK 17**: `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk` (and `ANDROID_HOME`
+pointed at the SDK) before `./gradlew`. The prebuilt-release fetch failing closed with HTTP 404
+is expected and correct: no release has ever been published (PRD-078); build from runtime
+source.
+
 This folder is an **execution manifest plus two new PRDs**. Existing PRDs referenced here stay
 in their owning batches — batches move whole to `done/` per `docs/PRDs/AGENTS.md`; nothing is
 moved into this folder.
