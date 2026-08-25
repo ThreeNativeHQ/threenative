@@ -50,6 +50,18 @@ export interface IWarmUpOptions {
    * knows its host wants a different signal passes one; a test passes a resolved promise.
    */
   readonly yieldFrame?: () => Promise<void>;
+  /**
+   * How long one pipeline may take before the warm-up gives up on it. Default 2000 ms.
+   *
+   * A real compile on a Pixel 8 measured ~77 ms; two seconds is a compile that is not coming back.
+   */
+  readonly compileTimeoutMs?: number;
+  /**
+   * How long the whole warm-up may take before it stops and lets the game start. Default 15000 ms.
+   *
+   * The launch must never be *worse* for having tried to optimize it.
+   */
+  readonly budgetMs?: number;
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
@@ -68,6 +80,19 @@ export interface IWarmUpReport {
    * still stalls.
    */
   readonly unsupported: boolean;
+  /**
+   * Pipelines whose compile never came back inside `compileTimeoutMs`, and pipelines never
+   * reached because the whole warm-up ran out of budget.
+   *
+   * Reported, never thrown. A warm-up is an optimization on the launch path: the one thing it must
+   * never do is stop the game from starting, and the first version of this did exactly that — a
+   * `compileAsync` that never resolved on the device left `#boot` awaiting forever, so the loop
+   * stayed held, the simulation never advanced and the game sat on its loading screen. A launch
+   * that is slower than it could be is a disappointment; a launch that never finishes is a bug.
+   */
+  readonly abandoned: number;
+  /** True when the overall budget ran out before every pipeline was warmed. */
+  readonly timedOut: boolean;
 }
 
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
@@ -76,6 +101,34 @@ export interface IWarmUpRenderer {
 }
 
 const DEFAULT_SLICE_SIZE = 24;
+const DEFAULT_COMPILE_TIMEOUT_MS = 2000;
+const DEFAULT_BUDGET_MS = 15000;
+
+/**
+ * Resolves when `work` settles or when `limitMs` elapses, whichever comes first.
+ *
+ * Returns whether the work actually finished, because "compiled" and "gave up waiting" are
+ * different facts and the report has to be able to tell them apart.
+ */
+async function within(work: Promise<unknown>, limitMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), limitMs);
+  });
+  try {
+    // A rejected compile is a pipeline this warm-up could not build, not a reason to fail the
+    // launch: the frame that needs it will try again and fail there, where the error belongs.
+    return await Promise.race([
+      work.then(
+        () => true,
+        () => false,
+      ),
+      expiry,
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 /**
  * Hands the host one loop iteration, so it can present a frame, and never waits on anything.
@@ -199,11 +252,30 @@ export async function warmUpScene(
       )}.`,
     );
   }
+  const compileTimeoutMs = options.compileTimeoutMs ?? DEFAULT_COMPILE_TIMEOUT_MS;
+  const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+  for (const [name, value] of [
+    ["compileTimeoutMs", compileTimeoutMs],
+    ["budgetMs", budgetMs],
+  ] as const) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(
+        `TN_WARMUP_TIMEOUT_INVALID: ${name} must be a positive number of milliseconds, received ${String(value)}.`,
+      );
+    }
+  }
   const now = (): number => globalThis.performance?.now() ?? Date.now();
   const startedAt = now();
 
   if (typeof renderer.compileAsync !== "function") {
-    return { compiled: 0, slices: 0, elapsedMs: now() - startedAt, unsupported: true };
+    return {
+      compiled: 0,
+      slices: 0,
+      elapsedMs: now() - startedAt,
+      unsupported: true,
+      abandoned: 0,
+      timedOut: false,
+    };
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
   const yieldFrame = options.yieldFrame ?? yieldToHost;
@@ -213,17 +285,43 @@ export async function warmUpScene(
   // Nothing to warm up is a real answer, not a reason to skip the report.
   if (total === 0) {
     options.onProgress?.({ done: 0, total: 0 });
-    return { compiled: 0, slices: 0, elapsedMs: now() - startedAt, unsupported: false };
+    return {
+      compiled: 0,
+      slices: 0,
+      elapsedMs: now() - startedAt,
+      unsupported: false,
+      abandoned: 0,
+      timedOut: false,
+    };
   }
 
   let slices = 0;
+  let compiled = 0;
+  let abandoned = 0;
+  let timedOut = false;
+  const deadline = startedAt + budgetMs;
+
   for (let index = 0; index < total; index += 1) {
+    if (now() >= deadline) {
+      // Out of budget. Everything still unwarmed is abandoned, and says so.
+      timedOut = true;
+      abandoned += total - index;
+      break;
+    }
     // Compiled one at a time, against the real scene so lights, fog and environment resolve
     // exactly as they will when the frame draws. `three` caches by material, so only the first
     // object using a given pipeline pays; the rest are a map lookup. That is what makes
     // per-object granularity affordable and lets the slice boundary be about presenting, not
     // about batching the compile.
-    await compileAsync(renderables[index] as Object3D, camera, scene);
+    //
+    // Bounded, because an unbounded await here is what held a real launch open forever.
+    const finished = await within(
+      compileAsync(renderables[index] as Object3D, camera, scene),
+      Math.min(compileTimeoutMs, Math.max(0, deadline - now())),
+    );
+    if (finished) compiled += 1;
+    else abandoned += 1;
+
     const done = index + 1;
     if (done % sliceSize === 0 || done === total) {
       slices += 1;
@@ -234,5 +332,12 @@ export async function warmUpScene(
     }
   }
 
-  return { compiled: total, slices, elapsedMs: now() - startedAt, unsupported: false };
+  return {
+    compiled,
+    slices,
+    elapsedMs: now() - startedAt,
+    unsupported: false,
+    abandoned,
+    timedOut,
+  };
 }

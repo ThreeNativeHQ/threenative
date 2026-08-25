@@ -167,6 +167,67 @@ describe("scene warm-up", () => {
     }
   }, 10_000);
 
+  test("should abandon a compile that never resolves instead of hanging the launch", async () => {
+    // This is the bug the bounded version exists for, and it shipped once. On a Pixel 8 a
+    // compileAsync never came back, so boot awaited it forever: the loop stayed held, the
+    // simulation never advanced (substeps mean 0 across 300 frames) and the game sat on its
+    // loading screen with no error logged anywhere. A slow launch is a disappointment; a launch
+    // that never finishes is a bug.
+    const compiled: string[] = [];
+    const renderer = {
+      compileAsync: (object: unknown) => {
+        const name = (object as IFakeObject).name;
+        compiled.push(name);
+        // The second pipeline hangs. Everything after it must still be warmed.
+        return name === "mesh-1" ? new Promise<void>(() => undefined) : Promise.resolve();
+      },
+    };
+    const report = await run(renderer, sceneOf(3), {
+      compileTimeoutMs: 20,
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(compiled).toEqual(["mesh-0", "mesh-1", "mesh-2"]);
+    expect(report.compiled).toBe(2);
+    expect(report.abandoned).toBe(1);
+    expect(report.timedOut).toBe(false);
+  }, 10_000);
+
+  test("should stop at its budget rather than make the launch worse", async () => {
+    const renderer = {
+      compileAsync: () => new Promise<void>((resolve) => setTimeout(resolve, 15)),
+    };
+    const report = await run(renderer, sceneOf(50), {
+      budgetMs: 60,
+      compileTimeoutMs: 1000,
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.timedOut).toBe(true);
+    expect(report.abandoned).toBeGreaterThan(0);
+    expect(report.compiled + report.abandoned).toBe(50);
+  }, 10_000);
+
+  test("should treat a rejected compile as a pipeline it could not build, not a failure", async () => {
+    // The frame that needs the pipeline will try again and fail there, where the error belongs.
+    const renderer = {
+      compileAsync: (object: unknown) =>
+        (object as IFakeObject).name === "mesh-0"
+          ? Promise.reject(new Error("backend said no"))
+          : Promise.resolve(),
+    };
+    const report = await run(renderer, sceneOf(2), { yieldFrame: () => Promise.resolve() });
+    expect(report.compiled).toBe(1);
+    expect(report.abandoned).toBe(1);
+  });
+
+  test("should fail closed on a timeout that cannot bound anything", async () => {
+    const renderer = fakeRenderer();
+    for (const options of [{ compileTimeoutMs: 0 }, { budgetMs: -1 }, { budgetMs: Number.NaN }]) {
+      await expect(run(renderer, sceneOf(2), options)).rejects.toThrow(
+        /TN_WARMUP_TIMEOUT_INVALID/u,
+      );
+    }
+  });
+
   test("should fail closed on a slice size that cannot terminate", async () => {
     const renderer = fakeRenderer();
     for (const sliceSize of [0, -1, 2.5]) {

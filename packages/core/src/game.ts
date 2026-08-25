@@ -26,7 +26,7 @@ import { type GameStore, createGameStore } from "./state.js";
 import { type IUiBridge, UI_READY_INTENT, connectUiBridge } from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
 import { type IViewportOptions, Viewport } from "./viewport.js";
-import { type IWarmUpOptions, warmUpScene } from "./warmup.js";
+import { type IWarmUpOptions, type IWarmUpReport, warmUpScene } from "./warmup.js";
 
 export type PluginCleanup = () => void;
 
@@ -788,27 +788,37 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // cost frames nobody is playing. Warming up here rather than letting the first real frame do
     // it is what keeps a launch from freezing inside one 24-second frame. PRD-218.
     if (this.#config.warmUp !== false && this.#renderer !== undefined) {
+      // Never fatal, and never able to hang the launch. This block sits between "the scene is
+      // built" and "the game may start", so anything it does wrong is something the player
+      // experiences as the game not starting -- which is exactly what the first version did: a
+      // `compileAsync` that never resolved on a Pixel 8 left this `await` pending forever, the
+      // loop stayed held, the simulation never advanced, and the game sat on its loading screen
+      // with no error anywhere. A warm-up that fails must cost the launch its speed, never its
+      // start, so the failure is reported and boot carries on.
+      let report: IWarmUpReport | undefined;
+      let failure: string | undefined;
       try {
-        const report = await warmUpScene(
-          this.#renderer,
-          threeScene,
-          camera,
-          this.#config.warmUp ?? {},
-        );
-        // One greppable line on every platform, so a device lane reads what the warm-up did
-        // without instrumenting anything -- including the case where it could do nothing.
-        console.log(
-          `TN_WARMUP:${JSON.stringify({
-            compiled: report.compiled,
-            slices: report.slices,
-            elapsedMs: Math.round(report.elapsedMs),
-            unsupported: report.unsupported,
-          })}`,
-        );
+        report = await warmUpScene(this.#renderer, threeScene, camera, this.#config.warmUp ?? {});
       } catch (error) {
-        this.#teardown(ctx);
-        throw error;
+        failure = error instanceof Error ? error.message : String(error);
       }
+      // One greppable line on every platform, so a device lane reads what the warm-up did without
+      // instrumenting anything -- including the cases where it could do nothing, ran out of
+      // budget, or threw.
+      console.log(
+        `TN_WARMUP:${JSON.stringify(
+          report === undefined
+            ? { failed: failure ?? "unknown" }
+            : {
+                compiled: report.compiled,
+                slices: report.slices,
+                elapsedMs: Math.round(report.elapsedMs),
+                unsupported: report.unsupported,
+                abandoned: report.abandoned,
+                timedOut: report.timedOut,
+              },
+        )}`,
+      );
       if (this.#aborted) {
         this.#teardown(ctx);
         return;
