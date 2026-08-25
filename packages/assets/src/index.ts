@@ -21,6 +21,8 @@ export type { ITextureOverride, ITexturePassOptions, TextureCodec } from "./pass
 export { texturePass } from "./passes/texture.js";
 export type { IModelSizeRow, ITextureSizeRow } from "./report.js";
 export { formatModelSizes, formatTextureSizes } from "./report.js";
+export type { IPngInfo } from "./png.js";
+export { parsePng } from "./png.js";
 export type {
   AssetFindingGrade,
   IAssetFinding,

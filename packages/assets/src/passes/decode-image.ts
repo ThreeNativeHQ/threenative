@@ -1,4 +1,5 @@
 import { PNG } from "pngjs";
+import { parsePng } from "../png.js";
 
 /**
  * Decodes an encoded image's bytes to tight 8-bit RGBA for the Basis encoder, which takes
@@ -17,7 +18,7 @@ export async function decodeImageBytes(
     assertRgba(image.data.length, image.width, image.height, logicalPath);
     return { data: new Uint8Array(image.data), height: image.height, width: image.width };
   }
-  if (bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
+  if (parsePng(bytes) !== undefined) {
     const image = PNG.sync.read(bytes);
     assertRgba(image.data.length, image.width, image.height, logicalPath);
     return { data: new Uint8Array(image.data), height: image.height, width: image.width };
@@ -26,8 +27,6 @@ export async function decodeImageBytes(
     `TN_ASSETS_TEXTURE_CONTAINER: '${logicalPath}' is not a PNG or JPEG the KTX2 encoder can read; convert it to .png or .jpg.`,
   );
 }
-
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function assertRgba(length: number, width: number, height: number, logicalPath: string): void {
   if (width <= 0 || height <= 0 || length !== width * height * 4) {

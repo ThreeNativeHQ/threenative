@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -11,11 +12,13 @@ import {
   discoverKitManifests,
   discoverTemplateNames,
   parseArgs,
+  scaffoldCompletionMessage,
 } from "../src/index.js";
 
 const run = promisify(execFile);
 
 const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
+const KIT_FIXTURE_ROOT = path.resolve("packages/create-threenative/__tests__/fixtures/kits");
 const ASSET_MCP = "threenative-asset-mcp";
 const SCULPT_MCP = "threenative-sculpt-mcp";
 const ENGINE_MCP = "threenative-engine-mcp";
@@ -24,6 +27,19 @@ const ENGINE_MCP = "threenative-engine-mcp";
 // the server packages themselves.
 const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
+
+const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  "action-rpg": "42716d5a52cf27ce963c4fb0591a1a186b52d4339993c9218a2258cd42f91e80",
+  defense: "bae15cc30544c761cca83f13bf6ba1486a2764607504dbb706566861794cbd48",
+  minimal: "0d73d5df12b64ba2469017174fd62125572b51c79118aebdae1af2ed46fab4b6",
+  platformer: "f858b2de946042645dd971efc694f617cc08b837d522a57b0950de5cc3ff5260",
+  racing: "d2beb624f0ad8071941a0529543b91a5ec95bfd7d8d64e707f12c3f4b825687c",
+  shooter: "4c76f02ec4f0277f0ddeeb4b3e7f37d3a51d75bddb88a48ba8a0e09e5de32929",
+  starter: "96d8b4972bca0588d1db759bbf4cdd4f952eba9da0ee055e06a71e4ef105b0b2",
+};
+
+const GENERATED_SCAFFOLD_METADATA =
+  /^(?:node_modules(?:\/|$)|dist(?:\/|$)|\.vite(?:\/|$)|coverage(?:\/|$)|pnpm-lock\.yaml$|package-lock\.json$|yarn\.lock$)/u;
 
 /** Stages a broken template in a throwaway copy of the template tree and hands the body its
  * root, so a negative control never edits the shipped templates. It used to edit them in place
@@ -47,6 +63,31 @@ async function withBrokenTemplateFile<T>(
   } finally {
     await rm(root, { force: true, recursive: true });
   }
+}
+
+async function scaffoldTreeHash(directory: string): Promise<string> {
+  const files: Array<[string, Buffer]> = [];
+  async function walk(current: string): Promise<void> {
+    for (const entry of (await readdir(current, { withFileTypes: true })).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      const file = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(file);
+      } else {
+        const relative = path.relative(directory, file);
+        if (!GENERATED_SCAFFOLD_METADATA.test(relative)) {
+          files.push([relative, await readFile(file)]);
+        }
+      }
+    }
+  }
+  await walk(directory);
+  const hash = createHash("sha256");
+  for (const [relative, contents] of files) {
+    hash.update(relative).update("\0").update(contents).update("\0");
+  }
+  return hash.digest("hex");
 }
 
 const STARTER_PATHS = [
@@ -193,6 +234,65 @@ describe("create-threenative", () => {
       expect(help).toContain(
         `${manifest.name.padEnd(width)}  ${manifest.title}: ${manifest.blurb}`,
       );
+    }
+  });
+
+  it("derives the scaffold completion message from every discovered kit", async () => {
+    const root = await makeTempDir("threenative-message-manifests-");
+    try {
+      const templates = path.join(root, "templates");
+      await cp(TEMPLATE_ROOT, templates, { recursive: true });
+      await cp(path.join(KIT_FIXTURE_ROOT, "scratch"), path.join(templates, "scratch"), {
+        recursive: true,
+      });
+      const manifests = discoverKitManifests(templates);
+
+      expect(scaffoldCompletionMessage(manifests)).toBe(
+        `Templates: ${manifests
+          .map(({ name }) => (name === "starter" ? `${name} (default)` : name))
+          .join(", ")}. Choose with --template <name>.\n`,
+      );
+      expect(scaffoldCompletionMessage(manifests)).toContain("scratch");
+      const source = await readFile(
+        path.resolve("packages/create-threenative/src/index.ts"),
+        "utf8",
+      );
+      expect(source).toContain("scaffoldCompletionMessage(discoverKitManifests())");
+      expect(source).not.toContain("Templates: minimal (smallest)");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps package flags and template substitution single-sourced", async () => {
+    const source = await readFile(path.resolve("packages/create-threenative/src/index.ts"), "utf8");
+    expect(source.match(/const PACKAGE_SOURCE_FLAGS =/gu)).toHaveLength(1);
+    expect(
+      source.match(/type PackageSourceName = keyof typeof PACKAGE_SOURCE_FLAGS;/gu),
+    ).toHaveLength(1);
+    expect(source).not.toMatch(/type PackageSourceName = ["']/u);
+    expect(
+      source.match(/for \(const \[name, flag\] of Object\.entries\(PACKAGE_SOURCE_FLAGS\)\)/gu),
+    ).toHaveLength(1);
+    expect(source).not.toContain("for (const [name, flag] of [");
+    expect(source.match(/function substituteTemplateVariables\(/gu)).toHaveLength(1);
+    expect(source.match(/substituteTemplateVariables\(/gu)).toHaveLength(3);
+    expect(source.match(/replaceAll\(placeholder, value\)/gu)).toHaveLength(1);
+  });
+
+  it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
+    const root = await makeTempDir("threenative-scaffold-stability-");
+    try {
+      for (const template of ALL_TEMPLATES) {
+        const { target } = await createProject(
+          { install: false, target: template, template },
+          root,
+        );
+        expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
+        expect(await scaffoldTreeHash(target)).toBe(PRD_201_PARENT_SCAFFOLD_HASHES[template]);
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
     }
   });
 

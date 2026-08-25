@@ -10,6 +10,22 @@ export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
 
 export type ScaffoldTemplate = string;
 
+const PACKAGE_SOURCE_FLAGS = {
+  "@threenative/core": "--core-package",
+  "@threenative/assets": "--assets-package",
+  "@threenative/physics": "--physics-package",
+  "@threenative/playtest": "--playtest-package",
+  "@threenative/runtime-native": "--runtime-native-package",
+  "@threenative/ui": "--ui-package",
+  "threenative-engine-mcp": "--engine-mcp-package",
+  "create-threenative": "--cli-package",
+} as const;
+
+type PackageSourceName = keyof typeof PACKAGE_SOURCE_FLAGS;
+type PackageSources = Partial<Record<PackageSourceName, string>> & {
+  readonly [packageName: string]: string | undefined;
+};
+
 export interface IKitManifest {
   readonly blurb: string;
   readonly genre: string;
@@ -20,7 +36,7 @@ export interface IKitManifest {
 
 export interface IScaffoldOptions {
   install?: boolean;
-  packageSources?: Partial<Record<string, string>>;
+  packageSources?: PackageSources;
   target: string;
   template?: ScaffoldTemplate;
 }
@@ -34,6 +50,7 @@ export interface IScaffoldResult {
 const TEXT_FILE_EXTENSIONS = new Set([".css", ".html", ".json", ".md", ".svg", ".ts", ".tsx"]);
 const TEMPLATE_NAME = /^[a-z][a-z0-9-]*$/u;
 const SHARED_AGENT_MARKER_LINE = /^<!--\s*(?:shared:\s*[^>]+|\/shared)\s*-->\r?\n?/gmu;
+const DEFAULT_TEMPLATE = "starter";
 
 export function templateRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../templates");
@@ -114,6 +131,16 @@ function templateHelp(manifests: readonly IKitManifest[]): string {
     .join("\n");
 }
 
+export function scaffoldCompletionMessage(
+  manifests: readonly IKitManifest[],
+  defaultTemplate = DEFAULT_TEMPLATE,
+): string {
+  const names = manifests
+    .map(({ name }) => (name === defaultTemplate ? `${name} (default)` : name))
+    .join(", ");
+  return `Templates: ${names}. Choose with --template <name>.\n`;
+}
+
 export function cliHelp(): string {
   const manifests = discoverKitManifests();
   return `${[
@@ -149,6 +176,17 @@ async function isEmpty(directory: string): Promise<boolean> {
   return entries.length === 0;
 }
 
+function substituteTemplateVariables(
+  content: string,
+  replacements: Readonly<Record<string, string>>,
+): string {
+  let rendered = content;
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    rendered = rendered.replaceAll(placeholder, value);
+  }
+  return rendered;
+}
+
 async function renderTemplate(
   directory: string,
   replacements: Readonly<Record<string, string>>,
@@ -162,10 +200,7 @@ async function renderTemplate(
     }
     if (!TEXT_FILE_EXTENSIONS.has(path.extname(entry.name))) continue;
     const content = await readFile(source, "utf8");
-    let rendered = content;
-    for (const [placeholder, value] of Object.entries(replacements)) {
-      rendered = rendered.replaceAll(placeholder, value);
-    }
+    let rendered = substituteTemplateVariables(content, replacements);
     if (entry.name === "AGENTS.md" || entry.name === "CLAUDE.md") {
       rendered = rendered.replace(SHARED_AGENT_MARKER_LINE, "");
     }
@@ -200,10 +235,10 @@ async function copyReferenceBundle(
   await mkdir(destination, { recursive: true });
   for (const entry of await readdir(bundle, { withFileTypes: true })) {
     if (!entry.isFile() || !REFERENCE_FILE_NAME.test(entry.name)) continue;
-    let content = await readFile(path.join(bundle, entry.name), "utf8");
-    for (const [placeholder, value] of Object.entries(replacements)) {
-      content = content.replaceAll(placeholder, value);
-    }
+    const content = substituteTemplateVariables(
+      await readFile(path.join(bundle, entry.name), "utf8"),
+      replacements,
+    );
     const destinationPath = path.join(destination, entry.name);
     if (path.relative(target, destinationPath).startsWith("..")) {
       throw new Error(`Reference page '${entry.name}' resolves outside '${target}'.`);
@@ -395,7 +430,7 @@ export async function createProject(
   root = templateRoot(),
 ): Promise<IScaffoldResult> {
   const manifests = discoverKitManifests(root);
-  const template = options.template ?? "starter";
+  const template = options.template ?? DEFAULT_TEMPLATE;
   if (!manifests.some(({ name }) => name === template)) kitManifest(template, root);
   const target = path.resolve(cwd, options.target);
   const targetExists = await isEmpty(target).catch(() => false);
@@ -468,7 +503,13 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
   const template = readFlag(argv, "--template") as ScaffoldTemplate | undefined;
   if (template !== undefined) kitManifest(template);
   const packageSources: Record<string, string> = {};
+  const knownPackageFlags = new Set<string>(Object.values(PACKAGE_SOURCE_FLAGS));
+  for (const [name, flag] of Object.entries(PACKAGE_SOURCE_FLAGS)) {
+    const source = readFlag(argv, flag);
+    if (source !== undefined) packageSources[name] = source;
+  }
   for (const flag of argv) {
+    if (knownPackageFlags.has(flag)) continue;
     const name = packageNameFromFlag(flag);
     const source = name === undefined ? undefined : readFlag(argv, flag);
     if (name !== undefined && source !== undefined) packageSources[name] = source;
@@ -501,9 +542,7 @@ async function main(): Promise<void> {
   }
   const result = await createProject(parseArgs(argv));
   process.stdout.write(`Created ${result.template} project at ${result.target}\n`);
-  process.stdout.write(
-    "Templates: minimal (smallest), starter (default), platformer. Choose with --template <name>.\n",
-  );
+  process.stdout.write(scaffoldCompletionMessage(discoverKitManifests()));
   if (!result.installed)
     process.stdout.write("Skipped install (--no-install). Run pnpm install, then pnpm dev.\n");
   else process.stdout.write("Next: cd into the project and run pnpm dev.\n");
