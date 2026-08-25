@@ -367,7 +367,7 @@ int compileBundle(const BundlerOptions& opts) {
 
     if (!opts.bundleOnly) {
         // Copy the runtime executable as the base of the compiled binary
-        std::string exePath = mystral::vfs::getExecutablePath();
+        std::string exePath = opts.runtimePath.empty() ? mystral::vfs::getExecutablePath() : opts.runtimePath;
         if (exePath.empty()) {
             std::cerr << "Error: Could not resolve current executable path." << std::endl;
             return 1;
@@ -437,7 +437,7 @@ int compileBundle(const BundlerOptions& opts) {
 
     if (!opts.bundleOnly) {
         // Copy executable permissions (only for compiled binaries, not standalone bundles)
-        std::string exePath = mystral::vfs::getExecutablePath();
+        std::string exePath = opts.runtimePath.empty() ? mystral::vfs::getExecutablePath() : opts.runtimePath;
         auto perms = fs::status(exePath, ec).permissions();
         if (!ec) {
             fs::permissions(outputPath, perms, ec);

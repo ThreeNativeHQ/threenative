@@ -11,8 +11,7 @@
  */
 
 #include "mystral/runtime.h"
-#include "bundler.h"
-#include "lightmap.h"
+#include "tool_dispatch.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include "mystral/debug/debug_server.h"
 #include "mystral/video/async_capture.h"
@@ -1703,34 +1702,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Handle 'compile' command
-    if (opts.command == "compile") {
-        mystral::cli::BundlerOptions bundlerOptions;
-        bundlerOptions.scriptPath = opts.scriptPath;
-        bundlerOptions.assetDirs = opts.assetDirs;
-        bundlerOptions.outputPath = opts.outputPath;
-        bundlerOptions.rootDir = opts.rootDir;
-        bundlerOptions.bundleOnly = opts.bundleOnly;
-        bundlerOptions.quiet = opts.quiet;
-        return mystral::cli::compileBundle(bundlerOptions);
-    }
-
-    // Handle 'bake' command
-    if (opts.command == "bake") {
-        if (opts.scriptPath.empty()) {
-            std::cerr << "Error: No input file specified for bake." << std::endl;
-            std::cerr << "Usage: mystral bake <input.glb|input.js> --output <dir>" << std::endl;
-            return 1;
-        }
-        mystral::cli::LightmapOptions lightmapOptions;
-        lightmapOptions.scriptPath = opts.scriptPath;
-        lightmapOptions.outputPath = opts.outputPath;
-        lightmapOptions.bakeResolution = opts.bakeResolution;
-        lightmapOptions.bakeSamples = opts.bakeSamples;
-        lightmapOptions.bakeBounces = opts.bakeBounces;
-        lightmapOptions.quiet = opts.quiet;
-        lightmapOptions.debug = opts.debug;
-        return mystral::cli::bakeLightmaps(lightmapOptions);
+    // Build-time commands execute in the separate tools binary. Keeping the dispatch seam in the
+    // runtime CLI preserves the public command surface without copying bundler/lightmap bodies
+    // into every compiled game.
+    if (opts.command == "compile" || opts.command == "bake") {
+        return mystral::cli::dispatchBuildTool(argc, argv);
     }
 
     // Handle 'run' command

@@ -15,6 +15,7 @@
 #if defined(MYSTRAL_HAS_QUICHE)
 
 #include "mystral/js/engine.h"
+#include "runtime_scripts.h"
 
 #include <quiche.h>
 
@@ -1169,10 +1170,10 @@ bool initBindings(js::Engine* engine) {
             return g_engine->newUndefined();
         }));
 
-    // Register the JS dispatcher target. The polyfill (below) defines
+    // Register the JS dispatcher target. The embedded polyfill defines
     // globalThis.__wtDispatch; we freeze it after eval.
-    extern const char* kWebTransportPolyfill;
-    if (!engine->eval(kWebTransportPolyfill, "<webtransport-polyfill>")) {
+    const auto script = runtime_scripts::find("webtransport-polyfill");
+    if (!script.data || !engine->eval(std::string(script.data, script.size).c_str(), "webtransport-polyfill.js")) {
         std::cerr << "[WebTransport] polyfill eval failed: " << engine->getException() << std::endl;
         return false;
     }
@@ -1198,6 +1199,7 @@ bool initBindings(js::Engine* engine) {
 // ---------------------------------------------------------------------------
 
 #include "mystral/js/engine.h"
+#include "runtime_scripts.h"
 
 namespace mystral {
 namespace webtransport {
@@ -1210,20 +1212,10 @@ bool hasActiveSessions() { return false; }
 bool initBindings(js::Engine* engine) {
     // Provide a WebTransport that always rejects so feature-detecting code can
     // handle the absence gracefully.
-    const char* stub = R"JS(
-globalThis.WebTransport = class WebTransport {
-  constructor() {
-    const err = new Error('WebTransport is not supported in this build (quiche not compiled in)');
-    this.ready = Promise.reject(err);
-    this.closed = Promise.reject(err);
-    this.ready.catch(() => {});
-    this.closed.catch(() => {});
-  }
-  close() {}
-};
-)JS";
-    engine->eval(stub, "<webtransport-stub>");
-    return true;
+    const script = runtime_scripts::find("webtransport-stub");
+    if (!script.data) return false;
+    const std::string source(script.data, script.size);
+    return engine->eval(source.c_str(), "webtransport-stub.js");
 }
 
 }  // namespace webtransport

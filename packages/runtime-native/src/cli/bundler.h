@@ -10,6 +10,7 @@ struct BundlerOptions {
     std::vector<std::string> assetDirs;
     std::string outputPath;
     std::string rootDir;
+    std::string runtimePath;
     bool bundleOnly = false;
     bool quiet = false;
 };

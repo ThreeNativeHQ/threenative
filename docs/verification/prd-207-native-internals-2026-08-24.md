@@ -26,12 +26,14 @@ closure branch commit `b911e138`. No branch was merged or squashed.
 1. Deprecated native GLTF/cgltf and Draco paths were removed from the runtime source and
    downloader. CMake now fails closed if either removed option is enabled; the JS contract checks
    that no native loader registration or live caller remains.
-2. Ten surviving bootstrap/polyfill programs moved to `src/runtime-scripts/` and are embedded by
-   `cmake/EmbedRuntimeScripts.cmake` into a generated header. `runtime.cpp` fell from 4,776 to
-   2,987 lines; the extracted sources total 1,500 lines.
-3. `cli/main.cpp` fell from 2,368 to 1,754 lines. Bundling and lightmap baking now live in
-   `src/cli/bundler.cpp` and `src/cli/lightmap.cpp`. The old and new CLI fixtures both produced
-   177 bytes with SHA-256
+2. Twelve surviving bootstrap/polyfill programs moved to `src/runtime-scripts/` and are embedded
+   by `cmake/EmbedRuntimeScripts.cmake` into a generated header. `runtime.cpp` fell from 4,776 to
+   3,007 lines; the extracted sources total 1,738 lines. Runtime initialization now stops when
+   any required embedded script fails to evaluate.
+3. `cli/main.cpp` fell from 2,368 to 1,730 lines. Bundling and lightmap baking live in the
+   separate `mystral-tools` target (`src/cli/bundler.cpp` and `src/cli/lightmap.cpp`); the runtime
+   `mystral` executable contains only the dispatch seam. The old and new compile fixtures both
+   produced 177 bytes with SHA-256
    `46efe4520985b6662d590b7febddc6dcc6284e436feccc017bd63b805c91a00d`.
 4. `JSValueHandle` now has Engine-owned `freezeHandle`, `freeHandle`, and
    `outstandingHandleCount` operations, with a move-only `JSValueGuard`. The churn executable
@@ -64,6 +66,10 @@ The first `pnpm native:verify:desktop` invocation stopped before the core scene 
 container ALSA device reported `Host is down`. The same audio proof passed, and the core/physics
 verifiers passed when rerun with `SDL_AUDIODRIVER=dummy`; this is an environment limitation, not a
 runtime assertion failure.
+
+The artifact verifier covers the compile/bundler path. A before/after lightmap artifact run and
+numeric before/after wake-latency measurements remain evidence gaps for review; the source
+contracts and converted wait primitives are covered by the focused suite.
 
 ## Platform limits
 

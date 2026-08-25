@@ -67,12 +67,19 @@ public:
 
         if (context_) {
             clearLastException();
-            for (const auto value : ownedHandles_) {
-                JSValueUnprotect(context_, value);
+            for (const auto& [value, count] : frameHandleRefs_) {
+                for (size_t index = 0; index < count; ++index) {
+                    JSValueUnprotect(context_, value);
+                }
             }
-            ownedHandles_.clear();
-            frameHandles_.clear();
-            protectedHandles_.clear();
+            for (const auto& [value, count] : protectedHandleRefs_) {
+                for (size_t index = 0; index < count; ++index) {
+                    JSValueUnprotect(context_, value);
+                }
+            }
+            frameHandleRefs_.clear();
+            protectedHandleRefs_.clear();
+            outstandingHandles_ = 0;
             if (functionPrototype_) JSValueUnprotect(context_, functionPrototype_);
             if (objectPrototype_) JSValueUnprotect(context_, objectPrototype_);
             if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
@@ -725,38 +732,48 @@ public:
 
     void freezeHandle(JSValueHandle value) override {
         if (!value.ptr) return;
-        const bool inserted = protectedHandles_.insert((JSValueRef)value.ptr).second;
-        if (inserted && ownedHandles_.insert((JSValueRef)value.ptr).second) {
-            JSValueProtect(context_, (JSValueRef)value.ptr);
+        const JSValueRef rawValue = (JSValueRef)value.ptr;
+        const auto frame = frameHandleRefs_.find(rawValue);
+        if (frame != frameHandleRefs_.end()) {
+            if (--frame->second == 0) frameHandleRefs_.erase(frame);
+            ++protectedHandleRefs_[rawValue];
+            return;
         }
+        ++protectedHandleRefs_[rawValue];
+        ++outstandingHandles_;
+        JSValueProtect(context_, rawValue);
     }
 
     void freeHandle(JSValueHandle value) override {
         if (!value.ptr) return;
-        const auto owned = ownedHandles_.find((JSValueRef)value.ptr);
-        if (owned == ownedHandles_.end()) return;
-        ownedHandles_.erase(owned);
-        frameHandles_.erase((JSValueRef)value.ptr);
-        protectedHandles_.erase((JSValueRef)value.ptr);
-        JSValueUnprotect(context_, (JSValueRef)value.ptr);
+        const JSValueRef rawValue = (JSValueRef)value.ptr;
+        const auto frame = frameHandleRefs_.find(rawValue);
+        if (frame != frameHandleRefs_.end()) {
+            if (--frame->second == 0) frameHandleRefs_.erase(frame);
+            --outstandingHandles_;
+            JSValueUnprotect(context_, rawValue);
+            return;
+        }
+        const auto persistent = protectedHandleRefs_.find(rawValue);
+        if (persistent == protectedHandleRefs_.end()) return;
+        if (--persistent->second == 0) protectedHandleRefs_.erase(persistent);
+        --outstandingHandles_;
+        JSValueUnprotect(context_, rawValue);
     }
 
     void protect(JSValueHandle value) override { freezeHandle(value); }
     void unprotect(JSValueHandle value) override { freeHandle(value); }
 
-    size_t outstandingHandleCount() const override { return ownedHandles_.size(); }
+    size_t outstandingHandleCount() const override { return outstandingHandles_; }
 
     void clearFrameHandles() override {
-        for (auto it = frameHandles_.begin(); it != frameHandles_.end();) {
-            const JSValueRef value = *it;
-            if (protectedHandles_.find(value) != protectedHandles_.end()) {
-                ++it;
-                continue;
+        for (const auto& [value, count] : frameHandleRefs_) {
+            for (size_t index = 0; index < count; ++index) {
+                JSValueUnprotect(context_, value);
             }
-            JSValueUnprotect(context_, value);
-            ownedHandles_.erase(value);
-            it = frameHandles_.erase(it);
+            outstandingHandles_ -= count;
         }
+        frameHandleRefs_.clear();
     }
 
     void gc() override {
@@ -1004,10 +1021,9 @@ private:
 
     JSValueHandle storeHandle(JSValueRef value) {
         if (!value) return {nullptr, context_};
-        if (ownedHandles_.insert(value).second) {
-            JSValueProtect(context_, value);
-        }
-        frameHandles_.insert(value);
+        ++frameHandleRefs_[value];
+        ++outstandingHandles_;
+        JSValueProtect(context_, value);
         return {(void*)value, context_};
     }
 
@@ -1045,8 +1061,8 @@ private:
         JSValueHandle result = callbackData->callback((void*)ctx, args);
         if (callbackData->engine) callbackData->engine->nativeCallbackDepth_ -= 1;
         if (callbackData->engine && result.ptr &&
-            callbackData->engine->protectedHandles_.find((JSValueRef)result.ptr) ==
-                callbackData->engine->protectedHandles_.end()) {
+            callbackData->engine->protectedHandleRefs_.find((JSValueRef)result.ptr) ==
+                callbackData->engine->protectedHandleRefs_.end()) {
             // The JavaScript call now owns the returned value. Release the temporary Engine
             // handle without touching borrowed callback arguments.
             callbackData->engine->freeHandle(result);
@@ -1068,9 +1084,9 @@ private:
     int nativeCallbackDepth_ = 0;
     bool exceptionFromNativeCallback_ = false;
     std::unordered_map<JSObjectRef, void*> privateDataMap_;
-    std::unordered_set<JSValueRef> ownedHandles_;
-    std::unordered_set<JSValueRef> frameHandles_;
-    std::unordered_set<JSValueRef> protectedHandles_;
+    std::unordered_map<JSValueRef, size_t> frameHandleRefs_;
+    std::unordered_map<JSValueRef, size_t> protectedHandleRefs_;
+    size_t outstandingHandles_ = 0;
     std::chrono::high_resolution_clock::time_point startTime_;
 };
 

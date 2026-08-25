@@ -4815,6 +4815,7 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                         if (!installed || !state->engine->toBoolean(installed.get())) {
                             std::cerr << "[WebGPU] failed to install async pipeline creation"
                                       << std::endl;
+                            return state->engine->newUndefined();
                         }
                     }
                     // device.createCommandEncoder(descriptor?)

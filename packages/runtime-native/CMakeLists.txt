@@ -1114,6 +1114,8 @@ set(TN_RUNTIME_SCRIPT_NAMES
     onload-trigger
     install-async-pipelines
     image-bitmap-polyfill
+    webtransport-polyfill
+    webtransport-stub
 )
 set(TN_RUNTIME_SCRIPT_FILES)
 foreach(TN_RUNTIME_SCRIPT_NAME IN LISTS TN_RUNTIME_SCRIPT_NAMES)
@@ -1155,7 +1157,6 @@ set(MYSTRAL_SOURCES
     src/http/http_client.cpp
     src/http/async_http_client.cpp
     src/webtransport/webtransport.cpp
-    src/webtransport/webtransport_polyfill.cpp
     src/fs/async_file.cpp
     src/fs/file_watcher.cpp
     src/audio/audio_context.cpp
@@ -1595,10 +1596,19 @@ endif()
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     add_executable(mystral
         src/cli/main.cpp
+        src/cli/tool_dispatch.cpp
+    )
+    target_link_libraries(mystral PRIVATE mystral-runtime)
+
+    # Build-time tools stay out of the runtime executable that gets copied into compiled games.
+    # The runtime CLI preserves `mystral compile` and `mystral bake` by dispatching to this
+    # sibling helper at build time.
+    add_executable(mystral-tools
+        src/cli/tools_main.cpp
         src/cli/bundler.cpp
         src/cli/lightmap.cpp
     )
-    target_link_libraries(mystral PRIVATE mystral-runtime)
+    target_link_libraries(mystral-tools PRIVATE mystral-runtime)
 
     # The desktop conformance lane's multitouch injector. It is a separate program rather than
     # part of the runtime because it must run *beside* a game, not inside one: it creates a
@@ -1702,7 +1712,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
 
     # Install CLI to bin directory
-    install(TARGETS mystral
+    install(TARGETS mystral mystral-tools
         RUNTIME DESTINATION bin
     )
 

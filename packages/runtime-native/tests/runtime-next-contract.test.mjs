@@ -15,6 +15,56 @@ function implementedRows() {
   return JSON.parse(read('conformance/registry.json')).tests.filter((entry) => entry.status === 'implemented');
 }
 
+const RUNTIME_SCRIPT_HASHES = {
+  'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
+  'fetch-polyfill.js': '0b9f8553897fa012e5eb2a754f9f36e3178d8a1bc1de4645dbeac0a2545a45e5',
+  'streams-polyfill.js': '134957d3cb3154f4e27b95b611af510b55c4e0e48a56c3785444ca0b31d45901',
+  'url-worker-polyfill.js': '1eb2015e202ca7e039e854aa68099bbc167d4f385f014c6acaa8cfd7ef2d850b',
+  'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
+  'event-constructors-setup.js': '9f69ab661c4926863e5ce59e5a83504ea9a8457ed95f58c69058ee6702dcd5e0',
+  'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
+  'onload-trigger.js': '226fba97f402a71ba5f3ae530133e31c0f2a977d8b1564b1cd903a871c194aad',
+  'install-async-pipelines.js': '9100a90ee38e89f53e8d92ae84156916c5c779d11bbedbf11e8b7c7f6ff44331',
+  'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
+  'webtransport-polyfill.js': '4b5a07862083c8e905341190cf37c613083517db84139288bbf7cee12fb6d359',
+  'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
+};
+
+const RUNTIME_SCRIPT_LOADERS = {
+  'install-async-pipelines.js': 'evalEmbeddedRuntimeScriptWithResult',
+  'image-bitmap-polyfill.js': 'evalEmbeddedRuntimeScript',
+  'webtransport-polyfill.js': 'runtime_scripts::find',
+  'webtransport-stub.js': 'runtime_scripts::find',
+};
+
+function runtimeScriptConsumer(filename, sources) {
+  if (filename === 'install-async-pipelines.js' || filename === 'image-bitmap-polyfill.js') {
+    return sources.bindings;
+  }
+  if (filename === 'webtransport-polyfill.js' || filename === 'webtransport-stub.js') {
+    return sources.webtransport;
+  }
+  return sources.runtime;
+}
+
+function runtimeScriptLoader(filename) {
+  return RUNTIME_SCRIPT_LOADERS[filename] ?? 'evalRuntimeScript\\(\\*jsEngine_';
+}
+
+function assertRuntimeScriptContract(filename, expectedHash, sources) {
+  const source = read(`src/runtime-scripts/${filename}`);
+  const actualHash = createHash('sha256').update(source).digest('hex');
+  assert.equal(actualHash, expectedHash, `${filename} was changed without updating its contract`);
+  const scriptName = filename.slice(0, -3);
+  assert.match(sources.cmake, new RegExp(`\\b${scriptName}\\b`), `${filename} is not in the embed step`);
+  const consumer = runtimeScriptConsumer(filename, sources);
+  assert.match(
+    consumer,
+    new RegExp(`${runtimeScriptLoader(filename)}.*"${scriptName}"`, 's'),
+    `${filename} is not loaded by its native consumer`,
+  );
+}
+
 test('official ThreeNative CMake presets and feature flags exist', () => {
   const presets = JSON.parse(read('CMakePresets.json'));
   const names = new Set(presets.configurePresets.map((preset) => preset.name));
@@ -149,40 +199,21 @@ test('deprecated native GLTF and Draco paths fail closed before compilation', ()
 });
 
 test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap', () => {
-  const scripts = {
-    'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
-    'fetch-polyfill.js': '0b9f8553897fa012e5eb2a754f9f36e3178d8a1bc1de4645dbeac0a2545a45e5',
-    'streams-polyfill.js': '134957d3cb3154f4e27b95b611af510b55c4e0e48a56c3785444ca0b31d45901',
-    'url-worker-polyfill.js': '1eb2015e202ca7e039e854aa68099bbc167d4f385f014c6acaa8cfd7ef2d850b',
-    'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
-    'event-constructors-setup.js': '9f69ab661c4926863e5ce59e5a83504ea9a8457ed95f58c69058ee6702dcd5e0',
-    'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
-    'onload-trigger.js': '226fba97f402a71ba5f3ae530133e31c0f2a977d8b1564b1cd903a871c194aad',
-    'install-async-pipelines.js': '9100a90ee38e89f53e8d92ae84156916c5c779d11bbedbf11e8b7c7f6ff44331',
-    'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
+  const sources = {
+    cmake: read('CMakeLists.txt'),
+    runtime: read('src/runtime.cpp'),
+    bindings: read('src/webgpu/bindings.cpp'),
+    webtransport: read('src/webtransport/webtransport.cpp'),
   };
-  const cmake = read('CMakeLists.txt');
-  const runtime = read('src/runtime.cpp');
-  const bindings = read('src/webgpu/bindings.cpp');
-  for (const [filename, expectedHash] of Object.entries(scripts)) {
-    const source = read(`src/runtime-scripts/${filename}`);
-    const actualHash = createHash('sha256').update(source).digest('hex');
-    assert.equal(actualHash, expectedHash, `${filename} was changed without updating its contract`);
-    const scriptName = filename.slice(0, -3);
-    assert.match(cmake, new RegExp(`\\b${scriptName}\\b`), `${filename} is not in the embed step`);
-    const consumer = filename === 'install-async-pipelines.js' || filename === 'image-bitmap-polyfill.js'
-      ? bindings
-      : runtime;
-    const loader = filename === 'install-async-pipelines.js'
-      ? 'evalEmbeddedRuntimeScriptWithResult'
-      : filename === 'image-bitmap-polyfill.js'
-        ? 'evalEmbeddedRuntimeScript'
-        : 'evalRuntimeScript\\(\\*jsEngine_';
-    assert.match(consumer, new RegExp(`${loader}.*"${scriptName}"`, 's'), `${filename} is not loaded by its native consumer`);
+  for (const [filename, expectedHash] of Object.entries(RUNTIME_SCRIPT_HASHES)) {
+    assertRuntimeScriptContract(filename, expectedHash, sources);
   }
+  const { cmake, runtime, bindings, webtransport } = sources;
   assert.doesNotMatch(runtime, /const char\*\s+\w+\s*=\s*R"/u, 'runtime bootstrap still owns a raw JavaScript string');
   assert.doesNotMatch(runtime, /jsEngine_->eval\("/u, 'runtime bootstrap still evaluates an inline JavaScript literal');
   assert.doesNotMatch(bindings, /const char\*\s+(installAsyncPipelines|imageBitmapPolyfill)\s*=\s*R"/u, 'WebGPU bootstrap still owns an extracted JavaScript string');
+  assert.match(bindings, /failed to install async pipeline creation[\s\S]*return state->engine->newUndefined\(\)/u, 'WebGPU device creation must stop when an extracted script fails');
+  assert.doesNotMatch(webtransport, /kWebTransportPolyfill|R"JS\(\s*\(function/u, 'WebTransport bootstrap still owns an extracted JavaScript string');
 });
 
 test('CLI build tools are separate units behind an unchanged dispatch surface', () => {
@@ -194,9 +225,10 @@ test('CLI build tools are separate units behind an unchanged dispatch surface', 
 
   assert.ok(main.split('\n').length <= 1800, 'main.cpp still contains a build-time tool body');
   assert.doesNotMatch(main, /static int (compileBundle|bakeLightmaps)\(/u);
-  assert.match(main, /BundlerOptions[\s\S]*compileBundle\(bundlerOptions\)/u);
-  assert.match(main, /LightmapOptions[\s\S]*bakeLightmaps\(lightmapOptions\)/u);
-  assert.match(cmake, /src\/cli\/bundler\.cpp[\s\S]*src\/cli\/lightmap\.cpp/u);
+  assert.match(main, /dispatchBuildTool\(argc, argv\)/u);
+  assert.match(cmake, /add_executable\(mystral-tools[\s\S]*src\/cli\/bundler\.cpp[\s\S]*src\/cli\/lightmap\.cpp/u);
+  assert.match(cmake, /add_executable\(mystral[\s\S]*src\/cli\/tool_dispatch\.cpp/u);
+  assert.doesNotMatch(cmake, /add_executable\(mystral\s*\n[^)]*src\/cli\/bundler\.cpp/u);
   assert.match(bundler, /int compileBundle\(const BundlerOptions& opts\)/u);
   assert.match(lightmap, /int bakeLightmaps\(const LightmapOptions& opts\)/u);
   assert.match(artifactCheck, /byteIdentical/u);
@@ -216,6 +248,7 @@ test('JSValueHandle ownership is an Engine API with a move-only guard', () => {
   assert.match(engine, /class JSValueGuard[\s\S]*JSValueGuard\(const JSValueGuard&\) = delete/u);
   assert.match(quickjs, /void freeHandle\(JSValueHandle value\) override/u);
   assert.match(v8, /void freeHandle\(JSValueHandle value\) override/u);
+  assert.match(read('src/js/jsc_engine.mm'), /frameHandleRefs_|protectedHandleRefs_/u);
   assert.match(churn, /handles-created=[\s\S]*outstanding/u);
   assert.match(read('CMakeLists.txt'), /threenative-handle-lifetime-test/u);
 });

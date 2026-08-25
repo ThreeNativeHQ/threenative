@@ -456,22 +456,37 @@ public:
         setupProcess();
 
         // Set up fetch API
-        setupFetch();
+        if (!setupFetch()) {
+            std::cerr << "[Mystral] Failed to install fetch runtime scripts" << std::endl;
+            return false;
+        }
 
         // Set up WebTransport API (QUIC/HTTP3 via quiche; stubbed if not built)
-        webtransport::initBindings(jsEngine_.get());
+        if (!webtransport::initBindings(jsEngine_.get())) {
+            std::cerr << "[Mystral] Failed to install WebTransport runtime script" << std::endl;
+            return false;
+        }
 
         // Set up URL parsing and the main-thread Worker polyfill.
-        setupURL();
+        if (!setupURL()) {
+            std::cerr << "[Mystral] Failed to install URL/Worker runtime script" << std::endl;
+            return false;
+        }
 
         // Set up module system (ESM/CJS resolution)
         setupModules();
 
         // Set up DOM event system (document, window, addEventListener, etc.)
-        setupDOMEvents();
+        if (!setupDOMEvents()) {
+            std::cerr << "[Mystral] Failed to install DOM runtime scripts" << std::endl;
+            return false;
+        }
 
         // Set up localStorage/sessionStorage (file-backed persistence)
-        setupStorage();
+        if (!setupStorage()) {
+            std::cerr << "[Mystral] Failed to install storage runtime script" << std::endl;
+            return false;
+        }
 
 #if TN_ENABLE_NATIVE_PHYSICS
         if (!physics::initializeNativePhysicsBindings(jsEngine_.get())) {
@@ -1439,8 +1454,8 @@ private:
         jsEngine_->setGlobalProperty("process", process);
     }
 
-    void setupStorage() {
-        if (!jsEngine_) return;
+    bool setupStorage() {
+        if (!jsEngine_) return false;
 
         // Initialize localStorage backed by a JSON file
         // Storage file is keyed by the current working directory name
@@ -1515,11 +1530,11 @@ private:
         );
 
         // JavaScript polyfill that creates localStorage and sessionStorage globals
-        evalRuntimeScript(*jsEngine_, "storage-polyfill", "storage-polyfill.js");
+        return evalRuntimeScript(*jsEngine_, "storage-polyfill", "storage-polyfill.js");
     }
 
-    void setupFetch() {
-        if (!jsEngine_) return;
+    bool setupFetch() {
+        if (!jsEngine_) return false;
 
         // Native file reading function - uses SDL on Android for asset access
         jsEngine_->setGlobalProperty("__readFileSync",
@@ -1783,7 +1798,7 @@ private:
         );
 
         // JavaScript fetch polyfill
-        evalRuntimeScript(*jsEngine_, "fetch-polyfill", "fetch-polyfill.js");
+        if (!evalRuntimeScript(*jsEngine_, "fetch-polyfill", "fetch-polyfill.js")) return false;
         std::cout << "[Mystral] Fetch API initialized (file://, http://, https://)" << std::endl;
 
         // --- WHATWG Streams -------------------------------------------------
@@ -1792,17 +1807,19 @@ private:
         // WebTransport API (so its readable/writable support pipeTo/pipeThrough,
         // tee and async iteration) and are also available to user code. Each is
         // guarded by typeof-undefined so a native engine implementation wins.
-        evalRuntimeScript(*jsEngine_, "streams-polyfill", "streams-polyfill.js");
+        if (!evalRuntimeScript(*jsEngine_, "streams-polyfill", "streams-polyfill.js")) return false;
         std::cout << "[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)" << std::endl;
+        return true;
     }
 
-    void setupURL() {
-        if (!jsEngine_) return;
+    bool setupURL() {
+        if (!jsEngine_) return false;
 
         // URL, URLSearchParams, and Worker polyfills for native runtime
         // Worker is a main-thread polyfill that simulates async message passing
-        evalRuntimeScript(*jsEngine_, "url-worker-polyfill", "url-worker-polyfill.js");
+        if (!evalRuntimeScript(*jsEngine_, "url-worker-polyfill", "url-worker-polyfill.js")) return false;
         std::cout << "[Mystral] URL and Worker polyfills initialized" << std::endl;
+        return true;
     }
 
     void setupModules() {
@@ -2058,8 +2075,8 @@ private:
     int watchId_ = -1;        // File watcher ID (-1 if not watching)
     bool reloadRequested_ = false;  // Set when a file change is detected
 
-    void setupDOMEvents() {
-        if (!jsEngine_) return;
+    bool setupDOMEvents() {
+        if (!jsEngine_) return false;
 
         // ========================================================================
         // Create canvas element FIRST (before document) so getElementById can return it
@@ -2333,7 +2350,9 @@ private:
                 auto onload = jsEngine_->getProperty(el, "onload");
                 if (!jsEngine_->isUndefined(onload) && !jsEngine_->isNull(onload)) {
                     // Call onload via setTimeout to simulate async loading
-                    evalRuntimeScript(*jsEngine_, "onload-trigger", "onload-trigger.js");
+                    if (!evalRuntimeScript(*jsEngine_, "onload-trigger", "onload-trigger.js")) {
+                        std::cerr << "[Mystral] Failed to install onload trigger" << std::endl;
+                    }
                 }
             }
             return jsEngine_->newUndefined();
@@ -2354,7 +2373,7 @@ private:
 
         // Set up document.createElement entirely in JavaScript for proper value handling
         // This must run AFTER document is set as a global
-        evalRuntimeScript(*jsEngine_, "create-element-setup", "createElement-setup.js");
+        if (!evalRuntimeScript(*jsEngine_, "create-element-setup", "createElement-setup.js")) return false;
 
         // Create window object with event listeners
         // Note: We use the global object as window, and also set 'window' as a global property
@@ -2400,7 +2419,7 @@ private:
                 return dispatchConstructedEvent("window", window, args);
             })
         );
-        evalRuntimeScript(*jsEngine_, "event-constructors-setup", "event-constructors-setup.js");
+        if (!evalRuntimeScript(*jsEngine_, "event-constructors-setup", "event-constructors-setup.js")) return false;
 
         // window.innerWidth / window.innerHeight
         jsEngine_->setProperty(window, "innerWidth", jsEngine_->newNumber(width_));
@@ -2653,9 +2672,10 @@ private:
 
         // Pre-cache image format support for @loaders.gl
         // This must run before any user script that uses the GLTF loader
-        evalRuntimeScript(*jsEngine_, "image-support-init", "image-support-init.js");
+        if (!evalRuntimeScript(*jsEngine_, "image-support-init", "image-support-init.js")) return false;
 
         std::cout << "[Mystral] DOM event system initialized" << std::endl;
+        return true;
     }
 
     void dispatchKeyboardEvent(const platform::KeyboardEventData& e) {
