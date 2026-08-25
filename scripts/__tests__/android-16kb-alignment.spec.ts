@@ -68,4 +68,16 @@ describe("android 16 KB page alignment", () => {
 
     expect(await sdl3VersionLiterals()).toEqual([]);
   });
+
+  it("gates every downloaded Android V8 ABI through the LOAD alignment check", async () => {
+    const downloader = await readFile(path.join(RUNTIME, "scripts", "download-deps.mjs"), "utf8");
+    expect(downloader).toMatch(
+      /dep\.needsV8AndroidExtraction\) verifyV8AndroidAlignment\(destDir, dep\)/u,
+    );
+    expect(downloader).toMatch(
+      /reshapeV8Android\(destDir, dep\);\s*verifyV8AndroidAlignment\(destDir, dep\)/u,
+    );
+    expect(downloader).toContain("lib', abi, 'libv8android.so");
+    expect(downloader).toContain("assertAndroid16KbAlignment(libraries)");
+  });
 });
