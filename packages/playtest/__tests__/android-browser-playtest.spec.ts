@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import { AndroidChromeBrowserSession, androidBrowserUrl } from "../src/runner/androidBrowserRunner.js";
 import { classifyRunnerError, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
-import { openRunnerPage, teardownBrowserSession } from "../src/runner/runner.js";
+import { openRunnerPage, teardownBrowserSession } from "../src/runner/browserSession.js";
 
 test("browser plus device selects the serial-bound Android Chrome lane, never local Chromium", async () => {
   const config = parseStandalonePlaytestArgs([
