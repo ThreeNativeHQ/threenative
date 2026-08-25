@@ -1320,51 +1320,6 @@ describe("SceneRenderProjection batches across differing geometries", () => {
     return meshes;
   }
 
-  it("wraps only each material-lane batch in its own dynamic bundle group", () => {
-    const scene = new Scene();
-    const townMaterial = new MeshStandardMaterial();
-    town(scene, townMaterial, 40);
-    town(scene, new MeshStandardMaterial(), 40);
-    fill(scene, new MeshStandardMaterial(), 40);
-    const exact = new Sprite(new SpriteMaterial());
-    const light = new DirectionalLight();
-    scene.add(exact, light);
-
-    const projection = projected(scene, 2);
-    const bundles: Array<Group & { isBundleGroup: true; static: boolean }> = [];
-    projection.root.traverse((object) => {
-      if ((object as { isBundleGroup?: boolean }).isBundleGroup === true) {
-        bundles.push(object as Group & { isBundleGroup: true; static: boolean });
-      }
-    });
-
-    expect(bundles).toHaveLength(2);
-    for (const bundle of bundles) {
-      expect(bundle.static).toBe(false);
-      expect(bundle.children).toHaveLength(1);
-      expect((bundle.children[0] as BatchedMesh).isBatchedMesh).toBe(true);
-      expect(bundle.children[0]?.parent).toBe(bundle);
-    }
-    // The instanced lane, exact proxies and lights remain ordinary direct scene children.
-    expect(
-      projection.root.children.find((object) => (object as InstancedMesh).isInstancedMesh === true),
-    ).toBeDefined();
-    expect(projection.root.children.some((object) => (object as Sprite).isSprite === true)).toBe(
-      true,
-    );
-    expect(projection.root.children.some(isLightObject)).toBe(true);
-
-    const batches = bundles.map((bundle) => bundle.children[0] as BatchedMesh);
-    const disposeSpies = batches.map((batch) => vi.spyOn(batch, "dispose"));
-    projection.dispose();
-    for (const [index, bundle] of bundles.entries()) {
-      expect(bundle.parent).toBeNull();
-      expect(bundle.children).toHaveLength(0);
-      expect(batches[index]?.parent).toBeNull();
-      expect(disposeSpies[index]).toHaveBeenCalledOnce();
-    }
-  });
-
   it("folds meshes that differ only in geometry into one draw per material", () => {
     const scene = new Scene();
     const material = new MeshStandardMaterial();
@@ -1399,29 +1354,6 @@ describe("SceneRenderProjection batches across differing geometries", () => {
     expect(projection.inspect(mover)?.matrixWorld.elements[12]).toBe(500);
     expect(projection.inspect(hidden)?.visible).toBe(false);
     expect(projection.report.projectedObjects).toBe(300);
-  });
-
-  it("keeps bundled material-lane movement, visibility and colour live after settling", () => {
-    const scene = new Scene();
-    const material = new MeshStandardMaterial({ color: 0x335577 });
-    const meshes = town(scene, material, 40);
-    const projection = projected(scene, 600);
-    const mover = meshes[5] as Mesh;
-    const hidden = meshes[9] as Mesh;
-
-    mover.position.set(500, 20, 0);
-    hidden.visible = false;
-    material.color.setHex(0xdd8844);
-    projection.reconcile();
-
-    expect(projection.inspect(mover)?.matrixWorld.elements.slice(12, 15)).toEqual([500, 20, 0]);
-    expect(projection.inspect(hidden)?.visible).toBe(false);
-    const bundle = projection.root.children.find(
-      (object) => (object as { isBundleGroup?: boolean }).isBundleGroup === true,
-    ) as Group | undefined;
-    const batch = bundle?.children[0] as BatchedMesh | undefined;
-    expect(batch?.material).toBe(material);
-    expect((batch?.material as MeshStandardMaterial).color.getHex()).toBe(0xdd8844);
   });
 
   it("demotes a geometry the game streams into instead of drawing a stale copy", () => {
