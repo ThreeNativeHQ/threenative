@@ -82,6 +82,11 @@ struct AndroidJsNativeProfile {
     uint64_t commandNs[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t bindingNs = 0;
     uint64_t bundlesExecuted = 0;
+    uint64_t writeBufferBytes = 0;
+    uint64_t writeBufferSmallCalls = 0;
+    uint64_t writeBufferMediumCalls = 0;
+    uint64_t writeBufferLargeCalls = 0;
+    std::unordered_set<WGPUBuffer> writeBufferTargets;
 };
 #endif
 

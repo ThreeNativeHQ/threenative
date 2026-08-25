@@ -391,6 +391,11 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << "\",\"calls\":" << calls
            << ",\"bindingNs\":" << state->androidJsNativeProfile.bindingNs
            << ",\"bundlesExecuted\":" << state->androidJsNativeProfile.bundlesExecuted
+           << ",\"writeBufferBytes\":" << state->androidJsNativeProfile.writeBufferBytes
+           << ",\"writeBufferDistinctTargets\":" << state->androidJsNativeProfile.writeBufferTargets.size()
+           << ",\"writeBufferSmallCalls\":" << state->androidJsNativeProfile.writeBufferSmallCalls
+           << ",\"writeBufferMediumCalls\":" << state->androidJsNativeProfile.writeBufferMediumCalls
+           << ",\"writeBufferLargeCalls\":" << state->androidJsNativeProfile.writeBufferLargeCalls
            << ",\"submitPollNs\":" << submitPollNs
            << ",\"presentNs\":" << presentNs
            << ",\"frame\":" << state->frameEndCount
@@ -4759,6 +4764,17 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                             }
 #if TN_ANDROID_JS_PROFILE
                             endProfiledBinding(state, ProfiledRenderCommand::WriteBuffer, profileStart);
+                            if (buffer && state->queue) {
+                                state->androidJsNativeProfile.writeBufferBytes += writeSize;
+                                state->androidJsNativeProfile.writeBufferTargets.insert(buffer);
+                                if (writeSize <= 256) {
+                                    state->androidJsNativeProfile.writeBufferSmallCalls += 1;
+                                } else if (writeSize <= 4096) {
+                                    state->androidJsNativeProfile.writeBufferMediumCalls += 1;
+                                } else {
+                                    state->androidJsNativeProfile.writeBufferLargeCalls += 1;
+                                }
+                            }
 #endif
                             return state->engine->newUndefined();
 }
