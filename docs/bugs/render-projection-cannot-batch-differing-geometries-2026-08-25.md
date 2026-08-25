@@ -1,6 +1,7 @@
 # The render projection batches nothing on a real scene: 835 candidates, 835 draws
 
-**Status:** open — diagnosed with device and browser evidence, not yet fixed
+**Status:** fix landed — unit red/green and browser reproduction done (commit `385fd50e`,
+2026-08-25); **device before/after on the Pixel 8 is still owed** before this file can be closed.
 **Severity:** high — it is the top frame-time lever on mobile and the thermal-headroom lever for
 the whole device lane. A physical Pixel 8 holds 17–19 fps on a 60 Hz display with the phone cool
 (31 °C, thermal status 0), so this is real cost and not throttling.
@@ -10,6 +11,55 @@ the whole device lane. A physical Pixel 8 holds 17–19 fps on a 60 Hz display w
 **Prior filings this supersedes in detail:** PRD-214's lever table row "Material-keyed
 `BatchedMesh` lane", filed by PRD-218 on 2026-08-24. That row is correct; this adds the measured
 population and the browser reproduction so the fix can be written and scored without a phone.
+
+---
+
+## Fix record (2026-08-25)
+
+The material-keyed lane landed exactly where this filing sketched it, with every constraint kept:
+keyed on material identity plus batch flags plus an attribute signature (what three's
+`_validateGeometry` refuses to mix — never material value); instanced grouping keeps first claim
+on any mesh; `WORTHWHILE_DRAW_RATIO` and `MIN_BATCH_MEMBERS` untouched; all existing
+`exactLaneReason`s preserved and one added (`negativeScale`, for the matrices `BatchedMesh`
+cannot carry). Two correctness obligations came with the packed copies, both corpus-tested:
+
+- a geometry whose attribute versions move after admission is demoted to the exact lane *before*
+  that frame's plan is built — no frame ever renders a stale copy;
+- negatively scaled sources are refused apply-side and counted before build, so a projected
+  frame never hands the renderer more draw candidates than the authored scene holds.
+
+Red first (`batches: 0`, `resultDrawCandidates == sourceRenderables` on distinct geometries over
+one shared material), then green (`300 → 1`). One pre-existing spec row was superseded rather
+than broken: "hands back a scene whose meshes each carry their own geometry" encoded the old
+decline verdict for exactly this scene shape; it now asserts the projection engages while keeping
+its authored-graph invariant. Gates at commit time: typecheck, lint, 2 186 unit tests, budgets —
+all exit 0.
+
+Browser reproduction against the sandbox game, headed Chromium, same scene as the symptom above:
+
+```
+BEFORE  {"projecting":false,"reasonCode":"notWorthwhile","sourceRenderables":835,
+         "resultDrawCandidates":835,"batches":0,"exact":{}}
+AFTER   {"projecting":true,"reasonCode":"projected","sourceRenderables":835,
+         "resultDrawCandidates":561,"batches":13,"instancedBatches":0,
+         "materialBatches":13,"projectedObjects":287,
+         "exact":{"skinned":40,"renderOrder":336,"transparent":75,"points":5,
+                  "instanced":12,"tooFewToBatch":80}}
+```
+
+Honest reading of the 561: 287 sources fold into 13 material-keyed draws; the rest are exact-lane
+proxies dominated by `renderOrder: 336` — mostly the ~224 hidden decal slots this filing already
+flagged as game-side work, which the mirror must still carry because they may become visible at
+any frame. The renderer-level GPU command count does not collapse to 13: r185's WebGPU backend
+walks one `BatchedMesh` as one render object (one pipeline/bind-group setup, one sort entry) but
+still issues a `drawIndexed` per packed sub-draw. The claimed win is the per-object CPU walk and
+shared state, and the arbiter for what that buys in frames and heat is the device run below.
+
+## Still owed
+
+A device run on the physical Pixel 8 with `observations.deviceMetrics` thermally clean, before
+and after, fps and the `render` phase from `TN_FRAME_BUDGET`. The before column exists in this
+file's cost section; only the after run remains.
 
 ---
 
