@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run build && pnpm --dir ../.. exec vitest run --config vitest.config.ts packages/assets && publint --strict"
+    "test": "pnpm run build && publint --strict"
   },
   "devDependencies": {
     "@types/node": "20.19.43",

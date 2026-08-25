@@ -24,6 +24,7 @@ concurrency:
 jobs:
   gates:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,19 +42,23 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - name: Refuse a stale or incomplete publish set
-        run: pnpm publish:check
+        # The release is the only caller allowed to admit exact pins for packages published in this
+        # coordinated set. Ordinary `pnpm publish:check` remains fail-closed for those pins.
+        run: pnpm publish:check --allow-current-publish-set-pins
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish:
     needs: gates
-    if: github.event_name == 'push' || inputs.dry_run == false
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -66,6 +71,19 @@ jobs:
       # publishable package is missing from it. A package that exists, is not private, and is
       # absent here would be omitted from the release.
       #
+      - name: Require the matching native runtime release
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          native_version="$(node -p 'JSON.parse(require("fs").readFileSync("packages/runtime-native/package.json", "utf8")).version')"
+          release_state="$(gh release view "runtime-native-v${native_version}" --repo "${{ github.repository }}" --json isDraft,isPrerelease --jq 'if .isDraft == false and .isPrerelease == false then "ready" else "not-ready" end')"
+          if [[ "${release_state}" != "ready" ]]; then
+            echo "Matching native runtime release is draft or prerelease; refusing npm publish."
+            exit 1
+          fi
+      # BEGIN GENERATED WORKSPACE PUBLISH SET
+      #   @threenative/assets
       #   @threenative/core
       #   @threenative/physics
       #   @threenative/playtest
@@ -73,14 +91,22 @@ jobs:
       #   @threenative/ui
       #   create-threenative
       #   threenative-engine-mcp
-      - name: Publish every non-private workspace package
-        run: pnpm -r --filter "./packages/*" publish --access public --no-git-checks
+      # END GENERATED WORKSPACE PUBLISH SET
+      - name: Run the single guarded release path
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.dry_run }}" == "true" ]]; then
+            pnpm tsx scripts/release.ts
+          else
+            pnpm tsx scripts/release.ts --yes
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   clean-room:
     needs: publish
+    if: github.event_name == 'push' || inputs.dry_run == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -89,6 +115,10 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install native desktop runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
       # Proves the registry path, which no other gate in this repository exercises: the sandbox,
       # the sweeps and verify-golden-path all resolve `file:` tarballs by design.
       - name: Install from the registry in a directory with no workspace above it

@@ -2,19 +2,23 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { promisify } from 'node:util';
 import { afterEach, test } from 'vitest';
+import { PNG } from 'pngjs';
 
 import {
+  PREBUILT_KEYS,
+  RELEASE_REPOSITORY,
   installPrebuilt,
   platformKey,
   readRelease,
   releaseManifestUrl,
   sha256,
   verifyChecksum,
+  writeInstallStatus,
 } from '../scripts/install-prebuilt.mjs';
 import {
   ANDROID_PREBUILT_ASSETS,
@@ -23,6 +27,41 @@ import {
   ensureGradleWrapper,
   prepareAndroidPrebuilts,
 } from '../scripts/package-android.mjs';
+
+/** Serves a set of named payloads over loopback and hands back a fixture `prebuilt-lock.json`. */
+async function serveFixtureRelease(root, contents) {
+  const server = createServer((request, response) => {
+    const key = decodeURIComponent(request.url.slice(1));
+    const payload = contents[key];
+    if (payload === undefined) {
+      response.statusCode = 404;
+      response.end();
+      return;
+    }
+    response.end(payload);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const artifacts = Object.fromEntries(
+    Object.entries(contents).map(([key, payload]) => [
+      key,
+      { sha256: sha256(payload), url: `http://127.0.0.1:${address.port}/${encodeURIComponent(key)}` },
+    ]),
+  );
+  const manifest = join(root, 'prebuilt-lock.json');
+  writeFileSync(manifest, `${JSON.stringify({ artifacts }, null, 2)}\n`);
+  return {
+    artifacts,
+    close: () =>
+      new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    manifest,
+    rewrite: (mutate) => {
+      mutate(artifacts);
+      writeFileSync(manifest, `${JSON.stringify({ artifacts }, null, 2)}\n`);
+    },
+  };
+}
 
 const roots = [];
 const run = promisify(execFile);
@@ -68,9 +107,53 @@ test('the default checksum lock URL is tied to the installed package version', (
   ).version;
   assert.equal(
     releaseManifestUrl(),
-    `https://github.com/jonit-dev/threenative/releases/download/runtime-native-v${version}/prebuilt-lock.json`,
+    `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v${version}/prebuilt-lock.json`,
   );
+  assert.equal(RELEASE_REPOSITORY, 'ThreeNativeHQ/threenative');
   assert.match(releaseManifestUrl(), /\/runtime-native-v\d+\.\d+\.\d+\//u);
+});
+
+test('records a failed prebuilt install with its release URL and reason', () => {
+  const root = makeTempDirSync('threenative-install-status-');
+  roots.push(root);
+  const url = releaseManifestUrl();
+  const statusPath = join(root, 'prebuilt', 'install-status.json');
+  writeInstallStatus(
+    {
+      key: 'linux-x64',
+      ok: false,
+      reason: `Prebuilt release manifest fetch failed for 'linux-x64' at ${url}: HTTP 404.`,
+      url,
+      version: '0.3.0',
+    },
+    statusPath,
+  );
+  assert.deepEqual(JSON.parse(readFileSync(statusPath, 'utf8')), {
+    key: 'linux-x64',
+    ok: false,
+    reason: `Prebuilt release manifest fetch failed for 'linux-x64' at ${url}: HTTP 404.`,
+    url,
+    version: '0.3.0',
+  });
+});
+
+test('exports the complete prebuilt key table consumed by release packaging', () => {
+  assert.ok(PREBUILT_KEYS.includes('linux-x64'));
+  assert.ok(PREBUILT_KEYS.includes('android-arm64-v8a-runtime'));
+  assert.ok(PREBUILT_KEYS.includes('android-arm64-v8a-runtime-v8'));
+  assert.ok(PREBUILT_KEYS.includes('ios-simulator-arm64'));
+});
+
+test('the native release workflow covers every exported prebuilt key', () => {
+  const workflow = readFileSync(
+    join(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'native-release.yml'),
+    'utf8',
+  );
+  assert.match(workflow, /PREBUILT_KEYS/u);
+  const namesBlock = workflow.match(/const names = \{([\s\S]*?)\n\s*\};/u)?.[1];
+  assert.ok(namesBlock, 'native release workflow has no checksum key table');
+  const workflowKeys = [...namesBlock.matchAll(/^\s*"([^"]+)":/gmu)].map((match) => match[1]);
+  assert.deepEqual([...workflowKeys].sort(), [...PREBUILT_KEYS].sort());
 });
 
 test('the installer can bootstrap a remote checksum lock before fetching the runtime', async () => {
@@ -158,6 +241,131 @@ test('Android QuickJS prebuilts verify every runtime, SDL, and Java payload befo
     );
   }
 });
+
+test('a clean-room install builds for Android from a fixture manifest, with no engine checkout', async () => {
+  // PRD-212 Phase 2. Every other Android test in this file runs inside the workspace, where
+  // CMakeLists.txt and a staged SDL3 AAR are simply present, so `packageAndroid` takes the source
+  // path and the prebuilt path is never exercised. A stranger has neither. This installs the packed
+  // tarball into a directory with no workspace and no engine checkout, and drives the packager from
+  // *there* — which is the only arrangement in which the 404 that killed bug 6 could have been seen.
+  const root = makeTempDirSync('threenative-android-cleanroom-');
+  roots.push(root);
+  const assets = ANDROID_PREBUILT_V8_ASSETS;
+  const contents = Object.fromEntries(
+    Object.keys(assets).map((key) => [key, Buffer.from(`payload:${key}`)]),
+  );
+  const release = await serveFixtureRelease(root, contents);
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    // The hook a stranger actually has. `packageAndroid` builds its own prebuilt call, so an
+    // option would test a seam no user can reach; the env variable is the shipped contract.
+    process.env.THREENATIVE_PREBUILT_MANIFEST = release.manifest;
+    const consumer = join(root, 'consumer');
+    mkdirSync(consumer);
+    const packed = await packRuntime(root);
+    writeFileSync(
+      join(consumer, 'package.json'),
+      `${JSON.stringify({
+        dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
+        name: 'android-cleanroom-proof',
+        private: true,
+      })}\n`,
+    );
+    await run('pnpm', ['install', '--ignore-scripts'], { cwd: consumer, env: { ...process.env } });
+
+    const installed = join(consumer, 'node_modules/@threenative/runtime-native');
+    // The detection the packager itself uses. If either of these were true the prebuilt path would
+    // be skipped and this test would silently prove the workspace path again.
+    assert.equal(existsSync(join(installed, 'CMakeLists.txt')), false);
+    assert.equal(existsSync(join(installed, 'third_party/sdl3-android/SDL3-3.2.8.aar')), false);
+
+    const { packageAndroid } = await import(
+      new URL(`file://${join(installed, 'scripts/package-android.mjs')}`).href
+    );
+
+    const bundle = join(root, 'main.js');
+    writeFileSync(bundle, 'export default { start() {} };\n');
+    const gradleInvocations = [];
+    await packageAndroid(bundle, join(root, 'game.apk'), undefined, undefined, undefined, {
+      // cmake and the NDK are masked: the whole point of the prebuilt path is that a stranger
+      // compiles no C++. Gradle is masked too — this gate proves the stranger's build reaches it
+      // with the right arguments and the right prebuilts staged, offline and on any machine.
+      ensureGradleWrapper: async () => join(installed, 'android/gradle/wrapper/gradle-wrapper.jar'),
+      runtimeRoot: installed,
+      spawnSync: (command, args) => {
+        gradleInvocations.push({ args, command });
+        mkdirSync(join(installed, 'android/app/build/outputs/apk/debug'), { recursive: true });
+        writeFileSync(
+          join(installed, 'android/app/build/outputs/apk/debug/app-debug.apk'),
+          'clean-room apk',
+        );
+        return { status: 0, stdout: '' };
+      },
+    });
+
+    // Every prebuilt the fixture manifest named landed where the Gradle build expects it.
+    for (const [key, path] of Object.entries(assets)) {
+      assert.deepEqual(
+        readFileSync(join(installed, 'android/prebuilt', path)),
+        contents[key],
+        `${key} was not staged from the fixture manifest`,
+      );
+    }
+    assert.equal(gradleInvocations.length, 1);
+    assert.ok(
+      gradleInvocations[0].args.includes('assembleDebug'),
+      `Gradle was not asked to assemble: ${JSON.stringify(gradleInvocations[0].args)}`,
+    );
+    assert.equal(existsSync(join(root, 'game.apk')), true);
+  } finally {
+    delete process.env.THREENATIVE_PREBUILT_MANIFEST;
+    await release.close();
+  }
+}, 300_000);
+
+test('the clean-room Android build fails loudly on a corrupt fixture manifest', async () => {
+  // The negative control for the gate above: a masked SDK or a corrupt lock must fail closed, not
+  // fall through to a build that quietly used nothing. A gate that passes on a broken manifest
+  // proves only that it ran.
+  const root = makeTempDirSync('threenative-android-cleanroom-red-');
+  roots.push(root);
+  const contents = Object.fromEntries(
+    Object.keys(ANDROID_PREBUILT_V8_ASSETS).map((key) => [key, Buffer.from(`payload:${key}`)]),
+  );
+  const release = await serveFixtureRelease(root, contents);
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const outputRoot = join(root, 'android');
+
+    release.rewrite((artifacts) => {
+      artifacts['android-arm64-v8a-runtime-v8'].sha256 = sha256(Buffer.from('tampered'));
+    });
+    await assert.rejects(
+      prepareAndroidPrebuilts({ manifestPath: release.manifest, outputRoot }),
+      /Checksum verification failed.*android-arm64-v8a-runtime-v8/u,
+      'a tampered artifact must not be staged',
+    );
+    assert.equal(existsSync(outputRoot), false);
+
+    release.rewrite((artifacts) => {
+      delete artifacts['android-sdl3-aar'];
+    });
+    await assert.rejects(
+      prepareAndroidPrebuilts({ manifestPath: release.manifest, outputRoot }),
+      /No prebuilt release asset.*android-sdl3-aar/u,
+      'a manifest missing an asset must name the asset',
+    );
+    assert.equal(existsSync(outputRoot), false);
+
+    await assert.rejects(
+      prepareAndroidPrebuilts({ manifestPath: join(root, 'absent-lock.json'), outputRoot }),
+      /No prebuilt release manifest exists/u,
+      'an absent manifest must fail closed rather than fetch the network',
+    );
+  } finally {
+    await release.close();
+  }
+}, 120_000);
 
 test('a packed Android build reconstructs only a checksum-verified Gradle wrapper', async () => {
   const root = makeTempDirSync('threenative-gradle-wrapper-');
@@ -265,11 +473,94 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
       ),
       runtime,
     );
+    assert.equal(
+      JSON.parse(
+        readFileSync(
+          join(
+            consumer,
+            'node_modules/@threenative/runtime-native/prebuilt/install-status.json',
+          ),
+          'utf8',
+        ),
+      ).ok,
+      true,
+    );
   } finally {
     await new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+test.runIf(process.platform === 'linux')('an installed runtime verifier uses packaged Linux display support', async () => {
+  const root = makeTempDirSync('threenative-installed-verifier-');
+  roots.push(root);
+  const consumer = join(root, 'consumer');
+  const packed = await packRuntime(root);
+  mkdirSync(consumer);
+  writeFileSync(
+    join(consumer, 'package.json'),
+    JSON.stringify({
+      dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
+      name: 'installed-verifier-proof',
+      private: true,
+    }),
+  );
+  await run('pnpm', ['install', '--ignore-scripts', '--node-linker=hoisted'], {
+    cwd: consumer,
+  });
+  const runtimePackage = join(consumer, 'node_modules', '@threenative', 'runtime-native');
+
+  const expectedScreenshot = join(root, 'expected.png');
+  const png = new PNG({ height: 16, width: 16 });
+  for (let index = 0; index < png.data.length; index += 4) {
+    const cyan = index < 128 * 4;
+    png.data[index] = cyan ? 20 : 0;
+    png.data[index + 1] = cyan ? 220 : 0;
+    png.data[index + 2] = cyan ? 240 : 0;
+    png.data[index + 3] = 255;
+  }
+  writeFileSync(expectedScreenshot, PNG.sync.write(png));
+
+  const artifactDirectory = join(consumer, 'dist-native');
+  mkdirSync(artifactDirectory, { recursive: true });
+  writeFileSync(join(consumer, 'package.json'), JSON.stringify({ name: 'starter' }));
+  const artifact = join(artifactDirectory, 'starter');
+  const artifactScript = [
+    '#!/bin/sh',
+    'set -eu',
+    'screenshot=',
+    'while [ "$#" -gt 0 ]; do',
+    '  case "$1" in',
+    '    --screenshot) screenshot="$2"; shift 2 ;;',
+    '    *) shift ;;',
+    '  esac',
+    'done',
+    'cp "$TN_TEST_SCREENSHOT" "$screenshot"',
+    "printf '%s\\n' 'TN_NATIVE_SMOKE_READY:webgpu' 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb' 'TN_NATIVE_SMOKE_300_FRAMES:300' 'Rendered 300 frames in 1ms'",
+    '',
+  ].join('\n');
+  writeFileSync(artifact, artifactScript);
+  chmodSync(artifact, 0o755);
+
+  const verifier = join(runtimePackage, 'scripts', 'verify-starter-desktop.mjs');
+  const result = await run(process.execPath, [verifier], {
+    cwd: consumer,
+    env: { ...process.env, TN_TEST_SCREENSHOT: expectedScreenshot },
+  });
+  assert.match(result.stdout, /starter desktop gate passed: 300 frames/u);
+  assert.equal(
+    JSON.parse(
+      readFileSync(join(consumer, 'artifacts', 'native', 'starter-desktop-report.json'), 'utf8'),
+    ).pass,
+    true,
+  );
+  await assert.rejects(
+    run('sh', [join(runtimePackage, 'scripts', 'xvfb.sh'), process.execPath, '-e', 'process.exit(7)'], {
+      cwd: consumer,
+    }),
+    (error) => error?.code === 7,
+  );
 });
 
 test('a corrupted download fails the packed consumer install lifecycle', async () => {
@@ -310,7 +601,24 @@ test('a corrupted download fails the packed consumer install lifecycle', async (
       (error) => /Checksum verification failed.*linux-x64/u.test(`${error.stdout}\n${error.stderr}`),
     );
     assert.equal(
-      existsSync(join(consumer, 'node_modules/@threenative/runtime-native/prebuilt')),
+      existsSync(
+        join(
+          consumer,
+          'node_modules/@threenative/runtime-native/prebuilt/linux-x64/threenative-runtime',
+        ),
+      ),
+      false,
+    );
+    assert.equal(
+      JSON.parse(
+        readFileSync(
+          join(
+            consumer,
+            'node_modules/@threenative/runtime-native/prebuilt/install-status.json',
+          ),
+          'utf8',
+        ),
+      ).ok,
       false,
     );
   } finally {

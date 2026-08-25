@@ -1,26 +1,25 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { publicWorkspacePackages } from "../../../scripts/workspace-packages.js";
 
-const roots = [
-  "core",
-  "physics",
-  "playtest",
-  "ui",
-  "runtime-native",
-  "create-threenative",
-] as const;
+const roots = publicWorkspacePackages(path.resolve("packages", "..")).map(({ directory }) =>
+  path.basename(directory),
+);
 
 interface IManifest {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   bin?: Record<string, string>;
   exports?: Record<string, string | Record<string, string>>;
   name: string;
+  optionalDependencies?: Record<string, string>;
   private?: boolean;
   publishConfig?: { access?: string };
   version: string;
 }
 
-async function manifest(root: (typeof roots)[number]): Promise<IManifest> {
+async function manifest(root: string): Promise<IManifest> {
   return JSON.parse(
     await readFile(path.resolve("packages", root, "package.json"), "utf8"),
   ) as IManifest;
@@ -62,6 +61,29 @@ describe("registry publication", () => {
       // And a template must pin whatever that version is, exactly — a scaffold pinning a
       // version the workspace no longer publishes cannot install.
       expect(templateManifest.dependencies["@threenative/ui"], template).toBe(packageJson.version);
+    }
+  });
+
+  it("keeps every template pin equal to the workspace package it ships", async () => {
+    const versions = new Map(
+      publicWorkspacePackages(path.resolve("packages", "..")).map(({ name, version }) => [
+        name,
+        version,
+      ]),
+    );
+    const templatesRoot = path.resolve("packages/create-threenative/templates");
+    for (const entry of await readdir(templatesRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const template = JSON.parse(
+        await readFile(path.join(templatesRoot, entry.name, "package.json"), "utf8"),
+      ) as IManifest;
+      for (const field of ["dependencies", "devDependencies", "optionalDependencies"] as const) {
+        for (const [name, version] of Object.entries(template[field] ?? {})) {
+          const workspaceVersion = versions.get(name);
+          if (workspaceVersion === undefined) continue;
+          expect(version, `${entry.name} ${field}.${name}`).toBe(workspaceVersion);
+        }
+      }
     }
   });
 

@@ -8,6 +8,7 @@ import type { IPlaytestBridgeV1 } from "../src/index.js";
 interface IWatchdogWorld {
   errors: string[];
   frames: Array<() => void>;
+  receives: number;
   restore(): void;
 }
 
@@ -17,6 +18,7 @@ function installWithFramePatch(): IWatchdogWorld {
     errors.push(parts.map((part) => String(part)).join(" "));
   });
   const frames: Array<() => void> = [];
+  let receives = 0;
   const globals = globalThis as typeof globalThis & {
     // biome-ignore lint/style/useNamingConvention: mirrors the native host's global name
     TN_PLAYTEST_MAILBOX?: unknown;
@@ -34,7 +36,10 @@ function installWithFramePatch(): IWatchdogWorld {
   globals.TN_PLAYTEST_MAILBOX = { request: "/mailbox/request.json", response: "/mailbox/response.json" };
   globals.__THREENATIVE_NATIVE__ = {
     playtest: {
-      receive: () => undefined,
+      receive: () => {
+        receives += 1;
+        return undefined;
+      },
       respond: () => true,
     },
   };
@@ -52,6 +57,9 @@ function installWithFramePatch(): IWatchdogWorld {
   return {
     errors,
     frames,
+    get receives() {
+      return receives;
+    },
     restore(): void {
       installation.close();
       errorSpy.mockRestore();
@@ -79,6 +87,16 @@ describe("native mailbox silence is named, never silent", () => {
       const stalls = world.errors.filter((text) => text.includes("TN_PLAYTEST_MAILBOX_POLL_STALLED"));
       expect(stalls).toHaveLength(1);
       expect(stalls[0]).toMatch(/frame pump/iu);
+    } finally {
+      world.restore();
+    }
+  });
+
+  test("a stopped frame pump still polls the mailbox within the operation timeout", () => {
+    const world = installWithFramePatch();
+    try {
+      vi.advanceTimersByTime(250 * 9);
+      expect(world.receives).toBeGreaterThan(0);
     } finally {
       world.restore();
     }

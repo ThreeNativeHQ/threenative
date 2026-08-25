@@ -189,6 +189,17 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     if (argc > 4 && argv[4] && argv[4][0] != '\0') windowTitle = argv[4];
     config.title = windowTitle.c_str();
     config.fullscreen = argc <= 5 || !argv[5] || std::string(argv[5]) == "true";
+    // `display.backgroundMode`, carried from the manifest as TN_BACKGROUND_MODE. Anything the
+    // parser does not recognize keeps the default and says so, rather than being guessed at.
+    if (argc > 6 && argv[6] && argv[6][0] != '\0') {
+        mystral::platform::BackgroundMode mode = mystral::platform::BackgroundMode::Pause;
+        if (mystral::platform::parseBackgroundMode(argv[6], mode)) {
+            config.backgroundMode = mode;
+        } else {
+            LOGE("Unrecognized TN_BACKGROUND_MODE '%s'; keeping 'pause'", argv[6]);
+        }
+    }
+    LOGI("backgroundMode=%s", mystral::platform::backgroundModeName(config.backgroundMode));
 #if TN_ANDROID_VSYNC
     config.vsync = true;
 #else

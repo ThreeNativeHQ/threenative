@@ -241,9 +241,25 @@ export function validateRegistry(registry) {
           errors.push(`${label}: ${field} must be a non-empty string`);
         }
       }
+      if (entry?.expires !== undefined && !isValidExclusionExpiry(entry.expires)) {
+        errors.push(`${label}: expires must be an ISO date (YYYY-MM-DD)`);
+      }
     }
   }
   return errors;
+}
+
+function isValidExclusionExpiry(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return false;
+  const timestamp = Date.parse(`${value}T00:00:00.000Z`);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().startsWith(value);
+}
+
+export function expiredExclusions(registry, now = Date.now()) {
+  return (registry.exclusions ?? []).filter((entry) => {
+    if (!isValidExclusionExpiry(entry?.expires)) return false;
+    return Date.parse(`${entry.expires}T00:00:00.000Z`) <= now;
+  });
 }
 
 function validateProvenanceEnv(entries) {
@@ -396,6 +412,15 @@ export function validateReport(report, registry) {
       (multitouch.status === "fail" && multitouch.exitCode === 0)
     ) {
       errors.push("supplemental.androidMultitouch status must match its exitCode");
+    }
+  }
+  for (const exclusion of report.supplemental?.expiredExclusions ?? []) {
+    if (
+      typeof exclusion?.id !== "string"
+      || exclusion.status !== "blocked"
+      || !isValidExclusionExpiry(exclusion.expires)
+    ) {
+      errors.push("supplemental.expiredExclusions entries must identify a blocked exclusion and its expiry");
     }
   }
   return errors;
@@ -1575,6 +1600,7 @@ function writeReport(report, path) {
 export function reportExitCode(report) {
   if (report.summary.fail > 0) return 1;
   if (report.summary.blocked > 0) return 2;
+  if ((report.supplemental?.expiredExclusions ?? []).length > 0) return 2;
   return 0;
 }
 
@@ -1692,6 +1718,12 @@ async function main(argv = process.argv.slice(2)) {
     project,
     provenance,
   );
+  const expired = expiredExclusions(registry);
+  if (expired.length > 0) {
+    report.supplemental = {
+      expiredExclusions: expired.map(({ expires, id }) => ({ expires, id, status: "blocked" })),
+    };
+  }
   const targetBlocker = dryRun
     ? null
     : target === "android-hardware"
@@ -1706,7 +1738,14 @@ async function main(argv = process.argv.slice(2)) {
   const executeRows = async (port, broker = null) => {
     for (const test of registry.tests) {
       const result = createResult(test);
-      if (test.status !== "implemented") {
+      const expiredRowExclusion = expired.find(
+        (entry) => entry.target === target && entry.row === test.id,
+      );
+      if (expiredRowExclusion !== undefined) {
+        result.status = "blocked";
+        result.blockedReason =
+          `TN_PARITY_EXCLUSION_EXPIRED: ${expiredRowExclusion.id} expired on ${expiredRowExclusion.expires}.`;
+      } else if (test.status !== "implemented") {
         result.status = dryRun ? "planned" : "blocked";
         if (!dryRun) result.blockedReason = "Registry row is not implemented.";
       } else if (selectedIds !== null && !selectedIds.includes(test.id)) {
@@ -1815,6 +1854,7 @@ async function main(argv = process.argv.slice(2)) {
     );
   if (shouldRunAndroidMultitouch({ dryRun, project, target })) {
     report.supplemental = {
+      ...report.supplemental,
       androidMultitouch: runAndroidMultitouchProof({
         device: valueAfter(argv, "--device"),
         runtimeRoot,

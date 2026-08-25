@@ -111,17 +111,6 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
   let watchdogBeats = 0;
   let polledAtBeat = 0;
   let stallReported = false;
-  const pollWatchdog = setInterval(() => {
-    watchdogBeats += 1;
-    if (closed || stallReported || watchdogBeats - polledAtBeat < MAILBOX_POLL_STALL_BEATS) return;
-    stallReported = true;
-    const stall = playtestDiagnostic(
-      "TN_PLAYTEST_MAILBOX_POLL_STALLED",
-      `the native mailbox poll has not run for ${MAILBOX_POLL_STALL_BEATS * MAILBOX_WATCHDOG_BEAT_MS}ms while timers still fire; the host's requestAnimationFrame frame pump stopped servicing it`,
-      "Inspect the host for a stopped or crashed frame pump; the mailbox cannot answer until frames resume.",
-    );
-    console.error(`${stall.code}: ${stall.message}`);
-  }, MAILBOX_WATCHDOG_BEAT_MS);
   const respond = (response: IPlaytestDeviceResponse): void => {
     if (!host.respond!(mailbox.response as string, JSON.stringify(response))) {
       console.error("TN_PLAYTEST_DEVICE_TRANSPORT: native mailbox response failed");
@@ -144,6 +133,22 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
     }
     frame = globalThis.requestAnimationFrame(poll);
   };
+  const pollWatchdog = setInterval(() => {
+    watchdogBeats += 1;
+    if (closed || watchdogBeats - polledAtBeat < MAILBOX_POLL_STALL_BEATS) return;
+    if (!stallReported) {
+      stallReported = true;
+      const stall = playtestDiagnostic(
+        "TN_PLAYTEST_MAILBOX_POLL_STALLED",
+        `the native mailbox poll has not run for ${MAILBOX_POLL_STALL_BEATS * MAILBOX_WATCHDOG_BEAT_MS}ms while timers still fire; the host's requestAnimationFrame frame pump stopped servicing it`,
+        "Inspect the host for a stopped or crashed frame pump; the mailbox will keep polling while frames recover.",
+      );
+      console.error(`${stall.code}: ${stall.message}`);
+    }
+    if (frame !== undefined) globalThis.cancelAnimationFrame(frame);
+    frame = undefined;
+    poll();
+  }, MAILBOX_WATCHDOG_BEAT_MS);
   respond({ id: "ready", result: null });
   frame = globalThis.requestAnimationFrame(poll);
   return {

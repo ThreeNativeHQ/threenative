@@ -12,6 +12,7 @@
  *  - has any package's `src/` moved since the version it still carries was published?
  *  - did a `catalog:` or `workspace:` specifier survive into a manifest that ships?
  *  - does every publishable package carry a README that its own `files` list would include?
+ *  - does every relative import of every shipped script resolve inside the packed tarball?
  *
  * A registry it cannot reach is not a pass. It exits `2` — `pnpm alpha:bar` uses the same rank,
  * where `2` means the question was never answered.
@@ -19,7 +20,14 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { init, parse } from "es-module-lexer";
+
+const { releaseManifestUrl } = (await import(
+  new URL("../packages/runtime-native/scripts/install-prebuilt.mjs", import.meta.url).href
+)) as { readonly releaseManifestUrl: (version?: string) => string };
+import { publicWorkspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -45,32 +53,31 @@ export interface IPublishReport {
 
 /** Every workspace package a stranger would have to install. `private` packages are not shipped. */
 export function publishSet(repo: string): readonly IPublishPackage[] {
-  const root = path.join(repo, "packages");
-  if (!fs.existsSync(root))
-    throw new Error(`TN_PUBLISH_NO_PACKAGES: ${root} does not exist, so nothing can be published.`);
-  const packages: IPublishPackage[] = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const manifest = path.join(root, entry.name, "package.json");
-    if (!fs.existsSync(manifest)) continue;
-    const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as {
-      name?: unknown;
-      private?: unknown;
-      version?: unknown;
-    };
-    if (parsed.private === true) continue;
-    if (typeof parsed.name !== "string" || typeof parsed.version !== "string")
-      throw new Error(`TN_PUBLISH_MANIFEST_MALFORMED: ${manifest} has no name or version.`);
-    packages.push({
-      directory: path.join(root, entry.name),
-      manifest,
-      name: parsed.name,
-      version: parsed.version,
-    });
-  }
-  if (packages.length === 0)
+  const workspacePackages = (() => {
+    try {
+      return publicWorkspacePackages(repo);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "TN_WORKSPACE_PACKAGES_EMPTY: no package manifests were found."
+      ) {
+        throw new Error(
+          "TN_PUBLISH_EMPTY_SET: no publishable package was found. Refusing to pass.",
+        );
+      }
+      throw error;
+    }
+  })();
+  const packages = workspacePackages.map((item) => ({
+    directory: item.directory,
+    manifest: path.join(item.directory, "package.json"),
+    name: item.name,
+    version: item.version,
+  }));
+  if (packages.length === 0) {
     throw new Error("TN_PUBLISH_EMPTY_SET: no publishable package was found. Refusing to pass.");
-  return packages.sort((left, right) => left.name.localeCompare(right.name));
+  }
+  return packages;
 }
 
 export interface IRegistryFacts {
@@ -80,16 +87,17 @@ export interface IRegistryFacts {
   readonly version?: string;
 }
 
-export type RegistryLookup = (packageName: string) => IRegistryFacts;
+export type RegistryLookup = (packageName: string, version?: string) => IRegistryFacts;
 
 export function npmLookup(repo: string): RegistryLookup {
   const userconfig = path.join(repo, ".npmrc");
   const config = fs.existsSync(userconfig) ? ["--userconfig", userconfig] : [];
-  return (packageName) => {
+  return (packageName, version) => {
+    const requested = version === undefined ? packageName : `${packageName}@${version}`;
     try {
       const stdout = execFileSync(
         "npm",
-        [...config, "view", packageName, "version", "time", "--json"],
+        [...config, "view", requested, "version", "time", "--json"],
         { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 },
       );
       const parsed = JSON.parse(stdout) as { time?: Record<string, string>; version?: string };
@@ -115,10 +123,21 @@ export type SourceCommits = (directory: string, since: string) => number;
 export function gitSourceCommits(repo: string): SourceCommits {
   return (directory, since) => {
     const source = path.join(directory, "src");
-    const target = fs.existsSync(source) ? source : directory;
+    const targets = [
+      ...(fs.existsSync(source) ? [source] : [directory]),
+      ...(fs.existsSync(path.join(directory, "templates"))
+        ? [path.join(directory, "templates")]
+        : []),
+    ];
     const stdout = execFileSync(
       "git",
-      ["log", "--oneline", `--since=${since}`, "--", path.relative(repo, target)],
+      [
+        "log",
+        "--oneline",
+        `--since=${since}`,
+        "--",
+        ...targets.map((target) => path.relative(repo, target)),
+      ],
       { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     );
     return stdout.split("\n").filter((line) => line.trim().length > 0).length;
@@ -126,6 +145,12 @@ export function gitSourceCommits(repo: string): SourceCommits {
 }
 
 const UNRESOLVED = /^(?:catalog:|workspace:)/u;
+const TEMPLATE_DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
 
 /**
  * A template manifest ships to a user's disk verbatim. `catalog:` and `workspace:` are pnpm
@@ -141,7 +166,7 @@ export function unresolvedTemplateSpecifiers(repo: string): readonly IPublishFin
     const manifest = path.join(root, entry.name, "package.json");
     if (!fs.existsSync(manifest)) continue;
     const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
-    for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+    for (const field of TEMPLATE_DEPENDENCY_FIELDS) {
       const block = parsed[field];
       if (typeof block !== "object" || block === null) continue;
       for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>))
@@ -156,10 +181,133 @@ export function unresolvedTemplateSpecifiers(repo: string): readonly IPublishFin
   return findings;
 }
 
+/** Every package specifier copied to a stranger's project must be portable and resolvable. */
+export function templatePinCensus(
+  repo: string,
+  lookup: RegistryLookup = npmLookup(repo),
+  options: { readonly allowCurrentPublishSetPins?: boolean } = {},
+): readonly IPublishFinding[] {
+  const root = path.join(repo, "packages", "create-threenative", "templates");
+  if (!fs.existsSync(root)) return [];
+  const findings: IPublishFinding[] = [...unresolvedTemplateSpecifiers(repo)];
+  const currentPublishPins = options.allowCurrentPublishSetPins
+    ? new Set(publishSet(repo).map((item) => `${item.name}@${item.version}`))
+    : new Set<string>();
+  const seen = new Map<string, IRegistryFacts>();
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifest = path.join(root, entry.name, "package.json");
+    if (!fs.existsSync(manifest)) continue;
+    const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
+    for (const field of TEMPLATE_DEPENDENCY_FIELDS) {
+      const block = parsed[field];
+      if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
+      for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>)) {
+        if (typeof specifier !== "string" || UNRESOLVED.test(specifier)) continue;
+        const pin = `${dependency}@${specifier}`;
+        let facts = seen.get(pin);
+        if (facts === undefined) {
+          try {
+            facts = lookup(dependency, specifier);
+          } catch {
+            facts = { state: "unreachable" };
+          }
+          seen.set(pin, facts);
+        }
+        if (facts.state === "present") continue;
+        if (
+          options.allowCurrentPublishSetPins &&
+          facts.state === "absent" &&
+          currentPublishPins.has(pin)
+        )
+          continue;
+        findings.push({
+          detail:
+            facts.state === "absent"
+              ? `templates/${entry.name}/package.json pins ${pin}, but the registry has no resolvable version.`
+              : `The registry could not be reached while resolving templates/${entry.name}/package.json pin ${pin}.`,
+          package: `template:${entry.name}`,
+          severity: facts.state === "absent" ? "fail" : "blocked",
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+export type PrebuiltReleaseProbe = (url: string) => "absent" | "present" | "unreachable";
+
+function headPrebuiltRelease(url: string): ReturnType<PrebuiltReleaseProbe> {
+  try {
+    const status = execFileSync(
+      "curl",
+      [
+        "--silent",
+        "--show-error",
+        "--location",
+        "--head",
+        "--output",
+        "/dev/null",
+        "--write-out",
+        "%{http_code}",
+        url,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 },
+    ).trim();
+    if (/^2\d\d$/u.test(status)) return "present";
+    if (status === "404") return "absent";
+    return "unreachable";
+  } catch {
+    return "unreachable";
+  }
+}
+
+function runtimePackageVersion(repo: string): string | undefined {
+  const manifest = path.join(repo, "packages", "runtime-native", "package.json");
+  if (!fs.existsSync(manifest)) return undefined;
+  const version = (JSON.parse(fs.readFileSync(manifest, "utf8")) as { version?: unknown }).version;
+  if (typeof version !== "string" || version.length === 0)
+    throw new Error(`TN_PUBLISH_VERSION_MALFORMED: ${manifest} has no version.`);
+  return version;
+}
+
+/** The runtime package and its public prebuilt lock must move together. */
+export function prebuiltReleaseCensus(
+  repo: string,
+  probe: PrebuiltReleaseProbe = headPrebuiltRelease,
+  version = runtimePackageVersion(repo),
+): readonly IPublishFinding[] {
+  if (version === undefined) return [];
+  const url = releaseManifestUrl(version);
+  let state: ReturnType<PrebuiltReleaseProbe>;
+  try {
+    state = probe(url);
+  } catch {
+    state = "unreachable";
+  }
+  if (state === "present") return [];
+  if (state === "absent") {
+    return [
+      {
+        detail: `No prebuilt release exists at ${url}; publish runtime-native-v${version} before publishing the runtime package.`,
+        package: "@threenative/runtime-native",
+        severity: "fail",
+      },
+    ];
+  }
+  return [
+    {
+      detail: `The prebuilt release could not be reached at ${url}; its existence is unknown.`,
+      package: "@threenative/runtime-native",
+      severity: "blocked",
+    },
+  ];
+}
+
 /**
  * A package page is only useful when its README exists and the package's own `files` list carries
  * it. Packages without an explicit list use npm's default inclusion rules, so existence is enough
- * for them. This stays manifest-based and offline: the tarball gate proves the same contract later.
+ * for them. This stays manifest-based; `unresolvableTarballImports` proves the packed contract.
  */
 export function missingPackageReadmes(
   packages: readonly IPublishPackage[],
@@ -277,6 +425,152 @@ export function staleInternalPeerRanges(
   return findings;
 }
 
+/**
+ * A packed tarball is what a stranger actually installs. `files` lists are hand-maintained and
+ * drift from the imports the scripts really make: HEAD ships `package-android.mjs`, which imports
+ * `./asset-preflight.mjs`, and that file is not in the list — so `build --target android` from a
+ * published install dies `ERR_MODULE_NOT_FOUND` before it reaches a single fetch. Nothing in the
+ * workspace can see that, because in the workspace the file is simply there.
+ */
+export interface ITarballContents {
+  /** Every shipped path, relative to the package root. */
+  readonly entries: readonly string[];
+  /** Contents of the shipped paths these gates read; binary and asset entries are not read. */
+  readonly text: ReadonlyMap<string, string>;
+}
+
+export type TarballReader = (item: IPublishPackage) => ITarballContents;
+
+const READABLE = /\.(?:mjs|cjs|js|json)$/u;
+
+/** Packs a package exactly as `pnpm publish` would and reads back what came out. */
+export function pnpmPackReader(): TarballReader {
+  return (item) => {
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), "threenative-pack-"));
+    try {
+      execFileSync("pnpm", ["pack", "--pack-destination", destination], {
+        cwd: item.directory,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const packed = fs.readdirSync(destination).filter((name) => name.endsWith(".tgz"));
+      if (packed.length !== 1)
+        throw new Error(
+          `TN_PUBLISH_PACK_FAILED: packing ${item.name} produced ${packed.length} tarball(s); expected exactly one.`,
+        );
+      const extracted = path.join(destination, "extracted");
+      fs.mkdirSync(extracted);
+      execFileSync("tar", ["-xzf", path.join(destination, packed[0] as string), "-C", extracted], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return readPackageTree(path.join(extracted, "package"));
+    } finally {
+      fs.rmSync(destination, { force: true, recursive: true });
+    }
+  };
+}
+
+function readPackageTree(root: string): ITarballContents {
+  const entries: string[] = [];
+  const text = new Map<string, string>();
+  const walk = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+        continue;
+      }
+      const relative = path.relative(root, absolute).split(path.sep).join("/");
+      entries.push(relative);
+      if (READABLE.test(relative)) text.set(relative, fs.readFileSync(absolute, "utf8"));
+    }
+  };
+  walk(root);
+  return { entries: entries.sort(), text };
+}
+
+/**
+ * `pnpm pack` rewrites `catalog:` and `workspace:` into real ranges; `npm pack` does not, and the
+ * tarball it produces installs nowhere — `EUNSUPPORTEDPROTOCOL` on the stranger's machine and
+ * nowhere else. CI only ever runs `pnpm -r publish`, so this cannot detect a policy breach in
+ * advance; it makes one visible in the artifact instead of in a user's install log.
+ */
+export function unresolvedTarballSpecifiers(
+  item: IPublishPackage,
+  contents: ITarballContents,
+): readonly IPublishFinding[] {
+  const manifest = contents.text.get("package.json");
+  if (manifest === undefined)
+    return [
+      {
+        detail: `${item.name} packs a tarball with no package.json, so what it would publish cannot be read.`,
+        package: item.name,
+        severity: "blocked",
+      },
+    ];
+  const parsed = JSON.parse(manifest) as Record<string, unknown>;
+  const findings: IPublishFinding[] = [];
+  for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+    const block = parsed[field];
+    if (typeof block !== "object" || block === null) continue;
+    for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>))
+      if (typeof specifier === "string" && UNRESOLVED.test(specifier))
+        findings.push({
+          detail: `${item.name} packs ${field}.${dependency} as '${specifier}', a workspace protocol npm cannot install. The tarball was not produced by \`pnpm pack\`.`,
+          package: item.name,
+          severity: "fail",
+        });
+  }
+  return findings;
+}
+
+/**
+ * Relative specifiers a shipped script imports. Parsed rather than pattern-matched: this file's
+ * first draft used regexes and reported `./game.js` as missing from the runtime-native tarball,
+ * because `profile-production.mjs` writes that import *into a generated bundle* as a string. A
+ * gate whose failures are half fiction gets suppressed rather than fixed.
+ *
+ * Dynamic forms count. `profile-production.mjs` reaches `../../../scripts/gate-records.mjs` from
+ * under a CLI guard; that still fails on an installed copy, just later and further from the cause.
+ */
+export async function relativeSpecifiers(file: string, source: string): Promise<readonly string[]> {
+  await init;
+  let parsed: ReturnType<typeof parse>[0];
+  try {
+    [parsed] = parse(source, file);
+  } catch (error) {
+    throw new Error(
+      `TN_PUBLISH_MODULE_UNREADABLE: ${file} is shipped but could not be parsed as a module, so its imports cannot be checked: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const found = new Set<string>();
+  for (const item of parsed) if (item.n?.startsWith(".") === true) found.add(item.n);
+  return [...found].sort();
+}
+
+/** Every relative import of every shipped script must resolve to something else that shipped. */
+export async function unresolvableTarballImports(
+  item: IPublishPackage,
+  contents: ITarballContents,
+): Promise<readonly IPublishFinding[]> {
+  const shipped = new Set(contents.entries);
+  const findings: IPublishFinding[] = [];
+  for (const [file, source] of contents.text) {
+    if (file.endsWith(".json")) continue;
+    for (const specifier of await relativeSpecifiers(file, source)) {
+      const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
+      if (shipped.has(resolved)) continue;
+      findings.push({
+        detail: `${item.name} ships ${file}, which imports '${specifier}', but ${resolved} is not in the tarball. Loading it fails ERR_MODULE_NOT_FOUND on an installed copy.`,
+        package: item.name,
+        severity: "fail",
+      });
+    }
+  }
+  return findings;
+}
+
 export const RELEASE_WORKFLOW = ".github/workflows/npm-release.yml";
 
 /**
@@ -308,9 +602,12 @@ export function missingFromReleaseWorkflow(
 }
 
 export interface ICheckPublishOptions {
+  readonly allowCurrentPublishSetPins?: boolean;
   readonly lookup?: RegistryLookup;
+  readonly prebuiltProbe?: PrebuiltReleaseProbe;
   readonly repo?: string;
   readonly sourceCommits?: SourceCommits;
+  readonly tarballs?: TarballReader;
 }
 
 function versionFinding(
@@ -343,7 +640,9 @@ function versionFinding(
   };
 }
 
-export function checkPublishState(options: ICheckPublishOptions = {}): IPublishReport {
+export async function checkPublishState(
+  options: ICheckPublishOptions = {},
+): Promise<IPublishReport> {
   const repo = options.repo ?? REPO;
   const lookup = options.lookup ?? npmLookup(repo);
   const commits = options.sourceCommits ?? gitSourceCommits(repo);
@@ -356,7 +655,18 @@ export function checkPublishState(options: ICheckPublishOptions = {}): IPublishR
   findings.push(...missingPackageReadmes(packages));
   findings.push(...staleInternalPeerRanges(packages));
   findings.push(...missingFromReleaseWorkflow(repo, packages));
-  findings.push(...unresolvedTemplateSpecifiers(repo));
+  findings.push(
+    ...templatePinCensus(repo, lookup, {
+      allowCurrentPublishSetPins: options.allowCurrentPublishSetPins,
+    }),
+  );
+  findings.push(...prebuiltReleaseCensus(repo, options.prebuiltProbe));
+  const readTarball = options.tarballs ?? pnpmPackReader();
+  for (const item of packages) {
+    const contents = readTarball(item);
+    findings.push(...unresolvedTarballSpecifiers(item, contents));
+    findings.push(...(await unresolvableTarballImports(item, contents)));
+  }
   const blocked = findings.some((finding) => finding.severity === "blocked");
   return {
     checked: packages.map((item) => item.name),
@@ -377,10 +687,27 @@ export function formatPublishReport(report: IPublishReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-function main(): void {
-  const report = checkPublishState();
+const ALLOW_CURRENT_PUBLISH_SET_PINS = "--allow-current-publish-set-pins";
+
+async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const unknown = argv.filter((argument) => argument !== ALLOW_CURRENT_PUBLISH_SET_PINS);
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `TN_PUBLISH_UNKNOWN_FLAG: ${unknown.join(", ")}. Supported flag: ${ALLOW_CURRENT_PUBLISH_SET_PINS}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const report = await checkPublishState({
+    allowCurrentPublishSetPins: argv.includes(ALLOW_CURRENT_PUBLISH_SET_PINS),
+  });
   process.stdout.write(formatPublishReport(report));
   process.exitCode = report.exitCode;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (import.meta.url === `file://${process.argv[1]}`)
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    // A question this preflight could not answer is never a pass; 2 is the blocked rank.
+    process.exitCode = 2;
+  });

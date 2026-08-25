@@ -7,6 +7,7 @@ import path from "node:path";
 const REGISTRY_VERSION = 1;
 const LOCK_WAIT_MS = 50;
 const LOCK_ATTEMPTS = 100;
+export const WORKTREE_LEASE_EXPIRY_MS = 15 * 60 * 1_000;
 
 export interface IWorktreeRecord {
   branch: string | undefined;
@@ -43,7 +44,7 @@ export interface IWorktreeContext {
   repositoryRoot: string;
 }
 
-interface ILeaseRegistry {
+export interface ILeaseRegistry {
   leases: IWorktreeLease[];
   version: number;
 }
@@ -184,9 +185,17 @@ export function assessWorktreeLease(
   lease: IWorktreeLease,
   current: IWorktreeRecord,
   identity: ILeaseIdentity,
+  now = Date.now(),
+  expiryMs = WORKTREE_LEASE_EXPIRY_MS,
 ): ILeaseAssessment {
   const snapshot = assessWorktreeSnapshot(worktreeFromLease(lease), current);
   if (!snapshot.ok) return snapshot;
+  if (isWorktreeLeaseExpired(lease, now, expiryMs)) {
+    return {
+      ok: false,
+      reason: `worktree lease heartbeat expired at ${lease.heartbeatAt ?? lease.startedAt}`,
+    };
+  }
   if (lease.owner !== identity.owner || lease.pid !== identity.pid) {
     return {
       ok: false,
@@ -200,10 +209,12 @@ export function canAcquireWorktreeLease(
   existing: IWorktreeLease | undefined,
   requested: ILeaseIdentity,
   processIsAlive: (pid: number) => boolean,
+  now = Date.now(),
+  expiryMs = WORKTREE_LEASE_EXPIRY_MS,
 ): ILeaseAssessment {
   if (existing === undefined) return { ok: true };
   if (existing.owner === requested.owner && existing.pid === requested.pid) return { ok: true };
-  if (processIsAlive(existing.pid)) {
+  if (processIsAlive(existing.pid) && !isWorktreeLeaseExpired(existing, now, expiryMs)) {
     return {
       ok: false,
       reason: `worktree is already owned by ${existing.owner} (pid ${existing.pid})`,
@@ -211,8 +222,19 @@ export function canAcquireWorktreeLease(
   }
   return {
     ok: true,
-    reason: `replacing stale lease owned by ${existing.owner} (pid ${existing.pid})`,
+    reason: isWorktreeLeaseExpired(existing, now, expiryMs)
+      ? `replacing expired lease owned by ${existing.owner} (pid ${existing.pid})`
+      : `replacing stale lease owned by ${existing.owner} (pid ${existing.pid})`,
   };
+}
+
+export function isWorktreeLeaseExpired(
+  lease: Pick<IWorktreeLease, "heartbeatAt" | "startedAt">,
+  now = Date.now(),
+  expiryMs = WORKTREE_LEASE_EXPIRY_MS,
+): boolean {
+  const heartbeat = Date.parse(lease.heartbeatAt ?? lease.startedAt);
+  return !Number.isFinite(heartbeat) || now - heartbeat > expiryMs;
 }
 
 export function processIsAlive(pid: number): boolean {
@@ -225,6 +247,23 @@ export function processIsAlive(pid: number): boolean {
       error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "EPERM"
     );
   }
+}
+
+export function cleanupWorktreeLeases(
+  registry: ILeaseRegistry,
+  processAlive: (pid: number) => boolean,
+  now = Date.now(),
+): { registry: ILeaseRegistry; removed: number } {
+  const stale = registry.leases.filter(
+    (lease) => !processAlive(lease.pid) || isWorktreeLeaseExpired(lease, now),
+  );
+  return {
+    registry: {
+      leases: registry.leases.filter((lease) => !stale.includes(lease)),
+      version: REGISTRY_VERSION,
+    },
+    removed: stale.length,
+  };
 }
 
 function runGit(repositoryRoot: string, args: readonly string[]): string {
@@ -339,6 +378,94 @@ export function findWorktreeLease(
   return records.find((lease) => path.resolve(lease.path) === path.resolve(currentPath));
 }
 
+export function registerWorktreeLease(
+  registry: ILeaseRegistry,
+  current: IWorktreeRecord,
+  identity: ILeaseIdentity,
+  phase: string,
+  now = new Date().toISOString(),
+  runId?: string,
+  processAlive: (pid: number) => boolean = processIsAlive,
+): ILeaseRegistry {
+  const existing = findWorktreeLease(registry.leases, current.path);
+  const acquisition = canAcquireWorktreeLease(existing, identity, processAlive, Date.parse(now));
+  if (!acquisition.ok) throw new Error(`TN_WORKTREE_OWNED: ${acquisition.reason}`);
+  if (
+    existing !== undefined &&
+    existing.owner === identity.owner &&
+    existing.pid === identity.pid
+  ) {
+    const assessment = assessWorktreeLease(existing, current, identity, Date.parse(now));
+    if (!assessment.ok) throw new Error(`TN_WORKTREE_DRIFTED: ${assessment.reason}`);
+  }
+  const next: IWorktreeLease = {
+    branch: current.branch,
+    expectedHead: current.head,
+    heartbeatAt: now,
+    owner: identity.owner,
+    path: current.path,
+    phase,
+    pid: identity.pid,
+    ...(runId === undefined ? {} : { runId }),
+    startedAt: existing?.startedAt ?? now,
+  };
+  return {
+    leases: [
+      ...registry.leases.filter((lease) => path.resolve(lease.path) !== path.resolve(current.path)),
+      next,
+    ],
+    version: REGISTRY_VERSION,
+  };
+}
+
+export function heartbeatWorktreeLease(
+  registry: ILeaseRegistry,
+  current: IWorktreeRecord,
+  identity: ILeaseIdentity,
+  phase: string,
+  now = new Date().toISOString(),
+  runId?: string,
+): ILeaseRegistry {
+  const existing = findWorktreeLease(registry.leases, current.path);
+  if (existing === undefined)
+    throw new Error(`TN_WORKTREE_LEASE_MISSING: cannot heartbeat '${phase}'.`);
+  const assessment = assessWorktreeLease(existing, current, identity, Date.parse(now));
+  if (!assessment.ok)
+    throw new Error(`TN_WORKTREE_GUARD_FAILED: phase '${phase}' — ${assessment.reason}`);
+  const next: IWorktreeLease = {
+    ...existing,
+    heartbeatAt: now,
+    phase: phase === "manual" ? existing.phase : phase,
+    ...(runId === undefined ? {} : { runId }),
+  };
+  return {
+    leases: registry.leases.map((lease) =>
+      path.resolve(lease.path) === path.resolve(current.path) ? next : lease,
+    ),
+    version: REGISTRY_VERSION,
+  };
+}
+
+export function releaseWorktreeLease(
+  registry: ILeaseRegistry,
+  currentPath: string,
+  identity: ILeaseIdentity,
+): ILeaseRegistry {
+  const existing = findWorktreeLease(registry.leases, currentPath);
+  if (existing === undefined) return registry;
+  if (existing.owner !== identity.owner || existing.pid !== identity.pid) {
+    throw new Error(
+      `TN_WORKTREE_OWNED: cannot release ${existing.owner} (pid ${existing.pid}) lease.`,
+    );
+  }
+  return {
+    leases: registry.leases.filter(
+      (lease) => path.resolve(lease.path) !== path.resolve(currentPath),
+    ),
+    version: REGISTRY_VERSION,
+  };
+}
+
 export async function getCurrentWorktreeLease(): Promise<{
   context: IWorktreeContext;
   lease: IWorktreeLease | undefined;
@@ -371,6 +498,7 @@ export async function verifyCurrentWorktreeLease(
 function statusFor(record: IWorktreeRecord, lease: IWorktreeLease | undefined): string {
   if (lease === undefined) return "unleased";
   if (!existsSync(record.path)) return "missing-path";
+  if (isWorktreeLeaseExpired(lease)) return "expired-lease";
   if (!processIsAlive(lease.pid)) return "stale-lease";
   return assessWorktreeSnapshot(worktreeFromLease(lease), record).ok ? "owned" : "drifted";
 }
@@ -402,37 +530,10 @@ async function registerLease(args: IArguments): Promise<void> {
   const now = new Date().toISOString();
   await withRegistryLock(context.registryPath, async () => {
     const registry = await readLeaseRegistry(context.registryPath);
-    const existing = findWorktreeLease(registry.leases, context.current.path);
-    const acquisition = canAcquireWorktreeLease(existing, identity, processIsAlive);
-    if (!acquisition.ok) throw new Error(`TN_WORKTREE_OWNED: ${acquisition.reason}`);
-    if (
-      existing !== undefined &&
-      existing.owner === identity.owner &&
-      existing.pid === identity.pid
-    ) {
-      const assessment = assessWorktreeLease(existing, context.current, identity);
-      if (!assessment.ok) throw new Error(`TN_WORKTREE_DRIFTED: ${assessment.reason}`);
-    }
-    const next: IWorktreeLease = {
-      branch: context.current.branch,
-      expectedHead: context.current.head,
-      heartbeatAt: now,
-      owner: identity.owner,
-      path: context.current.path,
-      phase: args.phase,
-      pid: identity.pid,
-      ...(args.runId === undefined ? {} : { runId: args.runId }),
-      startedAt: existing?.startedAt ?? now,
-    };
-    await writeRegistry(context.registryPath, {
-      leases: [
-        ...registry.leases.filter(
-          (lease) => path.resolve(lease.path) !== path.resolve(context.current.path),
-        ),
-        next,
-      ],
-      version: REGISTRY_VERSION,
-    });
+    await writeRegistry(
+      context.registryPath,
+      registerWorktreeLease(registry, context.current, identity, args.phase, now, args.runId),
+    );
   });
   process.stdout.write(`worktree lease registered: ${context.current.path} (${args.phase})\n`);
 }
@@ -455,29 +556,17 @@ async function heartbeatLease(args: IArguments): Promise<void> {
   const context = await readWorktreeContext();
   await withRegistryLock(context.registryPath, async () => {
     const registry = await readLeaseRegistry(context.registryPath);
-    const existing = findWorktreeLease(registry.leases, context.current.path);
-    if (existing === undefined) {
-      throw new Error(`TN_WORKTREE_LEASE_MISSING: cannot heartbeat '${args.phase}'.`);
-    }
-    const assessment = assessWorktreeLease(existing, context.current, {
-      owner: args.owner,
-      pid: args.pid,
-    });
-    if (!assessment.ok) {
-      throw new Error(`TN_WORKTREE_GUARD_FAILED: phase '${args.phase}' — ${assessment.reason}`);
-    }
-    const next: IWorktreeLease = {
-      ...existing,
-      heartbeatAt: new Date().toISOString(),
-      phase: args.phase === "manual" ? existing.phase : args.phase,
-      ...(args.runId === undefined ? {} : { runId: args.runId }),
-    };
-    await writeRegistry(context.registryPath, {
-      leases: registry.leases.map((lease) =>
-        path.resolve(lease.path) === path.resolve(context.current.path) ? next : lease,
+    await writeRegistry(
+      context.registryPath,
+      heartbeatWorktreeLease(
+        registry,
+        context.current,
+        { owner: args.owner, pid: args.pid },
+        args.phase,
+        new Date().toISOString(),
+        args.runId,
       ),
-      version: REGISTRY_VERSION,
-    });
+    );
   });
 }
 
@@ -485,17 +574,10 @@ async function releaseLease(args: IArguments): Promise<void> {
   const context = await readWorktreeContext();
   await withRegistryLock(context.registryPath, async () => {
     const registry = await readLeaseRegistry(context.registryPath);
-    const lease = findWorktreeLease(registry.leases, context.current.path);
-    if (lease === undefined) return;
-    if (lease.owner !== args.owner || lease.pid !== args.pid) {
-      throw new Error(`TN_WORKTREE_OWNED: cannot release ${lease.owner} (pid ${lease.pid}) lease.`);
-    }
-    await writeRegistry(context.registryPath, {
-      leases: registry.leases.filter(
-        (candidate) => path.resolve(candidate.path) !== path.resolve(context.current.path),
-      ),
-      version: REGISTRY_VERSION,
-    });
+    await writeRegistry(
+      context.registryPath,
+      releaseWorktreeLease(registry, context.current.path, { owner: args.owner, pid: args.pid }),
+    );
   });
   process.stdout.write(`worktree lease released: ${context.current.path}\n`);
 }
@@ -504,22 +586,19 @@ async function cleanupLeases(args: IArguments): Promise<void> {
   const context = await readWorktreeContext();
   const cleanup = async (): Promise<number> => {
     const registry = await readLeaseRegistry(context.registryPath);
-    const stale = registry.leases.filter((lease) => !processIsAlive(lease.pid));
+    const result = cleanupWorktreeLeases(registry, processIsAlive);
     if (!args.confirm) {
       process.stdout.write(
-        stale.length === 0
+        result.removed === 0
           ? "no stale worktree leases; no worktrees changed\n"
-          : `would remove ${stale.length} stale lease record(s); pass --confirm to remove records only\n`,
+          : `would remove ${result.removed} stale lease record(s); pass --confirm to remove records only\n`,
       );
       return 0;
     }
-    if (stale.length > 0) {
-      await writeRegistry(context.registryPath, {
-        leases: registry.leases.filter((lease) => processIsAlive(lease.pid)),
-        version: REGISTRY_VERSION,
-      });
+    if (result.removed > 0) {
+      await writeRegistry(context.registryPath, result.registry);
     }
-    process.stdout.write(`removed ${stale.length} stale lease record(s); no worktrees changed\n`);
+    process.stdout.write(`removed ${result.removed} stale lease record(s); no worktrees changed\n`);
     return 0;
   };
   await withRegistryLock(context.registryPath, cleanup);

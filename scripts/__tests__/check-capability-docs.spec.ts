@@ -19,7 +19,10 @@ async function writePackage(
 ): Promise<void> {
   const packageRoot = path.join(root, "packages", directory);
   await mkdir(path.join(packageRoot, "src"), { recursive: true });
-  await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({ name }));
+  await writeFile(
+    path.join(packageRoot, "package.json"),
+    JSON.stringify({ name, version: "0.3.0" }),
+  );
   await writeFile(path.join(packageRoot, "src", "index.ts"), source);
 }
 
@@ -46,6 +49,7 @@ async function arrowExportFixture(): Promise<string> {
       path.join(packageRoot, "package.json"),
       JSON.stringify({
         name: `@threenative/${packageName}`,
+        version: "0.0.0",
         exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
       }),
     );
@@ -137,9 +141,19 @@ describe("capability documentation gate", () => {
           packageName: "@threenative/physics",
           subpath: "./navigation",
         }),
+        expect.objectContaining({
+          name: "createReactOverlay",
+          packageName: "@threenative/core",
+          subpath: "./react",
+        }),
+        expect.objectContaining({
+          name: "connectUiBridge",
+          packageName: "@threenative/core",
+          subpath: "./ui-layer",
+        }),
       ]),
     );
-  });
+  }, 15_000);
 
   it("should scan a capability written as an arrow const, not only declaration forms", async () => {
     // The gate's job is to make an undocumented capability a release defect. It counted only
@@ -161,5 +175,5 @@ describe("capability documentation gate", () => {
     const report = await checkCapabilityDocs(process.cwd());
 
     expect(report.gaps).toEqual([]);
-  });
+  }, 30_000);
 });

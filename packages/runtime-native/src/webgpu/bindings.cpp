@@ -24,6 +24,7 @@
 #include "mystral/webgpu/wrapper_factories.h"
 #include "mystral/cold_start.h"
 #include "runtime_scripts.h"
+#include "mystral/webgpu/checked_handle.h"
 #include <iostream>
 #include <vector>
 #include <unordered_map>
@@ -1305,6 +1306,35 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
 }
 
 /**
+ * Names a failed swapchain acquire, at most once a second and always the first one.
+ *
+ * `TN_SURFACE_ACQUIRE_FAILED` is the marker a logcat filter finds when a device shows a black
+ * screen; the status is wgpu's own `WGPUSurfaceGetCurrentTextureStatus`, so an outdated or lost
+ * surface is distinguishable from a device that simply has no window.
+ */
+static void reportSurfaceAcquireFailure(uint32_t status) {
+    static uint64_t suppressed = 0;
+    static std::chrono::steady_clock::time_point lastReport{};
+    const auto now = std::chrono::steady_clock::now();
+    const bool first = lastReport.time_since_epoch().count() == 0;
+    if (!first && now - lastReport < std::chrono::seconds(1)) {
+        suppressed += 1;
+        return;
+    }
+    lastReport = now;
+    std::ostringstream out;
+    out << "TN_SURFACE_ACQUIRE_FAILED:{\"status\":" << status << ",\"suppressed\":" << suppressed
+        << "}";
+    suppressed = 0;
+    const std::string marker = out.str();
+    std::cerr << "[WebGPU] " << marker << " the surface handed out no texture, so this frame "
+                 "presents nothing" << std::endl;
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_ERROR, "MystralRuntime", "%s", marker.c_str());
+#endif
+}
+
+/**
  * Get the current swapchain texture (or offscreen texture in no-SDL mode)
  */
 static WGPUTexture getCurrentSwapchainTexture(BindingsState* state) {
@@ -1326,7 +1356,12 @@ static WGPUTexture getCurrentSwapchainTexture(BindingsState* state) {
     wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
 
     if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
-        std::cerr << "[WebGPU] Failed to get current texture" << std::endl;
+        // Fail by name. A surface that stops handing out images presents nothing, and the loop is
+        // no longer paced by presenting, so this fires hundreds of times a second, which is
+        // precisely how the resume defect looked from the outside: frames running away, presents
+        // frozen, a black screen, and no line in the log that said why. Rate-limited so the marker
+        // stays readable instead of becoming a flood.
+        reportSurfaceAcquireFailure(static_cast<uint32_t>(surfaceTexture.status));
         return nullptr;
     }
 
@@ -1976,6 +2011,8 @@ static js::JSValueHandle tnWebgpuHandler71(BindingsState* state, BindingDestinat
                                 viewDesc.arrayLayerCount = 6;
                             }
                             WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
+                            if (!requireHandle(state->engine, view, "device.createTextureView"))
+                                return state->engine->newUndefined();
                             auto jsView = state->engine->newObject();
                             state->engine->setPrivateData(jsView, view);
                             state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
@@ -2006,6 +2043,9 @@ static js::JSValueHandle tnWebgpuHandler70(BindingsState* state, BindingDestinat
                             layoutDesc.bindGroupLayoutCount = layouts.size();
                             layoutDesc.bindGroupLayouts = layouts.data();
                             WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(state->device, &layoutDesc);
+                            if (!requireHandle(state->engine, pipelineLayout, "device.createPipelineLayout",
+                                               "bindGroupLayouts=" + std::to_string(layouts.size())))
+                                return state->engine->newUndefined();
                             auto jsLayout = state->engine->newObject();
                             state->engine->setPrivateData(jsLayout, pipelineLayout);
                             if (state->verboseLogging) std::cout << "[WebGPU] Created pipeline layout with " << layoutCount << " bind group layouts" << std::endl;
@@ -2097,6 +2137,8 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                                             WGPUTextureViewDescriptor viewDesc = {};
                                             WGPUTextureView view = wgpuTextureCreateView(tex, &viewDesc);
                                             if (!view) {
+                                                reportNullHandle("device.createBindGroup/autoTextureView",
+                                                                 "binding=" + std::to_string(bgEntry.binding));
                                                 return failResource("texture view", "native handle is null after automatic creation", bgEntry.binding);
                                             }
                                             autoCreatedViews.push_back(view);
@@ -2118,6 +2160,8 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                             bgDesc.entries = bindGroupEntries.data();
                             WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(state->device, &bgDesc);
                             if (!bindGroup) {
+                                reportNullHandle("device.createBindGroup",
+                                                 "entries=" + std::to_string(bindGroupEntries.size()));
                                 releaseAutoCreatedViews();
                                 state->engine->throwException("Failed to create bind group");
                                 return state->engine->newUndefined();
@@ -2239,6 +2283,9 @@ static js::JSValueHandle tnWebgpuHandler68(BindingsState* state, BindingDestinat
                             layoutDesc.entryCount = layoutEntries.size();
                             layoutDesc.entries = layoutEntries.data();
                             WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(state->device, &layoutDesc);
+                            if (!requireHandle(state->engine, layout, "device.createBindGroupLayout",
+                                               "entries=" + std::to_string(entryCount)))
+                                return state->engine->newUndefined();
                             auto jsLayout = state->engine->newObject();
                             state->engine->setPrivateData(jsLayout, layout);
                             if (state->verboseLogging) std::cout << "[WebGPU] Created bind group layout with " << entryCount << " entries" << std::endl;
@@ -2438,6 +2485,7 @@ static js::JSValueHandle tnWebgpuHandler65(BindingsState* state, uint64_t textur
                                     }
                                     WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
                                     if (!view) {
+                                        reportNullHandle("texture.createView", "textureId=" + std::to_string(textureId));
                                         std::cerr << "[WebGPU] createView: Failed to create texture view" << std::endl;
                                         return state->engine->newUndefined();
                                     }
@@ -2619,6 +2667,10 @@ static js::JSValueHandle tnWebgpuHandler63(BindingsState* state, WGPUCommandEnco
                                         if (!state->jsCommandEncoder && !state->commandEncoderRegistry.empty()) {
                                             state->jsCommandEncoder = *state->commandEncoderRegistry.begin();
                                         }
+                                        // The encoder was checked; the command buffer it returns was not, and a
+                                        // NULL one reaches queue.submit(), which reads it inside wgpu-native.
+                                        if (!requireHandle(state->engine, cmdBuffer, "commandEncoder.finish"))
+                                            return state->engine->newUndefined();
                                         if (state->verboseLogging) std::cout << "[WebGPU] Command encoder finished, buffer: " << cmdBuffer << std::endl;
                                     }
                                     auto jsCommandBuffer = state->engine->newObject();
@@ -2865,6 +2917,7 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                     WGPUComputePassEncoder computePass =
                                         wgpuCommandEncoderBeginComputePass(capturedEncoder, &computePassDesc);
                                     if (!computePass) {
+                                        reportNullHandle("commandEncoder.beginComputePass", "");
                                         state->engine->throwException("Failed to begin compute pass");
                                         return state->engine->newUndefined();
                                     }
@@ -3295,6 +3348,8 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     // Begin render pass on the captured encoder (not the global)
                                     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoderToUse, &renderPassDesc);
                                     if (!renderPass) {
+                                        reportNullHandle("commandEncoder.beginRenderPass",
+                                                         "colorAttachments=" + std::to_string(numAttachments));
                                         state->engine->throwException("Failed to begin render pass");
                                         state->surfaceRenderEncoder = previousSurfaceRenderEncoder;
                                         state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
@@ -3445,6 +3500,7 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                             WGPUCommandEncoderDescriptor desc = {};
                             WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &desc);
                             if (!encoder) {
+                                reportNullHandle("device.createCommandEncoder", "");
                                 state->engine->throwException("Failed to create command encoder");
                                 return state->engine->newUndefined();
                             }
@@ -3960,6 +4016,9 @@ static js::JSValueHandle tnWebgpuHandler34(BindingsState* state, BindingDestinat
                             WGPUShaderModuleDescriptor shaderDesc = {};
                             setupShaderModuleWGSL(&shaderDesc, &wgslDesc, code.c_str());
                             WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(state->device, &shaderDesc);
+                            if (!requireHandle(state->engine, shaderModule, "device.createShaderModule",
+                                               "wgslBytes=" + std::to_string(code.size())))
+                                return state->engine->newUndefined();
                             auto jsShader = state->engine->newObject();
                             state->engine->setPrivateData(jsShader, shaderModule);
                             state->engine->setProperty(jsShader, "_tnVertexEntryPoint",
@@ -4621,9 +4680,13 @@ static js::JSValueHandle tnWebgpuHandler22(BindingsState* state, BindingDestinat
                             for (int i = 0; i < length; i++) {
                                 auto cmdBufferHandle = state->engine->getPropertyIndex(cmdBuffersArray, i);
                                 WGPUCommandBuffer cmdBuffer = (WGPUCommandBuffer)state->engine->getPrivateData(cmdBufferHandle);
-                                if (cmdBuffer) {
-                                    cmdBuffers.push_back(cmdBuffer);
-                                }
+                                // A NULL entry used to be dropped silently, which turns "the GPU never got
+                                // this frame's work" into a rendering mystery instead of an error, and
+                                // leaves the caller believing it submitted.
+                                if (!requireHandle(state->engine, cmdBuffer, "queue.submit",
+                                                   "commandBuffers[" + std::to_string(i) + "]"))
+                                    return state->engine->newUndefined();
+                                cmdBuffers.push_back(cmdBuffer);
                             }
                             // Submit user command buffers first
                             state->submitCount++;
@@ -5610,6 +5673,71 @@ void requestFrameScreenshot(BindingsState* state) {
     state->screenshotRequested = true;
 }
 
+/**
+ * Drops every reference to the live presentation surface, ahead of a rebuild.
+ *
+ * Android destroys the `ANativeWindow` behind a backgrounded app, so on resume the surface is
+ * replaced rather than reconfigured. Any swapchain image acquired and not yet presented has to be
+ * released first: wgpu-native refuses to tear a surface down with an outstanding `SurfaceOutput`
+ * ("`SurfaceOutput` must be dropped before a new `Surface` is made") and that panic aborts the
+ * process, which is how PRD-183's silent SIGABRT happened on the resize path.
+ */
+void detachSurfaceForRebuild(BindingsState* state) {
+#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+    if (!state) return;
+    state->framePresentPending = false;
+    if (state->currentTextureView != nullptr) {
+        wgpuTextureViewRelease(state->currentTextureView);
+        state->currentTextureView = nullptr;
+    }
+    if (state->currentSurfaceTextureId != 0) {
+        state->textureRegistry.erase(state->currentSurfaceTextureId);
+        state->currentSurfaceTextureId = 0;
+    }
+    if (state->currentTexture != nullptr) {
+        wgpuTextureRelease(state->currentTexture);
+        state->currentTexture = nullptr;
+    }
+    state->currentViewSourceTexture = nullptr;
+    state->surfaceRenderEncoder = nullptr;
+    state->surfaceRenderPassEnded = false;
+    state->screenshotCapturedThisFrame = false;
+    state->surface = nullptr;
+#else
+    (void)state;
+#endif
+}
+
+/**
+ * Publishes a rebuilt surface to the bindings, which is where every present reads it from.
+ *
+ * Without this the host would hold a fresh surface and JavaScript would keep presenting to the
+ * dead one: the resume defect again, one indirection later.
+ */
+void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceFormat,
+                      uint32_t presentMode, uint32_t width, uint32_t height) {
+#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+    if (!state) return;
+    state->surface = (WGPUSurface)wgpuSurface;
+    state->presentMode = static_cast<WGPUPresentMode>(presentMode);
+    state->nativeSurfaceFormat = (WGPUTextureFormat)surfaceFormat;
+    state->requiresSrgbPresentationBridge =
+        state->surface != nullptr && isSrgbSurfaceFormat(state->nativeSurfaceFormat);
+    state->surfaceFormat = state->requiresSrgbPresentationBridge
+        ? linearSurfaceFormat(state->nativeSurfaceFormat)
+        : state->nativeSurfaceFormat;
+    // The same pairing startup makes: the canvas dimensions name the size the surface is
+    // configured at, so `syncSurfaceSizeToCanvas` reconfigures on the next frame if the game is
+    // rendering at a different one.
+    state->canvasWidth = width;
+    state->canvasHeight = height;
+    std::cout << "[WebGPU] Surface republished to bindings: " << wgpuSurface << " " << width << "x"
+              << height << " (format=" << state->surfaceFormat << ")" << std::endl;
+#else
+    (void)state; (void)wgpuSurface; (void)surfaceFormat; (void)presentMode; (void)width; (void)height;
+#endif
+}
+
 void setOffscreenTexture(BindingsState* state, void* texture, void* textureView) {
     state->offscreenTexture = (WGPUTexture)texture;
     state->offscreenTextureView = (WGPUTextureView)textureView;
@@ -5658,6 +5786,11 @@ void compositeCanvas2DToWebGPU(BindingsState* state) {
         texDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
 
         state->canvas2DTexture = wgpuDeviceCreateTexture(state->device, &texDesc);
+        // Host-side path: there is no JS frame to throw into, so skip the composite rather than
+        // write pixels through a NULL texture. The next frame retries.
+        if (!requireHandleHostSide(state->canvas2DTexture, "canvas2D.createTexture",
+                                   std::to_string(width) + "x" + std::to_string(height)))
+            return;
         state->canvas2DTextureWidth = width;
         state->canvas2DTextureHeight = height;
     }
@@ -5844,10 +5977,17 @@ void compositeCanvas2DToWebGPU(BindingsState* state) {
     surfaceViewDesc.baseArrayLayer = 0;
     surfaceViewDesc.arrayLayerCount = 1;
     WGPUTextureView surfaceView = wgpuTextureCreateView(surfaceTexture.texture, &surfaceViewDesc);
+    // A surface whose window was released underneath us hands back NULL here. Compositing on
+    // through it is the "present into a released window" fault this pass exists to remove.
+    if (!requireHandleHostSide(surfaceView, "canvas2DComposite.surfaceView")) return;
 
     // Create command encoder and render pass
     WGPUCommandEncoderDescriptor encDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &encDesc);
+    if (!requireHandleHostSide(encoder, "canvas2DComposite.createCommandEncoder")) {
+        wgpuTextureViewRelease(surfaceView);
+        return;
+    }
 
     WGPURenderPassColorAttachment colorAttachment = {};
     colorAttachment.view = surfaceView;
@@ -5863,6 +6003,11 @@ void compositeCanvas2DToWebGPU(BindingsState* state) {
     renderPassDesc.colorAttachments = &colorAttachment;
 
     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+    if (!requireHandleHostSide(renderPass, "canvas2DComposite.beginRenderPass")) {
+        wgpuCommandEncoderRelease(encoder);
+        wgpuTextureViewRelease(surfaceView);
+        return;
+    }
     wgpuRenderPassEncoderSetPipeline(renderPass, state->canvas2DPipeline);
     wgpuRenderPassEncoderSetBindGroup(renderPass, 0, state->canvas2DBindGroup, 0, nullptr);
     wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
@@ -5907,6 +6052,11 @@ void compositeCanvas2DToWebGPU(BindingsState* state) {
 
     WGPUCommandBufferDescriptor cmdDesc = {};
     WGPUCommandBuffer cmdBuffer = wgpuCommandEncoderFinish(encoder, &cmdDesc);
+    if (!requireHandleHostSide(cmdBuffer, "canvas2DComposite.finish")) {
+        wgpuCommandEncoderRelease(encoder);
+        wgpuTextureViewRelease(surfaceView);
+        return;
+    }
     wgpuQueueSubmit(state->queue, 1, &cmdBuffer);
 
     wgpuCommandBufferRelease(cmdBuffer);
@@ -5987,6 +6137,7 @@ static void captureFrameScreenshot(BindingsState* state) {
         // Create encoder to copy texture to buffer
         WGPUCommandEncoderDescriptor encDesc = {};
         WGPUCommandEncoder copyEncoder = wgpuDeviceCreateCommandEncoder(state->device, &encDesc);
+        if (!requireHandleHostSide(copyEncoder, "screenshot.createCommandEncoder")) return;
 
         WGPUImageCopyTexture_Compat srcCopy = {};
         srcCopy.texture = screenshotTexture;
@@ -6008,6 +6159,10 @@ static void captureFrameScreenshot(BindingsState* state) {
 
         WGPUCommandBufferDescriptor cmdDesc = {};
         WGPUCommandBuffer copyCmd = wgpuCommandEncoderFinish(copyEncoder, &cmdDesc);
+        if (!requireHandleHostSide(copyCmd, "screenshot.finish")) {
+            wgpuCommandEncoderRelease(copyEncoder);
+            return;
+        }
         wgpuQueueSubmit(state->queue, 1, &copyCmd);
 
         wgpuCommandBufferRelease(copyCmd);

@@ -24,6 +24,9 @@ import org.libsdl.app.SDLActivity;
  */
 public class MystralActivity extends SDLActivity {
 
+    /** The transparent WebView the UI renders into, or null when this game ships no overlay. */
+    private TnUiOverlay uiOverlay;
+
     private Bundle applicationMetadata() {
         try {
             ApplicationInfo applicationInfo = getPackageManager().getApplicationInfo(
@@ -57,6 +60,39 @@ public class MystralActivity extends SDLActivity {
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
+        attachUiOverlay(metadata);
+    }
+
+    /**
+     * Attach the UI layer when the game asked for it.
+     *
+     * `TN_UI_RENDERER` is written by the packager from `ui.renderer` in the game's config, and
+     * "native" (the other value) means PRD-216's CanvasLayer renderer with no WebView and no
+     * second process — so a game that did not opt in ships no overlay at all.
+     *
+     * The attach is deliberately not wrapped in a try/catch. A game that asked for this
+     * renderer and cannot have it must fail at launch with the reason named; a swallowed
+     * exception here presents as a game with no HUD, which sends the reader to the UI code.
+     */
+    private void attachUiOverlay(Bundle metadata) {
+        String renderer = metadata == null ? "native" : metadata.getString("TN_UI_RENDERER", "native");
+        if (!"web".equals(renderer)) return;
+        uiOverlay = TnUiOverlay.attach(this);
+    }
+
+    /**
+     * Deliver one bridge frame to the UI layer. Called from the runtime over JNI, on the thread
+     * that owns JavaScript, so the post itself is handed to the UI thread that owns the view.
+     */
+    public void postUiOverlayMessage(final String frame) {
+        final TnUiOverlay overlay = uiOverlay;
+        if (overlay == null) return;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                overlay.postToPage(frame);
+            }
+        });
     }
 
     /**
@@ -74,17 +110,34 @@ public class MystralActivity extends SDLActivity {
      */
     private void applyOrientation(Bundle metadata) {
         String orientation = metadata == null ? null : metadata.getString("TN_ORIENTATION");
-        if (orientation == null) return;
-        switch (orientation) {
-            case "landscape":
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-                break;
-            case "portrait":
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-                break;
-            default:
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-                break;
+        if (!applyFixedOrientation(orientation)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        }
+    }
+
+    private boolean applyFixedOrientation(String orientation) {
+        if ("landscape".equals(orientation)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            return true;
+        }
+        if ("portrait".equals(orientation)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * SDL3 calls this again when it creates or resizes its window. With no SDL orientation hint a
+     * resizable window becomes FULL_USER, overwriting the game metadata applied in onCreate. Keep
+     * a fixed game orientation authoritative; sensor games retain SDL's normal policy.
+     */
+    @Override
+    public void setOrientationBis(int width, int height, boolean resizable, String hint) {
+        Bundle metadata = applicationMetadata();
+        String orientation = metadata == null ? null : metadata.getString("TN_ORIENTATION");
+        if (!applyFixedOrientation(orientation)) {
+            super.setOrientationBis(width, height, resizable, hint);
         }
     }
 
@@ -120,6 +173,13 @@ public class MystralActivity extends SDLActivity {
         Bundle metadata = applicationMetadata();
         String title = metadata == null ? "ThreeNative" : metadata.getString("TN_WINDOW_TITLE", "ThreeNative");
         boolean fullscreen = metadata == null || metadata.getBoolean("TN_FULLSCREEN", true);
+        // `display.backgroundMode`. The native side parses it and keeps the default for anything it
+        // does not recognize, so an unset value and a typo behave the same and both get logged.
+        // Default "pause" again as of 2026-08-23: resume now rebuilds the surface against the
+        // window Android hands back, so backgrounding no longer trades a battery cost for a black
+        // screen. This default must match the native one in `platform/lifecycle.cpp`, or an APK
+        // that carries no metadata runs one mode while the host reports the other.
+        String backgroundMode = metadata == null ? "pause" : metadata.getString("TN_BACKGROUND_MODE", "pause");
         if (mailboxRoot == null) {
             java.io.File externalFiles = getExternalFilesDir(null);
             mailboxRoot = externalFiles == null ? getFilesDir().getAbsolutePath() : externalFiles.getAbsolutePath();
@@ -129,7 +189,8 @@ public class MystralActivity extends SDLActivity {
             endpoint == null ? "" : endpoint,
             mailboxRoot,
             title,
-            Boolean.toString(fullscreen)
+            Boolean.toString(fullscreen),
+            backgroundMode == null ? "pause" : backgroundMode
         };
     }
 }

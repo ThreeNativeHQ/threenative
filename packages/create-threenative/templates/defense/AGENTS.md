@@ -1,5 +1,14 @@
 # AGENTS.md — __PROJECT_NAME__ defense
 
+## Native React
+
+Import `View` and `Text` from `@threenative/core/react`; `react-dom` is web-only. Pixels are
+absolute; `row`/`column` enable flow. Keys: `left`,
+`right`, `top`, `bottom`, `centerX`, `centerY`, `width`, `height`, `padding`, `direction`, `gap`,
+`align`, `background`, `color`, `opacity`, `fontSize`, `letterSpacing`, `textAlign`, and `zIndex`.
+Unknown keys/glyphs throw. CSS, Tailwind, flex grow/wrap, borders, radius, transforms, images, SVG,
+and events. Share state/components; adapt appearance in `src/ui/`.
+
 This project is an editable Three.js tower-defense starter. The framework owns the loop,
 renderer, physics bindings and playtest bridge; this repository owns the route, attackers,
 towers, economy, waves and look.
@@ -319,6 +328,13 @@ truthful when `enabled = false`, `normaliseToMetres` measures a skinned crown fo
 
 Refill scratch; pool objects.
 
-`{"performance":{"maxFrameMsP95":33}}`
+`TN_FRAME_BUDGET` prints `fps` and the frame split: `hostGap`, `update`, `render`, `overlay`,
+`residual`. `defineGame({ frameBudget: false })` silences it, not the measurement.
+
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12}}}`
 `agent-docs/assertion-reference.md#performance`
+
+Phone memory is a ~500 MiB driver floor plus what you ask for, and one equirect on both
+`scene.background` and `scene.environment` costs 48 MiB extra — measured, Pixel 8.
+Budgets and the fix: `agent-docs/mobile-memory-budget.md`.
 <!-- /shared -->

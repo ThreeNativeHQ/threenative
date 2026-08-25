@@ -208,7 +208,7 @@ test("the permanent regressed-scene control drives the render loop and turns red
   const snapshot = await renderControl(REGRESSED_MESH_COUNT, true);
   const result = buildReport(CONFIG, loaded, undefined, snapshot, [], []);
 
-  expect(snapshot.runtimeDiagnosticsSeries).toEqual([
+  expect((snapshot.runtimeDiagnosticsSeries ?? []).map(({ phases: _phases, ...sample }) => sample)).toEqual([
     { drawCalls: REGRESSED_MESH_COUNT, frameMs: 16, triangles: REGRESSED_MESH_COUNT * 12 },
     { drawCalls: REGRESSED_MESH_COUNT, frameMs: 16, triangles: REGRESSED_MESH_COUNT * 12 },
   ]);
@@ -225,10 +225,13 @@ test("the permanent regressed-scene control fails closed when renderer counts di
   const snapshot = await renderControl(REGRESSED_MESH_COUNT, false);
   const result = buildReport(CONFIG, loaded, undefined, snapshot, [], []);
 
-  expect(snapshot.runtimeDiagnosticsSeries).toEqual([
+  // The engine frame budget rides along on every sample; this control is about the renderer
+  // counts disappearing, so compare the sample without its phase split.
+  expect((snapshot.runtimeDiagnosticsSeries ?? []).map(({ phases: _phases, ...sample }) => sample)).toEqual([
     { frameMs: 16 },
     { frameMs: 16 },
   ]);
+  expect((snapshot.runtimeDiagnosticsSeries ?? []).every(({ phases }) => phases !== undefined)).toBe(true);
   expect(result.assertionResults).toEqual(expect.arrayContaining([
     expect.objectContaining({ id: "performance.maxDrawCalls", pass: false }),
     expect.objectContaining({ id: "performance.maxTriangles", pass: false }),
@@ -249,4 +252,78 @@ test("an empty performance series fails closed instead of passing vacuously", as
     expect.objectContaining({ id: "performance.maxFrameMsP95", pass: false }),
   ]));
   expect(evaluated.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_PERFORMANCE_SAMPLES_MISSING");
+});
+
+/**
+ * PRD-214's budget gate. The device measurement it exists for — a Pixel 8 presenting at 18.3 fps
+ * with `renderer.render()` owning ~88% of the frame — could only ever be recorded in prose,
+ * because nothing in the harness could assert an fps floor or say which phase blew it.
+ */
+const DEVICE_SHAPED_SERIES = [
+  { frameMs: 54.44, phases: { hostGap: 1.42, overlay: 0.3, render: 49.42, residual: 0.04, update: 3.26 } },
+  { frameMs: 56.01, phases: { hostGap: 1.5, overlay: 0.3, render: 50.1, residual: 0.05, update: 3.3 } },
+  { frameMs: 55.2, phases: { hostGap: 1.45, overlay: 0.3, render: 49.8, residual: 0.04, update: 3.28 } },
+];
+
+test("the fps floor turns red on the measured device frame and names the phase that owns it", async () => {
+  const loaded = await scenario({ maxPhaseMsP95: { render: 12 }, minFps: 30 });
+  const evaluated = evaluateRichPlaytestAssertions({ report: report(DEVICE_SHAPED_SERIES), scenario: loaded });
+
+  expect(evaluated.assertions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ details: expect.objectContaining({ actual: 18.12, expected: 30, unit: "fps" }), id: "performance.minFps", pass: false }),
+    expect.objectContaining({ details: expect.objectContaining({ actual: 50.1, expected: 12, phase: "render" }), id: "performance.maxPhaseMsP95.render", pass: false }),
+  ]));
+  expect(evaluated.diagnostics.map(({ message }) => message)).toEqual(expect.arrayContaining([
+    expect.stringContaining("performance.minFps expected at least 30 fps, observed 18.12"),
+    expect.stringContaining("performance.maxPhaseMsP95.render expected at most 12 ms, observed 50.1"),
+  ]));
+});
+
+test("the same budget passes on a frame that meets it, so the gate is not simply always red", async () => {
+  const loaded = await scenario({ maxPhaseMsP95: { render: 12 }, minFps: 30 });
+  const healthy = DEVICE_SHAPED_SERIES.map(() => ({
+    frameMs: 16.7,
+    phases: { hostGap: 1.4, overlay: 0.3, render: 9.2, residual: 0.04, update: 3.2 },
+  }));
+  const evaluated = evaluateRichPlaytestAssertions({ report: report(healthy), scenario: loaded });
+
+  expect(evaluated.assertions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "performance.minFps", pass: true }),
+    expect.objectContaining({ id: "performance.maxPhaseMsP95.render", pass: true }),
+  ]));
+});
+
+test("a phase ceiling fails closed when the run carries no frame-budget split", async () => {
+  const loaded = await scenario({ maxPhaseMsP95: { render: 12 } });
+  const evaluated = evaluateRichPlaytestAssertions({
+    report: report([{ frameMs: 16.7 }, { frameMs: 16.7 }]),
+    scenario: loaded,
+  });
+
+  expect(evaluated.assertions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ details: expect.objectContaining({ actual: null }), id: "performance.maxPhaseMsP95.render", pass: false }),
+  ]));
+  expect(evaluated.diagnostics.map(({ message }) => message)).toEqual(expect.arrayContaining([
+    expect.stringContaining("received no frame-budget phase samples"),
+  ]));
+});
+
+test("a wrong-typed phase split invalidates the sample rather than being ignored", async () => {
+  const loaded = await scenario({ minFps: 30 });
+  const evaluated = evaluateRichPlaytestAssertions({
+    report: report([{ frameMs: 16.7, phases: { render: "slow" } }]),
+    scenario: loaded,
+  });
+
+  expect(evaluated.assertions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "performance.samples", pass: false }),
+    expect.objectContaining({ id: "performance.minFps", pass: false }),
+  ]));
+});
+
+test("a budget naming a phase the engine does not measure throws at load", async () => {
+  await expect(scenario({ maxPhaseMsP95: { renderr: 12 } })).rejects.toThrow(/is not a frame-budget phase/u);
+  await expect(scenario({ maxPhaseMsP95: {} })).rejects.toThrow(/must name at least one frame-budget phase/u);
+  await expect(scenario({ maxPhaseMsP95: { render: "12" } })).rejects.toThrow(/non-negative number/u);
+  await expect(scenario({ minFps: "30" })).rejects.toThrow();
 });

@@ -72,6 +72,7 @@ describe("threenative.config.ts", () => {
       window: { title: "Fox Desktop", width: 1024, height: 576, resizable: false },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
+      ui: { renderer: "native" },
     });
   });
 
@@ -88,6 +89,7 @@ describe("threenative.config.ts", () => {
       window: { title: "fox-game", width: 1280, height: 720, resizable: true },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
+      ui: { renderer: "native" },
     });
   });
 

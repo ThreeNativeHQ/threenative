@@ -574,10 +574,10 @@ bool Context::createOffscreenTarget(uint32_t width, uint32_t height) {
     return true;
 }
 
-bool Context::createSurface(void* nativeHandle, int platformType) {
+WGPUSurface Context::makeSurface(void* nativeHandle, int platformType) {
     if (!instance_) {
         std::cerr << "[WebGPU] Cannot create surface: no instance" << std::endl;
-        return false;
+        return nullptr;
     }
 
     std::cout << "[WebGPU] Creating surface for platform type " << platformType << std::endl;
@@ -634,15 +634,23 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
 #endif
         default:
             std::cerr << "[WebGPU] Unsupported platform type: " << platformType << std::endl;
-            return false;
+            return nullptr;
     }
 
-    surface_ = wgpuInstanceCreateSurface(instance_, &surfaceDesc);
-    if (!surface_) {
+    WGPUSurface created = wgpuInstanceCreateSurface(instance_, &surfaceDesc);
+    if (!created) {
         std::cerr << "[WebGPU] Failed to create surface" << std::endl;
-        return false;
+        return nullptr;
     }
     std::cout << "[WebGPU] Surface created" << std::endl;
+    return created;
+}
+
+bool Context::createSurface(void* nativeHandle, int platformType) {
+    surface_ = makeSurface(nativeHandle, platformType);
+    if (!surface_) return false;
+    surfaceNativeHandle_ = nativeHandle;
+    surfacePlatformType_ = platformType;
 
     // Now request adapter with surface compatibility
     WGPURequestAdapterOptions adapterOptions = {};
@@ -1174,6 +1182,37 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
     TN_CONTEXT_LOGI("present mode %s vsync=%s", selectedPresentModeName, vsync ? "true" : "false");
 
     wgpuSurfaceCapabilitiesFreeMembers(capabilities);
+    return true;
+}
+
+bool Context::rebuildSurface(void* nativeHandle, int platformType) {
+    // The adapter, device and queue outlive the window: only the surface is bound to the
+    // `ANativeWindow` Android destroyed, and recreating the device would throw away every GPU
+    // resource the running game holds. So this is a surface swap and nothing more.
+    if (!instance_) {
+        std::cerr << "[WebGPU] Cannot rebuild surface: no instance" << std::endl;
+        return false;
+    }
+
+    WGPUSurface replacement = makeSurface(nativeHandle, platformType);
+    if (!replacement) {
+        std::cerr << "[WebGPU] Failed to rebuild surface for the new native window" << std::endl;
+        return false;
+    }
+
+    if (surface_) {
+        // Unconfigure before release so the old swapchain is torn down explicitly rather than at
+        // whatever moment the last reference happens to drop.
+        wgpuSurfaceUnconfigure(surface_);
+        wgpuSurfaceRelease(surface_);
+    }
+    surface_ = replacement;
+    surfaceNativeHandle_ = nativeHandle;
+    surfacePlatformType_ = platformType;
+    // Force the next configure to run even at an unchanged size: this is a different swapchain,
+    // not a resize of the one that was already configured.
+    surfaceWidth_ = 0;
+    surfaceHeight_ = 0;
     return true;
 }
 

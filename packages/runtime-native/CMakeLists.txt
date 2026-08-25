@@ -76,6 +76,10 @@ option(TN_ENABLE_NATIVE_GLTF "Enable deprecated native C++ GLTF path (must remai
 option(TN_ENABLE_DRACO "Enable native Draco decoder when dependencies exist" OFF)
 option(TN_ENABLE_DEBUG_SERVER "Enable debug-server control surface" OFF)
 option(TN_ENABLE_NATIVE_PHYSICS "Enable the ThreeNative native Rapier ABI" OFF)
+# The desktop UI layer: a transparent web view over the game surface, behind a C ABI.
+# Off by default and desktop-only — Android has its own host in Java, iOS has one in Swift, and a
+# game whose ui.renderer is "native" must link none of it.
+option(TN_ENABLE_UI_OVERLAY "Enable the ThreeNative desktop UI overlay" OFF)
 option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
@@ -105,6 +109,7 @@ add_compile_definitions(
     TN_ENABLE_NATIVE_GLTF=$<BOOL:${TN_ENABLE_NATIVE_GLTF}>
     TN_ENABLE_DEBUG_SERVER=$<BOOL:${TN_ENABLE_DEBUG_SERVER}>
     TN_ENABLE_NATIVE_PHYSICS=$<BOOL:${TN_ENABLE_NATIVE_PHYSICS}>
+    TN_ENABLE_UI_OVERLAY=$<BOOL:${TN_ENABLE_UI_OVERLAY}>
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
@@ -1153,11 +1158,15 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings.cpp
     src/webgpu/registration_table.cpp
     src/webgpu/wrapper_factories.cpp
+    src/webgpu/checked_handle.cpp
     src/webgpu/context.cpp
     src/canvas/canvas.cpp
     src/input/input_shim.cpp
     src/platform/window.cpp
     src/platform/input.cpp
+    src/platform/crash_handlers.cpp
+    src/platform/lifecycle.cpp
+    src/platform/ui_overlay.cpp
     src/utils/stb_impl.cpp
     src/http/http_client.cpp
     src/http/async_http_client.cpp
@@ -1166,6 +1175,7 @@ set(MYSTRAL_SOURCES
     src/fs/file_watcher.cpp
     src/audio/audio_context.cpp
     src/audio/audio_bindings.cpp
+    src/audio/vorbis_impl.c
     src/vfs/embedded_bundle.cpp
     src/storage/local_storage.cpp
     src/async/event_loop.cpp
@@ -1200,6 +1210,24 @@ if(TN_ENABLE_NATIVE_PHYSICS)
         IMPORTED_LOCATION "${THREENATIVE_PHYSICS_LIBRARY}"
     )
     list(APPEND MYSTRAL_SOURCES src/physics/native_bindings.cpp)
+endif()
+
+if(TN_ENABLE_UI_OVERLAY)
+    if(NOT THREENATIVE_UI_OVERLAY_LIBRARY)
+        set(THREENATIVE_UI_OVERLAY_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/libthreenative_ui_overlay.a"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_UI_OVERLAY_LIBRARY}")
+        message(FATAL_ERROR
+            "UI overlay artifact is missing: ${THREENATIVE_UI_OVERLAY_LIBRARY}. "
+            "Run node scripts/build-native-ui-overlay.mjs, or supply -DTHREENATIVE_UI_OVERLAY_LIBRARY."
+        )
+    endif()
+    add_library(threenative-ui-overlay STATIC IMPORTED)
+    set_target_properties(threenative-ui-overlay PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_UI_OVERLAY_LIBRARY}"
+    )
 endif()
 
 # Canvas2D sources provide no-Skia stubs when MYSTRAL_HAS_SKIA is absent.
@@ -1291,6 +1319,17 @@ target_compile_definitions(mystral-runtime PUBLIC
     MYSTRAL_JS_ENGINE="${MYSTRAL_JS_ENGINE_NAME}"
     MYSTRAL_WEBGPU_BACKEND="${MYSTRAL_WEBGPU_NAME}"
 )
+
+if(TN_ENABLE_UI_OVERLAY)
+    target_link_libraries(mystral-runtime PRIVATE threenative-ui-overlay)
+    if(UNIX AND NOT APPLE)
+        # webkit2gtk and its GTK stack come from the system, the same way the game's SDL does.
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(TN_WEBKITGTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)
+        target_link_libraries(mystral-runtime PRIVATE PkgConfig::TN_WEBKITGTK)
+    endif()
+endif()
+
 
 if(TN_ENABLE_NATIVE_PHYSICS)
     target_link_libraries(mystral-runtime PRIVATE threenative-native-physics)
@@ -1603,6 +1642,41 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         src/cli/main.cpp
         src/cli/tool_dispatch.cpp
     )
+    # SDL3's Linux tray loads GTK at run time and keeps two of its entry points in same-named
+    # globals — `g_object_ref` and `g_object_ref_sink`, as pointers in BSS. Statically linked, those
+    # common symbols satisfy the UI overlay's own references to the real GObject functions, and
+    # `gtk_init` then calls a null pointer. SDL globs its tray sources with no option to decline
+    # them and `third_party/` is reconstructed by `download-deps` rather than patched, so the two
+    # names are rewritten in the one object file that defines them, after SDL builds and before
+    # anything links against it. SDL's tray keeps working: it refers to them by the same names
+    # inside that object, and the rename moves both the definitions and the references together.
+    if(TN_ENABLE_UI_OVERLAY AND UNIX AND NOT APPLE)
+        find_program(TN_OBJCOPY NAMES objcopy llvm-objcopy)
+        if(NOT TN_OBJCOPY)
+            message(FATAL_ERROR
+                "objcopy is required to build the desktop UI overlay: SDL3's tray defines "
+                "g_object_ref and g_object_ref_sink as globals that would shadow GObject's."
+            )
+        endif()
+        # PRE_LINK on `mystral` rather than POST_BUILD on SDL: `add_custom_command(TARGET)` has to
+        # live in the directory that created the target, and SDL is added as a subdirectory. This
+        # also re-applies itself whenever SDL is rebuilt, which a one-shot patch would not.
+        # Made at configure time: a command's WORKING_DIRECTORY has to exist before the shell
+        # enters it, so creating it as the first step of that same command is too late.
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray")
+        add_custom_command(TARGET mystral PRE_LINK
+            COMMAND "${CMAKE_AR}" x "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
+            COMMAND "${TN_OBJCOPY}"
+                --redefine-sym g_object_ref=tn_sdl_tray_g_object_ref
+                --redefine-sym g_object_ref_sink=tn_sdl_tray_g_object_ref_sink
+                SDL_tray.c.o SDL_tray.c.o
+            COMMAND "${CMAKE_AR}" r "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray"
+            COMMENT "Renaming SDL3 tray's GObject globals so the UI overlay's GTK calls survive"
+            VERBATIM
+        )
+    endif()
+
     target_link_libraries(mystral PRIVATE mystral-runtime)
 
     # Build-time tools stay out of the runtime executable that gets copied into compiled games.
@@ -1630,6 +1704,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-audio-decode-promise-test EXCLUDE_FROM_ALL
         tests/audio_decode_promise_test.cpp)
     target_link_libraries(threenative-audio-decode-promise-test PRIVATE mystral-runtime)
+
+    # The Ogg proof runs on a genuine Ogg Vorbis file rather than on bytes the test writes: an
+    # "OggS" header a test assembles proves nothing about a decoder. The path is compiled in so
+    # the executable needs no working directory to find it.
+    add_executable(threenative-audio-decode-ogg-test EXCLUDE_FROM_ALL
+        tests/audio_decode_ogg_test.cpp)
+    target_link_libraries(threenative-audio-decode-ogg-test PRIVATE mystral-runtime)
+    target_compile_definitions(threenative-audio-decode-ogg-test PRIVATE
+        THREENATIVE_OGG_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pickup.ogg")
 
     add_executable(threenative-physics-actuation-bindings-test EXCLUDE_FROM_ALL
         tests/physics_actuation_bindings_test.cpp)
@@ -1681,6 +1764,40 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
             ${WGPU_TEST_INCLUDES})
     endif()
+
+    add_executable(threenative-crash-handler-policy-test EXCLUDE_FROM_ALL
+        tests/crash_handler_policy_test.cpp)
+    target_link_libraries(threenative-crash-handler-policy-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-wgpu-null-handle-test EXCLUDE_FROM_ALL
+        tests/wgpu_null_handle_test.cpp)
+    target_link_libraries(threenative-wgpu-null-handle-test PRIVATE mystral-runtime)
+
+    # localStorage is the persistence contract behind the JS storagePolyfill;
+    # this proves the file-backed backend without a display or engine. The
+    # header is internal to src/, so only this test gets that include dir.
+    add_executable(threenative-local-storage-test EXCLUDE_FROM_ALL
+        tests/local_storage_test.cpp)
+    target_include_directories(threenative-local-storage-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(threenative-local-storage-test PRIVATE mystral-runtime)
+
+    # Same lane for the embedded-bundle VFS: synthesizes real container files
+    # and proves the loader accepts the documented format and rejects damage.
+    add_executable(threenative-embedded-bundle-test EXCLUDE_FROM_ALL
+        tests/embedded_bundle_test.cpp)
+    target_link_libraries(threenative-embedded-bundle-test PRIVATE mystral-runtime)
+    # The negative control calls the real WebGPU C API with a NULL handle, so it needs the same
+    # backend headers the bindings use. mystral-runtime links these PRIVATE.
+    if(TARGET dawn::webgpu)
+        target_link_libraries(threenative-wgpu-null-handle-test PRIVATE dawn::webgpu)
+    elseif(TARGET wgpu::wgpu)
+        target_link_libraries(threenative-wgpu-null-handle-test PRIVATE wgpu::wgpu)
+    endif()
+
+    add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
+        tests/lifecycle_policy_test.cpp)
+    target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
 
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)
@@ -1735,6 +1852,9 @@ if(MYSTRAL_PLATFORM STREQUAL "ios")
     endif()
     add_executable(threenative-ios MACOSX_BUNDLE
         ios/main.mm
+        # The UI layer, whose contract is the same one Android and desktop implement. UNPROVEN:
+        # this repository has no macOS host, so no part of it has been compiled or run.
+        ios/ui_overlay_ios.mm
         "${THREENATIVE_IOS_PROOF_BUNDLE}"
     )
     set_source_files_properties("${THREENATIVE_IOS_PROOF_BUNDLE}" PROPERTIES
@@ -1745,7 +1865,7 @@ if(MYSTRAL_PLATFORM STREQUAL "ios")
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "dev.threenative.runtime"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
     )
-    target_link_libraries(threenative-ios PRIVATE mystral-runtime)
+    target_link_libraries(threenative-ios PRIVATE mystral-runtime "-framework WebKit")
     if(SDL3_STATIC_TARGET)
         target_link_libraries(threenative-ios PRIVATE ${SDL3_STATIC_TARGET})
     elseif(TARGET SDL3::SDL3-static)

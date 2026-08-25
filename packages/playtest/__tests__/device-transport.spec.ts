@@ -71,6 +71,33 @@ test("Android mailbox transport consumes the native ready handshake and correlat
   }
 });
 
+test("mailbox operations honor the configured runner timeout", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/silent-device-files");
+  const files = new Map<string, string>();
+  const mailbox: IDeviceMailbox = {
+    read: async (path) => files.get(path),
+    remove: async (path) => {
+      files.delete(path);
+    },
+    write: async (path, contents) => {
+      files.set(path, contents);
+    },
+  };
+  const transport = new DeviceMailboxTransport(mailbox, paths, 20);
+  await transport.start();
+  try {
+    files.set(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(100)).resolves.toBe(true);
+    const bounded = Promise.race([
+      transport.call("sample"),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("custom timeout ignored")), 200)),
+    ]);
+    await expect(bounded).rejects.toThrow(/exceeded 20ms/u);
+  } finally {
+    await transport.close();
+  }
+});
+
 class FakeMailbox implements IDeviceMailbox {
   readonly files = new Map<string, string>();
   readonly requests: unknown[] = [];

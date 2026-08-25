@@ -71,10 +71,6 @@
         console.error("phase0-console-error");
       }
 
-      if (mode === "network-only") {
-        fetch("http://127.0.0.1:1/missing-asset.js").catch(() => undefined);
-      }
-
       if (mode === "unhandled-rejection") {
         Promise.reject("phase2-unhandled-rejection");
       }
@@ -99,6 +95,7 @@
       let held = false;
       let tick = 0;
       const physicsDebugSeries = [];
+      let networkFailureSent = false;
       const worldBodies = ["player", "ground"];
       const expectedWorldBodies = worldBodies.length;
       let staleSchedulerCallbacks = 0;
@@ -257,6 +254,10 @@
             ? { ready: false, reason: "scene still loading" }
             : { ready: true },
         sample: (request) => {
+          if (mode === "network-only" && !networkFailureSent) {
+            networkFailureSent = true;
+            fetch("http://127.0.0.1:1/missing-asset.js").catch(() => undefined);
+          }
           if (mode === "physics" && request.label) {
             physicsDebugSeries.push({
               label: request.label,

@@ -84,4 +84,12 @@ describe("pnpm release ordering", () => {
     expect(new Set(order).size).toBe(order.length);
     expect(order).toHaveLength(publishSet(repo).length);
   });
+
+  it("keeps the guarded release path aligned with its current-set pin exception", async () => {
+    const source = await fs.promises.readFile(
+      path.resolve(import.meta.dirname, "../release.ts"),
+      "utf8",
+    );
+    expect(source).toContain("allowCurrentPublishSetPins: true");
+  });
 });

@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import * as ts from "typescript";
+import { workspacePackages } from "./workspace-packages.js";
 
 export interface ICapabilityExport {
   readonly packageName: "@threenative/core" | "@threenative/physics";
-  readonly subpath: "." | "./hot" | "./navigation" | "./playtest";
+  readonly subpath: "." | "./hot" | "./navigation" | "./playtest" | "./react" | "./ui-layer";
   readonly name: string;
   readonly entry: string;
 }
@@ -47,12 +48,19 @@ interface IPackageManifest {
   readonly exports?: Record<string, unknown>;
 }
 
-const PACKAGE_SPECS: readonly IPackageSpec[] = [
-  { name: "@threenative/core", directory: "packages/core" },
-  { name: "@threenative/physics", directory: "packages/physics" },
-];
-
 const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+
+function isCapabilityPackage(name: string): name is IPackageSpec["name"] {
+  return name === "@threenative/core" || name === "@threenative/physics";
+}
+
+function capabilityPackageSpecs(root: string): readonly IPackageSpec[] {
+  // Capability docs intentionally cover only the two authoring packages; their package names
+  // and directories still come from workspace manifests so this scan cannot go stale silently.
+  return workspacePackages(path.join(root, "packages")).flatMap(({ name, directory }) =>
+    isCapabilityPackage(name) ? [{ name, directory: path.relative(root, directory) }] : [],
+  );
+}
 
 interface IManifestEntry {
   readonly example: string;
@@ -123,11 +131,15 @@ async function packageEntries(
   const entries: { subpath: ICapabilityExport["subpath"]; entry: string }[] = [];
   for (const [subpath, targetDefinition] of Object.entries(manifest.exports)) {
     if (subpath === "./package.json") continue;
+    // Named rather than accepted wholesale: a new subpath is a new public surface, and this list
+    // is where someone has to notice it and decide the export deserves capability docs.
     if (
       subpath !== "." &&
       subpath !== "./hot" &&
       subpath !== "./navigation" &&
-      subpath !== "./playtest"
+      subpath !== "./playtest" &&
+      subpath !== "./react" &&
+      subpath !== "./ui-layer"
     ) {
       throw new Error(`CAPABILITY_DOCS_UNSUPPORTED_SUBPATH: ${spec.name}${subpath}`);
     }
@@ -204,7 +216,10 @@ export async function collectPublicExports(root: string): Promise<readonly ICapa
   const discovered: ICapabilityExport[] = [];
   const entryRecords = (
     await Promise.all(
-      PACKAGE_SPECS.map(async (spec) => ({ spec, entries: await packageEntries(root, spec) })),
+      capabilityPackageSpecs(root).map(async (spec) => ({
+        spec,
+        entries: await packageEntries(root, spec),
+      })),
     )
   ).flatMap(({ spec, entries }) => entries.map((entry) => ({ ...entry, packageName: spec.name })));
   const program = sourceProgram(

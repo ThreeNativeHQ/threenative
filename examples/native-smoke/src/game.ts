@@ -27,6 +27,20 @@ interface ISmokeState extends Record<string, unknown> {
   leftGroundWithTwoPointers: boolean;
   maxPointers: number;
   movedWithTwoPointers: boolean;
+  /** Every 0 → 1 pointer transition the GAME saw. A touch the UI layer consumed never arrives. */
+  pointerDowns: number;
+  /** Restart intents, counted on their own so an assertion never races the transition's end. */
+  restarts: number;
+  /** Transitions the UI layer reported finished. Guards the settled probe against vacuity. */
+  slidesDone: number;
+  /** Whether the UI layer announced itself, and with how many interactive rectangles. */
+  uiReady: boolean;
+  uiRegions: number;
+  /** Intents the UI layer sent, and the last one, so the bridge is provable in both directions. */
+  uiIntents: number;
+  lastUiIntent: string;
+  /** Published to the UI layer; the page transitions its sliding control while this is true. */
+  slide: boolean;
 }
 
 export interface ISmokeStatus {
@@ -222,9 +236,17 @@ class NativeSmoke extends Scene<ISmokeState> {
     airborne: false,
     currentPointers: 0,
     frames: 0,
+    lastUiIntent: "",
     leftGroundWithTwoPointers: false,
     maxPointers: 0,
     movedWithTwoPointers: false,
+    pointerDowns: 0,
+    restarts: 0,
+    slide: false,
+    slidesDone: 0,
+    uiIntents: 0,
+    uiReady: false,
+    uiRegions: 0,
   };
 
   override enter(ctx: ICtx<ISmokeState>) {
@@ -306,6 +328,18 @@ class NativeSmoke extends Scene<ISmokeState> {
     let movedWithTwoPointers = false;
     let leftGroundWithTwoPointers = false;
     let verticalVelocity = 0;
+    // The one number the UI-layer input proof reads. A touch the overlay consumed never reaches
+    // this runtime at all, so counting arrivals is the honest observation — "the player did not
+    // move" would also be true if the game were simply broken.
+    //
+    // Counted from the event, not sampled per frame. A tap whose down and up land between two
+    // frames is invisible to `input.raw.pointers`, and on a phone that happens often enough to
+    // make a frame-sampled counter under-report — which reads exactly like a touch the overlay
+    // swallowed. That distinction is the whole assertion.
+    let pointerDowns = 0;
+    runtimeCanvas.addEventListener?.("pointerdown", () => {
+      pointerDowns += 1;
+    });
     return (frameCtx: ICtx<ISmokeState>, dt: number) => {
       cube.rotation.x += dt * 0.5;
       cube.rotation.y += dt;
@@ -326,6 +360,7 @@ class NativeSmoke extends Scene<ISmokeState> {
         leftGroundWithTwoPointers,
         maxPointers,
         movedWithTwoPointers,
+        pointerDowns,
       });
       status.frames += 1;
       if (status.frames === 1) console.info("TN_NATIVE_SMOKE_FIRST_FRAME");
@@ -357,12 +392,32 @@ class NativeSmoke extends Scene<ISmokeState> {
   }
 }
 
-const game = defineGame<ISmokeState>({
+const game: ReturnType<typeof defineGame<ISmokeState>> = defineGame<ISmokeState>({
   canvas: runtimeCanvas,
   inputTarget: runtimeCanvas,
   plugins: __TN_PLAYTEST_ENABLED__ ? [playtest()] : [],
   scenes: { smoke: NativeSmoke },
   start: "smoke",
+});
+
+/**
+ * The game end of the UI bridge, wired in the example rather than in a package.
+ *
+ * `slide` is published state the overlay reacts to, and `slide`/`restart` are intents the
+ * overlay sends. Together they prove the bridge in both directions on a device — which is the
+ * half of PRD-217 Phase 0 that a hit test alone does not cover.
+ */
+game.ui.onIntent((intent, payload) => {
+  const state = game.state.getState();
+  game.state.set({
+    lastUiIntent: intent,
+    uiIntents: state.uiIntents + 1,
+    ...(intent === "slide" ? { slide: payload !== false } : {}),
+    ...(intent === "ready" ? { uiReady: true, uiRegions: Number(payload) } : {}),
+    ...(intent === "restart" ? { restarts: state.restarts + 1 } : {}),
+    ...(intent === "slideDone" ? { slidesDone: state.slidesDone + 1 } : {}),
+  });
+  game.state.flush();
 });
 
 export default game;

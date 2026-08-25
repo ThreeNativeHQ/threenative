@@ -159,6 +159,19 @@ test('native host publishes explicit platform facts before the game bundle', () 
   assert.match(smoke, /TN_NATIVE_PLATFORM:/u);
 });
 
+test('native project bundling defaults dependency selection to production mode', () => {
+  const bundler = read('scripts/bundle.mjs');
+  const defaultMode = bundler.indexOf("process.env.NODE_ENV ??= 'production';");
+  const viteBuild = bundler.indexOf('await build({', defaultMode);
+  assert.ok(defaultMode >= 0, 'native bundling must default NODE_ENV so React links its production build');
+  assert.ok(viteBuild > defaultMode, 'the production default must be installed before Vite loads dependencies');
+  assert.match(
+    bundler.slice(viteBuild),
+    /define:\s*\{\s*'process\.env\.NODE_ENV': JSON\.stringify\(process\.env\.NODE_ENV\)\s*\}/u,
+    'the Vite API must inline NODE_ENV; setting the parent process alone leaves both React builds in the bundle',
+  );
+});
+
 test('Win32 window creation does not require a Vulkan-capable host', () => {
   const windowSource = read('src/platform/window.cpp');
   assert.match(windowSource, /#elif !defined\(_WIN32\)[\s\S]*?SDL_WINDOW_VULKAN/u);
@@ -417,8 +430,33 @@ test('desktop playtests inject the shared mailbox before game evaluation and ser
 
 const generatedAndroidBundle = 'android/app/build/generated/threenative/assets/scripts/main.js';
 const generatedAndroidMeta = `${generatedAndroidBundle}.meta.json`;
+
+/**
+ * Two builders write to that one path. This gate is about the first-proof bundle
+ * (`build-android-first-proof.mjs`); `build-android-conformance.mjs` stamps
+ * `threenative-android-conformance` and carries no native-smoke provenance at all. Guarding on
+ * existence alone meant any `--target android` conformance run poisoned `pnpm test` with a SHA
+ * mismatch against native-smoke — a red pointing at entirely the wrong thing, which is exactly
+ * how repair rounds get spent on the wrong layer.
+ *
+ * A *different* known kind is not this gate's subject, so it is skipped. A missing or
+ * unrecognised kind still runs the assertions: an artifact this cannot identify must not
+ * silently stop being checked.
+ */
+function generatedAndroidBundleIsForeign() {
+  if (!existsSync(join(root, generatedAndroidMeta))) return false;
+  try {
+    const kind = JSON.parse(read(generatedAndroidMeta)).kind;
+    return typeof kind === 'string' && kind !== 'threenative-android-first-proof';
+  } catch {
+    return false;
+  }
+}
+
 test.skipIf(
-  !existsSync(join(root, generatedAndroidBundle)) || !existsSync(join(root, generatedAndroidMeta)),
+  !existsSync(join(root, generatedAndroidBundle)) ||
+    !existsSync(join(root, generatedAndroidMeta)) ||
+    generatedAndroidBundleIsForeign(),
 )('generated Android bundle provenance [requires the generated Android first-proof artifacts]', async () => {
   const smoke = read('../../examples/native-smoke/src/game.ts');
   const crypto = await import('node:crypto');
@@ -443,8 +481,19 @@ test.skipIf(
 });
 
 test('Android preserves native crash evidence and QuickJS reports each evaluation boundary', () => {
+  // The contract is unchanged — Android must not touch a disposition debuggerd owns — but the
+  // mechanism moved. It used to be five bare `signal()` calls in runtime.cpp guarded by an
+  // `#ifdef __ANDROID__`; it is now a policy value in `platform/crash_policy.h`, decided once and
+  // provable without crashing a process. Pin the policy, not the `#ifdef` it replaced.
   const runtime = read('src/runtime.cpp');
-  assert.match(runtime, /#ifdef __ANDROID__[\s\S]*g_suppressCrashDialog = false/, 'Android must preserve the original signal for debuggerd tombstones');
+  assert.match(runtime, /platform::installCrashHandlers\(\)/, 'the runtime must reach the crash-handler policy rather than calling signal() itself');
+  assert.doesNotMatch(runtime, /\bsignal\s*\(\s*SIG(SEGV|ABRT|BUS|TRAP|ILL)/, 'runtime.cpp must not install crash-signal handlers directly again');
+
+  const crashPolicy = read('include/mystral/platform/crash_policy.h');
+  assert.match(crashPolicy, /androidPlatform \? CrashHandlerPolicy::LeaveToPlatform/, 'Android must preserve the original signal for debuggerd tombstones');
+
+  const crashHandlers = read('src/platform/crash_handlers.cpp');
+  assert.match(crashHandlers, /LeaveToPlatform/, 'the applier must honour the Android policy');
 
   const quickjs = read('src/js/quickjs_engine.cpp');
   for (const marker of [

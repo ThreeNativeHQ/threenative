@@ -132,6 +132,21 @@ export function defineGame<TState extends Record<string, unknown>, TPhysics = un
 const game = defineGame({ scenes: { Play } });
 ```
 
+### `FrameBudget`
+
+`class` — Read where the frame's milliseconds went, per presented frame, on any platform.
+
+```ts
+export class FrameBudget { … }
+```
+
+- **Use when:** find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay
+- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
+
+```ts
+defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
+```
+
 ### `getPlatform`
 
 `function` — Read the host platform without reaching for browser globals.
@@ -484,6 +499,185 @@ export function playtest< TState extends Record<string, unknown> = Record<string
 
 ```ts
 const game = defineGame({ plugins: [playtest()] });
+```
+
+## `@threenative/core/react`
+
+### `createReactOverlay`
+
+`function` — `@threenative/core/react` — React that renders on a phone, with no DOM and no WebView. A subpath on purpose. `react` and `react-reconciler` are **optional** peers, and nothing in `@threenative/core`'s main entry imports either of them, so a game that never mounts a React overlay pays nothing and core stays consumable from React Three Fiber. Importing this module is the opt-in. The element vocabulary is two components, borrowed from React Native rather than invented: {@link View} is a rectangle, {@link Text} is a run of glyphs. They are components and not lowercase intrinsics because `view` and `text` are already SVG tags in `@types/react`, and a HUD element that silently means `<svg:text>` on one platform is exactly the kind of quiet divergence this path exists to end.
+
+```ts
+export function createReactOverlay(options: IReactOverlayOptions): IReactOverlay { … }
+```
+
+- **Use when:** render a React HUD on Android or iOS without a WebView · show the same React component on web and on a phone · show a React HUD on Android, iOS or desktop native · render the same React component on web and on a phone without a WebView
+- **Constraints:** styling is the `style` prop; Tailwind class names are CSS and cannot cross · import `react`, never `react-dom`, from the portable native entry · import `react`, never `react-dom`, from a native entry
+
+```ts
+const overlay = createReactOverlay({ canvasLayer: ctx.canvasLayer });
+```
+
+### `measureText`
+
+`function` — Width in pixels of a glyph run at a given cell height.
+
+```ts
+export function measureText(text: string, fontSize: number, letterSpacing = 0): number { … }
+```
+
+- **Use when:** measure native React HUD text before laying it out
+
+```ts
+const scoreWidth = measureText("SCORE 10", 24)
+```
+
+### `supportedGlyphs`
+
+`function` — Every character this glyph set can draw, for error messages and for the templates' AGENTS.md.
+
+```ts
+export function supportedGlyphs(): string { … }
+```
+
+- **Use when:** discover which characters a native React HUD can draw
+
+```ts
+supportedGlyphs().includes("A")
+```
+
+### `supportedStyleKeys`
+
+`function` — Every style key the overlay implements, for the templates' AGENTS.md and for error messages.
+
+```ts
+export function supportedStyleKeys(): readonly string[] { … }
+```
+
+- **Use when:** discover which React HUD style properties work on native
+
+```ts
+supportedStyleKeys().includes("centerX")
+```
+
+### `Text`
+
+`function` — A run of bitmap glyphs, drawn as one instanced quad per lit pixel.
+
+```ts
+export function Text(props: ITextProps): ReactNode { … }
+```
+
+- **Use when:** show text in a native React HUD without a DOM
+
+```ts
+<Text style={{ color: "#ffffff", fontSize: 24 }}>SCORE 10</Text>
+```
+
+### `View`
+
+`function` — A rectangle. Paints when its style has a `background`; otherwise it only positions children.
+
+```ts
+export function View(props: IViewProps): ReactNode { … }
+```
+
+- **Use when:** group and position native React HUD elements
+
+```ts
+<View style={{ centerX: 0, top: 24 }}><Text>READY</Text></View>
+```
+
+## `@threenative/core/ui-layer`
+
+### `connectUiBridge`
+
+`function` — Open the message channel between a game and its UI, whatever host is underneath.
+
+```ts
+export function connectUiBridge(options: IConnectOptions): IUiBridge { … }
+```
+
+- **Use when:** write a UI that talks to the game on web and on a phone alike · send a message from a HUD rendered over the game surface · connect game code to a platform-owned UI realm · share one UI bridge implementation across web, Android, iOS, and desktop
+- **Constraints:** the transport is discovered, never configured; no game names the web view
+
+```ts
+const bridge = connectUiBridge({ end: "ui" });
+```
+
+### `onUiIntent`
+
+`function` — Handle the actions a UI sends back to the game.
+
+```ts
+export function onUiIntent( bridge: IUiBridge, listener: (intent: string, payload: unknown) => void, ): () => void { … }
+```
+
+- **Use when:** restart or pause a game from a button in its HUD · handle a HUD button action in game code · route native and web UI commands through one listener
+- **Constraints:** prefer game.ui.onIntent, which connects the bridge for you
+
+```ts
+onUiIntent(bridge, (intent) => { if (intent === "restart") game.goto("Play"); });
+```
+
+### `publishHitRegions`
+
+`function` — Tell the native input host where a UI's touchable controls are.
+
+```ts
+export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry { … }
+```
+
+- **Use when:** let a touch on empty HUD space reach the game instead of the UI · make a HUD button receive taps on a phone · give native input hosts the rectangles claimed by UI controls · keep touch hit testing aligned with a moving web or native HUD
+- **Constraints:** mark controls with data-tn-interactive; pointer-events is not the mechanism
+
+```ts
+publishHitRegions({ bridge });
+```
+
+### `publishUiState`
+
+`function` — Publish the game's state so a UI in another process can mirror it.
+
+```ts
+export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }
+```
+
+- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop · publish game state to a HUD in another realm · keep a web and native UI mirror on the same throttled state stream
+- **Constraints:** publishes at the store's throttled cadence, and not at all with no UI listening
+
+```ts
+publishUiState(bridge, game.state);
+```
+
+### `sendUiIntent`
+
+`function` — Send a player action from the UI back to the game.
+
+```ts
+export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void { … }
+```
+
+- **Use when:** wire a Restart button in a HUD to the running game · pause a game from a menu drawn over its surface · send a button or menu action from a UI HUD to game code · keep UI input portable across web and native hosts
+- **Constraints:** one-way; the game decides what each name means and may ignore one
+
+```ts
+sendUiIntent(bridge, "restart");
+```
+
+### `subscribeUiState`
+
+`function` — Mirror the game's published state on the UI side.
+
+```ts
+export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … }
+```
+
+- **Use when:** read game state from a HUD that runs in the platform's web view · read published game state from a UI HUD · subscribe a web or native UI to the game's mirrored state
+- **Constraints:** returns undefined until the game publishes its first state
+
+```ts
+const mirror = subscribeUiState(bridge);
 ```
 
 ## `@threenative/physics`
@@ -1849,6 +2043,21 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>( { 
 <GameCanvas game={game} />
 ```
 
+### `UiLayer`
+
+`function` — Render a game's UI so the same source runs on web and on every native target.
+
+```ts
+export function UiLayer( { … }
+```
+
+- **Use when:** write one HUD that looks the same on the web build and on a phone · mount a React UI over the game surface on Android or iOS
+- **Constraints:** mark every control the player touches with data-tn-interactive
+
+```ts
+<UiLayer><Hud /></UiLayer>
+```
+
 ### `useGameState`
 
 `function` — Read throttled game state from React.
@@ -1862,5 +2071,35 @@ export function useGameState<TState extends Record<string, unknown>, TPhysics, T
 
 ```ts
 const score = useGameState(game, (state) => state.score);
+```
+
+### `useUiIntent`
+
+`function` — Send a player action from the UI back to the game.
+
+```ts
+export function useUiIntent(): (intent: string, payload?: unknown) => void { … }
+```
+
+- **Use when:** wire a Restart button in a HUD to the running game · pause a game from a menu rendered over its surface
+- **Constraints:** the game decides what each intent name means; it may ignore one
+
+```ts
+const send = useUiIntent(); send("restart");
+```
+
+### `useUiState`
+
+`function` — Read the game's published state from a UI that may be in another process.
+
+```ts
+export function useUiState<TState extends object>(): TState | undefined;
+```
+
+- **Use when:** bind a HUD to game state on web and native alike · show score or health in a UI rendered over the game surface
+- **Constraints:** returns undefined until the game publishes its first state
+
+```ts
+const score = useUiState((state) => state.score);
 ```
 

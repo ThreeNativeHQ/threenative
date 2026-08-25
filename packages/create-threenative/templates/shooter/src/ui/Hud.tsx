@@ -1,6 +1,4 @@
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { useGameState } from "@threenative/ui";
+import { useUiState } from "@threenative/ui";
 import { shooterUi } from "../render/ui.js";
 import type { GameState } from "../state.js";
 
@@ -23,13 +21,13 @@ function Meter({ label, value, tone }: { label: string; tone: MeterTone; value: 
   );
 }
 
-export function Hud({ game }: { game: IGame<GameState, IPhysicsContext> }) {
-  const health = useGameState(game, (state) => state.health);
-  const lives = useGameState(game, (state) => state.lives);
-  const wave = useGameState(game, (state) => state.wave);
-  const wavesCleared = useGameState(game, (state) => state.wavesCleared);
-  const targets = useGameState(game, (state) => state.targetsRemaining);
-  const phase = useGameState(game, (state) => state.phase);
+export function Hud() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in. Rendering
+  // zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
+  const { health, lives, wave, wavesCleared, phase } = state;
+  const targets = state.targetsRemaining;
   return (
     <section className={shooterUi.hud.root}>
       <div className={shooterUi.hud.eyebrow}>{shooterUi.hud.copy.eyebrow}</div>

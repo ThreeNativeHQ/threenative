@@ -148,12 +148,110 @@ function generateVFSHeader(files, outputPath) {
 }
 
 /**
+ * Three's compressed-asset decoders that cannot run on a mobile native target.
+ *
+ * Android runs QuickJS and iOS runs JavaScriptCore without a WASM JIT: neither has
+ * `WebAssembly`, so the Basis/zstd transcoder behind `KTX2Loader`, the Meshopt decoder and
+ * Draco's wasm decoder have nothing to instantiate there. Their specifiers are static strings
+ * inside `await import(...)`, so a bundler resolves and inlines them whether or not the game
+ * ships a single compressed asset — which is how one `.ktx2`-free game came to fail
+ * `TN_NATIVE_WASM_ON_MOBILE`. Replacing them here keeps that guard intact by keeping WASM out
+ * of the bundle instead of by ignoring it.
+ *
+ * The replacements construct and configure exactly like the originals so a game that ships no
+ * compressed asset boots normally (`createAssetLoader` builds the shared KTX2 loader eagerly);
+ * they refuse, by name, only when asked to decode. A game whose compiled assets do need one is
+ * refused earlier and louder, by `threenative build`, before this bundle is written.
+ */
+const MOBILE_KTX2_MESSAGE =
+  // Deliberately never spells the WASM host object: `TN_NATIVE_WASM_ON_MOBILE` greps the
+  // finished bundle for that identifier, and a refusal message must not read as the thing it
+  // refuses.
+  "TN_NATIVE_KTX2_UNSUPPORTED: this Android/iOS bundle carries no Basis transcoder, because the mobile native runtime has no WASM engine. Compiled .ktx2 textures cannot be decoded here; build native targets with assets.textures set to \\\"none\\\", or keep those textures on the web target.";
+const MOBILE_MESH_MESSAGE =
+  "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this Android/iOS bundle carries no Meshopt or Draco decoder, because the mobile native runtime has no WASM engine. Compressed model geometry cannot be decoded here; build native targets with assets.models set to \\\"none\\\", or keep those models on the web target.";
+
+const MOBILE_DECODER_STUBS = [
+  {
+    endsWith: '/examples/jsm/loaders/KTX2Loader.js',
+    source: `const message = "${MOBILE_KTX2_MESSAGE}";
+export class KTX2Loader {
+  constructor() { this.transcoderPath = ""; this.workerConfig = undefined; }
+  setTranscoderPath(path) { this.transcoderPath = path; return this; }
+  setWorkerLimit() { return this; }
+  // Support detection is where core asks whether this platform can transcode at all. Throwing
+  // is the documented "renderer exposed no surface to probe" answer: the asset loader resolves
+  // its shared loader to undefined and the game boots without compressed textures.
+  detectSupport() { throw new Error(message); }
+  load(url, onLoad, onProgress, onError) {
+    const error = new Error(\`\${message} (requested '\${url}')\`);
+    if (typeof onError === "function") onError(error);
+    else throw error;
+  }
+  parse() { throw new Error(message); }
+  dispose() { return this; }
+}
+`,
+  },
+  {
+    endsWith: '/examples/jsm/libs/meshopt_decoder.module.js',
+    source: `const message = "${MOBILE_MESH_MESSAGE}";
+function refuse() { throw new Error(message); }
+export const MeshoptDecoder = {
+  supported: false,
+  get ready() { return refuse(); },
+  decodeVertexBuffer: refuse,
+  decodeIndexBuffer: refuse,
+  decodeIndexSequence: refuse,
+  decodeGltfBuffer: refuse,
+  decodeGltfBufferAsync: refuse,
+  useWorkers: refuse,
+};
+`,
+  },
+  {
+    endsWith: '/examples/jsm/loaders/DRACOLoader.js',
+    source: `const message = "${MOBILE_MESH_MESSAGE}";
+export class DRACOLoader {
+  setDecoderPath() { return this; }
+  setDecoderConfig() { return this; }
+  setWorkerLimit() { return this; }
+  preload() { return this; }
+  load(url, onLoad, onProgress, onError) {
+    const error = new Error(\`\${message} (requested '\${url}')\`);
+    if (typeof onError === "function") onError(error);
+    else throw error;
+  }
+  parse() { throw new Error(message); }
+  decodeDracoFile() { throw new Error(message); }
+  dispose() { return this; }
+}
+`,
+  },
+];
+
+/**
+ * Matched on the resolved module path rather than the import specifier so every spelling of
+ * the same file — `three/addons/...`, `three/examples/jsm/...`, or a relative import from
+ * inside three — lands on the same replacement.
+ */
+function mobileDecoderStub(id) {
+  const normalized = id.split('\\').join('/');
+  return MOBILE_DECODER_STUBS.find((stub) => normalized.endsWith(stub.endsWith))?.source;
+}
+
+/**
  * Main
  */
 async function bundleProject(project, entryPoint, outputPath, target) {
   const absoluteProject = resolve(project);
   const absoluteEntry = resolve(absoluteProject, entryPoint);
   const absoluteOutput = resolve(outputPath);
+  // Vite's CLI supplies this default; its JavaScript API does not. Native bundling uses the API,
+  // so without an explicit default CommonJS packages such as React select their development
+  // builds and every game has to repeat this platform seam in vite.config.ts. Preserve an
+  // explicitly selected development mode for diagnostics while making shipping builds honest.
+  process.env.NODE_ENV ??= 'production';
   const require = createRequire(join(absoluteProject, 'package.json'));
   let viteEntry;
   try {
@@ -212,6 +310,14 @@ if (typeof globalThis.requestAnimationFrame === "function") {
       return code.replaceAll('import.meta.url', '"file:///threenative-bundle/"');
     },
   };
+  const mobileDecodersPlugin = {
+    name: 'threenative-mobile-decoders',
+    enforce: 'pre',
+    load(id) {
+      const stub = mobileDecoderStub(id);
+      return stub === undefined ? null : stub;
+    },
+  };
   const nativeEntryPlugin = {
     name: 'threenative-native-entry',
     enforce: 'pre',
@@ -235,7 +341,11 @@ void game.start().catch((error) => console.error(
   mkdirSync(dirname(absoluteOutput), { recursive: true });
   await build({
     root: absoluteProject,
-    plugins: [importMetaPlugin, nativeEntryPlugin],
+    define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV) },
+    plugins:
+      target === 'desktop'
+        ? [importMetaPlugin, nativeEntryPlugin]
+        : [importMetaPlugin, mobileDecodersPlugin, nativeEntryPlugin],
     resolve: target === 'desktop' ? undefined : { conditions: ['threenative-native'] },
     configFile: existsSync(join(absoluteProject, 'vite.config.ts'))
       ? join(absoluteProject, 'vite.config.ts')

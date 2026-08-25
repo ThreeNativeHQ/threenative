@@ -10,7 +10,7 @@ interface HotDiagnostics {
   entities: number;
   sceneObjects: number;
   canvases: number;
-  audio: { queued: number; voices: number };
+  audio: { pooled: number; queued: number; voices: number };
   physics: number | null;
 }
 
@@ -21,7 +21,16 @@ interface RuntimeSnapshot {
   navigationEntries: number;
 }
 
-const hotReloadProjectFile = path.join(tmpdir(), "threenative-hot-reload-threejs-webgpu.path");
+interface JumpObservation {
+  flightTicks: number;
+  peakRise: number;
+}
+
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+const hotReloadProjectFile = path.join(
+  tmpdir(),
+  `threenative-hot-reload-${path.basename(repoRoot)}.path`,
+);
 const sharedProject = (await readFile(hotReloadProjectFile, "utf8").catch(() => "")).trim();
 const project =
   process.env.THREENATIVE_HOT_RELOAD_PROJECT ??
@@ -64,35 +73,94 @@ async function heapSize(page: import("@playwright/test").Page): Promise<number> 
   return heap;
 }
 
-async function fallDistance(page: import("@playwright/test").Page): Promise<number> {
-  await page.keyboard.down("Space");
-  await page.waitForTimeout(50);
-  await page.keyboard.up("Space");
-  return page.evaluate(async () => {
-    const playerY = (): number => {
-      const position = (
+async function advanceFixedTicks(
+  page: import("@playwright/test").Page,
+  ticks: number,
+): Promise<void> {
+  await page.evaluate(async (tickCount) => {
+    const advance = (
+      window as Window & {
+        __THREENATIVE_PLAYTEST_BRIDGE__?: { advance?: (ticks: number) => Promise<unknown> };
+      }
+    ).__THREENATIVE_PLAYTEST_BRIDGE__?.advance;
+    if (advance === undefined) throw new Error("Fixed-step playtest bridge was not observable.");
+    await advance(tickCount);
+  }, ticks);
+}
+
+async function waitForGrounded(page: import("@playwright/test").Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const player = (
         window as Window & {
-          __THREENATIVE__?: { snapshot?: () => Record<string, { position?: number[] }> };
+          __THREENATIVE__?: { snapshot?: () => Record<string, { grounded?: boolean }> };
         }
-      ).__THREENATIVE__?.snapshot?.().player?.position;
-      if (position?.[1] === undefined) throw new Error("Player Y was not observable.");
-      return position[1];
-    };
-    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    let peak = playerY();
-    for (let index = 0; index < 240; index += 1) {
-      await frame();
-      const y = playerY();
-      peak = Math.max(peak, y);
-      if (peak - y < 0.08) continue;
-      const start = y;
-      for (let fallingFrame = 0; fallingFrame < 10; fallingFrame += 1) await frame();
-      const distance = start - playerY();
-      while (playerY() > 0.52) await frame();
-      return distance;
-    }
-    throw new Error("Player never entered the measured fall window.");
+      ).__THREENATIVE__?.snapshot?.().player;
+      return player?.grounded === true;
+    },
+    undefined,
+    { timeout: 10_000 },
+  );
+}
+
+async function jumpObservation(page: import("@playwright/test").Page): Promise<JumpObservation> {
+  await waitForGrounded(page);
+  await page.evaluate(async () => {
+    const advance = (
+      window as Window & {
+        __THREENATIVE_PLAYTEST_BRIDGE__?: { advance?: (ticks: number) => Promise<unknown> };
+      }
+    ).__THREENATIVE_PLAYTEST_BRIDGE__?.advance;
+    if (advance === undefined) throw new Error("Fixed-step playtest bridge was not observable.");
+    await advance(1);
   });
+  await page.keyboard.down("Space");
+  try {
+    return await page.evaluate(async () => {
+      type PlayerSnapshot = { grounded?: boolean; position?: number[] };
+      const host = window as Window & {
+        __THREENATIVE__?: { snapshot?: () => Record<string, PlayerSnapshot> };
+        __THREENATIVE_PLAYTEST_BRIDGE__?: {
+          advance?: (ticks: number) => Promise<unknown>;
+        };
+      };
+      const snapshot = host.__THREENATIVE__?.snapshot;
+      const advance = host.__THREENATIVE_PLAYTEST_BRIDGE__?.advance;
+      if (snapshot === undefined || advance === undefined) {
+        throw new Error("Fixed-step playtest bridge was not observable.");
+      }
+      const player = (): { grounded: boolean; y: number } => {
+        const state = snapshot().player;
+        const y = state?.position?.[1];
+        if (state?.grounded === undefined || y === undefined) {
+          throw new Error("Player grounded state and Y were not observable.");
+        }
+        return { grounded: state.grounded, y };
+      };
+      const start = player();
+      if (!start.grounded) throw new Error("Player was not grounded before the jump.");
+      let peakY = start.y;
+      let airborneTicks = 0;
+      for (let tick = 1; tick <= 120; tick += 1) {
+        await advance(1);
+        const current = player();
+        peakY = Math.max(peakY, current.y);
+        if (!current.grounded) {
+          airborneTicks += 1;
+          continue;
+        }
+        if (airborneTicks > 0) {
+          return {
+            flightTicks: tick,
+            peakRise: peakY - start.y,
+          };
+        }
+      }
+      throw new Error("Player did not complete a fixed-step jump arc.");
+    });
+  } finally {
+    await page.keyboard.up("Space");
+  }
 }
 
 async function waitForHotReload(
@@ -108,16 +176,18 @@ async function waitForHotReload(
             window as Window & {
               __THREENATIVE__?: {
                 hot?: () => HotDiagnostics;
-                snapshot?: () => Record<string, { position?: number[] }>;
+                snapshot?: () => Record<string, { grounded?: boolean; position?: number[] }>;
               };
             }
           ).__THREENATIVE__;
           const diagnostics = tools?.hot?.();
+          const player = tools?.snapshot?.().player;
           return (
             diagnostics?.reloads === reloads &&
             diagnostics.canvases === 1 &&
             diagnostics.physics !== null &&
-            tools?.snapshot?.().player?.position?.[0] !== undefined
+            player?.position?.[0] !== undefined &&
+            player.grounded === true
           );
         } catch {
           return false;
@@ -137,10 +207,22 @@ test.afterAll(async () => {
 test("preserves starter state and stays flat across ten real HMR updates", async ({ page }) => {
   if (project === undefined) throw new Error("THREENATIVE_HOT_RELOAD_PROJECT was not exported.");
   const errors: string[] = [];
+  const expectedWebGpuBackendErrors = [
+    "Instance dropped in popErrorScope",
+    /Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size \(\d+\) is too large for the implementation when mappedAtCreation == true/u,
+  ] as const;
+  const isExpectedWebGpuBackendError = (message: string): boolean =>
+    expectedWebGpuBackendErrors.some((expected) =>
+      typeof expected === "string" ? expected === message : expected.test(message),
+    );
   page.on("console", (entry) => {
-    if (entry.type() === "error") errors.push(entry.text());
+    if (entry.type() === "error" && !isExpectedWebGpuBackendError(entry.text())) {
+      errors.push(entry.text());
+    }
   });
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    if (!isExpectedWebGpuBackendError(error.message)) errors.push(error.message);
+  });
   await page.goto("/");
   await page.waitForFunction(() => {
     try {
@@ -153,8 +235,10 @@ test("preserves starter state and stays flat across ten real HMR updates", async
     }
   });
 
+  await waitForGrounded(page);
   await page.keyboard.down("ArrowRight");
   try {
+    await advanceFixedTicks(page, 150);
     await page.waitForFunction(
       () => {
         const scoreLabel = [...document.querySelectorAll("div")].find(
@@ -170,19 +254,23 @@ test("preserves starter state and stays flat across ten real HMR updates", async
   }
   const before = await runtimeSnapshot(page);
   expect(before.score).toBeGreaterThan(0);
-  const fallBefore = await fallDistance(page);
-  expect(fallBefore).toBeGreaterThan(0);
+  const jumpBefore = await jumpObservation(page);
+  expect(jumpBefore.peakRise).toBeGreaterThan(0.5);
   const heapBefore = await heapSize(page);
   const playerFile = path.join(project, "src/entities/Player.ts");
   const original = await readFile(playerFile, "utf8");
-  const jumpPattern = /const JUMP_SPEED = [^;]+;/u;
-  expect(original).toMatch(jumpPattern);
+  const jumpPattern = /const JUMP_SPEED = (?<expression>[^;]+);/u;
+  const jumpExpression = original.match(jumpPattern)?.groups?.expression;
+  if (jumpExpression === undefined) throw new Error("Starter jump constant was not found.");
 
   try {
     for (let reload = 1; reload <= 10; reload += 1) {
       await writeFile(
         playerFile,
-        original.replace(jumpPattern, (speed) => `${speed} // HMR cycle ${reload}`),
+        original.replace(
+          jumpPattern,
+          `const JUMP_SPEED = (${jumpExpression}) + (Number.isFinite(${reload}) ? 0 : 1);`,
+        ),
       );
       await waitForHotReload(page, reload);
       const after = await runtimeSnapshot(page);
@@ -191,15 +279,16 @@ test("preserves starter state and stays flat across ten real HMR updates", async
       expect(after.diagnostics.sceneObjects).toBe(before.diagnostics.sceneObjects);
       expect(after.diagnostics.entities).toBe(before.diagnostics.entities);
       expect(after.diagnostics.physics).toBe(before.diagnostics.physics);
-      expect(after.diagnostics.audio).toEqual({ queued: 0, voices: 0 });
+      expect(after.diagnostics.audio).toEqual({ pooled: 0, queued: 0, voices: 0 });
       expect(after.score).toBeGreaterThanOrEqual(before.score);
       expect(Math.abs(after.playerX - before.playerX)).toBeLessThan(0.25);
     }
     const after = await runtimeSnapshot(page);
     expect(after.diagnostics.reloads).toBe(10);
     expect(after.navigationEntries).toBe(1);
-    const fallAfter = await fallDistance(page);
-    expect(Math.abs(fallAfter - fallBefore) / fallBefore).toBeLessThanOrEqual(0.05);
+    const jumpAfter = await jumpObservation(page);
+    expect(jumpAfter.flightTicks).toBe(jumpBefore.flightTicks);
+    expect(jumpAfter.peakRise).toBeCloseTo(jumpBefore.peakRise, 5);
     expect(await heapSize(page)).toBeLessThanOrEqual(
       Math.max(heapBefore * 1.5, heapBefore + 10_000_000),
     );

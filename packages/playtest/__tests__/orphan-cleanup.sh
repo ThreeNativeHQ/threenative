@@ -5,18 +5,23 @@ script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "$script_directory/../../.." && pwd)"
 cd "$repository_root"
 
-# `/tmp` is shared by every agent lane working this repository, so counting every
-# `/tmp/threenative-*` made this guard report a sibling's directories as this run's leak — and, when
-# a sibling cleaned up mid-run, as this run's impossible negative leak. When the suite runner tags
-# its run, count only the directories carrying that tag; `test-support/temp-dir.ts` puts it there,
-# and PRD-135 already requires every temp directory to come from that helper. Without a tag the
-# whole-directory count stands, so an ad-hoc invocation still sees everything.
-count_temp_directories() {
-  if [[ -n "${TN_TEST_TEMP_TAG:-}" ]]; then
-    ls -d /tmp/threenative-*"${TN_TEST_TEMP_TAG}"* 2>/dev/null | wc -l || true
-  else
-    ls -d /tmp/threenative-* 2>/dev/null | wc -l || true
+owned_temp_root=0
+suite_temp_root="${TN_SUITE_TMPDIR:-}"
+if [[ -z "$suite_temp_root" || ! -d "$suite_temp_root" ]]; then
+  suite_temp_root="$(mktemp -d /tmp/threenative-orphan-suite.XXXXXX)"
+  owned_temp_root=1
+fi
+export TMPDIR="$suite_temp_root"
+
+cleanup_temp_root() {
+  if [[ "$owned_temp_root" -eq 1 ]]; then
+    rm -rf -- "$suite_temp_root"
   fi
+}
+trap cleanup_temp_root EXIT
+
+count_temp_directories() {
+  find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | wc -l
 }
 
 case "${1:-}" in
@@ -25,7 +30,10 @@ case "${1:-}" in
       echo "usage: $0 --suite-start MARKER" >&2
       exit 2
     fi
-    count_temp_directories >"$2"
+    {
+      echo "$suite_temp_root"
+      count_temp_directories
+    } >"$2"
     echo "suite temporary directory baseline recorded: $(<"$2")"
     exit 0
     ;;
@@ -34,13 +42,13 @@ case "${1:-}" in
       echo "usage: $0 --suite-finish MARKER" >&2
       exit 2
     fi
-    before_temp_directories="$(<"$2")"
+    before_temp_directories="$(sed -n '2p' "$2")"
     after_temp_directories="$(count_temp_directories)"
     if [[ "$after_temp_directories" != "$before_temp_directories" ]]; then
-      echo "temporary directory count changed across the full test suite: before $before_temp_directories, after $after_temp_directories" >&2
+      echo "temporary directory count changed in suite namespace '$suite_temp_root': before $before_temp_directories, after $after_temp_directories" >&2
       exit 1
     fi
-    echo "suite temporary directory count unchanged: $before_temp_directories"
+    echo "suite temporary directory count unchanged in '$suite_temp_root': $before_temp_directories"
     exit 0
     ;;
   "")
@@ -64,8 +72,8 @@ before_temp_directories="$(count_temp_directories)"
 
 set +e
 run_log="$(mktemp)"
-trap 'rm -f "$run_log"' EXIT
-baseline_pids="$(ps -eo pid= | tr -d ' ')"
+trap 'cleanup_temp_root; rm -f "$run_log"' EXIT
+baseline_pids="$(ps -eo pid=)"
 test_port="$(node --input-type=module -e '
   import { createServer } from "node:net";
   const server = createServer();
@@ -116,7 +124,7 @@ fi
 
 after_temp_directories="$(count_temp_directories)"
 if [[ "$after_temp_directories" -ne "$before_temp_directories" ]]; then
-  echo "temporary directory count changed: before $before_temp_directories, after $after_temp_directories" >&2
+  echo "temporary directory count changed in suite namespace '$suite_temp_root': before $before_temp_directories, after $after_temp_directories" >&2
   exit 1
 fi
 

@@ -8,6 +8,7 @@ import {
   assertFrameworkRatchet,
   classifyVanillaLine,
   collectLoc,
+  countGeneratedHudLoc,
   countLines,
   countPlatformerTemplateLoc,
   normaliseSource,
@@ -93,5 +94,13 @@ describe("count-loc", () => {
 
   it("reports the platformer template LOC without capping it", () => {
     expect(countPlatformerTemplateLoc()).toBeGreaterThan(0);
+  });
+
+  // PRD-217 removed the starter's second HUD, so what this prices now is the one HUD that runs
+  // everywhere. Same bar: the generated source must stay smaller than the geometry HUD it replaces.
+  it("prices the generated HUD against the geometry HUD", () => {
+    const comparison = countGeneratedHudLoc();
+
+    expect(comparison.generated).toBeLessThanOrEqual(comparison.geometry);
   });
 });

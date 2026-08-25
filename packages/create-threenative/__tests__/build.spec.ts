@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   assertNativeBundleCompatible,
+  assertNativeUiRendererCompatible,
   build,
+  buildUi,
   buildWeb,
   nativeOrientation,
   parseBuildArgs,
@@ -82,6 +84,7 @@ describe("threenative build", () => {
       display: { fullscreen: true, keepScreenOn: false, orientation: "landscape" as const },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
+      ui: { renderer: "native" as const },
       window: { height: 720, resizable: true, title: "Brand Game", width: 1280 },
     };
 
@@ -119,6 +122,40 @@ describe("threenative build", () => {
         await tree(path.join(target, "vite-dist")),
       );
     }
+  });
+
+  it("emits index.html for the native overlay loader", async () => {
+    const root = await makeTempDir("threenative-ui-build-");
+    roots.push(root);
+    await mkdir(path.join(root, "src/ui"), { recursive: true });
+    await mkdir(path.join(root, "node_modules"), { recursive: true });
+    const vitePackage = (await readdir(path.resolve("node_modules/.pnpm"))).find((entry) =>
+      entry.startsWith("vite@"),
+    );
+    if (vitePackage === undefined) throw new Error("The workspace Vite package is missing.");
+    await symlink(
+      path.resolve("node_modules/.pnpm", vitePackage, "node_modules/vite"),
+      path.join(root, "node_modules/vite"),
+      "dir",
+    );
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "ui-build" }));
+    await writeFile(path.join(root, "src/ui/main.tsx"), "export const ui = true;\n");
+
+    const output = await buildUi(root, {
+      ui: { renderer: "web" },
+    } as Parameters<typeof buildUi>[1]);
+    await expect(readFile(path.join(output, "index.html"), "utf8")).resolves.toContain("assets/");
+    await expect(readFile(path.join(output, "ui.html"), "utf8")).rejects.toThrow();
+  });
+
+  it("fails closed when a native target would discard a web UI bundle", () => {
+    expect(() => assertNativeUiRendererCompatible("android", "web")).not.toThrow();
+    expect(() => assertNativeUiRendererCompatible("desktop", "web")).toThrow(
+      /TN_UI_RENDERER_UNSUPPORTED.*desktop.*native/u,
+    );
+    expect(() => assertNativeUiRendererCompatible("ios", "web")).toThrow(
+      /TN_UI_RENDERER_UNSUPPORTED.*ios.*native/u,
+    );
   });
 
   it("ships the CLI and native runtime pins in every template", async () => {
@@ -221,6 +258,26 @@ describe("threenative build", () => {
     for (const target of ["android", "ios"] as const) {
       await expect(assertNativeBundleCompatible(wasm, target)).rejects.toThrow(
         /TN_NATIVE_WASM_ON_MOBILE.*src\/game\.ts.*PRD-052/u,
+      );
+    }
+  });
+
+  // PRD-217 acceptance criterion 4. The UI layer now renders react-dom on every target, and the
+  // temptation is to conclude this guard has been superseded. It has not: the guard is about the
+  // PORTABLE entry — the graph that reaches `THREE.Scene` — and the UI ships as a separate bundle
+  // the packager stages under `assets/ui/`, which never passes through here. A game whose
+  // `src/game.ts` mounts React is still refused, whatever its `ui.renderer` says.
+  it("still refuses react-dom in the portable entry after the UI layer landed", async () => {
+    const root = await makeTempDir("threenative-portable-guard-");
+    roots.push(root);
+    const portable = path.join(root, "game.js");
+    await writeFile(
+      portable,
+      'import { createRoot } from "react-dom/client";\nexport default defineGame({});\n',
+    );
+    for (const target of ["desktop", "android", "ios"] as const) {
+      await expect(assertNativeBundleCompatible(portable, target)).rejects.toThrow(
+        /TN_NATIVE_WEB_ONLY_UI/u,
       );
     }
   });

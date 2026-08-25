@@ -2,6 +2,15 @@
 
 # AGENTS.md — __PROJECT_NAME__ platformer
 
+## Native React layout — complete subset
+
+Use `View` and `Text` from `@threenative/core/react`; `react-dom` stays web-only. Units are pixels;
+children are absolute unless `direction` is `row` or `column`. The complete keys are `left`,
+`right`, `top`, `bottom`, `centerX`, `centerY`, `width`, `height`, `padding`, `direction`, `gap`,
+`align`, `background`, `color`, `opacity`, `fontSize`, `letterSpacing`, `textAlign`, and `zIndex`.
+Unknown keys/glyphs throw. CSS, Tailwind, flex grow/wrap, borders, radius, transforms, images, SVG,
+and events do not exist natively. Share components/state; keep appearance in `src/ui/` adapters.
+
 This project is an editable Three.js platformer starter. The framework owns the loop,
 input, renderer, physics bindings, and playtest bridge; this repository owns the feel,
 level, entities, and look.
@@ -364,6 +373,13 @@ const bounds = new Box3().setFromObject(viewmodel); // engine-override: measurin
 
 Refill scratch; pool objects.
 
-`{"performance":{"maxFrameMsP95":33}}`
+`TN_FRAME_BUDGET` prints `fps` and the frame split: `hostGap`, `update`, `render`, `overlay`,
+`residual`. `defineGame({ frameBudget: false })` silences it, not the measurement.
+
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12}}}`
 `agent-docs/assertion-reference.md#performance`
+
+Phone memory is a ~500 MiB driver floor plus what you ask for, and one equirect on both
+`scene.background` and `scene.environment` costs 48 MiB extra — measured, Pixel 8.
+Budgets and the fix: `agent-docs/mobile-memory-budget.md`.
 <!-- /shared -->

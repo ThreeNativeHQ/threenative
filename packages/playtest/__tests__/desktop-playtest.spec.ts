@@ -54,9 +54,11 @@ test.skipIf(process.platform === "win32")("desktop process and mailbox lifecycle
   const executable = join(root, "native-test.mjs");
   const response = join(root, "tn-playtest-response.json");
   await writeFile(executable, `#!/usr/bin/env node
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-writeFileSync(join(process.env.TN_PLAYTEST_MAILBOX_ROOT, "tn-playtest-response.json"), JSON.stringify({ id: "ready", result: null }));
+const responsePath = join(process.env.TN_PLAYTEST_MAILBOX_ROOT, "tn-playtest-response.json");
+writeFileSync(responsePath + ".tmp", JSON.stringify({ id: "ready", result: null }));
+renameSync(responsePath + ".tmp", responsePath);
 setInterval(() => {}, 1000);
 `);
   await chmod(executable, 0o755);

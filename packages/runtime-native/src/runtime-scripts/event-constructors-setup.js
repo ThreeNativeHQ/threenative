@@ -95,8 +95,24 @@
     }
   }
 
+  // The Worker polyfill's failed-load path constructs an ErrorEvent
+  // (url-worker-polyfill.js); without this global that path throws
+  // ReferenceError instead of delivering worker.onerror to the game.
+  class ErrorEvent extends Event {
+    constructor(type, init) {
+      const eventInit = init || {};
+      super(type, eventInit);
+      this.message = String(eventInit.message || "");
+      this.filename = String(eventInit.filename || "");
+      this.lineno = Number(eventInit.lineno || 0);
+      this.colno = Number(eventInit.colno || 0);
+      this.error = eventInit.error !== undefined ? eventInit.error : null;
+    }
+  }
+
   globalThis.Event = Event;
   globalThis.PointerEvent = PointerEvent;
   globalThis.TouchEvent = TouchEvent;
   globalThis.KeyboardEvent = KeyboardEvent;
+  globalThis.ErrorEvent = ErrorEvent;
 })();

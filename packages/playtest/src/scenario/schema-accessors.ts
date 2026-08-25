@@ -1,4 +1,5 @@
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
+import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions } from "./schema-base.js";
@@ -224,12 +225,37 @@ export function present<K extends string, V>(key: K, value: V | undefined): Part
 
 export function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxTriangles"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
   return {
     ...present("maxDrawCalls", optionalNonNegativeNumber(record, "maxDrawCalls", scenarioPath, objectPath)),
     ...present("maxFrameMsP95", optionalNonNegativeNumber(record, "maxFrameMsP95", scenarioPath, objectPath)),
+    ...present("maxPhaseMsP95", validatePhaseBudget(record.maxPhaseMsP95, scenarioPath, `${objectPath}.maxPhaseMsP95`)),
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
+    ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
   };
+}
+
+/** Re-exported so a scenario author and the protocol never disagree about the phase names. */
+export { PLAYTEST_FRAME_BUDGET_PHASES };
+
+function validatePhaseBudget(value: unknown, scenarioPath: string, objectPath: string): Readonly<Record<string, number>> | undefined {
+  if (value === undefined) return undefined;
+  const record = requireRecord(value, scenarioPath, objectPath);
+  const entries = Object.entries(record);
+  if (entries.length === 0)
+    throw invalidScenario(scenarioPath, `${objectPath} must name at least one frame-budget phase.`);
+  const budget: Record<string, number> = {};
+  for (const [phase, ceiling] of entries) {
+    if (!(PLAYTEST_FRAME_BUDGET_PHASES as readonly string[]).includes(phase))
+      throw invalidScenario(
+        scenarioPath,
+        `${objectPath}.${phase} is not a frame-budget phase. Expected one of: ${PLAYTEST_FRAME_BUDGET_PHASES.join(", ")}.`,
+      );
+    if (typeof ceiling !== "number" || !Number.isFinite(ceiling) || ceiling < 0)
+      throw invalidScenario(scenarioPath, `${objectPath}.${phase} must be a non-negative number of milliseconds.`);
+    budget[phase] = ceiling;
+  }
+  return budget;
 }
 
 export function validateFramebufferCoverageAssertion(

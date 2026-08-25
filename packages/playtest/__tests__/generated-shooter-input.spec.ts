@@ -6,6 +6,10 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import {
+  workspacePackageArchives,
+  workspacePackageSourceFlag,
+} from "../../../scripts/workspace-packages.js";
 import { WEBGPU_BROWSER_ARGS } from "../src/runner/browser.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import { runStandalonePlaytest } from "../src/runner/runner.js";
@@ -29,29 +33,13 @@ const SCENARIO_PATH = path.join(
 );
 const SCAFFOLDER_ENTRY = path.join(REPO_ROOT, "packages/create-threenative/dist/index.js");
 
-// Mirrors scripts/visual-gate.ts LOCAL_FRAMEWORK_PACKAGES: every @threenative/* the generated
-// package.json could resolve, redirected to freshly packed local tarballs.
-const LOCAL_PACKAGES = [
-  ["@threenative/playtest", "threenative-playtest-"],
-  ["@threenative/core", "threenative-core-"],
-  ["@threenative/assets", "threenative-assets-"],
-  ["@threenative/physics", "threenative-physics-"],
-  ["@threenative/runtime-native", "threenative-runtime-native-"],
-  ["@threenative/ui", "threenative-ui-"],
-  ["create-threenative", "create-threenative-"],
-  ["threenative-engine-mcp", "threenative-engine-mcp-"],
-] as const;
+// Every package is packed from the workspace manifests so a generated project cannot silently
+// miss a newly added framework package.
+const LOCAL_PACKAGES = workspacePackageArchives(path.join(REPO_ROOT, "packages"));
 
-const PACKAGE_FLAG_BY_NAME: Record<string, string> = {
-  "@threenative/core": "--core-package",
-  "@threenative/assets": "--assets-package",
-  "@threenative/physics": "--physics-package",
-  "@threenative/playtest": "--playtest-package",
-  "@threenative/runtime-native": "--runtime-native-package",
-  "@threenative/ui": "--ui-package",
-  "create-threenative": "--cli-package",
-  "threenative-engine-mcp": "--engine-mcp-package",
-};
+const PACKAGE_FLAG_BY_NAME = Object.fromEntries(
+  LOCAL_PACKAGES.map(([name]) => [name, workspacePackageSourceFlag(name)]),
+);
 
 // WebGPU under Chromium needs a real display server on Linux; the focused gate wraps this spec
 // in `sh scripts/xvfb.sh`. Without one the run cannot execute at all, so it is skipped with that
@@ -81,9 +69,10 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       packageSources[name] = path.join(packageDirectory, archive);
     }
     projectPath = path.join(workspaceRoot, "shooter-input-proof");
-    const flags = Object.entries(packageSources).flatMap(([name, archive]) =>
-      PACKAGE_FLAG_BY_NAME[name] === undefined ? [] : [PACKAGE_FLAG_BY_NAME[name]!, archive],
-    );
+    const flags = Object.entries(packageSources).flatMap(([name, archive]) => {
+      const flag = PACKAGE_FLAG_BY_NAME[name];
+      return flag === undefined ? [] : [flag, archive];
+    });
     await execFileAsync(
       process.execPath,
       [SCAFFOLDER_ENTRY, projectPath, "--template", "shooter", ...flags],

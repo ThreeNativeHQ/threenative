@@ -12,7 +12,6 @@ export const LIMITS = {
 
 const BASELINE_PATH = path.join("docs", "verification", "quality-baseline.json");
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
-const IGNORED_RUNTIME_PACKAGE = "runtime-native";
 
 process.stdout.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EPIPE") process.exit(0);
@@ -69,7 +68,7 @@ async function packageSourceRoots(root: string): Promise<string[]> {
     () => [],
   );
   return entries
-    .filter((entry) => entry.isDirectory() && entry.name !== IGNORED_RUNTIME_PACKAGE)
+    .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(root, "packages", entry.name, "src"))
     .filter((directory) => existsSync(directory));
 }
@@ -220,20 +219,36 @@ function findingKey(value: Pick<RawFinding, "file" | "line" | "signal">): string
   return `${value.file}:${value.line}:${value.signal}`;
 }
 
+function findingGroupKey(value: Pick<RawFinding, "file" | "signal">): string {
+  return `${value.file}:${value.signal}`;
+}
+
+function waiverTarget(
+  findings: readonly RawFinding[],
+  waiver: Waiver,
+  claimed: ReadonlySet<string>,
+): RawFinding | undefined {
+  const candidates = findings.filter(
+    (candidate) =>
+      candidate.file === waiver.file &&
+      candidate.line >= waiver.line &&
+      candidate.line <= waiver.line + 1 &&
+      candidate.signal !== "waiver-without-reason" &&
+      candidate.signal !== "stale-waiver" &&
+      !claimed.has(findingKey(candidate)),
+  );
+  return (
+    candidates.find((candidate) => candidate.line === waiver.line + 1) ??
+    candidates.find((candidate) => candidate.line === waiver.line)
+  );
+}
+
 function applyWaivers(findings: RawFinding[], waivers: Waiver[]): RawFinding[] {
   const result = [...findings];
   const claimed = new Set<string>();
   for (const waiver of waivers) {
     if (waiver.reason === "") continue;
-    const target = result.find(
-      (candidate) =>
-        candidate.file === waiver.file &&
-        candidate.line >= waiver.line &&
-        candidate.line <= waiver.line + 1 &&
-        candidate.signal !== "waiver-without-reason" &&
-        candidate.signal !== "stale-waiver" &&
-        !claimed.has(findingKey(candidate)),
-    );
+    const target = waiverTarget(result, waiver, claimed);
     if (target) claimed.add(findingKey(target));
     else
       result.push(
@@ -247,18 +262,90 @@ function waivedFindingKeys(findings: RawFinding[], waivers: Waiver[]): Set<strin
   const waived = new Set<string>();
   for (const waiver of waivers) {
     if (waiver.reason === "") continue;
-    const target = findings.find(
-      (candidate) =>
-        candidate.file === waiver.file &&
-        candidate.line >= waiver.line &&
-        candidate.line <= waiver.line + 1 &&
-        candidate.signal !== "waiver-without-reason" &&
-        candidate.signal !== "stale-waiver" &&
-        !waived.has(findingKey(candidate)),
-    );
+    const target = waiverTarget(findings, waiver, waived);
     if (target) waived.add(findingKey(target));
   }
   return waived;
+}
+
+function closestBaselineIndex(remaining: readonly BaselineFinding[], line: number): number {
+  const first = remaining[0];
+  if (first === undefined) return -1;
+  let index = 0;
+  for (let candidate = 1; candidate < remaining.length; candidate += 1) {
+    const candidateRow = remaining[candidate];
+    const selectedRow = remaining[index];
+    if (candidateRow === undefined || selectedRow === undefined) continue;
+    if (Math.abs(candidateRow.line - line) < Math.abs(selectedRow.line - line)) index = candidate;
+  }
+  return index;
+}
+
+function assignBaselineRow(
+  item: RawFinding,
+  index: number,
+  remaining: BaselineFinding[],
+  matches: Map<string, BaselineFinding>,
+): void {
+  const recorded = remaining.splice(index, 1)[0];
+  if (recorded !== undefined) matches.set(findingKey(item), recorded);
+}
+
+function assignExactBaselineRows(
+  current: readonly RawFinding[],
+  remaining: BaselineFinding[],
+  matches: Map<string, BaselineFinding>,
+): void {
+  const exact = current.filter((item) => remaining.some((recorded) => recorded.line === item.line));
+  for (const item of exact) {
+    const index = remaining.findIndex((recorded) => recorded.line === item.line);
+    if (index >= 0) assignBaselineRow(item, index, remaining, matches);
+  }
+}
+
+function assignRemainingBaselineRows(
+  current: readonly RawFinding[],
+  remaining: BaselineFinding[],
+  matches: Map<string, BaselineFinding>,
+  waived: ReadonlySet<string>,
+  isWaived: boolean,
+): void {
+  for (const item of current) {
+    const key = findingKey(item);
+    if (matches.has(key) || waived.has(key) !== isWaived) continue;
+    if (remaining.length === 0) break;
+    assignBaselineRow(item, closestBaselineIndex(remaining, item.line), remaining, matches);
+  }
+}
+
+function matchBaselineFindings(
+  findings: readonly RawFinding[],
+  baseline: readonly BaselineFinding[],
+  waived: ReadonlySet<string>,
+): ReadonlyMap<string, BaselineFinding> {
+  const currentGroups = new Map<string, RawFinding[]>();
+  for (const item of findings) {
+    const key = findingGroupKey(item);
+    currentGroups.set(key, [...(currentGroups.get(key) ?? []), item]);
+  }
+  const baselineGroups = new Map<string, BaselineFinding[]>();
+  for (const item of baseline) {
+    const key = findingGroupKey(item);
+    baselineGroups.set(key, [...(baselineGroups.get(key) ?? []), item]);
+  }
+
+  const matches = new Map<string, BaselineFinding>();
+  for (const [key, current] of currentGroups) {
+    const remaining = [...(baselineGroups.get(key) ?? [])];
+    assignExactBaselineRows(current, remaining, matches);
+
+    // A newly inserted waived row can sort before the unchanged row it accompanies. Reserve
+    // remaining baseline rows for current unwaived findings first, then let a waived current row
+    // inherit one only when no unwaived row can account for it.
+    assignRemainingBaselineRows(current, remaining, matches, waived, false);
+    assignRemainingBaselineRows(current, remaining, matches, waived, true);
+  }
+  return matches;
 }
 
 function validateBaseline(value: unknown, file: string): QualityBaseline {
@@ -357,19 +444,10 @@ export async function updateQualityBaseline(root = process.cwd()): Promise<Quali
 
 export async function runQuality(root = process.cwd()): Promise<QualityFinding[]> {
   const baseline = await loadQualityBaseline(root);
-  // Classification keys on file:signal, not file:line:signal — a finding that moves lines
-  // without growing is the same fact about the code. Rows are matched with multiplicity:
-  // two suppressions in one file consume two baseline rows, and a third is genuinely new.
-  const baselineRows = new Map<string, BaselineFinding[]>();
-  for (const item of baseline.findings) {
-    const key = `${item.file}:${item.signal}`;
-    const rows = baselineRows.get(key);
-    if (rows === undefined) baselineRows.set(key, [item]);
-    else rows.push(item);
-  }
   const source = await collectSourceFindings(root);
   const findings = applyWaivers(source.findings, source.waivers);
   const waived = waivedFindingKeys(findings, source.waivers);
+  const baselineMatches = matchBaselineFindings(findings, baseline.findings, waived);
   return findings
     .sort(
       (left, right) =>
@@ -378,8 +456,8 @@ export async function runQuality(root = process.cwd()): Promise<QualityFinding[]
         left.signal.localeCompare(right.signal),
     )
     .map((item) => {
+      const recorded = baselineMatches.get(findingKey(item));
       if (waived.has(findingKey(item))) return { ...item, state: "waived" as const };
-      const recorded = baselineRows.get(`${item.file}:${item.signal}`)?.shift();
       if (recorded === undefined) return { ...item, state: "new" as const };
       const grew =
         typeof item.value === "number" && typeof recorded.value === "number"
@@ -387,6 +465,17 @@ export async function runQuality(root = process.cwd()): Promise<QualityFinding[]
           : String(item.value) !== String(recorded.value);
       return { ...item, state: grew ? ("grew" as const) : ("inherited" as const) };
     });
+}
+
+export function fatalQualityFindings(
+  findings: readonly QualityFinding[],
+): readonly QualityFinding[] {
+  return findings.filter((item) => {
+    if (item.signal === "waiver-without-reason" || item.signal === "stale-waiver") return true;
+    const suppressionClass =
+      item.signal.startsWith("suppression/") || item.signal === "lint-coverage-hole";
+    return suppressionClass && (item.state === "new" || item.state === "grew");
+  });
 }
 
 function printHuman(findings: readonly QualityFinding[]): void {
@@ -414,6 +503,13 @@ async function main(): Promise<void> {
   if (json) {
     for (const item of findings) console.log(JSON.stringify(item));
   } else printHuman(findings);
+  const fatal = fatalQualityFindings(findings);
+  if (fatal.length > 0) {
+    console.error(
+      `quality gate failed: ${fatal.length} suppression-class finding(s) are new, grew, or lack a waiver reason`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 if (

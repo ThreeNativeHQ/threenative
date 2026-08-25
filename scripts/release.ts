@@ -23,6 +23,8 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { checkPublishState, formatPublishReport, publishSet } from "./check-publish-state.js";
 
@@ -102,6 +104,17 @@ async function waitForRegistry(name: string, version: string): Promise<void> {
   );
 }
 
+async function packReleaseSet(packages: readonly { name: string }[]): Promise<void> {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "threenative-release-pack-"));
+  try {
+    for (const { name } of packages) {
+      run("pnpm", ["--filter", name, "pack", "--pack-destination", destination], `pack ${name}`);
+    }
+  } finally {
+    await rm(destination, { force: true, recursive: true });
+  }
+}
+
 async function main(argv: readonly string[]): Promise<void> {
   const publish = argv.includes("--yes");
   const skipGates = argv.includes("--skip-gates");
@@ -129,7 +142,10 @@ async function main(argv: readonly string[]): Promise<void> {
   for (const [index, name] of order.entries())
     process.stdout.write(`  ${index + 1}. ${name}@${versions.get(name)}\n`);
 
-  const report = checkPublishState({ repo: REPO });
+  const report = await checkPublishState({
+    allowCurrentPublishSetPins: true,
+    repo: REPO,
+  });
   process.stdout.write(`\n${formatPublishReport(report)}`);
   if (report.exitCode !== 0)
     throw new Error("TN_RELEASE_PREFLIGHT_RED: pnpm publish:check refused this tree.");
@@ -142,8 +158,9 @@ async function main(argv: readonly string[]): Promise<void> {
   run("pnpm", ["build"], "pnpm build");
 
   if (!publish) {
+    await packReleaseSet(packages);
     process.stdout.write(
-      "\nDry run. Nothing was published. Re-run with --yes to publish, which cannot be undone.\n",
+      "\nDry run packed every publishable package. Nothing was published. Re-run with --yes to publish, which cannot be undone.\n",
     );
     return;
   }
@@ -153,7 +170,7 @@ async function main(argv: readonly string[]): Promise<void> {
     if (version === undefined) throw new Error(`TN_RELEASE_NO_VERSION: ${name}`);
     run(
       "pnpm",
-      ["--filter", name, "publish", "--no-git-checks", "--access", "public"],
+      ["--filter", name, "publish", "--no-git-checks", "--access", "public", "--provenance"],
       `publish ${name}@${version}`,
     );
     process.stdout.write(`  waiting for ${name}@${version} to be readable…\n`);

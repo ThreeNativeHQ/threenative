@@ -7,6 +7,10 @@ export const TERMINAL = {
 export type TerminalState = (typeof TERMINAL)[keyof typeof TERMINAL];
 
 export type GameState = {
+  /** Set from the UI\'s pause and resume intents, and read back by the menu. */
+  paused: boolean;
+  /** True once the UI layer has rendered and published its interactive rectangles. */
+  uiReady: boolean;
   checkpoint: number;
   coins: number;
   coyoteJumps: number;

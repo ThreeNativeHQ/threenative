@@ -1,12 +1,14 @@
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { useGameState } from "@threenative/ui";
+import { useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
-export function AbilityBar({ game }: { game: IGame<GameState, IPhysicsContext> }) {
-  const cooldown = useGameState(game, (state) => state.abilityCooldown);
-  const active = useGameState(game, (state) => state.modifierActive);
-  const uses = useGameState(game, (state) => state.abilityUses);
+export function AbilityBar() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
+  // Rendering zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
+  const cooldown = state.abilityCooldown;
+  const active = state.modifierActive;
+  const uses = state.abilityUses;
   const ready = cooldown <= 0;
   return (
     <footer className="pointer-events-none absolute bottom-6 left-6 w-72 border border-line bg-panel/90 p-3 text-[10px] uppercase tracking-[0.14em]">

@@ -1,6 +1,8 @@
 #include "mystral/runtime.h"
 #include "mystral/platform/window.h"
 #include "mystral/platform/input.h"
+#include "mystral/platform/crash_policy.h"
+#include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/js/engine.h"
@@ -144,56 +146,10 @@ static bool readAndroidAsset(const std::string& path, std::vector<uint8_t>& data
 }
 #endif
 
-// Android has no desktop crash dialog to suppress. Preserve the original signal
-// there so debuggerd can write a tombstone with the failing native frame.
-#ifdef __ANDROID__
-static bool g_suppressCrashDialog = false;
-#else
-static bool g_suppressCrashDialog = true;
-#endif
-
-// Signal handler to suppress crash dialog
-static void crashSignalHandler(int sig) {
-    if (g_suppressCrashDialog) {
-        // Print message to stderr but don't show crash dialog
-        const char* sigName = "UNKNOWN";
-        switch(sig) {
-            case SIGABRT: sigName = "SIGABRT"; break;
-            case SIGSEGV: sigName = "SIGSEGV"; break;
-#ifndef _WIN32
-            case SIGBUS: sigName = "SIGBUS"; break;
-            case SIGTRAP: sigName = "SIGTRAP"; break;
-#endif
-            case SIGILL: sigName = "SIGILL"; break;
-        }
-        // Use write() since it's async-signal-safe
-        MYSTRAL_WRITE(MYSTRAL_STDERR_FD, "[Mystral] Caught signal ", 24);
-        MYSTRAL_WRITE(MYSTRAL_STDERR_FD, sigName, strlen(sigName));
-        MYSTRAL_WRITE(MYSTRAL_STDERR_FD, ", exiting gracefully\n", 21);
-        _exit(1);
-    }
-    // Re-raise for crash dialog if enabled (MYSTRAL_SHOW_CRASH_DIALOG=1)
-    signal(sig, SIG_DFL);
-    raise(sig);
-}
-
-// Install all crash signal handlers
-static void installCrashHandlers() {
-    // Check if user wants to see crash dialogs
-    const char* showDialog = std::getenv("MYSTRAL_SHOW_CRASH_DIALOG");
-    if (showDialog && (showDialog[0] == '1' || showDialog[0] == 't' || showDialog[0] == 'T')) {
-        g_suppressCrashDialog = false;
-        return;
-    }
-
-    signal(SIGABRT, crashSignalHandler);
-    signal(SIGSEGV, crashSignalHandler);
-#ifndef _WIN32
-    signal(SIGBUS, crashSignalHandler);
-    signal(SIGTRAP, crashSignalHandler);
-#endif
-    signal(SIGILL, crashSignalHandler);
-}
+// The crash-signal decision moved to `platform/crash_handlers.cpp`, behind the pure policy in
+// `mystral/platform/crash_policy.h`. It used to live here as five bare `signal()` calls reached on
+// every platform, which on Android replaces the dispositions the zygote chained debuggerd into —
+// so every crash after startup exited SIGNALED status=11 with no tombstone.
 
 // Forward declaration for WebGPU bindings
 /**
@@ -245,6 +201,18 @@ public:
             std::cerr << "[Mystral] Failed to create window" << std::endl;
             return false;
         }
+
+        // Lifecycle first, before anything can be backgrounded. This has to be a watch and not a
+        // pump case: on Android SDL queues the background events and *then* blocks the pump, so a
+        // polled handler runs only after the app is already parked. Fail closed — a host that
+        // cannot observe backgrounding is the host that presented for 60 s with the screen off.
+        platform::setBackgroundMode(config_.backgroundMode);
+        if (!platform::installLifecycleWatch()) {
+            std::cerr << "[Mystral] Failed to install the lifecycle event watch" << std::endl;
+            return false;
+        }
+        std::cout << "[Mystral] Lifecycle watch installed; backgroundMode="
+                  << platform::backgroundModeName(config_.backgroundMode) << std::endl;
 
         // Get actual window size (may differ from requested, especially on mobile with 0x0 meaning fullscreen)
         platform::getWindowSize(&width_, &height_);
@@ -488,6 +456,9 @@ public:
             return false;
         }
 
+        // Set up the UI overlay bridge (`@threenative/core/ui-layer`'s game end)
+        setupUiBridge();
+
 #if TN_ENABLE_NATIVE_PHYSICS
         if (!physics::initializeNativePhysicsBindings(jsEngine_.get())) {
             std::cerr << "[Mystral] Failed to initialize native physics bindings" << std::endl;
@@ -520,12 +491,18 @@ public:
             );
         }
 
+        // Startup built and configured this surface itself, so whatever WINDOW_SHOWN the watch
+        // saw while the host was still waiting for its first valid window is not a resume. Drop
+        // the request rather than rebuilding a surface that is seconds old.
+        platform::clearSurfaceRevalidationRequest();
+
         // Set up ray tracing bindings (if compiled with MYSTRAL_HAS_RAYTRACING)
         setupRayTracing();
 
         // Install crash handlers AFTER full initialization
-        // (Metal/WebGPU use signals during setup that we shouldn't intercept)
-        installCrashHandlers();
+        // (Metal/WebGPU use signals during setup that we shouldn't intercept).
+        // On Android this installs nothing, deliberately: debuggerd owns those dispositions.
+        platform::installCrashHandlers();
 
         // Initialize libuv event loop for async I/O (HTTP, file, timers)
         async::EventLoop::instance().init();
@@ -886,11 +863,154 @@ public:
         // So we don't need to do anything here - just let JS drive.
     }
 
+    /**
+     * Rebuilds the presentation surface against the window the platform has now, and republishes
+     * it to the bindings.
+     *
+     * Startup already solves this problem once: it waits for a valid `ANativeWindow`, checks it
+     * with `ANativeWindow_getWidth`, creates the surface and configures it. Resume needs the same
+     * sequence, which is what PRD-210 specified and did not carry, so this is that sequence
+     * against a live device rather than a cold one.
+     *
+     * Non-Android targets keep their window across a minimize, so there is nothing to rebuild and
+     * this reports success without touching anything.
+     */
+    bool revalidateSurfaceAfterResume() {
+        if (platform::surfaceRevalidationDisabled()) {
+            // The negative control, in the same binary as the fix: resume clears the paused flag
+            // and nothing else, which is exactly what shipped before this change. Reachable only
+            // through `debug.threenative.skip_surface_revalidate` / the environment variable.
+            std::cerr << "[Mystral] TN_CONTROL_SKIP_SURFACE_REVALIDATE: resuming without "
+                         "revalidating the surface; presents are expected to stop"
+                      << std::endl;
+            LOGE("TN_CONTROL_SKIP_SURFACE_REVALIDATE: resuming without revalidating the surface");
+            return true;
+        }
+
+#if defined(__ANDROID__)
+        if (!webgpu_) return false;
+
+        SDL_Window* sdlWindow = platform::getSDLWindow();
+        if (!sdlWindow) {
+            std::cerr << "[Mystral] Resume found no SDL window" << std::endl;
+            return false;
+        }
+
+        // Bounded, like startup's wait. Android hands the new window over a moment after the
+        // foreground event, and an unbounded wait here is a hang rather than a failure.
+        void* nativeWindow = nullptr;
+        int32_t windowWidth = 0;
+        int32_t windowHeight = 0;
+        const int maxWaitAttempts = 50;  // 5 seconds
+        for (int attempt = 0; attempt < maxWaitAttempts; attempt += 1) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT) return false;
+            }
+            void* candidate = SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow),
+                SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+            if (candidate) {
+                ANativeWindow* anw = (ANativeWindow*)candidate;
+                windowWidth = ANativeWindow_getWidth(anw);
+                windowHeight = ANativeWindow_getHeight(anw);
+                if (windowWidth > 0 && windowHeight > 0) {
+                    nativeWindow = candidate;
+                    break;
+                }
+            }
+            SDL_Delay(100);
+        }
+
+        if (!nativeWindow) {
+            std::cerr << "[Mystral] Resume found no valid ANativeWindow after "
+                      << maxWaitAttempts << " attempts" << std::endl;
+            return false;
+        }
+
+        void* previous = webgpu_->getSurfaceNativeHandle();
+        // Always rebuilt, never compared: Android reuses window addresses, so an unchanged pointer
+        // is not evidence that the window survived, and a rebuild is what startup does anyway.
+        webgpu::detachSurfaceForRebuild(bindingsState_);
+        if (!webgpu_->rebuildSurface(nativeWindow, webgpu::Context::PLATFORM_ANDROID)) return false;
+
+        platform::getWindowSize(&width_, &height_);
+        if (width_ <= 0 || height_ <= 0) {
+            width_ = static_cast<int>(windowWidth);
+            height_ = static_cast<int>(windowHeight);
+        }
+        if (!webgpu_->configureSurface(width_, height_, config_.vsync)) return false;
+
+        webgpu::republishSurface(bindingsState_, webgpu_->getSurface(),
+                                 webgpu_->getPreferredFormat(), webgpu_->getPresentMode(),
+                                 static_cast<uint32_t>(width_), static_cast<uint32_t>(height_));
+
+        std::ostringstream marker;
+        marker << "TN_LIFECYCLE_SURFACE:{\"event\":\"revalidated\",\"previousWindow\":\""
+               << previous << "\",\"window\":\"" << nativeWindow << "\",\"width\":" << width_
+               << ",\"height\":" << height_ << "}";
+        std::cout << marker.str() << std::endl;
+        LOGI("%s", marker.str().c_str());
+        platform::refreshSafeAreaInsets();
+        return true;
+#else
+        return true;
+#endif
+    }
+
+    /** Names the failure loudly, on stderr and in logcat, before the loop stops. */
+    void reportSurfaceRevalidationFailure() {
+        const char* marker =
+            "TN_LIFECYCLE_SURFACE_FAILED:{\"event\":\"revalidation-failed\"}";
+        std::cerr << "[Mystral] " << marker
+                  << " the presentation surface could not be rebuilt after resume; stopping the "
+                     "loop rather than running frames that present nothing"
+                  << std::endl;
+        LOGE("%s", marker);
+    }
+
     bool pollEvents() override {
         // Poll SDL events through our platform layer (skip in no-SDL mode)
         if (!config_.noSdl) {
             if (!platform::pollEvents()) {
                 running_ = false;
+                return false;
+            }
+        }
+
+        // Drain the lifecycle markers the watch queued. The watch runs on SDL's sending thread —
+        // on Android, the thread that is about to park the pump — so it only enqueues; the text
+        // is written here, by the thread that owns stdio.
+        drainLifecycleMarkers();
+
+        if (platform::isTerminating()) {
+            std::cout << "[Mystral] Lifecycle terminal event; stopping the loop" << std::endl;
+            running_ = false;
+            return false;
+        }
+
+        if (!config_.noSdl && platform::isPaused()) {
+            // No JavaScript, no beginFrame, no rAF, no endDawnFrame, no present. Timer firings
+            // that came due are counted and dropped rather than replayed all at once on resume;
+            // `FixedStepLoop` clamps the elapsed time on the TypeScript side either way.
+            countAndDropDueTimers();
+            // Desktop does not block its pump the way Android does, so without this the paused
+            // loop would spin a core at full speed — a battery fix that costs battery.
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            return running_;
+        }
+
+        // Coming back from the background is not just "unset the paused flag". Android destroyed
+        // the ANativeWindow while the app was away and handed back a new one, so the surface every
+        // present writes to points at nothing until it is rebuilt. Ahead of any frame work,
+        // because a frame drawn to the dead surface is the black screen this fixes.
+        if (!config_.noSdl && platform::takeSurfaceRevalidationRequest()) {
+            if (!revalidateSurfaceAfterResume()) {
+                // Fail closed. A host that cannot get a surface back cannot present, and a loop
+                // that keeps running without presenting is the defect wearing a different hat:
+                // frames at 600/s, presents frozen, a black screen and nothing in the log.
+                reportSurfaceRevalidationFailure();
+                running_ = false;
+                exitCode_ = 1;
                 return false;
             }
         }
@@ -930,8 +1050,23 @@ public:
         // We process them here (after other callbacks) to ensure we're not in a nested callback stack
         processPendingFileCallbacks();
 
+        // Give the desktop overlay its slice of the frame, then deliver whatever the UI posted.
+        // Android and iOS pump on their own UI threads; only desktop's lives inside this loop.
+        platform::pumpUiOverlay();
+        drainUiMessages();
+
         // Process microtask queue for promises
         processMicrotasks();
+
+        // A deliberate fault, after startup, only when a proof harness asked for one. This is the
+        // lane that checks "a crash after startup leaves a tombstone" without waiting for an
+        // intermittent bug to recur; `deliberateCrashFrameCount()` is 0 unless the debug property
+        // or the environment variable says otherwise.
+        if (deliberateCrashFrames_ < 0) deliberateCrashFrames_ = platform::deliberateCrashFrameCount();
+        if (deliberateCrashFrames_ > 0) {
+            framesSinceStart_ += 1;
+            if (framesSinceStart_ >= deliberateCrashFrames_) platform::crashDeliberately();
+        }
 
         // Begin frame — enables per-frame allocation tracking
         jsEngine_->beginFrame();
@@ -1855,6 +1990,156 @@ private:
 #endif
     }
 
+    /**
+     * Writes the markers the lifecycle watch queued, and reports the skipped timer firings
+     * alongside the resume so a run says what the pause cost rather than leaving it to inference.
+     */
+    /**
+     * The game end of the UI bridge.
+     *
+     * `@threenative/core/ui-layer` discovers its transport rather than being configured with
+     * one, and these two globals are the whole contract on this side: `__tnUiPost` carries a
+     * frame out to the overlay, and the runtime calls `__tnUiGameReceive` with each frame that
+     * came back. Their names are declared once, in `UI_BRIDGE_GLOBALS`; a host that spells one
+     * differently has no bridge at all, silently, which is why they are asserted by a test
+     * rather than kept in step by hand.
+     *
+     * `__tnUiPost` returns false when no overlay is attached — a `renderer: "native"` game, or
+     * a platform with no overlay yet. The UI layer reads that as "nobody is listening", which
+     * is honest; it is not an error and it is not silence.
+     */
+    void setupUiBridge() {
+        if (!jsEngine_) return;
+        jsEngine_->setGlobalProperty("__tnUiPost",
+            jsEngine_->newFunction("__tnUiPost", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.empty()) return jsEngine_->newBoolean(false);
+                return jsEngine_->newBoolean(platform::postUiMessage(jsEngine_->toString(args[0])));
+            }));
+        jsEngine_->setGlobalProperty("__tnUiOverlayAttached",
+            jsEngine_->newFunction("__tnUiOverlayAttached", [this](void*, const std::vector<js::JSValueHandle>&) {
+                return jsEngine_->newBoolean(platform::uiOverlayAttached());
+            }));
+    }
+
+    /**
+     * Deliver the frames the overlay queued, on the thread that owns JavaScript.
+     *
+     * The host enqueues from its own UI thread; nothing here may run there. Same shape as the
+     * lifecycle markers above, and for the same reason.
+     */
+    /**
+     * Apply a `tn:hit-regions` frame, or report that it was not one.
+     *
+     * Parsed here rather than through the JS engine because it must work before any game script
+     * has connected its end of the bridge, and because the numbers go straight back out to the
+     * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
+     * every later click is decided against rectangles that no longer exist, so it is named.
+     */
+    bool applyUiHitRegions(const std::string& frame) {
+        if (frame.find("\"tn:hit-regions\"") == std::string::npos) return false;
+        // The registry emits each rectangle as x, y, width, height and nothing else lives in this
+        // frame, so reading the four keys in order is the whole parse. Named keys rather than
+        // "every number after a colon": a payload that grows a field would otherwise silently
+        // shift every rectangle by one.
+        static constexpr const char* kKeys[] = {"\"x\":", "\"y\":", "\"width\":", "\"height\":"};
+        std::vector<float> regions;
+        size_t cursor = 0;
+        while (true) {
+            float rectangle[4];
+            size_t next = cursor;
+            bool complete = true;
+            for (size_t index = 0; index < 4; ++index) {
+                const size_t found = frame.find(kKeys[index], next);
+                if (found == std::string::npos) {
+                    complete = false;
+                    break;
+                }
+                const size_t value = found + std::strlen(kKeys[index]);
+                char* end = nullptr;
+                rectangle[index] = std::strtof(frame.c_str() + value, &end);
+                if (end == frame.c_str() + value) {
+                    complete = false;
+                    break;
+                }
+                next = static_cast<size_t>(end - frame.c_str());
+            }
+            if (!complete) break;
+            regions.insert(regions.end(), std::begin(rectangle), std::end(rectangle));
+            cursor = next;
+        }
+        platform::setUiHitRegions(regions);
+        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << "}" << std::endl;
+        return true;
+    }
+
+    void drainUiMessages() {
+        if (!jsEngine_) return;
+        std::string frame;
+        while (platform::takeUiMessage(frame)) {
+            // Hit regions stop at the host: it owns the hit test, and forwarding them to the
+            // game would put a process hop in the input path for a reader that does not exist.
+            // Same rule as the Android host, which applies them in Java for the same reason.
+            if (applyUiHitRegions(frame)) continue;
+            js::JSValueHandle receive = jsEngine_->getGlobalProperty("__tnUiGameReceive");
+            if (!jsEngine_->isFunction(receive)) {
+                // The game has not connected its end yet. Dropping is correct and must be
+                // visible: a UI whose intents vanish looks exactly like a dead button.
+                std::cout << "TN_UI_BRIDGE:{\"dropped\":\"no __tnUiGameReceive\"}" << std::endl;
+                continue;
+            }
+            jsEngine_->call(receive, jsEngine_->getGlobal(), {jsEngine_->newString(frame.c_str())});
+            if (jsEngine_->hasException()) {
+                std::cerr << "[Mystral] UI bridge frame threw: " << jsEngine_->getException()
+                          << std::endl;
+            }
+        }
+    }
+
+    void drainLifecycleMarkers() {
+        std::string marker;
+        while (platform::takeLifecycleMarker(marker)) {
+            std::cout << marker << std::endl;
+#if defined(__ANDROID__)
+            __android_log_print(ANDROID_LOG_INFO, MYSTRAL_LOG_TAG, "%s", marker.c_str());
+#endif
+        }
+        if (!platform::isPaused() && !countedPausedTimers_.empty()) {
+            const uint64_t skipped = platform::takeDroppedTimerFirings();
+            countedPausedTimers_.clear();
+            std::cout << "TN_LIFECYCLE:{\"event\":\"catchUp\",\"skippedTimerFirings\":" << skipped
+                      << "}" << std::endl;
+        }
+    }
+
+    /**
+     * Counts, once per pause, each timer that came due while the loop was parked.
+     *
+     * Nothing is replayed: the libuv loop is not run while paused, and an interval reschedules
+     * from `now`, so a ten-minute background costs at most one firing per timer rather than a
+     * flood. `FixedStepLoop` clamps the simulation side of the same gap
+     * (`packages/core/src/loop.ts`), which is asserted rather than rebuilt here.
+     */
+    void countAndDropDueTimers() {
+#ifdef MYSTRAL_USE_LIBUV_TIMERS
+        std::lock_guard<std::mutex> lock(timerMutex_);
+        // The queue cannot grow while paused, so counting it once is the whole answer.
+        if (countedPausedTimers_.count(0) == 0) {
+            countedPausedTimers_.insert(0);
+            for (size_t i = 0; i < pendingTimerCallbacks_.size(); i++)
+                platform::noteDroppedTimerFiring();
+        }
+#else
+        const auto now = std::chrono::high_resolution_clock::now();
+        for (const auto& timer : timerCallbacks_) {
+            if (timer.cancelled || now < timer.targetTime) continue;
+            if (countedPausedTimers_.insert(timer.id).second) platform::noteDroppedTimerFiring();
+        }
+        // A pause with no timers at all still has to leave a trace, or the resume marker cannot
+        // tell "nothing was skipped" from "nobody looked".
+        countedPausedTimers_.insert(0);
+#endif
+    }
+
     void executeTimerCallbacks() {
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
         // Process pending timer callbacks from libuv
@@ -2035,6 +2320,12 @@ private:
     std::unordered_set<int> cancelledTimerIds_;  // Track IDs cancelled during callback execution
     bool timerInstallationPending_ = false;
     bool timerInstallationInstalled_ = false;
+    // Timers already counted as skipped during the current pause; cleared on resume. Id 0 is the
+    // sentinel that says "this pause was observed", so a pause with no timers still reports.
+    std::unordered_set<int> countedPausedTimers_;
+    // -1 until the deliberate-crash setting has been read once; 0 means nobody asked for one.
+    int deliberateCrashFrames_ = -1;
+    int framesSinceStart_ = 0;
     int nextTimerId_ = 1;
 
     // Pending async file read callbacks (processed on main thread)

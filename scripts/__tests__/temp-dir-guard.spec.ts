@@ -24,6 +24,10 @@ const allowedProductionCreators = new Map<string, string>([
     "packages/playtest/src/runner/desktopRunner.ts",
     "The production desktop runner removes its owned mailbox root in finally.",
   ],
+  [
+    "scripts/check-publish-state.ts",
+    "The tarball gate packs into a scratch directory removed in finally.",
+  ],
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
   ["scripts/sweep-proof.ts", "The production proof gate removes roots in finally."],
   ["scripts/template-baseline.ts", "The production baseline gate removes its root in finally."],
@@ -33,6 +37,7 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/verify-template-playtests.ts",
     "The production template playtest gate owns its cleanup.",
   ],
+  ["scripts/release.ts", "The release packer removes its temporary tarball directory in finally."],
   [
     "scripts/verify-registry-install.ts",
     "The production registry probe removes its parent in finally.",

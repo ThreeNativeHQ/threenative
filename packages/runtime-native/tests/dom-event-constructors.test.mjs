@@ -19,7 +19,7 @@ function constructorSource(runtime, script) {
     /evalRuntimeScript\(\*jsEngine_, "event-constructors-setup"/u,
     "runtime must load executable event constructors",
   );
-  for (const name of ["Event", "PointerEvent", "TouchEvent", "KeyboardEvent"]) {
+  for (const name of ["Event", "PointerEvent", "TouchEvent", "KeyboardEvent", "ErrorEvent"]) {
     assert.match(script, new RegExp(`globalThis\\.${name} = ${name};`, "u"));
   }
   return script;

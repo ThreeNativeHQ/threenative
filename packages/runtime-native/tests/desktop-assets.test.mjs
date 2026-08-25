@@ -4,8 +4,19 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import { stageDesktopFiles } from '../scripts/package-desktop.mjs';
+import { minimalGlb } from './fixtures/minimal-glb.mjs';
+
+const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
+/** An Ogg page carrying Opus: the magic number of a container the runtime reads, the codec of one it does not. */
+function opusBytes() {
+  const bytes = Buffer.alloc(64);
+  bytes.write('OggS', 0, 'ascii');
+  bytes.write('OpusHead', 28, 'ascii');
+  return bytes;
+}
 
 test('desktop public assets are staged at web-root paths', () => {
   const root = makeTempDirSync('threenative-desktop-assets-');
@@ -13,16 +24,17 @@ test('desktop public assets are staged at web-root paths', () => {
     const bundle = join(root, 'bundle.js');
     const assets = join(root, 'public');
     const staging = join(root, 'staging');
+    const model = minimalGlb();
     mkdirSync(join(assets, 'models'), { recursive: true });
     writeFileSync(bundle, 'export default 1;');
     writeFileSync(join(assets, 'native-proof.png'), 'png');
-    writeFileSync(join(assets, 'models', 'native-proof.glb'), 'glb');
+    writeFileSync(join(assets, 'models', 'native-proof.glb'), model);
 
     const entry = stageDesktopFiles(bundle, assets, staging);
 
     assert.equal(entry, join(staging, '.threenative', 'game.js'));
     assert.equal(readFileSync(join(staging, 'native-proof.png'), 'utf8'), 'png');
-    assert.equal(readFileSync(join(staging, 'models', 'native-proof.glb'), 'utf8'), 'glb');
+    assert.deepEqual(readFileSync(join(staging, 'models', 'native-proof.glb')), model);
     assert.equal(readFileSync(entry, 'utf8'), 'export default 1;');
   } finally {
     rmSync(root, { force: true, recursive: true });
@@ -59,13 +71,23 @@ test('desktop staging embeds the resolved window contract for the native host', 
 
     stageDesktopFiles(bundle, undefined, staging, config);
 
+    // `uiRenderer` is flattened out of `ui.renderer` by the packager because `renderer` already
+    // means the WebGPU preference at the top level, and the host reads this file with a scanner
+    // that would find the wrong one. A game that states nothing gets the native renderer.
     assert.deepEqual(
       JSON.parse(readFileSync(join(staging, '.threenative', 'config.json'), 'utf8')),
-      config,
+      { ...config, uiRenderer: 'native' },
+    );
+    const web = join(root, 'staging-web');
+    stageDesktopFiles(bundle, undefined, web, { ...config, ui: { renderer: 'web' } });
+    assert.equal(
+      JSON.parse(readFileSync(join(web, '.threenative', 'config.json'), 'utf8')).uiRenderer,
+      'web',
     );
     const host = readFileSync(new URL('../src/cli/main.cpp', import.meta.url), 'utf8');
     assert.match(host, /readEmbeddedFile\("\.threenative\/config\.json"/u);
     assert.match(host, /extractJsonString\(config, "title"\)/u);
+    assert.match(host, /extractJsonString\(config, "uiRenderer"\)/u);
     assert.match(host, /extractJsonNumber\(config, "width"/u);
     assert.match(host, /extractJsonNumber\(config, "height"/u);
     assert.match(host, /extractJsonBool\(config, "resizable"/u);
@@ -138,6 +160,47 @@ int main() {
     );
     execFileSync('g++', ['-std=c++17', source, '-o', binary], { stdio: 'pipe' });
     execFileSync(binary, { stdio: 'pipe' });
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test('desktop staging refuses audio no native target decodes, at package time', () => {
+  // Desktop ran no preflight at all: only `package-android.mjs` did. So the same file that failed
+  // an APK shipped in a desktop binary and failed at `decodeAudioData` after launch instead — the
+  // packager having already opened and copied the bytes on its way past.
+  const root = makeTempDirSync('threenative-desktop-audio-gate-');
+  try {
+    const bundle = join(root, 'bundle.js');
+    const assets = join(root, 'public');
+    mkdirSync(join(assets, 'audio'), { recursive: true });
+    writeFileSync(bundle, 'export default 1;');
+    writeFileSync(join(assets, 'audio', 'voice.ogg'), opusBytes());
+    assert.throws(
+      () => stageDesktopFiles(bundle, assets, join(root, 'staging'), undefined, runtimeRoot),
+      (error) => {
+        assert.match(error.message, /cannot be decoded by the desktop target/u);
+        assert.match(error.message, /is Ogg Opus; no native target decodes this container/u);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test('desktop staging packages a genuine Ogg Vorbis file, because the runtime decodes it', () => {
+  const root = makeTempDirSync('threenative-desktop-audio-pass-');
+  try {
+    const bundle = join(root, 'bundle.js');
+    const assets = join(root, 'public');
+    mkdirSync(join(assets, 'audio'), { recursive: true });
+    writeFileSync(bundle, 'export default 1;');
+    const fixture = readFileSync(join(runtimeRoot, 'tests', 'fixtures', 'pickup.ogg'));
+    writeFileSync(join(assets, 'audio', 'pickup.ogg'), fixture);
+    const staging = join(root, 'staging');
+    stageDesktopFiles(bundle, assets, staging, undefined, runtimeRoot);
+    assert.deepEqual(readFileSync(join(staging, 'audio', 'pickup.ogg')), fixture);
   } finally {
     rmSync(root, { force: true, recursive: true });
   }

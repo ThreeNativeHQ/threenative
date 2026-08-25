@@ -10,7 +10,7 @@
     { "kind": "input", "label": "attack", "press": "KeyF", "holdTicks": 1, "release": true },
     { "kind": "input", "label": "surge", "press": "KeyE", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "surge-active", "waitTicks": 5, "release": true },
-    { "kind": "wait", "label": "surge-expired", "waitTicks": 90, "release": true }
+    { "kind": "wait", "label": "surge-expired", "waitTicks": 65, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
@@ -52,7 +52,13 @@
       { "name": "ability", "entity": "player", "minCount": 1 },
       { "name": "ability-expired", "entity": "player", "minCount": 1, "atStep": "surge-expired" }
     ],
-    "components": [{ "entity": "player", "component": "health", "equals": 95, "changed": true }],
+    "components": [
+      {
+        "entity": "player",
+        "component": "health",
+        "atSteps": [{ "label": "surge-expired", "equals": 95 }]
+      }
+    ],
     "visibility": [
       {
         "allowTrivial": "The action RPG scene begins with the player visible and in frame; this held visibility row accompanies the combat assertions.",

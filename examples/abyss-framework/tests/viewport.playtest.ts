@@ -11,6 +11,11 @@ test("viewport resize keeps the canvas and player visible", async ({ page }) => 
   await page.setViewportSize({ height: 720, width: 1280 });
   await page.goto("/?viewport");
   await expect(page.locator("canvas")).toBeVisible();
+  await page.keyboard.press("`");
+  const overlay = page.locator('[data-threenative-debug-overlay="true"]');
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toHaveCSS("position", "fixed");
+  await expect(overlay).toHaveCSS("pointer-events", "none");
   await expect.poll(() => canvasSize(page)).toEqual({ height: 720, width: 1280 });
 
   await page.setViewportSize({ height: 1280, width: 720 });

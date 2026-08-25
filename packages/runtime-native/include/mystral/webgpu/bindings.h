@@ -32,6 +32,15 @@ bool initBindings(
     bool debug,
     void* wgpuAdapter = nullptr);
 
+// Drops every reference to the live presentation surface, ahead of a rebuild. Android replaces
+// the `ANativeWindow` behind a backgrounded app rather than reconfiguring it, and wgpu-native
+// aborts the process if a surface is torn down with a swapchain image still outstanding.
+void detachSurfaceForRebuild(BindingsState* state);
+
+// Publishes a rebuilt surface to the bindings, which is where every present reads it from.
+void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceFormat,
+                      uint32_t presentMode, uint32_t width, uint32_t height);
+
 void setOffscreenTexture(BindingsState* state, void* texture, void* textureView);
 void beginDawnFrame(BindingsState* state);
 void endDawnFrame(BindingsState* state);

@@ -21,6 +21,14 @@
       "types": "./dist/hot.d.ts",
       "import": "./dist/hot.js"
     },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./ui-layer": {
+      "types": "./dist/ui-layer.d.ts",
+      "import": "./dist/ui-layer.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -39,17 +47,29 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-reconciler": "0.32.1",
     "@types/three": "0.185.3",
     "@threenative/playtest": "workspace:*",
     "publint": "0.3.22",
+    "react": "catalog:",
+    "react-reconciler": "0.33.0",
     "tsup": "8.5.1",
     "typescript": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.3.0 <0.4.0"
+    "@threenative/playtest": ">=0.3.0 <0.4.0",
+    "react": ">=19.2.0 <20",
+    "react-reconciler": ">=0.33.0 <0.34"
   },
   "peerDependenciesMeta": {
     "@threenative/playtest": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-reconciler": {
       "optional": true
     }
   }

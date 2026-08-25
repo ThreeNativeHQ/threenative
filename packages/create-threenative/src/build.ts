@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { compileAssets } from "@threenative/assets";
@@ -79,6 +79,181 @@ export async function assertNativeBundleCompatible(
   throw new Error(
     `TN_NATIVE_WASM_ON_MOBILE: ${target} bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
   );
+}
+
+/**
+ * Refuse a web UI target before native packaging can silently discard its bundle. Android is the
+ * only host with the WebView surface implemented; desktop and iOS retain the native renderer
+ * until their host surfaces land.
+ */
+export function assertNativeUiRendererCompatible(
+  target: NativeBuildTarget,
+  renderer: IResolvedThreeNativeConfig["ui"]["renderer"],
+): void {
+  if (renderer === "native" || target === "android") return;
+  throw new Error(
+    `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "web", but ${target} has no WebView host yet. Set ui.renderer to "native" for ${target}; Android is the only native web UI target currently implemented.`,
+  );
+}
+
+/** glTF extensions whose geometry only decodes through a WASM decoder. */
+const COMPRESSED_MODEL_EXTENSIONS: readonly string[] = [
+  "EXT_meshopt_compression",
+  "KHR_draco_mesh_compression",
+  "KHR_meshopt_compression",
+];
+
+function namedAssets(logicalPaths: readonly string[]): string {
+  const shown = logicalPaths.slice(0, 3).join(", ");
+  const rest = logicalPaths.length - 3;
+  return rest > 0 ? `${shown} and ${rest} more` : shown;
+}
+
+/**
+ * Refuses compiled assets a mobile native target cannot decode, at the first point the build
+ * knows about them — after the compile step, before a bundle or an APK exists.
+ *
+ * Android runs QuickJS and iOS runs JavaScriptCore without a WASM JIT, so neither has
+ * `WebAssembly`. Three's Basis/zstd transcoder, its Meshopt decoder and Draco's wasm decoder
+ * therefore cannot run there and are not in the mobile bundle at all (they are replaced in
+ * `runtime-native/scripts/bundle.mjs`, which is what keeps `TN_NATIVE_WASM_ON_MOBILE` green).
+ * A game that genuinely ships such an asset must hear that here rather than discover it as a
+ * missing texture on a phone.
+ */
+export async function assertNativeAssetsCompatible(
+  cwd: string,
+  target: BuildTarget,
+  config: IResolvedThreeNativeConfig,
+): Promise<void> {
+  if (target === "desktop" || target === "web") return;
+  const outputRoot = path.resolve(cwd, config.assets?.output ?? "public");
+  const manifestPath = path.join(outputRoot, "assets.manifest.json");
+  let raw: string;
+  try {
+    raw = await readFile(manifestPath, "utf8");
+  } catch {
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const entries = (parsed as { entries?: unknown }).entries;
+  if (typeof entries !== "object" || entries === null) {
+    throw new Error(`TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' has no 'entries' object.`);
+  }
+  const rows = Object.entries(entries as Record<string, unknown>).map(
+    ([logical, entry]) => [logical, (entry ?? {}) as Record<string, unknown>] as const,
+  );
+  const ktx2 = rows
+    .filter(([, entry]) => typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output))
+    .map(([logical]) => logical);
+  if (ktx2.length > 0) {
+    throw new Error(
+      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Set assets.textures to "none" so native builds ship the source textures, or keep the compressed textures on the web target.`,
+    );
+  }
+  const compressedModels = rows
+    .filter(([, entry]) =>
+      (Array.isArray(entry.extensions) ? (entry.extensions as unknown[]) : []).some(
+        (extension) =>
+          typeof extension === "string" && COMPRESSED_MODEL_EXTENSIONS.includes(extension),
+      ),
+    )
+    .map(([logical]) => logical);
+  if (compressedModels.length > 0) {
+    throw new Error(
+      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). The mobile native runtime has no WebAssembly and therefore no Meshopt or Draco decoder. Set assets.models to "none" so native builds ship uncompressed geometry, or keep the compressed models on the web target.`,
+    );
+  }
+}
+
+/** The one UI entry every target mounts. Convention, not configuration. */
+const UI_ENTRY = path.join("src", "ui", "main.tsx");
+
+/**
+ * Build `src/ui/` on its own, for the platform's web view to load.
+ *
+ * The page is UI only: no scene, no simulation, no render path. It is built through the
+ * project's own Vite config so the game's Tailwind, PostCSS, aliases and plugins apply exactly
+ * as they do on the web target — that equivalence is the whole point, and re-deriving the
+ * toolchain here would be a second build that drifts from the first.
+ *
+ * The generated entry lives under `.threenative/build/` and the Vite root stays the project, so
+ * `/src/ui/main.tsx` resolves the same way it does in `index.html`.
+ */
+export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): Promise<string> {
+  const output = path.join(cwd, ".threenative", "build", "ui");
+  const entry = path.join(cwd, UI_ENTRY);
+  try {
+    if (!(await stat(entry)).isFile()) throw new Error("not a file");
+  } catch {
+    throw new Error(
+      `TN_UI_ENTRY_MISSING: ui.renderer is "${config.ui.renderer}" but ${UI_ENTRY} does not exist. It is the entry every platform's web view loads; create it, or set ui.renderer to "native".`,
+    );
+  }
+  const buildRoot = path.join(cwd, ".threenative", "build");
+  await mkdir(buildRoot, { recursive: true });
+  const page = path.join(buildRoot, "index.html");
+  // `viewport-fit=cover` so the UI can reach under a display cutout, and a transparent body so
+  // the game surface underneath is what shows through everywhere the UI does not draw.
+  await writeFile(
+    page,
+    [
+      "<!doctype html>",
+      '<html lang="en">',
+      "  <head>",
+      '    <meta charset="utf-8" />',
+      '    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />',
+      "    <style>html,body,#tn-ui{margin:0;height:100%;background:transparent}</style>",
+      "  </head>",
+      "  <body>",
+      '    <div id="tn-ui"></div>',
+      `    <script type="module" src="/${UI_ENTRY.split(path.sep).join("/")}"></script>`,
+      "  </body>",
+      "</html>",
+    ].join("\n"),
+  );
+  const driver = path.join(buildRoot, "build-ui.mjs");
+  await writeFile(driver, uiBuildDriver(cwd, page, output));
+  await run(process.execPath, [driver], cwd);
+  const generatedPage = path.join(output, path.relative(cwd, page));
+  const index = path.join(output, "index.html");
+  if (generatedPage !== index) {
+    await rename(generatedPage, index);
+    await rm(path.dirname(generatedPage), { force: true, recursive: true });
+  }
+  return output;
+}
+
+/**
+ * Vite's Node API rather than its CLI, because the CLI cannot point a build at an entry HTML
+ * outside the project's own `index.html` without a config file — and a hand-written config file
+ * would be a second copy of the game's, which is the drift this avoids.
+ */
+function uiBuildDriver(cwd: string, page: string, output: string): string {
+  const literal = (value: string): string => JSON.stringify(value);
+  return `${[
+    'import { build, loadConfigFromFile, mergeConfig } from "vite";',
+    "",
+    `const root = ${literal(cwd)};`,
+    `const loaded = await loadConfigFromFile({ command: "build", mode: "production" }, undefined, root);`,
+    "await build(",
+    "  mergeConfig(loaded?.config ?? {}, {",
+    "    root,",
+    '    base: "./",',
+    "    build: {",
+    `      outDir: ${literal(output)},`,
+    "      emptyOutDir: true,",
+    `      rollupOptions: { input: { index: ${literal(page)} } },`,
+    "    },",
+    "  }),",
+    ");",
+  ].join("\n")}\n`;
 }
 
 export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
@@ -226,7 +401,9 @@ function installedRuntime(runtimeRoot: string): string {
 
 async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
   const config = await loadConfig(cwd);
+  assertNativeUiRendererCompatible(target, config.ui.renderer);
   await compileAssets({ config: config.assets, cwd });
+  await assertNativeAssetsCompatible(cwd, target, config);
   const entry = await nativeEntry(cwd, config);
   const orientation = config.display.orientation;
   const configPath = await writePackagingConfig(cwd, config);
@@ -234,6 +411,9 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
   const bundle = await bundleNative(cwd, runtimeRoot, entry, target);
   await assertNativeBundleCompatible(bundle, target);
   const assets = path.join(cwd, "public");
+  // The UI is built only when the game asked for the web renderer, so a `native` game ships no
+  // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
+  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
   if (target === "ios") {
     const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
     await run(
@@ -244,6 +424,7 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        ...(ui === undefined ? [] : ["--ui", ui]),
         "--orientation",
         orientation,
         "--config",
@@ -265,6 +446,7 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
         bundle,
         "--assets",
         assets,
+        ...(ui === undefined ? [] : ["--ui", ui]),
         "--orientation",
         orientation,
         "--config",
@@ -285,6 +467,7 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
       bundle,
       "--assets",
       assets,
+      ...(ui === undefined ? [] : ["--ui", ui]),
       "--config",
       configPath,
       "--runtime",

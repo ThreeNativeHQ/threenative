@@ -1,3 +1,4 @@
+import type { PlaytestFramePhase } from "../protocol.js";
 import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, IPlaytestPerformanceAssertion } from "../scenario.js";
 import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
@@ -65,6 +66,7 @@ export function evaluatePerformanceAssertion(
   const drawCalls = observed.flatMap(({ drawCalls: value }) => value === undefined ? [] : [value]);
   const triangles = observed.flatMap(({ triangles: value }) => value === undefined ? [] : [value]);
   const frameMsP95 = nearestRank(frameTimes, 0.95);
+  const frameMsP50 = nearestRank(frameTimes, 0.5);
   const maxObservedDrawCalls = drawCalls.length === 0 ? undefined : Math.max(...drawCalls);
   const maxObservedTriangles = triangles.length === 0 ? undefined : Math.max(...triangles);
   const results: IPlaytestAssertionResult[] = [];
@@ -125,6 +127,54 @@ export function evaluatePerformanceAssertion(
       samplesPass && drawCalls.length === samples.length && maxObservedDrawCalls !== undefined && maxObservedDrawCalls <= assertion.maxDrawCalls,
     );
   }
+  if (assertion.minFps !== undefined) {
+    // A floor, not a ceiling, so it gets its own arm rather than a negated addBound: reporting
+    // "expected at most 30 fps" for a floor is the kind of message that makes an agent fix the
+    // wrong thing.
+    const observed = frameMsP50 === undefined || frameMsP50 <= 0 ? undefined : Math.round((1_000 / frameMsP50) * 100) / 100;
+    const pass = samplesPass && observed !== undefined && observed >= assertion.minFps;
+    results.push({
+      details: { actual: observed ?? null, expected: assertion.minFps, sampleCount: samples.length, unit: "fps" },
+      id: "performance.minFps",
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+      message: `performance.minFps expected at least ${assertion.minFps} fps, observed ${observed ?? "unavailable"}.`,
+      observedRuntimePath: path,
+      severity: "error",
+      sourcePath,
+      suggestion: "Read the TN_FRAME_BUDGET marker for this run: it names which frame phase owns the time.",
+    });
+  }
+  if (assertion.maxPhaseMsP95 !== undefined) {
+    for (const [phase, ceiling] of Object.entries(assertion.maxPhaseMsP95) as [PlaytestFramePhase, number][]) {
+      // Fails closed twice over: a series whose samples carry no phase split cannot satisfy a
+      // phase ceiling, and neither can a phase the engine never measured. Either one is a
+      // failure naming the missing evidence, never a skipped bound.
+      const measured = observed.flatMap(({ phases }) =>
+        phases === undefined || typeof phases[phase] !== "number" ? [] : [phases[phase] as number]);
+      const actual = measured.length === samples.length ? nearestRank(measured, 0.95) : undefined;
+      const pass = samplesPass && actual !== undefined && actual <= ceiling;
+      results.push({
+        details: { actual: actual ?? null, expected: ceiling, phase, sampleCount: samples.length, unit: "ms" },
+        id: `performance.maxPhaseMsP95.${phase}`,
+        pass,
+      });
+      if (!pass) diagnostics.push({
+        code: "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        message: actual === undefined
+          ? `performance.maxPhaseMsP95.${phase} received no frame-budget phase samples; the run produced ${measured.length} of ${samples.length}.`
+          : `performance.maxPhaseMsP95.${phase} expected at most ${ceiling} ms, observed ${actual}.`,
+        observedRuntimePath: path,
+        severity: "error",
+        sourcePath,
+        suggestion: actual === undefined
+          ? "Keep the engine frame budget installed: defineGame({ frameBudget: false }) silences the marker but a phase ceiling still needs the per-frame split."
+          : "Reduce the cost of that phase, or move the ceiling and say why in the scenario.",
+      });
+    }
+  }
   if (assertion.maxTriangles !== undefined) {
     addBound(
       "performance.maxTriangles",
@@ -145,7 +195,19 @@ export function isRuntimeDiagnosticsSample(value: unknown): value is IPlaytestRu
     return false;
   }
   return (value.drawCalls === undefined || (typeof value.drawCalls === "number" && Number.isFinite(value.drawCalls) && value.drawCalls >= 0))
-    && (value.triangles === undefined || (typeof value.triangles === "number" && Number.isFinite(value.triangles) && value.triangles >= 0));
+    && (value.triangles === undefined || (typeof value.triangles === "number" && Number.isFinite(value.triangles) && value.triangles >= 0))
+    && isFramePhaseSplit(value.phases);
+}
+
+/**
+ * A phase split is optional, but a malformed one is not tolerated: a sample carrying
+ * `phases: { render: "slow" }` would otherwise be counted as a valid sample whose render bound
+ * silently evaluated against nothing.
+ */
+function isFramePhaseSplit(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((entry) => typeof entry === "number" && Number.isFinite(entry) && entry >= 0);
 }
 
 export function nearestRank(values: readonly number[], percentile: number): number | undefined {

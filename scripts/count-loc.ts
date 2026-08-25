@@ -281,6 +281,29 @@ export function countPlatformerTemplateLoc(rootDirectory = process.cwd()): numbe
   );
 }
 
+/**
+ * The generated HUD's source, against the geometry HUD it replaces.
+ *
+ * This used to price `NativeHud.tsx` — the starter's second HUD, written in `View`/`Text` quads so
+ * that native had something to draw. PRD-217 deleted it: the same `Hud.tsx` now runs on every
+ * target, so the thing worth pricing is that one file. It should stay smaller than the geometry
+ * HUD it replaces, which is the same bar the second HUD had to clear.
+ */
+export function countGeneratedHudLoc(rootDirectory = process.cwd()): {
+  readonly geometry: number;
+  readonly generated: number;
+} {
+  const root = resolve(rootDirectory);
+  const count = (relativePath: string): number => {
+    const path = join(root, relativePath);
+    return lineCount(normaliseSource(readFileSync(path, "utf8"), path, root));
+  };
+  return {
+    geometry: count("packages/create-threenative/templates/minimal/src/render/hud.ts"),
+    generated: count("packages/create-threenative/templates/starter/src/ui/Hud.tsx"),
+  };
+}
+
 function summary(rows: readonly LocCount[], arm: BenchmarkArm): LocCount {
   const selected = rows.filter((row) => row.arm === arm);
   return {
@@ -404,4 +427,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   // Reported, not capped: the template LOC caps were retired by owner decision 2026-08-09.
   process.stdout.write(`platformer template LOC: ${countPlatformerTemplateLoc(root)}\n`);
+  const hud = countGeneratedHudLoc(root);
+  process.stdout.write(`generated HUD LOC: ${hud.generated} (geometry HUD ${hud.geometry})\n`);
 }

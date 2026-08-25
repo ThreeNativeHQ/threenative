@@ -82,3 +82,79 @@ The starter's OGG pickup playback was not exercised by this visual gate; the hos
 its pre-existing unsupported-decode path. This row does not claim audio parity. The new
 `starter-linux` workflow job rebuilds this same scaffold and retains its log, screenshot and
 JSON report.
+
+## Ogg Vorbis decode — 2026-08-23
+
+`decodeAudioFile` was one call to `SDL_LoadWAV_IO`, so RIFF/WAVE was the only container any
+native target could read. That is the "pre-existing unsupported-decode path" the starter row
+above records, and it is not Android-specific — desktop simply never noticed, because every
+audio proof here fed a WAV built inline. PRD-211 Phase 1 vendors `stb_vorbis.c` through
+`scripts/download-deps.mjs`, compiles it once in `src/audio/vorbis_impl.c`, and sniffs `OggS`
+ahead of SDL.
+
+```sh
+pnpm native:build
+node scripts/verify-desktop-audio.mjs           # V8, the shipping desktop preset
+node scripts/verify-desktop-audio.mjs --dual    # V8 + QuickJS, the Android rollback engine
+```
+
+- `threenative-audio-decode-ogg-test` decodes `tests/fixtures/pickup.ogg` — a genuine Ogg
+  Vorbis file from this repository, 8,820 frames of mono at 44,100 Hz — through the installed
+  `AudioContext.decodeAudioData`, and asserts audible PCM rather than a buffer of silence.
+- **Passed on V8 and on QuickJS.** JavaScriptCore is reported skipped, not passed: this build
+  carries no JSC, and a build carrying no engine at all fails rather than reporting a pass.
+- Negative controls in the same executable: a truncated Ogg and an `OggS` header over corrupt
+  bytes both reject with an `Error`, the same loud class an `SDL_LoadWAV_IO` failure produces.
+  An Ogg carrying Opus fails the same way — the container is not the codec, and this runtime
+  implements Vorbis only.
+- `targetSampleRate` was accepted by `decodeAudioFile` and never read, and
+  `AudioBufferSourceNode::process` does no rate conversion, so a buffer kept at its own rate
+  played at `bufferRate / contextRate` speed. It is now honoured for every container: a
+  22,050 Hz asset decoded on a 44,100 Hz context comes back 44,100 frames long instead of
+  22,050, proved in the same executable.
+- Not claimed: any device. The Android and iOS halves of this decoder are the same source file
+  and are compiled by the same lists, but no phone ran it.
+  `docs/verification/prd-211-phase1-2026-08-23.md` names what is still open.
+
+## Stability contracts without a display — 2026-08-24 (PRD-210)
+
+`native:verify:desktop` gained a third proof ahead of the display-dependent ones:
+
+```sh
+node scripts/verify-desktop-stability.mjs
+```
+
+It builds and runs three executables that link the real runtime and open no window, no GPU and
+no audio device beyond SDL's dummy driver:
+
+- `threenative-crash-handler-policy-test` — stands a `sigaction`/`SA_SIGINFO` handler in for
+  debuggerd, applies each crash policy, and reads the disposition back. The Android policy must
+  leave the stand-in in place; the desktop policy must replace it, which is the negative control
+  and is exactly what every platform used to do.
+- `threenative-wgpu-null-handle-test` — forks a child that hands a NULL encoder to the real
+  `wgpuCommandEncoderBeginRenderPass`, reports the signal that killed it, then proves the checked
+  path throws to JavaScript naming the operation. Ran on Linux x64 against Dawn: the child died
+  with `Segmentation fault (signal 11)`; the checked path threw
+  `TN_WGPU_NULL_HANDLE: device.createCommandEncoder returned no handle (label=frame)`.
+- `threenative-lifecycle-policy-test` — drives the SDL lifecycle transition table, the paused
+  flag, the `TN_LIFECYCLE` markers, the `display.backgroundMode` override and the host-side
+  AudioContext registry, and pushes a real event through SDL so the watch is exercised on SDL's
+  own send path. Since 2026-08-23 it also covers the **surface revalidation** resume queues in both
+  modes, and the `debug.threenative.skip_surface_revalidate` control that reinstates the pre-fix
+  resume. It was failing at `c3ae3b26` — the retreat to `backgroundMode: "continue"` left the
+  default asserted by section 2 disagreeing with the default the reset installs — and passes again
+  now that the default is `"pause"`.
+
+All three passed on Linux x64, V8 13.1.201.22, Dawn, preset `tn-linux`. The desktop preset carries
+V8 alone, so QuickJS and JavaScriptCore report `SKIP … not compiled into this build` — a skip, not
+a pass. Evidence and the open device rows:
+[`../../../docs/verification/prd-210-2026-08-23.md`](../../../docs/verification/prd-210-2026-08-23.md).
+
+**Surface revalidation on resume** (2026-08-23). `webgpu::Context::rebuildSurface()` swaps the
+`WGPUSurface` against a new native window while keeping the adapter, device and queue, and
+`webgpu::detachSurfaceForRebuild()` / `webgpu::republishSurface()` move `g_surface` with it. Both
+are named here because the other half of the repository is entitled to rely on them: a present
+after a resume reads the republished surface, and nothing else in the host may hold the old one.
+Desktop is a deliberate no-op — a desktop window survives a minimize — so this changes nothing
+about the desktop gate; it is proven on a physical Pixel 8 in
+[`../../../docs/verification/resume-presents-2026-08-23.md`](../../../docs/verification/resume-presents-2026-08-23.md).

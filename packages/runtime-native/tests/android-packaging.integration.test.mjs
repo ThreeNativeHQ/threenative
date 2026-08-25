@@ -197,6 +197,7 @@ public final class ActivityInfo {
   public static final int SCREEN_ORIENTATION_UNSPECIFIED = -1;
   public static final int SCREEN_ORIENTATION_SENSOR_LANDSCAPE = 6;
   public static final int SCREEN_ORIENTATION_SENSOR_PORTRAIT = 7;
+  public static final int SCREEN_ORIENTATION_FULL_USER = 13;
 }
 `,
     'org/libsdl/app/SDLActivity.java': `package org.libsdl.app;
@@ -224,7 +225,28 @@ public class SDLActivity {
   public File getFilesDir() { return new File(System.getProperty("java.io.tmpdir")); }
   public int requestedOrientation = Integer.MIN_VALUE;
   public void setRequestedOrientation(int orientation) { requestedOrientation = orientation; }
+  public void setOrientationBis(int width, int height, boolean resizable, String hint) {
+    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
+  }
   public void configureMetadata(Bundle metadata) { packageManager = new PackageManager(metadata); }
+  public void runOnUiThread(Runnable action) { action.run(); }
+}
+`,
+    'com/threenative/runtime/TnUiOverlay.java': `package com.threenative.runtime;
+
+// A stand-in for the real transparent WebView. The probe cares only about whether the activity
+// decides to attach one, which is what ui.renderer controls and what acceptance criterion 5 of
+// PRD-217 turns on: a game that did not opt in ships no overlay and no extra process.
+public final class TnUiOverlay {
+  public static int attachCount = 0;
+  public static String lastPosted = null;
+
+  public static TnUiOverlay attach(Object activity) {
+    attachCount += 1;
+    return new TnUiOverlay();
+  }
+
+  public void postToPage(String frame) { lastPosted = frame; }
 }
 `,
     'com/threenative/runtime/MetadataProbe.java': `package com.threenative.runtime;
@@ -238,6 +260,7 @@ public final class MetadataProbe {
   private static final class ProbeActivity extends MystralActivity {
     public void create() { onCreate(null); }
     public String[] arguments() { return getArguments(); }
+    public void applySdlOrientation() { setOrientationBis(1080, 2400, true, ""); }
   }
 
   private static void require(boolean value, String message) {
@@ -268,6 +291,30 @@ public final class MetadataProbe {
     // is the belt to the manifest property's braces; this asserts that it happens.
     require(activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
       "declared landscape orientation was not re-requested in onCreate");
+    activity.applySdlOrientation();
+    require(activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+      "SDL window creation overwrote the declared landscape orientation");
+
+    // PRD-217 acceptance criterion 5: a game that did not ask for the web UI renderer ships no
+    // overlay at all. The metadata above never mentions TN_UI_RENDERER.
+    require(TnUiOverlay.attachCount == 0,
+      "a game with no ui.renderer must ship no overlay");
+
+    metadata.putString("TN_UI_RENDERER", "web");
+    ProbeActivity web = new ProbeActivity();
+    web.configureMetadata(metadata);
+    web.create();
+    require(TnUiOverlay.attachCount == 1, "ui.renderer web must attach the overlay");
+    web.postUiOverlayMessage("{\\"type\\":\\"tn:state\\"}");
+    require("{\\"type\\":\\"tn:state\\"}".equals(TnUiOverlay.lastPosted),
+      "the runtime's bridge frame must reach the overlay");
+
+    // Anything the packager did not write is the native renderer, not a guess at the expensive one.
+    metadata.putString("TN_UI_RENDERER", "webview");
+    ProbeActivity typo = new ProbeActivity();
+    typo.configureMetadata(metadata);
+    typo.create();
+    require(TnUiOverlay.attachCount == 1, "an unrecognised ui.renderer must not attach an overlay");
   }
 }
 `,

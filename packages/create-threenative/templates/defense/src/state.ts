@@ -12,6 +12,10 @@ export function registerLeak(leaks: number): {
 }
 
 export type GameState = {
+  /** Set from the UI\'s pause and resume intents, and read back by the menu. */
+  paused: boolean;
+  /** True once the UI layer has rendered and published its interactive rectangles. */
+  uiReady: boolean;
   balance: number;
   defeated: number;
   income: number;
@@ -31,6 +35,8 @@ export type GameState = {
 };
 
 export const INITIAL_STATE: GameState = {
+  paused: false,
+  uiReady: false,
   balance: 120,
   defeated: 0,
   income: 0,

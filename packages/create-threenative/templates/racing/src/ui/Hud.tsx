@@ -1,14 +1,15 @@
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { useGameState } from "@threenative/ui";
+import { useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
 function clock(seconds: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}.${String(Math.floor((seconds % 1) * 10))}`;
 }
 
-export function Hud({ game }: { game: IGame<GameState, IPhysicsContext> }) {
-  const state = useGameState(game, (value) => value);
+export function Hud() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
+  // Rendering zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
   const statusClass =
     state.raceStatus === "WON"
       ? "text-win"

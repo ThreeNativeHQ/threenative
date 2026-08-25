@@ -7,10 +7,20 @@ native half of the "web and native are one codebase" rule stated there.
 
 ## Product contract
 
-A native-first Three.js games runtime with no Chromium, WebView, Electron or Tauri WebView.
+A native-first Three.js games runtime that ships no Chromium, and is not Electron or a Tauri app.
 It is **a host, not a renderer**: upstream Three.js `WebGPURenderer` stays the primary
-renderer, at exactly the workspace catalog version. Runtime internals may keep Mystral names
-recognizable during the fork, but public contracts expose ThreeNative names.
+renderer, at exactly the workspace catalog version.
+
+**The scene never enters a web view; the UI may.** As of PRD-217 a game can render `src/ui/`
+through the platform's own browser-class renderer — a transparent `WebView` composited over the
+game surface — so one `src/ui/` runs unchanged on web and native. That is the platform's browser,
+attached at the composition layer, not a browser this package ships: measured free on a Pixel 8,
+and about 6% of one game's memory in a process the OS can reclaim. `ui.renderer: "native"` is the
+opt-out and ships no overlay and no extra process. `TnUiOverlay` owns the input hit test; the
+contract is in `include/mystral/platform/ui_overlay.h` and `@threenative/core/ui-layer`.
+
+Runtime internals may keep Mystral names recognizable during the fork, but public contracts expose
+ThreeNative names.
 
 Targets: browser/upstream Three.js, Windows/macOS/Linux V8+Dawn, Android V8+wgpu-native,
 iOS JSC+wgpu-native. The JavaScript runtime that owns `THREE.Scene` also owns the renderer —
@@ -60,12 +70,27 @@ TypeScript package.
 When you add a shim, say so in the owning gate doc so the other half of the repo can rely on
 it. When you remove or narrow one, grep `packages/*/src` first.
 
+The machine-readable inventory is [`shim-manifest.json`](./shim-manifest.json). It records each
+global installed by the native host and every deliberate allowlist exception with its reason;
+`pnpm budgets` runs the checker against `packages/{core,ui,playtest}/src` so this manifest is the
+enforced contract, not a second prose-only list.
+
 Native bundles enter through the project's declared `threenative.nativeEntry` (default
 `src/game.ts`), which must default-export the game. `TN_NATIVE_ENTRY_MISSING` and
 `TN_NATIVE_ENTRY_NO_DEFAULT` are entry-contract failures; `TN_NATIVE_WEB_ONLY_UI` means the
 portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means Android or iOS reached
 WASM. Do not weaken these guards. Every packager stages `public/` beside the game bundle,
 and a missing runtime asset must reject game startup rather than fall back to the network.
+
+**Mobile has no compressed-asset decoders.** Android QuickJS and iOS JSC have no WASM engine,
+so three's Basis/zstd transcoder (`KTX2Loader`), its Meshopt decoder and Draco's wasm decoder
+cannot run there. `scripts/bundle.mjs` replaces all three with refusing stubs on the mobile
+targets only — desktop keeps the real ones — which is what keeps a game that ships no
+compressed asset out of `TN_NATIVE_WASM_ON_MOBILE`; their specifiers are static strings inside
+`await import(...)`, so a bundler inlines them whether the game uses them or not. A game whose
+compiled assets do need one is refused by `threenative build` before any bundle exists, with
+`TN_NATIVE_KTX2_UNSUPPORTED` or `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`. Making mobile decode
+either format is a native decoder question, not a bundler one.
 
 ## Package boundaries
 

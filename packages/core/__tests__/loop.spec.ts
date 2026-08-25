@@ -58,6 +58,33 @@ describe("FixedStepLoop", () => {
     expect(updates).toBe(5);
   });
 
+  it("should absorb a backgrounded app's time jump without a burst of updates", () => {
+    // The native host pauses the loop when the player leaves and resumes it when they return
+    // (PRD-210). Resuming hands `stepFrame` a `now` that is minutes ahead, and a phone whose
+    // clock was adjusted while the app was parked can hand it one that moved backwards. Both are
+    // already handled here — the elapsed clamp and the maxSteps budget — so the host asserts this
+    // rather than building its own catch-up.
+    const steps: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (step) => steps.push(step) });
+
+    loop.stepFrame(0);
+    const afterTenMinutes = loop.stepFrame(600_000);
+    expect(afterTenMinutes).toBe(5);
+    expect(steps).toHaveLength(5);
+    expect(steps.every((step) => step > 0)).toBe(true);
+
+    // A clock that went backwards must produce no update at all, never a negative one...
+    steps.length = 0;
+    expect(loop.stepFrame(500_000)).toBe(0);
+    expect(steps).toHaveLength(0);
+
+    // ...and must not poison the frames after it. Without the clamp the accumulator goes 100 s
+    // negative and the game stops simulating for a hundred seconds while still rendering, which
+    // reads as a freeze with no error anywhere.
+    for (let frame = 1; frame <= 4; frame++) loop.stepFrame(600_000 + (frame * 1_000) / 60);
+    expect(steps.length).toBeGreaterThan(0);
+  });
+
   it("should expose a finite render FPS that decays after a stall", () => {
     const loop = new FixedStepLoop({ onUpdate: () => undefined });
     loop.stepFrame(0);
@@ -232,5 +259,40 @@ describe("FixedStepLoop metrics collection", () => {
     loop.setCollectMetrics(true);
     loop.stepFrame(32);
     expect(loop.runtimeDiagnosticsSeries()).toHaveLength(1);
+  });
+
+  it("renders but does not simulate, tick or bank time while held", () => {
+    // Boot holds the loop so a loading screen can draw before the start scene has loaded. Three
+    // things have to survive that hold: nothing is stepped, `tick()` still reads zero -- the
+    // determinism contract every playtest hold rests on, and `#tick` advances inside the very
+    // block a naive "skip the callback" gate would leave running -- and no elapsed time is
+    // banked, or the first real tick arrives with a dt spanning the whole asset load.
+    const steps: number[] = [];
+    let renders = 0;
+    const loop = new FixedStepLoop({
+      onUpdate: (dt) => steps.push(dt),
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+
+    loop.setHeld(true);
+    expect(loop.held).toBe(true);
+    loop.start(0);
+    // Two seconds of held frames: unheld, this is 120 updates.
+    for (let frame = 1; frame <= 120; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
+
+    expect(renders).toBe(120);
+    expect(steps).toHaveLength(0);
+    expect(loop.tick()).toBe(0);
+
+    loop.setHeld(false);
+    expect(loop.held).toBe(false);
+    // One ordinary frame after release. A loop that banked the hold would spend its whole
+    // catch-up budget here instead of running the single step the frame is worth.
+    expect(loop.stepFrame(121 * 16.6667)).toBe(1);
+    expect(steps).toEqual([1 / 60]);
+    expect(loop.tick()).toBe(1);
   });
 });

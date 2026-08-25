@@ -1,10 +1,11 @@
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { useGameState } from "@threenative/ui";
+import { useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
-export function Hud({ game }: { game: IGame<GameState, IPhysicsContext> }) {
-  const state = useGameState(game, (value) => value);
+export function Hud() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
+  // Rendering zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
   return (
     <div className="pointer-events-none absolute inset-0 p-6 text-[11px] uppercase tracking-[0.14em] text-text">
       <div className="flex gap-5">

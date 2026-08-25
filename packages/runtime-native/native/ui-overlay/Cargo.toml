@@ -1,0 +1,34 @@
+[package]
+name = "threenative-ui-overlay"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# The desktop half of PRD-217's UI layer: a transparent web view attached as a child of the
+# window SDL already owns, behind a C ABI the C++ host calls. Rust is not a new class of
+# dependency here — `native/physics` is already a Rust staticlib linked into the same host on
+# every desktop target — which is the whole reason this is worth trying before paying for CEF.
+[lib]
+name = "threenative_ui_overlay"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+wry = "0.48"
+raw-window-handle = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+gdkx11 = "0.18"
+glib = "0.18"
+x11-dl = "2"
+libloading = "0.8"
+
+# The spike: attach to a window SDL already owns and report what happened. A binary rather than a
+# test because the thing under measurement is a real compositor over a real GPU surface.
+[[bin]]
+name = "tn-ui-overlay-probe"
+path = "src/bin/probe.rs"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

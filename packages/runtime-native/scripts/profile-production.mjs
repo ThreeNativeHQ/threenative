@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -243,13 +243,16 @@ async function scaffoldPlatformer(project, tools) {
   const packageSource = async (name, directory) => [name, await packLocalPackage(directory, packageArchiveRoot)];
   const localSources = [];
   if (inRepositoryCheckout) {
-    localSources.push(await packageSource('@threenative/core', join(repositoryRoot, 'packages/core')));
-    localSources.push(await packageSource('@threenative/physics', join(repositoryRoot, 'packages/physics')));
-    localSources.push(await packageSource('@threenative/playtest', join(repositoryRoot, 'packages/playtest')));
-    localSources.push(await packageSource('@threenative/runtime-native', join(repositoryRoot, 'packages/runtime-native')));
-    localSources.push(await packageSource('@threenative/ui', join(repositoryRoot, 'packages/ui')));
-    localSources.push(await packageSource('@threenative/studio', join(repositoryRoot, 'packages/studio')));
-    localSources.push(await packageSource('create-threenative', join(repositoryRoot, 'packages/create-threenative')));
+    for (const workspacePackage of localWorkspacePackages()) {
+      localSources.push(
+        await packageSource(workspacePackage.name, join(repositoryRoot, workspacePackage.directory)),
+      );
+    }
+    const studioDirectory = join(repositoryRoot, 'packages/studio');
+    if (existsSync(join(studioDirectory, 'package.json'))) {
+      // Studio is a private cross-checkout extra, not a workspace package in this repository.
+      localSources.push(await packageSource('@threenative/studio', studioDirectory));
+    }
   }
   const args = [
     tools.scaffoldCli,
@@ -263,6 +266,17 @@ async function scaffoldPlatformer(project, tools) {
   }
 }
 
+function localWorkspacePackages() {
+  const output = execFileSync(
+    'pnpm',
+    ['exec', 'tsx', join(repositoryRoot, 'scripts/workspace-packages.ts'), '--json'],
+    { cwd: repositoryRoot, encoding: 'utf8' },
+  );
+  const packages = JSON.parse(output);
+  if (!Array.isArray(packages)) throw new Error('TN_WORKSPACE_PACKAGE_DERIVATION_INVALID: expected an array.');
+  return packages.filter((item) => item && typeof item.name === 'string' && typeof item.directory === 'string');
+}
+
 async function packLocalPackage(directory, destination) {
   const before = new Set(await readdir(destination));
   const result = await runCommand('pnpm', ['pack', '--pack-destination', destination], directory);
@@ -273,19 +287,13 @@ async function packLocalPackage(directory, destination) {
 }
 
 function packageSourceFlag(name) {
-  return name === '@threenative/core'
-    ? '--core-package'
-    : name === '@threenative/physics'
-      ? '--physics-package'
-      : name === '@threenative/playtest'
-        ? '--playtest-package'
-        : name === '@threenative/runtime-native'
-          ? '--runtime-native-package'
-          : name === '@threenative/ui'
-            ? '--ui-package'
-            : name === '@threenative/studio'
-              ? '--studio-package'
-            : '--cli-package';
+  if (name === 'create-threenative') return '--cli-package';
+  if (name === 'threenative-engine-mcp') return '--engine-mcp-package';
+  if (name.startsWith('@threenative/')) {
+    const suffix = name.slice('@threenative/'.length);
+    return `--threenative-${suffix}-package`;
+  }
+  throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
 export async function writeRunScenarios(project, options) {
@@ -1510,7 +1518,17 @@ function positiveInteger(value, flag) {
 }
 
 if (process.argv[1] && new URL(`file://${process.argv[1]}`).pathname === new URL(import.meta.url).pathname) {
-  const { createGateRecorder } = await import('../../../scripts/gate-records.mjs');
+  // Gate records are an engine-repository artefact, not something a published install owns. A
+  // package-relative specifier here would ship inside the tarball and die ERR_MODULE_NOT_FOUND on
+  // an installed copy, so the path is resolved against the checkout and its absence is named.
+  const gateRecords = resolve(scriptDirectory, '../../../scripts/gate-records.mjs');
+  if (!existsSync(gateRecords)) {
+    throw new ProductionEvidenceError(
+      'TN_PROD_GATE_RECORDS_MISSING',
+      `pnpm profile:production records its gate phases through ${gateRecords}, which does not exist. This command runs from a ThreeNative engine checkout, not from an installed @threenative/runtime-native.`,
+    );
+  }
+  const { createGateRecorder } = await import(pathToFileURL(gateRecords).href);
   const gateRecorder = await createGateRecorder({
     phase: 'profile-production',
     command: ['pnpm profile:production', ...process.argv.slice(2)].join(' '),

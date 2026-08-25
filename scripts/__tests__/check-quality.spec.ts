@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   collectQualityFindings,
+  fatalQualityFindings,
   loadQualityBaseline,
   runQuality,
   updateQualityBaseline,
@@ -26,7 +27,18 @@ async function fixtureRoot(): Promise<string> {
 }
 
 async function sourceFile(root: string, source: string): Promise<void> {
-  await writeFile(path.join(root, "packages", "core", "src", "fixture.ts"), source);
+  await sourceFileAt(root, "core", "fixture.ts", source);
+}
+
+async function sourceFileAt(
+  root: string,
+  packageName: string,
+  fileName: string,
+  source: string,
+): Promise<void> {
+  const directory = path.join(root, "packages", packageName, "src");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, fileName), source);
 }
 
 describe("quality gate", () => {
@@ -87,6 +99,29 @@ type Tuple = [string];
     const findings = await collectQualityFindings(root);
     expect(findings).toContainEqual(
       expect.objectContaining({ signal: "waiver-without-reason", value: "" }),
+    );
+  });
+
+  it("matches a line-order waiver to the following suppression before file length", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, `${"const line = 1;\n".repeat(401)}`);
+    await updateQualityBaseline(root);
+
+    await sourceFile(
+      root,
+      `// quality-allow: fixture suppression is intentional
+// biome-ignore lint/suspicious/noExplicitAny
+${"const line = 1;\n".repeat(399)}`,
+    );
+    const findings = await runQuality(root);
+    expect(findings).toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore", line: 2, state: "waived" }),
+    );
+    expect(findings).toContainEqual(
+      expect.objectContaining({ signal: "file-length", line: 1, state: "inherited" }),
+    );
+    expect(fatalQualityFindings(findings)).not.toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore" }),
     );
   });
 
@@ -223,6 +258,57 @@ const ignored: any = value;
     );
   });
 
+  it("keeps a new same-signal suppression fatal after a waived inherited finding", async () => {
+    const root = await fixtureRoot();
+    const inherited =
+      "// quality-allow: the first suppression is intentionally inherited\n" +
+      "// biome-ignore lint/suspicious/noExplicitAny\nconst value: any = 1;\n";
+    await sourceFile(root, inherited);
+    await updateQualityBaseline(root);
+
+    await sourceFile(
+      root,
+      `${inherited}// biome-ignore lint/suspicious/noExplicitAny\nconst next: any = value;\n`,
+    );
+    const findings = await runQuality(root);
+    expect(findings).toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore", line: 2, state: "waived" }),
+    );
+    expect(findings).toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore", line: 4, state: "new" }),
+    );
+    expect(fatalQualityFindings(findings)).toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore", line: 4, state: "new" }),
+    );
+  });
+
+  it("does not spend an inherited same-signal baseline row on a waived addition", async () => {
+    const root = await fixtureRoot();
+    const suppression = "// biome-ignore lint/suspicious/noExplicitAny\n";
+    const inherited = `${suppression}const existing: any = 1;\n`;
+    await sourceFile(root, inherited);
+    await updateQualityBaseline(root);
+
+    await sourceFile(
+      root,
+      `// quality-allow: the new suppression is intentional\n${suppression}const added: any = 1;\n${inherited}`,
+    );
+    const waivedFindings = await runQuality(root);
+    expect(waivedFindings).toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore", line: 2, state: "waived" }),
+    );
+    expect(waivedFindings).toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore", line: 4, state: "inherited" }),
+    );
+    expect(fatalQualityFindings(waivedFindings)).toEqual([]);
+
+    await sourceFile(root, `${suppression}const added: any = 1;\n${inherited}`);
+    const unwaivedFindings = await runQuality(root);
+    expect(fatalQualityFindings(unwaivedFindings)).toContainEqual(
+      expect.objectContaining({ signal: "suppression/biome-ignore", state: "new" }),
+    );
+  });
+
   it("should keep fail-closed baseline validation", async () => {
     const root = await fixtureRoot();
     await sourceFile(root, "const ready = true;\n");
@@ -238,5 +324,60 @@ const ignored: any = value;
       }),
     );
     await expect(loadQualityBaseline(root)).rejects.toThrow(/every finding needs/u);
+  });
+
+  it("makes new suppression-class findings fatal while keeping advisory length findings report-only", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(
+      root,
+      `${"const line = 1;\n".repeat(401)}// biome-ignore lint/suspicious/noExplicitAny\nconst value: any = 1;\n`,
+    );
+    await updateQualityBaseline(root);
+    await sourceFile(
+      root,
+      `${"const line = 1;\n".repeat(401)}// biome-ignore lint/suspicious/noExplicitAny\nconst value: any = 1;\n// biome-ignore lint/suspicious/noExplicitAny\nconst next: any = value;\n`,
+    );
+
+    const fatal = fatalQualityFindings(await runQuality(root));
+    expect(fatal).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ signal: "suppression/biome-ignore", state: "new" }),
+      ]),
+    );
+    expect(fatal).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ signal: "file-length" })]),
+    );
+  });
+
+  it("makes an unwaived runtime-native suppression fatal", async () => {
+    const root = await fixtureRoot();
+    await sourceFileAt(root, "runtime-native", "fixture.ts", "const ready = true;\n");
+    await updateQualityBaseline(root);
+    await sourceFileAt(
+      root,
+      "runtime-native",
+      "fixture.ts",
+      "// biome-ignore lint/suspicious/noExplicitAny\nconst value: any = 1;\n",
+    );
+
+    const findings = await runQuality(root);
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        file: "packages/runtime-native/src/fixture.ts",
+        signal: "suppression/biome-ignore",
+        state: "new",
+      }),
+    );
+    expect(fatalQualityFindings(findings)).toContainEqual(
+      expect.objectContaining({ file: "packages/runtime-native/src/fixture.ts" }),
+    );
+  });
+
+  it("makes a waiver without a reason fatal", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, "// quality-allow:\nconst value = 1;\n");
+    await updateQualityBaseline(root);
+    const fatal = fatalQualityFindings(await runQuality(root));
+    expect(fatal).toContainEqual(expect.objectContaining({ signal: "waiver-without-reason" }));
   });
 });

@@ -23,7 +23,9 @@ third_party/
 # Runtime-local output and downloaded release artifacts
 .runtime/
 artifacts/
-native/physics/target/
+# Every Rust crate here builds into its own target/. Listing them one by one is how the next
+# crate's build output ends up in a commit; the glob covers whatever gets added next.
+native/*/target/
 
 # OS
 .DS_Store

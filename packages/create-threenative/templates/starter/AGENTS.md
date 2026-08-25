@@ -160,11 +160,9 @@ until published scenarios migrate.)
 Four host differences break there, and `@threenative/physics/navigation` is a separate
 browser-only boundary under the current native portability rule:
 
-1. **The native host has no DOM and does not run React.** Native builds ship `src/scenes/`
-   and `src/render/` without `src/ui/`; gameplay, scoring and state transitions live in the
-   scene, so a desktop build still ends its runs — just without the React banner. Pause is
-   genuinely web-only here (`game.pause()` from the React menu): a native build cannot pause.
-   Add a native HUD in your game-owned render code only if your game needs one.
+1. **The native host has no DOM in the game.** `src/game.ts` and everything it imports must stay
+   free of `react-dom` and of `document`; `TN_NATIVE_WEB_ONLY_UI` refuses a build that breaks it.
+   `src/ui/` is a separate bundle and has no such rule — see "One UI, on every target".
 2. **No `document`, `window`, or `localStorage` reach outside the canvas.** Use `ctx` and
    Three.js. Save games go through your own JSON, not `window.localStorage` directly.
 3. **No dynamic `import()`.** The native build is one bundled file.
@@ -173,6 +171,28 @@ browser-only boundary under the current native portability rule:
 
 Writing against `ctx`, `three`, and the Godot-named physics nodes keeps all four host differences
 correct without thinking about it. If you only ever ship to the web, ignore this section.
+
+## One UI, on every target
+
+`src/ui/` is the whole UI and the same source everywhere — ordinary React DOM, Tailwind and SVG,
+beside the canvas on web and in the platform's own browser-class renderer over the game surface on
+native. `GameUi.tsx` holds it; `App.tsx` and `main.tsx` mount it.
+
+**The game and the UI are separate processes on native**, so the UI cannot hold the game object: it
+reads *published* state and sends *intents*, and `src/game.ts` decides what each means.
+
+```tsx
+const state = useUiState<GameState>();   // ~10 Hz; undefined until the first snapshot
+if (state === undefined) return null;
+const send = useUiIntent();
+<button data-tn-interactive onClick={() => send("restart")}>restart</button>
+```
+
+**`data-tn-interactive` marks every element the player touches** — the one thing a UI must do
+differently from a web page. The host publishes those rectangles and decides on pointer-down
+whether a touch is the UI's or the game's; unmarked elements are scenery a touch passes through.
+`pointer-events: none` is not that mechanism: the platform hands the gesture to the web view before
+any CSS runs. `ui: { renderer: "native" }` draws `View`/`Text` quads in the frame instead.
 
 ## The game this ships with
 
@@ -384,23 +404,16 @@ your game — when you change something visual, actually look at it before repor
 
 ## UI
 
-React renders the HUD, menus, and overlays. **React never touches the scene graph** — no
-JSX for meshes, lights, or cameras.
-
-```ts
-ctx.state.set({ score });         // in update(), at loop rate — the bridge coalesces
-const { score } = useGameState(); // in a component; the bridge flushes every ~100 ms
-```
-
-Per-frame visual feedback belongs in scene-owned Three.js objects; anything shorter than one
-flush interval must not go through React.
+**React never touches the scene graph** — no JSX for meshes, lights or cameras. `ctx.state.set()`
+writes at loop rate and the bridge coalesces into a flush every ~100 ms, so per-frame feedback
+belongs in scene-owned Three.js objects.
 
 The start scene owns the initial state in `static initialState`; omit a duplicate
 `initialState` literal from `defineGame`. Update only the fields that changed:
 `ctx.state.set({ score })`. Hot reload carries JSON-shaped store state only — seed entities
 in `Play.enter()` from carried values such as `playerX`, because the scene graph, physics
 world, audio voices, particles, and renderer are rebuilt on every update. The keyboard and
-React restart paths reset `Play.initialState` before rebuilding the scene.
+intent restart paths reset `Play.initialState` before rebuilding the scene.
 
 ## Register entities you want to inspect or test
 
@@ -457,6 +470,13 @@ this?* If no, you are not finished.
 
 Refill scratch; pool objects.
 
-`{"performance":{"maxFrameMsP95":33}}`
+`TN_FRAME_BUDGET` prints `fps` and the frame split: `hostGap`, `update`, `render`, `overlay`,
+`residual`. `defineGame({ frameBudget: false })` silences it, not the measurement.
+
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12}}}`
 `agent-docs/assertion-reference.md#performance`
+
+Phone memory is a ~500 MiB driver floor plus what you ask for, and one equirect on both
+`scene.background` and `scene.environment` costs 48 MiB extra — measured, Pixel 8.
+Budgets and the fix: `agent-docs/mobile-memory-budget.md`.
 <!-- /shared -->

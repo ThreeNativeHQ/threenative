@@ -3,11 +3,10 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
-const workspaceRoot = resolve(fileURLToPath(import.meta.url), '..', '..', '..', '..');
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
 
@@ -61,9 +60,13 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   mkdirSync(artifactDirectory, { recursive: true });
   const runtimeArgs = ['--screenshot', screenshot, '--frames', String(frames)];
   // See verify-desktop-core.mjs: `xvfb-run` hands back its own failing cleanup kill's status.
+  const displayHelper = join(dirname(fileURLToPath(import.meta.url)), 'xvfb.sh');
+  if (process.platform === 'linux' && !existsSync(displayHelper)) {
+    throw new Error(`TN_NATIVE_STARTER_DISPLAY_SUPPORT_MISSING: ${displayHelper}`);
+  }
   const command = process.platform === 'linux' ? 'sh' : artifact;
   const args = process.platform === 'linux'
-    ? [join(workspaceRoot, 'scripts', 'xvfb.sh'), artifact, ...runtimeArgs]
+    ? [displayHelper, artifact, ...runtimeArgs]
     : runtimeArgs;
   const result = spawnSync(command, args, {
     cwd: projectRoot,

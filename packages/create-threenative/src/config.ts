@@ -7,9 +7,14 @@ import type {
   IThreeNativeConfig,
   IThreeNativeIconVariants,
   ThreeNativeOrientation,
+  ThreeNativeUiRenderer,
 } from "@threenative/core";
 
-export type { IThreeNativeConfig, ThreeNativeOrientation } from "@threenative/core";
+export type {
+  IThreeNativeConfig,
+  ThreeNativeOrientation,
+  ThreeNativeUiRenderer,
+} from "@threenative/core";
 
 export interface IResolvedThreeNativeConfig {
   readonly app: {
@@ -35,6 +40,9 @@ export interface IResolvedThreeNativeConfig {
   readonly nativeEntry: string;
   readonly renderer: {
     readonly preferWebGPU: boolean;
+  };
+  readonly ui: {
+    readonly renderer: ThreeNativeUiRenderer;
   };
   readonly assets?: {
     readonly models?: "none" | IThreeNativeModelsConfig;
@@ -850,6 +858,24 @@ async function validateBootSplash(
   };
 }
 
+/** Which renderer draws `src/ui/`. @see IThreeNativeConfig.ui */
+const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "web"];
+
+/**
+ * The public surface is exactly two words. Which web view a `"web"` game lands on — and whether
+ * a platform composites a sibling layer or renders to a texture — is the host's business, so a
+ * typo here fails naming the two valid values rather than defaulting to one of them.
+ */
+function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
+  const ui = assertRecord(raw, "ui");
+  assertKeys(ui, "ui", ["renderer"]);
+  const renderer = ui.renderer === undefined ? "native" : ui.renderer;
+  if (typeof renderer !== "string" || !UI_RENDERERS.includes(renderer as ThreeNativeUiRenderer)) {
+    fail("TN_CONFIG_UI_RENDERER_INVALID", "ui.renderer must be web or native.");
+  }
+  return { renderer: renderer as ThreeNativeUiRenderer };
+}
+
 function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] {
   const renderer = assertRecord(raw, "renderer");
   assertKeys(renderer, "renderer", ["preferWebGPU"]);
@@ -1071,6 +1097,7 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
           "window",
           "nativeEntry",
           "renderer",
+          "ui",
           "assets",
         ]);
       }
@@ -1090,6 +1117,7 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
         window: validateWindow(raw?.window, app.name),
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
         renderer: validateRenderer(raw?.renderer),
+        ui: validateUi(raw?.ui),
         ...(bootSplash === undefined ? {} : { bootSplash }),
         ...(assets === undefined ? {} : { assets }),
       };

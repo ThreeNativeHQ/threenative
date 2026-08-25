@@ -1,13 +1,15 @@
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { useGameState } from "@threenative/ui";
+import { useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
-export function CharacterPanel({ game }: { game: IGame<GameState, IPhysicsContext> }) {
-  const health = useGameState(game, (state) => state.health);
-  const damage = useGameState(game, (state) => state.damage);
-  const equipped = useGameState(game, (state) => state.equippedItem);
-  const lastDamage = useGameState(game, (state) => state.lastDamage);
+export function CharacterPanel() {
+  const state = useUiState<GameState>();
+  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
+  // Rendering zeroes instead would put wrong numbers on screen and then correct them.
+  if (state === undefined) return null;
+  const health = state.health;
+  const damage = state.damage;
+  const equipped = state.equippedItem;
+  const lastDamage = state.lastDamage;
   return (
     <aside className="pointer-events-none absolute right-6 top-5 w-52 border border-line bg-panel/90 p-3 text-[10px] uppercase tracking-[0.14em]">
       <div className="text-amber">character</div>

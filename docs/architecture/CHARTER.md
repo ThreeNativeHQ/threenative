@@ -6,6 +6,12 @@ questions in §11.1, and §5b splits mechanism from appearance. The kill switch 
 closed list (§2) are unchanged.
 **Amended 2026-08-22:** §1 and §11 — performance is a shipped default bounded by §5b, §11.2 and
 §10a, not a tuning pass left to each game.
+**Amended 2026-08-24:** §4 and §6b — React UI may opt into the isolated `@threenative/core/react`
+subpath; the vanilla main entry and scene graph remain React-free.
+**Amended 2026-08-24 (PRD-217):** §6b — one UI layer, the same React DOM, Tailwind, CSS and SVG on
+every target, through the platform's own browser-class renderer. `@threenative/core/react`'s quad
+renderer stays as the opt-in with no WebView. The old rule assumed embedding a browser meant
+shipping one; a measured Pixel 8 run showed the platform composites its own for free.
 **Supersedes:** `~/projects/threejs-to-bevy` (abandoned 2026-08-02, ~790k lines, 7 weeks).
 
 ---
@@ -194,7 +200,12 @@ safe to answer generously.
 
 ## 4. Substrate: vanilla Three.js core
 
-**Decision: vanilla core. Zero React dependency in `@threenative/core`.**
+**Decision: vanilla core. Zero React reach from `@threenative/core`'s main entry.**
+
+React UI is the opt-in exception: `@threenative/core/react` carries optional React peers and maps
+generated game components to `CanvasLayer`. A game that never imports that subpath loads no React,
+and React never owns the scene graph or loop. This preserves the one-way door below while supplying
+platform plumbing a game cannot write portably.
 
 1. **React's render model fights game loops.** Reconciliation is for state changes;
    games mutate 60×/sec. R3F's answer is `useFrame` + refs — imperative Three.js
@@ -412,13 +423,45 @@ the same split Bone Tide shipped: a shared TypeScript engine, with only the UI i
 
 | Web | Desktop / Mobile |
 |---|---|
-| React 19 + react-dom | OPEN |
-| Tailwind 4 | OPEN |
+| React 19 + react-dom | React 19 + react-dom, in a transparent WebView over the game surface |
+| Tailwind 4, CSS, SVG | The same Tailwind 4, CSS and SVG — the same renderer |
 
-**The native UI stack is an open question, not a decision.** The runtime (§7) is a host
-with no DOM and no React Native layer, so neither `react-dom` nor NativeWind applies, and
-no HUD has yet been rendered on it by any means. The store rule below is host-independent
-and holds on every target.
+**One UI, one web-standard rendering contract by default.** A game writes `src/ui/` once and the
+same React DOM, Tailwind, CSS, SVG, fonts and assets run unchanged on every target, through that
+platform's browser-class renderer. What is guaranteed is source parity and, to the bar in PRD-217's
+acceptance criterion 1, visual parity — not browser-binary parity, which no design using system
+engines can offer once iOS is in the set.
+
+**The native UI renderer remains, as an opt-in.** `@threenative/core/react` maps React to
+`CanvasLayer` quads with no WebView, no CSS and no second process. A game chooses it when it wants
+a UI that is part of the rendered frame, or a target with no WebView, or zero extra processes.
+Choosing it means owning the appearance difference — that is the trade the game is making, stated
+up front rather than discovered in a screenshot.
+
+Neither renderer touches `THREE.Scene`. The store rule below is host-independent and holds on every
+target, under both.
+
+The choice is two words in a game's config, and the surface underneath is never a game's business:
+
+```ts
+ui: { renderer: 'web' }      // default — the platform picks the surface
+ui: { renderer: 'native' }   // CanvasLayer quads, no WebView
+```
+
+**Why this reverses what §6b used to say.** It read *"Tailwind remains web-only"* and *"no CSS or
+WebView"*, and `packages/core/src/react-layout.ts` carried the reasoning: *"a CSS engine is a
+browser, which is the thing this whole path exists to avoid."* That assumed embedding a browser
+meant **shipping** one. Measured on a physical Pixel 8 on 2026-08-24, a transparent WebView over the
+GL surface cost nothing the run-to-run variance did not already cover — 16.88 FPS without it against
+18.26 with it, at a 0.8 °C lower start temperature — because the system composites it as a hardware
+overlay. The platform already provides the browser, at the composition layer, for free. The gap the
+old rule left instead was concrete: the quad renderer implements twenty style keys and a 5×7
+uppercase bitmap font against the browser's entire CSS, SVG and font stack, and one real game lost
+its minimap, its roster portraits, all four SVG glyphs and its touch-control art to it.
+
+Two things this amendment does not touch, because they are load-bearing and unrelated: `react-dom`
+stays banned from the **portable entry** — `TN_NATIVE_WEB_ONLY_UI` guards the scene graph, not the
+UI — and React still must never re-render on the game loop.
 
 **The 60fps problem.** React must never re-render on the game loop. The bridge is a
 plain external store the game writes to and React subscribes to:

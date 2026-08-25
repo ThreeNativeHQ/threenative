@@ -1,0 +1,86 @@
+/**
+ * The UI overlay seam — the native half of the message bridge in `@threenative/core/ui-layer`.
+ *
+ * The UI runs in the platform's own browser-class renderer, composited over the game surface;
+ * the game runs in this runtime beside it. Two realms, usually two processes, so everything
+ * that crosses is one JSON string.
+ *
+ * Threading is the whole reason this file exists. The host delivers a page message on the
+ * platform's UI thread (Android's main thread, not SDL's), while JavaScript may only be
+ * touched from the thread that owns the engine. So inbound frames are queued here and drained
+ * once per frame by the runtime, exactly like the lifecycle markers beside them.
+ */
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace mystral {
+namespace platform {
+
+/**
+ * Queue one frame the UI layer sent. Thread-safe; called from the platform's UI thread.
+ *
+ * The queue is bounded: a UI that posts faster than the game drains must lose its oldest
+ * frames rather than grow without limit, and the drop is counted so a run can report it
+ * instead of presenting as mysterious latency.
+ */
+void queueUiMessage(std::string frame);
+
+/** Pop the oldest queued frame. Returns false when the queue is empty. */
+bool takeUiMessage(std::string& frame);
+
+/** How many inbound frames have been dropped for queue pressure across this run. */
+uint64_t droppedUiMessages();
+
+/**
+ * Send one frame to the UI layer. Returns false when no overlay is attached, which is the
+ * normal state for a game whose UI renderer is `native` and on any platform with no overlay
+ * implementation yet.
+ */
+bool postUiMessage(const std::string& frame);
+
+/** Whether an overlay attached itself on this run. Reported, never assumed. */
+bool uiOverlayAttached();
+
+/** Called by the platform host once its overlay is up, or has failed to come up. */
+void setUiOverlayAttached(bool attached);
+
+/**
+ * Bring up the desktop overlay over the game window, serving the built UI from `uiRoot`.
+ *
+ * The page is served over a custom protocol rather than `file://`, which is the desktop
+ * counterpart of Android's `WebViewAssetLoader`: a real origin, so `fetch`, module imports and
+ * same-origin rules behave as they do on the web build.
+ *
+ * Android and iOS attach from their own hosts, in Java and Swift, before the runtime starts; only
+ * desktop attaches from here, because only here does the runtime own the window. Returns false and
+ * logs a named reason when it cannot — no compositor, no GTK, no container — rather than leaving a
+ * game that asked for the web renderer with an opaque rectangle over its scene.
+ */
+bool attachDesktopUiOverlay(const std::string& uiRoot);
+
+/** Give the desktop overlay its slice of the frame. A no-op where nothing is attached. */
+void pumpUiOverlay();
+
+/** Publish the interactive rectangles, normalized to the viewport, as x, y, width, height. */
+void setUiHitRegions(const std::vector<float>& regions);
+
+/** Tear the desktop overlay down. Safe when nothing is attached. */
+void detachDesktopUiOverlay();
+
+#if defined(__APPLE__)
+/**
+ * The iOS overlay, in `ios/ui_overlay_ios.mm`.
+ *
+ * **UNPROVEN.** Never compiled, launched or touched — this repository has no macOS host. PRD-217's
+ * acceptance criterion 6 asks for iOS to be proven or stated unproven, and this is the statement.
+ */
+bool attachIosUiOverlay(const std::string& uiRoot);
+void detachIosUiOverlay();
+bool postIosUiMessage(const std::string& frame);
+#endif
+
+}  // namespace platform
+}  // namespace mystral

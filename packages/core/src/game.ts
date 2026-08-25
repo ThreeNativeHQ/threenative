@@ -8,6 +8,7 @@ import {
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
+import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "./frame-budget.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
@@ -22,6 +23,8 @@ import { type IRendererLike, type IRendererOptions, createRenderer } from "./ren
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import { type GameStore, createGameStore } from "./state.js";
+import { type IUiBridge, UI_READY_INTENT, connectUiBridge } from "./ui-bridge.js";
+import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
 import { type IViewportOptions, Viewport } from "./viewport.js";
 
 export type PluginCleanup = () => void;
@@ -52,6 +55,8 @@ export interface IGamePluginRuntime {
    * assertions, not for every frame of every game.
    */
   readonly enableRuntimeDiagnostics?: () => void;
+  /** The frame's cost attribution so far, or undefined when the game turned the budget off. */
+  readonly frameBudgetWindow?: () => IFrameBudgetWindow | undefined;
   /**
    * Hold the frame loop until `gate` settles, after the start scene has entered.
    *
@@ -144,6 +149,14 @@ export interface IGameConfig<
    * the browser menu over its canvas.
    */
   readonly contextMenu?: ContextMenuPolicy;
+  /**
+   * Per-frame cost attribution, on by default. Every `reportEvery` presented frames the game
+   * prints one `TN_FRAME_BUDGET` line naming where the frame went — present wait, simulation,
+   * three.js render, overlay, the rest — which is what a device lane reads instead of guessing.
+   * Pass `false` to silence the marker; the same numbers still reach a playtest `performance`
+   * assertion, because turning a convention off must not turn its measurement off.
+   */
+  readonly frameBudget?: IFrameBudgetOptions | false;
   readonly initialState?: TState;
   readonly inputTarget?: EventTarget;
   /**
@@ -187,6 +200,33 @@ export interface IOrthogonalCameraConfig {
 
 export type CameraConfig = IPerspectiveCameraConfig | IOrthogonalCameraConfig;
 
+/**
+ * The game's end of the UI bridge.
+ *
+ * The UI renders through the platform's own browser-class renderer, which on every native
+ * target is a different realm from this one — so it holds a mirror of the game's published
+ * state and sends intents back rather than calling into the game. The web target uses the same
+ * two channels through an in-process broker, which is what keeps one `src/ui/` honest: a HUD
+ * that works here works on a phone.
+ *
+ * Publication is automatic and throttled to the store's own published cadence, and it stops
+ * entirely when nothing is listening — a game whose `ui.renderer` is `native` pays nothing.
+ */
+export interface IGameUi {
+  /**
+   * Whether a UI layer has announced itself.
+   *
+   * Stricter than "a transport exists": the UI sends `tn:ready` once its tree has rendered and its
+   * interactive rectangles are published, and only then is this true. A transport with nothing on
+   * the other end and a UI that failed to render look the same to a game otherwise.
+   */
+  readonly connected: boolean;
+  /** Handle an intent the UI sent — `restart`, `pause`, whatever the game defines. */
+  onIntent(listener: (intent: string, payload: unknown) => void): () => void;
+  /** Publish the current state now, whether or not it changed. */
+  publish(): void;
+}
+
 export interface IGame<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -194,6 +234,8 @@ export interface IGame<
   readonly ctx: ICtx<TState, TPhysics> | undefined;
   readonly scene: Scene<TState, TPhysics> | undefined;
   readonly state: GameStore<TState>;
+  /** The seam between the game and its UI layer, on every target. @see IGameUi */
+  readonly ui: IGameUi;
   /** Rebuilds the requested scene from the game's declared initial state. */
   goto(name: string): Promise<void>;
   start(): Promise<void>;
@@ -298,6 +340,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #random: IRandom | undefined;
   #picker: ScenePicker | undefined;
   #scheduler: Scheduler | undefined;
+  #frameBudget: FrameBudget | undefined;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
   #pendingStart: Promise<void> | undefined;
@@ -305,6 +348,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #sceneEntered = false;
   #paused = false;
   #started = false;
+  #uiBridge: IUiBridge | undefined;
+  #uiPublisher: IUiStatePublisher | undefined;
+  #uiReady = false;
   // Flipped only by a diagnostics consumer announcing itself; see enableRuntimeDiagnostics().
   #renderMetricsEnabled = false;
 
@@ -335,6 +381,37 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   get state(): GameStore<TState> {
     return this.#state;
+  }
+
+  /**
+   * The UI seam. Connected lazily, because a game that never touches it — and every game whose
+   * `ui.renderer` is `native` — must not pay for a channel nobody reads.
+   */
+  get ui(): IGameUi {
+    const bridge = this.#connectUi();
+    const ready = () => this.#uiReady;
+    return {
+      get connected() {
+        return bridge.hasPeer() && ready();
+      },
+      onIntent: (listener) => onUiIntent(bridge, listener),
+      publish: () => this.#uiPublisher?.publish(),
+    };
+  }
+
+  #connectUi(): IUiBridge {
+    if (this.#uiBridge !== undefined) return this.#uiBridge;
+    const bridge = connectUiBridge({ end: "game" });
+    this.#uiBridge = bridge;
+    this.#uiPublisher = publishUiState(bridge, this.#state);
+    onUiIntent(bridge, (intent) => {
+      if (intent !== UI_READY_INTENT) return;
+      this.#uiReady = true;
+      // Publish immediately: the UI has just rendered against nothing, and waiting for the store's
+      // next change would leave a HUD showing its initial values for up to a tick.
+      this.#uiPublisher?.publish();
+    });
+    return bridge;
   }
 
   goto(name: string): Promise<void> {
@@ -544,7 +621,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         : platform.devToolsHost;
     this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
     this.#scene = new SceneType();
+    // Built here rather than inside the loop so `frameBudget: false` is a single decision with a
+    // single owner, and so the render phases below feed the same instrument the loop feeds.
+    const frameBudget =
+      this.#config.frameBudget === false
+        ? undefined
+        : new FrameBudget(this.#config.frameBudget ?? {});
+    this.#frameBudget = frameBudget;
+    const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
     const gameLoop = new FixedStepLoop({
+      ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
         for (const particle of this.#particles) {
@@ -560,7 +646,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // is what lets a change the game made this tick reach the screen this tick instead of the
         // next one. Scenes under its mesh floor get their own graph back and pay nothing.
         this.#projection?.reconcile();
-        if (!projectionSettled) {
+        // Reconciling is unconditional -- a goto clears the graph before its destination enters,
+        // and the projection has to drop those objects on the very next frame. Settling is not:
+        // frames run during the boot hold, before the start scene has loaded, and a loading
+        // screen awaiting `startup.whenReady()` would be told the world is ready while its
+        // assets were still downloading.
+        if (!projectionSettled && this.#sceneEntered) {
           projectionSettled = true;
           markProjectionSettled();
         }
@@ -569,13 +660,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no
           // second optional render path to leave untested.
+          const renderStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.render(this.#projection?.root ?? threeScene, camera);
+          frameBudget?.addRender(budgetNow() - renderStart);
           // Same entering-window rule as onUpdate: nothing of the incoming scene draws before enter().
           if (this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
         }
         if (canvasLayer.scene.children.length > 0) {
+          const overlayStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
+          frameBudget?.addOverlay(budgetNow() - overlayStart);
           if (!this.#renderMetricsEnabled) return undefined;
           const overlayMetrics = rendererPerformanceMetrics(renderer.raw);
           return worldMetrics === undefined
@@ -607,6 +702,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startGates: Promise<void>[] = [];
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
+      frameBudgetWindow: () => this.#frameBudget?.window(),
       enableRuntimeDiagnostics: () => {
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);
@@ -644,6 +740,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       this.#teardown(ctx);
       return;
     }
+    // Held: the loop renders every frame from here but steps nothing. On native the render loop
+    // is the only thing that can put pixels on the screen, so starting it after `load()` resolved
+    // meant a black screen for the entire asset load and a HUD's `!ready` branch was unreachable.
+    // Holding rather than simply starting keeps the determinism contract intact: no tick advances
+    // and no elapsed time is banked before the release below.
+    gameLoop.setHeld(true);
+    gameLoop.start();
     try {
       await scene.load(ctx);
     } catch (error) {
@@ -679,6 +782,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     this.#started = true;
+    // Every gate has resolved and the scene has entered, so the simulation may move. The first
+    // tick after this reads a single frame's dt, not one spanning the load.
+    gameLoop.setHeld(false);
     gameLoop.start();
   }
   pause(): void {
@@ -706,6 +812,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // Every attempt runs, errors are collected, and the first — the original cause — is thrown
     // once all attempts and the final leak check have completed.
     const failures: unknown[] = [];
+    this.#uiPublisher?.stop();
+    this.#uiPublisher = undefined;
+    this.#uiReady = false;
+    this.#uiBridge?.close();
+    this.#uiBridge = undefined;
     this.#loop?.stop();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
     this.#sceneFrame = undefined;

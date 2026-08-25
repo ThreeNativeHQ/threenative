@@ -49,7 +49,9 @@ export type {
   IThreeNativeConfig,
   IThreeNativeIconVariants,
   IThreeNativeTexturesConfig,
+  ThreeNativeBackgroundMode,
   ThreeNativeOrientation,
+  ThreeNativeUiRenderer,
 } from "./config.js";
 /**
  * Create a deterministic random source for portable gameplay.
@@ -69,6 +71,26 @@ export type { IRandom } from "./random.js";
  * @example const game = defineGame({ scenes: { Play } });
  */
 export { defineGame } from "./game.js";
+/**
+ * Read where the frame's milliseconds went, per presented frame, on any platform.
+ * @situation find out why a game runs slowly on a phone
+ * @situation attribute a frame to present wait, simulation, three.js render, or overlay
+ * @constraint on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
+ * @example defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
+ */
+export {
+  FRAME_BUDGET_MARKER,
+  FRAME_BUDGET_PHASES,
+  FRAME_HITCH_MARKER,
+  FrameBudget,
+} from "./frame-budget.js";
+export type {
+  FrameBudgetPhase,
+  IFrameBudgetOptions,
+  IFrameBudgetSummary,
+  IFrameBudgetWindow,
+  IFramePhaseSample,
+} from "./frame-budget.js";
 export type {
   IGame,
   IGameObservationContribution,

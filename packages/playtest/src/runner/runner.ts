@@ -2,7 +2,7 @@ import { applyScenarioSetup, waitFrames, observedEntityIds, observedResourceIds,
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./sampling.js";
-import { stopManagedServer, boundedTeardownStep, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, isAnonymousMovementScenario, readCaptureProvenance, entityPosition, sampleHud, safePart, pairObservations, normalizedRuntimeDiagnostics, pageLifecycleDiagnostic, findFreePort, withPort } from "./sampling.js";
+import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, isAnonymousMovementScenario, readCaptureProvenance, entityPosition, sampleHud, safePart, pairObservations, normalizedRuntimeDiagnostics, pageLifecycleDiagnostic, findFreePort, withPort } from "./sampling.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -206,6 +206,7 @@ export async function runStandalonePlaytest(
   const ownsServer = options.managedServer === undefined && activeConfig.server !== undefined;
   server = options.managedServer;
   let browser: Browser | undefined;
+  let browserLaunch: Promise<Browser> | undefined;
   let page: Page | undefined;
   let teardownPromise: Promise<void> | undefined;
   let serverTeardownPromise: Promise<void> | undefined;
@@ -227,7 +228,12 @@ export async function runStandalonePlaytest(
       // Chromium does not always exit when asked — under a virtual display with a live GPU
       // process it can sit in close() forever. The report is already written by this point, so
       // teardown gives up rather than holding the run open; the CLI then exits explicitly.
-      await boundedTeardownStep(browser?.close(), 10_000);
+      // A signal can arrive while chromium.launch() is still in flight, when `browser` is not
+      // yet assigned. Closing only the assigned handle would close nothing and exit the process
+      // over a live Chromium, stranding it and its profile directory — which is the orphan the
+      // suite gate catches. Wait for the launch to settle, then close whatever it produced.
+      const launched = browser ?? (await settledTeardownValue(browserLaunch, 10_000));
+      await boundedTeardownStep(launched?.close(), 10_000);
     })();
     await teardownPromise.catch(() => undefined);
     if (stopManagedServerOnTeardown) await stopServer();
@@ -256,11 +262,12 @@ export async function runStandalonePlaytest(
       if (!usesFreePort) await assertManagedUrlAvailable(activeConfig.url);
       server = startManagedServer(activeConfig, usesFreePort ? activeConfig.port : undefined);
     }
-    browser = await chromium.launch({
+    browserLaunch = chromium.launch({
       ...(browserConfig.browserArgs === undefined ? {} : { args: resolveBrowserArguments(browserConfig.browserArgs) }),
       ...(providedDisplay === undefined ? {} : { env: providedDisplay.env }),
       headless: activeConfig.headless,
     });
+    browser = await browserLaunch;
     if (server !== undefined && options.managedServer === undefined) {
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
@@ -334,6 +341,9 @@ export async function runStandalonePlaytest(
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,
     ).catch(() => false);
+    // Vite can abort dependency-prefetch requests while the first document is settling. Those
+    // cold-start failures are not gameplay evidence; diagnostics begin at the readiness boundary.
+    if (runtimeReady) networkEntries.length = 0;
     const entityIds = observedEntityIds(scenario);
     const resourceIds = observedResourceIds(scenario);
     const sampleRequest = {
@@ -359,7 +369,8 @@ export async function runStandalonePlaytest(
     const needsCapture = scenario.artifacts?.screenshots !== false
       || scenario.steps.some((step) => step.screenshot !== undefined)
       || wantsVisual;
-    const captureProvenance = needsCapture
+    const requiresWebGpuProvenance = browserConfig.browserArgs?.includes("--enable-unsafe-webgpu") === true;
+    const captureProvenance = needsCapture || requiresWebGpuProvenance
       ? await readCaptureProvenance(page, browserConfig, scenario)
       : undefined;
     if (captureProvenance !== undefined) {

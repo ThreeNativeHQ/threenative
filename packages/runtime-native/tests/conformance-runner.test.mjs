@@ -37,6 +37,7 @@ import {
   androidFocusedWindowOwner,
   androidSystemDialog,
   buildProvenance,
+  expiredExclusions,
   validateRegistry,
   validateReport,
 } from "../conformance/run-conformance.mjs";
@@ -118,7 +119,17 @@ test("dry run validates and bundles implemented rows without a browser or native
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}, 60_000);
+  // This bundles every registry row twice, once per target, so its cost tracks the registry's
+  // size rather than anything constant. At a 60 s budget it measured 56.8 s standalone on an idle
+  // machine — a 5% margin — and it went red in three separate agent lanes on the same day, each of
+  // which spent time proving the red was not theirs. A budget that close to the work is a coin
+  // flip reported as a defect.
+  //
+  // Being generous costs nothing here, because the wall clock never guarded coverage in the first
+  // place: `report.summary.validated === implemented` above is what fails when rows stop being
+  // bundled, and it fails on the count no matter how fast or slow the run was. The timeout is a
+  // hang detector and only ever was one, so 240 s is the right size for it.
+}, 240_000);
 
 test("project mode resolves the configured native entry and dry-bundles only that project", () => {
   const dir = makeTempDirSync("threenative-parity-project-");
@@ -453,6 +464,21 @@ test("registry exclusions fail closed without an owner, reason, or explicit excl
   assert.match(errors, /owner must be a non-empty string/u);
   assert.match(errors, /reason must be a non-empty string/u);
   assert.match(errors, /status must be excluded/u);
+});
+
+test("registry exclusion expiry is validated and surfaced as blocked evidence", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const exclusion = registry.exclusions.find(({ id }) => id === "desktop-multitouch-input");
+  assert.equal(expiredExclusions(registry, Date.parse("2026-12-30T23:59:59.000Z")).length, 0);
+  assert.deepEqual(
+    expiredExclusions(registry, Date.parse("2027-01-01T00:00:00.000Z")).map(({ id }) => id),
+    ["desktop-multitouch-input"],
+  );
+  assert.equal(validateRegistry(registry).length, 0);
+
+  const malformed = structuredClone(registry);
+  malformed.exclusions.find(({ id }) => id === exclusion.id).expires = "2026-02-30";
+  assert.match(validateRegistry(malformed).join("\n"), /expires must be an ISO date/u);
 });
 
 test("help exits without starting any parity lane", () => {

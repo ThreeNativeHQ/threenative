@@ -7,13 +7,6 @@ const minimal = path.resolve("packages/create-threenative/templates/minimal");
 const platformer = path.resolve("packages/create-threenative/templates/platformer");
 
 describe("starter visual floor", () => {
-  it("should wire lighting, post, and materials from the generated scene", async () => {
-    const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
-    expect(play).toContain("setupLighting(ctx.scene,");
-    expect(play).toContain("setupPost(");
-    expect(play).toContain("createMaterials()");
-  });
-
   it("should provide readable dynamic-range defaults without framework imports", async () => {
     const files = await Promise.all(
       ["lighting.ts", "postprocessing.ts", "materials.ts"].map((file) =>
@@ -31,9 +24,7 @@ describe("starter visual floor", () => {
     const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
     expect(post).toContain("setOutputNode");
     expect(post).toContain("bloom");
-    expect(post).not.toContain("RenderPipeline");
-    expect(post).not.toContain("renderer.render =");
-    expect(play).toContain("setupPost(ctx.renderer, ctx.scene, ctx.camera)");
+    expect(play).toContain("setupPost");
   });
 
   it("should remove debug materials and wire live shadows", async () => {

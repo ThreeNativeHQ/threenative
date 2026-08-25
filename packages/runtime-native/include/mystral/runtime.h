@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mystral/platform/lifecycle.h"
+
 #include <memory>
 #include <string>
 #include <functional>
@@ -23,6 +25,9 @@ struct RuntimeConfig {
     bool debug = false;  // Enable verbose debug logging
     // Test-only seam: install timers after JS engine creation. Production callers leave this false.
     bool testEngineFirstTimers = false;
+    // `display.backgroundMode`. Default pauses the loop off-screen; "continue" is the named
+    // override, and it turns pausing off without turning the lifecycle markers off.
+    platform::BackgroundMode backgroundMode = platform::BackgroundMode::Pause;
 };
 
 /**

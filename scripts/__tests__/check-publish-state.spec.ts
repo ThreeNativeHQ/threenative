@@ -4,18 +4,44 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
+  type IPublishPackage,
   type IRegistryFacts,
+  type ITarballContents,
   RELEASE_WORKFLOW,
   type RegistryLookup,
+  type TarballReader,
   checkPublishState,
   missingPackageReadmes,
+  pnpmPackReader,
+  prebuiltReleaseCensus,
   publishSet,
+  relativeSpecifiers,
   satisfiesRange,
   staleInternalPeerRanges,
+  templatePinCensus,
+  unresolvableTarballImports,
+  unresolvedTarballSpecifiers,
   unresolvedTemplateSpecifiers,
 } from "../check-publish-state.js";
 
 const roots: string[] = [];
+
+/** A tarball that ships nothing but a clean manifest, so the fixture's other gates stay in view. */
+const cleanTarballs: TarballReader = (item) => ({
+  entries: ["package.json"],
+  text: new Map([["package.json", JSON.stringify({ name: item.name, version: item.version })]]),
+});
+
+function tarball(files: Record<string, string>): ITarballContents {
+  return { entries: Object.keys(files).sort(), text: new Map(Object.entries(files)) };
+}
+
+const PACKED: IPublishPackage = {
+  directory: "/nowhere",
+  manifest: "/nowhere/package.json",
+  name: "@threenative/runtime-native",
+  version: "0.3.0",
+};
 
 const PUBLISHED = "2026-08-09T07:32:33.145Z";
 
@@ -69,10 +95,11 @@ describe("pnpm publish:check", () => {
 
   it("passes when every version moved past what the registry holds", async () => {
     const root = await fixture();
-    const report = checkPublishState({
+    const report = await checkPublishState({
       lookup: (name) => ({ ...everythingPublished(name), version: "0.0.9" }),
       repo: root,
       sourceCommits: () => 12,
+      tarballs: cleanTarballs,
     });
     expect(report.findings).toEqual([]);
     expect(report.exitCode).toBe(0);
@@ -80,10 +107,11 @@ describe("pnpm publish:check", () => {
 
   it("fails when a local version equals the published version and the source has moved", async () => {
     const root = await fixture();
-    const report = checkPublishState({
+    const report = await checkPublishState({
       lookup: everythingPublished,
       repo: root,
       sourceCommits: () => 144,
+      tarballs: cleanTarballs,
     });
     expect(report.exitCode).toBe(1);
     expect(report.findings.map((finding) => finding.package)).toContain("@threenative/core");
@@ -94,10 +122,11 @@ describe("pnpm publish:check", () => {
     // Republishing an identical tree is not the defect. Publishing a *changed* tree under a
     // version string the registry already serves is, because npm will refuse it.
     const root = await fixture();
-    const report = checkPublishState({
+    const report = await checkPublishState({
       lookup: everythingPublished,
       repo: root,
       sourceCommits: () => 0,
+      tarballs: cleanTarballs,
     });
     expect(report.findings).toEqual([]);
     expect(report.exitCode).toBe(0);
@@ -107,13 +136,14 @@ describe("pnpm publish:check", () => {
     // A 404 is what this whole lane exists to fix; refusing to publish because of it would make
     // the preflight unsatisfiable.
     const root = await fixture();
-    const report = checkPublishState({
+    const report = await checkPublishState({
       lookup: (name) =>
         name === "create-threenative"
           ? ({ state: "absent" } satisfies IRegistryFacts)
           : { ...everythingPublished(name), version: "0.0.9" },
       repo: root,
       sourceCommits: () => 5,
+      tarballs: cleanTarballs,
     });
     expect(report.findings).toEqual([]);
   });
@@ -121,10 +151,11 @@ describe("pnpm publish:check", () => {
   it("fails when a publishable package is missing from the release workflow's publish set", async () => {
     const root = await fixture();
     write(root, RELEASE_WORKFLOW, "#   @threenative/core\n");
-    const report = checkPublishState({
+    const report = await checkPublishState({
       lookup: (name) => ({ ...everythingPublished(name), version: "0.0.9" }),
       repo: root,
       sourceCommits: () => 1,
+      tarballs: cleanTarballs,
     });
     expect(report.exitCode).toBe(1);
     expect(report.findings[0]?.detail).toMatch(
@@ -162,10 +193,11 @@ describe("pnpm publish:check", () => {
   it("blocks, never passes, when the release workflow does not exist", async () => {
     const root = await fixture();
     await rm(path.join(root, RELEASE_WORKFLOW));
-    const report = checkPublishState({
+    const report = await checkPublishState({
       lookup: (name) => ({ ...everythingPublished(name), version: "0.0.9" }),
       repo: root,
       sourceCommits: () => 1,
+      tarballs: cleanTarballs,
     });
     expect(report.exitCode).toBe(2);
     expect(report.findings[0]?.severity).toBe("blocked");
@@ -173,10 +205,11 @@ describe("pnpm publish:check", () => {
 
   it("blocks, never passes, when the registry cannot be reached", async () => {
     const root = await fixture();
-    const report = checkPublishState({
+    const report = await checkPublishState({
       lookup: () => ({ state: "unreachable" }),
       repo: root,
       sourceCommits: () => 1,
+      tarballs: cleanTarballs,
     });
     expect(report.exitCode).toBe(2);
     expect(report.findings.every((finding) => finding.severity === "blocked")).toBe(true);
@@ -194,6 +227,118 @@ describe("pnpm publish:check", () => {
     expect(findings[0]?.detail).toMatch(/no meaning outside this workspace/u);
   });
 
+  it("fails when a template pins a package the registry does not have", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/create-threenative/templates/starter/package.json",
+      JSON.stringify({ dependencies: { "@threenative/core": "9.9.9", three: "0.185.1" } }),
+    );
+    const findings = templatePinCensus(root, (name, version) =>
+      name === "@threenative/core" && version === "9.9.9"
+        ? { state: "absent" }
+        : { state: "present", version: "0.0.0" },
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.package).toBe("template:starter");
+    expect(findings[0]?.detail).toMatch(/@threenative\/core@9\.9\.9/u);
+  });
+
+  it("rejects an absent exact internal pin at the version in the current publish set by default", async () => {
+    const root = await fixture();
+    const lookup: RegistryLookup = (name, version) =>
+      name === "@threenative/core" && (version === undefined || version === "0.1.0")
+        ? { state: "absent" }
+        : { published: PUBLISHED, state: "present", version: "0.0.0" };
+
+    expect(templatePinCensus(root, lookup)).toContainEqual(
+      expect.objectContaining({
+        package: "template:starter",
+        severity: "fail",
+      }),
+    );
+    const report = await checkPublishState({
+      lookup,
+      prebuiltProbe: () => "present",
+      repo: root,
+      sourceCommits: () => 0,
+      tarballs: cleanTarballs,
+    });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        package: "template:starter",
+        severity: "fail",
+      }),
+    );
+    expect(report.exitCode).toBe(1);
+  });
+
+  it("allows an absent exact current-set pin only with the explicit release opt-in", async () => {
+    const root = await fixture();
+    const lookup: RegistryLookup = (name, version) =>
+      name === "@threenative/core" && (version === undefined || version === "0.1.0")
+        ? { state: "absent" }
+        : { published: PUBLISHED, state: "present", version: "0.0.0" };
+
+    expect(templatePinCensus(root, lookup, { allowCurrentPublishSetPins: true })).toEqual([]);
+    const report = await checkPublishState({
+      allowCurrentPublishSetPins: true,
+      lookup,
+      prebuiltProbe: () => "present",
+      repo: root,
+      sourceCommits: () => 0,
+      tarballs: cleanTarballs,
+    });
+    expect(report.findings).toEqual([]);
+    expect(report.exitCode).toBe(0);
+  });
+
+  it("still fails an absent pin outside the current publish set with the opt-in", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/create-threenative/templates/starter/package.json",
+      JSON.stringify({ dependencies: { "@threenative/core": "9.9.9" } }),
+    );
+    const findings = templatePinCensus(root, () => ({ state: "absent" }), {
+      allowCurrentPublishSetPins: true,
+    });
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        package: "template:starter",
+        severity: "fail",
+      }),
+    );
+  });
+
+  it("keeps the coordinated pin opt-in explicit in the npm release workflow", () => {
+    const workflow = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../../.github/workflows/npm-release.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("run: pnpm publish:check --allow-current-publish-set-pins");
+  });
+
+  it("passes a template pin resolved by the registry", async () => {
+    const root = await fixture();
+    expect(templatePinCensus(root, () => ({ state: "present", version: "0.1.0" }))).toEqual([]);
+  });
+
+  it("fails when no prebuilt release exists for the runtime version", async () => {
+    const root = await fixture();
+    const findings = prebuiltReleaseCensus(root, () => "absent", "0.3.0");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.detail).toMatch(/runtime-native-v0\.3\.0.*prebuilt-lock\.json/u);
+  });
+
+  it("blocks, never passes, when the prebuilt release probe is unreachable", async () => {
+    const root = await fixture();
+    const findings = prebuiltReleaseCensus(root, () => "unreachable", "0.3.0");
+    expect(findings).toMatchObject([
+      { package: "@threenative/runtime-native", severity: "blocked" },
+    ]);
+  });
+
   it("fails when a workspace: specifier survives into a template manifest", async () => {
     const root = await fixture();
     write(
@@ -202,6 +347,29 @@ describe("pnpm publish:check", () => {
       JSON.stringify({ devDependencies: { "@threenative/playtest": "workspace:*" } }),
     );
     expect(unresolvedTemplateSpecifiers(root)).toHaveLength(1);
+  });
+
+  it("fails the publish report when an optional template pin still uses workspace:", async () => {
+    const root = await fixture();
+    write(
+      root,
+      "packages/create-threenative/templates/starter/package.json",
+      JSON.stringify({
+        optionalDependencies: { "@threenative/runtime-native": "workspace:*" },
+      }),
+    );
+    const report = await checkPublishState({
+      lookup: (name) => ({ ...everythingPublished(name), version: "0.0.9" }),
+      repo: root,
+      sourceCommits: () => 0,
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({ package: "template:starter", severity: "fail" }),
+    );
+    expect(report.findings.map(({ detail }) => detail).join("\n")).toMatch(
+      /optionalDependencies\.@threenative\/runtime-native.*workspace:\*/u,
+    );
   });
 
   it("fails when a peer range on a sibling excludes the version shipping beside it", async () => {
@@ -260,6 +428,134 @@ describe("pnpm publish:check", () => {
     // nothing, so an unreadable range is an error rather than an optimistic true.
     expect(() => satisfiesRange("0.2.0", "1.x || >=2")).toThrow(/TN_PUBLISH_RANGE_UNREADABLE/u);
   });
+
+  it("fails when a shipped script imports a file the tarball does not contain", async () => {
+    // The defect this was built for: runtime-native shipped package-android.mjs while
+    // asset-preflight.mjs was absent from `files`, so `build --target android` from a published
+    // install died ERR_MODULE_NOT_FOUND before it reached a single fetch.
+    const findings = await unresolvableTarballImports(
+      PACKED,
+      tarball({
+        "package.json": JSON.stringify({ name: PACKED.name, version: PACKED.version }),
+        "scripts/package-android.mjs": "import { x } from './asset-preflight.mjs';\n",
+      }),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ package: PACKED.name, severity: "fail" });
+    expect(findings[0]?.detail).toMatch(
+      /ships scripts\/package-android\.mjs.*'\.\/asset-preflight\.mjs'.*ERR_MODULE_NOT_FOUND/u,
+    );
+  });
+
+  it("accepts a shipped script whose imports all shipped beside it", async () => {
+    expect(
+      await unresolvableTarballImports(
+        PACKED,
+        tarball({
+          "package.json": JSON.stringify({ name: PACKED.name, version: PACKED.version }),
+          "scripts/asset-preflight.mjs": "export const x = 1;\n",
+          "scripts/package-android.mjs": "import { x } from './asset-preflight.mjs';\n",
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("counts a dynamic import that escapes the tarball, and ignores one written into a string", async () => {
+    const findings = await unresolvableTarballImports(
+      PACKED,
+      tarball({
+        "package.json": JSON.stringify({ name: PACKED.name, version: PACKED.version }),
+        "scripts/profile-production.mjs":
+          'const generated = `import game from "./game.js";`;\n' +
+          "export async function record() {\n" +
+          "  const { createGateRecorder } = await import('../../../scripts/gate-records.mjs');\n" +
+          "  return [createGateRecorder, generated];\n" +
+          "}\n",
+      }),
+    );
+    // Two claims in one: the CLI-guarded dynamic import still fails on an installed copy and is
+    // reported, while `./game.js` — which this script writes into a generated bundle as text —
+    // is not an import of this script at all. A gate whose failures are half fiction gets
+    // suppressed rather than fixed.
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.detail).toMatch(/gate-records\.mjs/u);
+  });
+
+  it("reads imports out of source rather than out of strings and comments", async () => {
+    expect(
+      await relativeSpecifiers(
+        "sample.mjs",
+        "// import './commented.mjs';\nconst s = `import x from \"./quoted.mjs\"`;\nimport './real.mjs';\nexport * from './re-exported.mjs';\n",
+      ),
+    ).toEqual(["./re-exported.mjs", "./real.mjs"]);
+  });
+
+  it("refuses a shipped module it cannot parse rather than reporting it clean", async () => {
+    await expect(
+      unresolvableTarballImports(
+        PACKED,
+        tarball({
+          "package.json": JSON.stringify({ name: PACKED.name, version: PACKED.version }),
+          "scripts/broken.mjs": "import { from './a.mjs'\n",
+        }),
+      ),
+    ).rejects.toThrow(/TN_PUBLISH_MODULE_UNREADABLE/u);
+  });
+
+  it("fails when a packed manifest still carries a workspace protocol specifier", () => {
+    // `npm pack` leaves catalog:/workspace: verbatim where `pnpm pack` substitutes them. The
+    // tarball installs nowhere — EUNSUPPORTEDPROTOCOL on a stranger's machine and nowhere else.
+    const findings = unresolvedTarballSpecifiers(
+      PACKED,
+      tarball({
+        "package.json": JSON.stringify({
+          dependencies: { three: "catalog:" },
+          devDependencies: { "@threenative/core": "workspace:*" },
+          name: PACKED.name,
+          version: PACKED.version,
+        }),
+      }),
+    );
+    expect(findings).toHaveLength(2);
+    expect(findings.map((finding) => finding.detail)).toEqual([
+      expect.stringMatching(/dependencies\.three as 'catalog:'/u),
+      expect.stringMatching(/devDependencies\.@threenative\/core as 'workspace:\*'/u),
+    ]);
+  });
+
+  it("accepts a packed manifest whose specifiers were substituted", () => {
+    expect(
+      unresolvedTarballSpecifiers(
+        PACKED,
+        tarball({
+          "package.json": JSON.stringify({
+            dependencies: { three: "0.185.1" },
+            name: PACKED.name,
+            version: PACKED.version,
+          }),
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("blocks, never passes, on a tarball with no manifest to read", () => {
+    const findings = unresolvedTarballSpecifiers(PACKED, tarball({ "README.md": "# x\n" }));
+    expect(findings).toEqual([
+      expect.objectContaining({ package: PACKED.name, severity: "blocked" }),
+    ]);
+  });
+
+  it("packs this repository's runtime-native and finds every import inside the tarball", async () => {
+    // The unit cases above plant their own tarballs; this one packs the real package, which is
+    // the only way the `files` list itself is under test.
+    const repo = path.resolve(import.meta.dirname, "../..");
+    const item = publishSet(repo).find((entry) => entry.name === "@threenative/runtime-native");
+    expect(item).toBeDefined();
+    const contents = pnpmPackReader()(item as IPublishPackage);
+    expect(contents.entries).toContain("scripts/asset-preflight.mjs");
+    expect(await unresolvableTarballImports(item as IPublishPackage, contents)).toEqual([]);
+    expect(unresolvedTarballSpecifiers(item as IPublishPackage, contents)).toEqual([]);
+  }, 120_000);
 
   it("refuses an empty publish set rather than reporting nothing to do", async () => {
     const root = await makeTempDir("threenative-publish-empty-");

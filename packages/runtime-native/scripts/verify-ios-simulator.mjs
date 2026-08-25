@@ -56,7 +56,7 @@ function runExpected(command, args, expectedStatus, expectedText) {
 }
 
 function validateScaffold() {
-  const required = ['ios/Info.plist', 'ios/main.mm', 'CMakeLists.txt'];
+  const required = ['ios/Info.plist', 'ios/main.mm', 'ios/ui_overlay_ios.mm', 'CMakeLists.txt'];
   for (const path of required) {
     if (!existsSync(join(runtimeRoot, path))) throw new Error(`iOS scaffold is missing ${path}.`);
   }

@@ -14,6 +14,7 @@
   },
   "include": [
     "scripts/**/*.ts",
+    "test-support/**/*.ts",
     "hosting/**/*.ts",
     "packages/**/__tests__/**/*.ts",
     "examples/**/__tests__/**/*.ts",

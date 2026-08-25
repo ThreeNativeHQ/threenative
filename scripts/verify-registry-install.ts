@@ -72,6 +72,14 @@ export function checkLockfile(project: string): string {
 
 export type CommandRunner = (command: string, args: readonly string[], cwd: string) => string;
 
+export type McpRunner = (
+  serverName: string,
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  env?: Readonly<Record<string, string>>,
+) => string;
+
 export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
   return (command, args, cwd) =>
     execFileSync(command, [...args], {
@@ -83,9 +91,153 @@ export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
     });
 }
 
+function mcpRequests(serverName: string): string {
+  const requests = [
+    {
+      id: 1,
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: {
+        capabilities: {},
+        clientInfo: { name: "threenative-registry-install", version: "1.0.0" },
+        protocolVersion: "2025-06-18",
+      },
+    },
+    ...(serverName === "threenative-engine"
+      ? [
+          {
+            id: 2,
+            jsonrpc: "2.0",
+            method: "tools/call",
+            params: {
+              arguments: { situation: "enemy walks around a wall" },
+              name: "engine_search_capabilities",
+            },
+          },
+        ]
+      : []),
+  ];
+  return `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`;
+}
+
+function jsonLines(output: string, serverName: string): readonly Record<string, unknown>[] {
+  const messages: Record<string, unknown>[] = [];
+  for (const line of output.split(/\r?\n/u).filter((candidate) => candidate.trim().length > 0)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line) as unknown;
+    } catch (error) {
+      throw new Error(
+        `MCP server '${serverName}' emitted non-JSON stdout during initialize: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      throw new Error(`MCP server '${serverName}' emitted a non-object JSON response.`);
+    messages.push(parsed as Record<string, unknown>);
+  }
+  return messages;
+}
+
+function requireMcpResponse(
+  messages: readonly Record<string, unknown>[],
+  serverName: string,
+  id: number,
+): Record<string, unknown> {
+  const response = messages.find((message) => message.id === id);
+  if (response === undefined)
+    throw new Error(`MCP server '${serverName}' never answered request ${id}.`);
+  if (response.error !== undefined)
+    throw new Error(
+      `MCP server '${serverName}' request ${id} failed: ${JSON.stringify(response.error)}.`,
+    );
+  if (typeof response.result !== "object" || response.result === null)
+    throw new Error(`MCP server '${serverName}' returned no result for request ${id}.`);
+  return response;
+}
+
+interface ICapabilitySearchHit {
+  readonly constraints: readonly string[];
+  readonly example: string;
+  readonly importPath: string;
+  readonly summary: string;
+  readonly symbol: string;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isCapabilitySearchHit(value: unknown): value is ICapabilitySearchHit {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const hit = value as Record<string, unknown>;
+  return (
+    isNonEmptyString(hit.symbol) &&
+    isNonEmptyString(hit.importPath) &&
+    isNonEmptyString(hit.summary) &&
+    isNonEmptyString(hit.example) &&
+    Array.isArray(hit.constraints) &&
+    hit.constraints.every((constraint) => typeof constraint === "string")
+  );
+}
+
+function assertMcpHandshake(serverName: string, output: string): string {
+  const messages = jsonLines(output, serverName);
+  requireMcpResponse(messages, serverName, 1);
+  if (serverName !== "threenative-engine") return "initialize ok";
+  const response = requireMcpResponse(messages, serverName, 2);
+  const result = response.result as { content?: unknown };
+  if (!Array.isArray(result.content))
+    throw new Error(`MCP server '${serverName}' returned no tools/call content.`);
+  const text = result.content.find(
+    (entry): entry is { text: string } =>
+      typeof entry === "object" &&
+      entry !== null &&
+      "text" in entry &&
+      typeof entry.text === "string",
+  )?.text;
+  if (text === undefined)
+    throw new Error(`MCP server '${serverName}' returned no text search result.`);
+  let hits: unknown;
+  try {
+    hits = JSON.parse(text) as unknown;
+  } catch (error) {
+    throw new Error(
+      `MCP server '${serverName}' returned malformed capability JSON: ${String(error)}.`,
+    );
+  }
+  if (!Array.isArray(hits) || hits.length === 0)
+    throw new Error(
+      `MCP server '${serverName}' returned no capability hits for the plain-words query.`,
+    );
+  const malformedIndex = hits.findIndex((hit) => !isCapabilitySearchHit(hit));
+  if (malformedIndex !== -1)
+    throw new Error(
+      `MCP server '${serverName}' returned malformed capability hit at index ${malformedIndex}; expected non-empty string symbol, importPath, summary, and example fields plus a string-only constraints array.`,
+    );
+  return `initialize ok; engine_search_capabilities returned ${hits.length} hit(s)`;
+}
+
+export function realMcpRunner(
+  serverName: string,
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  env: Readonly<Record<string, string>> = {},
+): string {
+  return execFileSync(command, [...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+    input: mcpRequests(serverName),
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 30_000,
+  });
+}
+
 export interface IVerifyRegistryInstallOptions {
   /** Where the clean room is created. Must have no workspace above it. */
   readonly parent?: string;
+  readonly mcp?: McpRunner;
   readonly run?: CommandRunner;
   readonly template?: string;
 }
@@ -96,6 +248,95 @@ function step(name: string, work: () => string): IRegistryInstallStep {
   } catch (error) {
     return { detail: error instanceof Error ? error.message : String(error), name, ok: false };
   }
+}
+
+function nativeOutput(project: string): string {
+  const manifest = JSON.parse(fs.readFileSync(path.join(project, "package.json"), "utf8")) as {
+    name?: unknown;
+  };
+  if (typeof manifest.name !== "string" || manifest.name.length === 0)
+    throw new Error("Native build produced no project name to resolve its executable.");
+  const name = manifest.name.replace(/^@[^/]+\//u, "").replace(/[^a-zA-Z0-9._-]/gu, "-");
+  const executable = path.join(
+    project,
+    "dist-native",
+    `${name}${process.platform === "win32" ? ".exe" : ""}`,
+  );
+  if (!fs.existsSync(executable))
+    throw new Error(`Native build produced no executable at ${executable}.`);
+  const mode = fs.statSync(executable).mode;
+  if (process.platform !== "win32" && (mode & 0o111) === 0)
+    throw new Error(`Native build output is not executable: ${executable}.`);
+  return executable;
+}
+
+function assertDoctorTargetCensus(output: string): string {
+  for (const target of ["web", "desktop", "android", "ios"] as const) {
+    const line = new RegExp(`^[✓!✗] target ${target}: (?:available|unavailable)`, "imu");
+    if (!line.test(output))
+      throw new Error(`Doctor text did not report target ${target} as available or unavailable.`);
+  }
+  return output;
+}
+
+function verifyNativeFrames(project: string, runner: CommandRunner): string {
+  const verifier = path.join(
+    project,
+    "node_modules",
+    "@threenative",
+    "runtime-native",
+    "scripts",
+    "verify-starter-desktop.mjs",
+  );
+  const output = runner("node", [verifier], project);
+  const reportPath = path.join(project, "artifacts", "native", "starter-desktop-report.json");
+  if (!fs.existsSync(reportPath))
+    throw new Error(`Native verifier produced no 300 frames report at ${reportPath}.`);
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+    frames?: unknown;
+    pass?: unknown;
+  };
+  if (report.pass !== true || report.frames !== 300)
+    throw new Error(
+      `Native verifier did not prove 300 frames: pass=${String(report.pass)}, frames=${String(report.frames)}.`,
+    );
+  return `${output}\nVerified ${report.frames} rendered frames.`;
+}
+
+function mcpStep(project: string, runner: McpRunner): string {
+  const configPath = path.join(project, ".mcp.json");
+  if (!fs.existsSync(configPath)) throw new Error(`MCP configuration is missing: ${configPath}.`);
+  const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as {
+    mcpServers?: Record<string, { args?: unknown; command?: unknown; env?: unknown }>;
+  };
+  const servers = parsed.mcpServers;
+  if (servers === undefined || Object.keys(servers).length === 0)
+    throw new Error("MCP configuration declares no servers.");
+  const results: string[] = [];
+  for (const [name, server] of Object.entries(servers)) {
+    if (typeof server.command !== "string" || !Array.isArray(server.args))
+      throw new Error(`MCP server '${name}' has no executable command and argument list.`);
+    if (!server.args.every((arg) => typeof arg === "string"))
+      throw new Error(`MCP server '${name}' has a non-string argument.`);
+    const env =
+      typeof server.env === "object" && server.env !== null && !Array.isArray(server.env)
+        ? Object.fromEntries(
+            Object.entries(server.env as Record<string, unknown>).filter(
+              (entry): entry is [string, string] => typeof entry[1] === "string",
+            ),
+          )
+        : {};
+    try {
+      results.push(
+        `${name}: ${assertMcpHandshake(name, runner(name, server.command, server.args as string[], project, env))}`,
+      );
+    } catch (error) {
+      throw new Error(
+        `MCP server '${name}' handshake failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return results.join("; ");
 }
 
 export function verifyRegistryInstall(
@@ -112,6 +353,7 @@ export function verifyRegistryInstall(
   const project = path.join(parent, "my-game");
   const run =
     options.run ?? realRunner({ ...process.env, NPM_CONFIG_CACHE: cache, npm_config_cache: cache });
+  const mcp = options.mcp ?? realMcpRunner;
   const steps: IRegistryInstallStep[] = [];
   try {
     steps.push(
@@ -125,11 +367,34 @@ export function verifyRegistryInstall(
     );
     if (steps[0]?.ok === true) {
       steps.push(step("install", () => run("npm", ["install"], project)));
-      steps.push(step("lockfile", () => `Checked ${checkLockfile(project)}; no file: or link:.`));
-      steps.push(step("build", () => run("npm", ["run", "build"], project)));
-      steps.push(step("test", () => run("npm", ["test"], project)));
+      if (steps[1]?.ok === true) {
+        steps.push(step("lockfile", () => `Checked ${checkLockfile(project)}; no file: or link:.`));
+        steps.push(step("build", () => run("npm", ["run", "build"], project)));
+        steps.push(step("test", () => run("pnpm", ["test"], project)));
+        steps.push(
+          step("doctor", () =>
+            assertDoctorTargetCensus(run("npx", ["threenative", "doctor", "--text"], project)),
+          ),
+        );
+        steps.push(
+          step("native", () => {
+            const output = run("npm", ["run", "build:desktop"], project);
+            const executable = nativeOutput(project);
+            const proof = verifyNativeFrames(project, run);
+            return `${output}\nExecutable: ${executable}\n${proof}`;
+          }),
+        );
+        steps.push(step("mcp", () => mcpStep(project, mcp)));
+      } else {
+        for (const name of ["lockfile", "build", "test", "doctor", "native", "mcp"])
+          steps.push({
+            detail: "Not run: the install step failed to produce an installed project.",
+            name,
+            ok: false,
+          });
+      }
     } else {
-      for (const name of ["install", "lockfile", "build", "test"])
+      for (const name of ["install", "lockfile", "build", "test", "doctor", "native", "mcp"])
         steps.push({
           detail: "Not run: the scaffold step never produced a project.",
           name,

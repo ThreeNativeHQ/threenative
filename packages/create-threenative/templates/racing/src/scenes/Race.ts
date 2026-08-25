@@ -33,6 +33,8 @@ function quantize(value: number, scale: number): number {
 
 export class Race extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
+    paused: false,
+    uiReady: false,
     boostActive: false,
     boostPeakSpeed: 0,
     boostUses: 0,

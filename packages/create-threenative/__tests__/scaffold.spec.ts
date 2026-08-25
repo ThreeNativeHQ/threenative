@@ -81,12 +81,15 @@ const STARTER_PATHS = [
   "src/entities/Player.ts",
   "src/ui/Hud.tsx",
   "src/ui/Menu.tsx",
+  "src/ui/GameUi.tsx",
+  "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
   "playtests/survives.playtest.json",
   "playtests/assets.playtest.json",
   "playtests/play.playtest.json",
   "playtests/forward.playtest.json",
+  "native-playtests/react-hud.playtest.json",
   "playtests/coyote.playtest.json",
   "playtests/buffer.playtest.json",
   "playtests/look.playtest.json",
@@ -210,6 +213,7 @@ describe("create-threenative", () => {
         "debug-surface.md",
         "finding-assets.md",
         "gameplay-recipes.md",
+        "mobile-memory-budget.md",
         "sculpt-from-a-reference.md",
         "visual-baseline.md",
       ]);
@@ -307,7 +311,13 @@ describe("create-threenative", () => {
       );
       const sourcedManifest = JSON.parse(
         await readFile(path.join(sourced.target, "package.json"), "utf8"),
-      ) as { pnpm?: { overrides?: Record<string, string> } };
+      ) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+        pnpm?: { overrides?: Record<string, string> };
+      };
+      expect(sourcedManifest.devDependencies?.["@threenative/assets"]).toBe("file:/tmp/assets.tgz");
+      expect(sourcedManifest.dependencies?.["@threenative/assets"]).toBeUndefined();
       expect(sourcedManifest.pnpm?.overrides).toMatchObject({
         "@threenative/assets": "file:/tmp/assets.tgz",
         "create-threenative": "file:/tmp/cli.tgz",
@@ -695,12 +705,51 @@ describe("create-threenative", () => {
     });
   });
 
+  it("should accept a local package added to the workspace without a CLI map edit", () => {
+    expect(
+      parseArgs(["my-game", "--no-install", "--new-package-package", "/tmp/new-package.tgz"]),
+    ).toEqual({
+      install: false,
+      packageSources: { "@threenative/new-package": "/tmp/new-package.tgz" },
+      target: "my-game",
+    });
+  });
+
   it("should accept a local engine MCP package for offline scaffold tests", () => {
     expect(
       parseArgs(["my-game", "--no-install", "--engine-mcp-package", "/tmp/engine-mcp.tgz"]),
     ).toEqual({
       install: false,
       packageSources: { "threenative-engine-mcp": "/tmp/engine-mcp.tgz" },
+      target: "my-game",
+    });
+  });
+
+  it("should accept the short local runtime package override", () => {
+    expect(parseArgs(["my-game", "--no-install", "--runtime-package", "/tmp/runtime.tgz"])).toEqual(
+      {
+        install: false,
+        packageSources: { "@threenative/runtime-native": "/tmp/runtime.tgz" },
+        target: "my-game",
+      },
+    );
+  });
+  it("maps scoped workspace packages with colliding names to distinct source flags", () => {
+    expect(
+      parseArgs([
+        "my-game",
+        "--no-install",
+        "--threenative-cli-package",
+        "/tmp/scoped-cli.tgz",
+        "--threenative-engine-mcp-package",
+        "/tmp/scoped-engine-mcp.tgz",
+      ]),
+    ).toEqual({
+      install: false,
+      packageSources: {
+        "@threenative/cli": "/tmp/scoped-cli.tgz",
+        "@threenative/engine-mcp": "/tmp/scoped-engine-mcp.tgz",
+      },
       target: "my-game",
     });
   });

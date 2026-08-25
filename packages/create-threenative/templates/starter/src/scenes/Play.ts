@@ -37,11 +37,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     levelX: -99,
     lives: STARTING_LIVES,
     odometer: 0,
+    paused: false,
     peakRise: 0,
     playerX: -2,
     respawns: 0,
     score: 0,
     status: "playing",
+    uiReady: false,
   };
 
   override async load(ctx: GameCtx): Promise<void> {

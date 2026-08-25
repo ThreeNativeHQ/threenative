@@ -30,7 +30,7 @@ output look worse than vanilla.
 
 ## Templates
 
-- `minimal` — no React, no UI folder. Core + physics, DOM HUD.
+- `minimal` — no React, no UI folder. Core + physics, and a camera-parented geometry HUD in `src/render/hud.ts` (no DOM readout, so it survives on native).
 - `starter` — adds React 19, Tailwind 4, `src/ui/`. The default.
 - `platformer` — adds navigation; its Recast WASM dependency makes it web/desktop only.
 

@@ -14,12 +14,32 @@ const HEALTHY: IProjectSnapshot = {
   installedVersions: new Map([
     ["@threenative/core", "0.4.0"],
     ["@threenative/physics", "0.4.0"],
+    ["@threenative/runtime-native", "0.4.0"],
   ]),
   packageJson: {
     dependencies: { "@threenative/core": "0.4.0", "@threenative/physics": "0.4.0" },
     name: "my-game",
+    optionalDependencies: { "@threenative/runtime-native": "0.4.0" },
   },
   readText: (relative) => (relative === "src/game.ts" ? "export default defineGame({})" : ""),
+  readRuntimeText: (relative) =>
+    relative === "prebuilt/install-status.json"
+      ? JSON.stringify({
+          key: `${process.platform}-${process.arch}`,
+          ok: true,
+          reason: "installed",
+          url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
+          version: "0.4.0",
+        })
+      : undefined,
+  runtimeFileExists: (relative) =>
+    relative ===
+      `prebuilt/${process.platform}-${process.arch}/${process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime"}` ||
+    relative === "scripts/package-android.mjs" ||
+    relative === "scripts/package-ios.mjs",
+  runtimeManifestUrl:
+    "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
+  runtimeRoot: "/runtime-native",
 };
 
 function snapshot(overrides: Partial<IProjectSnapshot>): IProjectSnapshot {
@@ -37,7 +57,9 @@ describe("threenative doctor", () => {
   it("passes a healthy scaffolded project", () => {
     const report = diagnoseProject(HEALTHY);
     expect(report.pass).toBe(true);
-    expect(report.checks.every(({ status }) => status === "ok")).toBe(true);
+    expect(report.checks.every(({ status }) => status !== "fail")).toBe(true);
+    expect(check(report, "native runtime")).toMatchObject({ status: "ok" });
+    expect(check(report, "native runtime").detail).toMatch(/^available/u);
   });
 
   it("fails when there is no package.json to read", () => {
@@ -118,6 +140,85 @@ describe("threenative doctor", () => {
     expect(check(report, "capability search").status).toBe("warn");
     expect(check(report, "capability search").detail).toMatch(/capabilit/i);
     expect(report.pass).toBe(true);
+  });
+
+  it("fails when the native runtime install recorded a failure", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readRuntimeText: () =>
+          JSON.stringify({
+            key: `${process.platform}-${process.arch}`,
+            ok: false,
+            reason:
+              "Prebuilt release manifest fetch failed at https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json: HTTP 404.",
+          }),
+      }),
+    );
+    expect(report.pass).toBe(false);
+    expect(check(report, "native runtime").status).toBe("fail");
+    expect(check(report, "native runtime").detail).toMatch(/linux-x64|native runtime/u);
+    expect(check(report, "native runtime").detail).toMatch(/HTTP 404/u);
+  });
+
+  it("fails when the recorded native runtime binary is gone", () => {
+    const report = diagnoseProject(snapshot({ runtimeFileExists: () => false }));
+    expect(report.pass).toBe(false);
+    expect(check(report, "native runtime").detail).toMatch(/prebuilt binary.*gone|missing/u);
+  });
+
+  it("reports an unknown native state when the install status file is deleted", () => {
+    const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
+    expect(check(report, "native runtime")).toMatchObject({ status: "warn" });
+    expect(check(report, "native runtime").detail).toMatch(/unknown.*install status/u);
+  });
+
+  it("lists web, desktop, Android, and iOS target availability", () => {
+    const report = diagnoseProject(HEALTHY);
+    for (const target of ["web", "desktop", "android", "ios"])
+      expect(check(report, `target ${target}`).detail).toMatch(/available|unavailable/u);
+    expect(check(report, "target web").status).toBe("ok");
+    expect(check(report, "target desktop").status).toBe("ok");
+    expect(check(report, "target android").status).toBe("ok");
+    if (process.platform === "darwin" && process.arch === "arm64") {
+      expect(check(report, "target ios").status).toBe("ok");
+    } else {
+      expect(check(report, "target ios")).toMatchObject({ status: "warn" });
+      expect(check(report, "target ios").detail).toMatch(/requires darwin-arm64.*received/u);
+    }
+  });
+
+  it("fails when install status belongs to a stale runtime version", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readRuntimeText: () =>
+          JSON.stringify({
+            key: `${process.platform}-${process.arch}`,
+            ok: true,
+            reason: "installed",
+            url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.3.9/prebuilt-lock.json",
+            version: "0.3.9",
+          }),
+      }),
+    );
+    expect(report.pass).toBe(false);
+    expect(check(report, "native runtime").detail).toMatch(/version.*0\.3\.9.*0\.4\.0/u);
+  });
+
+  it("fails when install status names a stale release URL", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readRuntimeText: () =>
+          JSON.stringify({
+            key: `${process.platform}-${process.arch}`,
+            ok: true,
+            reason: "installed",
+            url: "https://example.invalid/runtime-native-v0.4.0/prebuilt-lock.json",
+            version: "0.4.0",
+          }),
+      }),
+    );
+    expect(report.pass).toBe(false);
+    expect(check(report, "native runtime").detail).toMatch(/release URL.*example\.invalid/u);
   });
 });
 
