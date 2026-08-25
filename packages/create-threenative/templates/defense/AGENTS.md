@@ -334,7 +334,7 @@ Refill scratch; pool objects.
 `TN_FRAME_BUDGET` reports `fps`/`hostGap`/`update`/`render`/`overlay`/`residual`;
 `defineGame({ frameBudget: false })` silences output, never measurement.
 
-Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded comparisons.
+Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4.
 
 |Tier|Measure|Floor|Target|
 |---|---|---:|---:|

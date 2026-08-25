@@ -670,14 +670,16 @@ describe("template contracts", () => {
     ] as const;
     const fragment = await readFile(path.join(agentDocsRoot, "performance-default.md"), "utf8");
     expect(fragment).toContain("Unexecuted platforms stay unverified");
-    expect(fragment).toContain("Withdraw thermally-confounded comparisons");
+    expect(fragment).toContain(
+      "Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4",
+    );
     for (const target of expectedTargets) expect(fragment).toContain(target);
 
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
       expect(agents, `${template}/unexecuted`).toContain("Unexecuted platforms stay unverified");
       expect(agents, `${template}/thermal-confound`).toContain(
-        "Withdraw thermally-confounded comparisons",
+        "Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4",
       );
       for (const target of expectedTargets)
         expect(agents, `${template}/${target}`).toContain(target);
