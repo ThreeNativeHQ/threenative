@@ -7,6 +7,7 @@ import type { IStandalonePlaytestConfig } from "./config.js";
 import { DeviceMetricsRecorder, type IPlaytestDeviceMetricsObservation } from "./deviceMetrics.js";
 import { findFreePort } from "./sampling.js";
 import { runStandalonePlaytest, type IStandalonePlaytestReport } from "./runner.js";
+import { runWithRemoteBrowser } from "./browserSession.js";
 
 const execFileAsync = promisify(execFile);
 const CHROME_PACKAGE = "com.android.chrome";
@@ -187,7 +188,7 @@ export async function runAndroidBrowserPlaytest(
   dependencies: IAndroidBrowserDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<IStandalonePlaytestReport> {
   const session = new AndroidChromeBrowserSession(config, dependencies);
-  return runStandalonePlaytest(config, { remoteBrowser: session });
+  return runWithRemoteBrowser(config, session, runStandalonePlaytest);
 }
 
 export async function runAndroidBrowserPlaytests(

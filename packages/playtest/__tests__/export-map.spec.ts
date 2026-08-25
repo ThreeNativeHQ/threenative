@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -70,5 +70,17 @@ describe("the published export map", () => {
     expect(runner).toHaveProperty("WEBGPU_BROWSER_ARGS");
     expect(runner.WEBGPU_BROWSER_ARGS).toContain("--enable-features=Vulkan");
     expect(runner).toHaveProperty("softwareAdapterName");
+  });
+
+  it("does not publish the internal remote-browser session through runStandalonePlaytest", async () => {
+    const dist = fileURLToPath(new URL("../dist", import.meta.url));
+    const declarations = await Promise.all(
+      (await readdir(dist, { recursive: true }))
+        .filter((file) => file.endsWith(".d.ts"))
+        .map((file) => readFile(new URL(`../dist/${file}`, import.meta.url), "utf8")),
+    );
+    const emitted = declarations.join("\n");
+    expect(emitted).not.toMatch(/runStandalonePlaytest[\s\S]{0,500}remoteBrowser/u);
+    expect(emitted).not.toMatch(/interface IStandalonePlaytestRunOptions[\s\S]{0,300}remoteBrowser/u);
   });
 });

@@ -64,6 +64,7 @@ import {
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 import {
   openRunnerPage,
+  remoteBrowserFor,
   teardownBrowserSession,
   type IRemoteBrowserSession,
 } from "./browserSession.js";
@@ -186,14 +187,27 @@ export interface IRunStepSamples {
   inputDriven: boolean;
 }
 
-interface IStandalonePlaytestRunOptions {
+export interface IStandalonePlaytestRunOptions {
   managedServer?: ChildProcess;
+}
+
+interface IStandalonePlaytestInternalOptions extends IStandalonePlaytestRunOptions {
   remoteBrowser?: IRemoteBrowserSession;
 }
 
 export async function runStandalonePlaytest(
   config: IStandalonePlaytestConfig,
   options: IStandalonePlaytestRunOptions = {},
+): Promise<IStandalonePlaytestReport> {
+  return runStandalonePlaytestInternal(config, {
+    ...options,
+    remoteBrowser: remoteBrowserFor(config),
+  });
+}
+
+async function runStandalonePlaytestInternal(
+  config: IStandalonePlaytestConfig,
+  options: IStandalonePlaytestInternalOptions = {},
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
   const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
@@ -589,12 +603,12 @@ export async function runStandalonePlaytests(
 ): Promise<readonly IStandalonePlaytestReport[]> {
   const scenarioPaths = config.scenarioPaths ?? [config.scenarioPath];
   if (scenarioPaths.length <= 1) {
-    return [await runStandalonePlaytest({ ...config, scenarioPath: scenarioPaths[0]! })];
+    return [await runStandalonePlaytestInternal({ ...config, scenarioPath: scenarioPaths[0]! })];
   }
   if (config.server === undefined) {
     const reports: IStandalonePlaytestReport[] = [];
     for (const [index, scenarioPath] of scenarioPaths.entries()) {
-      reports.push(await runStandalonePlaytest({
+      reports.push(await runStandalonePlaytestInternal({
         ...config,
         artifactDirectory: batchArtifactDirectory(config.artifactDirectory, scenarioPath, index),
         scenarioPath,
@@ -617,7 +631,7 @@ export async function runStandalonePlaytests(
     await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     const reports: IStandalonePlaytestReport[] = [];
     for (const [index, scenarioPath] of scenarioPaths.entries()) {
-      reports.push(await runStandalonePlaytest({
+      reports.push(await runStandalonePlaytestInternal({
         ...activeConfig,
         artifactDirectory: batchArtifactDirectory(activeConfig.artifactDirectory, scenarioPath, index),
         scenarioPath,

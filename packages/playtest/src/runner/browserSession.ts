@@ -16,6 +16,28 @@ export interface IRemoteBrowserSession {
   prepare(config: IStandalonePlaytestConfig): Promise<void>;
 }
 
+const REMOTE_BROWSER_SESSIONS = new WeakMap<IStandalonePlaytestConfig, IRemoteBrowserSession>();
+
+export function remoteBrowserFor(config: IStandalonePlaytestConfig): IRemoteBrowserSession | undefined {
+  return REMOTE_BROWSER_SESSIONS.get(config);
+}
+
+export async function runWithRemoteBrowser<T>(
+  config: IStandalonePlaytestConfig,
+  session: IRemoteBrowserSession,
+  run: (config: IStandalonePlaytestConfig) => Promise<T>,
+): Promise<T> {
+  if (REMOTE_BROWSER_SESSIONS.has(config)) {
+    throw new Error("TN_PLAYTEST_DEVICE_FAILED: playtest config already has an active remote browser session.");
+  }
+  REMOTE_BROWSER_SESSIONS.set(config, session);
+  try {
+    return await run(config);
+  } finally {
+    REMOTE_BROWSER_SESSIONS.delete(config);
+  }
+}
+
 export function openRunnerPage(
   page: Page,
   config: IStandalonePlaytestConfig,
