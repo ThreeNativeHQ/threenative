@@ -933,6 +933,13 @@ private:
         lastException_ = exception;
     }
 
+    JSValue takeNativeCallbackException() {
+        JSValue exception = lastException_;
+        lastException_ = JS_UNDEFINED;
+        exceptionFromNativeCallback_ = false;
+        return exception;
+    }
+
     void setupGlobals() {
         JSValue global = JS_GetGlobalObject(context_);
 
@@ -1016,10 +1023,35 @@ private:
         // Call the native function
         JSValueHandle result = (*fn)(ctx, args);
 
-        JSValue returned = JS_UNDEFINED;
         JSValue* returnedHandle = result.ptr ? static_cast<JSValue*>(result.ptr) : nullptr;
         const bool resultIsProtected = returnedHandle && engine &&
             engine->protectedHandles_.find(result.ptr) != engine->protectedHandles_.end();
+
+        // QuickJS requires the native callback to return JS_EXCEPTION. The Engine abstraction
+        // stores throwException()'s value so host-side code can inspect it; transfer that value
+        // back to QuickJS here instead of returning the callback's ordinary undefined result.
+        const bool callbackException = engine && engine->exceptionFromNativeCallback_ &&
+            engine->hasException();
+        if (callbackException) {
+            if (returnedHandle && !resultIsProtected) {
+                engine->frameHandles_.erase(result.ptr);
+                JS_FreeValue(ctx, *returnedHandle);
+                delete returnedHandle;
+            }
+            for (auto& arg : args) {
+                if (engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end() ||
+                    arg.ptr == result.ptr) {
+                    continue;
+                }
+                JSValue* val = (JSValue*)arg.ptr;
+                JS_FreeValue(ctx, *val);
+                delete val;
+            }
+            engine->nativeCallbackDepth_ -= 1;
+            return JS_Throw(ctx, engine->takeNativeCallbackException());
+        }
+
+        JSValue returned = JS_UNDEFINED;
         if (returnedHandle) {
             if (resultIsProtected) {
                 // The native owner keeps its protected reference; the JS call receives its own.

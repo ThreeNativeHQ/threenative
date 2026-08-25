@@ -21,10 +21,7 @@
 #endif
 #include "storage/local_storage.h"
 
-// Ray tracing bindings (conditional)
-#ifdef MYSTRAL_HAS_RAYTRACING
 #include "raytracing/bindings.h"
-#endif
 #include <map>
 #include <iostream>
 
@@ -507,7 +504,7 @@ public:
         // the request rather than rebuilding a surface that is seconds old.
         platform::clearSurfaceRevalidationRequest();
 
-        // Set up ray tracing bindings (if compiled with MYSTRAL_HAS_RAYTRACING)
+        // Set up the public ray tracing surface; hardware backends remain optional.
         setupRayTracing();
 
         // Install crash handlers AFTER full initialization
@@ -543,9 +540,7 @@ public:
         audio::cleanupAudioBindings();
 
         // Clean up ray tracing resources
-#ifdef MYSTRAL_HAS_RAYTRACING
         rt::cleanupRTBindings();
-#endif
 
         // Shutdown async HTTP client (cancels pending requests)
         http::getAsyncHttpClient().shutdown();
@@ -1999,13 +1994,11 @@ private:
     }
 
     void setupRayTracing() {
-#ifdef MYSTRAL_HAS_RAYTRACING
         if (!jsEngine_) return;
 
         if (!rt::initializeRTBindings(jsEngine_.get())) {
             std::cerr << "[Mystral] Failed to initialize ray tracing bindings" << std::endl;
         }
-#endif
     }
 
     /**

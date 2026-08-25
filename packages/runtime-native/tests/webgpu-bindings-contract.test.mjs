@@ -532,10 +532,14 @@ test("QuickJS centrally replaces and clears owned exception values", () => {
     quickjs,
     /void replaceLastException\(JSValue exception\)[\s\S]*clearLastException\(\)[\s\S]*lastException_ = exception/u,
   );
+  assert.match(
+    quickjs,
+    /JSValue takeNativeCallbackException\(\)[\s\S]*lastException_ = JS_UNDEFINED/u,
+  );
   assert.equal(
     quickjs.match(/lastException_\s*=/gu)?.length,
-    3,
-    "only clear, replace, and the member initializer may assign lastException_",
+    4,
+    "only clear, replace, takeNativeCallbackException, and the member initializer may assign lastException_",
   );
   assert.match(destructor, /clearLastException\(\)[\s\S]*JS_FreeContext/u);
   for (const directReplacement of [

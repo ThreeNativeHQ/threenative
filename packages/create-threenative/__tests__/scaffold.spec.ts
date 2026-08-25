@@ -29,13 +29,13 @@ const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "42716d5a52cf27ce963c4fb0591a1a186b52d4339993c9218a2258cd42f91e80",
-  defense: "bae15cc30544c761cca83f13bf6ba1486a2764607504dbb706566861794cbd48",
-  minimal: "0d73d5df12b64ba2469017174fd62125572b51c79118aebdae1af2ed46fab4b6",
-  platformer: "f858b2de946042645dd971efc694f617cc08b837d522a57b0950de5cc3ff5260",
-  racing: "d2beb624f0ad8071941a0529543b91a5ec95bfd7d8d64e707f12c3f4b825687c",
-  shooter: "4c76f02ec4f0277f0ddeeb4b3e7f37d3a51d75bddb88a48ba8a0e09e5de32929",
-  starter: "96d8b4972bca0588d1db759bbf4cdd4f952eba9da0ee055e06a71e4ef105b0b2",
+  "action-rpg": "abda912141053b7c53b8b96f51b6df8d42558e38d5cb4dc0401c63b3218a9581",
+  defense: "f240a0adfc9ab98fe43439fea6c336365764cc9f19944cdd1249c7eb07625722",
+  minimal: "23f9e48b7b7df47fedac073d3d41b5f56aaa0c12a3076abfd0b4efcd1d397816",
+  platformer: "e8a2a70b7199e86a9fe3cd5c52002e968fe379cf4eb6512d7bf8f8c5ebd3d560",
+  racing: "9c6257b58344e42c8680d2697b15178e0fa31ade7607ee2815aefcee53978942",
+  shooter: "c9a25969e353372ce3198c5e1785151fa4e2d83fb6a20ef3f476549de75f3a18",
+  starter: "76db43bb89d75c4bc789e77da15e701d5db7ed3f6fae70ef61bcbdec9f5d2e53",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

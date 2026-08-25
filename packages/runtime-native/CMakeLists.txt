@@ -1251,13 +1251,14 @@ if(TN_ENABLE_VIDEO)
     )
 endif()
 
-# Ray tracing sources (conditional)
-if(MYSTRAL_USE_RAYTRACING)
-    list(APPEND MYSTRAL_SOURCES
-        src/raytracing/rt_common.cpp
-        src/raytracing/bindings.cpp
-    )
+# The common factory and JavaScript bindings are always built so every native preset exposes the
+# same honest unavailable surface. Hardware backends remain opt-in and conditional below.
+list(APPEND MYSTRAL_SOURCES
+    src/raytracing/rt_common.cpp
+    src/raytracing/bindings.cpp
+)
 
+if(MYSTRAL_USE_RAYTRACING)
     # Add Vulkan RT backend if Vulkan is available
     if(Vulkan_FOUND)
         list(APPEND MYSTRAL_SOURCES
