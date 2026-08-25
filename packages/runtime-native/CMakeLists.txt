@@ -83,6 +83,7 @@ option(TN_ENABLE_UI_OVERLAY "Enable the ThreeNative desktop UI overlay" OFF)
 option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
+option(TN_V8_CALLBACK_HANDLE_POOL "Reuse V8 native-callback argument allocations" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
 
 if(TN_ENABLE_NATIVE_GLTF)
@@ -113,6 +114,7 @@ add_compile_definitions(
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
+    TN_V8_CALLBACK_HANDLE_POOL=$<BOOL:${TN_V8_CALLBACK_HANDLE_POOL}>
 )
 
 # ============================================================================

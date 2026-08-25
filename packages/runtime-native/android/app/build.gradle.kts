@@ -74,6 +74,7 @@ val generatedThreeNativeAssets = layout.buildDirectory.dir("generated/threenativ
 val nativeVsync = providers.gradleProperty("threenativeVsync").orElse("true")
 val nativeJsProfile = providers.gradleProperty("threenativeJsProfile").orElse("false")
 val nativeJsProfileBusyLoop = providers.gradleProperty("threenativeJsProfileBusyLoop").orElse("false")
+val nativeV8CallbackHandlePool = providers.gradleProperty("threenativeV8CallbackHandlePool").orElse("false")
 // V8 is the Android default, decided by the product owner on 2026-08-16 (PRD-130) on PRD-118's
 // measurement: 115.64 ms of script per frame under QuickJS against 5.25 ms under V8. It needs
 // third_party/v8-android, which `scripts/download-deps.mjs --android` now provisions.
@@ -321,6 +322,7 @@ android {
                     "-DTN_ANDROID_VSYNC=${nativeVsync.asCmakeBoolean("PthreenativeVsync")}",
                     "-DTN_ANDROID_JS_PROFILE=${nativeJsProfile.asCmakeBoolean("PthreenativeJsProfile")}",
                     "-DTN_ANDROID_JS_PROFILE_BUSY_LOOP=${nativeJsProfileBusyLoop.asCmakeBoolean("PthreenativeJsProfileBusyLoop")}",
+                    "-DTN_V8_CALLBACK_HANDLE_POOL=${nativeV8CallbackHandlePool.asCmakeBoolean("PthreenativeV8CallbackHandlePool")}",
                 )
                 System.getenv("THREENATIVE_WGPU_ROOT")?.takeIf { it.isNotBlank() }?.let {
                     nativeArguments.add("-DTHREENATIVE_WGPU_ROOT=$it")
