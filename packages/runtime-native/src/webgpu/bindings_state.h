@@ -68,6 +68,8 @@ enum class ProfiledRenderCommand : size_t {
     SetBindGroup,
     Draw,
     DrawIndexed,
+    BundleDrawIndexed,
+    ExecuteBundles,
     SetVertexBuffer,
     SetIndexBuffer,
     Count
@@ -76,6 +78,7 @@ enum class ProfiledRenderCommand : size_t {
 struct AndroidJsNativeProfile {
     uint64_t counts[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t bindingNs = 0;
+    uint64_t bundlesExecuted = 0;
 };
 #endif
 

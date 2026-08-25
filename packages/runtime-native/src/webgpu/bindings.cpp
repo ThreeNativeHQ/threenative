@@ -386,6 +386,7 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
     output << "TN_ANDROID_JS_NATIVE:{\"engine\":\"" << state->engine->getName()
            << "\",\"calls\":" << calls
            << ",\"bindingNs\":" << state->androidJsNativeProfile.bindingNs
+           << ",\"bundlesExecuted\":" << state->androidJsNativeProfile.bundlesExecuted
            << ",\"submitPollNs\":" << submitPollNs
            << ",\"presentNs\":" << presentNs
            << ",\"frame\":" << state->frameEndCount
@@ -393,6 +394,8 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"setBindGroup\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetBindGroup)]
            << ",\"draw\":" << counts[static_cast<size_t>(ProfiledRenderCommand::Draw)]
            << ",\"drawIndexed\":" << counts[static_cast<size_t>(ProfiledRenderCommand::DrawIndexed)]
+           << ",\"bundleDrawIndexed\":" << counts[static_cast<size_t>(ProfiledRenderCommand::BundleDrawIndexed)]
+           << ",\"executeBundles\":" << counts[static_cast<size_t>(ProfiledRenderCommand::ExecuteBundles)]
            << ",\"setVertexBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetVertexBuffer)]
            << ",\"setIndexBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetIndexBuffer)]
            << "}}";
@@ -1830,12 +1833,18 @@ static js::JSValueHandle tnWebgpuHandler79(BindingsState* state, WGPURenderBundl
 
 static js::JSValueHandle tnWebgpuHandler78(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty()) return state->engine->newUndefined();
+#if TN_ANDROID_JS_PROFILE
+                                    const auto profileStart = beginProfiledBinding();
+#endif
                                     uint32_t indexCount = (uint32_t)state->engine->toNumber(args[0]);
                                     uint32_t instanceCount = args.size() > 1 ? (uint32_t)state->engine->toNumber(args[1]) : 1;
                                     uint32_t firstIndex = args.size() > 2 ? (uint32_t)state->engine->toNumber(args[2]) : 0;
                                     int32_t baseVertex = args.size() > 3 ? (int32_t)state->engine->toNumber(args[3]) : 0;
                                     uint32_t firstInstance = args.size() > 4 ? (uint32_t)state->engine->toNumber(args[4]) : 0;
                                     wgpuRenderBundleEncoderDrawIndexed(capturedEncoder, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+#if TN_ANDROID_JS_PROFILE
+                                    endProfiledBinding(state, ProfiledRenderCommand::BundleDrawIndexed, profileStart);
+#endif
                                     return state->engine->newUndefined();
 }
 
@@ -3046,6 +3055,9 @@ static js::JSValueHandle tnWebgpuHandler52(
 
 static js::JSValueHandle tnWebgpuHandler51(BindingsState* state, WGPURenderPassEncoder capturedRenderPassForBundles, const std::vector<js::JSValueHandle>& args) {
                                             if (args.empty() || !capturedRenderPassForBundles) return state->engine->newUndefined();
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
                                             auto bundlesArray = args[0];
                                             auto lengthProp = state->engine->getProperty(bundlesArray, "length");
                                             int bundleCount = state->engine->isUndefined(lengthProp) ? 0 : (int)state->engine->toNumber(lengthProp);
@@ -3058,8 +3070,14 @@ static js::JSValueHandle tnWebgpuHandler51(BindingsState* state, WGPURenderPassE
                                             }
                                             if (!bundles.empty()) {
                                                 wgpuRenderPassEncoderExecuteBundles(capturedRenderPassForBundles, bundles.size(), bundles.data());
+#if TN_ANDROID_JS_PROFILE
+                                                state->androidJsNativeProfile.bundlesExecuted += bundles.size();
+#endif
                                                 if (state->verboseLogging) std::cout << "[WebGPU] Executed " << bundles.size() << " render bundles" << std::endl;
                                             }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::ExecuteBundles, profileStart);
+#endif
                                             return state->engine->newUndefined();
 }
 

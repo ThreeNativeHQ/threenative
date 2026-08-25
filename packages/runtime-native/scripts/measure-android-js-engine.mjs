@@ -568,11 +568,13 @@ export function analyzeMeasurementLog(log, expected = {}) {
     throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_FRAME_ARITHMETIC_MISMATCH");
   }
 
-  const fields = ["bindingNs", "calls", "presentNs", "submitPollNs"];
+  const fields = ["bindingNs", "bundlesExecuted", "calls", "presentNs", "submitPollNs"];
   const totals = Object.fromEntries(fields.map((field) => [field, 0]));
   const commandFields = [
+    "bundleDrawIndexed",
     "draw",
     "drawIndexed",
+    "executeBundles",
     "setBindGroup",
     "setIndexBuffer",
     "setPipeline",
@@ -647,6 +649,7 @@ export function analyzeMeasurementLog(log, expected = {}) {
     frame,
     native: {
       boundaryMsPerSubmit,
+      bundlesExecutedPerFrame: totals.bundlesExecuted / frame.frames,
       callsPerFrame: totals.calls / frame.frames,
       callsPerSubmit: totals.calls / sampleCount,
       commandsPerFrame: Object.fromEntries(

@@ -55,7 +55,7 @@ test("RuntimeConfig vsync selects and preserves a supported presentation mode", 
   assert.match(bindings, /config\.presentMode = state->presentMode/u);
 });
 
-test("native profiling reports and resets exactly the six render-pass commands per submit", () => {
+test("native profiling reports direct and bundled render commands per submit", () => {
   const marker = bindings.match(
     /TN_ANDROID_JS_NATIVE:\{[\s\S]*?state->androidJsNativeProfile = \{\};/u,
   )?.[0] ?? "";
@@ -67,6 +67,9 @@ test("native profiling reports and resets exactly the six render-pass commands p
     "setBindGroup",
     "draw",
     "drawIndexed",
+    "bundleDrawIndexed",
+    "executeBundles",
+    "bundlesExecuted",
     "setVertexBuffer",
     "setIndexBuffer",
     "bindingNs",
@@ -78,8 +81,8 @@ test("native profiling reports and resets exactly the six render-pass commands p
   assert.match(bindings, /state->androidJsNativeProfile = \{\};/u);
   assert.equal(
     (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
-    6,
-    "exactly six render-pass wrappers must be timed",
+    8,
+    "the six direct wrappers plus bundle encoding and execution must be timed",
   );
   assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
 });

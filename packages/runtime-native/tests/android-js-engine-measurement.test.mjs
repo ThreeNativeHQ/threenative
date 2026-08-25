@@ -61,10 +61,13 @@ function nativeFootprint(abi, libraries) {
 function cleanLog(overrides = {}, submits = 300) {
   const native = {
     bindingNs: 200_000,
+    bundlesExecuted: 0,
     calls: 441,
     commands: {
+      bundleDrawIndexed: 0,
       draw: 1,
       drawIndexed: 1,
+      executeBundles: 0,
       setBindGroup: 1,
       setIndexBuffer: 436,
       setPipeline: 1,
@@ -93,6 +96,7 @@ test("measurement parser splits a complete frame and records engine identity", (
   assert.equal(result.native.callsPerSubmit, 441);
   assert.equal(result.native.callsPerFrame, 441);
   assert.equal(result.native.commandsPerFrame.drawIndexed, 1);
+  assert.equal(result.native.bundlesExecutedPerFrame, 0);
   assert.equal(result.split.boundaryMsPerFrame, 0.2);
   // 300 identical submits with no frame tag: run-length dedupe counts one present event, so the
   // frame figure is (30_000_000 + 50_000) ns / 300 — not the old per-submit sum's 0.15, which
@@ -126,8 +130,10 @@ test("engine identity and subject configuration cannot silently drift", () => {
       analyzeMeasurementLog(
         cleanLog({
           commands: {
+            bundleDrawIndexed: 0,
             draw: 1,
             drawIndexed: 1,
+            executeBundles: 0,
             setBindGroup: 1,
             setIndexBuffer: 435,
             setPipeline: 1,
@@ -570,10 +576,13 @@ test("present time counts once per frame when the host tags each submit with its
   // present. Grouped by the frame tag, present contributes once per frame, not once per submit.
   const native = {
     bindingNs: 200_000,
+    bundlesExecuted: 0,
     calls: 441,
     commands: {
+      bundleDrawIndexed: 0,
       draw: 1,
       drawIndexed: 1,
+      executeBundles: 0,
       setBindGroup: 1,
       setIndexBuffer: 436,
       setPipeline: 1,
@@ -605,10 +614,13 @@ test("present time counts once per frame when the host tags each submit with its
 test("legacy logs without a frame tag count a run of identical present values as one present", () => {
   const base = {
     bindingNs: 200_000,
+    bundlesExecuted: 0,
     calls: 441,
     commands: {
+      bundleDrawIndexed: 0,
       draw: 1,
       drawIndexed: 1,
+      executeBundles: 0,
       setBindGroup: 1,
       setIndexBuffer: 436,
       setPipeline: 1,
