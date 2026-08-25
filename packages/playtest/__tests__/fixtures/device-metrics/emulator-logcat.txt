@@ -1,0 +1,13 @@
+--------- beginning of main
+08-24 21:48:00.002  1381  1520 I AiAiEcho: #remoteViewsTwiddler: feature disabled.
+08-24 21:48:00.002  1381  1520 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface lockscreen with targets# 0 (types=[])
+08-24 21:48:00.002  1381  1520 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface home with targets# 0 (types=[])
+08-24 21:48:00.003  1289  1289 D SsBaseTemplateCard: No text view can be set up
+08-24 21:48:00.003  1289  1289 D SsBaseTemplateCard: Passed-in item info is null
+08-24 21:48:00.003  1289  1289 D SsBaseTemplateCard: Passed-in item info is null
+08-24 21:48:00.003  1289  1289 D SsBaseTemplateCard: Passed-in item info is null
+08-24 21:48:00.003  1289  1289 I SsBaseTemplateCard: Secondary card pane is null
+08-24 21:48:00.019   836   836 W PageIndicator: Total number of pages invalid: 0. Assuming 1 page.
+08-24 21:48:00.024  1289  1509 D EGL_emulation: app_time_stats: avg=59998.44ms min=59998.44ms max=59998.44ms count=1
+08-24 21:48:00.027   836   926 D EGL_emulation: app_time_stats: avg=20358.41ms min=20358.41ms max=20358.41ms count=1
+08-24 21:48:01.560   823   823 I wpa_supplicant: wlan0: CTRL-EVENT-BEACON-LOSS 

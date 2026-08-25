@@ -1,4 +1,5 @@
 import { length } from "./sampling.js";
+import type { IPlaytestDeviceMetricsObservation } from "./deviceMetrics.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -165,6 +166,7 @@ export function buildReport(
   captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined = undefined,
   movementSamples: readonly IMovementSampleInterval[] = [],
   setup: IPlaytestSetupApplication | undefined = undefined,
+  deviceMetrics: IPlaytestDeviceMetricsObservation | undefined = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -230,6 +232,7 @@ export function buildReport(
             signals: labeledSamples.flatMap(({ signals }) => signals),
           }),
       hud,
+      ...(deviceMetrics === undefined ? {} : { deviceMetrics }),
       ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
       network: networkEntries,
       ...(performanceSeries === undefined ? {} : { performanceSeries }),

@@ -1,0 +1,1 @@
+cat: /sys/class/power_supply/battery/current_now_missing: No such file or directory

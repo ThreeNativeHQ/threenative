@@ -16,6 +16,10 @@ export const ANDROID_TRANSPORT_CAPABILITIES = [
   "browser.console",
   "browser.input",
   "browser.screenshot",
+  // The host measures the device around the run; only an adb lane can. Desktop and iOS share
+  // this transport but never reach here with a deviceMetrics assertion — androidRunner's
+  // `unsupportedAssertion` fails those first and names android.
+  "device.metrics",
   "runtime.diagnostics",
 ] as const;
 

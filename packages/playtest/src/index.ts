@@ -42,6 +42,35 @@ export type {
   IPlaytestObservations,
 } from "./assertion-report.js";
 /**
+ * Measure and judge device thermal, power and battery state around a device playtest run.
+ * @situation find out whether an Android run was throttled or started hot
+ * @situation read battery temperature, current draw or per-rail power for a run
+ * @constraint a reading the device does not expose reports unavailable, never zero
+ * @constraint a run that started hot or whose thermal status rose is flagged as confounded
+ * @example const verdict = summarizeDeviceMetrics(observation.samples);
+ */
+export {
+  DEVICE_METRICS_CADENCE_MS,
+  DEVICE_METRICS_MAX_SAMPLES,
+  DeviceMetricsError,
+  DeviceMetricsRecorder,
+  HOT_START_TEMPERATURE_C,
+  parseDeviceBattery,
+  parseDeviceCurrent,
+  parseDevicePowerRails,
+  parseDeviceThermal,
+  summarizeDeviceMetrics,
+} from "./runner/deviceMetrics.js";
+export type {
+  IPlaytestDeviceBattery,
+  IPlaytestDeviceMetricsObservation,
+  IPlaytestDeviceMetricsSample,
+  IPlaytestDeviceMetricsVerdict,
+  IPlaytestDeviceThermal,
+  PlaytestDeviceMeasurement,
+  PlaytestDevicePowerRails,
+} from "./runner/deviceMetrics.js";
+/**
  * Create a structured playtest diagnostic.
  * @situation report a named runtime diagnostic to a scenario
  * @situation explain why a playtest assertion cannot pass

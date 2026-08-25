@@ -71,6 +71,32 @@ The negative-control scenarios in `examples/native-smoke/playtests/` (`-misspell
 `-wrong-value`) prove the device path still fails closed; run them when you change transport
 or observation code.
 
+## Device thermal, power and battery
+
+Every `--target android` run measures the phone around itself and reports it as
+`observations.deviceMetrics` — battery temperature and level, Android thermal status, charging
+state, current draw, and Pixel's per-rail ODPM power breakdown. It is sampled before `prepare()`
+(the only moment a pre-launch baseline is still readable, since `prepare` clears logcat), every
+five seconds during the run, and once after the last bridge sample.
+
+The point is **comparability**. On 2026-08-24 two cold-launch runs read 44 s to first frame
+against a 14.7 s baseline and the difference was blamed on a code change; the device had reached
+43.2 °C at thermal status 2 while the baseline ran at 38.2 °C at status 0. A run is flagged
+`thermallyConfounded` with named reasons — `hot-start` (≥ 40 °C), `throttled-start`,
+`thermal-status-rose`, `charging`, `incomplete` — and a flagged run's numbers are still reported
+in full. The verdict withdraws the claim of comparability, never the measurement.
+
+Scenarios assert on it with `deviceMetrics`: `notThermallyConfounded`, `maxTemperatureRiseC`,
+`maxThermalStatus`. On browser, desktop or iOS the assertion fails
+`TN_PLAYTEST_UNSUPPORTED_ON_TARGET` and names android — it never skips. A reading the device does
+not expose (per-rail power off Pixel hardware, `current_now` where the sysfs node is absent)
+reports `{ available: false, reason }`; **nothing here ever reports an unmeasured zero**.
+
+Parsers and verdict live in `runner/deviceMetrics.ts` and are unit-tested against captured device
+output in `__tests__/fixtures/device-metrics/`. Add real captures there rather than inventing a
+`dumpsys` format. This lane observes only; the pre-run gate that *refuses* a hot or charging
+device is `packages/runtime-native/scripts/device-preflight.mjs`, and the two stay separate.
+
 ## Scenario-controlled spawn & aim
 
 The scenario `setup` block carries a placement vocabulary so capturing a vantage frame is

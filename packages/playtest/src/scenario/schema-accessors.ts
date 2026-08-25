@@ -2,7 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
-import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions } from "./schema-base.js";
+import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -221,6 +221,31 @@ export function optionalTargetArray(value: Record<string, unknown>, key: string,
 /** Spread helper: omits an absent key, keeps a validated one. */
 export function present<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {
   return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
+}
+
+export function validateDeviceMetricsAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestDeviceMetricsAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxTemperatureRiseC", "maxThermalStatus", "notThermallyConfounded"], scenarioPath, objectPath);
+  const assertion = {
+    ...present("maxTemperatureRiseC", optionalNonNegativeNumber(record, "maxTemperatureRiseC", scenarioPath, objectPath)),
+    ...present("maxThermalStatus", optionalNonNegativeInteger(record, "maxThermalStatus", scenarioPath, objectPath)),
+    ...present("notThermallyConfounded", optionalBoolean(record, "notThermallyConfounded", scenarioPath, objectPath)),
+  };
+  // An assertion with no expectation consults no observation and reports green: the vacuous
+  // shape this package rejects everywhere.
+  if (Object.keys(assertion).length === 0) {
+    throw invalidScenario(
+      scenarioPath,
+      `${objectPath} must declare at least one of 'maxTemperatureRiseC', 'maxThermalStatus' or 'notThermallyConfounded'.`,
+    );
+  }
+  if (assertion.notThermallyConfounded === false) {
+    throw invalidScenario(
+      scenarioPath,
+      `${objectPath}.notThermallyConfounded may only be true; remove the key to stop requiring a comparable run.`,
+    );
+  }
+  return assertion;
 }
 
 export function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {

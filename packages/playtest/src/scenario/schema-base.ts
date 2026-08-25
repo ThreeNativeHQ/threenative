@@ -302,12 +302,27 @@ export interface IPlaytestWorldAssertion {
   seed: number | null;
 }
 
+/**
+ * Thermal, power and battery state measured around the run itself. Its point is comparability:
+ * a run that started hot, or whose thermal status rose while it ran, is not evidence against a
+ * cool baseline, and this is how a scenario says so out loud.
+ */
+export interface IPlaytestDeviceMetricsAssertion {
+  /** Ceiling on the battery temperature climb from the first to the last sample, in °C. */
+  maxTemperatureRiseC?: number;
+  /** Ceiling on the highest Android thermal status observed during the run (0 is NONE). */
+  maxThermalStatus?: number;
+  /** Requires a run the harness judged comparable with a cool one. */
+  notThermallyConfounded?: boolean;
+}
+
 export interface IPlaytestScenarioAssertions {
   aerodynamics?: IPlaytestAerodynamicsAssertion[];
   animation?: IPlaytestAnimationAssertion[];
   camera?: IPlaytestCameraAssertion;
   components?: IPlaytestComponentAssertion[];
   contacts?: IPlaytestContactAssertion[];
+  deviceMetrics?: IPlaytestDeviceMetricsAssertion;
   diagnostics?: IPlaytestDiagnosticsAssertion;
   framebufferCoverage?: IPlaytestFramebufferCoverageAssertion;
   hud?: IPlaytestPathAssertion[];

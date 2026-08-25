@@ -479,6 +479,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   camera: { entity: "camera.main", follows: "player", targetInViewport: true },
   components: [{ changed: true, component: "health", entity: "player", equals: 2 }],
   contacts: [{ entity: "fox", kind: "trigger", minCount: 1, with: "coin" }],
+  deviceMetrics: { maxTemperatureRiseC: 5, notThermallyConfounded: true },
   diagnostics: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true, runtimeReady: true },
   framebufferCoverage: { backdrop: [5, 7, 11], tolerance: 8, window: { endStep: "loading-end", startStep: "loading-start" } },
   hud: [{ id: "score-label", textIncludes: "Score" }],
@@ -499,6 +500,9 @@ const FAMILY_SCENARIO_ASSERTS = {
 
 /** Result ids of the all-families scenario when every family's evidence arrived. */
 const FAMILY_PASS_IDS = [
+  "deviceMetrics.observed",
+  "deviceMetrics.notThermallyConfounded",
+  "deviceMetrics.maxTemperatureRiseC",
   "framebufferCoverage",
   "reachability.0.platform.a.platform.b",
   "overlayNode.game-ui:[data-testid=fps-crosshair]",
@@ -560,6 +564,24 @@ function familyReportObservations(fulfilled: boolean) {
   return {
     components: { player: { health: { after: 2, before: 3 } } },
     console: [],
+    deviceMetrics: {
+      available: true,
+      errors: [],
+      samples: [{ at: 0 }, { at: 9000 }],
+      source: "adb",
+      verdict: {
+        endTemperatureC: 35.1,
+        endThermalStatus: 0,
+        maxThermalStatus: 0,
+        peakTemperatureC: 35.1,
+        powerRailWindowAdvanced: null,
+        reasons: [],
+        startTemperatureC: 34.7,
+        startThermalStatus: 0,
+        temperatureRiseC: 0.4,
+        thermallyConfounded: false,
+      },
+    },
     effectLog: {
       entries: [
         { kind: "service", payload: { request: { entity: "aircraft", inputs: { surfaces: { elevator: 0.5 } } } }, service: "physics.aerodynamics.setInputs" },
@@ -648,6 +670,7 @@ test("should preserve every assertion family's result contract", async () => {
   // (visual collapses to its not-evaluated placeholder) and names a diagnostic code.
   const empty = await evaluate(familyReportObservations(false));
   expect(empty.assertions.map(({ id }) => id), "RED observed: assertion family result ordering changed").toEqual([
+    "deviceMetrics.observed",
     "framebufferCoverage",
     "reachability.0.platform.a.platform.b",
     "overlayNode.game-ui:[data-testid=fps-crosshair]",
@@ -680,6 +703,7 @@ test("should preserve every assertion family's result contract", async () => {
     "movement.distance",
   ]);
   expect(empty.diagnostics.map(({ code }) => code), "RED observed: fail-closed diagnostic codes changed").toEqual([
+    "TN_PLAYTEST_DEVICE_METRICS_UNAVAILABLE",
     "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED",
     "TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED",
     "TN_PLAYTEST_OVERLAY_NODE_ASSERTION_FAILED",

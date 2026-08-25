@@ -1,4 +1,5 @@
 import type { IPlaytestComponentAssertion, IPlaytestDiagnosticsAssertion, IPlaytestPathAssertion } from "./scenario.js";
+import type { IPlaytestDeviceMetricsObservation } from "./runner/deviceMetrics.js";
 import type { IPlaytestDiagnosticsPolicy } from "./report.js";
 
 export type Vec3 = [number, number, number];
@@ -32,6 +33,8 @@ export interface IPlaytestObservations {
   console: Array<{ source?: "browser-console" | "page-error" | "unhandled-rejection"; text: string; type: string }>;
   contacts?: unknown;
   debugColliderCount?: number;
+  /** Host-measured device thermal, power and battery state; produced by the android target. */
+  deviceMetrics?: IPlaytestDeviceMetricsObservation;
   effectLog?: unknown;
   effectLogBefore?: unknown;
   effectLogSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;

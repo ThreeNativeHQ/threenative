@@ -8,6 +8,28 @@ validator itself reads, so this page cannot disagree with the runtime. Assertion
 closed: a malformed assertion throws at load, and a scenario whose assertions all hold
 trivially fails `TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING`.
 
+### `deviceMetrics`
+
+Reports the device's thermal, power and battery state around the run and judges whether the run is comparable with a cool one. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** device.metrics
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `maxTemperatureRiseC` | finite non-negative number | no |
+| `maxThermalStatus` | non-negative integer 0..6 | no |
+| `notThermallyConfounded` | true | no |
+
+
+```json
+{
+  "deviceMetrics": {
+    "maxTemperatureRiseC": 5,
+    "notThermallyConfounded": true
+  }
+}
+```
+
 ### `framebufferCoverage`
 
 Samples the framebuffer on every render frame inside a labeled loading window and requires every coarse-grid RGB sample to match the declared backdrop. **Use when** that is the thing the scenario must prove.
@@ -423,13 +445,15 @@ Proves console, network, runtime, and readiness diagnostics stayed clean. **Use 
 
 ### `performance`
 
-Proves a live render sample exists and optionally bounds frame time, draw calls, and triangles. **Use when** that is the thing the scenario must prove.
+Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, draw calls, and triangles. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.performance
 
 | Field | Type | Required |
 | --- | --- | --- |
 | `maxFrameMsP95` | number | no |
+| `minFps` | number | no |
+| `maxPhaseMsP95` | { [phase]: number } | no |
 | `maxDrawCalls` | number | no |
 | `maxTriangles` | number | no |
 
@@ -437,9 +461,10 @@ Proves a live render sample exists and optionally bounds frame time, draw calls,
 ```json
 {
   "performance": {
-    "maxDrawCalls": 100,
-    "maxFrameMsP95": 33,
-    "maxTriangles": 10000
+    "maxPhaseMsP95": {
+      "render": 12
+    },
+    "minFps": 30
   }
 }
 ```

@@ -13,10 +13,10 @@ import {
 } from "../src/index.js";
 import type { IAndroidDriver } from "../src/runner/android.js";
 import { AdbAndroidDriver, androidTouchBatches } from "../src/runner/android.js";
-import { runAndroidPlaytest } from "../src/runner/androidRunner.js";
+import { runAndroidPlaytest, runDevicePlaytest } from "../src/runner/androidRunner.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
-import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
+import { androidMailboxPaths, DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import {
   connectDevicePlaytestBridge,
   type IDeviceBridgeInstallation,
@@ -436,6 +436,123 @@ test("Android multi-pointer steps deliver complete held sets and release in fina
   expect(driver.pointerSets.slice(0, 3)).toEqual([[7], [7, 3], []]);
   expect(driver.pointerSets.at(-1)).toEqual([]);
 });
+
+test("an Android run records device thermal, power and battery state as an observation", async () => {
+  const driver = new MeteredAndroidDriver(movingBridge().bridge);
+  const result = await runDevice(
+    { diagnostics: deviceDiagnosticsOptOut },
+    driver,
+    1_000,
+    [{ waitFrames: 1 }],
+    null,
+  );
+
+  const metrics = result.observations?.deviceMetrics;
+  expect(metrics?.available).toBe(true);
+  expect(metrics?.errors).toEqual([]);
+  expect(metrics?.serial).toBe("192.168.1.192:5555");
+  // Sampled before prepare() and after the last bridge sample, so the run is bracketed.
+  expect(metrics?.samples.map(({ phase }) => phase)).toEqual(["before", "after"]);
+  expect(metrics?.samples[0]?.batteryTemperatureC).toBe(34.7);
+  expect(metrics?.samples[0]?.powerRails.available).toBe(true);
+  expect(metrics?.verdict.thermallyConfounded).toBe(false);
+  expect(driver.adbCalls.some((call) => call.includes("dumpsys thermalservice"))).toBe(true);
+});
+
+test("a deviceMetrics assertion on a device run judges the thermal verdict", async () => {
+  const driver = new MeteredAndroidDriver(movingBridge().bridge, "hot");
+  const result = await runDevice(
+    {
+      deviceMetrics: { notThermallyConfounded: true },
+      diagnostics: deviceDiagnosticsOptOut,
+    },
+    driver,
+    1_000,
+    [{ waitFrames: 1 }],
+    null,
+  );
+
+  expect(result.pass).toBe(false);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({
+    id: "deviceMetrics.notThermallyConfounded",
+    pass: false,
+  }));
+  expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_DEVICE_THERMALLY_CONFOUNDED");
+  // The numbers survive the failing verdict: a confounded run is reported, never discarded.
+  expect(result.observations?.deviceMetrics?.samples[0]?.batteryTemperatureC).toBe(43.2);
+});
+
+test("a deviceMetrics assertion on desktop fails unsupported and names the Android lane", async () => {
+  const projectPath = await makeTempDir("playtest-device-metrics-desktop-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: { deviceMetrics: { notThermallyConfounded: true } },
+    name: "thermal-cross-target",
+    schemaVersion: 1,
+    steps: [{ waitFrames: 1 }],
+    target: "desktop",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  const driver = new FakeAndroidDriver();
+  const result = await runDevicePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: "desktop",
+    timeoutMs: 1_000,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  }, {
+    driver,
+    mailboxPaths: androidMailboxPaths("com.mystral.engine", projectPath),
+    name: "desktop",
+    processName: "native-game",
+  });
+
+  expect(result.pass).toBe(false);
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+    message: expect.stringContaining("device thermal and power assertions"),
+  }));
+  expect(result.diagnostics[0]?.suggestion).toContain("--target android");
+  expect(driver.prepared).toBe(false);
+});
+
+/**
+ * Answers the four read-only device probes from the captured Pixel 8 fixtures in
+ * `fixtures/device-metrics/`, so the wiring is proven without a phone attached.
+ */
+class MeteredAndroidDriver extends FakeAndroidDriver {
+  readonly adbCalls: string[] = [];
+
+  constructor(bridge?: IPlaytestBridgeV1, private readonly heat: "cool" | "hot" = "cool") {
+    super(bridge);
+  }
+
+  deviceSerial() {
+    return "192.168.1.192:5555";
+  }
+
+  async runAdb(args: readonly string[]) {
+    const call = args.join(" ");
+    this.adbCalls.push(call);
+    const suffix = this.heat === "hot" ? "-hot" : "";
+    if (call.includes("dumpsys battery")) return deviceMetricsFixture(`pixel8-battery${suffix}.txt`);
+    if (call.includes("dumpsys thermalservice")) return deviceMetricsFixture(`pixel8-thermalservice${suffix}.txt`);
+    if (call.includes("current_now")) return deviceMetricsFixture("pixel8-current-now.txt");
+    if (call.includes("logcat")) return deviceMetricsFixture("pixel8-power-rails.logcat.txt");
+    throw new Error(`unexpected adb call: ${call}`);
+  }
+}
+
+async function deviceMetricsFixture(name: string): Promise<string> {
+  return readFile(
+    join(dirname(fileURLToPath(import.meta.url)), "fixtures/device-metrics", name),
+    "utf8",
+  );
+}
 
 async function runDevice(
   assert: unknown,

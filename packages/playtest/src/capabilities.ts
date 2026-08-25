@@ -7,6 +7,7 @@ export type PlaytestCapability =
   | "browser.screenshot"
   | "browser.trace"
   | "camera.observe"
+  | "device.metrics"
   | "entity.bounds"
   | "entity.observe"
   | "entity.setup"
@@ -40,6 +41,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("browser.screenshot", "Captures viewport screenshots."),
   capability("browser.trace", "Captures a bounded Playwright trace."),
   capability("camera.observe", "Samples the active camera transform and projection."),
+  capability("device.metrics", "Measures device thermal, power and battery state around a run."),
   capability("entity.bounds", "Projects registered entity bounds into the viewport."),
   capability("entity.observe", "Samples registered entity transforms and visibility."),
   capability("entity.setup", "Applies bounded transforms to registered entities."),

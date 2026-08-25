@@ -18,9 +18,10 @@ import {
 } from "../index.js";
 import type { Page } from "playwright";
 
-import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
+import { HOST_PLAYTEST_OBSERVATION_FIELDS, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 
 const STANDALONE_OBSERVATION_FIELD_SET: readonly string[] = STANDALONE_PLAYTEST_OBSERVATION_FIELDS;
+const HOST_OBSERVATION_FIELD_SET: readonly string[] = HOST_PLAYTEST_OBSERVATION_FIELDS;
 
 const BROWSER_CAPABILITIES = [
   "browser.canvas",
@@ -191,6 +192,7 @@ function unavailableObservation(
       };
     }
     for (const path of requiredObservationPaths(scenario, entry.kind, entry.observationPath)) {
+      if (HOST_OBSERVATION_FIELD_SET.includes(path)) continue;
       if (!STANDALONE_OBSERVATION_FIELD_SET.includes(path)) {
         return {
           assertion: entry.kind,

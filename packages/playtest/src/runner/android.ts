@@ -31,10 +31,14 @@ export interface IAndroidDriverOptions {
 
 export interface IAndroidDriver {
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
+  /** The device this driver is bound to, when it knows; reported next to its metric samples. */
+  deviceSerial?(): string | undefined;
   isAlive(): Promise<boolean>;
   prepare(endpoint: string, mailboxRoot?: string): Promise<void>;
   readFile?(path: string): Promise<string | undefined>;
   removeFile?(path: string): Promise<void>;
+  /** Raw adb passthrough, so the host can measure the device itself. Read-only probes only. */
+  runAdb?(args: readonly string[]): Promise<string>;
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
   startScreenRecording?(): Promise<void>;
@@ -287,6 +291,19 @@ export class AdbAndroidDriver implements IAndroidDriver {
       await rm(directory, { force: true, recursive: true });
       await this.adb(["shell", "rm", "-f", remotePath]).catch(() => undefined);
     }
+  }
+
+  deviceSerial(): string | undefined {
+    return this.options.serial;
+  }
+
+  /**
+   * The device-metrics probes read `dumpsys`, `logcat` and sysfs through here. Deliberately a
+   * thin passthrough rather than a metrics API: the parsing belongs to deviceMetrics.ts, which
+   * is unit-tested against real captured device output.
+   */
+  async runAdb(args: readonly string[]): Promise<string> {
+    return this.adb(args);
   }
 
   private async adb(args: readonly string[]): Promise<string> {

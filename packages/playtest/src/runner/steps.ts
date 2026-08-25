@@ -58,7 +58,7 @@ import {
   finishFramebufferCoverageProbe,
   startFramebufferCoverageProbe,
 } from "./framebufferCoverage.js";
-import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
+import { HOST_PLAYTEST_OBSERVATION_FIELDS, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 // Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 import { entityPosition, subtract, isAnonymousMovementScenario } from "./sampling.js";
 import { aimAngles, yawPitchToQuaternion } from "../scenario/orientation.js";
@@ -101,7 +101,7 @@ export async function captureVisualSurface(
 
 export function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
   const observations = {} as IPlaytestObservations;
-  for (const field of STANDALONE_PLAYTEST_OBSERVATION_FIELDS) {
+  for (const field of [...STANDALONE_PLAYTEST_OBSERVATION_FIELDS, ...HOST_PLAYTEST_OBSERVATION_FIELDS]) {
     const value = candidate[field];
     if (value !== undefined) Object.assign(observations, { [field]: value });
   }

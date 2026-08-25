@@ -1,6 +1,6 @@
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
-import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
+import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
@@ -617,6 +617,11 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   const performance = isRecord(value.performance)
     ? validatePerformanceAssertion(value.performance, scenarioPath, "assert.performance")
     : undefined;
+  // Present-but-not-an-object is a validation failure, not a dropped assertion: a scenario that
+  // says `"deviceMetrics": "cool"` must never run with the thermal check silently missing.
+  const deviceMetrics = value.deviceMetrics === undefined
+    ? undefined
+    : validateDeviceMetricsAssertion(value.deviceMetrics, scenarioPath, "assert.deviceMetrics");
   const framebufferCoverage = isRecord(value.framebufferCoverage)
     ? validateFramebufferCoverageAssertion(
         value.framebufferCoverage,
@@ -680,6 +685,7 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
         }
       : {}),
     ...(performance === undefined ? {} : { performance }),
+    ...(deviceMetrics === undefined ? {} : { deviceMetrics }),
     ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
     ...(movement === undefined
       ? {}

@@ -27,6 +27,7 @@ import {
   type IPlaytestBridgeClient,
 } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
+import { DeviceMetricsRecorder } from "./deviceMetrics.js";
 import {
   androidMailboxPaths,
   DeviceBridgeTransport,
@@ -45,10 +46,12 @@ export interface IAndroidPlaytestDependencies {
 
 export interface IDevicePlaytestDriver {
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
+  deviceSerial?(): string | undefined;
   isAlive(): Promise<boolean>;
   prepare(endpoint: string, mailboxRoot?: string): Promise<void>;
   readFile?(path: string): Promise<string | undefined>;
   removeFile?(path: string): Promise<void>;
+  runAdb?(args: readonly string[]): Promise<string>;
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
   startScreenRecording?(): Promise<void>;
@@ -157,10 +160,15 @@ async function runDevicePlaytestInternal(
   let coverageRecordingStarted = false;
   let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
   const coverageVideoPath = join(config.artifactDirectory, "framebuffer-coverage.mp4");
+  const metrics = deviceMetricsRecorder(target);
   try {
     await throwIfAborted(target);
     await transport.start();
     await throwIfAborted(target);
+    // Sampled before prepare(): prepare force-stops the app and clears logcat, so this is the
+    // only point at which the device's pre-launch thermal baseline is still readable.
+    await metrics?.sampleNow("before").catch(() => undefined);
+    metrics?.start();
     await target.driver.prepare(endpoint, config.mailboxRoot);
     await throwIfAborted(target);
     bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs);
@@ -354,6 +362,8 @@ async function runDevicePlaytestInternal(
     }
     const after = await bridge.sample(sampleRequest);
     appendPosition(pathPositions, after, pathEntity);
+    metrics?.stop();
+    await metrics?.sampleNow("after").catch(() => undefined);
     if (scenario.artifacts?.screenshots !== false) {
       await target.driver.screenshot(join(config.artifactDirectory, "after.png"));
     }
@@ -381,6 +391,8 @@ async function runDevicePlaytestInternal(
       undefined,
       undefined,
       movementSamples,
+      undefined,
+      metrics?.observation(),
     );
     // Same artifacts as the browser target: a diagnostic that names console.json must find it
     // there whichever target produced the run.
@@ -433,8 +445,26 @@ async function runDevicePlaytestInternal(
       await bridge?.close();
     });
     await attemptCleanup(() => transport.close());
+    metrics?.stop();
     if (cleanupErrors.length > 0) cleanupState.error = cleanupFailure(cleanupErrors);
   }
+}
+
+/**
+ * Only the Android lane can measure the device: desktop and iOS have no adb passthrough, and a
+ * driver without `runAdb` (a test double, or a transport-only driver) reports nothing rather
+ * than reporting invented zeros. A scenario that *asserts* device metrics never reaches here on
+ * those targets — `unsupportedAssertion` fails it and names android first.
+ */
+function deviceMetricsRecorder(target: IDevicePlaytestTarget): DeviceMetricsRecorder | undefined {
+  if (target.name !== "android") return undefined;
+  const runAdb = target.driver.runAdb?.bind(target.driver);
+  if (runAdb === undefined) return undefined;
+  const serial = target.driver.deviceSerial?.();
+  return new DeviceMetricsRecorder({
+    adb: runAdb,
+    ...(serial === undefined ? {} : { serial }),
+  });
 }
 
 async function throwIfAborted(target: IDevicePlaytestTarget): Promise<void> {
@@ -508,6 +538,13 @@ function unsupportedAssertion(
     return unsupportedDiagnostic(
       "complete held-pointer input",
       "Run this scenario on --target browser or --target android; the desktop mailbox host exposes one pointer.",
+      target,
+    );
+  }
+  if (scenario.assert?.deviceMetrics !== undefined && target !== "android") {
+    return unsupportedDiagnostic(
+      "device thermal and power assertions",
+      `Run this assertion on --target android; ${targetLabel(target)} has no battery, thermal or power-rail probe.`,
       target,
     );
   }

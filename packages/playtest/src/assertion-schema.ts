@@ -24,6 +24,23 @@ export interface IPlaytestAssertionSchemaEntry {
 
 export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] = [
   {
+    description: "Reports the device's thermal, power and battery state around the run and judges whether the run is comparable with a cool one.",
+    example: { deviceMetrics: { maxTemperatureRiseC: 5, notThermallyConfounded: true } },
+    fields: [
+      { description: "Ceiling on the battery temperature climb from the first to the last sample, in \u00b0C.", name: "maxTemperatureRiseC", type: "finite non-negative number" },
+      { description: "Ceiling on the highest Android thermal status observed during the run; 0 is NONE.", name: "maxThermalStatus", type: "non-negative integer 0..6" },
+      { description: "Requires a run the harness judged comparable with a cool one: not started hot, not already throttled, no thermal-status rise, not charging.", name: "notThermallyConfounded", type: "true" },
+    ],
+    cardinality: "object",
+    kind: "deviceMetrics",
+    observationPath: "deviceMetrics",
+    requiredCapabilities: ["device.metrics"],
+    resultIdPrefix: "deviceMetrics.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The observation is measured by the host from the device around the run; there is no initial in-scene value that could satisfy it.",
+  },
+  {
     description: "Samples the framebuffer on every render frame inside a labeled loading window and requires every coarse-grid RGB sample to match the declared backdrop.",
     example: {
       framebufferCoverage: {

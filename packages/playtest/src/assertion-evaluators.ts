@@ -4,6 +4,7 @@ import type { IPlaytestAssertionResult, IPlaytestDiagnostic } from "./assertion-
 import type { IPlaytestReport } from "./report.js";
 import type { IPlaytestScenario } from "./scenario.js";
 import type { IEvaluationContext } from "./evaluators/context.js";
+import { emitDeviceMetrics } from "./evaluators/device-metrics.js";
 import { emitEvidenceFamilies } from "./evaluators/evidence-families.js";
 import { emitMovementEvidence } from "./evaluators/movement-evidence.js";
 import { emitDisplayFamilies } from "./evaluators/framebuffer-reachability.js";
@@ -20,6 +21,7 @@ export function evaluateRichPlaytestAssertions(input: {
   const diagnostics: IPlaytestDiagnostic[] = [];
   const scenarioAssertions = input.scenario.assert ?? {};
   const ctx: IEvaluationContext = { assertions, diagnostics, input, scenarioAssertions };
+  emitDeviceMetrics(ctx);
   emitDisplayFamilies(ctx);
   emitEvidenceFamilies(ctx);
   emitPerfSignalsWorld(ctx);
