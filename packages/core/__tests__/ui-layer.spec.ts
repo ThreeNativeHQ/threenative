@@ -40,7 +40,10 @@ function fakeScope(rects: IFakeRect[][]): Scope & {
   };
   const document = {
     querySelectorAll: (selector: string) => {
-      expect(selector).toBe(`[${INTERACTIVE_ATTRIBUTE}]`);
+      // The registry asks twice: once for the marked rects it publishes, and once — in
+      // development only — for pressable controls that carry no marker, to warn about them.
+      // This fake owns only the first; the warning has its own scope below.
+      if (selector !== `[${INTERACTIVE_ATTRIBUTE}]`) return [];
       return state.rects.map((element) => ({
         getClientRects: () => element,
         getBoundingClientRect: () => element[0] ?? { left: 0, top: 0, width: 0, height: 0 },
@@ -265,5 +268,83 @@ describe("the interactive-rect registry", () => {
     scope.move(80);
     mutationCallback?.();
     expect((posted.at(-1)?.regions as { x: number }[]).at(0)?.x).toBe(0.2);
+  });
+});
+
+/**
+ * A scope whose document answers both selectors: the marked-rect query the registry publishes
+ * from, and the pressable-control query the development warning checks against it.
+ */
+function scopeWithControls(options: {
+  readonly marked: readonly string[];
+  readonly controls: readonly { readonly tag: string; readonly marked: boolean }[];
+}): Record<string, unknown> & { readonly warnings: string[] } {
+  const warnings: string[] = [];
+  const rect = { left: 0, top: 0, width: 40, height: 40 };
+  const element = (tag: string, isMarked: boolean) => ({
+    getClientRects: () => [rect],
+    getBoundingClientRect: () => rect,
+    closest: (selector: string) =>
+      selector === `[${INTERACTIVE_ATTRIBUTE}]` && isMarked ? {} : null,
+    tagName: tag.toUpperCase(),
+    id: "",
+    className: "",
+  });
+  const document = {
+    querySelectorAll: (selector: string) =>
+      selector === `[${INTERACTIVE_ATTRIBUTE}]`
+        ? options.marked.map((tag) => element(tag, true))
+        : options.controls.map((control) => element(control.tag, control.marked)),
+    documentElement: { clientWidth: 400, clientHeight: 800 },
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+  return Object.assign(
+    {
+      document,
+      innerWidth: 400,
+      innerHeight: 800,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame: () => undefined,
+      console: { warn: (message: string) => warnings.push(message) },
+    },
+    { warnings },
+  );
+}
+
+describe("unmarked controls", () => {
+  const bridge = (): ReturnType<typeof connectUiBridge> => ({
+    end: "ui" as const,
+    transport: "host" as const,
+    hasPeer: () => true,
+    post: () => undefined,
+    onMessage: () => () => undefined,
+    close: () => undefined,
+  });
+
+  test("should name a pressable control that publishes no hit region", () => {
+    const scope = scopeWithControls({
+      marked: ["button"],
+      controls: [
+        { tag: "button", marked: true },
+        { tag: "button", marked: false },
+      ],
+    });
+    publishHitRegions({ bridge: bridge(), scope });
+    expect(scope.warnings).toHaveLength(1);
+    expect(scope.warnings[0]).toContain("TN_UI_UNMARKED_CONTROLS");
+    expect(scope.warnings[0]).toContain("1 control(s)");
+    expect(scope.warnings[0]).toContain(INTERACTIVE_ATTRIBUTE);
+  });
+
+  test("should stay silent when every pressable control is marked", () => {
+    const scope = scopeWithControls({
+      marked: ["button"],
+      controls: [{ tag: "button", marked: true }],
+    });
+    publishHitRegions({ bridge: bridge(), scope });
+    expect(scope.warnings).toEqual([]);
   });
 });

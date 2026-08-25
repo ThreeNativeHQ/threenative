@@ -265,6 +265,13 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
     "  mergeConfig(loaded?.config ?? {}, {",
     "    root,",
     '    base: "./",',
+    // The UI is a HUD page, not the game: it must not carry the game's `public/`. Vite copies
+    // `publicDir` into every build it runs, and this output is packaged *beside* the game's own
+    // assets — so every model, texture and sound shipped twice. One game's APK came to 361 MB, of
+    // which 97.6 MB was a second copy of its own 97.3 MB asset directory, six copies of one 11 MB
+    // weapon among them. Nothing in `src/ui/` reads those files; it reaches the game through
+    // published state and intents.
+    "    publicDir: false,",
     "    build: {",
     `      outDir: ${literal(output)},`,
     "      emptyOutDir: true,",

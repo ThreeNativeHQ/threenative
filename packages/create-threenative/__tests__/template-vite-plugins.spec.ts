@@ -78,3 +78,28 @@ describe("template stylesheets", () => {
     expect(painted).toEqual([]);
   });
 });
+
+describe("template dependencies", () => {
+  it("gives every template on Vite 8 its own esbuild", async () => {
+    const missing: string[] = [];
+    for (const template of await templates()) {
+      const manifest = await readFile(
+        path.join(TEMPLATE_ROOT, template, "package.json"),
+        "utf8",
+      ).catch(() => null);
+      if (manifest === null) continue;
+      const parsed = JSON.parse(manifest) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      const all = { ...parsed.dependencies, ...parsed.devDependencies };
+      // Vite 8 builds with rolldown and no longer carries esbuild, which is what the framework's
+      // TypeScript config loader transpiles `threenative.config.ts` with. Three templates shipped
+      // without it: their scaffolds could not load their own config at all, and said so as a
+      // missing transpiler, which reads like a broken install rather than a missing dependency.
+      if (all.vite === undefined) continue;
+      if (all.esbuild === undefined) missing.push(template);
+    }
+    expect(missing).toEqual([]);
+  });
+});

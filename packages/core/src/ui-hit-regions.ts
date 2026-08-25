@@ -69,6 +69,11 @@ interface IRectLike {
 interface IElementLike {
   getClientRects?: () => ArrayLike<IRectLike>;
   getBoundingClientRect: () => IRectLike;
+  /** Used only to name an unmarked control in the development warning below. */
+  closest?: (selector: string) => IElementLike | null;
+  tagName?: string;
+  id?: string;
+  className?: string;
 }
 
 /** A `MutationObserver` or a `ResizeObserver`, as the two things this file asks of either. */
@@ -99,6 +104,7 @@ interface IScopeLike extends IEventTargetLike {
   // Indexed because a real realm carries far more than this, and a fake one is free to.
   [key: string]: unknown;
   document?: IDocumentLike;
+  console?: { warn?: (message: string) => void };
   innerWidth?: number;
   innerHeight?: number;
   requestAnimationFrame?: (callback: () => void) => number;
@@ -158,6 +164,7 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
     );
   }
 
+  const unmarkedWarning = { warned: false };
   let published: readonly IHitRegion[] = [];
   let publishedFrame = "";
   let stopped = false;
@@ -207,6 +214,7 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
       const element = elements[index];
       if (element !== undefined) regions.push(...normalize(boxesOf(element), width, height));
     }
+    warnAboutUnmarkedControls(document, selector, scope, unmarkedWarning);
     return regions;
   };
 
@@ -311,4 +319,64 @@ export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry
       bridge.post({ type: HIT_REGIONS_MESSAGE, regions: [] });
     },
   };
+}
+
+/**
+ * Controls that look pressable but publish no rectangle, named once in development.
+ *
+ * The attribute is documented in every template's instructions as the one thing a UI must do
+ * differently from a web page, and it is still the easiest thing in this layer to forget: the
+ * button renders, `pointer-events-auto` looks like it should be enough, and on web it *is*. The
+ * failure only appears on a device, as a button that does nothing, with no error anywhere — the
+ * platform handed the gesture to the game before any CSS ran.
+ *
+ * So the registry says so at the moment the page runs, in the browser, which is where a UI is
+ * built. Once per page: a warning repeated every frame is noise, and noise is not read.
+ */
+const UNMARKED_CONTROL_SELECTOR = 'button, [role="button"], a[href], input, select, textarea';
+
+/** Once per registry, not once per process: two pages in one test run are two pages. */
+interface IWarnedOnce {
+  warned: boolean;
+}
+
+function warnAboutUnmarkedControls(
+  document: IDocumentLike,
+  selector: string,
+  scope: IScopeLike,
+  once: IWarnedOnce,
+): void {
+  if (once.warned || !isDevelopment()) return;
+  if (typeof document.querySelectorAll !== "function") return;
+  const candidates = document.querySelectorAll(UNMARKED_CONTROL_SELECTOR);
+  const unmarked: string[] = [];
+  for (let index = 0; index < candidates.length; index += 1) {
+    const element = candidates[index];
+    if (element === undefined) continue;
+    if (element.closest?.(selector) != null) continue;
+    unmarked.push(describe(element));
+  }
+  if (unmarked.length === 0) return;
+  once.warned = true;
+  const names = unmarked.slice(0, 5).join(", ");
+  const rest = unmarked.length > 5 ? ` and ${unmarked.length - 5} more` : "";
+  scope.console?.warn?.(
+    `TN_UI_UNMARKED_CONTROLS: ${unmarked.length} control(s) publish no hit region, so on native ` +
+      `the press reaches the game instead: ${names}${rest}. Mark each with ` +
+      `${INTERACTIVE_ATTRIBUTE}, or wrap them in an element that carries it.`,
+  );
+}
+
+/** A short, recognisable name for one element: tag, id, and the first class. */
+function describe(element: IElementLike): string {
+  const tag = (element.tagName ?? "element").toLowerCase();
+  const id = element.id === undefined || element.id === "" ? "" : `#${element.id}`;
+  const first = (element.className ?? "").split(/\s+/u).filter(Boolean)[0];
+  return `<${tag}${id}${first === undefined ? "" : `.${first}`}>`;
+}
+
+function isDevelopment(): boolean {
+  return (
+    (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true
+  );
 }
