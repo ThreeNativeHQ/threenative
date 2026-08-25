@@ -364,7 +364,7 @@ static std::chrono::steady_clock::time_point beginProfiledBinding() {
     return start;
 }
 
-static void endProfiledBinding(
+static uint64_t endProfiledBinding(
     BindingsState* state,
     ProfiledRenderCommand command,
     std::chrono::steady_clock::time_point start,
@@ -377,6 +377,7 @@ static void endProfiledBinding(
     state->androidJsNativeProfile.counts[index] += count;
     state->androidJsNativeProfile.commandNs[index] += elapsedNs;
     state->androidJsNativeProfile.bindingNs += elapsedNs;
+    return elapsedNs;
 }
 
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
@@ -394,8 +395,11 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"writeBufferBytes\":" << state->androidJsNativeProfile.writeBufferBytes
            << ",\"writeBufferDistinctTargets\":" << state->androidJsNativeProfile.writeBufferTargets.size()
            << ",\"writeBufferSmallCalls\":" << state->androidJsNativeProfile.writeBufferSmallCalls
+           << ",\"writeBufferSmallNs\":" << state->androidJsNativeProfile.writeBufferSmallNs
            << ",\"writeBufferMediumCalls\":" << state->androidJsNativeProfile.writeBufferMediumCalls
+           << ",\"writeBufferMediumNs\":" << state->androidJsNativeProfile.writeBufferMediumNs
            << ",\"writeBufferLargeCalls\":" << state->androidJsNativeProfile.writeBufferLargeCalls
+           << ",\"writeBufferLargeNs\":" << state->androidJsNativeProfile.writeBufferLargeNs
            << ",\"submitPollNs\":" << submitPollNs
            << ",\"presentNs\":" << presentNs
            << ",\"frame\":" << state->frameEndCount
@@ -4763,16 +4767,20 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                                 }
                             }
 #if TN_ANDROID_JS_PROFILE
-                            endProfiledBinding(state, ProfiledRenderCommand::WriteBuffer, profileStart);
+                            const auto writeBufferNs =
+                                endProfiledBinding(state, ProfiledRenderCommand::WriteBuffer, profileStart);
                             if (buffer && state->queue) {
                                 state->androidJsNativeProfile.writeBufferBytes += writeSize;
                                 state->androidJsNativeProfile.writeBufferTargets.insert(buffer);
                                 if (writeSize <= 256) {
                                     state->androidJsNativeProfile.writeBufferSmallCalls += 1;
+                                    state->androidJsNativeProfile.writeBufferSmallNs += writeBufferNs;
                                 } else if (writeSize <= 4096) {
                                     state->androidJsNativeProfile.writeBufferMediumCalls += 1;
+                                    state->androidJsNativeProfile.writeBufferMediumNs += writeBufferNs;
                                 } else {
                                     state->androidJsNativeProfile.writeBufferLargeCalls += 1;
+                                    state->androidJsNativeProfile.writeBufferLargeNs += writeBufferNs;
                                 }
                             }
 #endif
