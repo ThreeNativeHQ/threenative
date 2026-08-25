@@ -119,6 +119,10 @@ export class AndroidChromeBrowserSession {
     return context;
   }
 
+  navigationUrl(config: IStandalonePlaytestConfig): string {
+    return androidBrowserUrl(config.url).url;
+  }
+
   async finish(): Promise<IPlaytestDeviceMetricsObservation | undefined> {
     if (this.metrics === undefined) return undefined;
     await this.metrics.sampleNow("after").catch(() => undefined);

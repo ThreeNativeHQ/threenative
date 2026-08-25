@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import { AndroidChromeBrowserSession, androidBrowserUrl } from "../src/runner/androidBrowserRunner.js";
 import { classifyRunnerError, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs } from "../src/runner/config.js";
-import { teardownBrowserSession } from "../src/runner/runner.js";
+import { openRunnerPage, teardownBrowserSession } from "../src/runner/runner.js";
 
 test("browser plus device selects the serial-bound Android Chrome lane, never local Chromium", async () => {
   const config = parseStandalonePlaytestArgs([
@@ -144,6 +144,31 @@ test("a pre-existing Chrome process and default context survive remote cleanup",
   expect(context.close).not.toHaveBeenCalled();
   expect(browser.close).not.toHaveBeenCalled();
   expect(remote.close).toHaveBeenCalledOnce();
+});
+
+test("the remote runner navigates the scenario page to device loopback while retaining operator config", async () => {
+  const navigated: string[] = [];
+  const page = {
+    goto: async (url: string) => { navigated.push(url); },
+    waitForFunction: async () => { throw new Error("bridge absent"); },
+    waitForLoadState: async () => undefined,
+  };
+  const config = {
+    timeoutMs: 1000,
+    url: "https://devbox.example:8443/game/level?seed=7#spawn",
+  };
+
+  await openRunnerPage(page as never, config as never, {
+    assert: { diagnostics: { noConsoleErrors: true } },
+    name: "remote-url",
+    schemaVersion: 1,
+    steps: [],
+  } as never, {
+    navigationUrl: (active) => androidBrowserUrl(active.url).url,
+  } as never);
+
+  expect(navigated).toEqual(["https://127.0.0.1:8443/game/level?seed=7#spawn"]);
+  expect(config.url).toBe("https://devbox.example:8443/game/level?seed=7#spawn");
 });
 
 function ownershipSession(

@@ -184,13 +184,28 @@ export interface IRunStepSamples {
 
 export interface IStandalonePlaytestRunOptions {
   managedServer?: ChildProcess;
-  remoteBrowser?: {
-    close(): Promise<void>;
-    connect(config: IStandalonePlaytestConfig): Promise<Browser>;
-    context(browser: Browser): Promise<BrowserContext>;
-    finish(): Promise<IPlaytestDeviceMetricsObservation | undefined>;
-    prepare(config: IStandalonePlaytestConfig): Promise<void>;
-  };
+  remoteBrowser?: IRemoteBrowserSession;
+}
+
+export interface IRemoteBrowserSession {
+  close(): Promise<void>;
+  connect(config: IStandalonePlaytestConfig): Promise<Browser>;
+  context(browser: Browser): Promise<BrowserContext>;
+  finish(): Promise<IPlaytestDeviceMetricsObservation | undefined>;
+  navigationUrl(config: IStandalonePlaytestConfig): string;
+  prepare(config: IStandalonePlaytestConfig): Promise<void>;
+}
+
+export function openRunnerPage(
+  page: Page,
+  config: IStandalonePlaytestConfig,
+  scenario: IPlaytestScenario,
+  remoteBrowser: Pick<IRemoteBrowserSession, "navigationUrl"> | undefined,
+): Promise<IPlaytestBridgeClient | undefined> {
+  const navigationUrl = remoteBrowser?.navigationUrl(config) ?? config.url;
+  // This copy is navigation-only. Reports and operator diagnostics retain the URL supplied on
+  // the command line, while Android Chrome reaches the same server through its reverse tunnel.
+  return openPageAndConnectBridge(page, { ...config, url: navigationUrl }, scenario);
 }
 
 export async function teardownBrowserSession(
@@ -354,7 +369,7 @@ export async function runStandalonePlaytest(
       pageLifecycle.closed = true;
     });
     const activePage = page;
-    const bridge = await openPageAndConnectBridge(page, browserConfig, scenario);
+    const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     let setupApplication: IPlaytestSetupApplication | undefined;
