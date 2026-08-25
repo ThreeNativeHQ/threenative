@@ -165,3 +165,12 @@ after the shim landed.
 - [ ] `batch-2026-08-24-fps-framework-mobile-perf` moves to `done/` **only** once PRD-218's
       remainder rows 1–4 close it. Until then it stays in its own batch and the batch is not
       archived — a short criterion is not completion.
+
+**Steering note 2026-08-25 ~04:57, for the PRD-198 lane:** the full-suite failure in
+`packages/create-threenative/__tests__/scaffold.spec.ts` ("keeps every no-install scaffold tree
+byte-stable against the PRD parent") is not out-of-scope baseline debt — it is this PRD's
+required companion edit. The test compares each no-install scaffold against
+`PRD_201_PARENT_SCAFFOLD_HASHES`; a PRD that legitimately changes generated shipped bytes (as
+198's capability-truth change does) refreshes those recorded hashes **in the same commit**, red
+first (old hash observed failing), then green. Leaving it red would fail main's post-merge root
+gate, which blocks the squash.
