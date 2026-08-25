@@ -69,6 +69,15 @@ describe("threenative-engine-mcp", () => {
     ).toMatch(/import and call `attachToBone` from `@threenative\/core`/u);
   });
 
+  it("answers that native ray tracing is unavailable until readable output interop exists", () => {
+    const results = searchCapabilities("can I raytrace on native", workspaceManifest);
+    const platform = results.find((result) => result.symbol === "getPlatform");
+    expect(platform).toBeDefined();
+    expect(platform?.constraints.join(" ")).toContain("ray tracing is unavailable on native");
+    expect(platform?.constraints.join(" ")).toContain("buffer-to-texture copy-out interop exists");
+    expect(platform?.constraints.join(" ")).toContain("traceRays");
+  });
+
   it("ranks attachToBone for holding a rifle in a character's right hand", () => {
     const results = searchCapabilities(
       "hold a rifle in a character's right hand",

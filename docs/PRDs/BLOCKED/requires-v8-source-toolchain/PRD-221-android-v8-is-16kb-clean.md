@@ -4,8 +4,7 @@ prd_contract: v1
 
 # PRD-221 — The Android V8 library is 16 KB-clean
 
-**Status:** NOT STARTED — filed 2026-08-24 for the night batch, from
-`docs/verification/android-16kb-alignment-2026-08-24.md`.
+**Status:** **BLOCKED** — 2026-08-25 — `requires-v8-source-toolchain`. See the [Phase 0 memo](../../../verification/prd-221-2026-08-25.md).
 **Complexity:** +2 platform/toolchain, +1 external dependency decision = **3 → MEDIUM/HIGH,
 strictly time-boxed**; ending `BLOCKED` with a named obstacle is a legitimate outcome.
 

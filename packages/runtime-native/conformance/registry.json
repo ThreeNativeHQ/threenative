@@ -936,6 +936,20 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "98-native-raytracing-refusal",
+      "title": "native raytracing refuses unreadable output",
+      "category": "raytracing",
+      "status": "implemented",
+      "availability": "unavailable-until-readback",
+      "scene": "conformance/scenes/shared/raytracing-refusal.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
     }
   ],
   "generatedPlaytestProofs": [

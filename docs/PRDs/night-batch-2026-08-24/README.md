@@ -11,6 +11,33 @@ short, one not met — so that batch cannot move to `done/` and the work below i
 blocked or short criterion is not completion. Its evidence is
 `docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`.
 
+**Amended 2026-08-24 ~23:25 (device lanes, read before any APK build):** the 22:18 squash
+(`0d6417f9`) left `main` failing every Android APK build —
+`v8_engine.cpp:1454:23: error: no member named 'HasPendingException' in 'v8::Isolate'`
+(desktop V8 13 has it, the Android V8 11 prebuilt does not). Fixed in `00d3020e` with a
+`V8_MAJOR_VERSION` guard; both CMake toolchains verified green; evidence in
+`docs/verification/squash-followup-v8-android-hasPendingException-2026-08-24.md`. Lanes that
+branched from `557ed2ba` or earlier must sync `main` into their worktree before their next
+Gradle build.
+
+**Steering note 2026-08-25 ~00:40, for whoever files PRD-219's device leg:** before writing
+BLOCKED — the observed signature (first tap owns:true and focuses the field, typed text
+delivers, then the *second* click lands just outside `begin` across six environment variants)
+matches Android IME resize, not a coordinate-contract bug: typing opens the keyboard, the
+WebView shrinks, and the pre-computed `begin` coordinate points at the pre-keyboard layout.
+Web passes because its driver never raises an IME. The candidate remedy lives in the runner
+transport, editing neither the scenario nor the engine: after an Android text `input` step,
+dismiss the keyboard (`adb shell input keyevent 111`) before later `click` steps, and cite the
+existing `TN_UI_HITTEST` records as evidence either way. If tested and refuted, record the
+refutation in the lane memo — that is a real result too.
+
+**Steering note 2026-08-25 ~00:56, for the Gradle lanes (220, and any later APK build):** if
+Gradle dies with a bare `26.0.2`, that is JDK 26 being selected — this machine's Gradle/Kotlin
+lane wants **JDK 17**: `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk` (and `ANDROID_HOME`
+pointed at the SDK) before `./gradlew`. The prebuilt-release fetch failing closed with HTTP 404
+is expected and correct: no release has ever been published (PRD-078); build from runtime
+source.
+
 This folder is an **execution manifest plus two new PRDs**. Existing PRDs referenced here stay
 in their owning batches — batches move whole to `done/` per `docs/PRDs/AGENTS.md`; nothing is
 moved into this folder.
@@ -36,11 +63,11 @@ moved into this folder.
 
 | Lane | Device | Queue | Why tonight |
 | --- | --- | --- | --- |
-| A — honesty debt | none (unit gates) | [PRD-199](../batch-2026-08-23-tech-debt/PRD-199-parity-scenario-validation-fails-closed.md) → [PRD-201](../batch-2026-08-23-tech-debt/PRD-201-scaffolder-derives-what-it-ships.md) → [PRD-197 — done](../done/PRD-197-native-host-fails-loudly-at-creation.md) → [PRD-198](../batch-2026-08-23-tech-debt/PRD-198-raytracing-surface-stays-dark-until-results-exist.md) → [PRD-200 phases 1–2](../batch-2026-08-23-tech-debt/PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) → **hygiene tail** (see below) → **PRD-218 remainder rows 1 and 4** (see below) | Pre-scoped red-green-in-hours work; fail-closed honesty is the house's top rule. Start with 199/201 (zero file overlap with the device-metrics lane); 197 landed with the PRD-205/207 squash; 198 begins only after step 0's WIP has landed (it touches `runtime-native`). 200 phase 3 waits for PRD-202 — out of scope tonight |
+| A — honesty debt | none (unit gates) | [PRD-199 — done](../done/PRD-199-parity-scenario-validation-fails-closed.md) → [PRD-201 — done](../done/PRD-201-scaffolder-derives-what-it-ships.md) → [PRD-197 — done](../done/PRD-197-native-host-fails-loudly-at-creation.md) → [PRD-198 — done](../done/PRD-198-raytracing-surface-stays-dark-until-results-exist.md) → [PRD-200 phases 1–2](../batch-2026-08-23-tech-debt/PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) → **hygiene tail** (see below) → **PRD-218 remainder rows 1 and 4** (see below) | Pre-scoped red-green-in-hours work; fail-closed honesty is the house's top rule. Start with 199/201 (zero file overlap with the device-metrics lane); 197 landed with the PRD-205/207 squash; 198 begins only after step 0's WIP has landed (it touches `runtime-native`). 200 phase 3 waits for PRD-202 — out of scope tonight |
 | B — menu flow on Android | `emulator-5554` | [PRD-219](./PRD-219-android-proof-of-the-menu-flow-starter.md) (new) | Today's headline convention proved web-only; the house rule says web-only is unfinished |
 | C — physical Pixel 8 | `192.168.1.192:5555` | Finish [PRD-217](../PRD-217-webview-ui-layer.md) criterion 3 + Phase 3B, then [PRD-214 Phase 0](../batch-2026-08-23-mobile-stability/PRD-214-render-js-owns-the-mobile-frame.md), then **PRD-218 remainder rows 1–3** (see below, one session), then **device tails** (see below) | 217 died at 39.8 °C / 13 % battery mid-capture — overnight is the thermal reset. Then the 19 FPS ceiling bisect, sequenced last by its own batch because the lanes above were needed first |
-| D — distribution | local Gradle build | [PRD-220](./PRD-220-apk-size-is-attributed.md) (new) | The fps-framework APK measured 379 MB; nobody can name where the bytes are |
-| E — stretch, time-boxed | emulator + local build | [PRD-221](./PRD-221-android-v8-is-16kb-clean.md) (new) | `libv8android.so` is the one library still failing Play's 16 KB rule; Phase 0 memo is mandatory, ending BLOCKED-with-a-name is an acceptable close |
+| D — distribution | local Gradle build | [PRD-220 — done 2026-08-25, `4ade82c7`](../done/PRD-220-apk-size-is-attributed.md) | The fps-framework APK measured 379 MB; nobody can name where the bytes are. Attributed: packaging residue + unstripped native debug symbols; clean rebuild 173,572,580 bytes (`docs/verification/apk-size-2026-08-25.md`) |
+| E — stretch, time-boxed | emulator + local build | [PRD-221](../BLOCKED/requires-v8-source-toolchain/PRD-221-android-v8-is-16kb-clean.md) (BLOCKED) | `libv8android.so` is the one library still failing Play's 16 KB rule; Phase 0 memo is mandatory, ending BLOCKED-with-a-name is an acceptable close |
 
 **Lane A hygiene tail** (minutes each; these records mislead future agents until fixed):
 add PRD-065 to the `BLOCKED/README.md` table; reconcile PRD-127's header ("PROPOSED,
@@ -138,3 +165,12 @@ after the shim landed.
 - [ ] `batch-2026-08-24-fps-framework-mobile-perf` moves to `done/` **only** once PRD-218's
       remainder rows 1–4 close it. Until then it stays in its own batch and the batch is not
       archived — a short criterion is not completion.
+
+**Steering note 2026-08-25 ~04:57, for the PRD-198 lane:** the full-suite failure in
+`packages/create-threenative/__tests__/scaffold.spec.ts` ("keeps every no-install scaffold tree
+byte-stable against the PRD parent") is not out-of-scope baseline debt — it is this PRD's
+required companion edit. The test compares each no-install scaffold against
+`PRD_201_PARENT_SCAFFOLD_HASHES`; a PRD that legitimately changes generated shipped bytes (as
+198's capability-truth change does) refreshes those recorded hashes **in the same commit**, red
+first (old hash observed failing), then green. Leaving it red would fail main's post-merge root
+gate, which blocks the squash.

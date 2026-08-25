@@ -963,6 +963,14 @@ private:
         reportException(exception);
     }
 
+    JSValueRef takeNativeCallbackException() {
+        JSValueRef exception = lastException_;
+        lastException_ = nullptr;
+        if (exception) JSValueUnprotect(context_, exception);
+        exceptionFromNativeCallback_ = false;
+        return exception;
+    }
+
     void setupGlobals() {
         // console.log / console.warn / console.error
         JSObjectRef console = JSObjectMake(context_, nullptr, nullptr);
@@ -1061,6 +1069,18 @@ private:
         // Call the native function
         JSValueHandle result = callbackData->callback((void*)ctx, args);
         if (callbackData->engine) callbackData->engine->nativeCallbackDepth_ -= 1;
+        const bool callbackException = callbackData->engine &&
+            callbackData->engine->exceptionFromNativeCallback_ &&
+            callbackData->engine->hasException();
+        if (callbackException) {
+            if (callbackData->engine && result.ptr &&
+                callbackData->engine->protectedHandleRefs_.find((JSValueRef)result.ptr) ==
+                    callbackData->engine->protectedHandleRefs_.end()) {
+                callbackData->engine->freeHandle(result);
+            }
+            *exception = callbackData->engine->takeNativeCallbackException();
+            return nullptr;
+        }
         if (callbackData->engine && result.ptr &&
             callbackData->engine->protectedHandleRefs_.find((JSValueRef)result.ptr) ==
                 callbackData->engine->protectedHandleRefs_.end()) {

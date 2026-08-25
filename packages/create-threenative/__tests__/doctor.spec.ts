@@ -50,6 +50,8 @@ const HEALTHY: IProjectSnapshot = {
   runtimeRoot: "/runtime-native",
 };
 
+const APK_SHA256 = "409a7f83ac6b31dc8c77e3ec18038f209bd2f545e0f4177c2e2381aa4e067b49";
+
 function snapshot(overrides: Partial<IProjectSnapshot>): IProjectSnapshot {
   return { ...HEALTHY, ...overrides };
 }
@@ -278,6 +280,105 @@ describe("threenative doctor", () => {
     );
     expect(report.pass).toBe(false);
     expect(check(report, "native runtime").detail).toMatch(/release URL.*example\.invalid/u);
+  });
+
+  it("reports the last APK attribution total when its evidence is present", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-apk-size-");
+    const recordPath = "docs/verification/apk-size-2026-08-25.md";
+    const artifactPath =
+      "packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk";
+    const buildDirectory = "packages/runtime-native/android/app/build";
+    await mkdir(path.join(root, path.dirname(recordPath)), { recursive: true });
+    await mkdir(path.join(root, path.dirname(artifactPath)), { recursive: true });
+    await writeFile(path.join(root, artifactPath), Buffer.alloc(123));
+    await writeFile(
+      path.join(root, recordPath),
+      [
+        "# APK size attribution",
+        "",
+        "- Rebuilt APK bytes: **123**",
+        `- APK artifact: \`${artifactPath}\``,
+        `- Build directory: \`${buildDirectory}\``,
+        `- APK SHA-256: \`${APK_SHA256}\``,
+        "",
+      ].join("\n"),
+    );
+    const report = diagnoseProject(
+      snapshot({
+        files: new Set([...HEALTHY.files, recordPath]),
+        projectRoot: root,
+        readText: (relative) =>
+          relative === recordPath
+            ? "# APK size attribution\n\n- Rebuilt APK bytes: **123**\n- APK artifact: `packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk`\n- Build directory: `packages/runtime-native/android/app/build`\n- APK SHA-256: `409a7f83ac6b31dc8c77e3ec18038f209bd2f545e0f4177c2e2381aa4e067b49`\n"
+            : relative === "src/game.ts"
+              ? "export default defineGame({})"
+              : "",
+      }),
+    );
+
+    expect(check(report, "APK size")).toMatchObject({ status: "ok" });
+    expect(check(report, "APK size").detail).toContain("123 bytes");
+  });
+
+  it("warns when a replaced APK keeps the recorded byte count but has a different hash", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-apk-size-replaced-");
+    const recordPath = "docs/verification/apk-size-2026-08-25.md";
+    const artifactPath =
+      "packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk";
+    const buildDirectory = "packages/runtime-native/android/app/build";
+    await mkdir(path.join(root, path.dirname(recordPath)), { recursive: true });
+    await mkdir(path.join(root, path.dirname(artifactPath)), { recursive: true });
+    await writeFile(path.join(root, artifactPath), Buffer.alloc(123, 1));
+    await writeFile(
+      path.join(root, recordPath),
+      [
+        "# APK size attribution",
+        "",
+        "- Rebuilt APK bytes: **123**",
+        `- APK artifact: \`${artifactPath}\``,
+        `- Build directory: \`${buildDirectory}\``,
+        `- APK SHA-256: \`${APK_SHA256}\``,
+        "",
+      ].join("\n"),
+    );
+    const report = diagnoseProject(
+      snapshot({
+        files: new Set([...HEALTHY.files, recordPath]),
+        projectRoot: root,
+        readText: (relative) =>
+          relative === recordPath
+            ? `# APK size attribution\n\n- Rebuilt APK bytes: **123**\n- APK artifact: \`${artifactPath}\`\n- Build directory: \`${buildDirectory}\`\n- APK SHA-256: \`${APK_SHA256}\`\n`
+            : relative === "src/game.ts"
+              ? "export default defineGame({})"
+              : "",
+      }),
+    );
+
+    expect(check(report, "APK size")).toMatchObject({ status: "warn" });
+    expect(check(report, "APK size").detail).toMatch(/SHA-256|hash/u);
+    expect(check(report, "APK size").detail).not.toContain("123 bytes");
+  });
+
+  it("names missing APK evidence without presenting the recorded total as current", () => {
+    const recordPath = "docs/verification/apk-size-2026-08-25.md";
+    const report = diagnoseProject(
+      snapshot({
+        files: new Set([...HEALTHY.files, recordPath]),
+        projectRoot: "/tmp/tn-doctor-apk-size-missing",
+        readText: (relative) =>
+          relative === recordPath
+            ? "# APK size attribution\n\n- Rebuilt APK bytes: **123**\n- APK artifact: `packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk`\n- Build directory: `packages/runtime-native/android/app/build`\n- APK SHA-256: `409a7f83ac6b31dc8c77e3ec18038f209bd2f545e0f4177c2e2381aa4e067b49`\n"
+            : relative === "src/game.ts"
+              ? "export default defineGame({})"
+              : "",
+      }),
+    );
+
+    expect(check(report, "APK size")).toMatchObject({ status: "warn" });
+    expect(check(report, "APK size").detail).toMatch(/missing evidence|build directory/u);
+    expect(check(report, "APK size").detail).not.toContain("123 bytes");
   });
 });
 

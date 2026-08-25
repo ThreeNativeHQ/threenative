@@ -155,8 +155,8 @@ defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
 export function getPlatform(): Readonly<IPlatformInfo> { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device
-- **Constraints:** only use the returned platform facts; native globals are host-owned
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -202,8 +202,8 @@ const snap = new GroundSnap(character, { enabled: true });
 export function isMobile(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device
-- **Constraints:** only use the returned platform facts; native globals are host-owned
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -217,8 +217,8 @@ if (isMobile()) showTouchControls();
 export function isNative(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device
-- **Constraints:** only use the returned platform facts; native globals are host-owned
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -232,8 +232,8 @@ if (isMobile()) showTouchControls();
 export function isTouchscreenAvailable(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device
-- **Constraints:** only use the returned platform facts; native globals are host-owned
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -247,8 +247,8 @@ if (isMobile()) showTouchControls();
 export function isWeb(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device
-- **Constraints:** only use the returned platform facts; native globals are host-owned
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
 
 ```ts
 if (isMobile()) showTouchControls();

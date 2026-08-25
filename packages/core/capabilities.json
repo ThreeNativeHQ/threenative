@@ -160,7 +160,10 @@
       "symbol": "FrameBudget"
     },
     {
-      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "constraints": [
+        "only use the returned platform facts; native globals are host-owned",
+        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+      ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
       "kind": "function",
@@ -169,7 +172,8 @@
       "signature": "export function getPlatform(): Readonly<IPlatformInfo> { … }",
       "situations": [
         "branch a portable game on web or native",
-        "choose touch controls for a mobile device"
+        "choose touch controls for a mobile device",
+        "can I raytrace on native"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
@@ -212,7 +216,10 @@
       "symbol": "GroundSnap"
     },
     {
-      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "constraints": [
+        "only use the returned platform facts; native globals are host-owned",
+        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+      ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
       "kind": "function",
@@ -221,14 +228,18 @@
       "signature": "export function isMobile(): boolean { … }",
       "situations": [
         "branch a portable game on web or native",
-        "choose touch controls for a mobile device"
+        "choose touch controls for a mobile device",
+        "can I raytrace on native"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
       "symbol": "isMobile"
     },
     {
-      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "constraints": [
+        "only use the returned platform facts; native globals are host-owned",
+        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+      ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
       "kind": "function",
@@ -237,14 +248,18 @@
       "signature": "export function isNative(): boolean { … }",
       "situations": [
         "branch a portable game on web or native",
-        "choose touch controls for a mobile device"
+        "choose touch controls for a mobile device",
+        "can I raytrace on native"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
       "symbol": "isNative"
     },
     {
-      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "constraints": [
+        "only use the returned platform facts; native globals are host-owned",
+        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+      ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
       "kind": "function",
@@ -253,14 +268,18 @@
       "signature": "export function isTouchscreenAvailable(): boolean { … }",
       "situations": [
         "branch a portable game on web or native",
-        "choose touch controls for a mobile device"
+        "choose touch controls for a mobile device",
+        "can I raytrace on native"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
       "symbol": "isTouchscreenAvailable"
     },
     {
-      "constraints": ["only use the returned platform facts; native globals are host-owned"],
+      "constraints": [
+        "only use the returned platform facts; native globals are host-owned",
+        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+      ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
       "kind": "function",
@@ -269,7 +288,8 @@
       "signature": "export function isWeb(): boolean { … }",
       "situations": [
         "branch a portable game on web or native",
-        "choose touch controls for a mobile device"
+        "choose touch controls for a mobile device",
+        "can I raytrace on native"
       ],
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],

@@ -1449,9 +1449,16 @@ private:
         // A native callback may have thrown an exception that JavaScript caught. The host-side
         // latch must follow JavaScript control flow, or a later binding transaction will reject a
         // valid install even though the pending JS exception is gone.
+        // HasPendingException() exists from V8 13; the Android prebuilt (V8 11) has no public
+        // equivalent, so there the latch clears on the host-side record alone. The probe only
+        // guards the rare finally-block-with-pending-exception call, and clearing early errs
+        // toward un-rejecting valid installs, which is what the latch exists to fix.
         if (engine && engine->nativeCallbackDepth_ == 0 &&
-            engine->exceptionFromNativeCallback_ && engine->hasException() &&
-            !isolate->HasPendingException()) {
+            engine->exceptionFromNativeCallback_ && engine->hasException()
+#if V8_MAJOR_VERSION >= 13
+            && !isolate->HasPendingException()
+#endif
+        ) {
             engine->getException();
         }
 

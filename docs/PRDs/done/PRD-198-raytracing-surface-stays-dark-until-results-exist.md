@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-198 — The raytracing surface stays dark until results exist
 
-**Status:** NOT STARTED
+**Status:** COMPLETE 2026-08-25 — native raytracing now exposes an honest refusal until readable
+results exist; browser behavior remains unchanged. Evidence is recorded in
+`docs/verification/prd-198-raytracing-gated-2026-08-25.md`.
 
 **Complexity:** +2 for 6–10 files, +2 for a public-surface contract change, +1 for
 conformance/registry updates = **5 → MEDIUM mode**.

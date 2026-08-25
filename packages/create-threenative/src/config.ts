@@ -2,16 +2,19 @@ import { access, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parsePng } from "@threenative/assets";
 import type {
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,
+  IThreeNativeTexturesConfig,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "@threenative/core";
 
 export type {
   IThreeNativeConfig,
+  IThreeNativeTexturesConfig,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "@threenative/core";
@@ -77,16 +80,6 @@ export interface IThreeNativeModelsConfig {
     /** UV precision in bits, default 12. */
     readonly uvBits?: number;
   };
-}
-
-export interface IThreeNativeTexturesConfig {
-  readonly overrides?: readonly {
-    readonly codec: "etc1s" | "none" | "uastc";
-    readonly glob: string;
-    readonly quality?: number;
-  }[];
-  /** ETC1S encoder quality 1–255. Ignored for UASTC. */
-  readonly quality?: number;
 }
 
 interface IPackageManifest {
@@ -193,68 +186,6 @@ function defaultAppId(name: string): string {
   let segment = name.toLowerCase().replace(/[^a-z0-9]/gu, "") || "game";
   if (!/^[a-z]/u.test(segment)) segment = `game${segment}`;
   return `com.threenative.${segment}`;
-}
-
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-function crc32(value: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of value) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-interface IPngInfo {
-  readonly width: number;
-  readonly height: number;
-  readonly hasAlpha: boolean;
-}
-
-function parsePng(value: Buffer): IPngInfo | undefined {
-  if (value.length < PNG_SIGNATURE.length || !value.subarray(0, 8).equals(PNG_SIGNATURE)) {
-    return undefined;
-  }
-
-  let offset = PNG_SIGNATURE.length;
-  let hasHeader = false;
-  let hasData = false;
-  let width = 0;
-  let height = 0;
-  let colorType = 0;
-  let hasTransparencyChunk = false;
-  while (offset + 12 <= value.length) {
-    const length = value.readUInt32BE(offset);
-    const chunkEnd = offset + 12 + length;
-    if (chunkEnd > value.length) return undefined;
-    const type = value.toString("ascii", offset + 4, offset + 8);
-    const chunk = value.subarray(offset + 4, offset + 8 + length);
-    if (crc32(chunk) !== value.readUInt32BE(offset + 8 + length)) return undefined;
-    if (type === "IHDR") {
-      if (hasHeader || length !== 13) return undefined;
-      width = value.readUInt32BE(offset + 8);
-      height = value.readUInt32BE(offset + 12);
-      colorType = value.readUInt8(offset + 17);
-      if (width === 0 || height === 0) return undefined;
-      hasHeader = true;
-    } else if (type === "IDAT") {
-      hasData = true;
-    } else if (type === "tRNS") {
-      hasTransparencyChunk = true;
-    } else if (type === "IEND") {
-      if (length !== 0 || !hasHeader || !hasData || chunkEnd !== value.length) return undefined;
-      return {
-        width,
-        height,
-        hasAlpha: colorType === 4 || colorType === 6 || hasTransparencyChunk,
-      };
-    }
-    offset = chunkEnd;
-  }
-  return undefined;
 }
 
 function projectRequire(cwd: string): NodeJS.Require {

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-201 — The scaffolder derives what it ships
 
-**Status:** NOT STARTED
+**Status: DELIVERED 2026-08-25** — squash-merged to main as `c7f437fa` after two review rounds plus a recorded direct follow-up (`ed3761c9` fixes); evidence in `docs/verification/prd-201-scaffolder-derives-2026-08-25.md`.
 
 **Complexity:** +2 for 6–10 files, +2 cross-package (create-threenative ↔ core ↔ assets),
 +1 config-surface = **5 → MEDIUM mode**.

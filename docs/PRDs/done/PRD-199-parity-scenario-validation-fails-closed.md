@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-199 — Parity scenario validation fails closed
 
-**Status:** NOT STARTED
+**Status: DELIVERED 2026-08-25** — squash-merged to main as `76ef4929`; 8 mutation failures observed red before the fix, evidence in `docs/verification/prd-199-parity-fails-closed-2026-08-25.md`.
 
 **Complexity:** +1 for 1–5 files = **3 → LOW mode**.
 

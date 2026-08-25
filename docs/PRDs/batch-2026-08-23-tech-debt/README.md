@@ -1,6 +1,7 @@
 # Batch — pay down the tech-debt scan, 2026-08-23
 
-**Status:** PARTIAL — 197, 205 and 207 are done (archived to `docs/PRDs/done/`); the other nine
+**Status:** PARTIAL — 197, 198, 199, 201, 205 and 207 are done (archived to `docs/PRDs/done/`);
+the other six
 have not started. Twelve PRDs filed from
 `docs/audits/tech-debt-scan-2026-08-23.md` (checkout `62fac4d5`, anchors re-verified at
 HEAD `36831d96` before filing). Every numbered finding in the scan maps to exactly one
@@ -17,10 +18,10 @@ Tier-4 sweep.
 | PRD | Outcome | Scan items | Complexity | Depends on |
 | --- | --- | --- | --- | --- |
 | [197](../done/PRD-197-native-host-fails-loudly-at-creation.md) **(done)** | TLS verifies peers by default; bind groups/samplers throw at creation; no phantom timer stubs | #1, #7, #15 | 5 → MEDIUM | none |
-| [198](./PRD-198-raytracing-surface-stays-dark-until-results-exist.md) | Raytracing is gated off instead of resolving success on a result nothing can read | #2 | 5 → MEDIUM | none |
-| [199](./PRD-199-parity-scenario-validation-fails-closed.md) | Malformed parity animation/resources and wrong-typed viewports throw at load | #3, #16 | 3 → LOW | none |
+| [198](../done/PRD-198-raytracing-surface-stays-dark-until-results-exist.md) **(done)** | Raytracing is gated off instead of resolving success on a result nothing can read | #2 | 5 → MEDIUM | none |
+| [199](../done/PRD-199-parity-scenario-validation-fails-closed.md) **(done)** | Malformed parity animation/resources and wrong-typed viewports throw at load | #3, #16 | 3 → LOW | none |
 | [200](./PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) | Triviality guard has one definition; `buildReport` takes an options object; movement-evidence splits | #5, #6, #13 | 6 → MEDIUM | none |
-| [201](./PRD-201-scaffolder-derives-what-it-ships.md) | Template list, package list, substitution loop, textures config and PNG parsing each have one definition | #4, #25, #26, #19, #24 | 5 → MEDIUM | none |
+| [201](../done/PRD-201-scaffolder-derives-what-it-ships.md) **(done)** | Template list, package list, substitution loop, textures config and PNG parsing each have one definition | #4, #25, #26, #19, #24 | 5 → MEDIUM | none |
 | [202](./PRD-202-runner-lanes-share-one-implementation.md) | Device and browser lanes run identical helper code; distance math cannot diverge; sampling splits | #8, #14 | 6 → MEDIUM | none |
 | [203](./PRD-203-template-loading-screens-stop-drifting.md) | One canonical `loading.ts` is stamped at scaffold time; drift is a failing test | #9 | 5 → MEDIUM | none |
 | [204](./PRD-204-assertion-validators-are-generated-from-the-registry.md) | Assertion validators are generated from the registry that already generates the docs | #11 | 6 → MEDIUM | none |

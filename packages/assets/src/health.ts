@@ -1,6 +1,7 @@
 import { type Document, type GLTF, ImageUtils, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { type AssetKind, type IAssetTargets, classify } from "./compile.js";
+import { parsePng } from "./png.js";
 
 export type AssetFindingGrade = "fail" | "ok" | "warn";
 
@@ -55,7 +56,6 @@ interface IParsedModel {
   readonly model: IModelStats;
 }
 
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const UNKNOWN_LICENSE = "unknown";
 const MODE_TRIANGLES = 4;
 const MODE_TRIANGLE_STRIPS = 5;
@@ -79,26 +79,11 @@ function marksCollider(name: string): boolean {
   return /collider/iu.test(name) || /(?:^|[-_. ])col(?:only|convcolonly|convcol)?$/iu.test(name);
 }
 
-function pngHasAlpha(bytes: Buffer): boolean {
-  if (bytes.length < 26 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return false;
-  const colorType = bytes[25];
-  if (colorType === 4 || colorType === 6) return true;
-  let offset = 8;
-  while (offset + 8 <= bytes.length) {
-    const length = bytes.readUInt32BE(offset);
-    const type = bytes.toString("ascii", offset + 4, offset + 8);
-    if (type === "tRNS") return true;
-    if (type === "IDAT" || type === "IEND") return false;
-    offset += 12 + length;
-  }
-  return false;
-}
-
 function sniffImageMime(bytes: Buffer): "image/jpeg" | "image/png" | undefined {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return "image/jpeg";
   }
-  return bytes.subarray(0, 8).equals(PNG_SIGNATURE) ? "image/png" : undefined;
+  return parsePng(bytes) === undefined ? undefined : "image/png";
 }
 
 /** Shared with the KTX2 texture pass, which picks its codec from the alpha channel it reports. */
@@ -106,17 +91,26 @@ export function textureStats(bytes: Buffer, mimeType?: string): ITextureStats {
   const mime = mimeType ?? sniffImageMime(bytes);
   let width = 0;
   let height = 0;
+  let alpha = false;
   if (mime !== undefined) {
-    try {
-      const size = ImageUtils.getSize(bytes, mime);
-      if (size !== null) [width, height] = size;
-    } catch {
-      // Unreadable image headers stay at zero and are reported as-is; hard failures
-      // belong to the decode passes of later PRDs.
+    if (mime === "image/png") {
+      const png = parsePng(bytes);
+      if (png !== undefined) {
+        ({ height, width } = png);
+        alpha = png.hasAlpha;
+      }
+    } else {
+      try {
+        const size = ImageUtils.getSize(bytes, mime);
+        if (size !== null) [width, height] = size;
+      } catch {
+        // Unreadable image headers stay at zero and are reported as-is; hard failures
+        // belong to the decode passes of later PRDs.
+      }
     }
   }
   return {
-    alpha: mime === "image/png" ? pngHasAlpha(bytes) : false,
+    alpha,
     height,
     powerOfTwo: isPowerOfTwo(width) && isPowerOfTwo(height),
     width,

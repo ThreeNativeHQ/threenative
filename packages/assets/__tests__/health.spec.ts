@@ -15,6 +15,7 @@ import {
   formatHealthReport,
   runHealthReport,
 } from "../src/health.js";
+import { parsePng } from "../src/png.js";
 
 const io = new NodeIO();
 
@@ -60,7 +61,12 @@ function pngChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([length, typed, data, checksum]);
 }
 
-function pngBytes(width: number, height: number, colorType: number): Buffer {
+function pngBytes(
+  width: number,
+  height: number,
+  colorType: number,
+  withTransparency = false,
+): Buffer {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
@@ -70,6 +76,7 @@ function pngBytes(width: number, height: number, colorType: number): Buffer {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     pngChunk("IHDR", header),
+    ...(withTransparency ? [pngChunk("tRNS", Buffer.from([0, 0]))] : []),
     pngChunk("IDAT", deflateSync(raw)),
     pngChunk("IEND", Buffer.alloc(0)),
   ]);
@@ -348,6 +355,14 @@ describe("runHealthReport", () => {
     expect(sky?.width).toBe(32);
     expect(sky?.height).toBe(16);
     expect(sky?.alpha).toBe(false);
+  });
+
+  it("should share the PNG parser for tRNS alpha in health results", async () => {
+    const data = pngBytes(3, 5, 2, true);
+    expect(parsePng(data)).toEqual({ height: 5, width: 3, hasAlpha: true });
+    expect(
+      entryOf(await runHealthReport([{ data, logicalPath: "trns.png" }]), "trns.png").texture,
+    ).toMatchObject({ alpha: true, height: 5, width: 3 });
   });
 
   it("should count materials and animation clips per model", async () => {

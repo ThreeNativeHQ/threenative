@@ -142,6 +142,13 @@ reason to assume it wins.
 
 ### Phase 2 — spike: price the three branches on this device
 
+**Re-scope note, 2026-08-24:** PRD-130 (2026-08-16) made V8 Android's default JS engine and
+measured it against QuickJS on a Pixel 8 (8.34 ms vs 101.24 ms per frame at 16 384 cubes) —
+that flip predates and partially answers these phases. The engine branch this spike was to
+price is already chosen and measured; what remains open here is the per-mesh cost breakdown
+under **V8 specifically**, the `.so` size / build-time deltas for that choice, and Phases 4–5's
+frame-rate gate. Price those under the current default rather than re-litigating the flip.
+
 Deliverable is a decision document with measured numbers, not an implementation.
 
 - Measure per-mesh JS cost under each candidate engine on the Pixel 8 with the same

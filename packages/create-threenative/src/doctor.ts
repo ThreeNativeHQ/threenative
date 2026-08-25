@@ -1,5 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -34,6 +43,8 @@ export interface IProjectSnapshot {
   readonly files: ReadonlySet<string>;
   readonly installedVersions: ReadonlyMap<string, string>;
   readonly packageJson: unknown;
+  /** Absolute project root, available to checks that validate recorded build evidence. */
+  readonly projectRoot?: string;
   readonly readText: (relative: string) => string | undefined;
   /** Resolved package root and readers for the optional native runtime package. */
   readonly readRuntimeText?: (relative: string) => string | undefined;
@@ -140,6 +151,149 @@ function nativeEntryFrom(config: unknown): string {
 
 function usesDesktopOverlay(config: unknown): boolean {
   return record(record(config)?.ui)?.renderer === "web";
+}
+
+const APK_SIZE_RECORD = /^docs\/verification\/apk-size-(\d{4}-\d{2}-\d{2})\.md$/u;
+
+interface IApkSizeRecord {
+  readonly artifact: string;
+  readonly buildDirectory: string;
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
+function parseApkSizeRecord(source: string): IApkSizeRecord | undefined {
+  const bytesMatch = source.match(/^\s*-\s*Rebuilt APK bytes:\s*\*\*(\d[\d,]*)\*\*\s*$/mu);
+  const artifactMatch = source.match(/^\s*-\s*APK artifact:\s*`([^`]+)`\s*$/mu);
+  const buildDirectoryMatch = source.match(/^\s*-\s*Build directory:\s*`([^`]+)`\s*$/mu);
+  const sha256Match = source.match(/^\s*-\s*APK SHA-256:\s*`([0-9a-f]{64})`\s*$/imu);
+  if (
+    bytesMatch === null ||
+    artifactMatch === null ||
+    buildDirectoryMatch === null ||
+    sha256Match === null
+  )
+    return undefined;
+  const bytesText = bytesMatch[1];
+  const artifact = artifactMatch[1];
+  const buildDirectory = buildDirectoryMatch[1];
+  const sha256 = sha256Match[1];
+  if (
+    bytesText === undefined ||
+    artifact === undefined ||
+    buildDirectory === undefined ||
+    sha256 === undefined
+  )
+    return undefined;
+  const bytes = Number(bytesText.replaceAll(",", ""));
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) return undefined;
+  if (artifact.length === 0 || buildDirectory.length === 0) return undefined;
+  return { artifact, buildDirectory, bytes, sha256: sha256.toLowerCase() };
+}
+
+function sha256File(file: string): string {
+  const hash = createHash("sha256");
+  const descriptor = openSync(file, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead = 0;
+    do {
+      bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+    return hash.digest("hex");
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function evidencePath(snapshot: IProjectSnapshot, relative: string): string | undefined {
+  if (snapshot.projectRoot === undefined || path.isAbsolute(relative)) return undefined;
+  const root = path.resolve(snapshot.projectRoot);
+  const resolved = path.resolve(root, relative);
+  return resolved === root || resolved.startsWith(`${root}${path.sep}`) ? resolved : undefined;
+}
+
+function evidenceExists(snapshot: IProjectSnapshot, relative: string, directory: boolean): boolean {
+  const absolute = evidencePath(snapshot, relative);
+  if (absolute !== undefined) {
+    try {
+      const stats = statSync(absolute);
+      return directory ? stats.isDirectory() : stats.isFile();
+    } catch {
+      return false;
+    }
+  }
+  return snapshot.files.has(relative);
+}
+
+function apkSizeCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
+  const recordPath = [...snapshot.files]
+    .filter((file) => APK_SIZE_RECORD.test(file))
+    .sort()
+    .at(-1);
+  if (recordPath === undefined) return undefined;
+  const source = snapshot.readText(recordPath);
+  const record = source === undefined ? undefined : parseApkSizeRecord(source);
+  if (record === undefined) {
+    return {
+      detail: `attribution record ${recordPath} is malformed; no APK total was trusted`,
+      fix: "Regenerate the record with the APK artifact, SHA-256, build directory, and rebuilt byte total.",
+      name: "APK size",
+      status: "warn",
+    };
+  }
+  if (!evidenceExists(snapshot, record.buildDirectory, true)) {
+    return {
+      detail: `missing evidence — attribution record ${recordPath} names build directory ${record.buildDirectory}, which is missing`,
+      fix: "Rebuild the recorded Android variant before using its attribution total.",
+      name: "APK size",
+      status: "warn",
+    };
+  }
+  const artifact = evidencePath(snapshot, record.artifact);
+  if (!evidenceExists(snapshot, record.artifact, false) || artifact === undefined) {
+    return {
+      detail: `missing evidence — attribution record ${recordPath} names APK artifact ${record.artifact}, which is missing`,
+      fix: "Rebuild the recorded Android variant before using its attribution total.",
+      name: "APK size",
+      status: "warn",
+    };
+  }
+  let actualBytes: number;
+  let actualSha256: string;
+  try {
+    actualBytes = statSync(artifact).size;
+    actualSha256 = sha256File(artifact);
+  } catch {
+    return {
+      detail: `missing evidence — APK artifact ${record.artifact} could not be read`,
+      fix: "Rebuild the recorded Android variant before using its attribution total.",
+      name: "APK size",
+      status: "warn",
+    };
+  }
+  if (actualBytes !== record.bytes) {
+    return {
+      detail: `evidence differs — ${record.artifact} is ${actualBytes.toLocaleString("en-US")} bytes, but ${recordPath} records a different total`,
+      fix: "Regenerate the attribution record from this APK before trusting its rows.",
+      name: "APK size",
+      status: "warn",
+    };
+  }
+  if (actualSha256 !== record.sha256) {
+    return {
+      detail: `evidence differs — ${record.artifact} has SHA-256 ${actualSha256}, but ${recordPath} records ${record.sha256}`,
+      fix: "Regenerate the attribution record from this APK before trusting its rows.",
+      name: "APK size",
+      status: "warn",
+    };
+  }
+  return {
+    detail: `last attributed APK: ${record.bytes.toLocaleString("en-US")} bytes (${recordPath})`,
+    name: "APK size",
+    status: "ok",
+  };
 }
 
 function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
@@ -405,11 +559,13 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
   }
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
   const nativeRuntime = nativeRuntimeCheck(snapshot);
+  const apkSize = apkSizeCheck(snapshot);
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
     nativeEntryCheck(snapshot),
     nativeRuntime,
+    ...(apkSize === undefined ? [] : [apkSize]),
     ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
       ? []
       : [desktopOverlayCheck(snapshot.desktopOverlay)]),
@@ -519,6 +675,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
     files,
     installedVersions,
     packageJson,
+    projectRoot: root,
     readText: (relative) => {
       const file = path.join(root, relative);
       try {

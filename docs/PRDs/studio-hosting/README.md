@@ -12,10 +12,14 @@ command below as pointing at the private repository, not this one.
 
 **Status: 100–102 COMPLETE; 103 PARTIAL; 104 COMPLETE; 105 PARTIAL, 2026-08-16.** The product half of the series runs
 on `docs/studio-hosting-series`: a container image, accounts and projects, and a session broker
-that opens a live Studio and pushes every commit to the durable repository. Nothing in 103, 104
-or 105 has run — no microVM has booted, no egress policy is applied, no OpenRouter request has
-been made, nothing is deployed, and **no security property claimed for those three has been
-tested**. What exists reaches the operator only; signup is not open to strangers.
+that opens a live Studio and pushes every commit to the durable repository. Reconciled
+2026-08-24 with the PRDs' own records: PRD-103's boot guard and containment **did** run — the
+escape probes execute green (`hosting/__tests__/escape.spec.ts`, each probe also observed
+failing with its rule disabled) and a sandbox has no route to the control plane or network —
+and PRD-104 was verified through the full topology against a live provider, not stubs. What has
+still never run: no microVM has booted, nothing is deployed, and PRD-105's deploy half stays
+blocked on a hosting account. What exists reaches the operator only; signup is not open to
+strangers.
 
 Six PRDs, PRD-100 through PRD-105. They exist because `@threenative/studio` today is a
 **loopback single-project developer tool** and the product being asked for is a **public

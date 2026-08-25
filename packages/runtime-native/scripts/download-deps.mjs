@@ -24,6 +24,7 @@ import { pipeline } from 'node:stream/promises';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
+import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -782,6 +783,7 @@ async function downloadDep(name) {
     console.log(`${name} already exists at ${destDir}`);
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
+        if (dep.needsV8AndroidExtraction) verifyV8AndroidAlignment(destDir, dep);
         console.log('Skipping (use --force to re-download)');
         return true;
       }
@@ -891,6 +893,7 @@ async function downloadDep(name) {
 
     if (dep.needsV8AndroidExtraction) {
       await reshapeV8Android(destDir, dep);
+      verifyV8AndroidAlignment(destDir, dep);
     }
 
     // Extract AAR if needed (SDL3 Android)
@@ -912,6 +915,12 @@ async function downloadDep(name) {
     console.error(`Failed to download ${name}:`, error.message);
     return false;
   }
+}
+
+function verifyV8AndroidAlignment(destDir, dep) {
+  const libraries = dep.abis.map((abi) => join(destDir, 'lib', abi, 'libv8android.so'));
+  assertAndroid16KbAlignment(libraries);
+  console.log(`Verified v8-android 16 KB LOAD alignment for ${dep.abis.join(', ')}`);
 }
 
 /**
