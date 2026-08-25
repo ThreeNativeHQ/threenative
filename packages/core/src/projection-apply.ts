@@ -18,6 +18,7 @@ import {
   Sprite,
   type SpriteMaterial,
 } from "three";
+import { BundleGroup } from "three/webgpu";
 
 import { MIN_BATCH_MEMBERS, isLight } from "./projection-plan.js";
 import type {
@@ -86,6 +87,8 @@ interface IBatch {
  */
 interface IBatched {
   readonly mesh: BatchedMesh;
+  /** Owns exactly this material batch as one WebGPU render bundle. */
+  readonly bundle: BundleGroup;
   readonly group: IProjectionMaterialGroup;
   readonly material: Material;
   /** Source geometry to its packed sub-geometry id. */
@@ -709,6 +712,7 @@ export class ProjectionMirror {
     mesh.layers.mask = reference.layers.mask;
     const batch: IBatched = {
       mesh,
+      bundle: new BundleGroup(),
       group,
       material: group.material,
       geometries: new Map(),
@@ -726,8 +730,12 @@ export class ProjectionMirror {
       mesh.dispose();
       return undefined;
     }
+    // Matrices, visibility and shared material values remain live after admission. A dynamic
+    // bundle lets Three.js refresh that state without treating the batch hierarchy as static.
+    (batch.bundle as BundleGroup & { static: boolean }).static = false;
+    batch.bundle.add(mesh);
     this.#materialBatches.set(group, batch);
-    this.scene.add(mesh);
+    this.scene.add(batch.bundle);
     this.#compileMs += (globalThis.performance?.now() ?? 0) - startedAt;
     return batch;
   }
@@ -799,7 +807,8 @@ export class ProjectionMirror {
    * batch owns; the source geometries were only read from, never adopted, and stay the game's.
    */
   #disposeBatched(batch: IBatched): void {
-    this.scene.remove(batch.mesh);
+    this.scene.remove(batch.bundle);
+    batch.bundle.remove(batch.mesh);
     batch.mesh.dispose();
     for (const object of batch.instances.keys()) this.#state.delete(object);
     this.#materialBatches.delete(batch.group);
@@ -935,7 +944,8 @@ export class ProjectionMirror {
     }
     this.#batches.clear();
     for (const batch of this.#materialBatches.values()) {
-      this.scene.remove(batch.mesh);
+      this.scene.remove(batch.bundle);
+      batch.bundle.remove(batch.mesh);
       batch.mesh.dispose();
     }
     this.#materialBatches.clear();
