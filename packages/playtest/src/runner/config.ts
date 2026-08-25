@@ -162,6 +162,18 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   if (browserRecipe !== undefined && explicitBrowserArgs.length > 0) {
     throw new PlaytestCliUsageError("Choose --browser-recipe or --browser-arg, not both.");
   }
+  const device = flags.get("--device")?.[0];
+  if (target === "browser" && device !== undefined) {
+    if (browserRecipe !== undefined) {
+      throw new PlaytestCliUsageError("Android Chrome device runs cannot honor --browser-recipe; remove it.");
+    }
+    if (explicitBrowserArgs.length > 0) {
+      throw new PlaytestCliUsageError("Android Chrome device runs cannot honor --browser-arg; remove it.");
+    }
+    if (argv.includes("--headed")) {
+      throw new PlaytestCliUsageError("Android Chrome device runs are already visible on the device and cannot honor --headed; remove it.");
+    }
+  }
   const rawTouchRotation = flags.get("--touch-rotation")?.[0];
   // Fail closed rather than defaulting: a mistyped rotation that quietly became 0 would put every
   // injected touch somewhere else and report the game as broken.
@@ -187,7 +199,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     },
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
-    ...(flags.get("--device")?.[0] === undefined ? {} : { device: flags.get("--device")![0] }),
+    ...(device === undefined ? {} : { device }),
     ...(executable === undefined ? {} : { desktop: { executable: resolve(projectPath, executable) } }),
     endpoint: flags.get("--endpoint")?.[0] ?? "http://127.0.0.1:41777/playtest",
     headless: !argv.includes("--headed"),

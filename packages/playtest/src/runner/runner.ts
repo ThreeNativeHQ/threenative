@@ -34,7 +34,8 @@ import {
   type PlaytestVec3,
 } from "../index.js";
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
-import { chromium, type Browser, type CDPSession, type Page } from "playwright";
+import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
+import type { IPlaytestDeviceMetricsObservation } from "./deviceMetrics.js";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import {
@@ -183,6 +184,13 @@ export interface IRunStepSamples {
 
 export interface IStandalonePlaytestRunOptions {
   managedServer?: ChildProcess;
+  remoteBrowser?: {
+    close(): Promise<void>;
+    connect(config: IStandalonePlaytestConfig): Promise<Browser>;
+    context(browser: Browser): Promise<BrowserContext>;
+    finish(): Promise<IPlaytestDeviceMetricsObservation | undefined>;
+    prepare(config: IStandalonePlaytestConfig): Promise<void>;
+  };
 }
 
 export async function runStandalonePlaytest(
@@ -234,6 +242,7 @@ export async function runStandalonePlaytest(
       // suite gate catches. Wait for the launch to settle, then close whatever it produced.
       const launched = browser ?? (await settledTeardownValue(browserLaunch, 10_000));
       await boundedTeardownStep(launched?.close(), 10_000);
+      await boundedTeardownStep(options.remoteBrowser?.close(), 10_000);
     })();
     await teardownPromise.catch(() => undefined);
     if (stopManagedServerOnTeardown) await stopServer();
@@ -246,7 +255,7 @@ export async function runStandalonePlaytest(
   // Pixel-producing runs have their display handled by the runner itself now (a private Xvfb
   // whenever Linux offers no usable X display), so the wrapper-only preflight advice is
   // muted exactly where provisioning answers it; every other run keeps it.
-  const needsPixels = runNeedsPixels(activeConfig, scenario);
+  const needsPixels = options.remoteBrowser === undefined && runNeedsPixels(activeConfig, scenario);
   const preflight = needsPixels ? undefined : preflightDisplay(activeConfig, scenario);
   if (preflight !== undefined) {
     process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
@@ -262,16 +271,24 @@ export async function runStandalonePlaytest(
       if (!usesFreePort) await assertManagedUrlAvailable(activeConfig.url);
       server = startManagedServer(activeConfig, usesFreePort ? activeConfig.port : undefined);
     }
-    browserLaunch = chromium.launch({
-      ...(browserConfig.browserArgs === undefined ? {} : { args: resolveBrowserArguments(browserConfig.browserArgs) }),
-      ...(providedDisplay === undefined ? {} : { env: providedDisplay.env }),
-      headless: activeConfig.headless,
-    });
-    browser = await browserLaunch;
-    if (server !== undefined && options.managedServer === undefined) {
+    if (options.remoteBrowser !== undefined && server !== undefined && options.managedServer === undefined) {
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
-    const context = await browser.newContext({ viewport: scenario.viewport });
+    await options.remoteBrowser?.prepare(activeConfig);
+    browserLaunch = options.remoteBrowser === undefined
+      ? chromium.launch({
+          ...(browserConfig.browserArgs === undefined ? {} : { args: resolveBrowserArguments(browserConfig.browserArgs) }),
+          ...(providedDisplay === undefined ? {} : { env: providedDisplay.env }),
+          headless: activeConfig.headless,
+        })
+      : options.remoteBrowser.connect(activeConfig);
+    browser = await browserLaunch;
+    if (options.remoteBrowser === undefined && server !== undefined && options.managedServer === undefined) {
+      await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
+    }
+    const context = options.remoteBrowser === undefined
+      ? await browser.newContext({ viewport: scenario.viewport })
+      : await options.remoteBrowser.context(browser);
     if (activeConfig.trace) {
       await context.tracing.start({ screenshots: true, snapshots: true });
     }
@@ -523,6 +540,7 @@ export async function runStandalonePlaytest(
     if (activeConfig.trace) {
       await context.tracing.stop({ path: join(activeConfig.artifactDirectory, "trace.zip") });
     }
+    const deviceMetrics = await options.remoteBrowser?.finish();
     const report = buildReport(
       browserConfig,
       scenario,
@@ -540,6 +558,7 @@ export async function runStandalonePlaytest(
       captureFailure,
       movementSamples,
       setupApplication,
+      deviceMetrics,
     );
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,

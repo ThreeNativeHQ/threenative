@@ -16,6 +16,7 @@ import { diagnoseDevice, diagnoseHarness, formatDoctorReport, readDeviceProbe, r
 import { formatSceneOverview, observeScene, summariseScene } from "./sceneOverview.js";
 import { initStandalonePlaytest } from "./init.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
+import { runAndroidBrowserPlaytest, runAndroidBrowserPlaytests } from "./androidBrowserRunner.js";
 import { runDesktopPlaytest } from "./desktopRunner.js";
 import { runIosPlaytest } from "./iosRunner.js";
 import { recordToScenario } from "./recording.js";
@@ -34,6 +35,7 @@ export type IConfiguredPlaytestRunner = (
 
 export interface IPlaytestTargetRunners {
   android: IConfiguredPlaytestRunner;
+  androidBrowser?: IConfiguredPlaytestRunner;
   browser: IConfiguredPlaytestRunner;
   desktop: IConfiguredPlaytestRunner;
   ios: IConfiguredPlaytestRunner;
@@ -41,6 +43,7 @@ export interface IPlaytestTargetRunners {
 
 const DEFAULT_TARGET_RUNNERS: IPlaytestTargetRunners = {
   android: runAndroidPlaytest,
+  androidBrowser: runAndroidBrowserPlaytest,
   browser: runStandalonePlaytest,
   desktop: runDesktopPlaytest,
   ios: runIosPlaytest,
@@ -50,6 +53,9 @@ export function runConfiguredPlaytest(
   config: IStandalonePlaytestConfig,
   runners: IPlaytestTargetRunners = DEFAULT_TARGET_RUNNERS,
 ): Promise<import("./runner.js").IStandalonePlaytestReport> {
+  if ((config.target ?? "browser") === "browser" && config.device !== undefined) {
+    return (runners.androidBrowser ?? runAndroidBrowserPlaytest)(config);
+  }
   return runners[config.target ?? "browser"](config);
 }
 
@@ -90,6 +96,13 @@ export function classifyRunnerError(
     };
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (message.startsWith("TN_PLAYTEST_DEVICE_FAILED")) {
+    return diagnostic(
+      "TN_PLAYTEST_DEVICE_FAILED",
+      message,
+      "Confirm adb can reach the requested serial and Android Chrome exposes its CDP socket, then rerun.",
+    );
+  }
   if (message.startsWith("browserType.launch")) {
     return diagnostic(
       "TN_PLAYTEST_BROWSER_UNAVAILABLE",
@@ -208,7 +221,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     config = parseStandalonePlaytestArgs(argv);
     const scenarioPaths = config.scenarioPaths ?? [config.scenarioPath];
     const reports = config.target === "browser"
-      ? await runStandalonePlaytests(config)
+      ? config.device === undefined
+        ? await runStandalonePlaytests(config)
+        : await runAndroidBrowserPlaytests(config)
       : await runDevicePlaytests(config, scenarioPaths);
     const output = reports.length === 1
       ? reports[0]
