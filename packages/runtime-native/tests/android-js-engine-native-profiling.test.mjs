@@ -21,7 +21,6 @@ test("Android measurement controls remain default-off and pass through Gradle", 
   for (const flag of [
     "TN_ANDROID_JS_PROFILE",
     "TN_ANDROID_JS_PROFILE_BUSY_LOOP",
-    "TN_V8_CALLBACK_HANDLE_POOL",
   ]) {
     assert.match(cmake, new RegExp(`option\\(${flag}[^\\n]+ OFF\\)`, "u"));
     assert.match(cmake, new RegExp(`${flag}=\\$<BOOL:\\$\\{${flag}\\}>`, "u"));
@@ -30,7 +29,6 @@ test("Android measurement controls remain default-off and pass through Gradle", 
   assert.match(gradle, /gradleProperty\("threenativeVsync"\)\.orElse\("true"\)/u);
   assert.match(gradle, /gradleProperty\("threenativeJsProfile"\)\.orElse\("false"\)/u);
   assert.match(gradle, /gradleProperty\("threenativeJsProfileBusyLoop"\)\.orElse\("false"\)/u);
-  assert.match(gradle, /gradleProperty\("threenativeV8CallbackHandlePool"\)\.orElse\("false"\)/u);
   for (const setting of [
     "EXTRA_DRAW_CONTROL",
     "FRAME_WINDOW",
@@ -46,12 +44,10 @@ test("Android measurement controls remain default-off and pass through Gradle", 
   assert.match(gradle, /inputs\.properties\(jsProfileEnvironment\)/u);
 });
 
-test("V8 callback pooling reuses argument vectors and persistent wrappers", () => {
-  const v8 = source("../src/js/v8_engine.cpp");
-  assert.match(v8, /acquireCallbackArgumentHandle/u);
-  assert.match(v8, /releaseCallbackArgumentHandle/u);
-  assert.match(v8, /callbackArgumentVectors_/u);
-  assert.match(v8, /TN_V8_CALLBACK_HANDLE_POOL/u);
+test("V8 callback churn harness verifies lifetime and reports throughput", () => {
+  const lifetimeHarness = source("handle_lifetime_test.cpp");
+  assert.match(lifetimeHarness, /callback-churn=/u);
+  assert.match(lifetimeHarness, /callbacks-per-second=/u);
 });
 
 test("RuntimeConfig vsync selects and preserves a supported presentation mode", () => {

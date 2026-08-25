@@ -147,11 +147,6 @@ public:
             delete handle;
         }
         frameHandles_.clear();
-        for (auto* handle : callbackArgumentHandlePool_) {
-            handle->Reset();
-            delete handle;
-        }
-        callbackArgumentHandlePool_.clear();
         protectedHandles_.clear();
         for (auto* ref : nativeFunctionRefs_) {
             ref->persistent.Reset();
@@ -1443,27 +1438,6 @@ private:
         }
     }
 
-    v8::Persistent<v8::Value>* acquireCallbackArgumentHandle(v8::Local<v8::Value> value) {
-#if defined(TN_V8_CALLBACK_HANDLE_POOL) && TN_V8_CALLBACK_HANDLE_POOL
-        if (!callbackArgumentHandlePool_.empty()) {
-            auto* handle = callbackArgumentHandlePool_.back();
-            callbackArgumentHandlePool_.pop_back();
-            handle->Reset(isolate_, value);
-            return handle;
-        }
-#endif
-        return new v8::Persistent<v8::Value>(isolate_, value);
-    }
-
-    void releaseCallbackArgumentHandle(v8::Persistent<v8::Value>* handle) {
-        handle->Reset();
-#if defined(TN_V8_CALLBACK_HANDLE_POOL) && TN_V8_CALLBACK_HANDLE_POOL
-        callbackArgumentHandlePool_.push_back(handle);
-#else
-        delete handle;
-#endif
-    }
-
     static void nativeCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
         v8::Isolate* isolate = info.GetIsolate();
         v8::HandleScope handle_scope(isolate);
@@ -1496,18 +1470,9 @@ private:
 
         // Convert arguments
         std::vector<JSValueHandle> args;
-#if defined(TN_V8_CALLBACK_HANDLE_POOL) && TN_V8_CALLBACK_HANDLE_POOL
-        if (engine && !engine->callbackArgumentVectors_.empty()) {
-            args = std::move(engine->callbackArgumentVectors_.back());
-            engine->callbackArgumentVectors_.pop_back();
-        }
-#endif
-        args.clear();
         args.reserve(info.Length());
         for (int i = 0; i < info.Length(); i++) {
-            v8::Persistent<v8::Value>* persistent = engine
-                ? engine->acquireCallbackArgumentHandle(info[i])
-                : new v8::Persistent<v8::Value>(isolate, info[i]);
+            v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate, info[i]);
             args.push_back({persistent, isolate});
         }
 
@@ -1532,12 +1497,8 @@ private:
                 continue;
             }
             v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)arg.ptr;
-            if (engine) {
-                engine->releaseCallbackArgumentHandle(persistent);
-            } else {
-                persistent->Reset();
-                delete persistent;
-            }
+            persistent->Reset();
+            delete persistent;
         }
 
         // Clean up result handle if it wasn't one of the args. An argument handle is also a
@@ -1555,12 +1516,8 @@ private:
             (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
             auto* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
             if (engine) engine->frameHandles_.erase(resPersistent);
-            if (engine) {
-                engine->releaseCallbackArgumentHandle(resPersistent);
-            } else {
-                resPersistent->Reset();
-                delete resPersistent;
-            }
+            resPersistent->Reset();
+            delete resPersistent;
         } else if (result.ptr && !resultWasArg &&
             (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
             v8::Persistent<v8::Value>* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
@@ -1568,20 +1525,10 @@ private:
             if (engine) {
                 engine->frameHandles_.erase(resPersistent);
             }
-            if (engine) {
-                engine->releaseCallbackArgumentHandle(resPersistent);
-            } else {
-                resPersistent->Reset();
-                delete resPersistent;
-            }
+            resPersistent->Reset();
+            delete resPersistent;
         }
         if (engine) engine->nativeCallbackDepth_ -= 1;
-#if defined(TN_V8_CALLBACK_HANDLE_POOL) && TN_V8_CALLBACK_HANDLE_POOL
-        if (engine) {
-            args.clear();
-            engine->callbackArgumentVectors_.push_back(std::move(args));
-        }
-#endif
     }
 
     // Weak reference data for GC-triggered Dawn resource cleanup
@@ -1604,8 +1551,6 @@ private:
     std::unordered_map<std::string, v8::Global<v8::Module>> moduleCache_;
     std::unordered_map<int, std::string> moduleIdToPath_;  // Reverse lookup: module hash -> path
     std::unordered_set<v8::Persistent<v8::Value>*> frameHandles_;  // Handles to free at end of frame
-    std::vector<v8::Persistent<v8::Value>*> callbackArgumentHandlePool_;
-    std::vector<std::vector<JSValueHandle>> callbackArgumentVectors_;
     std::unordered_set<void*> protectedHandles_;
     std::unordered_set<NativeFunctionRef*> nativeFunctionRefs_;
     bool inFrame_ = false;  // True during animation frame execution

@@ -1,5 +1,6 @@
 #include "mystral/js/engine.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -27,6 +28,35 @@ int main(int argc, char** argv) {
     if (!engine) {
         std::cout << "SKIP: " << engineName << " is not compiled in" << std::endl;
         return 77;
+    }
+
+    const uint64_t callbackChurn = argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 0;
+    if (callbackChurn > 0) {
+        auto* enginePtr = engine.get();
+        uint64_t callbackCount = 0;
+        double callbackChecksum = 0;
+        auto churnCallback = engine->newFunction("callbackChurn", [
+            enginePtr,
+            &callbackCount,
+            &callbackChecksum
+        ](void*, const std::vector<mystral::js::JSValueHandle>& args) {
+            callbackCount += 1;
+            for (const auto argument : args) callbackChecksum += enginePtr->toNumber(argument);
+            return enginePtr->newUndefined();
+        });
+        if (!engine->setGlobalProperty("__tnCallbackChurn", churnCallback)) return EXIT_FAILURE;
+        const std::string script = "for (let i = 0; i < " + std::to_string(callbackChurn) +
+            "; i++) globalThis.__tnCallbackChurn(i, i + 1, i + 2);";
+        const auto start = std::chrono::steady_clock::now();
+        if (!engine->evalScript(script.c_str(), "callback-churn.js")) return EXIT_FAILURE;
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
+        const double callbacksPerSecond = static_cast<double>(callbackCount) / elapsedSeconds;
+        std::cout << "callback-churn=" << callbackCount
+                  << " callbacks-per-second=" << callbacksPerSecond
+                  << " checksum=" << callbackChecksum << std::endl;
+        engine->freeHandle(churnCallback);
+        if (callbackCount != callbackChurn) return EXIT_FAILURE;
     }
 
     constexpr size_t kChurn = 512;
