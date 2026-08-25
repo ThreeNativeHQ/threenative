@@ -73,9 +73,6 @@ test("native profiling reports direct and bundled render commands per submit", (
     "writeBuffer",
     "writeBufferBytes",
     "writeBufferDistinctTargets",
-    "writeBufferUsage",
-    "writeBufferFullCalls",
-    "writeBufferPartialCalls",
     "writeBufferSmallCalls",
     "writeBufferSmallNs",
     "writeBufferMediumCalls",
@@ -100,6 +97,16 @@ test("native profiling reports direct and bundled render commands per submit", (
     "render commands, queue uploads, and render-pass finalization must be timed independently",
   );
   assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
+
+  const uploadMarker = bindings.match(/TN_ANDROID_JS_UPLOAD:\{[\s\S]*?uploadMarker/u)?.[0] ?? "";
+  for (const field of [
+    "frame",
+    "writeBufferUsage",
+    "writeBufferFullCalls",
+    "writeBufferPartialCalls",
+  ]) {
+    assert.ok(uploadMarker.includes(`\\"${field}\\"`), `upload marker must contain ${field}`);
+  }
 });
 
 test("busy-loop negative control stays inside timed bindings", () => {

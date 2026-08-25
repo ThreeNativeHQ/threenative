@@ -404,6 +404,21 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
                << ",\"bytes\":" << usageBytes[index]
                << ",\"ns\":" << usageNs[index] << "}";
     };
+    std::ostringstream uploadOutput;
+    uploadOutput << "TN_ANDROID_JS_UPLOAD:{\"frame\":" << state->frameEndCount
+                 << ",\"writeBufferFullCalls\":" << state->androidJsNativeProfile.writeBufferFullCalls
+                 << ",\"writeBufferPartialCalls\":" << state->androidJsNativeProfile.writeBufferPartialCalls
+                 << ",\"writeBufferUsage\":{";
+    emitUsage(uploadOutput, "uniform", ProfiledBufferUsage::Uniform);
+    uploadOutput << ",";
+    emitUsage(uploadOutput, "storage", ProfiledBufferUsage::Storage);
+    uploadOutput << ",";
+    emitUsage(uploadOutput, "vertex", ProfiledBufferUsage::Vertex);
+    uploadOutput << ",";
+    emitUsage(uploadOutput, "index", ProfiledBufferUsage::Index);
+    uploadOutput << ",";
+    emitUsage(uploadOutput, "other", ProfiledBufferUsage::Other);
+    uploadOutput << "}}";
     std::ostringstream output;
     output << "TN_ANDROID_JS_NATIVE:{\"engine\":\"" << state->engine->getName()
            << "\",\"calls\":" << calls
@@ -411,19 +426,6 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"bundlesExecuted\":" << state->androidJsNativeProfile.bundlesExecuted
            << ",\"writeBufferBytes\":" << state->androidJsNativeProfile.writeBufferBytes
            << ",\"writeBufferDistinctTargets\":" << state->androidJsNativeProfile.writeBufferTargets.size()
-           << ",\"writeBufferFullCalls\":" << state->androidJsNativeProfile.writeBufferFullCalls
-           << ",\"writeBufferPartialCalls\":" << state->androidJsNativeProfile.writeBufferPartialCalls
-           << ",\"writeBufferUsage\":{";
-    emitUsage(output, "uniform", ProfiledBufferUsage::Uniform);
-    output << ",";
-    emitUsage(output, "storage", ProfiledBufferUsage::Storage);
-    output << ",";
-    emitUsage(output, "vertex", ProfiledBufferUsage::Vertex);
-    output << ",";
-    emitUsage(output, "index", ProfiledBufferUsage::Index);
-    output << ",";
-    emitUsage(output, "other", ProfiledBufferUsage::Other);
-    output << "}"
            << ",\"writeBufferSmallCalls\":" << state->androidJsNativeProfile.writeBufferSmallCalls
            << ",\"writeBufferSmallNs\":" << state->androidJsNativeProfile.writeBufferSmallNs
            << ",\"writeBufferMediumCalls\":" << state->androidJsNativeProfile.writeBufferMediumCalls
@@ -454,9 +456,12 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"writeBuffer\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::WriteBuffer)]
            << ",\"endRenderPass\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::EndRenderPass)]
            << "}}";
+    const std::string uploadMarker = uploadOutput.str();
     const std::string marker = output.str();
+    std::cout << uploadMarker << std::endl;
     std::cout << marker << std::endl;
 #if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", uploadMarker.c_str());
     __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", marker.c_str());
 #endif
     state->androidJsNativeProfile = {};
