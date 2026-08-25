@@ -31,15 +31,17 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // Refreshed by PRD-219, in the commit that changed the bytes. Two shipped things moved: the
 // starter's menu proof became cross-target (`noNetworkErrors` is a reasoned opt-out, because the
 // browser is the only target with a CDP network observer), and the capability manifest every
-// template embeds gained the three Android viewport/rotation helpers that proof needed.
+// template embeds gained the Android viewport, rotation, tap and IME helpers that proof needed.
+// The starter's name field also gained autoCapitalize/autoCorrect/spellCheck: a phone keyboard
+// rewrites what the player typed unless the field says not to.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "d25f8066673dd91d7b32733630f6579599507bfc2ca19243486dab5b1853a100",
-  defense: "2885d55734caed4bf917bf5147d99a71f918589357515d0fae155ad7dd9088ed",
-  minimal: "b79e45fa20c38aad6a97a83c4782075c110d60c11b701ff65e2cc05c8cf9022f",
-  platformer: "b01e0ded679b2b6db0e62ce1557f7f3b394b5ea4e86787125c5c64b470675984",
-  racing: "4ad740e4438c6157f49e4e010b924c2674490a661c619ea228ccd87ec2cb456f",
-  shooter: "993523fd18f06a2f93ac178a0177a683811f5b7a718f221eac4cf76b67cc6edb",
-  starter: "83543149033fda7d44940313caca1c7b5f50e179c6ee84d4186ee74a6ccbdba9",
+  "action-rpg": "3b47d2a3812f14ce17bbe687791af986af6e08694d98ca282c098fec8bea6e6f",
+  defense: "d156d5a3f8ba0f3986187d48264b5dfc50ee03818eb3099bbe8776a8e4f0c8eb",
+  minimal: "d41432c1f7175d5a2805259c035139b47f3277ab3b7264c3cfd675a01f34ab0b",
+  platformer: "f009c1e32140d2181870cd1a362a0c05ed1337bf16a96a90a899fc635c380b8d",
+  racing: "5e9b2d58b0d3b4492362d33ef200470bd185a3a2975b846e90f340cd526370b6",
+  shooter: "06ed5b76829ebe946e0faf3ebcec2189f9eed90b8fbf340f7413139de1265d31",
+  starter: "7f4fa8ecb000531922aaeab20ac5d87c878ab3c8641062dcdb7b91fc09177bed",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

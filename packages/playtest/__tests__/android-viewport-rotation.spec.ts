@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
 
 import {
+  keyboardIsShown,
+  tapCommand,
   touchRotationFromWindowDump,
   viewportPresentationCommands,
   viewportRestoreCommands,
@@ -46,6 +48,7 @@ test("a portrait-natural device presents the viewport in its natural frame at on
     .toEqual([
       ["shell", "wm", "size", "720x1280"],
       ["shell", "wm", "density", "160"],
+      ["shell", "wm", "user-rotation", "lock", "1"],
     ]);
 });
 
@@ -54,6 +57,25 @@ test("a landscape-natural device presents the same viewport the other way round"
     .toEqual([
       ["shell", "wm", "size", "1280x720"],
       ["shell", "wm", "density", "160"],
+      ["shell", "wm", "user-rotation", "lock", "0"],
+    ]);
+});
+
+/**
+ * Orientation is half of presenting a viewport, and the half that was missing.
+ *
+ * Measured on the physical Pixel 8 (`37251FDJH0037Z`), 2026-08-25: the runtime's activity
+ * declares no `screenOrientation`, so it takes whatever the device gives. The emulator gave
+ * landscape and the phone, lying flat, gave portrait — the same build, the same override, a
+ * 720x405 letterbox inside a 720x1280 window. A 1280x720 viewport is a landscape viewport, and a
+ * device showing it portrait is not presenting it.
+ */
+test("a portrait viewport on a portrait-natural device needs no quarter turn", () => {
+  expect(viewportPresentationCommands({ height: 1280, width: 720 }, { height: 2400, width: 1080 }))
+    .toEqual([
+      ["shell", "wm", "size", "720x1280"],
+      ["shell", "wm", "density", "160"],
+      ["shell", "wm", "user-rotation", "lock", "0"],
     ]);
 });
 
@@ -64,7 +86,45 @@ test("presenting a viewport with no area fails closed", () => {
 
 test("the override is always undone by reset, never by writing the old numbers back", () => {
   expect(viewportRestoreCommands()).toEqual([
+    ["shell", "wm", "user-rotation", "free"],
     ["shell", "wm", "size", "reset"],
     ["shell", "wm", "density", "reset"],
   ]);
+});
+
+/**
+ * A tap on a device is delivered in the display's current orientation, which — once the viewport
+ * above is presented — is the scenario's viewport, one pixel for one pixel. That is why click
+ * steps do not go through `rotatedTouchPosition`: there is nothing to rotate.
+ *
+ * It also has to be `input tap` rather than the emulator's `adb emu event send` pointer protocol,
+ * which exists only on emulators. The physical Pixel 8 failed
+ * `TN_PLAYTEST_ANDROID_MULTITOUCH_EMULATOR_REQUIRED` before it ever reached an assertion.
+ */
+test("a click is one OS tap in viewport pixels, on every Android device", () => {
+  expect(tapCommand(640, 428)).toEqual(["shell", "input", "tap", "640", "428"]);
+});
+
+test("a fractional click point is rounded to whole device pixels", () => {
+  expect(tapCommand(639.6, 427.4)).toEqual(["shell", "input", "tap", "640", "427"]);
+});
+
+/**
+ * The soft keyboard, measured on the physical Pixel 8 on 2026-08-25 and the reason the night
+ * README's steering note was right about hardware.
+ *
+ * Focusing the name field opens the IME, which is a separate window covering the bottom of the
+ * screen, and the WebView reflows into what is left — so the centred menu rides up and `begin`
+ * moves from y=428 to about y=213. The scenario's second click then lands on the keyboard, where
+ * it does not merely miss: it types a letter into the field it was supposed to submit.
+ *
+ * The emulator never showed this because it takes hardware-keyboard input and raises no IME,
+ * which is why its recorded hit tests show the overlay's dimensions unchanged.
+ */
+test.each([
+  ["      mInputShown=true", true],
+  ["      mInputShown=false", false],
+  ["mSystemReady=true mInteractive=true", false],
+])("the IME state parses from %s", (dump, shown) => {
+  expect(keyboardIsShown(dump)).toBe(shown);
 });

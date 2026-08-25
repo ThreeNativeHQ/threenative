@@ -58,6 +58,8 @@ export interface IDevicePlaytestDriver {
   runAdb?(args: readonly string[]): Promise<string>;
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
+  tap?(x: number, y: number): Promise<void>;
+  hideKeyboard?(): Promise<boolean>;
   startScreenRecording?(): Promise<void>;
   stop(): Promise<void>;
   stopScreenRecording?(path: string): Promise<void>;
@@ -131,7 +133,7 @@ async function runDevicePlaytestInternal(
   const unsupported = unsupportedAssertion(
     scenario,
     target.name,
-    typeof target.driver.setPointers === "function",
+    typeof target.driver.tap === "function",
   );
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
   if (
@@ -540,7 +542,7 @@ async function executeDeviceClickStep(
   step: IPlaytestScenario["steps"][number],
   viewport: IPlaytestScenario["viewport"],
 ): Promise<void> {
-  if (target.name !== "android" || typeof target.driver.setPointers !== "function") {
+  if (target.name !== "android" || typeof target.driver.tap !== "function") {
     throw new PlaytestBridgeError(unsupportedDiagnostic(
       "click steps",
       "Run click steps on --target browser, or use an Android driver with OS pointer injection; native targets never fall back to keyboard input.",
@@ -556,13 +558,13 @@ async function executeDeviceClickStep(
       target.name,
     ));
   }
-  await target.driver.setPointers([{
-    buttons: 1,
-    id: 1,
-    x: point.x / viewport.width,
-    y: point.y / viewport.height,
-  }]);
-  await target.driver.setPointers([]);
+  // The soft keyboard first, and never as a nicety. On a physical device, focusing a text field
+  // opens an IME window over the bottom of the screen and the page reflows into what is left, so
+  // the menu rides up and this coordinate now points at a key. The tap would not miss quietly —
+  // it types into the field it was meant to submit. The emulator raises no IME, which is exactly
+  // why this went unseen there.
+  await target.driver.hideKeyboard?.();
+  await target.driver.tap(point.x, point.y);
 }
 
 async function deviceClickPoint(

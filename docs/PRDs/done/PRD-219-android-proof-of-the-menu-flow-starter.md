@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-219 — The starter's menu flow proves itself on Android
 
-**Status:** DELIVERED 2026-08-25 — criteria 1, 2, 3 and 4 met on `emulator-5554`; the Phase 3
-physical-Pixel stretch did not run (Lane C owned the phone). Evidence:
+**Status:** DELIVERED 2026-08-25 — criteria 1, 2, 3 and 4 met on `emulator-5554`, and the Phase 3
+physical-Pixel 8 stretch passed too, after the phone exposed three further defects the emulator
+cannot produce (orientation, emulator-only click injection, and the soft keyboard). Evidence:
 `docs/verification/prd-219-android-menu-flow-2026-08-25.md`.
 **Complexity:** +2 multi-package (playtest, create-threenative), +1 platform seam (webview
 pointer transport) = **3 → LOW/MEDIUM**, checkpoint after every phase.
@@ -94,9 +95,9 @@ flowchart LR
 - [x] Mutation (red control): remove `carry` from the scaffold's start-game handler → the same
       scenario goes red on device; paste both reports.
 
-#### Phase 3: stretch — physical Pixel rung — NOT RUN (Lane C held the device all night)
+#### Phase 3: stretch — physical Pixel rung — PASSED 2026-08-25 on `37251FDJH0037Z`
 
-- [ ] Same scenario, same assertions, physical Pixel 8, `observations.deviceMetrics`
+- [x] Same scenario, same assertions, physical Pixel 8, `observations.deviceMetrics`
       comparability verdict recorded. Emulator results never upgrade to device claims; each
       run names its lane.
 

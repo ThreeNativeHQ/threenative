@@ -1731,6 +1731,22 @@
       "symbol": "isRuntimeReadout"
     },
     {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function keyboardIsShown(dump: string): boolean { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "keyboardIsShown"
+    },
+    {
       "constraints": ["the mailbox lifecycle must be disposed after the run"],
       "example": "const driver = new DesktopPlaytestDriver(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2158,6 +2174,22 @@
       "summary": "Execute scenario steps, assertions, and evidence capture.",
       "supersedes": [],
       "symbol": "substituteManagedPort"
+    },
+    {
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function tapCommand(x: number, y: number): string[] { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "tapCommand"
     },
     {
       "constraints": ["Android evidence must name its target and transport"],

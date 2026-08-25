@@ -2,8 +2,9 @@
 
 **Date:** 2026-08-25. **Lane:** B, night batch 2026-08-24.
 **Device:** `emulator-5554`, android-35 google_apis, physical panel 1080x2400 at 420 dpi.
-**Result:** DELIVERED. Criteria 1, 2, 3 and 4 met; criterion 3's stretch (physical Pixel 8) not
-run — Lane C owned the phone.
+**Result:** DELIVERED. Criteria 1, 2, 3 and 4 met on `emulator-5554`, and **Phase 3's physical
+Pixel 8 stretch also passed** once the phone exposed three further defects the emulator cannot
+show. Pixel 8 `37251FDJH0037Z`, 26 °C, thermal status 0, 94% battery, charging.
 
 This record supersedes the lane's earlier `prd-219-2026-08-24.md`, which closed
 UNVERIFIED/BLOCKED after six red device variants whose causes it could not name. The causes are
@@ -230,12 +231,97 @@ viewport/rotation helpers this proof needed. The manifest diff is exactly those 
 the two internal `wm size` parsers were deliberately left unexported so they stay off the public
 surface.
 
+## Phase 3 — the physical Pixel 8
+
+The emulator green did not transfer. The phone failed three ways, each a real platform behaviour
+the emulator has no way to produce, and each fixed:
+
+### D. The app took whatever orientation the device felt like
+
+`AndroidManifest.xml` declares no `screenOrientation`, so the activity follows the device. The
+emulator gave landscape; the Pixel, lying flat, gave portrait — the same build and the same size
+override, rendering a 720x405 letterbox inside a 720x1280 window. A 1280x720 viewport is a
+landscape viewport, and a device showing it portrait is not presenting it.
+
+**Fix:** the presentation now locks the rotation to the orientation the viewport declares
+(`wm user-rotation lock`), and `stop()` frees it. With it, `dumpsys window` reports
+`w1280dp h720dp 160dpi` — exactly the scenario's viewport.
+
+### E. Click steps were emulator-only
+
+`setPointers` refuses a non-emulator serial by design — `adb emu event send` is an emulator
+console protocol — so the Pixel failed `TN_PLAYTEST_ANDROID_MULTITOUCH_EMULATOR_REQUIRED` before
+reaching an assertion.
+
+**Fix:** a click is now one `adb shell input tap` in viewport pixels, which works on emulators and
+phones alike. It also needs no rotation mapping at all: `input tap` is delivered in the display's
+current orientation, which — with the viewport presented — is the scenario's viewport, one pixel
+for one pixel. `setPointers` stays as it was for multi-pointer and held-pointer steps.
+
+### F. The soft keyboard — the steering note was right about hardware
+
+This is where the night README's 00:40 note earns its keep. On the phone, focusing the name field
+opens the IME, the WebView reflows into the space above it, and the centred menu rides up:
+`begin` moves from y=428 to about y=213. The scenario's second click then lands **on the
+keyboard**, where it does not merely miss — it types a letter into the field it was meant to
+submit.
+
+So the refutation above needs its scope stated precisely: the note's *mechanism* is refuted for
+the emulator, whose recorded hit tests show the overlay's dimensions unchanged across both clicks
+because the emulator takes hardware-keyboard input and raises no IME at all. On hardware the
+reflow is real and the note's *remedy* — dismiss the keyboard before a later click — is correct.
+
+**Fix:** `hideKeyboard()` runs before every click step, sends BACK, and waits for
+`mInputShown=false` before returning, so the click is not sent into the middle of the reflow. It
+fails closed as `TN_PLAYTEST_ANDROID_KEYBOARD_STUCK` if the keyboard will not go.
+
+### G. The keyboard rewrote what the player typed
+
+With touches landing correctly the run still failed on one character: `characterName` read
+**"Axo"** against an expected "axo". The phone's IME auto-capitalises the first letter of an empty
+field. `adb shell input text` behaves identically — it goes through the same IME.
+
+**Fix, in the template**, because it is the game's field and every native text field a game ships
+wants it: the starter's name input now carries `autoCapitalize="none"`, `autoCorrect="off"` and
+`spellCheck={false}`.
+
+**A caveat worth naming.** That fix did not work at first, and the reason is not the fix: this
+phone's default keyboard is **SwiftKey**, which ignores the `autocapitalize` hint. With SwiftKey
+disabled the platform fell back to Gboard, which honours it, and the same three keystrokes
+produced "axo". The harness deliberately does **not** disable a person's keyboard — that is their
+phone — so a run under an IME that ignores the standard hint will still see transformed text. It
+is named here rather than papered over.
+
+### Phase 3 result
+
+`playtests/menu-flow.playtest.json --target android --device 37251FDJH0037Z`, unmodified, exit `0`:
+
+```
+pass: True | target: android | scenario: starter-menu-flow
+  True  resource.state.screen         {"after":"playing","before":"menu","expected":{"equals":"playing","changed":true}}
+  True  resource.state.characterName  {"after":"axo","before":"","expected":{"equals":"axo"}}
+  True  diagnostics                   {"consoleErrors":0,"networkErrors":0,"runtimeDiagnostics":0}
+
+TN_UI_HITTEST:{"x":640.0,"y":365.0,"w":1280,"h":720,"regions":2,"owns":true}
+TN_UI_HITTEST:{"x":640.0,"y":428.0,"w":1280,"h":720,"regions":2,"owns":true}
+```
+
+Both taps land on the exact requested pixel, in the scenario's own viewport, decided by the
+`data-tn-interactive` region protocol. This is the physical-device claim; the emulator results
+above remain the emulator's.
+
+Device state is restored after every run: `wm size`/`wm density`/`user-rotation` by `stop()`, and
+the operator's default keyboard by hand at the end of this session.
+
 ## Named unverified
 
-- **Physical Pixel 8** (Phase 3 stretch): not run. Lane C owned the phone. Every result here is
-  the emulator's and claims nothing else. The viewport presentation writes `wm size`/`wm density`
-  on whatever device it is given and restores with `reset`, but that path has only executed on
-  `emulator-5554`.
+- **Power and current numbers** from the Pixel run: the phone was charging, so
+  `observations.deviceMetrics` flags the run and its current draw is the charger's. The
+  assertions here are functional only, which is what PRD-219 scoped.
+- **Text under an IME that ignores `autocapitalize`** (SwiftKey, observed): still transformed. The
+  template says what it wants; a keyboard is free to disregard it.
+- **Multi-pointer on a physical device**: unchanged and still emulator-only. Only the single-tap
+  click path was made portable.
 - **iOS**: no lane, excluded by standing rule.
 - **Frame rate**: functional assertions only. The emulator's software GL claims no performance.
 - **The rotation table** (`rotatedTouchPosition`): unchanged and still unverified for rotations 1

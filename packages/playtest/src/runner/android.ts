@@ -46,6 +46,10 @@ export interface IAndroidDriver {
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
   startScreenRecording?(): Promise<void>;
+  /** One OS tap in viewport pixels. Works on emulators and physical devices alike. */
+  tap?(x: number, y: number): Promise<void>;
+  /** Put the soft keyboard away, and report whether one was up. */
+  hideKeyboard?(): Promise<boolean>;
   stop(): Promise<void>;
   stopScreenRecording?(path: string): Promise<void>;
   writeFile?(path: string, contents: string): Promise<void>;
@@ -140,6 +144,33 @@ export class AdbAndroidDriver implements IAndroidDriver {
         `TN_PLAYTEST_ANDROID_VIEWPORT_NOT_PRESENTED: asked for ${String(expected)} and the device reports ${String(override)}.`,
       );
     }
+  }
+
+  async tap(x: number, y: number): Promise<void> {
+    await this.adb(tapCommand(x, y));
+  }
+
+  /**
+   * Dismiss the soft keyboard and wait for it to actually be gone.
+   *
+   * Measured on the physical Pixel 8: focusing a text field opens the IME, the WebView reflows
+   * into the space left above it, and the page's centred menu rides up — so a coordinate computed
+   * against the scenario's viewport now points at the keyboard. A tap there does not merely miss
+   * the control; it types a character into the field it meant to submit.
+   *
+   * BACK is the dismissal the platform guarantees. The wait is the point: the reflow happens on
+   * the next layout pass, and a click sent into the middle of it lands wherever the menu was
+   * halfway through moving.
+   */
+  async hideKeyboard(): Promise<boolean> {
+    if (!keyboardIsShown(await this.adb(["shell", "dumpsys", "input_method"]))) return false;
+    await this.adb(["shell", "input", "keyevent", "4"]);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!keyboardIsShown(await this.adb(["shell", "dumpsys", "input_method"]))) return true;
+    }
+    throw new Error(
+      "TN_PLAYTEST_ANDROID_KEYBOARD_STUCK: the soft keyboard did not close, so a click step would land on it instead of the UI.",
+    );
   }
 
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
@@ -553,11 +584,36 @@ export function viewportPresentationCommands(
   }
   const short = Math.min(viewport.width, viewport.height);
   const long = Math.max(viewport.width, viewport.height);
-  const natural = physical.height >= physical.width ? `${short}x${long}` : `${long}x${short}`;
+  const naturallyPortrait = physical.height >= physical.width;
+  const natural = naturallyPortrait ? `${short}x${long}` : `${long}x${short}`;
+  // Orientation is the other half of presenting a viewport. The runtime's activity declares no
+  // `screenOrientation`, so it takes whatever the device gives: the emulator gave landscape and
+  // the Pixel 8, lying flat, gave portrait — the same build and the same size override, but a
+  // 720x405 letterbox inside a portrait window. A 1280x720 viewport is a landscape viewport, and
+  // a device showing it portrait is not presenting it.
+  const quarterTurn = naturallyPortrait === viewport.width > viewport.height;
   return [
     ["shell", "wm", "size", natural],
     ["shell", "wm", "density", "160"],
+    ["shell", "wm", "user-rotation", "lock", quarterTurn ? "1" : "0"],
   ];
+}
+
+/**
+ * One OS-level tap, in the display's current orientation.
+ *
+ * With the viewport presented, that orientation *is* the scenario's viewport and the coordinate
+ * needs no rotation — which is the second reason to prefer this over the emulator's pointer
+ * protocol. The first is that `adb emu event send` exists only on emulators, and a click step
+ * that only works on an emulator is a click step that does not work.
+ */
+export function tapCommand(x: number, y: number): string[] {
+  return ["shell", "input", "tap", String(Math.round(x)), String(Math.round(y))];
+}
+
+/** Whether an input method window is on screen, from `dumpsys input_method`. */
+export function keyboardIsShown(dump: string): boolean {
+  return /\bmInputShown=true\b/u.test(dump);
 }
 
 /**
@@ -569,6 +625,9 @@ export function viewportPresentationCommands(
  */
 export function viewportRestoreCommands(): string[][] {
   return [
+    // Orientation first: freeing it while the display is still the test size lets the window
+    // manager settle once, rather than once per reset.
+    ["shell", "wm", "user-rotation", "free"],
     ["shell", "wm", "size", "reset"],
     ["shell", "wm", "density", "reset"],
   ];

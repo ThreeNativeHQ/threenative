@@ -137,12 +137,21 @@ test("Android click injects a viewport-pixel touch through the device transport"
   }));
   const pointerSets: Array<readonly { buttons?: number; id: number; x: number; y: number }[]> = [];
   const adbCalls: string[][] = [];
+  const taps: Array<{ x: number; y: number }> = [];
+  let keyboardHidden = 0;
   let tick = 0;
   const driver: IDevicePlaytestDriver = {
     captureConsole: async () => [],
+    hideKeyboard: async () => {
+      keyboardHidden += 1;
+      return false;
+    },
     isAlive: async () => true,
     prepare: async () => undefined,
     screenshot: async () => undefined,
+    tap: async (x, y) => {
+      taps.push({ x, y });
+    },
     setPointers: async (pointers) => {
       pointerSets.push(pointers);
       return {
@@ -203,10 +212,14 @@ test("Android click injects a viewport-pixel touch through the device transport"
   });
 
   expect(report.pass).toBe(true);
-  expect(pointerSets).toEqual([
-    [{ buttons: 1, id: 1, x: 0.5, y: 0.5 }],
-    [],
-  ]);
+  // A click is one OS tap in the scenario's viewport pixels — not a normalized pointer set. The
+  // emulator's `adb emu event send` protocol does not exist on a physical device, and the Pixel 8
+  // failed TN_PLAYTEST_ANDROID_MULTITOUCH_EMULATOR_REQUIRED before reaching an assertion.
+  expect(taps).toEqual([{ x: 320, y: 180 }]);
+  expect(pointerSets).toEqual([]);
+  // And the keyboard is put away first, every time: on hardware the IME reflows the page under
+  // the coordinate that was already computed.
+  expect(keyboardHidden).toBe(1);
   expect(adbCalls.filter((args) => args.includes("input"))).toEqual([
     ["shell", "input", "keyevent", "KEYCODE_A"],
   ]);
