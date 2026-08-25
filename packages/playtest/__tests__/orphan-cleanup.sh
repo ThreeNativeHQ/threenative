@@ -102,8 +102,16 @@ if [[ "$run_code" -eq 2 ]] && rg -q "TN_PLAYTEST_(BROWSER_UNAVAILABLE|SERVER_FAI
   unverified=1
 fi
 
-sleep 2
-orphans="$(ps -eo pid=,args= | awk -v baseline="$baseline_pids" -v port_token="port $test_port" '
+# Teardown is asynchronous: the runner kills the browser, and Playwright removes its profile and
+# artifact directories a moment later. A fixed sleep made this gate a race — it passed on a quiet
+# machine and failed on a loaded CI runner with `before 1, after 3`, reporting a leak that cleaned
+# itself up a second after the count was taken. Poll to a deadline instead, and fail only when the
+# state never settles. That still catches a real leak: a process or directory that is genuinely
+# orphaned is still there when the deadline passes.
+readonly settle_deadline_seconds="${TN_ORPHAN_SETTLE_SECONDS:-30}"
+
+list_orphan_processes() {
+  ps -eo pid=,args= | awk -v baseline="$baseline_pids" -v port_token="port $test_port" '
   BEGIN {
     count = split(baseline, pids, /[[:space:]]+/)
     for (idx = 1; idx <= count; idx += 1) if (pids[idx] != "") existing[pids[idx]] = 1
@@ -115,16 +123,33 @@ orphans="$(ps -eo pid=,args= | awk -v baseline="$baseline_pids" -v port_token="p
     sub(/^[[:space:]]+/, "", $0)
     owned = index($0, port_token) || index($0, "playwright_chromiumdev_profile-") || index($0, "packages/playtest/dist/runner/cli.js")
     if (owned && !existing[pid]) print pid " " $0
-  }')"
+  }'
+}
+
+orphans=""
+after_temp_directories="$before_temp_directories"
+settle_started="$SECONDS"
+while true; do
+  sleep 1
+  orphans="$(list_orphan_processes)"
+  after_temp_directories="$(count_temp_directories)"
+  if [[ -z "$orphans" && "$after_temp_directories" -eq "$before_temp_directories" ]]; then
+    break
+  fi
+  if (( SECONDS - settle_started >= settle_deadline_seconds )); then
+    break
+  fi
+done
+
 if [[ -n "$orphans" ]]; then
-  echo "orphan processes remain:" >&2
+  echo "orphan processes remain after ${settle_deadline_seconds}s:" >&2
   echo "$orphans" >&2
   exit 1
 fi
 
-after_temp_directories="$(count_temp_directories)"
 if [[ "$after_temp_directories" -ne "$before_temp_directories" ]]; then
-  echo "temporary directory count changed in suite namespace '$suite_temp_root': before $before_temp_directories, after $after_temp_directories" >&2
+  echo "temporary directory count changed in suite namespace '$suite_temp_root' and did not settle within ${settle_deadline_seconds}s: before $before_temp_directories, after $after_temp_directories" >&2
+  find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d -print >&2 2>/dev/null || true
   exit 1
 fi
 
