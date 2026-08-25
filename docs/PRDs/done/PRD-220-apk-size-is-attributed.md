@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-220 — The Android APK's bytes are attributed
 
-**Status:** NOT STARTED — filed 2026-08-24 for the night batch.
+**Status: DELIVERED 2026-08-25** — squash-merged to main as `4ade82c7` after two independent review passes; evidence in `docs/verification/apk-size-2026-08-25.md` (clean rebuild 173,572,580 bytes, SHA-256 recorded, C1–C19 fail-closed).
 **Complexity:** **2 → LOW**, one build lane, no device frame runs.
 
 ## Context
