@@ -413,17 +413,14 @@ export class ProjectionMirror {
   /** Retires material-keyed batches on the same hidden-not-deleted free-list discipline. */
   #retireMaterialBatches(seen: { has(object: Object3D): boolean }): void {
     for (const batch of this.#materialBatches.values()) {
-      let drawStructureChanged = false;
       for (const object of batch.instances.keys()) {
         if (seen.has(object)) continue;
         const slot = batch.instances.get(object) as number;
         batch.mesh.setVisibleAt(slot, false);
-        drawStructureChanged = true;
         batch.instances.delete(object);
         batch.free.push(slot);
         this.#state.delete(object);
       }
-      if (drawStructureChanged) batch.bundle.needsUpdate = true;
       if (batch.instances.size === 0) this.#disposeBatched(batch);
     }
   }
@@ -781,16 +778,11 @@ export class ProjectionMirror {
 
     const state = this.#state.get(mesh) as ISourceState;
     const visible = this.#visibleInWorld(mesh);
-    const visibilityChanged = visible !== state.visible;
-    if (visibilityChanged || !matrixEquals(state.matrixWorld, mesh.matrixWorld)) {
+    if (visible !== state.visible || !matrixEquals(state.matrixWorld, mesh.matrixWorld)) {
       state.matrixWorld.copy(mesh.matrixWorld);
       state.visible = visible;
       target.mesh.setMatrixAt(slot, mesh.matrixWorld);
       target.mesh.setVisibleAt(slot, visible);
-      // Three r185 replays a cached bundle without calling BatchedMesh.onBeforeRender. Visibility
-      // changes its multidraw command list, so force a new recording; matrices live in a texture
-      // and deliberately do not invalidate the bundle.
-      if (visibilityChanged) target.bundle.needsUpdate = true;
     }
     state.geometry = mesh.geometry;
     state.material = mesh.material;
@@ -895,9 +887,7 @@ export class ProjectionMirror {
         (batch as IBatch).mesh.setMatrixAt(slot, ZERO_MATRIX);
         (batch as IBatch).mesh.instanceMatrix.needsUpdate = true;
       } else {
-        const materialBatch = batch as IBatched;
-        materialBatch.mesh.setVisibleAt(slot, false);
-        materialBatch.bundle.needsUpdate = true;
+        (batch as IBatched).mesh.setVisibleAt(slot, false);
       }
       batch.instances.delete(object);
       batch.free.push(slot);
