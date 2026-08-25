@@ -55,6 +55,36 @@ Three things follow, and they shape every target below.
    hardware, not the framework. The honest comparison is Chrome-on-the-Pixel against
    native-on-the-Pixel, and that number has never been taken.
 
+### What the batch-lane device session already showed (2026-08-25)
+
+Four findings from the session that took the post-fix rows above, recorded here so the loop does
+not pay for them again.
+
+1. **The 60 Hz panel quantizes bayview's fps to vblank cells, and the 30 fps Floor sits exactly
+   one cell away.** Post-fix at native resolution: `frame.mean` 33.7 ms inside a `presented.mean`
+   of 49.8 ms = 49.8 ÷ 16.67 ≈ **2.99 vblank cells** per frame — the game renders in ~2 cells
+   then waits for the third. That is why the fix moved fps 17.3 → 20.1 (an unstable 3-to-4-cell
+   cadence became a solid 3) without render dropping proportionally. To hold 30 fps the whole
+   frame must fit **2 cells**: `render.p95` has to come down from 34.8 ms to under ~33 ms — a
+   bounded 5–7 ms lever, not an open-ended climb. It also means fps improvements will arrive in
+   steps (20 → 30 → 60), never smoothly, and a gate should expect that.
+2. **After the fix, render still owns the frame; hostGap is vsync, not host.** Cool window:
+   render 28.5 of 33.7 ms (~57 %), update 1.8 ms, residual 0.4 ms, hostGap 16.1 ms — but that
+   hostGap is present-wait quantization (frames ready early, panel not), so chasing it as a host
+   cost would burn a rung on nothing. PRD-214's ranking stands: material/node evaluation first,
+   shadow pass second.
+3. **A pre-existing SIGSEGV kills ~1 launch in 3 at 25–40 s, on both sides of any A/B.**
+   Physics-bridge callback dispatch, null/dangling `std::function`, A/B-proven not the batch
+   lane's:
+   `docs/bugs/physics-simulation-callback-segv-flaky-2026-08-25.md`. Every measurement loop on
+   this lane must check `pidof` after launch and re-launch on death — or fix the crash first,
+   because every silent death costs a relaunch, a heat-soak cycle, and battery toward the floor.
+4. **Cooling stalls are real; matched-warm pairs are the fallback.** After a heavy run the phone
+   plateaued at ~34 °C for 20+ minutes of idle, and an unrelated heat source (a browser left
+   running on the device at 94 % CPU) can silently warm a "cooldown". When the start temp cannot
+   be reached, two arms back-to-back at the same elevated temperature still support a *relative*
+   delta — that is how the 1200×540 pair was taken — but absolute claims need the cool start.
+
 ## Solution
 
 **Two axes, because they fail for different reasons and have different owners.**
@@ -280,10 +310,10 @@ The result splits the work and must be stated plainly:
 
 Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
 
-- [ ] bayview native Android to **30 fps** — the headline. Levers already ranked in PRD-214 and
-      re-measured 2026-08-25: material/node evaluation first, shadow pass second, draw submission
-      third (the batch lane landed `385fd50e`; its device number is still owed and is the first
-      thing to take).
+- [ ] bayview native Android to **30 fps** — the headline, and per finding 1 it is one bounded
+      lever away: get `render.p95` from 34.8 ms under ~33 ms so every frame fits two vblank cells.
+      The draw-submission lever has landed (`385fd50e`, device-measured 20.1 fps cool) — what
+      remains is PRD-214's ranking: material/node evaluation first, shadow pass second.
 - [ ] Every Tier 1 row to Floor.
 - [ ] Every Tier 3 row to Floor.
 - [ ] One Tier 4 sustained run per lever that lands — the cool number and the ten-minute number
@@ -328,12 +358,17 @@ Ordered by what Phase 0 names. Absent a Phase-0 surprise, the standing order is:
 - **The phone is the bottleneck of the loop, not the code.** It needs to cool between runs, and it
   has a battery floor. Batch the questions you ask it: instrument on the host, then take one
   capture that answers several rows.
+- **Guard every device run against the physics SIGSEGV** (`docs/bugs/physics-simulation-callback-segv-flaky-2026-08-25.md`):
+  check `pidof` ~45 s after launch and treat a dead process as a relaunch, never as data. Better,
+  fix that crash first — it burns a launch, a heat cycle and battery every time it fires.
 - **Never claim a gate you did not run.** "Unverified" is an acceptable answer and the only honest
   one for a row nobody measured.
 
 **Named unverified at proposal time:** every Tier 1 row except native Android; every Tier 2 row
 (no parity run has ever been taken); every Tier 4 row (the 2026-08-24 heat numbers are a soak that
-happened, not a run against these thresholds); iOS entirely (no lane, excluded by standing rule); Windows and
-macOS desktop (no host); and bayview's post-batch-fix device number, which is owed by
-`docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md` and is the first
-measurement this PRD should collect.
+happened, not a run against these thresholds); iOS entirely (no lane, excluded by standing rule);
+Windows and macOS desktop (no host). *Taken since filing:* bayview's post-batch-fix device number
+— measured 2026-08-25, recorded in
+`docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md` and in the table and
+findings above; what that scene still owes this PRD is its Tier 4 sustained run and its
+browser-on-Pixel arm (Phase 0).
