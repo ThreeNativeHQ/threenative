@@ -23,6 +23,15 @@ std::filesystem::path toolsPath(int argc, char** argv) {
         return std::filesystem::absolute(configured);
     }
 
+    const std::string runtime = mystral::vfs::getExecutablePath();
+    if (!runtime.empty()) {
+#ifdef _WIN32
+        return std::filesystem::path(runtime).parent_path() / "mystral-tools.exe";
+#else
+        return std::filesystem::path(runtime).parent_path() / "mystral-tools";
+#endif
+    }
+
     if (argc == 0 || !argv || !argv[0]) return {};
     std::error_code error;
     const auto executable = std::filesystem::absolute(argv[0], error);

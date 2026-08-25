@@ -2350,6 +2350,7 @@ private:
                 auto onload = jsEngine_->getProperty(el, "onload");
                 if (!jsEngine_->isUndefined(onload) && !jsEngine_->isNull(onload)) {
                     // Call onload via setTimeout to simulate async loading
+                    jsEngine_->setGlobalProperty("__tnOnloadCallback", onload);
                     if (!evalRuntimeScript(*jsEngine_, "onload-trigger", "onload-trigger.js")) {
                         std::cerr << "[Mystral] Failed to install onload trigger" << std::endl;
                     }

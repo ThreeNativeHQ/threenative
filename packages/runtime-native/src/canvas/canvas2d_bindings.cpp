@@ -7,10 +7,28 @@
 
 #include "mystral/canvas/canvas2d.h"
 #include "mystral/js/engine.h"
+#include "runtime_scripts.h"
 #include <iostream>
+#include <string>
+#include <string_view>
 
 namespace mystral {
 namespace canvas {
+
+static bool evalCanvasScript(js::Engine& engine, std::string_view name, const char* filename) {
+    const auto script = runtime_scripts::find(name);
+    if (!script.data) {
+        std::cerr << "[Canvas2D] Embedded runtime script not found: " << name << std::endl;
+        return false;
+    }
+    const std::string source(script.data, script.size);
+    if (!engine.eval(source.c_str(), filename)) {
+        std::cerr << "[Canvas2D] Failed to evaluate " << filename << ": "
+                  << engine.getException() << std::endl;
+        return false;
+    }
+    return true;
+}
 
 /**
  * Create a CanvasRenderingContext2D JS object that wraps a native Canvas2DContext
@@ -655,79 +673,10 @@ js::JSValueHandle createCanvas2DContext(
     // inside the IIFE that runs synchronously
     engine->setGlobalProperty("__canvas2dContextTemp", jsCtx);
 
-    // Set up property interceptors for fillStyle, strokeStyle, etc.
-    // These call the native setters when properties are changed
-    // The IIFE receives the context as a parameter (not via global lookup)
-    const char* setupPropertyInterceptors = R"(
-        (function(ctx) {
-            var _fillStyle = '#000000';
-            var _strokeStyle = '#000000';
-            var _lineWidth = 1.0;
-            var _globalAlpha = 1.0;
-            var _font = '10px sans-serif';
-            var _textAlign = 'start';
-            var _textBaseline = 'alphabetic';
-
-            Object.defineProperty(ctx, 'fillStyle', {
-                get: function() { return _fillStyle; },
-                set: function(v) {
-                    _fillStyle = v;
-                    ctx.__nativeSetFillStyle(v);
-                }
-            });
-
-            Object.defineProperty(ctx, 'strokeStyle', {
-                get: function() { return _strokeStyle; },
-                set: function(v) {
-                    _strokeStyle = v;
-                    ctx.__nativeSetStrokeStyle(v);
-                }
-            });
-
-            Object.defineProperty(ctx, 'lineWidth', {
-                get: function() { return _lineWidth; },
-                set: function(v) {
-                    _lineWidth = v;
-                    ctx.__nativeSetLineWidth(v);
-                }
-            });
-
-            Object.defineProperty(ctx, 'globalAlpha', {
-                get: function() { return _globalAlpha; },
-                set: function(v) {
-                    _globalAlpha = v;
-                    ctx.__nativeSetGlobalAlpha(v);
-                }
-            });
-
-            Object.defineProperty(ctx, 'font', {
-                get: function() { return _font; },
-                set: function(v) {
-                    _font = v;
-                    ctx.__nativeSetFont(v);
-                }
-            });
-
-            Object.defineProperty(ctx, 'textAlign', {
-                get: function() { return _textAlign; },
-                set: function(v) {
-                    _textAlign = v;
-                    ctx.__nativeSetTextAlign(v);
-                }
-            });
-
-            Object.defineProperty(ctx, 'textBaseline', {
-                get: function() { return _textBaseline; },
-                set: function(v) {
-                    _textBaseline = v;
-                    ctx.__nativeSetTextBaseline(v);
-                }
-            });
-        })(__canvas2dContextTemp);
-    )";
-
-    // Execute the property interceptor setup
-    engine->eval(setupPropertyInterceptors, "canvas2d-setup");
+    // Execute the property interceptor setup.
+    if (!evalCanvasScript(*engine, "canvas2d-properties", "canvas2d-properties.js")) {
+        std::cerr << "[Canvas2D] Failed to install property interceptors" << std::endl;
+    }
 
     return jsCtx;
 }

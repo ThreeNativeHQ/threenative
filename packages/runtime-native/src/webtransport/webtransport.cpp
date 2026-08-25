@@ -1212,7 +1212,7 @@ bool hasActiveSessions() { return false; }
 bool initBindings(js::Engine* engine) {
     // Provide a WebTransport that always rejects so feature-detecting code can
     // handle the absence gracefully.
-    const script = runtime_scripts::find("webtransport-stub");
+    const auto script = runtime_scripts::find("webtransport-stub");
     if (!script.data) return false;
     const std::string source(script.data, script.size);
     return engine->eval(source.c_str(), "webtransport-stub.js");

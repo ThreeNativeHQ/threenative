@@ -747,18 +747,19 @@ public:
     void freeHandle(JSValueHandle value) override {
         if (!value.ptr) return;
         const JSValueRef rawValue = (JSValueRef)value.ptr;
+        const auto persistent = protectedHandleRefs_.find(rawValue);
+        if (persistent != protectedHandleRefs_.end()) {
+            if (--persistent->second == 0) protectedHandleRefs_.erase(persistent);
+            --outstandingHandles_;
+            JSValueUnprotect(context_, rawValue);
+            return;
+        }
         const auto frame = frameHandleRefs_.find(rawValue);
         if (frame != frameHandleRefs_.end()) {
             if (--frame->second == 0) frameHandleRefs_.erase(frame);
             --outstandingHandles_;
             JSValueUnprotect(context_, rawValue);
-            return;
         }
-        const auto persistent = protectedHandleRefs_.find(rawValue);
-        if (persistent == protectedHandleRefs_.end()) return;
-        if (--persistent->second == 0) protectedHandleRefs_.erase(persistent);
-        --outstandingHandles_;
-        JSValueUnprotect(context_, rawValue);
     }
 
     void protect(JSValueHandle value) override { freezeHandle(value); }

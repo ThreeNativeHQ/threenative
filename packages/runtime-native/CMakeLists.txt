@@ -1116,6 +1116,11 @@ set(TN_RUNTIME_SCRIPT_NAMES
     image-bitmap-polyfill
     webtransport-polyfill
     webtransport-stub
+    audio-context-constructor
+    audio-source-properties
+    audio-gain-param
+    audio-panner-properties
+    canvas2d-properties
 )
 set(TN_RUNTIME_SCRIPT_FILES)
 foreach(TN_RUNTIME_SCRIPT_NAME IN LISTS TN_RUNTIME_SCRIPT_NAMES)
