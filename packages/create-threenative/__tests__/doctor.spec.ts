@@ -1,6 +1,14 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { type IProjectSnapshot, diagnoseProject } from "../src/doctor.js";
+import {
+  type IProjectSnapshot,
+  diagnoseProject,
+  formatDoctorReport,
+  probeDesktopOverlay,
+  readProject,
+} from "../src/doctor.js";
 
 const HEALTHY: IProjectSnapshot = {
   config: { nativeEntry: "src/game.ts" },
@@ -54,6 +62,57 @@ function check(report: ReturnType<typeof diagnoseProject>, name: string) {
 }
 
 describe("threenative doctor", () => {
+  it("names the compositor-less X11 blocker before a build", () => {
+    const probe = probeDesktopOverlay({ DISPLAY: ":99" }, () => false);
+    const report = diagnoseProject(
+      snapshot({
+        config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
+        desktopOverlay: probe,
+      }),
+    );
+
+    expect(check(report, "desktop overlay")).toMatchObject({
+      detail: expect.stringContaining("no compositing manager is running"),
+      status: "fail",
+    });
+    expect(formatDoctorReport(report)).toContain("Start a compositing manager");
+  });
+
+  it("names the Wayland transparent-container blocker before a build", () => {
+    const probe = probeDesktopOverlay(
+      { DISPLAY: ":0", WAYLAND_DISPLAY: "wayland-0", XDG_SESSION_TYPE: "wayland" },
+      () => true,
+    );
+    const report = diagnoseProject(
+      snapshot({
+        config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
+        desktopOverlay: probe,
+      }),
+    );
+
+    expect(probe).toMatchObject({
+      detail: expect.stringContaining("transparent container could not be created"),
+      status: "fail",
+    });
+    expect(check(report, "desktop overlay")).toMatchObject({
+      detail: expect.stringContaining("transparent container could not be created"),
+      status: "fail",
+    });
+  });
+
+  it("does not report a desktop overlay blocker for native UI", () => {
+    const probe = probeDesktopOverlay({ DISPLAY: ":99" }, () => false);
+    const report = diagnoseProject(
+      snapshot({
+        config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
+        desktopOverlay: probe,
+      }),
+    );
+
+    expect(report.checks.some(({ name }) => name === "desktop overlay")).toBe(false);
+    expect(report.pass).toBe(true);
+  });
+
   it("passes a healthy scaffolded project", () => {
     const report = diagnoseProject(HEALTHY);
     expect(report.pass).toBe(true);
@@ -223,6 +282,26 @@ describe("threenative doctor", () => {
 });
 
 describe("threenative doctor command", () => {
+  it("loads the shipped TypeScript config before deciding whether to probe the web overlay", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-config-");
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src/game.ts"), "export default {};");
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "doctor-config", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { nativeEntry: "src/game.ts", ui: { renderer: "web" } };\n',
+    );
+
+    const snapshot = await readProject(root);
+
+    expect(snapshot.config).toMatchObject({ ui: { renderer: "web" } });
+    expect(snapshot.desktopOverlay).toBeDefined();
+  });
+
   it("reads a real directory and exits 1 when that directory is not a project", async () => {
     const { runDoctorCommand } = await import("../src/threenative.js");
     const { makeTempDir } = await import("../../../test-support/temp-dir.js");

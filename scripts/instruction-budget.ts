@@ -80,7 +80,8 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
-    starter: 3891,
+    // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
+    starter: 3950,
   },
 };
 

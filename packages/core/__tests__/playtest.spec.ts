@@ -474,6 +474,33 @@ describe("playtest plugin", () => {
       game.stop();
     }
   });
+
+  it("keeps state resource snapshots stable across a scene goto", async () => {
+    type ScreenState = { characterName: string; screen: "menu" | "play" };
+    class MenuScene extends Scene<ScreenState> {
+      static override readonly initialState: ScreenState = { characterName: "", screen: "menu" };
+    }
+    class PlayScene extends Scene<ScreenState> {
+      static override readonly initialState: ScreenState = { characterName: "", screen: "play" };
+    }
+    const game = defineGame<ScreenState>({
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { menu: MenuScene, play: PlayScene },
+      start: "menu",
+    });
+
+    await game.start();
+    try {
+      const before = await bridge().sample({});
+      await game.goto("play", { carry: { characterName: "Axo" } });
+      const after = await bridge().sample({});
+      expect(before.resources?.state).toEqual({ characterName: "", screen: "menu" });
+      expect(after.resources?.state).toEqual({ characterName: "Axo", screen: "play" });
+    } finally {
+      game.stop();
+    }
+  });
 });
 
 function stubRenderer(canvas: HTMLCanvasElement) {

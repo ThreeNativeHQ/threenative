@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-218 — Scenes are the screens: the menu/start-screen flow, shipped as a convention
 
-**Status:** PROPOSED 2026-08-24. Spike evidence: `docs/verification/menu-spike-2026-08-24.md`.
+**Status:** COMPLETE 2026-08-24. Spike evidence: `docs/verification/menu-spike-2026-08-24.md`.
 
 **Complexity:** +3 for 10+ files across four packages (core, playtest, create-threenative,
 runtime-native), +2 multi-package, +1 state semantics (the goto reset) = **6 → MEDIUM mode**.

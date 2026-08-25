@@ -23,10 +23,12 @@ export interface IPlaytestPointer {
 }
 
 export interface IPlaytestStep {
-  kind?: "aimAt" | "input" | "wait";
+  kind?: "aimAt" | "click" | "input" | "wait";
   /** @deprecated Use holdTicks. Fixed-step bridges treat this as a tick alias. */
   holdFrames?: number;
   holdTicks?: number;
+  /** A viewport-pixel click target, resolved directly or from a registered entity's bounds. */
+  at?: IPlaytestClickTarget;
   label?: string;
   overlayMessage?: {
     overlayId: string;
@@ -59,6 +61,8 @@ export interface IPlaytestStep {
 
 /** Where an aimAt step points: a world xz position or another registered entity. */
 export type IPlaytestAimTarget = { entity: string } | { x: number; z: number };
+
+export type IPlaytestClickTarget = { entity: string } | { x: number; y: number };
 
 export interface IPlaytestMovementAssertion {
   axis?: string;

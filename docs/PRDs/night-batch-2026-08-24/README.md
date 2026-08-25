@@ -5,6 +5,12 @@ the day's three batches finished in their worktrees (pending merge):
 `batch-2026-08-23-mobile-stability`, `batch-2026-08-24-fps-framework-mobile-perf`,
 `batch-2026-08-24-menu-screen-flow`.
 
+**Amended 2026-08-25 ~00:15:** `batch-2026-08-24-fps-framework-mobile-perf` did **not** finish.
+PRD-218 (native load/FPS/heat) closed the session **PARTIAL** — three of five criteria met, one
+short, one not met — so that batch cannot move to `done/` and the work below is what remains. A
+blocked or short criterion is not completion. Its evidence is
+`docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`.
+
 This folder is an **execution manifest plus two new PRDs**. Existing PRDs referenced here stay
 in their owning batches — batches move whole to `done/` per `docs/PRDs/AGENTS.md`; nothing is
 moved into this folder.
@@ -30,9 +36,9 @@ moved into this folder.
 
 | Lane | Device | Queue | Why tonight |
 | --- | --- | --- | --- |
-| A — honesty debt | none (unit gates) | [PRD-199](../batch-2026-08-23-tech-debt/PRD-199-parity-scenario-validation-fails-closed.md) → [PRD-201](../batch-2026-08-23-tech-debt/PRD-201-scaffolder-derives-what-it-ships.md) → [PRD-197](../batch-2026-08-23-tech-debt/PRD-197-native-host-fails-loudly-at-creation.md) → [PRD-198](../batch-2026-08-23-tech-debt/PRD-198-raytracing-surface-stays-dark-until-results-exist.md) → [PRD-200 phases 1–2](../batch-2026-08-23-tech-debt/PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) → **hygiene tail** (see below) | Pre-scoped red-green-in-hours work; fail-closed honesty is the house's top rule. Start with 199/201 (zero file overlap with the device-metrics lane); 197/198 begin only after step 0's WIP has landed (they touch `runtime-native`). 200 phase 3 waits for PRD-202 — out of scope tonight |
+| A — honesty debt | none (unit gates) | [PRD-199](../batch-2026-08-23-tech-debt/PRD-199-parity-scenario-validation-fails-closed.md) → [PRD-201](../batch-2026-08-23-tech-debt/PRD-201-scaffolder-derives-what-it-ships.md) → [PRD-197](../batch-2026-08-23-tech-debt/PRD-197-native-host-fails-loudly-at-creation.md) → [PRD-198](../batch-2026-08-23-tech-debt/PRD-198-raytracing-surface-stays-dark-until-results-exist.md) → [PRD-200 phases 1–2](../batch-2026-08-23-tech-debt/PRD-200-playtest-evaluator-plumbing-is-single-sourced.md) → **hygiene tail** (see below) → **PRD-218 remainder rows 1 and 4** (see below) | Pre-scoped red-green-in-hours work; fail-closed honesty is the house's top rule. Start with 199/201 (zero file overlap with the device-metrics lane); 197/198 begin only after step 0's WIP has landed (they touch `runtime-native`). 200 phase 3 waits for PRD-202 — out of scope tonight |
 | B — menu flow on Android | `emulator-5554` | [PRD-219](./PRD-219-android-proof-of-the-menu-flow-starter.md) (new) | Today's headline convention proved web-only; the house rule says web-only is unfinished |
-| C — physical Pixel 8 | `192.168.1.192:5555` | Finish [PRD-217](../PRD-217-webview-ui-layer.md) criterion 3 + Phase 3B, then [PRD-214 Phase 0](../batch-2026-08-23-mobile-stability/PRD-214-render-js-owns-the-mobile-frame.md), then **device tails** (see below) | 217 died at 39.8 °C / 13 % battery mid-capture — overnight is the thermal reset. Then the 19 FPS ceiling bisect, sequenced last by its own batch because the lanes above were needed first |
+| C — physical Pixel 8 | `192.168.1.192:5555` | Finish [PRD-217](../PRD-217-webview-ui-layer.md) criterion 3 + Phase 3B, then [PRD-214 Phase 0](../batch-2026-08-23-mobile-stability/PRD-214-render-js-owns-the-mobile-frame.md), then **PRD-218 remainder rows 1–3** (see below, one session), then **device tails** (see below) | 217 died at 39.8 °C / 13 % battery mid-capture — overnight is the thermal reset. Then the 19 FPS ceiling bisect, sequenced last by its own batch because the lanes above were needed first |
 | D — distribution | local Gradle build | [PRD-220](./PRD-220-apk-size-is-attributed.md) (new) | The fps-framework APK measured 379 MB; nobody can name where the bytes are |
 | E — stretch, time-boxed | emulator + local build | [PRD-221](./PRD-221-android-v8-is-16kb-clean.md) (new) | `libv8android.so` is the one library still failing Play's 16 KB rule; Phase 0 memo is mandatory, ending BLOCKED-with-a-name is an acceptable close |
 
@@ -59,6 +65,42 @@ PRD or criterion outright: PRD-130's missing V8 conformance row (dismiss the tes
 one clean run — executed everywhere else); PRD-127's physical-device preflight criteria
 observed red; [PRD-075](../PRD-075-loading-scene-separation.md)'s exact physical-Pixel perf
 comparison (Phases 0–2 are green on browser + emulator; only this capture is open).
+
+## PRD-218 remainder — what is actually left, in order
+
+PRD-218 shipped the launch-stall instrument, the presentation cap, the Android storage fix, the
+`scheduler.yield` host shim and the batching filing. What follows is the rest, ordered by
+dependency first and value second. **Rows 1–3 are one device session, not three** — instrument and
+fix on the host, then a single capture pair closes two criteria at once. Do not spend three Pixel
+runs on this.
+
+| # | What | Lane | Device | Why in this order |
+| --- | --- | --- | --- | --- |
+| 1 | **Name the 3.3 s residual** (criterion 1: 73.5 % → ≥ 80 %) | A, then C to confirm | none to write, one capture to prove | Pure host work and the cheapest row. The five native segments cover 8.7 s of an 11.7 s gap; the remainder is JavaScript inside the first frame — three's render walk and node building. Do it **before** row 2 so one capture proves both. |
+| 2 | **The Phase 1 ordering fix** (criterion 2) | C | Pixel 8 | The launch-stall fix, and the only row that can move the 14.3 s launch. `#boot` calls `setHeld(true); start()` before the scene loads, and a held loop **still calls `onRender`** — so the first world render begins beside the warm-up and compiles everything in 8.0 s, starving the warm-up it runs next to. The loop must not render the world while warming. Then re-enable `warmUp` and re-measure. |
+| 3 | **Re-read presents/s on a forced cheap frame** (criterion 3 tail) | C | Pixel 8 | The cap is proven by its reported `capHz` and by the game running under it, but the ≤ 65 presents/s reading on a genuinely cheap frame was never re-taken after the cap landed. One capture in the same session as row 2. Cheap-frame lane is the conformance package, not bayview. |
+| 4 | **Attribute the 32 `THREE.Material: parameter 'map' has value of undefined` warnings** (criterion 5 tail) | A | none | Last open guard-rail. Name the source, then fix it or file it where it belongs — a warning nobody has traced is a warning everybody learns to ignore. |
+| 5 | **Material-keyed `BatchedMesh` lane** | C, as PRD-214 Phases 1–2 | Pixel 8 | **Already queued** — filed into PRD-214's lever table with its measurement, so it is not a separate row in the lane table above. Sequenced after PRD-214 Phase 0 by that PRD's own design. |
+
+**Read before starting row 2.** `renderer.compileAsync()` does not work on the native host, and
+`packages/core/src/renderer.ts` documents it as the fix for exactly this stall. Measured: one
+whole-scene call warmed nothing in 15.3 s while the first frame compiled the identical pipelines
+synchronously in 8.0 s. One layer of that is fixed (`three`'s `yieldToMain` fell back to a whole
+rendered frame because the host shimmed `self` and never shimmed `scheduler`); the remaining layer
+is the ordering in row 2. Two dead ends are recorded in the verification file so they are not
+re-walked: per-object `compileAsync` (6 of 490 in 15 s), and treating this as a scheduling problem
+after the shim landed.
+
+**Two traps this work already fell into**, both now guarded but worth naming for whoever picks it up:
+
+- An unbounded `await` in the warm-up **held the launch open forever** — loop held, `substeps mean 0`
+  across 300 frames, nothing thrown, no error in logcat, and the only visible symptom a game that
+  rendered and never started. It reached the user as an enemy stuck in bind pose. `warmUp` is now
+  bounded per compile and overall and always reports; keep it that way.
+- Two runs read 44 s to first frame against a 14.7 s baseline and were **thermally confounded**, not
+  regressed (43.2 °C / thermal status 2 against 38.2 °C / status 0). `doctor --device` and
+  `observations.deviceMetrics` now exist precisely so this is caught by the harness rather than by
+  a human noticing afterwards. Use them.
 
 ## Device contention rules
 
@@ -93,3 +135,6 @@ comparison (Phases 0–2 are green on browser + emulator; only this capture is o
 - [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` exit 0 after each PRD.
 - [ ] Finished PRDs are `git mv`-ed to `done/` in the commit that closes them; this folder is
       deleted once every queue row above is closed or re-filed BLOCKED.
+- [ ] `batch-2026-08-24-fps-framework-mobile-perf` moves to `done/` **only** once PRD-218's
+      remainder rows 1–4 close it. Until then it stays in its own batch and the batch is not
+      archived — a short criterion is not completion.

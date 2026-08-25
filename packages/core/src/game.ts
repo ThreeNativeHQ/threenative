@@ -251,6 +251,10 @@ export interface IGameUi {
   publish(): void;
 }
 
+export interface IGotoOptions<TState extends Record<string, unknown>> {
+  readonly carry?: Partial<TState>;
+}
+
 export interface IGame<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -260,8 +264,8 @@ export interface IGame<
   readonly state: GameStore<TState>;
   /** The seam between the game and its UI layer, on every target. @see IGameUi */
   readonly ui: IGameUi;
-  /** Rebuilds the requested scene from the game's declared initial state. */
-  goto(name: string): Promise<void>;
+  /** Rebuilds the requested scene from its initial state, then merges an optional carry patch. */
+  goto(name: string, options?: IGotoOptions<TState>): Promise<void>;
   start(): Promise<void>;
   pause(): void;
   resume(): void;
@@ -272,6 +276,43 @@ function positiveCameraValue(name: string, value: number): number {
   if (!Number.isFinite(value) || value <= 0)
     throw new Error(`camera.${name} must be finite and positive.`);
   return value;
+}
+
+function assertJsonSafe(value: unknown, path = "$", seen = new WeakSet<object>()): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return;
+    throw new TypeError(`${path} must contain only finite JSON numbers.`);
+  }
+  if (typeof value === "object") {
+    if (seen.has(value)) throw new TypeError(`${path} must be JSON-safe and cannot be cyclic.`);
+    seen.add(value);
+    if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) {
+        throw new TypeError(`${path} must be a JSON-safe array.`);
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        assertJsonSafe(value[index], `${path}[${index}]`, seen);
+      }
+      seen.delete(value);
+      return;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(`${path} must be a JSON-safe plain object.`);
+    }
+    for (const [key, item] of Object.entries(value)) assertJsonSafe(item, `${path}.${key}`, seen);
+    seen.delete(value);
+    return;
+  }
+  throw new TypeError(`${path} must be JSON-safe.`);
+}
+
+function assertCarry(value: unknown): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("goto carry must be a JSON object.");
+  }
+  assertJsonSafe(value, "$.carry");
 }
 
 function validateCameraConfig(config: CameraConfig | undefined): void {
@@ -438,13 +479,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     return bridge;
   }
 
-  goto(name: string): Promise<void> {
+  goto(name: string, options?: IGotoOptions<TState>): Promise<void> {
     if (this.#ctx === undefined) throw new Error("Cannot call game.goto() before start().");
     // Validate before the reset: a typo'd scene name must not wipe the live session's state on
     // its way to throwing.
-    if (this.#config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
+    const SceneType = this.#config.scenes[name];
+    if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
+    const carry = options?.carry;
+    if (carry !== undefined) assertCarry(carry);
+    const destinationInitialState =
+      (SceneType as SceneConstructor<TState, TPhysics> & { initialState?: TState }).initialState ??
+      this.#initialState;
     this.#state.stop();
-    this.#state.setState({ ...this.#initialState });
+    this.#state.setState({ ...destinationInitialState, ...(carry as Partial<TState> | undefined) });
     this.#state.start();
     return this.#goto(name, this.#ctx);
   }

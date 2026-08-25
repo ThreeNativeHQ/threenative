@@ -16,7 +16,9 @@ import type { GameState } from "../state.js";
  */
 export function Menu() {
   const send = useUiIntent();
-  const paused = useUiState<GameState, boolean>((state) => state.paused) ?? false;
+  const state = useUiState<GameState>();
+  if (state === undefined || state.screen !== "playing") return null;
+  const paused = state.paused;
 
   return (
     <div className="pointer-events-none absolute bottom-6 left-6 flex items-center gap-3 border border-line bg-panel/75 px-4 py-3 text-[11px] uppercase tracking-[0.14em] text-dim">

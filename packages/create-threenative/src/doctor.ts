@@ -1,7 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { loadConfig } from "./config.js";
 
 /**
  * `threenative doctor` — check a generated project against the assumptions the build and the
@@ -37,10 +40,78 @@ export interface IProjectSnapshot {
   readonly runtimeFileExists?: (relative: string) => boolean;
   readonly runtimeManifestUrl?: string;
   readonly runtimeRoot?: string;
+  /** Desktop UI overlay preflight, when the machine exposes a display to probe. */
+  readonly desktopOverlay?: IDesktopOverlayProbe;
+}
+
+export interface IDesktopOverlayProbe {
+  readonly detail: string;
+  readonly fix: string;
+  readonly status: DoctorStatus;
 }
 
 const DEFAULT_NATIVE_ENTRY = "src/game.ts";
 const RUNTIME_PACKAGE = "@threenative/runtime-native";
+
+type CompositorProbe = (environment: NodeJS.ProcessEnv) => boolean | undefined;
+
+export function detectX11Compositor(
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean | undefined {
+  if (environment.DISPLAY === undefined) return undefined;
+  try {
+    const output = execFileSync("xprop", ["-root", "_NET_WM_CM_S0"], {
+      encoding: "utf8",
+      env: { ...environment },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return /window id\s*#/u.test(output);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : false;
+  }
+}
+
+export function probeDesktopOverlay(
+  environment: NodeJS.ProcessEnv = process.env,
+  compositor: CompositorProbe = detectX11Compositor,
+): IDesktopOverlayProbe {
+  const wayland =
+    environment.WAYLAND_DISPLAY !== undefined || environment.XDG_SESSION_TYPE === "wayland";
+  if (wayland) {
+    return {
+      detail: "the transparent container could not be created on this Wayland/Xwayland session",
+      fix: "Run the desktop target under an X11 session (for example SDL_VIDEODRIVER=x11) or use the web UI target.",
+      status: "fail",
+    };
+  }
+  if (environment.DISPLAY === undefined) {
+    return {
+      detail: "no display is available, so the desktop overlay could not be probed",
+      fix: "Run doctor in the display session that will host the desktop target.",
+      status: "warn",
+    };
+  }
+  const present = compositor(environment);
+  if (present === true) {
+    return {
+      detail: "an X11 compositing manager owns _NET_WM_CM_S0; transparent overlay alpha can blend",
+      fix: "",
+      status: "ok",
+    };
+  }
+  if (present === false) {
+    return {
+      detail: "no compositing manager is running, so nothing would blend the overlay",
+      fix: "Start a compositing manager or run the desktop target under a composited X11 session.",
+      status: "fail",
+    };
+  }
+  return {
+    detail: "the X11 compositor probe could not run, so overlay transparency is unknown",
+    fix: "Install xprop and rerun doctor in the desktop display session.",
+    status: "warn",
+  };
+}
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -65,6 +136,10 @@ function nativeEntryFrom(config: unknown): string {
   return typeof configured === "string" && configured.length > 0
     ? configured
     : DEFAULT_NATIVE_ENTRY;
+}
+
+function usesDesktopOverlay(config: unknown): boolean {
+  return record(record(config)?.ui)?.renderer === "web";
 }
 
 function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
@@ -305,6 +380,15 @@ function targetChecks(
   ];
 }
 
+function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
+  return {
+    detail: probe.detail,
+    fix: probe.fix,
+    name: "desktop overlay",
+    status: probe.status,
+  };
+}
+
 export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
   if (record(snapshot.packageJson) === undefined) {
     return {
@@ -326,6 +410,9 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
     ...dependencyChecks(snapshot),
     nativeEntryCheck(snapshot),
     nativeRuntime,
+    ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
+      ? []
+      : [desktopOverlayCheck(snapshot.desktopOverlay)]),
     ...targetChecks(snapshot, nativeRuntime),
     snapshot.files.has("src/main.ts")
       ? { detail: "src/main.ts is the web entry", name: "web entry", status: "ok" }
@@ -403,7 +490,8 @@ async function runtimeReleaseManifestUrl(
 export async function readProject(root: string): Promise<IProjectSnapshot> {
   const packageJson = await readJson(path.join(root, "package.json"));
   const configFile = await readJson(path.join(root, "threenative.config.json"));
-  const config = configFile ?? record(packageJson)?.threenative;
+  const config =
+    configFile ?? record(packageJson)?.threenative ?? (await readTypeScriptConfig(root));
   const files = new Set(await collectFiles(root));
   const installedVersions = new Map<string, string>();
   for (const name of declaredDependencies(packageJson)) {
@@ -439,6 +527,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
         return undefined;
       }
     },
+    ...(usesDesktopOverlay(config) ? { desktopOverlay: probeDesktopOverlay() } : {}),
     ...(runtimeRoot === undefined
       ? {}
       : {
@@ -454,6 +543,16 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
           runtimeRoot,
         }),
   };
+}
+
+async function readTypeScriptConfig(root: string): Promise<unknown> {
+  try {
+    return await loadConfig(root);
+  } catch {
+    // Doctor still reports the independent package, entry, and runtime checks when config
+    // validation is already failing; the build path owns the detailed config error.
+    return undefined;
+  }
 }
 
 export function formatDoctorReport(report: IDoctorReport): string {

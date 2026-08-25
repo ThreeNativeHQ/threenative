@@ -73,6 +73,44 @@ test("scenario parser preserves complete held-pointer sets in arrival order", as
   expect(parsed.steps[1]?.pointers?.map(({ id }) => id)).toEqual([7, 3]);
 });
 
+test("scenario parser accepts viewport-pixel click steps", async () => {
+  const directory = await makeTempDir("playtest-click-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    name: "clicks",
+    schemaVersion: 1,
+    steps: [
+      { at: { x: 640, y: 360 }, kind: "click", label: "start" },
+      { at: { entity: "settings" }, kind: "click", label: "settings" },
+    ],
+  }));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.steps).toEqual([
+    { at: { x: 640, y: 360 }, kind: "click", label: "start", release: true },
+    { at: { entity: "settings" }, kind: "click", label: "settings", release: true },
+  ]);
+});
+
+test.each([
+  ["wrong coordinate type", { at: { x: "640", y: 360 }, kind: "click" }],
+  ["negative coordinate", { at: { x: -1, y: 360 }, kind: "click" }],
+  ["wrong entity type", { at: { entity: 42 }, kind: "click" }],
+  ["click with keyboard input", { at: { x: 640, y: 360 }, kind: "click", press: "Enter" }],
+  ["unknown kind", { at: { x: 640, y: 360 }, kind: "pointerClick" }],
+])("scenario parser rejects malformed click steps: %s", async (_label, step) => {
+  const directory = await makeTempDir("playtest-click-invalid-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    name: "invalid-click",
+    schemaVersion: 1,
+    steps: [step],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { code: expect.stringMatching(/^TN_PLAYTEST_SCENARIO_(?:INVALID|STEP_INVALID)$/u) },
+  });
+});
+
 test.each([
   ["non-array set", { pointers: {}, waitFrames: 1 }],
   ["duplicate ids", { pointers: [{ id: 1, x: 0.2, y: 0.8 }, { id: 1, x: 0.8, y: 0.8 }] }],

@@ -882,6 +882,81 @@ describe("IGame", () => {
     game.stop();
   });
 
+  it("resets goto to the destination scene and merges a serializable carry patch", async () => {
+    type ScreenState = { characterName: string; screen: "menu" | "play" };
+
+    class Menu extends Scene<ScreenState> {
+      static override readonly initialState: ScreenState = { characterName: "", screen: "menu" };
+    }
+
+    class Play extends Scene<ScreenState> {
+      static override readonly initialState: ScreenState = { characterName: "", screen: "play" };
+    }
+
+    const game = defineGame<ScreenState>({
+      renderer: renderer(testCanvas()),
+      scenes: { menu: Menu, play: Play },
+      start: "menu",
+    });
+
+    await game.start();
+    game.state.set({ characterName: "temporary" });
+    game.state.flush();
+    await game.goto("play");
+    expect(game.state.getState()).toEqual({ characterName: "", screen: "play" });
+
+    await game.goto("play", { carry: { characterName: "Axo" } });
+    expect(game.state.getState()).toEqual({ characterName: "Axo", screen: "play" });
+
+    const invalidCarry = {
+      characterName: () => "not serializable",
+    } as unknown as Partial<ScreenState>;
+    expect(() => game.goto("play", { carry: invalidCarry })).toThrow(/JSON-safe/u);
+    expect(game.state.getState()).toEqual({ characterName: "Axo", screen: "play" });
+    game.stop();
+  });
+
+  it("rejects non-plain carry values before changing the live state", async () => {
+    type ScreenState = { characterName: string; screen: "menu" | "play" };
+
+    class Menu extends Scene<ScreenState> {
+      static override readonly initialState: ScreenState = { characterName: "", screen: "menu" };
+    }
+
+    class Play extends Scene<ScreenState> {
+      static override readonly initialState: ScreenState = { characterName: "", screen: "play" };
+    }
+
+    class CarryInstance {
+      readonly value = "class instance";
+    }
+
+    const game = defineGame<ScreenState>({
+      renderer: renderer(testCanvas()),
+      scenes: { menu: Menu, play: Play },
+      start: "menu",
+    });
+
+    await game.start();
+    await game.goto("play", { carry: { characterName: "Axo" } });
+    const rejectedValues: readonly [string, unknown][] = [
+      ["Date", new Date()],
+      ["Map", new Map([["name", "Axo"]])],
+      ["Set", new Set(["Axo"])],
+      ["class instance", new CarryInstance()],
+      ["NaN", Number.NaN],
+      ["Infinity", Number.POSITIVE_INFINITY],
+      ["function", () => "Axo"],
+    ];
+
+    for (const [label, value] of rejectedValues) {
+      const carry = { characterName: value } as unknown as Partial<ScreenState>;
+      expect(() => game.goto("play", { carry }), label).toThrow(/JSON/u);
+      expect(game.state.getState()).toEqual({ characterName: "Axo", screen: "play" });
+    }
+    game.stop();
+  });
+
   /**
    * PRD-152 Phase 2. The projection is only worth anything if `defineGame` is what routes through
    * it. These drive the real frame loop and assert on the scene the renderer was handed, because a

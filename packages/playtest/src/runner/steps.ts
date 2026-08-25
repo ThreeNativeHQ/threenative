@@ -378,6 +378,16 @@ export async function runStep(
   finalStep: boolean,
   subject?: string,
 ): Promise<IRunStepSamples> {
+  if (step.kind === "click") {
+    await executeClickStep(page, bridge, step, viewport);
+    const frames = Math.max(step.waitFrames ?? 0, step.waitTicks ?? 0, 1);
+    if (bridge?.description.capabilities.includes("runtime.fixedStep") === true && step.waitTicks !== undefined) {
+      await advanceFixedStep(page, bridge, step.waitTicks);
+    } else {
+      await waitFrames(page, frames);
+    }
+    return { afterInput: undefined, afterStep: undefined, inputDriven: false };
+  }
   if (step.kind === "aimAt") {
     await executeAimAtStep(bridge, step, subject);
   }
@@ -467,6 +477,69 @@ export async function runStep(
     }
   }
   return { afterInput, afterStep, inputDriven };
+}
+
+async function executeClickStep(
+  page: Page,
+  bridge: IPlaytestBridgeClient | undefined,
+  step: IPlaytestScenario["steps"][number],
+  viewport: IPlaytestScenario["viewport"],
+): Promise<void> {
+  const target = step.at;
+  if (target === undefined) {
+    throw clickError(
+      "Click step has no target.",
+      "Declare at as viewport pixels ({ x, y }) or a registered entity ({ entity }).",
+    );
+  }
+  const point = "entity" in target
+    ? await entityClickPoint(bridge, target.entity)
+    : { x: target.x, y: target.y };
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0
+    || point.x > viewport.width || point.y > viewport.height) {
+    throw clickError(
+      `Click target resolves outside the ${viewport.width}x${viewport.height} viewport at (${point.x}, ${point.y}).`,
+      "Use viewport pixel coordinates inside the scenario viewport, or register an entity visible to the bridge.",
+    );
+  }
+  if (typeof page.mouse?.move !== "function" || typeof page.mouse?.down !== "function" || typeof page.mouse?.up !== "function") {
+    throw clickError(
+      "The selected playtest target has no browser pointer transport for a click step.",
+      "Run the scenario on a target with pointer input, or replace click with a supported input step.",
+    );
+  }
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.up({ button: "left" });
+}
+
+async function entityClickPoint(
+  bridge: IPlaytestBridgeClient | undefined,
+  entity: string,
+): Promise<{ x: number; y: number }> {
+  if (bridge === undefined) {
+    throw clickError(
+      `Click target entity '${entity}' cannot be resolved without a playtest bridge.`,
+      "Install the playtest bridge and register the clickable entity, or use explicit viewport pixels.",
+    );
+  }
+  const snapshot = await bridge.sample({ entities: [entity] });
+  const bounds = snapshot.entities?.find((candidate) => candidate.id === entity)?.bounds;
+  if (bounds === undefined) {
+    throw clickError(
+      `Click target entity '${entity}' has no observed screen bounds.`,
+      "Register a visible entity with the playtest bridge, or use explicit viewport pixels.",
+    );
+  }
+  return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+function clickError(message: string, instruction: string): PlaytestBridgeError {
+  return new PlaytestBridgeError(playtestDiagnostic(
+    "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+    message,
+    instruction,
+  ));
 }
 
 /**
@@ -567,6 +640,7 @@ export function playtestStepDrivesMovement(
   step: IPlaytestScenario["steps"][number],
   hasHeldInput: boolean,
 ): boolean {
+  if (step.kind === "click") return false;
   const hasNewInput = typeof step.press === "string"
     ? step.press.length > 0
     : (step.press?.length ?? 0) > 0
@@ -661,6 +735,18 @@ export async function samplePathPosition(
   if (position !== undefined) positions.push(position);
 }
 
+export async function sampleAfterTransition(
+  page: Page,
+  bridge: IPlaytestBridgeClient | undefined,
+  request: IPlaytestSampleRequest,
+): Promise<IPlaytestObservationSnapshot | undefined> {
+  if (bridge === undefined) return undefined;
+  // UI intents cross a message boundary before the game performs its scene goto. Give that
+  // boundary one rendered frame to settle before recording the terminal resources snapshot.
+  await waitFrames(page, 1);
+  return bridge.sample(request);
+}
+
 export function accumulatedPathLength(positions: readonly PlaytestVec3[]): number | undefined {
   if (positions.length < 2) return undefined;
   return positions.slice(1).reduce(
@@ -707,4 +793,3 @@ export function observedResourceIds(scenario: IPlaytestScenario): string[] {
     ...(scenario.setup?.resources ?? []).map(({ id }) => id),
   ])];
 }
-

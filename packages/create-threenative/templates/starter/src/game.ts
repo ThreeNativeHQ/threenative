@@ -3,6 +3,7 @@ import { playtest } from "@threenative/core/playtest";
 import type { IPhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
 import config from "../threenative.config.js";
+import { MainMenu } from "./scenes/MainMenu.js";
 import { Play } from "./scenes/Play.js";
 import type { GameState } from "./state.js";
 
@@ -22,9 +23,9 @@ const game = defineGame<GameState, IPhysicsContext>({
   },
   plugins: [rapier(), replay(), playtest()],
   render: config.renderer,
-  scenes: { play: Play },
+  scenes: { menu: MainMenu, play: Play },
   seed: 90210,
-  start: "play",
+  start: "menu",
 });
 
 export default game;
@@ -36,7 +37,18 @@ export default game;
  * game decides what each means. Nothing comes back this way — the UI reads the game's published
  * state instead, which keeps one source of truth on the side that owns the simulation.
  */
-game.ui.onIntent((intent) => {
+game.ui.onIntent((intent, payload) => {
+  if (intent === "start-game") {
+    const name =
+      typeof payload === "object" &&
+      payload !== null &&
+      typeof (payload as { name?: unknown }).name === "string"
+        ? (payload as { name: string }).name.trim().slice(0, 24)
+        : "";
+    if (name.length === 0) return;
+    void game.goto("play", { carry: { characterName: name } });
+  }
+  if (intent === "back-to-menu") void game.goto("menu");
   if (intent === "restart") void game.goto("play");
   if (intent === "pause") game.pause();
   if (intent === "resume") game.resume();

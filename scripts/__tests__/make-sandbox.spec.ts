@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -6,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   PACKAGES,
+  assertPackedManifestResolved,
   assertTemplateSourcesCovered,
   isArchived,
   makeSandbox,
@@ -30,6 +32,24 @@ async function temporaryRoot(prefix: string): Promise<string> {
 }
 
 describe("genre sandbox", () => {
+  it("fails closed when a packed manifest still contains catalog or workspace protocols", async () => {
+    const root = await temporaryRoot("threenative-packed-manifest-");
+    const packageRoot = path.join(root, "package");
+    await mkdir(packageRoot, { recursive: true });
+    const archive = path.join(root, "package.tgz");
+    await writeFile(
+      path.join(packageRoot, "package.json"),
+      JSON.stringify({
+        dependencies: { three: "catalog:" },
+        name: "fixture",
+        version: "0.1.0",
+      }),
+    );
+    execFileSync("tar", ["-czf", archive, "-C", root, "package"]);
+
+    expect(() => assertPackedManifestResolved(archive)).toThrow(/catalog:/u);
+  });
+
   it("packs the native runtime and capability server with the user-facing packages", () => {
     expect(PACKAGES).toContain("runtime-native");
     expect(PACKAGES).toContain("engine-mcp");

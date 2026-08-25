@@ -221,7 +221,11 @@ registration file — the tree is small enough to read.
 mobile orientation and display flags, desktop window, renderer preference, native entry.
 `package.json` may retain only `threenative.nativeEntry` as a compatibility fallback.
 
-`src/ui/Hud.tsx` is the starter's single HUD; keep gameplay decisions in the portable scene.
+`src/ui/MainMenuUi.tsx` is the starter's form screen, and `src/ui/Hud.tsx` is its gameplay HUD;
+keep gameplay decisions in the portable scenes and let the published `state.screen` choose which
+chrome is visible.
+The complete menu-to-settings-to-play recipe is `agent-docs/menu-screens.md`; the starter's
+`playtests/menu-flow.playtest.json` shows the menu-to-play proof.
 Touch controls are not generated yet: add the small pointer-action mapping after the core
 multitouch surface from PRD-053 lands.
 
@@ -409,8 +413,8 @@ your game — when you change something visual, actually look at it before repor
 writes at loop rate and the bridge coalesces into a flush every ~100 ms, so per-frame feedback
 belongs in scene-owned Three.js objects.
 
-The start scene owns the initial state in `static initialState`; omit a duplicate
-`initialState` literal from `defineGame`. Update only the fields that changed:
+Each scene owns its initial state in `static initialState`; omit a duplicate `initialState` literal
+from `defineGame`. Update only the fields that changed:
 `ctx.state.set({ score })`. Hot reload carries JSON-shaped store state only — seed entities
 in `Play.enter()` from carried values such as `playerX`, because the scene graph, physics
 world, audio voices, particles, and renderer are rebuilt on every update. The keyboard and
@@ -428,7 +432,8 @@ guessing from pixels.
 
 ## Playtests
 
-`playtests/survives.playtest.json` is the durable smoke proof — boot, diagnostics, a nonblank
+`playtests/menu-flow.playtest.json` is the screen-flow proof — click the menu form, carry a name
+into play, and assert it through `resources`. `playtests/survives.playtest.json` is the durable smoke proof — boot, diagnostics, a nonblank
 frame, player movement — and stays green however far you replace the starter gameplay.
 `playtests/goal.playtest.json` and `playtests/gameover.playtest.json` prove the win and fail
 outcomes; rewrite that pair when you replace the win and fail conditions, keeping the pairing:

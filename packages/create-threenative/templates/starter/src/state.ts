@@ -1,4 +1,5 @@
 export type GameState = {
+  characterName: string;
   coyoteJumps: number;
   entityCount: number;
   jumps: number;
@@ -7,6 +8,8 @@ export type GameState = {
   odometer: number;
   /** Set from the UI's pause and resume intents, and read back by the menu. */
   paused: boolean;
+  /** Which scene-backed screen the shared UI should show. */
+  screen: "menu" | "playing";
   /** True once the UI layer has rendered and published its interactive rectangles. */
   uiReady: boolean;
   peakRise: number;

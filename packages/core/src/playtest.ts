@@ -374,7 +374,10 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
       ctx.state.flush();
       const state = ctx.state.getState();
       assertJsonSafe(state);
-      const value = state as Record<string, JsonValue>;
+      // A bridge sample is an observation, not a live view. The store's current object is
+      // mutated in place by later patches and scene resets; returning it directly makes an
+      // earlier `before` sample change when a menu navigates to the next scene.
+      const value = cloneJsonValue(state) as Record<string, JsonValue>;
       return Object.fromEntries([
         // `state` is canonical. Keep `GameState` as a compatibility alias until published
         // scenarios have migrated, then remove the alias in a future breaking release.
@@ -383,4 +386,14 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
       ]);
     },
   };
+}
+
+function cloneJsonValue(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return value.map((item) => cloneJsonValue(item));
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, cloneJsonValue(item)]),
+    );
+  }
+  return value;
 }

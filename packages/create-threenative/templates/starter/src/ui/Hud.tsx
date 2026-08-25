@@ -15,13 +15,14 @@ export function Hud() {
   const state = useUiState<GameState>();
   // Nothing to draw until the game publishes its first snapshot, a few milliseconds in. Rendering
   // zeroes instead would put a wrong score on screen and then correct it.
-  if (state === undefined) return null;
+  if (state === undefined || state.screen !== "playing") return null;
   const position = Math.max(0, Math.min(100, Math.abs(state.playerX) * 10));
   const won = state.status === "won";
 
   return (
     <>
       <div className="pointer-events-none absolute left-6 top-6 w-32">
+        <div className="text-sm text-text">{state.characterName}</div>
         <div className="text-[10px] uppercase tracking-[0.14em] text-dim">score</div>
         <div className="text-4xl leading-none tabular-nums text-lume">{state.score}</div>
         <div className="mt-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-dim">

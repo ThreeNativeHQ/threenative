@@ -533,6 +533,13 @@ function unsupportedAssertion(
   scenario: IPlaytestScenario,
   target: "android" | "desktop" | "ios",
 ): IPlaytestProtocolDiagnostic | undefined {
+  if (scenario.steps.some((step) => step.kind === "click")) {
+    return unsupportedDiagnostic(
+      "click steps",
+      "Run click steps on --target browser; native targets support explicit pointerPosition or pointers input, not browser UI clicks.",
+      target,
+    );
+  }
   const hasMultiPointerInput = scenario.steps.some((step) => step.pointers !== undefined);
   if (hasMultiPointerInput && target === "desktop") {
     return unsupportedDiagnostic(

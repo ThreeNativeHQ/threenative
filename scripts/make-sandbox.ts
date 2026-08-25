@@ -80,6 +80,31 @@ function run(command: string, args: string[], cwd: string): void {
   execFileSync(command, args, { cwd, stdio: "inherit" });
 }
 
+export function assertPackedManifestResolved(file: string): void {
+  const raw = execFileSync("tar", ["-xOzf", file, "package/package.json"], { encoding: "utf8" });
+  const manifest = JSON.parse(raw) as Record<string, unknown>;
+  for (const field of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ] as const) {
+    const dependencies = manifest[field];
+    if (typeof dependencies !== "object" || dependencies === null || Array.isArray(dependencies))
+      continue;
+    for (const [name, specifier] of Object.entries(dependencies)) {
+      if (
+        typeof specifier === "string" &&
+        (specifier === "catalog:" || specifier.startsWith("workspace:"))
+      ) {
+        throw new Error(
+          `${file} packs ${field}.${name} as '${specifier}'; use pnpm pack, not npm pack.`,
+        );
+      }
+    }
+  }
+}
+
 export function readFlag(name: string, fallback?: string): string | undefined {
   const index = process.argv.indexOf(name);
   if (index === -1) return fallback;
@@ -477,20 +502,21 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   if (options.prepare ?? true) {
     run("pnpm", ["--filter", "./packages/**", "--if-present", "run", "build"], repo);
     for (const name of [...PACKAGES, CLI_PACKAGE]) {
-      run(
-        "pnpm",
-        ["--filter", `./packages/${name}`, "exec", "pnpm", "pack", "--pack-destination", staging],
-        repo,
-      );
+      run("pnpm", ["--filter", `./packages/${name}`, "pack", "--pack-destination", staging], repo);
     }
     for (const file of fs.readdirSync(staging)) {
       const owner = [...PACKAGES].find((name) => file.startsWith(`threenative-${name}-`));
       const key = owner ?? (file.startsWith(`${CLI_PACKAGE}-`) ? CLI_PACKAGE : undefined);
-      if (key !== undefined) tarballs[key] = stampTarball(path.join(staging, file));
+      if (key !== undefined) {
+        const tarball = path.join(staging, file);
+        assertPackedManifestResolved(tarball);
+        tarballs[key] = stampTarball(tarball);
+      }
     }
   } else {
     for (const name of requiredPackages) {
-      tarballs[name] = options.packageTarballs?.[name] ?? path.join(staging, `${name}.tgz`);
+      const source = options.packageTarballs?.[name] ?? path.join(staging, `${name}.tgz`);
+      tarballs[name] = source.startsWith("file:") ? source : path.resolve(source);
     }
   }
 

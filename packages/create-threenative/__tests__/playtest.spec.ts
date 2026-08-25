@@ -383,13 +383,20 @@ describe("starter playtest proof", () => {
     ).rejects.toThrow();
   });
 
-  it("should start directly in Play without a redundant boot scene", async () => {
+  it("should start in the menu scene before entering Play", async () => {
     const game = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/game.ts"),
       "utf8",
     );
-    expect(game).toContain("scenes: { play: Play }");
-    expect(game).toContain('start: "play"');
+    expect(game).toContain("scenes: { menu: MainMenu, play: Play }");
+    expect(game).toContain('start: "menu"');
+    expect(game).toContain('game.goto("play", { carry: { characterName: name } })');
+    await expect(
+      readFile(
+        path.resolve("packages/create-threenative/templates/starter/src/scenes/MainMenu.ts"),
+        "utf8",
+      ),
+    ).resolves.toContain('screen: "menu"');
     await expect(
       readFile(
         path.resolve("packages/create-threenative/templates/starter/src/scenes/Boot.ts"),

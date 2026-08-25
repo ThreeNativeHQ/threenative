@@ -256,13 +256,16 @@ async function applyPackageSources(
     optionalDependencies?: Record<string, string>;
     pnpm?: { overrides?: Record<string, string> };
   };
+  const localSource = (source: string): string => {
+    const filePath = source.startsWith("file:") ? source.slice("file:".length) : source;
+    return `file:${path.resolve(filePath)}`;
+  };
   for (const [name, source] of Object.entries(packageSources)) {
     if (source === undefined) continue;
+    const resolvedSource = localSource(source);
     const isExistingDevDependency = packageJson.devDependencies?.[name] !== undefined;
     if (packageJson.optionalDependencies?.[name] !== undefined) {
-      packageJson.optionalDependencies[name] = source.startsWith("file:")
-        ? source
-        : `file:${source}`;
+      packageJson.optionalDependencies[name] = resolvedSource;
     } else if (
       isExistingDevDependency ||
       name === "@threenative/playtest" ||
@@ -270,17 +273,17 @@ async function applyPackageSources(
       name === "threenative-engine-mcp"
     ) {
       packageJson.devDependencies ??= {};
-      packageJson.devDependencies[name] = source.startsWith("file:") ? source : `file:${source}`;
+      packageJson.devDependencies[name] = resolvedSource;
     } else {
       packageJson.dependencies ??= {};
-      packageJson.dependencies[name] = source.startsWith("file:") ? source : `file:${source}`;
+      packageJson.dependencies[name] = resolvedSource;
     }
     // Every local source also overrides transitive resolution: the packed CLI itself depends
     // on @threenative/assets, which no direct pin in this manifest reaches — and which is not
     // on the registry, so an install without the override 404s.
     packageJson.pnpm ??= {};
     packageJson.pnpm.overrides ??= {};
-    packageJson.pnpm.overrides[name] = source.startsWith("file:") ? source : `file:${source}`;
+    packageJson.pnpm.overrides[name] = resolvedSource;
   }
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }

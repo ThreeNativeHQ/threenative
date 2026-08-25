@@ -1,4 +1,4 @@
-import { applyScenarioSetup, waitFrames, observedEntityIds, observedResourceIds, captureVisualSurface, runStep, screenshotObservations, accumulatedPathLength, failureReport } from "./steps.js";
+import { applyScenarioSetup, waitFrames, observedEntityIds, observedResourceIds, captureVisualSurface, runStep, screenshotObservations, accumulatedPathLength, failureReport, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./sampling.js";
@@ -501,7 +501,7 @@ export async function runStandalonePlaytest(
         await capturePage(`${safePart(step.screenshot)}.png`, { path: join(activeConfig.artifactDirectory, `${safePart(step.screenshot)}.png`) });
       }
     }
-    const afterSnapshot = await bridge?.sample(sampleRequest);
+    const afterSnapshot = await sampleAfterTransition(page, bridge, sampleRequest);
     if (afterSnapshot !== undefined && pathEntity !== undefined) {
       const position = entityPosition(afterSnapshot, pathEntity);
       if (position !== undefined) pathPositions.push(position);

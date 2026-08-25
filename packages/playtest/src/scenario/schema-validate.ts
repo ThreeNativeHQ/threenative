@@ -281,6 +281,8 @@ export function validateSetupEntity(value: unknown, scenarioPath: string, index:
 
 /** Keys one step accepts; exported for the documentation-drift gate alongside {@link PLAYTEST_ROOT_KEYS}. */
 export const PLAYTEST_STEP_KEYS = [
+
+  "at",
   "holdFrames",
   "holdTicks",
   "kind",
@@ -360,7 +362,19 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   const holdTicks = positiveInteger(value.holdTicks);
   const waitFrames = positiveInteger(value.waitFrames);
   const waitTicks = positiveInteger(value.waitTicks);
-  const kind = value.kind === "aimAt" ? "aimAt" : value.kind === "wait" ? "wait" : value.kind === "input" ? "input" : undefined;
+  const kind = value.kind === "aimAt"
+    ? "aimAt"
+    : value.kind === "click"
+      ? "click"
+      : value.kind === "wait"
+        ? "wait"
+        : value.kind === "input"
+          ? "input"
+          : undefined;
+  if (value.kind !== undefined && kind === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} kind must be 'aimAt', 'click', 'input', or 'wait'.`);
+  }
+  const at = validateClickTarget(value.at, scenarioPath, index);
   const target = validateAimTarget(value.target, scenarioPath, index);
   const pitch = typeof value.pitch === "number" && Number.isFinite(value.pitch) ? value.pitch : undefined;
   const screenshot = typeof value.screenshot === "string" && /^[A-Za-z0-9._-]+$/.test(value.screenshot)
@@ -379,6 +393,22 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     : undefined;
   if (isRecord(value.window)) {
     rejectUnknownKeys(value.window, ["height", "operation", "width"], scenarioPath, `steps[${index}].window`);
+  }
+  if (kind !== "click" && (at !== undefined || value.at !== undefined)) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} declares at, which belongs to kind 'click'.`);
+  }
+  if (kind === "click") {
+    if (at === undefined) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'click' must define at as { x, y } or { entity }.`);
+    }
+    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "target", "window"] as const) {
+      if (value[forbidden] !== undefined) {
+        throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'click' cannot define ${forbidden}.`);
+      }
+    }
+    if (holdFrames !== undefined || holdTicks !== undefined) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'click' cannot define holdFrames/holdTicks; use waitFrames or waitTicks after the click.`);
+    }
   }
   if (value.press !== undefined && press === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} press must be a non-empty key or a unique array of non-empty keys.`);
@@ -429,8 +459,8 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
-  if (press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} must define press, overlayMessage, pointerPosition, pointers, window, aimAt target, or waitFrames/waitTicks.`);
+  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, window, aimAt target, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} holdFrames must be a positive integer.`);
@@ -461,6 +491,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(holdFrames === undefined ? {} : { holdFrames }),
     ...(holdTicks === undefined ? {} : { holdTicks }),
     ...(typeof value.label === "string" ? { label: value.label } : {}),
+    ...(at === undefined ? {} : { at }),
     ...(overlayMessage === undefined ? {} : { overlayMessage }),
     ...(pitch === undefined ? {} : { pitch }),
     ...(pointerPosition === undefined ? {} : { pointerPosition }),
@@ -473,6 +504,24 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(waitTicks === undefined ? {} : { waitTicks }),
     ...(window === undefined ? {} : { window }),
   };
+}
+
+function validateClickTarget(value: unknown, scenarioPath: string, index: number): IPlaytestStep["at"] | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.entity === "string") {
+    rejectUnknownKeys(value, ["entity"], scenarioPath, `steps[${index}].at`);
+    return value.entity.length === 0 ? undefined : { entity: value.entity };
+  }
+  if (value.entity !== undefined) return undefined;
+  rejectUnknownKeys(value, ["x", "y"], scenarioPath, `steps[${index}].at`);
+  return typeof value.x === "number"
+    && Number.isFinite(value.x)
+    && value.x >= 0
+    && typeof value.y === "number"
+    && Number.isFinite(value.y)
+    && value.y >= 0
+    ? { x: value.x, y: value.y }
+    : undefined;
 }
 
 /** An aimAt target is exactly one of a world xz position or a registered entity id. */
@@ -949,4 +998,3 @@ export function validateOccludedAssertion(value: unknown, scenarioPath: string, 
     ...present("target", optionalString(record, "target", scenarioPath, objectPath)),
   };
 }
-
