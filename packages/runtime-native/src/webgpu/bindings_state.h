@@ -77,6 +77,12 @@ enum class ProfiledRenderCommand : size_t {
     Count
 };
 
+struct ProfiledBufferWrite {
+    uint64_t offset = 0;
+    size_t size = 0;
+    uint64_t hash = 0;
+};
+
 struct AndroidJsNativeProfile {
     uint64_t counts[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t commandNs[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
@@ -89,7 +95,11 @@ struct AndroidJsNativeProfile {
     uint64_t writeBufferMediumNs = 0;
     uint64_t writeBufferLargeCalls = 0;
     uint64_t writeBufferLargeNs = 0;
+    uint64_t writeBufferDuplicateCalls = 0;
+    uint64_t writeBufferDuplicateBytes = 0;
+    uint64_t writeBufferDuplicateNs = 0;
     std::unordered_set<WGPUBuffer> writeBufferTargets;
+    std::unordered_map<WGPUBuffer, ProfiledBufferWrite> writeBufferLastWrites;
 };
 #endif
 

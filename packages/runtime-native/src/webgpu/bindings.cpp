@@ -364,6 +364,15 @@ static std::chrono::steady_clock::time_point beginProfiledBinding() {
     return start;
 }
 
+static uint64_t hashProfiledBufferWrite(const uint8_t* data, size_t size) {
+    uint64_t hash = 1469598103934665603ull;
+    for (size_t index = 0; index < size; index++) {
+        hash ^= data[index];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
 static uint64_t endProfiledBinding(
     BindingsState* state,
     ProfiledRenderCommand command,
@@ -394,6 +403,9 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"bundlesExecuted\":" << state->androidJsNativeProfile.bundlesExecuted
            << ",\"writeBufferBytes\":" << state->androidJsNativeProfile.writeBufferBytes
            << ",\"writeBufferDistinctTargets\":" << state->androidJsNativeProfile.writeBufferTargets.size()
+           << ",\"writeBufferDuplicateCalls\":" << state->androidJsNativeProfile.writeBufferDuplicateCalls
+           << ",\"writeBufferDuplicateBytes\":" << state->androidJsNativeProfile.writeBufferDuplicateBytes
+           << ",\"writeBufferDuplicateNs\":" << state->androidJsNativeProfile.writeBufferDuplicateNs
            << ",\"writeBufferSmallCalls\":" << state->androidJsNativeProfile.writeBufferSmallCalls
            << ",\"writeBufferSmallNs\":" << state->androidJsNativeProfile.writeBufferSmallNs
            << ",\"writeBufferMediumCalls\":" << state->androidJsNativeProfile.writeBufferMediumCalls
@@ -4752,8 +4764,8 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                                 state->engine->throwException("writeBuffer: source range exceeds the supplied buffer view");
                                 return state->engine->newUndefined();
                             }
+                            const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
                             if (buffer && state->queue) {
-                                const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
                                 const size_t alignedWriteSize = (writeSize + 3) & ~size_t(3);
                                 if (alignedWriteSize == writeSize) {
                                     wgpuQueueWriteBuffer(state->queue, buffer, offset, source, writeSize);
@@ -4772,6 +4784,22 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                             if (buffer && state->queue) {
                                 state->androidJsNativeProfile.writeBufferBytes += writeSize;
                                 state->androidJsNativeProfile.writeBufferTargets.insert(buffer);
+                                const ProfiledBufferWrite currentWrite = {
+                                    offset,
+                                    writeSize,
+                                    hashProfiledBufferWrite(source, writeSize),
+                                };
+                                const auto previous =
+                                    state->androidJsNativeProfile.writeBufferLastWrites.find(buffer);
+                                if (previous != state->androidJsNativeProfile.writeBufferLastWrites.end() &&
+                                    previous->second.offset == currentWrite.offset &&
+                                    previous->second.size == currentWrite.size &&
+                                    previous->second.hash == currentWrite.hash) {
+                                    state->androidJsNativeProfile.writeBufferDuplicateCalls += 1;
+                                    state->androidJsNativeProfile.writeBufferDuplicateBytes += writeSize;
+                                    state->androidJsNativeProfile.writeBufferDuplicateNs += writeBufferNs;
+                                }
+                                state->androidJsNativeProfile.writeBufferLastWrites[buffer] = currentWrite;
                                 if (writeSize <= 256) {
                                     state->androidJsNativeProfile.writeBufferSmallCalls += 1;
                                     state->androidJsNativeProfile.writeBufferSmallNs += writeBufferNs;
