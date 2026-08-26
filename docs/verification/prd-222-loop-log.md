@@ -65,12 +65,14 @@ below is a step on the vblank-cell ladder (20 → 30 → 60), never smooth.
 2. Tier-1 acceptance rerun of the upload-staging win on a cool, charged phone (this pair was
    matched-warm development evidence).
 3. File the direct-path readback defect (F6) with its probe as evidence.
-4. Attack the crossing tax (F8): batch WebGPU command recording so one JS→C++ crossing
-   replays many ops (typed-array opcodes + cached wrapper handles), or fast-path the hot
-   handlers' argument parsing (e.g. typed-array element size read directly off
-   `v8::TypedArray` instead of a `BYTES_PER_ELEMENT` property Get on every `writeBuffer`).
-   This is the only lever that reaches the ~27 ms of render time outside measured commands.
-5. After any seam win: re-rank; `render_pass_end` (7.94% CPU, 4.35 ms/frame) is next.
+4. **Attack the per-value seam cost (F13), not the crossing count.** In order: drop the
+   per-call `Isolate`/`Context` scopes and hoist the cached `ExternalReference`; replace
+   `Reflect.set` with `Object::CreateDataProperty` and name-keyed `Object::Get` with internal
+   fields; stop wrapping every crossed value in a `v8::Persistent`; then give WebGPU wrappers
+   fixed shapes (`ObjectTemplate` + internal fields), which is the only item that reaches the
+   3.9 ms/frame of megamorphic and dictionary property lookups on the JavaScript side.
+5. Do **not** re-rank `render_pass_end` as a lever: symbolized, the Mali driver is 2.3 ms of a
+   53 ms frame. The earlier 7.94% was inclusive of everything wgpu defers into `end()`.
 
 ## Device result, 2026-08-26 evening — upload staging v3, paired arms
 
