@@ -1166,6 +1166,15 @@ void releaseTextureRegistryEntry(BindingsState* state, uint64_t textureId) {
     if (state->nextTextureId == textureId + 1) state->nextTextureId = textureId;
 }
 
+static const TextureInfo* findTextureInfoByHandle(
+    const BindingsState* state, WGPUTexture texture) {
+    for (const auto& [textureId, info] : state->textureRegistry) {
+        (void)textureId;
+        if (info.texture == texture) return &info;
+    }
+    return nullptr;
+}
+
 js::JSValueHandle acquireSurfaceTexture(
     BindingsState* state,
     const SurfaceTextureAcquire& acquire,
@@ -2307,18 +2316,11 @@ static js::JSValueHandle tnWebgpuHandler71(BindingsState* state, BindingDestinat
                                 state->engine->throwException("createTextureView: invalid texture");
                                 return state->engine->newUndefined();
                             }
-                            // Get texture info
-                            double formatEnum = state->engine->toNumber(state->engine->getProperty(textureHandle, "_formatEnum"));
-                            WGPUTextureFormat format = formatEnum == 0 ? state->surfaceFormat : (WGPUTextureFormat)(int)formatEnum;
-                            // Get format from _textureId if available
-                            auto textureIdVal = state->engine->getProperty(textureHandle, "_textureId");
-                            if (!state->engine->isUndefined(textureIdVal)) {
-                                uint64_t textureId = (uint64_t)state->engine->toNumber(textureIdVal);
-                                auto it = state->textureRegistry.find(textureId);
-                                if (it != state->textureRegistry.end()) {
-                                    format = it->second.format;
-                                }
-                            }
+                            const TextureInfo* textureInfo =
+                                findTextureInfoByHandle(state, texture);
+                            WGPUTextureFormat format = textureInfo
+                                ? textureInfo->format
+                                : state->surfaceFormat;
                             WGPUTextureViewDescriptor viewDesc = {};
                             viewDesc.format = format;
                             viewDesc.dimension = WGPUTextureViewDimension_2D;
@@ -2354,16 +2356,11 @@ static js::JSValueHandle tnWebgpuHandler71(BindingsState* state, BindingDestinat
                                 if (!state->engine->isUndefined(arrayLayerCount)) {
                                     uint32_t requested = (uint32_t)state->engine->toNumber(arrayLayerCount);
                                     // Clamp to 1 for surface textures (which only have 1 layer)
-                                    // or look up actual layer count from registry
-                                    auto textureIdVal2 = state->engine->getProperty(textureHandle, "_textureId");
-                                    uint32_t maxLayers = 1;
-                                    if (!state->engine->isUndefined(textureIdVal2)) {
-                                        uint64_t tid = (uint64_t)state->engine->toNumber(textureIdVal2);
-                                        auto it = state->textureRegistry.find(tid);
-                                        if (it != state->textureRegistry.end()) {
-                                            maxLayers = it->second.depthOrArrayLayers > 0 ? it->second.depthOrArrayLayers : 1;
-                                        }
-                                    }
+                                    // or use the native registry record for regular textures.
+                                    uint32_t maxLayers = textureInfo &&
+                                            textureInfo->depthOrArrayLayers > 0
+                                        ? textureInfo->depthOrArrayLayers
+                                        : 1;
                                     viewDesc.arrayLayerCount = std::min(requested, maxLayers - viewDesc.baseArrayLayer);
                                 }
                                 auto aspect = state->engine->getProperty(descriptor, "aspect");
@@ -2970,10 +2967,6 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
                             textureInfo.accounted = false;
                             state->textureRegistry[textureId] = textureInfo;
                             // Store texture ID for lookup
-                            state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber((double)textureId));
-                            // texture.createView(descriptor?) - Store texture ID for lookup
-                            // We store the textureId to look up the texture later since callbacks don't have 'this'
-                            state->engine->setProperty(jsTexture, "_createViewTextureId", state->engine->newNumber((double)textureId));
                             if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUTexture", "createView", 0, nullptr,
                                 makeCapturedHandler(textureId, &tnWebgpuHandler65)
@@ -4308,12 +4301,17 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                             // Get vertex stage
                             auto vertex = state->engine->getProperty(descriptor, "vertex");
                             auto vertexModule = state->engine->getProperty(vertex, "module");
+                            WGPUShaderModule vsModule =
+                                (WGPUShaderModule)state->engine->getPrivateData(vertexModule);
                             auto vertexEntryProp = state->engine->getProperty(vertex, "entryPoint");
                             const bool hasVertexEntry = !state->engine->isUndefined(vertexEntryProp);
+                            const auto vertexMetadata =
+                                state->shaderModuleMetadata.find(vsModule);
                             std::string vertexEntry = hasVertexEntry
                                 ? state->engine->toString(vertexEntryProp)
-                                : state->engine->toString(
-                                    state->engine->getProperty(vertexModule, "_tnVertexEntryPoint"));
+                                : vertexMetadata != state->shaderModuleMetadata.end()
+                                    ? vertexMetadata->second.vertexEntryPoint
+                                    : "";
                             if (vertexEntry.empty()) {
                                 state->engine->throwException(
                                     "createRenderPipeline: omitted vertex entryPoint requires exactly one @vertex function");
@@ -4331,8 +4329,12 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                                 if (!state->engine->isUndefined(fragEntryProp)) {
                                     fragmentEntry = state->engine->toString(fragEntryProp);
                                 } else {
-                                    fragmentEntry = state->engine->toString(state->engine->getProperty(
-                                        fragmentModule, "_tnFragmentEntryPoint"));
+                                    const auto fragmentMetadata =
+                                        state->shaderModuleMetadata.find(fsModule);
+                                    fragmentEntry = fragmentMetadata !=
+                                            state->shaderModuleMetadata.end()
+                                        ? fragmentMetadata->second.fragmentEntryPoint
+                                        : "";
                                     if (fragmentEntry.empty()) {
                                         state->engine->throwException(
                                             "createRenderPipeline: omitted fragment entryPoint requires exactly one @fragment function");
@@ -4340,8 +4342,6 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                                     }
                                 }
                             }
-                            // Get native shader modules
-                            WGPUShaderModule vsModule = (WGPUShaderModule)state->engine->getPrivateData(vertexModule);
                             // Create pipeline descriptor
                             WGPURenderPipelineDescriptor pipelineDesc = {};
                             // Check for layout property
@@ -4700,10 +4700,10 @@ static js::JSValueHandle tnWebgpuHandler34(BindingsState* state, BindingDestinat
                                 return state->engine->newUndefined();
                             auto jsShader = state->engine->newObject();
                             state->engine->setPrivateData(jsShader, shaderModule);
-                            state->engine->setProperty(jsShader, "_tnVertexEntryPoint",
-                                state->engine->newString(singleWgslEntryPoint(code, "vertex").c_str()));
-                            state->engine->setProperty(jsShader, "_tnFragmentEntryPoint",
-                                state->engine->newString(singleWgslEntryPoint(code, "fragment").c_str()));
+                            state->shaderModuleMetadata[shaderModule] = {
+                                singleWgslEntryPoint(code, "vertex"),
+                                singleWgslEntryPoint(code, "fragment"),
+                            };
                             return jsShader;
 }
 

@@ -126,7 +126,6 @@ js::JSValueHandle createTextureWrapper(
     state->engine->setProperty(jsTexture, "height", state->engine->newNumber(height));
     state->engine->setProperty(jsTexture, "depthOrArrayLayers", state->engine->newNumber(1));
     state->engine->setProperty(jsTexture, "format", state->engine->newString(format));
-    state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber((double)textureId));
 
     if (!installBindingTable(state->engine, state, bindingTable({
         {"GPUTexture", "createView", 0, nullptr,

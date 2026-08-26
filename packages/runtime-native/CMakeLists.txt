@@ -1769,6 +1769,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-handle-lifetime-test EXCLUDE_FROM_ALL
         tests/handle_lifetime_test.cpp)
     target_link_libraries(threenative-handle-lifetime-test PRIVATE mystral-runtime)
+    add_executable(threenative-v8-engine-contract-test EXCLUDE_FROM_ALL
+        tests/v8_engine_contract_test.cpp)
+    target_link_libraries(threenative-v8-engine-contract-test PRIVATE mystral-runtime)
     if(TN_ENABLE_VIDEO)
         add_executable(threenative-video-recorder-state-test EXCLUDE_FROM_ALL
             tests/video_recorder_state_test.cpp)

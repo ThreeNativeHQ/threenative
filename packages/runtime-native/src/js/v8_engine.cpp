@@ -11,6 +11,7 @@
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
 #include <iostream>
+#include <optional>
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
@@ -85,6 +86,32 @@ static bool initializeV8() {
     return true;
 }
 
+class V8EntryScope {
+public:
+    explicit V8EntryScope(v8::Isolate* isolate)
+        : isolate_(isolate), isolateScope_(isolate), handleScope_(isolate) {}
+
+    void enterContext(v8::Local<v8::Context> context) {
+        if (isolate_->GetCurrentContext() != context) contextScope_.emplace(context);
+    }
+
+private:
+    class ConditionalIsolateScope {
+    public:
+        explicit ConditionalIsolateScope(v8::Isolate* isolate) {
+            if (v8::Isolate::GetCurrent() != isolate) scope_.emplace(isolate);
+        }
+
+    private:
+        std::optional<v8::Isolate::Scope> scope_;
+    };
+
+    v8::Isolate* isolate_;
+    ConditionalIsolateScope isolateScope_;
+    v8::HandleScope handleScope_;
+    std::optional<v8::Context::Scope> contextScope_;
+};
+
 class V8Engine : public Engine {
 public:
     struct NativeFunctionRef {
@@ -109,8 +136,7 @@ public:
         isolate_->SetData(0, this);
 
         // Create context
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
 
         v8::Local<v8::Context> context = v8::Context::New(isolate_);
         context_.Reset(isolate_, context);
@@ -183,10 +209,9 @@ public:
     // ========================================================================
 
     bool eval(const char* code, const char* filename) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Local<v8::String> source =
             v8::String::NewFromUtf8(isolate_, code).ToLocalChecked();
@@ -240,10 +265,9 @@ public:
     }
 
     JSValueHandle evalWithResult(const char* code, const char* filename) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Local<v8::String> source =
             v8::String::NewFromUtf8(isolate_, code).ToLocalChecked();
@@ -290,10 +314,9 @@ public:
     }
 
     bool evalScript(const char* code, const char* filename) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Local<v8::String> source =
             v8::String::NewFromUtf8(isolate_, code).ToLocalChecked();
@@ -324,10 +347,9 @@ public:
     }
 
     JSValueHandle evalScriptWithResult(const char* code, const char* filename) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Local<v8::String> source =
             v8::String::NewFromUtf8(isolate_, code).ToLocalChecked();
@@ -364,8 +386,7 @@ public:
     // ========================================================================
 
     JSValueHandle getGlobal() override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         v8::Local<v8::Object> global = context->Global();
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, global);
@@ -374,10 +395,9 @@ public:
     }
 
     bool setGlobalProperty(const char* name, JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Local<v8::Object> global = context->Global();
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
@@ -391,10 +411,9 @@ public:
     }
 
     JSValueHandle getGlobalProperty(const char* name) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Local<v8::Object> global = context->Global();
         v8::Local<v8::Value> result;
@@ -410,50 +429,44 @@ public:
     // ========================================================================
 
     JSValueHandle newUndefined() override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Undefined(isolate_));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
 
     JSValueHandle newNull() override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Null(isolate_));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
 
     JSValueHandle newBoolean(bool value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Boolean::New(isolate_, value));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
 
     JSValueHandle newNumber(double value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Number::New(isolate_, value));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
 
     JSValueHandle newString(const char* value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::String::NewFromUtf8(isolate_, value).ToLocalChecked());
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
 
     JSValueHandle newObject() override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
         v8::Local<v8::Object> object = v8::Object::New(isolate_);
         object->SetPrivate(
             context,
@@ -466,20 +479,18 @@ public:
     }
 
     JSValueHandle newArray(size_t length) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Array::New(isolate_, (int)length));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
 
     JSValueHandle newArrayBuffer(const uint8_t* data, size_t length) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         // Create a backing store with a copy of the data
         std::unique_ptr<v8::BackingStore> backingStore = v8::ArrayBuffer::NewBackingStore(
@@ -500,10 +511,9 @@ public:
     }
 
     JSValueHandle newArrayBufferExternal(void* data, size_t length) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         // Create a backing store that references external memory without copying
         // Pass empty deleter since WebGPU manages this memory
@@ -522,8 +532,7 @@ public:
     }
 
     void* getArrayBufferData(JSValueHandle value, size_t* size) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
 
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         if (!persistent) return nullptr;
@@ -552,8 +561,7 @@ public:
     }
 
     JSValueHandle createFloat32Array(const float* data, size_t count) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
 
         size_t byteLength = count * sizeof(float);
         std::unique_ptr<v8::BackingStore> backingStore = v8::ArrayBuffer::NewBackingStore(isolate_, byteLength);
@@ -569,8 +577,7 @@ public:
     }
 
     JSValueHandle createFloat32ArrayView(float* data, size_t count) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
 
         size_t byteLength = count * sizeof(float);
         // Create external backing store (no copy, caller manages lifetime)
@@ -588,8 +595,7 @@ public:
     }
 
     JSValueHandle createUint32Array(const uint32_t* data, size_t count) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
 
         size_t byteLength = count * sizeof(uint32_t);
         std::unique_ptr<v8::BackingStore> backingStore = v8::ArrayBuffer::NewBackingStore(isolate_, byteLength);
@@ -605,13 +611,12 @@ public:
     }
 
     JSValueHandle createUint8Array(const uint8_t* data, size_t count) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         // A context must be entered for typed-array creation: this method can be
         // called outside of a JS call stack (e.g. from WebTransport event
         // dispatch), where no context is current. Matches newArrayBuffer().
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         std::unique_ptr<v8::BackingStore> backingStore = v8::ArrayBuffer::NewBackingStore(isolate_, count);
         if (data && count > 0) {
@@ -626,10 +631,9 @@ public:
     }
 
     JSValueHandle newFunction(const char* name, NativeFunction fn) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         // Store the callback
         auto* fnPtr = new NativeFunction(fn);
@@ -665,23 +669,20 @@ public:
     // ========================================================================
 
     bool toBoolean(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->BooleanValue(isolate_);
     }
 
     double toNumber(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->NumberValue(context).FromMaybe(0);
     }
 
     std::string toString(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         v8::Local<v8::String> str;
@@ -693,67 +694,58 @@ public:
     }
 
     bool isUndefined(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsUndefined();
     }
 
     bool isNull(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsNull();
     }
 
     bool isBoolean(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsBoolean();
     }
 
     bool isNumber(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsNumber();
     }
 
     bool isString(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsString();
     }
 
     bool isObject(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsObject();
     }
 
     bool isArray(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsArray();
     }
 
     bool isFunction(JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)value.ptr;
         return persistent->Get(isolate_)->IsFunction();
     }
 
     bool isBindingDestination(JSValueHandle value) override {
         if (!value.ptr || value.ctx != isolate_) return false;
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
         auto* persistent = static_cast<v8::Persistent<v8::Value>*>(value.ptr);
         v8::Local<v8::Value> local = persistent->Get(isolate_);
         if (!local->IsObject()) return false;
@@ -773,8 +765,7 @@ public:
 
     bool isSameValue(JSValueHandle left, JSValueHandle right) override {
         if (!left.ptr || !right.ptr) return left.ptr == right.ptr;
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         auto* leftPersistent = (v8::Persistent<v8::Value>*)left.ptr;
         auto* rightPersistent = (v8::Persistent<v8::Value>*)right.ptr;
         return leftPersistent->Get(isolate_)->SameValue(rightPersistent->Get(isolate_));
@@ -785,24 +776,28 @@ public:
     // ========================================================================
 
     bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Persistent<v8::Value>* valPersistent = (v8::Persistent<v8::Value>*)value.ptr;
 
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
-        return setPropertyWithReflect(
-            context, objLocal, internedKey(isolate_, name), valPersistent->Get(isolate_));
+        v8::TryCatch try_catch(isolate_);
+        const auto result = objLocal->CreateDataProperty(
+            context, internedKey(isolate_, name), valPersistent->Get(isolate_));
+        if (result.IsNothing()) {
+            reportException(try_catch);
+            return false;
+        }
+        return result.FromJust();
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
@@ -820,10 +815,9 @@ public:
     }
 
     bool getPropertyInfo(JSValueHandle obj, const char* name, JSPropertyInfo& info) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
         v8::TryCatch try_catch(isolate_);
 
         auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
@@ -931,10 +925,9 @@ public:
     }
 
     bool hasProperty(JSValueHandle obj, const char* name) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
@@ -950,10 +943,9 @@ public:
     }
 
     bool deleteProperty(JSValueHandle obj, const char* name) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
@@ -969,10 +961,9 @@ public:
     }
 
     bool setPropertyIndex(JSValueHandle arr, uint32_t index, JSValueHandle value) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Persistent<v8::Value>* arrPersistent = (v8::Persistent<v8::Value>*)arr.ptr;
         v8::Persistent<v8::Value>* valPersistent = (v8::Persistent<v8::Value>*)value.ptr;
@@ -982,10 +973,9 @@ public:
     }
 
     JSValueHandle getPropertyIndex(JSValueHandle arr, uint32_t index) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Persistent<v8::Value>* arrPersistent = (v8::Persistent<v8::Value>*)arr.ptr;
         v8::Local<v8::Object> objLocal = arrPersistent->Get(isolate_).As<v8::Object>();
@@ -999,10 +989,9 @@ public:
     }
 
     JSValueHandle call(JSValueHandle func, JSValueHandle thisArg, const std::vector<JSValueHandle>& args) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Persistent<v8::Value>* funcPersistent = (v8::Persistent<v8::Value>*)func.ptr;
         v8::Local<v8::Function> funcLocal = funcPersistent->Get(isolate_).As<v8::Function>();
@@ -1026,6 +1015,7 @@ public:
         v8::Local<v8::Value> result;
         if (!funcLocal->Call(context, thisLocal, (int)v8Args.size(), v8Args.data()).ToLocal(&result)) {
             reportException(try_catch);
+            if (nativeCallbackDepth_ > 0) try_catch.ReThrow();
             return {nullptr, isolate_};
         }
 
@@ -1066,10 +1056,9 @@ public:
     }
 
     void processMicrotasks() override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
         while (v8::platform::PumpMessageLoop(g_platform.get(), isolate_)) {
         }
         isolate_->PerformMicrotaskCheckpoint();
@@ -1108,8 +1097,7 @@ public:
     }
 
     void registerRelease(JSValueHandle obj, std::function<void()> callback) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
 
         auto* origPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Value> local = origPersistent->Get(isolate_);
@@ -1153,10 +1141,9 @@ public:
     }
 
     void throwException(const char* message) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
         isolate_->ThrowException(
             v8::String::NewFromUtf8(isolate_, message).ToLocalChecked());
         lastException_ = message;
@@ -1168,10 +1155,9 @@ public:
     // ========================================================================
 
     void setPrivateData(JSValueHandle obj, void* data) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
@@ -1182,10 +1168,9 @@ public:
     }
 
     void* getPrivateData(JSValueHandle obj) override {
-        v8::Isolate::Scope isolate_scope(isolate_);
-        v8::HandleScope handle_scope(isolate_);
+        V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
@@ -1437,9 +1422,9 @@ private:
 
     static void nativeCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
         v8::Isolate* isolate = info.GetIsolate();
-        v8::HandleScope handle_scope(isolate);
+        V8EntryScope entry_scope(isolate);
         v8::Local<v8::Context> context = isolate->GetCurrentContext();
-        v8::Context::Scope context_scope(context);
+        entry_scope.enterContext(context);
 
         // Get engine for frame handle tracking
         auto* engine = static_cast<V8Engine*>(isolate->GetData(0));

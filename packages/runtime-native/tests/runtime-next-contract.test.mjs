@@ -566,10 +566,10 @@ test('WebGPU wrappers remain valid across framework render frames', () => {
   assert.match(bindings, /state->currentSurfaceTextureId[\s\S]*wgpuTextureRelease\(state->currentTexture\)/,
     'presented surface textures must be removed from the registry and released');
   assert.match(bindings,
-    /singleWgslEntryPoint[\s\S]*_tnVertexEntryPoint[\s\S]*omitted vertex entryPoint requires exactly one @vertex function/,
+    /shaderModuleMetadata[\s\S]*vertexEntryPoint[\s\S]*omitted vertex entryPoint requires exactly one @vertex function/,
     'render pipelines must infer one omitted WGSL vertex entry point and reject ambiguity');
   assert.match(bindings,
-    /singleWgslEntryPoint[\s\S]*_tnFragmentEntryPoint[\s\S]*omitted fragment entryPoint requires exactly one @fragment function/,
+    /shaderModuleMetadata[\s\S]*fragmentEntryPoint[\s\S]*omitted fragment entryPoint requires exactly one @fragment function/,
     'render pipelines must infer one omitted WGSL fragment entry point and reject ambiguity');
   assert.match(bindings, /capturedRenderPassForCommands = renderPass/,
     'each render-pass wrapper must retain the native pass it owns');

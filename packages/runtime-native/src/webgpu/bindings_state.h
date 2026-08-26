@@ -43,6 +43,11 @@ struct TextureInfo {
     bool accounted = false;
 };
 
+struct ShaderModuleMetadata {
+    std::string vertexEntryPoint;
+    std::string fragmentEntryPoint;
+};
+
 struct BufferInfo {
     WGPUBuffer buffer = nullptr;
     uint64_t size = 0;
@@ -214,6 +219,7 @@ struct BindingsState {
     canvas::Canvas2DContext* mainCanvas2DContext = nullptr;
     std::unordered_map<uint64_t, TextureInfo> textureRegistry;
     uint64_t nextTextureId = 1;
+    std::unordered_map<WGPUShaderModule, ShaderModuleMetadata> shaderModuleMetadata;
     std::unordered_map<uint64_t, BufferInfo> bufferRegistry;
 #if TN_ANDROID_JS_PROFILE
     std::unordered_map<WGPUBuffer, BufferInfo> androidJsProfileBufferRegistry;
