@@ -4063,15 +4063,11 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
                                         return state->engine->newUndefined();
                                     }
-                                    // Store in per-encoder map (fixes issue with multiple encoders)
-                                    state->encoderRenderPassMap[encoderToUse] = renderPass;
-                                    // Also set global for backwards compatibility with render pass methods
-                                    state->jsRenderPass = renderPass;
-                                    if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
                                     // Suspend frame tracking while creating render pass wrapper
                                     state->engine->suspendFrameTracking();
                                     // Reuse a pooled wrapper so the renderer's call sites keep
-                                    // seeing one receiver shape and one callee per method.
+                                    // seeing one receiver shape and one callee per method. Acquire before
+                                    // publishing this pass: opaque native handle addresses can be recycled.
                                     auto* passWrapper = acquireRenderPassWrapper(state);
                                     const bool freshRenderPassWrapper =
                                         passWrapper->object.ptr == nullptr;
@@ -4208,6 +4204,13 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     }
 #endif
                                     }
+                                    // Store in the per-encoder map only after acquisition. A wrapper's
+                                    // previous slot can equal a recycled native handle address, so publishing
+                                    // first would make that otherwise-idle wrapper look live to the pool.
+                                    state->encoderRenderPassMap[encoderToUse] = renderPass;
+                                    // Also set global for backwards compatibility with render pass methods.
+                                    state->jsRenderPass = renderPass;
+                                    if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
                                     // Resume frame tracking
                                     state->engine->resumeFrameTracking();
                                     return jsRenderPass;

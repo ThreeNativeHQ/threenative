@@ -242,8 +242,14 @@
     pass.end = () => {
       // The replay binding reads the length header from the buffer, replays ops
       // [1, length) against the captured encoder, and performs the native end-of-pass
-      // state transitions. This buffer belongs to this pass alone and is never reused.
-      return replayEnd(ops);
+      // state transitions. The wrapper can be reused for a later native pass, so clear this
+      // closure's stream whether replay succeeds or throws.
+      try {
+        return replayEnd(ops);
+      } finally {
+        cursor = 1;
+        ops[0] = 1;
+      }
     };
 
     return true;
