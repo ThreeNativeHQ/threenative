@@ -50,6 +50,33 @@ test("V8 callback churn harness verifies lifetime and reports throughput", () =>
   assert.match(lifetimeHarness, /callbacks-per-second=/u);
 });
 
+test("wgpu upload staging is a default-on build toggle passed through Gradle", () => {
+  assert.match(cmake, /option\(TN_WEBGPU_UPLOAD_STAGING[^\n]+ ON\)/u);
+  assert.match(cmake, /TN_WEBGPU_UPLOAD_STAGING=\$<BOOL:\$\{TN_WEBGPU_UPLOAD_STAGING\}>/u);
+  assert.match(gradle, /gradleProperty\("threenativeUploadStaging"\)\.orElse\("true"\)/u);
+  assert.match(gradle, /-DTN_WEBGPU_UPLOAD_STAGING=\$\{/u);
+});
+
+test("writeBuffer stages into mapped blocks flushed at every queue boundary", () => {
+  const bindingsState = source("../src/webgpu/bindings_state.h");
+  // The staging structure itself: persistently mapped COPY_SRC blocks plus in-flight tracking.
+  assert.match(bindingsState, /struct UploadStagingBlock/u);
+  assert.match(bindingsState, /std::vector<UploadStagingBlock> retired/u);
+  assert.match(bindingsState, /std::vector<UploadStagingBlock> ready/u);
+  // The write path stages; oversized or failed-staging writes fall back to direct writes.
+  assert.match(bindings, /stageWriteInUploadStaging/u);
+  assert.match(bindings, /wgpuCommandEncoderCopyBufferToBuffer/u);
+  assert.match(bindings, /wgpuQueueWriteBuffer\(state->queue, buffer, offset, source, writeSize\)/u);
+  // Every operation whose queue-order semantics staged writes must preserve flushes first:
+  // the JS queue.submit handler, the internal srgb-presentation blit submit, writeTexture,
+  // mapAsync readback and onSubmittedWorkDone — five call sites beyond the definition.
+  const flushSites = bindings.match(/flushUploadStaging\(state\)/gu) ?? [];
+  assert.ok(
+    flushSites.length >= 5,
+    `expected >=5 flushUploadStaging call sites, found ${flushSites.length}`,
+  );
+});
+
 test("RuntimeConfig vsync selects and preserves a supported presentation mode", () => {
   assert.match(androidMain, /config\.vsync = (?:true|false)/u);
   assert.match(runtime, /configureSurface\(width_, height_, config_\.vsync\)/u);

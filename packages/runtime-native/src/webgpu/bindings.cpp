@@ -173,6 +173,221 @@ BindingsState* createBindingsState() {
     return new BindingsState();
 }
 
+#if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
+
+struct UploadStagingMapData {
+    bool completed = false;
+};
+
+#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
+static void onUploadStagingMapped(WGPUMapAsyncStatus, WGPUStringView, void* userdata1, void*) {
+    static_cast<UploadStagingMapData*>(userdata1)->completed = true;
+}
+#else
+static void onUploadStagingMapped(WGPUMapAsyncStatus, void* userdata) {
+    static_cast<UploadStagingMapData*>(userdata)->completed = true;
+}
+#endif
+
+// Upload staging (see BindingsState::uploadStaging). One work-done callback serves every retired
+// block: flushes are strictly ordered on this thread, callbacks fire in retirement order during
+// poll, and each one recycles exactly the oldest retired block.
+static void onUploadStagingWorkDone(WGPUQueueWorkDoneStatus, void* userdata1, void*) {
+    auto* state = static_cast<BindingsState*>(userdata1);
+    auto& staging = state->uploadStaging;
+    if (staging.retired.empty()) return;
+    UploadStagingBlock recycled = staging.retired.front();
+    staging.retired.erase(staging.retired.begin());
+    staging.ready.push_back(recycled);
+}
+
+static void releaseUploadStagingBlock(UploadStagingBlock& block) {
+    if (block.buffer) {
+        if (block.mapped) wgpuBufferUnmap(block.buffer);
+        wgpuBufferRelease(block.buffer);
+    }
+    block = {};
+}
+
+static void releaseUploadStaging(BindingsState* state) {
+    auto& staging = state->uploadStaging;
+    releaseUploadStagingBlock(staging.current);
+    for (auto& block : staging.retired) releaseUploadStagingBlock(block);
+    staging.retired.clear();
+    for (auto& block : staging.ready) releaseUploadStagingBlock(block);
+    staging.ready.clear();
+    staging.scratch.clear();
+    staging.scratch.shrink_to_fit();
+    staging.pendingCopies.clear();
+    staging.disabled = false;
+}
+
+// Takes a completed or freshly allocated block and maps it for writing. A mapping failure is
+// transient by nature (the queue drains), so it falls back to direct writes for the batch but
+// leaves staging enabled; only an allocation failure disables it outright.
+static bool acquireMappedUploadStagingBlock(BindingsState* state) {
+    auto& staging = state->uploadStaging;
+    if (staging.current.buffer) return true;
+    if (staging.ready.empty()) {
+        WGPUBufferDescriptor descriptor = {};
+        descriptor.size = UploadStaging::kBlockBytes;
+        descriptor.usage = WGPUBufferUsage_MapWrite | WGPUBufferUsage_CopySrc;
+        staging.current.buffer = wgpuDeviceCreateBuffer(state->device, &descriptor);
+        if (!staging.current.buffer) {
+            staging.disabled = true;
+            std::cerr << "[WebGPU] upload staging: could not allocate a block;"
+                         " falling back to direct queue writes" << std::endl;
+            return false;
+        }
+    } else {
+        staging.current = staging.ready.back();
+        staging.ready.pop_back();
+    }
+    UploadStagingMapData mapData;
+#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
+    WGPUBufferMapCallbackInfo stagingMapCallbackInfo = {};
+    stagingMapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+    stagingMapCallbackInfo.callback = onUploadStagingMapped;
+    stagingMapCallbackInfo.userdata1 = &mapData;
+    stagingMapCallbackInfo.userdata2 = nullptr;
+    wgpuBufferMapAsync(
+        staging.current.buffer, WGPUMapMode_Write, 0, UploadStaging::kBlockBytes,
+        stagingMapCallbackInfo);
+#else
+    wgpuBufferMapAsync(
+        staging.current.buffer, WGPUMapMode_Write, 0, UploadStaging::kBlockBytes,
+        onUploadStagingMapped, &mapData);
+#endif
+    int polls = 0;
+    while (!mapData.completed && polls < 10000) {
+#if defined(MYSTRAL_WEBGPU_WGPU)
+        wgpuDevicePoll(state->device, true, nullptr);
+#endif
+        polls++;
+    }
+    if (!mapData.completed ||
+        !(staging.current.mapped =
+              static_cast<uint8_t*>(wgpuBufferGetMappedRange(
+                  staging.current.buffer, 0, UploadStaging::kBlockBytes)))) {
+        std::cerr << "[WebGPU] upload staging: map did not complete; writing batch directly"
+                  << std::endl;
+        releaseUploadStagingBlock(staging.current);
+        return false;
+    }
+    return true;
+}
+
+// Writes the scratch window through the mapped block in one bulk memcpy — staging offsets index
+// both identically — then retires the block unmapped and submits the batch as one command
+// buffer. Queue FIFO order makes every recorded copy land before whatever queue work follows
+// this boundary.
+static void flushUploadStaging(BindingsState* state) {
+    auto& staging = state->uploadStaging;
+    const size_t batchBytes = staging.scratch.size();
+    if (staging.pendingCopies.empty() || batchBytes == 0 || !state->queue || !state->device) {
+        return;
+    }
+
+    if (!acquireMappedUploadStagingBlock(state)) {
+        for (const UploadStagingCopy& copy : staging.pendingCopies) {
+            wgpuQueueWriteBuffer(
+                state->queue, copy.destination, copy.destinationOffset,
+                staging.scratch.data() + copy.stagingOffset, copy.size);
+        }
+        staging.pendingCopies.clear();
+        staging.scratch.clear();
+        return;
+    }
+    std::memcpy(staging.current.mapped, staging.scratch.data(), batchBytes);
+    wgpuBufferUnmap(staging.current.buffer);
+    staging.current.mapped = nullptr;
+
+    WGPUCommandEncoderDescriptor encoderDescriptor = {};
+    WGPUCommandEncoder encoder =
+        wgpuDeviceCreateCommandEncoder(state->device, &encoderDescriptor);
+    if (!encoder) {
+        std::cerr << "[WebGPU] upload staging: encoder creation failed, dropping "
+                  << staging.pendingCopies.size() << " staged writes" << std::endl;
+        staging.pendingCopies.clear();
+        staging.scratch.clear();
+        releaseUploadStagingBlock(staging.current);
+        return;
+    }
+    for (const UploadStagingCopy& copy : staging.pendingCopies) {
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder, staging.current.buffer, copy.stagingOffset,
+            copy.destination, copy.destinationOffset, copy.size);
+    }
+    WGPUCommandBufferDescriptor commandBufferDescriptor = {};
+    WGPUCommandBuffer commandBuffer =
+        wgpuCommandEncoderFinish(encoder, &commandBufferDescriptor);
+    wgpuCommandEncoderRelease(encoder);
+    if (!commandBuffer) {
+        std::cerr << "[WebGPU] upload staging: finish failed, dropping "
+                  << staging.pendingCopies.size() << " staged writes" << std::endl;
+        staging.pendingCopies.clear();
+        staging.scratch.clear();
+        releaseUploadStagingBlock(staging.current);
+        return;
+    }
+
+    staging.retired.push_back(staging.current);
+    staging.current = {};
+    staging.pendingCopies.clear();
+    staging.scratch.clear();
+
+    wgpuQueueSubmit(state->queue, 1, &commandBuffer);
+    wgpuCommandBufferRelease(commandBuffer);
+
+    // Distinct local name on purpose: webgpu-async-observation.test.mjs mutates the first
+    // `state->queue, callbackInfo` work-done registration to prove its failure is observed;
+    // this recycling registration must not shadow that one.
+    WGPUQueueWorkDoneCallbackInfo stagingCallbackInfo = {};
+    stagingCallbackInfo.callback = onUploadStagingWorkDone;
+    stagingCallbackInfo.userdata1 = state;
+    wgpuQueueOnSubmittedWorkDone(state->queue, stagingCallbackInfo);
+}
+
+#else
+
+static void flushUploadStaging(BindingsState*) {}
+
+#endif
+
+// Returns true when the write was absorbed into staging. A false return sends the caller down
+// the direct wgpuQueueWriteBuffer path: staging disabled by build flag or allocation failure,
+// or the write larger than a whole block. Any pending batch is flushed first so the direct write
+// keeps its place in queue order.
+static bool stageWriteInUploadStaging(
+    BindingsState* state, WGPUBuffer buffer, uint64_t offset,
+    const uint8_t* source, size_t writeSize, size_t alignedWriteSize) {
+#if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
+    auto& staging = state->uploadStaging;
+    if (staging.disabled) return false;
+
+    // A write bigger than a whole block can never stage; flush what precedes it so the direct
+    // write keeps its place in queue order.
+    if (alignedWriteSize > UploadStaging::kBlockBytes) {
+        flushUploadStaging(state);
+        return false;
+    }
+    // The batch shares one block per flush: close it when the next write would not fit.
+    if (staging.scratch.size() + alignedWriteSize > UploadStaging::kBlockBytes) {
+        flushUploadStaging(state);
+    }
+
+    const size_t stagingOffset = staging.scratch.size();
+    staging.scratch.resize(stagingOffset + alignedWriteSize, 0);
+    std::memcpy(staging.scratch.data() + stagingOffset, source, writeSize);
+    staging.pendingCopies.push_back({buffer, offset, stagingOffset, alignedWriteSize});
+    return true;
+#else
+    (void)state; (void)buffer; (void)offset;
+    (void)source; (void)writeSize; (void)alignedWriteSize;
+    return false;
+#endif
+}
+
 void destroyBindingsState(BindingsState*& state) {
     if (!state) return;
     BindingsState* ownedState = state;
@@ -189,6 +404,9 @@ void destroyBindingsState(BindingsState*& state) {
             }
             state->protectedHandles.clear();
         }
+#if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
+        releaseUploadStaging(state);
+#endif
         state->canvas2DContexts.clear();
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
         while (!state->textureRegistry.empty()) {
@@ -1409,6 +1627,7 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
         wgpuCommandEncoderFinish(encoder, &commandBufferDescriptor);
     const bool encoded = commandBuffer != nullptr;
     if (encoded) {
+        flushUploadStaging(state);
         wgpuQueueSubmit(state->queue, 1, &commandBuffer);
         wgpuSurfacePresent(state->surface);
     }
@@ -4268,9 +4487,11 @@ static js::JSValueHandle tnWebgpuHandler30(BindingsState* state, uint64_t buffer
                                     mapCallbackInfo.callback = onBufferMapped;
                                     mapCallbackInfo.userdata1 = &state->bufferMapData;
                                     mapCallbackInfo.userdata2 = nullptr;
+                                    flushUploadStaging(state);
                                     wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, mapCallbackInfo);
 #else
                                     // wgpu-native uses separate callback and userdata
+                                    flushUploadStaging(state);
                                     wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, onBufferMapped, &state->bufferMapData);
 #endif
                                     // Poll device until mapping completes
@@ -4413,6 +4634,9 @@ static js::JSValueHandle tnWebgpuHandler27(BindingsState* state, BindingDestinat
 }
 
 static js::JSValueHandle tnWebgpuHandler26(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                            // The promise must cover every write enqueued before it was created,
+                            // including ones still sitting in the staging batch.
+                            flushUploadStaging(state);
                             auto* data = new QueueWorkDoneData();
 #if WGPU_USES_CALLBACK_INFO_PATTERN
                             WGPUQueueWorkDoneCallbackInfo callbackInfo = {};
@@ -4739,6 +4963,7 @@ static js::JSValueHandle tnWebgpuHandler24(BindingsState* state, BindingDestinat
                             layout.rowsPerImage = rowsPerImage;
                             WGPUExtent3D copySize = {width, height, depthOrArrayLayers};
                             // Write texture
+                            flushUploadStaging(state);
                             wgpuQueueWriteTexture(state->queue, &destCopy, (uint8_t*)dataPtr + layoutOffset, dataSize - layoutOffset, &layout, &copySize);
                             if (state->verboseLogging) std::cout << "[WebGPU] writeTexture: " << width << "x" << height << " (" << dataSize << " bytes)" << std::endl;
                             return state->engine->newUndefined();
@@ -4796,15 +5021,22 @@ static js::JSValueHandle tnWebgpuHandler23(BindingsState* state, BindingDestinat
                             const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
                             if (buffer && state->queue) {
                                 const size_t alignedWriteSize = (writeSize + 3) & ~size_t(3);
-                                if (alignedWriteSize == writeSize) {
-                                    wgpuQueueWriteBuffer(state->queue, buffer, offset, source, writeSize);
-                                } else {
-                                    // Three pads destination attribute buffers to four bytes.
-                                    // Mirror browser implementations by zero-padding the final
-                                    // partial element before crossing the native WebGPU ABI.
-                                    std::vector<uint8_t> alignedData(alignedWriteSize, 0);
-                                    std::memcpy(alignedData.data(), source, writeSize);
-                                    wgpuQueueWriteBuffer(state->queue, buffer, offset, alignedData.data(), alignedData.size());
+                                bool staged = false;
+#if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
+                                staged = stageWriteInUploadStaging(
+                                    state, buffer, offset, source, writeSize, alignedWriteSize);
+#endif
+                                if (!staged) {
+                                    if (alignedWriteSize == writeSize) {
+                                        wgpuQueueWriteBuffer(state->queue, buffer, offset, source, writeSize);
+                                    } else {
+                                        // Three pads destination attribute buffers to four bytes.
+                                        // Mirror browser implementations by zero-padding the final
+                                        // partial element before crossing the native WebGPU ABI.
+                                        std::vector<uint8_t> alignedData(alignedWriteSize, 0);
+                                        std::memcpy(alignedData.data(), source, writeSize);
+                                        wgpuQueueWriteBuffer(state->queue, buffer, offset, alignedData.data(), alignedData.size());
+                                    }
                                 }
                             }
 #if TN_ANDROID_JS_PROFILE
@@ -4874,6 +5106,9 @@ static js::JSValueHandle tnWebgpuHandler22(BindingsState* state, BindingDestinat
 #if TN_ANDROID_JS_PROFILE
                                 const auto submitStart = std::chrono::steady_clock::now();
 #endif
+                                // Staged uniform writes must land on the GPU before the command
+                                // buffers that read them; queue FIFO does the rest.
+                                flushUploadStaging(state);
                                 wgpuQueueSubmit(state->queue, cmdBuffers.size(), cmdBuffers.data());
 #if TN_ANDROID_JS_PROFILE
                                 submitPollNs = static_cast<uint64_t>(

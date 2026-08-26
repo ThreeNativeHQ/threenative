@@ -81,6 +81,7 @@ option(TN_ENABLE_NATIVE_PHYSICS "Enable the ThreeNative native Rapier ABI" OFF)
 # game whose ui.renderer is "native" must link none of it.
 option(TN_ENABLE_UI_OVERLAY "Enable the ThreeNative desktop UI overlay" OFF)
 option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
+option(TN_WEBGPU_UPLOAD_STAGING "Stage queue.writeBuffer calls into mapped blocks flushed at queue boundaries (wgpu-native builds)" ON)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
@@ -111,6 +112,7 @@ add_compile_definitions(
     TN_ENABLE_NATIVE_PHYSICS=$<BOOL:${TN_ENABLE_NATIVE_PHYSICS}>
     TN_ENABLE_UI_OVERLAY=$<BOOL:${TN_ENABLE_UI_OVERLAY}>
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
+    TN_WEBGPU_UPLOAD_STAGING=$<BOOL:${TN_WEBGPU_UPLOAD_STAGING}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
 )

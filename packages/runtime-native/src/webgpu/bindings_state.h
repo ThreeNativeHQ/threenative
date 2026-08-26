@@ -107,6 +107,45 @@ struct AndroidJsNativeProfile {
 };
 #endif
 
+#if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
+struct UploadStagingCopy {
+    WGPUBuffer destination;
+    uint64_t destinationOffset;
+    uint64_t stagingOffset;
+    uint64_t size;
+};
+
+// Semantics-preserving upload staging for wgpu-native builds (PRD-222). Each queue.writeBuffer
+// memcpy's its bytes into a CPU scratch arena instead of driving wgpu-native's per-write
+// staging map/unmap cycle — the Pixel 8's largest measured seam cost at 538 writes/frame. A
+// boundary operation (queue.submit, writeTexture, mapAsync, onSubmittedWorkDone, the internal
+// presentation blit) performs ONE async map of a COPY_SRC block, one bulk copy of the arena,
+// one unmap, then records the batch as copies in a single command buffer and submits it once,
+// so queue-order semantics are unchanged. The block is never mapped while the GPU can observe
+// it: a mapped buffer may appear in no submitted command.
+//
+// Blocks retire through work-done callbacks because staged bytes stay in flight until their
+// flush's submit completes; a retired block is recycled only after its callback fires. When no
+// block is available and one cannot be created, the batch falls back to direct queue writes.
+struct UploadStagingBlock {
+    WGPUBuffer buffer = nullptr;
+    uint8_t* mapped = nullptr;                   // non-null only while host-mapped
+};
+
+struct UploadStaging {
+    static constexpr uint64_t kBlockBytes = 1u << 20;
+    // Payloads land here at writeBuffer() time (spec copies eagerly); a flush moves the whole
+    // window through one mapped block. Offsets in `pendingCopies.stagingOffset` index this
+    // arena, and the same offsets index the block after the flush's single bulk copy.
+    std::vector<uint8_t> scratch;
+    UploadStagingBlock current;                  // reserved by the active flush
+    std::vector<UploadStagingBlock> retired;     // submitted; work-done has not fired yet
+    std::vector<UploadStagingBlock> ready;       // completed, reusable, always unmapped
+    std::vector<UploadStagingCopy> pendingCopies; // batched, not yet submitted
+    bool disabled = false;                       // set when staging cannot allocate; go direct
+};
+#endif
+
 struct BindingsState {
     bool verboseLogging = false;
 
@@ -119,6 +158,9 @@ struct BindingsState {
     js::Engine* engine = nullptr;
     std::vector<js::JSValueHandle> protectedHandles;
     std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;
+#if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
+    UploadStaging uploadStaging;
+#endif
 
     WGPUTexture offscreenTexture = nullptr;
     WGPUTextureView offscreenTextureView = nullptr;
