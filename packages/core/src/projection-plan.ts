@@ -516,7 +516,7 @@ function geometrySignatureOf(
     const name = names[index] as string;
     const attribute = geometry.getAttribute(name);
     if (attribute === undefined) continue;
-    signature += ` ${name}:${attribute.itemSize}:${attribute.normalized ? 1 : 0}`;
+    signature += ` ${name}:${attribute.itemSize}:${attribute.normalized ? 1 : 0}`;
   }
   workspace.geometrySignatures.set(geometry, signature);
   return signature;
