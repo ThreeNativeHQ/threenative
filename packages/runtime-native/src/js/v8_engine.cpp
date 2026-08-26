@@ -143,11 +143,12 @@ public:
         std::cout << "[V8] Destroying engine..." << std::endl;
         // Clean up any remaining frame handles
         for (auto* handle : frameHandles_) {
-            handle->Reset();
-            delete handle;
+            releasePersistent(handle);
         }
         frameHandles_.clear();
         protectedHandles_.clear();
+        for (auto* pooled : persistentPool_) delete pooled;
+        persistentPool_.clear();
         for (auto* ref : nativeFunctionRefs_) {
             ref->persistent.Reset();
             delete ref->function;
@@ -163,6 +164,12 @@ public:
         bindingDestinationPrototype_.Reset();
         bindingDestinationKey_.Reset();
         privateKey_.Reset();
+        // Interned keys are Globals too: they must be dropped before the isolate is disposed,
+        // because these members outlive this destructor body.
+        for (auto& entry : internedKeys_) {
+            entry.second.Reset();
+        }
+        internedKeys_.clear();
         context_.Reset();
         isolate_->Dispose();
         delete allocator_;
@@ -277,7 +284,7 @@ public:
         }
 
         // Store persistent handle
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -347,7 +354,7 @@ public:
             return {nullptr, isolate_};
         }
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -361,7 +368,7 @@ public:
         v8::HandleScope handle_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         v8::Local<v8::Object> global = context->Global();
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, global);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, global);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -393,7 +400,7 @@ public:
         v8::Local<v8::Value> result;
         global->Get(context, v8::String::NewFromUtf8(isolate_, name).ToLocalChecked()).ToLocal(&result);
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -405,7 +412,7 @@ public:
     JSValueHandle newUndefined() override {
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, v8::Undefined(isolate_));
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Undefined(isolate_));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -413,7 +420,7 @@ public:
     JSValueHandle newNull() override {
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, v8::Null(isolate_));
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Null(isolate_));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -421,7 +428,7 @@ public:
     JSValueHandle newBoolean(bool value) override {
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, v8::Boolean::New(isolate_, value));
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Boolean::New(isolate_, value));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -429,7 +436,7 @@ public:
     JSValueHandle newNumber(double value) override {
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, v8::Number::New(isolate_, value));
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Number::New(isolate_, value));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -437,8 +444,7 @@ public:
     JSValueHandle newString(const char* value) override {
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(
-            isolate_, v8::String::NewFromUtf8(isolate_, value).ToLocalChecked());
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::String::NewFromUtf8(isolate_, value).ToLocalChecked());
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -454,7 +460,7 @@ public:
             bindingDestinationKey_.Get(isolate_),
             v8::True(isolate_)).Check();
         v8::Persistent<v8::Value>* persistent =
-            new v8::Persistent<v8::Value>(isolate_, object);
+            acquirePersistent(isolate_, object);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -464,7 +470,7 @@ public:
         v8::HandleScope handle_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         v8::Context::Scope context_scope(context);
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, v8::Array::New(isolate_, (int)length));
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Array::New(isolate_, (int)length));
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -488,7 +494,7 @@ public:
         v8::Local<v8::ArrayBuffer> arrayBuffer = v8::ArrayBuffer::New(
             isolate_, std::move(backingStore));
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, arrayBuffer);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, arrayBuffer);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -510,7 +516,7 @@ public:
         v8::Local<v8::ArrayBuffer> arrayBuffer = v8::ArrayBuffer::New(
             isolate_, std::move(backingStore));
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, arrayBuffer);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, arrayBuffer);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -557,7 +563,7 @@ public:
         v8::Local<v8::ArrayBuffer> arrayBuffer = v8::ArrayBuffer::New(isolate_, std::move(backingStore));
         v8::Local<v8::Float32Array> typedArray = v8::Float32Array::New(arrayBuffer, 0, count);
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, typedArray);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, typedArray);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -576,7 +582,7 @@ public:
         v8::Local<v8::ArrayBuffer> arrayBuffer = v8::ArrayBuffer::New(isolate_, std::move(backingStore));
         v8::Local<v8::Float32Array> typedArray = v8::Float32Array::New(arrayBuffer, 0, count);
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, typedArray);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, typedArray);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -593,7 +599,7 @@ public:
         v8::Local<v8::ArrayBuffer> arrayBuffer = v8::ArrayBuffer::New(isolate_, std::move(backingStore));
         v8::Local<v8::Uint32Array> typedArray = v8::Uint32Array::New(arrayBuffer, 0, count);
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, typedArray);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, typedArray);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -614,7 +620,7 @@ public:
         v8::Local<v8::ArrayBuffer> arrayBuffer = v8::ArrayBuffer::New(isolate_, std::move(backingStore));
         v8::Local<v8::Uint8Array> typedArray = v8::Uint8Array::New(arrayBuffer, 0, count);
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, typedArray);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, typedArray);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -649,7 +655,7 @@ public:
             delete ref;
         }, v8::WeakCallbackType::kParameter);
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, func);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, func);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -788,10 +794,8 @@ public:
         v8::Persistent<v8::Value>* valPersistent = (v8::Persistent<v8::Value>*)value.ptr;
 
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
-        v8::Local<v8::String> key =
-            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked();
         return setPropertyWithReflect(
-            context, objLocal, key, valPersistent->Get(isolate_));
+            context, objLocal, internedKey(isolate_, name), valPersistent->Get(isolate_));
     }
 
     JSValueHandle getProperty(JSValueHandle obj, const char* name) override {
@@ -805,15 +809,12 @@ public:
 
         v8::TryCatch try_catch(isolate_);
         v8::Local<v8::Value> result;
-        if (!objLocal->Get(
-                context,
-                v8::String::NewFromUtf8(isolate_, name).ToLocalChecked())
-                 .ToLocal(&result)) {
+        if (!objLocal->Get(context, internedKey(isolate_, name)).ToLocal(&result)) {
             reportException(try_catch);
             result = v8::Undefined(isolate_);
         }
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -827,8 +828,7 @@ public:
 
         auto* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> current = objPersistent->Get(isolate_).As<v8::Object>();
-        v8::Local<v8::String> key =
-            v8::String::NewFromUtf8(isolate_, name).ToLocalChecked();
+        v8::Local<v8::String> key = internedKey(isolate_, name);
         bool own = true;
         std::vector<v8::Local<v8::Object>> visited;
 
@@ -890,7 +890,7 @@ public:
                     return false;
                 }
                 if (!readBoolean("writable", info.writable)) return false;
-                auto* persistent = new v8::Persistent<v8::Value>(isolate_, value);
+                auto* persistent = acquirePersistent(isolate_, value);
                 frameHandles_.insert(persistent);
                 info.kind = JSPropertyKind::Data;
                 info.value = {persistent, isolate_};
@@ -925,8 +925,7 @@ public:
             auto* persistent =
                 static_cast<v8::Persistent<v8::Value>*>(info.value.ptr);
             frameHandles_.erase(persistent);
-            persistent->Reset();
-            delete persistent;
+            releasePersistent(persistent);
         }
         info = {};
     }
@@ -994,7 +993,7 @@ public:
         v8::Local<v8::Value> result;
         objLocal->Get(context, index).ToLocal(&result);
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -1030,7 +1029,7 @@ public:
             return {nullptr, isolate_};
         }
 
-        v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate_, result);
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -1054,8 +1053,7 @@ public:
         if (it == frameHandles_.end()) return;
         protectedHandles_.erase(value.ptr);
         frameHandles_.erase(it);
-        persistent->Reset();
-        delete persistent;
+        releasePersistent(persistent);
     }
 
     void protect(JSValueHandle value) override { freezeHandle(value); }
@@ -1086,8 +1084,7 @@ public:
         for (auto it = frameHandles_.begin(); it != frameHandles_.end();) {
             auto* handle = *it;
             if (protectedHandles_.find(handle) == protectedHandles_.end()) {
-                handle->Reset();
-                delete handle;
+                releasePersistent(handle);
                 it = frameHandles_.erase(it);
             } else {
                 ++it;
@@ -1468,12 +1465,17 @@ private:
 
         if (engine) engine->nativeCallbackDepth_ += 1;
 
-        // Convert arguments
-        std::vector<JSValueHandle> args;
+        // Convert arguments into pooled Persistents, reusing both the arg vector (one per
+        // nesting depth — one thread cannot run two callbacks at once at the same depth) and
+        // the Persistent owners themselves.
+        if ((int)engine->callbackArgsPool_.size() <= engine->nativeCallbackDepth_) {
+            engine->callbackArgsPool_.resize(engine->nativeCallbackDepth_ + 1);
+        }
+        std::vector<JSValueHandle>& args = engine->callbackArgsPool_[engine->nativeCallbackDepth_];
+        args.clear();
         args.reserve(info.Length());
         for (int i = 0; i < info.Length(); i++) {
-            v8::Persistent<v8::Value>* persistent = new v8::Persistent<v8::Value>(isolate, info[i]);
-            args.push_back({persistent, isolate});
+            args.push_back({engine->acquirePersistent(isolate, info[i]), isolate});
         }
 
         // Call the native function
@@ -1485,7 +1487,9 @@ private:
             info.GetReturnValue().Set(resPersistent->Get(isolate));
         }
 
-        // Clean up argument handles (but skip protected ones and the result if it's an arg)
+        // Clean up argument handles (but skip protected ones and the result if it's an arg).
+        // A handle skipped here was handed to frameHandles_ ownership by freezeHandle(), or is
+        // returned as the result below; either way its owner leaves through another path.
         for (auto& arg : args) {
             // Check if this handle was protected by the native function
             if (engine && engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end()) {
@@ -1496,9 +1500,7 @@ private:
             if (arg.ptr == result.ptr) {
                 continue;
             }
-            v8::Persistent<v8::Value>* persistent = (v8::Persistent<v8::Value>*)arg.ptr;
-            persistent->Reset();
-            delete persistent;
+            engine->releasePersistent((v8::Persistent<v8::Value>*)arg.ptr);
         }
 
         // Clean up result handle if it wasn't one of the args. An argument handle is also a
@@ -1516,8 +1518,7 @@ private:
             (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
             auto* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
             if (engine) engine->frameHandles_.erase(resPersistent);
-            resPersistent->Reset();
-            delete resPersistent;
+            engine->releasePersistent(resPersistent);
         } else if (result.ptr && !resultWasArg &&
             (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
             v8::Persistent<v8::Value>* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
@@ -1525,8 +1526,7 @@ private:
             if (engine) {
                 engine->frameHandles_.erase(resPersistent);
             }
-            resPersistent->Reset();
-            delete resPersistent;
+            engine->releasePersistent(resPersistent);
         }
         if (engine) engine->nativeCallbackDepth_ -= 1;
     }
@@ -1553,10 +1553,53 @@ private:
     std::unordered_set<v8::Persistent<v8::Value>*> frameHandles_;  // Handles to free at end of frame
     std::unordered_set<void*> protectedHandles_;
     std::unordered_set<NativeFunctionRef*> nativeFunctionRefs_;
+    // Handlers read the same few property names ("length", "offset", "data", …) thousands of
+    // times per frame; interning them replaces a NewFromUtf8 allocation per read with one map
+    // lookup. The set of names is tiny and bounded by the host's own call sites.
+    std::unordered_map<std::string, v8::Global<v8::String>> internedKeys_;
+    // Dead Persistent owners recycled across handles. The bridge creates and destroys
+    // thousands of handles per frame, and every one of them was a heap allocation pair —
+    // scudo allocate/deallocate owned measurable self time in the simpleperf capture.
+    std::vector<v8::Persistent<v8::Value>*> persistentPool_;
+    static constexpr size_t kPersistentPoolCap = 4096;
+    // One arg vector per callback nesting depth, reused across callbacks on this thread.
+    // A crossing used to heap-allocate its argument vector even when it had arguments.
+    std::vector<std::vector<JSValueHandle>> callbackArgsPool_;
     bool inFrame_ = false;  // True during animation frame execution
     bool frameTrackingSuspended_ = false;  // When true, skip frame tracking for new allocations
     int nativeCallbackDepth_ = 0;
     bool exceptionFromNativeCallback_ = false;
+
+    // Requires an active Isolate/HandleScope (every caller already holds one).
+    v8::Local<v8::String> internedKey(v8::Isolate* isolate, const char* name) {
+        auto it = internedKeys_.find(name);
+        if (it != internedKeys_.end()) return it->second.Get(isolate);
+        v8::Local<v8::String> key = v8::String::NewFromUtf8(isolate, name).ToLocalChecked();
+        internedKeys_.emplace(name, v8::Global<v8::String>(isolate, key));
+        return key;
+    }
+
+    v8::Persistent<v8::Value>* acquirePersistent(v8::Isolate* isolate, v8::Local<v8::Value> value) {
+        v8::Persistent<v8::Value>* persistent;
+        if (!persistentPool_.empty()) {
+            persistent = persistentPool_.back();
+            persistentPool_.pop_back();
+        } else {
+            persistent = new v8::Persistent<v8::Value>();
+        }
+        persistent->Reset(isolate, value);
+        return persistent;
+    }
+
+    void releasePersistent(v8::Persistent<v8::Value>* persistent) {
+        if (!persistent) return;
+        persistent->Reset();
+        if (persistentPool_.size() < kPersistentPoolCap) {
+            persistentPool_.push_back(persistent);
+        } else {
+            delete persistent;
+        }
+    }
 };
 
 // Factory function
