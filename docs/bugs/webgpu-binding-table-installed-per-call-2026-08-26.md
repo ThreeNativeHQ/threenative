@@ -43,6 +43,14 @@ Update 2026-08-26 (execution):
    remains red ONLY at the documented HEAD slice failure ("all migrated WebGPU registration
    families…"), which predates this work and was left alone as instructed.
 
+5. **Regression guards** (added after the fix landed): the contract executable also drives the
+   real headless runtime and fails if two encoders stop sharing one prototype, carry per-instance
+   own method properties, or stop sharing method identities — demonstrated red by disabling the
+   fast path (`2 failure(s)`, exit 1) and green restored. A static vitest guard pins the same
+   wiring in `webgpu-bindings-contract.test.mjs` ("GPUCommandEncoder installs its table once per
+   class, not per call"), with a mutation self-check so deleting the prototype attachment fails
+   the suite by construction.
+
 5. **Frame-level smoke (step 3, smoke tier)** — `verify-desktop-core.mjs`: 300 frames rendered
    through the real three.js loop (`beginRenderPass`/`finish` dispatch through the new
    receiver-aware methods every frame), 300 presents, non-blank screenshot
