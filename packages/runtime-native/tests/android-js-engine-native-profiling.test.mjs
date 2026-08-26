@@ -173,38 +173,3 @@ test("the native profile marker reports render-thread CPU, not just wall time", 
   assert.match(bindings, /\\"threadCpuNs\\":/u);
   assert.match(bindings, /renderThreadCpuNs/u);
 });
-
-test("render-pass wrappers are reused so V8 inline caches stay warm across frames", () => {
-  // A fresh wrapper object with freshly created method functions on every beginRenderPass gives
-  // every renderer call site a new receiver shape and a new callee, which drives V8 into its
-  // megamorphic stub cache — 2.7 ms/frame on a Pixel 8 (PRD-222 F13). Wrappers are pooled and a
-  // pooled wrapper is only handed out when its previous pass is no longer live.
-  const state = source("../src/webgpu/bindings_state.h");
-  assert.match(state, /struct RenderPassWrapper/u);
-  assert.match(state, /renderPassWrappers/u);
-  assert.match(bindings, /acquireRenderPassWrapper/u);
-  assert.match(bindings, /makeSlotHandler/u);
-  // The pass a wrapper's handlers act on is rebound per begin rather than captured by value.
-  assert.doesNotMatch(
-    bindings,
-    /makeCapturedHandler\(renderPass, &tnWebgpuHandler39\)/u,
-    "the render-pass command table must bind through the wrapper's slot",
-  );
-});
-
-test("render-pass reuse acquires before publish and preserves reuse-only lifetime rules", () => {
-  const beginRenderPass = bindings.slice(bindings.indexOf("static js::JSValueHandle tnWebgpuHandler38"));
-  const acquireAt = beginRenderPass.indexOf("auto* passWrapper = acquireRenderPassWrapper(");
-  const publishAt = beginRenderPass.indexOf("state->encoderRenderPassMap[encoderToUse] = renderPass;");
-  const privateDataAt = beginRenderPass.indexOf("state->engine->setPrivateData(object, pass);");
-  const freshAt = beginRenderPass.indexOf("if (freshRenderPassWrapper) {");
-
-  assert.ok(acquireAt >= 0 && publishAt > acquireAt,
-    "acquire before map publication so a recycled opaque handle cannot mark its idle wrapper live");
-  assert.ok(privateDataAt > freshAt && privateDataAt < publishAt,
-    "every reuse must overwrite private native data before JavaScript can observe the pass");
-  assert.match(beginRenderPass, /discardFreshRenderPassWrapper\(\s*\*passWrapper, freshRenderPassWrapper/u,
-    "beginRenderPass must delegate rollback disposal to the tested fresh-only lifecycle helper");
-  assert.match(beginRenderPass, /if \(freshRenderPassWrapper\) \{[\s\S]*installBatchedPassEncoding/u,
-    "batched method wrapping remains a first-allocation operation");
-});

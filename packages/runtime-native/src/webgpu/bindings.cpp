@@ -24,7 +24,6 @@
 #include "mystral/webgpu/wrapper_factories.h"
 #include "mystral/cold_start.h"
 #include "mystral/stall_budget.h"
-#include "mystral/webgpu/render_pass_wrapper_pool.h"
 #include "runtime_scripts.h"
 #include "mystral/webgpu/checked_handle.h"
 #include <ctime>
@@ -1889,28 +1888,6 @@ static BindingHandler makeCapturedHandler(
 
 // Bind a handler to a slot rather than to a value, so a pooled wrapper's methods follow the
 // object they belong to when its native handle is rebound on the next frame.
-template <typename T>
-static BindingHandler makeSlotHandler(
-    std::shared_ptr<T> slot,
-    js::JSValueHandle (*handler)(BindingsState*, T, const std::vector<js::JSValueHandle>&)) {
-    return [slot, handler](BindingsState* state, BindingDestination,
-                           const std::vector<js::JSValueHandle>& args) {
-        return handler(state, *slot, args);
-    };
-}
-
-template <typename T, typename U>
-static BindingHandler makeSlotPairHandler(
-    std::shared_ptr<T> first,
-    std::shared_ptr<U> second,
-    js::JSValueHandle (*handler)(
-        BindingsState*, T, U, const std::vector<js::JSValueHandle>&)) {
-    return [first, second, handler](BindingsState* state, BindingDestination,
-                                    const std::vector<js::JSValueHandle>& args) {
-        return handler(state, *first, *second, args);
-    };
-}
-
 template <typename T, typename U>
 static BindingHandler makeCapturedPairHandler(
     T first,
@@ -4045,39 +4022,15 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
                                         return state->engine->newUndefined();
                                     }
+                                    // Store in per-encoder map (fixes issue with multiple encoders)
+                                    state->encoderRenderPassMap[encoderToUse] = renderPass;
+                                    // Also set global for backwards compatibility with render pass methods
+                                    state->jsRenderPass = renderPass;
+                                    if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
                                     // Suspend frame tracking while creating render pass wrapper
                                     state->engine->suspendFrameTracking();
-                                    // Reuse a pooled wrapper so the renderer's call sites keep
-                                    // seeing one receiver shape and one callee per method. Acquire before
-                                    // publishing this pass: opaque native handle addresses can be recycled.
-                                    auto* passWrapper = acquireRenderPassWrapper(
-                                        state->renderPassWrappers, state->encoderRenderPassMap,
-                                        [](const js::JSValueHandle& object) { return object.ptr == nullptr; });
-                                    const bool freshRenderPassWrapper =
-                                        passWrapper->object.ptr == nullptr;
-                                    if (freshRenderPassWrapper) {
-                                        passWrapper->pass =
-                                            std::make_shared<WGPURenderPassEncoder>(nullptr);
-                                        passWrapper->encoder =
-                                            std::make_shared<WGPUCommandEncoder>(nullptr);
-                                        passWrapper->object = state->engine->newObject();
-                                        // The wrapper outlives the frame that created it, so it
-                                        // must leave the per-frame handle set.
-                                        state->engine->freezeHandle(passWrapper->object);
-                                    }
-                                    rebindRenderPassWrapper(
-                                        *passWrapper, renderPass, encoderToUse,
-                                        [state](js::JSValueHandle object, WGPURenderPassEncoder pass) {
-                                            state->engine->setPrivateData(object, pass);
-                                        });
-                                    auto jsRenderPass = passWrapper->object;
-                                    const auto discardRenderPassWrapper = [&]() {
-                                        discardFreshRenderPassWrapper(
-                                            *passWrapper, freshRenderPassWrapper,
-                                            [state](js::JSValueHandle object) {
-                                                state->engine->freeHandle(object);
-                                            });
-                                    };
+                                    auto jsRenderPass = state->engine->newObject();
+                                    state->engine->setPrivateData(jsRenderPass, renderPass);
                                     WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
                                     const auto rollbackRenderPass = [&]() {
                                         auto it = state->encoderRenderPassMap.find(encoderToUse);
@@ -4100,58 +4053,56 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         state->surfaceRenderEncoder = previousSurfaceRenderEncoder;
                                         state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
                                     };
-                                    if (freshRenderPassWrapper) {
                                     // renderPass.setPipeline(pipeline)
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler39)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler39)
                                     , jsRenderPass},
                                     // renderPass.setBindGroup(index, bindGroup, dynamicOffsets?)
                                         {"GPURenderPassEncoder", "setBindGroup", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler40)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler40)
                                     , jsRenderPass},
                                     // renderPass.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
                                         {"GPURenderPassEncoder", "draw", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler41)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler41)
                                     , jsRenderPass},
                                     // renderPass.setVertexBuffer(slot, buffer, offset?, size?)
                                         {"GPURenderPassEncoder", "setVertexBuffer", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler42)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler42)
                                     , jsRenderPass},
                                     // renderPass.setIndexBuffer(buffer, format, offset?, size?)
                                         {"GPURenderPassEncoder", "setIndexBuffer", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler43)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler43)
                                     , jsRenderPass},
                                     // renderPass.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
                                         {"GPURenderPassEncoder", "drawIndexed", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler44)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler44)
                                     , jsRenderPass},
                                     // renderPass.drawIndirect(indirectBuffer, indirectOffset)
                                         {"GPURenderPassEncoder", "drawIndirect", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler45)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler45)
                                     , jsRenderPass},
                                     // renderPass.drawIndexedIndirect(indirectBuffer, indirectOffset)
                                         {"GPURenderPassEncoder", "drawIndexedIndirect", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler46)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler46)
                                     , jsRenderPass},
                                     // renderPass.setViewport(x, y, width, height, minDepth, maxDepth)
                                         {"GPURenderPassEncoder", "setViewport", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler47)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler47)
                                     , jsRenderPass},
                                     // renderPass.setScissorRect(x, y, width, height)
                                         {"GPURenderPassEncoder", "setScissorRect", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler48)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler48)
                                     , jsRenderPass},
                                     // renderPass.setBlendConstant(color)
                                         {"GPURenderPassEncoder", "setBlendConstant", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler49)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler49)
                                     , jsRenderPass},
                                     // renderPass.setStencilReference(reference)
                                         {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler50)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler50)
                                     , jsRenderPass}}))) {
                                         rollbackRenderPass();
-                                        discardRenderPassWrapper();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
@@ -4160,20 +4111,18 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     WGPURenderPassEncoder capturedRenderPassForBundles = renderPass;
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
-                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler51)
+                                        makeCapturedHandler(renderPass, &tnWebgpuHandler51)
                                     , jsRenderPass}}))) {
                                         rollbackRenderPass();
-                                        discardRenderPassWrapper();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
                                     // renderPass.end() - capture encoder and render pass for cleanup
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "end", 0, nullptr,
-                                        makeSlotPairHandler(passWrapper->encoder, passWrapper->pass, &tnWebgpuHandler52)
+                                        makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuHandler52)
                                     , jsRenderPass}}))) {
                                         rollbackRenderPass();
-                                        discardRenderPassWrapper();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
@@ -4183,7 +4132,7 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     // array to this binding explicitly.
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "__tnReplayEnd", 0, nullptr,
-                                        makeSlotPairHandler(passWrapper->encoder, passWrapper->pass, &tnWebgpuBatchedPassEnd)
+                                        makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuBatchedPassEnd)
                                     , jsRenderPass}}))) {
                                         std::cerr << "[WebGPU] replay binding not installed;"
                                                   << " keeping per-op encoding" << std::endl;
@@ -4191,14 +4140,6 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         installBatchedPassEncoding(state, jsRenderPass);
                                     }
 #endif
-                                    }
-                                    // Store in the per-encoder map only after acquisition. A wrapper's
-                                    // previous slot can equal a recycled native handle address, so publishing
-                                    // first would make that otherwise-idle wrapper look live to the pool.
-                                    state->encoderRenderPassMap[encoderToUse] = renderPass;
-                                    // Also set global for backwards compatibility with render pass methods.
-                                    state->jsRenderPass = renderPass;
-                                    if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
                                     // Resume frame tracking
                                     state->engine->resumeFrameTracking();
                                     return jsRenderPass;

@@ -87,6 +87,17 @@ dictionary time, plus the `newFunction` cost itself (~0.15–0.44 ms/frame deskt
 
 ### Lever A execution record (2026-08-26)
 
+#### Kill-switch ruling (2026-08-26)
+
+Rejected and removed. The three valid desktop medians for the reusable render-pass-wrapper pool
+were 23.054, 21.055, and 21.878 ms for `threadCpuNs - presentNs`; they overlap the recorded
+21.1–22.5 ms baseline and establish no improvement. The pool, slot-bound handlers, fresh-only
+installer path, lifecycle harness, and reuse-specific tests cost substantially more framework and
+test code than plain captured render-pass bindings, so the abstraction fails the kill switch.
+`threadCpuNs` profiling and the independently pre-existing batched-pass marker/fixture corrections
+remain. Future levers must use the named post-Lever-A screenshot baseline rather than treating this
+rejected path as a performance foundation.
+
 Source: `818e97b3-lever-a-0952a2c73aeb` (specified base plus the four-file Lever A patch;
 the full command outputs are in the task report). The implementation pools a frozen render-pass
 object, rebinds pass/encoder slots, excludes map-live passes from reuse, overwrites private data

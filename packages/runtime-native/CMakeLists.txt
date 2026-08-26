@@ -1766,11 +1766,6 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/webgpu_bindings_reentrancy_test.cpp)
     target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE mystral-runtime)
 
-    add_executable(threenative-render-pass-wrapper-lifetime-test EXCLUDE_FROM_ALL
-        tests/render_pass_wrapper_lifetime_test.cpp)
-    target_include_directories(threenative-render-pass-wrapper-lifetime-test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
     add_executable(threenative-handle-lifetime-test EXCLUDE_FROM_ALL
         tests/handle_lifetime_test.cpp)
     target_link_libraries(threenative-handle-lifetime-test PRIVATE mystral-runtime)
