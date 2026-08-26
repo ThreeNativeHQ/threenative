@@ -1172,6 +1172,19 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
     config.width = width;
     config.height = height;
     config.presentMode = selectedPresentMode;
+#if defined(MYSTRAL_WEBGPU_WGPU)
+#if TN_WEBGPU_DESIRED_FRAME_LATENCY > 0
+    // The backend's default frame latency of 2 lets `getCurrentTexture` block the next frame's
+    // encode behind the previous frame's scan-out once a game runs slower than the display —
+    // measured on Pixel 8 as acquire waiting inside the render phase. Requesting a deeper
+    // flight of images lets CPU encoding overlap GPU and display work instead.
+    WGPUSurfaceConfigurationExtras latencyExtras = {};
+    latencyExtras.chain.sType = static_cast<WGPUSType>(WGPUSType_SurfaceConfigurationExtras);
+    latencyExtras.chain.next = nullptr;
+    latencyExtras.desiredMaximumFrameLatency = TN_WEBGPU_DESIRED_FRAME_LATENCY;
+    config.nextInChain = &latencyExtras.chain;
+#endif
+#endif
 
     wgpuSurfaceConfigure(surface_, &config);
     vsync_ = vsync;
