@@ -7,6 +7,9 @@
 // (nullptr receiver -> callee reports it), and per-instance state independence across two
 // instances of one prototype.
 #include "mystral/js/engine.h"
+#include "mystral/runtime.h"
+
+#include "../src/webgpu/bindings_state.h"
 
 #include <iostream>
 #include <string>
@@ -105,6 +108,82 @@ void runContract(mystral::js::Engine& engine) {
     delete calls;
 }
 
+/**
+ * Behavioral guard against reverting to per-call installs: through the real headless runtime,
+ * two command encoders must share one prototype, carry no own method properties, share method
+ * identities, and dispatch interleaved passes to the right native handles.
+ */
+void runRuntimeContract() {
+    mystral::RuntimeConfig config;
+    config.width = 1;
+    config.height = 1;
+    config.noSdl = true;
+    const auto runtime = mystral::Runtime::create(config);
+    if (!runtime || !runtime->getWebGPUBindingsState()) {
+        expect(false, "headless runtime with WebGPU bindings created");
+        return;
+    }
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
+    auto* engine = state->engine;
+
+    const bool booted = engine->evalScript(
+        R"JS((async () => {
+            const adapter = await navigator.gpu.requestAdapter();
+            const device = await adapter.requestDevice();
+            globalThis.__encA = device.createCommandEncoder();
+            globalThis.__encB = device.createCommandEncoder();
+        })())JS",
+        "tn-runtime-encoders.js");
+    expect(booted, "encoder-creating script evaluated");
+    for (int pump = 0; pump < 200; ++pump) {
+        if (!engine->isUndefined(engine->getGlobalProperty("__encA"))) break;
+        engine->processMicrotasks();
+    }
+    expect(!engine->isUndefined(engine->getGlobalProperty("__encA")),
+           "two command encoders exist through the real device surface");
+
+    // Guards that go red if anyone reverts to per-instance installs: with captured per-call
+    // closures each wrapper owns its method properties and no two instances share a prototype.
+    const bool methodsExist = engine->toBoolean(engine->evalScriptWithResult(
+        "typeof __encA.beginRenderPass === 'function' && typeof __encA.finish === 'function'",
+        "tn-methods-exist.js"));
+    expect(methodsExist, "encoder methods exist on the wrapper");
+
+    const bool sharedPrototype = engine->toBoolean(engine->evalScriptWithResult(
+        "Object.getPrototypeOf(__encA) === Object.getPrototypeOf(__encB)",
+        "tn-proto-identity.js"));
+    expect(sharedPrototype, "both encoders share one class prototype");
+
+    const bool noOwnMethods = engine->toBoolean(engine->evalScriptWithResult(
+        "!Object.hasOwn(__encA, 'beginRenderPass') && !Object.hasOwn(__encA, 'finish')",
+        "tn-no-own-methods.js"));
+    expect(noOwnMethods, "methods are prototype members, not per-instance own properties");
+
+    const bool sharedIdentity = engine->toBoolean(engine->evalScriptWithResult(
+        "typeof __encA.beginRenderPass === 'function' && "
+        "__encA.beginRenderPass === __encB.beginRenderPass && "
+        "__encA.finish === __encB.finish",
+        "tn-shared-identity.js"));
+    expect(sharedIdentity, "method function identities are shared across instances");
+
+    // Receiver routing under interleaving: pass and finish each encoder in overlapping order.
+    // A stale captured handle shows up as an exception or a wrong-encoder command stream.
+    const bool interleaved = engine->evalScript(
+        R"JS((() => {
+            const passA = __encA.beginRenderPass({colorAttachments: []});
+            const passB = __encB.beginRenderPass({colorAttachments: []});
+            passA.end();
+            passB.end();
+            __encA.finish();
+            __encB.finish();
+            return true;
+        })())JS",
+        "tn-interleaved.js");
+    expect(interleaved && !engine->hasException(),
+           "interleaved beginRenderPass/end/finish dispatch per receiver without error");
+    if (engine->hasException()) engine->getException();
+}
+
 }  // namespace
 
 int main() {
@@ -118,12 +197,14 @@ int main() {
     const auto engineJsc = mystral::js::createEngine(mystral::js::EngineType::JavaScriptCore);
     if (engineJsc) runContract(*engineJsc);
 
+    runRuntimeContract();
+
     if (failures != 0) {
         std::cerr << "command-encoder-class-table contract: " << failures << " failure(s)"
                   << std::endl;
         return 1;
     }
     std::cout << "command-encoder-class-table: prototype=shared receivers=resolved "
-                 "detached=null-reported" << std::endl;
+                 "detached=null-reported runtime=wired" << std::endl;
     return 0;
 }

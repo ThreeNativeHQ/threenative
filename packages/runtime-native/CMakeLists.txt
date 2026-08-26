@@ -1788,11 +1788,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${DAWN_INCLUDE_DIR})
         target_include_directories(threenative-shader-module-metadata-test PRIVATE
             ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-command-encoder-class-table-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
         get_target_property(WGPU_TEST_INCLUDES wgpu::wgpu INTERFACE_INCLUDE_DIRECTORIES)
         target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
             ${WGPU_TEST_INCLUDES})
         target_include_directories(threenative-shader-module-metadata-test PRIVATE
+            ${WGPU_TEST_INCLUDES})
+        target_include_directories(threenative-command-encoder-class-table-test PRIVATE
             ${WGPU_TEST_INCLUDES})
     endif()
 
