@@ -150,6 +150,45 @@ In `v8_engine.cpp`:
 
 ~4.6% + 3.2% of the thread per the profile. Mechanical, desktop-verifiable.
 
+#### Fox/shadow workload checkpoint (diagnostic only)
+
+A freshly rebuilt Bayview shadows-on/off pair removed 1,408 bridge calls and 9.103 ms of
+render-thread work, while measured binding work fell by only 1.662 ms. This is diagnostic-only
+evidence: it locates most of the removed work in the surrounding JavaScript/V8/host machinery and
+does not license disabling shadows, changing the game's look, or making an FPS claim.
+
+#### Lever C execution record (2026-08-26)
+
+Source `2fdb675c22b350a7ddd227238af2e6a851df28b0` replaces bridge-owned `Reflect.set`
+writes with `Object::CreateDataProperty` while retaining interned keys and keeping the global path
+separate. One conditional V8 entry scope now enters the isolate/context only when needed and always
+retains a handle scope. Proven C++-only shader entry-point and texture metadata moved from ordinary
+JavaScript properties into common binding state/native registries; JS-required compatibility fields
+were preserved. Lever A pooling remains absent.
+
+- The executable V8 contract reads, overwrites, enumerates, and deletes an own writable,
+  enumerable, configurable data property, with an inherited-setter negative control. It also proves
+  nested native callbacks preserve return values, caught exceptions, reentrancy, and zero
+  outstanding handles. The old `Reflect.set` path failed the own-property control before the fix.
+- The fresh no-pool base `9840fc88` medians were 21.1050905, 22.9768555, and 23.1198635 ms;
+  their three-run median was **22.9768555 ms/frame**. Lever C medians were 22.666427,
+  22.710709, and 22.223790 ms; their three-run median was **22.666427 ms/frame**. The measured
+  cumulative improvement was **0.3104285 ms/frame**.
+- Both arms used the original Bayview bundle with SHA-256
+  `12d7edb2112ab1bcb8872c089968131decaafbe79dd216eec66e2ab876b9ac20`. Each run deduped
+  `(frame,bindingNs,calls,threadCpuNs)`, retained 899 eligible frames with at least three markers and
+  over 100 indexed draws, and measured the median of frames 226–899 (674 frames) using
+  `threadCpuNs - presentNs`.
+- All six runs reached 900 presents, produced non-blank 1280×720 screenshots, and had zero
+  exception/start-failure matches after excluding the known non-fatal XKB warning. Evidence is in
+  `artifacts/prd-222/lever-c/baseline-no-pool-9840fc88/` and
+  `artifacts/prd-222/lever-c/2fdb675c-lever-c/`.
+- The 0.3104285 ms desktop improvement did not meet the approximately 2 ms Pixel 8 trigger, so no
+  device pair ran and no FPS claim is made. Focused checks passed 42 tests with 2 skipped plus the
+  native executable contract. The root typecheck and lint completed (431 existing warnings); the
+  package suite stopped at one unrelated pre-existing over-broad source-slice assertion in
+  `webgpu-bindings-contract.test.mjs` (533 passed, 34 skipped, 1 failed).
+
 ### Lever D: stop wrapping every crossed value in a `v8::Persistent`
 
 `nativeCallback` allocates one Persistent per argument per crossing (`GlobalHandles::Create` +

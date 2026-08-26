@@ -18,7 +18,7 @@ const wrapperFactories = readFileSync(
 
 test("bridge-owned writes bypass Reflect and inherited setters", () => {
   const setProperty = v8Engine.match(
-    /bool setProperty\(JSValueHandle obj,[\s\S]*?\n    \}\n\n    JSValueHandle getProperty/u,
+    /bool setProperty\(JSValueHandle obj,[\s\S]*?\n {4}\}\n\n {4}JSValueHandle getProperty/u,
   )?.[0] ?? "";
   assert.match(setProperty, /CreateDataProperty/u);
   assert.doesNotMatch(setProperty, /setPropertyWithReflect/u);
@@ -43,7 +43,7 @@ test("host methods share conditional V8 isolate and context entry", () => {
     "only engine construction may use a direct context scope",
   );
   const nativeCallback = v8Engine.match(
-    /static void nativeCallback\([\s\S]*?\n    \}\n\n    \/\/ Weak reference data/u,
+    /static void nativeCallback\([\s\S]*?\n {4}\}\n\n {4}\/\/ Weak reference data/u,
   )?.[0] ?? "";
   assert.match(nativeCallback, /V8EntryScope entry_scope\(isolate\)/u);
   assert.match(nativeCallback, /entry_scope\.enterContext\(context\)/u);
