@@ -83,6 +83,7 @@ option(TN_ENABLE_UI_OVERLAY "Enable the ThreeNative desktop UI overlay" OFF)
 option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
 option(TN_WEBGPU_UPLOAD_STAGING "Stage queue.writeBuffer calls into mapped blocks flushed at queue boundaries (wgpu-native builds)" ON)
 set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameLatency into the surface configuration (wgpu-native builds); 0 keeps the backend default of 2")
+option(TN_WEBGPU_BATCHED_PASS "Record render-pass ops in JavaScript and replay them in one crossing at pass end" OFF)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
@@ -115,6 +116,7 @@ add_compile_definitions(
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
     TN_WEBGPU_UPLOAD_STAGING=$<BOOL:${TN_WEBGPU_UPLOAD_STAGING}>
     TN_WEBGPU_DESIRED_FRAME_LATENCY=${TN_WEBGPU_DESIRED_FRAME_LATENCY}
+    TN_WEBGPU_BATCHED_PASS=$<BOOL:${TN_WEBGPU_BATCHED_PASS}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
 )
@@ -1123,6 +1125,7 @@ set(TN_RUNTIME_SCRIPT_NAMES
     image-support-init
     onload-trigger
     install-async-pipelines
+    batched-pass-encoder
     image-bitmap-polyfill
     webtransport-polyfill
     webtransport-stub

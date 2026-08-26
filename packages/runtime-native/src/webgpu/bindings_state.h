@@ -220,6 +220,14 @@ struct BindingsState {
     uint64_t nextComputePipelineId = 1;
     std::unordered_map<uint64_t, WGPURenderPipeline> renderPipelineRegistry;
     uint64_t nextRenderPipelineId = 1;
+    // Bind groups join the id registry so a batched pass stream can name them numerically
+    // (see runtime-scripts/batched-pass-encoder.js).
+    std::unordered_map<uint64_t, WGPUBindGroup> bindGroupRegistry;
+    uint64_t nextBindGroupId = 1;
+#if TN_WEBGPU_BATCHED_PASS
+    // Cached installer function from batched-pass-encoder.js; frozen on first use.
+    js::JSValueHandle batchedPassInstaller{};
+#endif
     std::vector<std::unique_ptr<WGPUBlendState>> blendStates;
     BufferMapData bufferMapData;
     std::unordered_map<int, std::unique_ptr<OffscreenCanvas>> offscreenCanvases;

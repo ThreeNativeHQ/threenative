@@ -2523,8 +2523,14 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                             // internal references through the bind group
                             releaseAutoCreatedViews();
                             auto jsBindGroup = state->engine->newObject();
+                            const uint64_t bindGroupId = state->nextBindGroupId++;
+                            state->bindGroupRegistry[bindGroupId] = bindGroup;
                             state->engine->setPrivateData(jsBindGroup, bindGroup);
-                            state->engine->registerRelease(jsBindGroup, [bindGroup]() {
+                            state->engine->setProperty(
+                                jsBindGroup, "_bindGroupId",
+                                state->engine->newNumber((double)bindGroupId));
+                            state->engine->registerRelease(jsBindGroup, [state, bindGroup, bindGroupId]() {
+                                state->bindGroupRegistry.erase(bindGroupId);
                                 wgpuBindGroupRelease(bindGroup);
                             });
                             if (state->verboseLogging) std::cout << "[WebGPU] Created bind group with " << entryCount << " entries" << std::endl;
@@ -3320,6 +3326,281 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                     return jsComputePass;
 }
 
+#if TN_WEBGPU_BATCHED_PASS
+
+// Registry lookups for a batched pass stream. An unknown id fails closed: replay throws
+// rather than silently dropping the op, because a dropped bind group or buffer would render
+// wrong and read as a game bug.
+static WGPUBuffer batchedBufferForId(BindingsState* state, double id) {
+    if (!(id >= 0)) return nullptr;
+    const auto it = state->bufferRegistry.find(static_cast<uint64_t>(id));
+    return it == state->bufferRegistry.end() ? nullptr : it->second.buffer;
+}
+
+static WGPUBindGroup batchedBindGroupForId(BindingsState* state, double id) {
+    if (!(id >= 0)) return nullptr;
+    const auto it = state->bindGroupRegistry.find(static_cast<uint64_t>(id));
+    return it == state->bindGroupRegistry.end() ? nullptr : it->second;
+}
+
+static WGPURenderPipeline batchedRenderPipelineForId(BindingsState* state, double id) {
+    if (!(id >= 0)) return nullptr;
+    const auto it = state->renderPipelineRegistry.find(static_cast<uint64_t>(id));
+    return it == state->renderPipelineRegistry.end() ? nullptr : it->second;
+}
+
+// Replays the op stream recorded by runtime-scripts/batched-pass-encoder.js against the
+// captured pass encoder. The stream is f64 slots; slot 0 is the live slot count and ops run
+// from slot 1. Returns false after throwing when an opcode or id cannot be resolved.
+static bool tnReplayBatchedPassOps(
+    BindingsState* state, WGPURenderPassEncoder pass, const double* slots, size_t count) {
+    static constexpr int OP_SET_PIPELINE = 1;
+    static constexpr int OP_SET_BIND_GROUP = 2;
+    static constexpr int OP_SET_VERTEX_BUFFER = 3;
+    static constexpr int OP_SET_INDEX_BUFFER = 4;
+    static constexpr int OP_DRAW = 5;
+    static constexpr int OP_DRAW_INDEXED = 6;
+    static constexpr int OP_SET_VIEWPORT = 7;
+    static constexpr int OP_SET_SCISSOR_RECT = 8;
+    static constexpr int OP_SET_STENCIL_REFERENCE = 9;
+    static constexpr int OP_SET_BLEND_CONSTANT = 10;
+
+    size_t i = 1;  // slots[0] is the live length: ops occupy slots [1, count)
+    // Every opcode validates its full stride against `count` before reading. A short or
+    // corrupted stream must throw cleanly, never read past the recorded region — the buffer
+    // is a live ArrayBuffer, and an out-of-bounds read here is memory-unsafe, not just a
+    // wrong frame.
+    auto strideFits = [&](size_t lastSlotIndex) -> bool {
+        if (lastSlotIndex < count) return true;
+        state->engine->throwException("batched pass: op stream truncated");
+        return false;
+    };
+    while (i < count) {
+        switch (static_cast<int>(slots[i])) {
+            case OP_SET_PIPELINE: {
+                if (!strideFits(i + 1)) return false;
+                const WGPURenderPipeline pipeline =
+                    batchedRenderPipelineForId(state, slots[i + 1]);
+                if (!pipeline) {
+                    state->engine->throwException("batched pass: unknown pipeline id");
+                    return false;
+                }
+                wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+                i += 2;
+                break;
+            }
+            case OP_SET_BIND_GROUP: {
+                if (!strideFits(i + 3)) return false;
+                const uint32_t groupIndex = static_cast<uint32_t>(slots[i + 1]);
+                const WGPUBindGroup bindGroup = batchedBindGroupForId(state, slots[i + 2]);
+                if (!bindGroup) {
+                    state->engine->throwException("batched pass: unknown bind group id");
+                    return false;
+                }
+                const double rawOffsetCount = slots[i + 3];
+                // A negative or oversized count would overflow the size_t arithmetic below;
+                // bound it by the stream length before trusting it.
+                if (!(rawOffsetCount >= 0) ||
+                    static_cast<double>(count) < rawOffsetCount ||
+                    i + 3 + static_cast<size_t>(rawOffsetCount) > count) {
+                    state->engine->throwException("batched pass: truncated dynamic offsets");
+                    return false;
+                }
+                const size_t offsetCount = static_cast<size_t>(rawOffsetCount);
+                std::vector<uint32_t> offsets(offsetCount);
+                for (size_t k = 0; k < offsetCount; k++) {
+                    offsets[k] = static_cast<uint32_t>(slots[i + 4 + k]);
+                }
+                wgpuRenderPassEncoderSetBindGroup(
+                    pass, groupIndex, bindGroup, offsets.size(),
+                    offsets.empty() ? nullptr : offsets.data());
+                i += 4 + offsetCount;
+                break;
+            }
+            case OP_SET_VERTEX_BUFFER: {
+                if (!strideFits(i + 4)) return false;
+                const WGPUBuffer buffer = batchedBufferForId(state, slots[i + 2]);
+                if (!buffer) {
+                    state->engine->throwException("batched pass: unknown vertex buffer id");
+                    return false;
+                }
+                const uint64_t size = slots[i + 4] < 0
+                    ? WGPU_WHOLE_SIZE
+                    : static_cast<uint64_t>(slots[i + 4]);
+                wgpuRenderPassEncoderSetVertexBuffer(
+                    pass, static_cast<uint32_t>(slots[i + 1]), buffer,
+                    static_cast<uint64_t>(slots[i + 3]), size);
+                i += 5;
+                break;
+            }
+            case OP_SET_INDEX_BUFFER: {
+                if (!strideFits(i + 4)) return false;
+                const WGPUBuffer buffer = batchedBufferForId(state, slots[i + 2]);
+                if (!buffer) {
+                    state->engine->throwException("batched pass: unknown index buffer id");
+                    return false;
+                }
+                WGPUIndexFormat format = WGPUIndexFormat_Uint16;
+                switch (static_cast<int>(slots[i + 1])) {
+                    case 1: format = WGPUIndexFormat_Uint32; break;
+                    case 0: format = WGPUIndexFormat_Uint16; break;
+                    default:
+                        state->engine->throwException("batched pass: unknown index format");
+                        return false;
+                }
+                const uint64_t size = slots[i + 4] < 0
+                    ? WGPU_WHOLE_SIZE
+                    : static_cast<uint64_t>(slots[i + 4]);
+                wgpuRenderPassEncoderSetIndexBuffer(
+                    pass, buffer, format, static_cast<uint64_t>(slots[i + 3]), size);
+                i += 5;
+                break;
+            }
+            case OP_DRAW:
+                if (!strideFits(i + 4)) return false;
+                wgpuRenderPassEncoderDraw(
+                    pass, static_cast<uint32_t>(slots[i + 1]),
+                    static_cast<uint32_t>(slots[i + 2]),
+                    static_cast<uint32_t>(slots[i + 3]),
+                    static_cast<uint32_t>(slots[i + 4]));
+                i += 6;
+                break;
+            case OP_DRAW_INDEXED:
+                if (!strideFits(i + 5)) return false;
+                wgpuRenderPassEncoderDrawIndexed(
+                    pass, static_cast<uint32_t>(slots[i + 1]),
+                    static_cast<uint32_t>(slots[i + 2]),
+                    static_cast<uint32_t>(slots[i + 3]),
+                    static_cast<int32_t>(slots[i + 4]),
+                    static_cast<uint32_t>(slots[i + 5]));
+                i += 7;
+                break;
+            case OP_SET_VIEWPORT:
+                if (!strideFits(i + 6)) return false;
+                wgpuRenderPassEncoderSetViewport(
+                    pass, (float)slots[i + 1], (float)slots[i + 2], (float)slots[i + 3],
+                    (float)slots[i + 4], (float)slots[i + 5], (float)slots[i + 6]);
+                i += 8;
+                break;
+            case OP_SET_SCISSOR_RECT:
+                if (!strideFits(i + 4)) return false;
+                wgpuRenderPassEncoderSetScissorRect(
+                    pass, static_cast<uint32_t>(slots[i + 1]),
+                    static_cast<uint32_t>(slots[i + 2]),
+                    static_cast<uint32_t>(slots[i + 3]),
+                    static_cast<uint32_t>(slots[i + 4]));
+                i += 6;
+                break;
+            case OP_SET_STENCIL_REFERENCE:
+                if (!strideFits(i + 1)) return false;
+                wgpuRenderPassEncoderSetStencilReference(
+                    pass, static_cast<uint32_t>(slots[i + 1]));
+                i += 3;
+                break;
+            case OP_SET_BLEND_CONSTANT: {
+                if (!strideFits(i + 4)) return false;
+                WGPUColor color = {(float)slots[i + 1], (float)slots[i + 2],
+                                   (float)slots[i + 3], (float)slots[i + 4]};
+                wgpuRenderPassEncoderSetBlendConstant(pass, &color);
+                i += 6;
+                break;
+            }
+            default:
+                state->engine->throwException("batched pass: unknown opcode");
+                return false;
+        }
+    }
+    return true;
+}
+
+// The `end` binding installed on batched passes: one crossing replays the recorded stream,
+// then performs exactly tnWebgpuHandler52's end-of-pass state transitions. args[0] carries
+// the Float64Array whose slot 0 holds the live length.
+static js::JSValueHandle tnWebgpuBatchedPassEnd(
+    BindingsState* state,
+    WGPUCommandEncoder capturedEncoderForEnd,
+    WGPURenderPassEncoder capturedRenderPass,
+    const std::vector<js::JSValueHandle>& args) {
+#if TN_ANDROID_JS_PROFILE
+                                            const auto profileStart = beginProfiledBinding();
+#endif
+                                            if (capturedRenderPass && !args.empty()) {
+                                                size_t dataBytes = 0;
+                                                void* data =
+                                                    state->engine->getArrayBufferData(args[0], &dataBytes);
+                                                if (data && dataBytes >= sizeof(double)) {
+                                                    const double* slots = static_cast<const double*>(data);
+                                                    const size_t count = static_cast<size_t>(slots[0]);
+                                                    if (count > 1 &&
+                                                        dataBytes / sizeof(double) >= count) {
+                                                        // Replay before ending so every op lands inside the pass.
+                                                        if (!tnReplayBatchedPassOps(
+                                                                state, capturedRenderPass, slots, count)) {
+#if TN_ANDROID_JS_PROFILE
+                                                            endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, profileStart);
+#endif
+                                                            return state->engine->newUndefined();
+                                                        }
+                                                    } else if (count > 0) {
+                                                        state->engine->throwException(
+                                                            "batched pass: op stream exceeds array bounds");
+                                                    }
+                                                }
+                                            }
+                                            auto passIt = state->encoderRenderPassMap.find(capturedEncoderForEnd);
+                                            if (capturedRenderPass && passIt != state->encoderRenderPassMap.end() &&
+                                                passIt->second == capturedRenderPass) {
+                                                wgpuRenderPassEncoderEnd(capturedRenderPass);
+                                                wgpuRenderPassEncoderRelease(capturedRenderPass);
+                                                // Remove from per-encoder map
+                                                state->encoderRenderPassMap.erase(passIt);
+                                                // Clear global if it matches
+                                                if (state->jsRenderPass == capturedRenderPass) {
+                                                    state->jsRenderPass = nullptr;
+                                                }
+                                                // Mark surface render pass as ended
+                                                if (state->surfaceRenderEncoder == capturedEncoderForEnd) {
+                                                    state->surfaceRenderPassEnded = true;
+                                                }
+                                            }
+#if TN_ANDROID_JS_PROFILE
+                                            endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, profileStart);
+#endif
+                                            return state->engine->newUndefined();
+}
+
+// Evaluates (once) and caches the installer function from batched-pass-encoder.js.
+static bool ensureBatchedPassInstaller(BindingsState* state) {
+    if (state->batchedPassInstaller.ptr) return true;
+    js::JSValueHandle installer = evalEmbeddedRuntimeScriptWithResult(
+        *state->engine, "batched-pass-encoder", "batched-pass-encoder.js");
+    if (!installer.ptr) {
+        std::cerr << "[WebGPU] batched pass encoding unavailable: installer missing" << std::endl;
+        return false;
+    }
+    // The factory must outlive this frame; an unfrozen handle dies with clearFrameHandles().
+    state->engine->freezeHandle(installer);
+    state->batchedPassInstaller = installer;
+    return true;
+}
+
+// Overrides the hot encoder methods with recording closures. The installer also replaces
+// `end`, closing over `__tnReplayEnd` so the recorded stream reaches the replay binding
+// even though three.js calls end() with no arguments. Best-effort: any failure leaves the
+// original per-op bindings in place.
+static void installBatchedPassEncoding(BindingsState* state, js::JSValueHandle passWrapper) {
+    if (!ensureBatchedPassInstaller(state)) return;
+    js::JSValueGuard installed(
+        *state->engine,
+        state->engine->call(state->batchedPassInstaller,
+                            state->engine->newUndefined(), {passWrapper}));
+    if (!installed || !state->engine->toBoolean(installed.get())) {
+        std::cerr << "[WebGPU] batched pass encoding declined for this pass" << std::endl;
+    }
+}
+
+#endif  // TN_WEBGPU_BATCHED_PASS
+
 static js::JSValueHandle tnWebgpuHandler52(
     BindingsState* state,
     WGPUCommandEncoder capturedEncoderForEnd,
@@ -3823,6 +4104,20 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
+#if TN_WEBGPU_BATCHED_PASS
+                                    // The replay binding sits under its own name: three.js calls end()
+                                    // with no arguments, so the batched `end` closure must hand the ops
+                                    // array to this binding explicitly.
+                                    if (!installBindingTable(state->engine, state, bindingTable({
+                                        {"GPURenderPassEncoder", "__tnReplayEnd", 0, nullptr,
+                                        makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuBatchedPassEnd)
+                                    , jsRenderPass}}))) {
+                                        std::cerr << "[WebGPU] replay binding not installed;"
+                                                  << " keeping per-op encoding" << std::endl;
+                                    } else {
+                                        installBatchedPassEncoding(state, jsRenderPass);
+                                    }
+#endif
                                     // Resume frame tracking
                                     state->engine->resumeFrameTracking();
                                     return jsRenderPass;
