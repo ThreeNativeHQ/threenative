@@ -1886,8 +1886,6 @@ static BindingHandler makeCapturedHandler(
     };
 }
 
-// Bind a handler to a slot rather than to a value, so a pooled wrapper's methods follow the
-// object they belong to when its native handle is rebound on the next frame.
 template <typename T, typename U>
 static BindingHandler makeCapturedPairHandler(
     T first,
@@ -2551,7 +2549,7 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                             state->engine->setProperty(
                                 jsBindGroup, "_bindGroupId",
                                 state->engine->newNumber((double)bindGroupId));
-                            state->engine->registerRelease(jsBindGroup, [bindGroup, bindGroupId, state]() {
+                            state->engine->registerRelease(jsBindGroup, [state, bindGroup, bindGroupId]() {
                                 state->bindGroupRegistry.erase(bindGroupId);
                                 wgpuBindGroupRelease(bindGroup);
                             });

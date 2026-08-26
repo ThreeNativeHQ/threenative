@@ -49,41 +49,39 @@ bug renders plausible frames then dies quietly.
 
 ## The levers, in order
 
-### Lever A (in flight, working tree): reuse the GPURenderPassEncoder wrapper
+### Lever A (historical, rejected and removed): reuse the GPURenderPassEncoder wrapper
 
-**Why first:** three.js begins render passes every frame; today each `beginRenderPass` builds a
-fresh JS object and ~15 fresh `v8::Function`s. Every renderer call site therefore sees a new
-receiver map and a new callee every frame → megamorphic ICs → the 3.9 ms/frame of stub-cache +
-dictionary time, plus the `newFunction` cost itself (~0.15–0.44 ms/frame desktop, more on device).
+**Historical rationale:** three.js began render passes every frame, and each `beginRenderPass`
+built a fresh JS object and ~15 fresh `v8::Function`s. The hypothesis was that every renderer call
+site therefore saw a new receiver map and a new callee every frame → megamorphic ICs → the
+3.9 ms/frame of stub-cache + dictionary time, plus the `newFunction` cost itself
+(~0.15–0.44 ms/frame desktop, more on device).
 
-**Design (already partially written, uncommitted):**
+**Historical design tested:**
 
-- `bindings_state.h`: `struct RenderPassWrapper { js::JSValueHandle object; shared_ptr<WGPURenderPassEncoder> pass; shared_ptr<WGPUCommandEncoder> encoder; }` plus
+- `bindings_state.h` temporarily carried `struct RenderPassWrapper { js::JSValueHandle object;
+  shared_ptr<WGPURenderPassEncoder> pass; shared_ptr<WGPUCommandEncoder> encoder; }` plus
   `std::vector<std::unique_ptr<RenderPassWrapper>> renderPassWrappers;` on `BindingsState`.
 - `bindings.cpp`:
-  - `makeSlotHandler` / `makeSlotPairHandler`: bind handlers to the wrapper's *slots*
-    (`shared_ptr` deref at call time) instead of capturing the pass by value, so a pooled
-    wrapper's methods follow whatever pass it is currently bound to.
-  - `acquireRenderPassWrapper(state)`: hand out a pooled wrapper only if its previous pass is no
-    longer a value in `encoderRenderPassMap` (that map is maintained by begin/end/rollback);
-    otherwise grow the pool. Concurrent passes never share a wrapper.
-  - In `beginRenderPass`: on a fresh wrapper, `newObject()` + `freezeHandle` (it outlives the
-    frame) + install all binding tables once; on reuse, only `*pass = renderPass;
-    *encoder = encoderToUse; setPrivateData(jsRenderPass, renderPass)`. Rollback paths call
-    `discardRenderPassWrapper()` which frees the handle only for fresh wrappers.
-- Red/green test (already added, green): `android-js-engine-native-profiling.test.mjs` asserts
-  `RenderPassWrapper`, `acquireRenderPassWrapper`, `makeSlotHandler` exist and the old
-  `makeCapturedHandler(renderPass, &tnWebgpuHandler39)` form is gone.
+  - `makeSlotHandler` / `makeSlotPairHandler` bound handlers to the wrapper's *slots*
+    (`shared_ptr` dereference at call time) instead of capturing the pass by value, so a pooled
+    wrapper's methods followed whichever pass was currently bound.
+  - `acquireRenderPassWrapper(state)` handed out a pooled wrapper only when its previous pass was
+    no longer a value in `encoderRenderPassMap`; otherwise it grew the pool. Concurrent passes did
+    not share a wrapper.
+  - In `beginRenderPass`, a fresh wrapper received `newObject()` + `freezeHandle` and all binding
+    tables once; reuse only rebound the pass/encoder slots and overwrote private data. Rollback
+    called `discardRenderPassWrapper()` only for a fresh wrapper.
+- The historical red/green test asserted that `RenderPassWrapper`, `acquireRenderPassWrapper`, and
+  `makeSlotHandler` existed and that captured render-pass handlers were absent. Those pooling-only
+  assertions were removed with the rejected implementation.
 
-**Next actions to finish it (build already compiles):**
+**Historical validation plan completed before removal:**
 
-1. Run the desktop probe A/B: 3× 900-frame runs, expect `work` to drop and, critically,
-   **screenshot identical to baseline** and zero exceptions.
-2. Watch two hazards: (a) `setPrivateData` on reuse must overwrite, not accumulate;
-   (b) the batched-pass installer (`installBatchedPassEncoding`) must also run only on fresh
-   wrappers — it re-wraps methods, so double-install would stack closures.
-3. If desktop `work` moves ≥0.5 ms, build the device arm and run the paired protocol.
-4. Commit with the red/green outputs pasted; the CMake/gradle profile flags stay default-OFF.
+1. The desktop probe ran 3× 900-frame samples and checked screenshots and exceptions.
+2. The implementation covered private-data overwrite and fresh-only batched-pass installation.
+3. The desktop work did not move ≥0.5 ms, so the device arm was not triggered.
+4. The CMake/Gradle profile flags remained default-OFF.
 
 ### Lever A execution record (2026-08-26)
 
@@ -95,33 +93,35 @@ were 23.054, 21.055, and 21.878 ms for `threadCpuNs - presentNs`; they overlap t
 installer path, lifecycle harness, and reuse-specific tests cost substantially more framework and
 test code than plain captured render-pass bindings, so the abstraction fails the kill switch.
 `threadCpuNs` profiling and the independently pre-existing batched-pass marker/fixture corrections
-remain. Future levers must use the named post-Lever-A screenshot baseline rather than treating this
-rejected path as a performance foundation.
+remain. The named screenshot was captured from the pooled source revision; it is historical
+pool-era visual evidence, not a post-removal or current-HEAD baseline for future levers.
 
 Source: `818e97b3-lever-a-0952a2c73aeb` (specified base plus the four-file Lever A patch;
-the full command outputs are in the task report). The implementation pools a frozen render-pass
-object, rebinds pass/encoder slots, excludes map-live passes from reuse, overwrites private data
-on reuse, and only frees a newly allocated wrapper during binding-install rollback.
+the full command outputs are in the task report). At that historical source, the implementation
+pooled a frozen render-pass object, rebound pass/encoder slots, excluded map-live passes from reuse,
+overwrote private data on reuse, and only freed a newly allocated wrapper during rollback.
 
-- Source regression: the base source lacks `acquireRenderPassWrapper`/`makeSlotHandler` (expected
-  red, exit 1); `pnpm --filter @threenative/runtime-native exec vitest run
-  tests/android-js-engine-native-profiling.test.mjs` is green (11/11). The contract/trace follow-up
-  is green (29 passed, 2 skipped).
-- Native build: `cmake -DTN_ANDROID_JS_PROFILE=ON .` configured the Linux V8/wgpu build; the
-  configured Ninja at `.runtime/tools-venv/bin/ninja mystral` completed the `Linking CXX executable
-  mystral` step. The resulting binary contains `,"threadCpuNs":`.
-- Bayview desktop meter: valid runs 2–4 are under
+- Historical source regression: the base source lacked
+  `acquireRenderPassWrapper`/`makeSlotHandler` (expected red, exit 1); the focused profiling test
+  passed 11/11 against the pooled revision, and the contract/trace follow-up passed 29 tests with
+  2 skipped.
+- Historical native build: `cmake -DTN_ANDROID_JS_PROFILE=ON .` configured the Linux V8/wgpu
+  build; the configured Ninja at `.runtime/tools-venv/bin/ninja mystral` completed the `Linking CXX
+  executable mystral` step. The resulting binary contains `,"threadCpuNs":`.
+- Historical Bayview desktop meter: valid runs 2–4 are under
   `artifacts/prd-222/lever-a/818e97b3-lever-a-0952a2c73aeb/`. After deduplication by
   `(frame,bindingNs,calls,threadCpuNs)`, requiring at least three markers and over 100 indexed
-  draws, and retaining frames 226–899, median `threadCpuNs - presentNs` is 23.054, 21.055, and
-  21.878 ms. The result overlaps the 21.1–22.5 ms baseline, so it does not establish the 0.5 ms
+  draws, and retaining frames 226–899, median `threadCpuNs - presentNs` was 23.054, 21.055, and
+  21.878 ms. The result overlapped the 21.1–22.5 ms baseline, so it did not establish the 0.5 ms
   improvement needed to trigger the Pixel 8 paired protocol.
-- All three valid runs reached 900 presents, emitted no native exception/start failure, and have
-  non-blank 1280×720 screenshots. The only `error` text is the non-fatal XKB keymap warning.
+- All three historical valid runs reached 900 presents, emitted no native exception/start failure,
+  and had non-blank 1280×720 screenshots. The only `error` text was the non-fatal XKB keymap warning.
   `/tmp/bayview-batched-frame.png` was the only pre-change candidate and is all-black (mean 0),
-  so an identical baseline comparison is unavailable. `baseline-after-lever-a.png` is now named
-  beside the valid run artifacts for the next lever. Repeated valid frames are visually non-blank
-  but not byte-identical (AE: run 2↔3 15,945,000; run 2↔4 875,792), so no exact-pixel claim is made.
+  so an identical baseline comparison was unavailable. `baseline-after-lever-a.png` was captured
+  from the pooled source and remains named beside those artifacts only as historical visual
+  evidence; it is not a post-removal or current-HEAD baseline. Repeated valid frames were visually
+  non-blank but not byte-identical (AE: run 2↔3 15,945,000; run 2↔4 875,792), so no exact-pixel
+  claim was made.
 - Repository gate: `pnpm typecheck && pnpm lint && pnpm test` ran. Typecheck completed; lint had
   431 existing non-fatal warnings; the full test suite then failed outside Lever A (the
   `.claude/worktrees/prd-222-resume/` agent-mirror census, a 5-second temp-dir-guard timeout, and
