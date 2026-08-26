@@ -54,10 +54,13 @@ Update 2026-08-26 (execution):
 5. **Frame-level smoke (step 3, smoke tier)** — `verify-desktop-core.mjs`: 300 frames rendered
    through the real three.js loop (`beginRenderPass`/`finish` dispatch through the new
    receiver-aware methods every frame), 300 presents, non-blank screenshot
-   (`artifacts/desktop-core-2026-08-26.png`). First invocation reported 299/300 presents
-   (first-frame Xvfb warm-up); the re-run was clean, so treat a single missed present as a lane
-   flake until it reproduces. The measured desktop A/B against the recorded 22.2 ms pair is still
-   owed on a quiet machine before any widening claim.
+   (`artifacts/desktop-core-2026-08-26.png`). Correction: an earlier green run of this gate drove
+   a STALE pre-fix `build/tn-linux/mystral` (the verify script never rebuilds), so it proved
+   nothing about this change; the gate was re-run 2026-08-26 ~16:15 against a freshly rebuilt
+   post-fix binary and passed — 300/300 presents, non-blank scene. An unrelated first invocation
+   on that stale pair also reported 299/300 presents (first-frame Xvfb warm-up); treat a single
+   missed present as a lane flake until it reproduces. The measured desktop A/B against the
+   recorded 22.2 ms pair is still owed on a quiet machine before any widening claim.
 
 Not yet executed: the measured desktop A/B pair on THIS build, widening to
 `GPURenderPassEncoder`, the remaining classes, and the device arm. QuickJS/JSC implementations
