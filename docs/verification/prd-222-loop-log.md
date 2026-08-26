@@ -22,6 +22,10 @@ below is a step on the vblank-cell ladder (20 → 30 → 60), never smooth.
 | F7 | The game's end screen ("RUN OVER") idles at unbounded fps with render ≈ 0 — budget windows must be classified live (`update.mean ≥ 3 ms`) before comparing, or an idle loop reads as a 174 fps "win" | v2 arm windows 5–8 vs screenshot at capture time | Protocol rule added |
 | F5 | The physics SIGSEGV (`docs/bugs/physics-simulation-callback-segv-flaky-2026-08-25.md`) killed 5 of 9 launches in one session. At 75% loss per launch it is the single largest tax on every future measurement loop | Session log 2026-08-26: attempts died at 30 s, 120 s, 60 s, 45 s, 75 s | **Next lane — fix before more measurement work** |
 | F6 | `writeBuffer` → `mapAsync(READ)` readback returns zeros then one-submit-stale data on the direct path (wgpu-native): mapping readiness does not imply queue drain. Three.js never reads back, so nothing caught it | `/tmp` probe against staging-OFF build, 2026-08-26 | Named defect; staging fixes the boundary by construction; direct fallback retains upstream behavior |
+| F8 | The JS→C++ seam, not the GPU and not game logic, owns the frame: a fresh simpleperf capture at HEAD attributes SDLThread CPU overwhelmingly to V8 C++ API machinery under `V8Engine::nativeCallback` (bridge dispatch 37.5% incl, of which two unnamed-but-accessor-region libv8android clusters take ~20.6% + ~15.4%), with `render_pass_end` 7.94%. Only ~13 ms of the 40 ms render phase is inside measured wgpu commands; the rest is crossing dispatch and argument parsing for ~2,400–5,000 crossings/frame. Chrome pays none of this — Dawn calls are plain in-process C++ | `~/projects/threenative/scratch-perf-20260825/lat3.perf.data`, 2026-08-26, profiled latency-3 APK | **Primary diagnosis.** Next lever is fewer/cheaper crossings: command-batching seam or fast-path arg parsing |
+| F9 | Bridge micro-fixes (interned property keys, pooled Persistent owners, reused arg vectors, `caa78a11`) cut desktop render p50 12.35 → 10.83 ms but moved Pixel 8 nothing (render.p50 39.9 → 39.9 ms, bindingNs 10.14 → 9.98): on-device cost lives in the per-call property/accessor machinery itself, not string/handle allocation churn. Desktop-only win is still real and kept | Paired desktop A/B + paired device arms same night, profiled builds | Kept; direction for device is crossing-count reduction, more marshalling micro-tuning |
+| F10 | Swapchain depth is not the phone's serializer: `desiredMaximumFrameLatency=3` chained through `WGPUSurfaceConfigurationExtras` (`47e4cc7e`) measured flat on device (18.98 vs 18.92 fps) while collapsing desktop Xvfb frame work (frame.p50 21.0 → 13.8 ms). Knob kept as infrastructure; do not re-arm this hypothesis without new evidence | Compile-flag-verified arm `bayview-frameLatency3-profile.apk`, live windows w4+ | Rejected for device; useful on desktop lanes |
+| F11 | Desktop Xvfb fps is throttled by FIFO present (~19 fps ceiling) no matter how fast frames get: judge desktop A/Bs by `phases.render.p50`/`frame.p50`, never fps | Latency-3 desktop run vs baseline, same night | Protocol rule |
 
 ## Learnings
 
@@ -59,8 +63,12 @@ below is a step on the vblank-cell ladder (20 → 30 → 60), never smooth.
 2. Tier-1 acceptance rerun of the upload-staging win on a cool, charged phone (this pair was
    matched-warm development evidence).
 3. File the direct-path readback defect (F6) with its probe as evidence.
-4. Next render levers toward 60: pass finalization (`renderPass.end` 2.70 ms/frame) and
-   bind/pipeline churn (1,757 sets/frame), per the Phase-2 telemetry ranking.
+4. Attack the crossing tax (F8): batch WebGPU command recording so one JS→C++ crossing
+   replays many ops (typed-array opcodes + cached wrapper handles), or fast-path the hot
+   handlers' argument parsing (e.g. typed-array element size read directly off
+   `v8::TypedArray` instead of a `BYTES_PER_ELEMENT` property Get on every `writeBuffer`).
+   This is the only lever that reaches the ~27 ms of render time outside measured commands.
+5. After any seam win: re-rank; `render_pass_end` (7.94% CPU, 4.35 ms/frame) is next.
 
 ## Device result, 2026-08-26 evening — upload staging v3, paired arms
 
@@ -78,3 +86,20 @@ of render p50, consistent in direction with the desktop A/B (+12% on the write-h
 Not Tier-1 acceptance evidence (warm arms, no charger waiver record, single pair). Desktop
 probe (`writeBuffer`→`mapAsync` readback) passes on both arms' binaries; zero SIGSEGV deaths
 in this pair after fresh installs.
+
+## Device result, 2026-08-26 late — bridge fix and latency knob arms, paired profiled builds
+
+All three arms same night, same protocol (cold launch, live windows `update.mean ≥ 3`,
+profiled arm64 APKs from repo HEAD runtime source). Control = HEAD before tonight's commits.
+
+| arm | fps median | render.p50 ms | bindingNs ms | verdict |
+| --- | ---: | ---: | ---: | --- |
+| control (`bayview-head-0eec59b6-profile`) | 18.92 | 39–41 | 10.14 | baseline |
+| bridge fix (`bayview-bridgefix-profile`, `caa78a11`) | 18.23* | 39.5–40.5 | 9.98 | flat on device |
+| frame latency 3 (`bayview-frameLatency3-profile`, `47e4cc7e`) | 18.98 | 39.2 | — | flat on device |
+
+*fix-arm early windows ran a heavier match phase (update.mean 8–10 ms), so fps medians are
+phase-confounded; matched-phase windows (update ≈ 2.8) show no render difference. Desktop
+A/B for the same bridge commit: render p50 12.35 → 10.83 ms, frame p50 21.0 → 19.6 ms.
+
+Raw captures: `~/projects/threenative/scratch-perf-20260825/prd222-{head,bridgefix,latency3}-capture.log`.
