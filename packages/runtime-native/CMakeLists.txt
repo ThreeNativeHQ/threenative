@@ -1769,9 +1769,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-handle-lifetime-test EXCLUDE_FROM_ALL
         tests/handle_lifetime_test.cpp)
     target_link_libraries(threenative-handle-lifetime-test PRIVATE mystral-runtime)
-    add_executable(threenative-v8-engine-contract-test EXCLUDE_FROM_ALL
-        tests/v8_engine_contract_test.cpp)
-    target_link_libraries(threenative-v8-engine-contract-test PRIVATE mystral-runtime)
+    add_executable(threenative-js-engine-contract-test EXCLUDE_FROM_ALL
+        tests/js_engine_contract_test.cpp)
+    target_link_libraries(threenative-js-engine-contract-test PRIVATE mystral-runtime)
+    add_executable(threenative-command-encoder-class-table-test EXCLUDE_FROM_ALL
+        tests/command_encoder_class_table_test.cpp)
+    target_link_libraries(threenative-command-encoder-class-table-test PRIVATE mystral-runtime)
+    add_executable(threenative-shader-module-metadata-test EXCLUDE_FROM_ALL
+        tests/shader_module_metadata_test.cpp)
+    target_link_libraries(threenative-shader-module-metadata-test PRIVATE mystral-runtime)
     if(TN_ENABLE_VIDEO)
         add_executable(threenative-video-recorder-state-test EXCLUDE_FROM_ALL
             tests/video_recorder_state_test.cpp)
@@ -1780,9 +1786,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(MYSTRAL_USE_DAWN)
         target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
             ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-shader-module-metadata-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
         get_target_property(WGPU_TEST_INCLUDES wgpu::wgpu INTERFACE_INCLUDE_DIRECTORIES)
         target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
+            ${WGPU_TEST_INCLUDES})
+        target_include_directories(threenative-shader-module-metadata-test PRIVATE
             ${WGPU_TEST_INCLUDES})
     endif()
 

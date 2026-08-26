@@ -26,6 +26,13 @@ struct BindingRegistration {
     const char* arityError;
     BindingHandler handler;
     BindingDestination destination;
+    // When set, installBindingTable() installs this already-created function instead of
+    // manufacturing a plain NativeFunction around `handler`. Used by per-class tables whose
+    // rows are receiver-aware Engine::newMethod functions. The handle follows the same
+    // transactional lifecycle as a created function: installed once, released with the
+    // expected-value bookkeeping either on success or rollback. `handler` must still be
+    // non-null for validation, but an installed row never dispatches through it.
+    const js::JSValueHandle* prebuiltFunction = nullptr;
 };
 
 struct BindingTable {

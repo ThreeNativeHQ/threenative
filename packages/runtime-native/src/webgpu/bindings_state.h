@@ -48,6 +48,24 @@ struct ShaderModuleMetadata {
     std::string fragmentEntryPoint;
 };
 
+struct ShaderModuleMetadataStore {
+    using NativeRelease = void (*)(WGPUShaderModule);
+
+    std::unordered_map<WGPUShaderModule, ShaderModuleMetadata> entries;
+
+    bool release(WGPUShaderModule module, NativeRelease releaseNative) {
+        const auto entry = entries.find(module);
+        if (entry == entries.end()) return false;
+        entries.erase(entry);
+        releaseNative(module);
+        return true;
+    }
+
+    void releaseAll(NativeRelease releaseNative) {
+        while (!entries.empty()) release(entries.begin()->first, releaseNative);
+    }
+};
+
 struct BufferInfo {
     WGPUBuffer buffer = nullptr;
     uint64_t size = 0;
@@ -194,6 +212,9 @@ struct BindingsState {
     WGPURenderPassEncoder jsRenderPass = nullptr;
     WGPUComputePassEncoder jsComputePass = nullptr;
     WGPUCommandEncoder jsCommandEncoder = nullptr;
+    // Shared GPUCommandEncoder prototype carrying the once-installed binding table (PRD-222).
+    // Empty until the first encoder wrapper exists; frozen methods hold no native handles.
+    js::JSValueHandle commandEncoderPrototype = {};
     std::unordered_set<WGPUCommandEncoder> commandEncoderRegistry;
     std::unordered_map<WGPUCommandEncoder, WGPURenderPassEncoder> encoderRenderPassMap;
     std::unordered_map<WGPUCommandEncoder, WGPUComputePassEncoder> encoderComputePassMap;
@@ -219,7 +240,8 @@ struct BindingsState {
     canvas::Canvas2DContext* mainCanvas2DContext = nullptr;
     std::unordered_map<uint64_t, TextureInfo> textureRegistry;
     uint64_t nextTextureId = 1;
-    std::unordered_map<WGPUShaderModule, ShaderModuleMetadata> shaderModuleMetadata;
+    std::shared_ptr<ShaderModuleMetadataStore> shaderModuleMetadata =
+        std::make_shared<ShaderModuleMetadataStore>();
     std::unordered_map<uint64_t, BufferInfo> bufferRegistry;
 #if TN_ANDROID_JS_PROFILE
     std::unordered_map<WGPUBuffer, BufferInfo> androidJsProfileBufferRegistry;

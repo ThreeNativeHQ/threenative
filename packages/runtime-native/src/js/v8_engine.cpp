@@ -23,6 +23,10 @@
 
 #include "v8.h"
 #include "libplatform/libplatform.h"
+#if TN_ANDROID_JS_PROFILE
+#include "v8-profiler.h"
+#include <cstdlib>
+#endif
 
 namespace mystral {
 namespace js {
@@ -58,7 +62,20 @@ void mystralSetV8SnapshotBlob(const char* data, size_t size) {
     g_snapshot.raw_size = static_cast<int>(g_snapshotBytes.size());
 }
 
+// Diagnostic-only V8 flag channel. PRD-222 needed --trace-deopt/--trace-ic to explain why identical
+// JavaScript costs more here than in a browser, and the host set no flags at all. Off unless the
+// environment asks; never read in a shipping run.
+static void applyDiagnosticV8Flags() {
+    if (const char* flags = std::getenv("TN_V8_FLAGS")) {
+        if (flags[0] != '\0') {
+            v8::V8::SetFlagsFromString(flags);
+            std::cout << "[V8] diagnostic flags: " << flags << std::endl;
+        }
+    }
+}
+
 static bool initializeV8() {
+    applyDiagnosticV8Flags();
     if (g_initialized) {
         return true;
     }
@@ -117,6 +134,9 @@ public:
     struct NativeFunctionRef {
         v8::Global<v8::Function> persistent;
         NativeFunction* function = nullptr;
+        // Set instead of function for receiver-aware methods (Engine::newMethod). The GC
+        // lifetime is identical: both pointers die with the JS function.
+        NativeMethod* method = nullptr;
         V8Engine* owner = nullptr;
     };
 
@@ -162,11 +182,82 @@ public:
             setupGlobals();
         }
 
+#if TN_ANDROID_JS_PROFILE
+        // PRD-222: name the JavaScript half of the frame. Opt-in through the environment so the
+        // profiled host stays usable as a plain A/B meter; the profiler perturbs the frame.
+        if (const char* enabled = std::getenv("TN_JS_CPU_PROFILE")) {
+            if (enabled[0] == '1') {
+                g_startCpuProfile = [this]() {
+                    if (cpuProfiler_) return;
+                    cpuProfiler_ = v8::CpuProfiler::New(isolate_);
+                    cpuProfiler_->SetSamplingInterval(200);
+                    v8::HandleScope profileScope(isolate_);
+                    cpuProfiler_->StartProfiling(
+                        v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked(), true);
+                    std::cout << "[V8] CPU profiler started" << std::endl;
+                };
+                g_dumpCpuProfile = [this]() { dumpCpuProfile(); };
+            }
+        }
+#endif
         std::cout << "[V8] Engine created successfully" << std::endl;
     }
 
+#if TN_ANDROID_JS_PROFILE
+    // Flatten the sampled tree into self-time per (function, script:line) and print the heaviest
+    // entries. Self time is the node's own hit count, so a shared helper is not credited to its
+    // callers and the totals stay additive.
+    void dumpCpuProfile() {
+        if (!cpuProfiler_) return;
+        v8::HandleScope scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        v8::Context::Scope contextScope(context);
+        v8::CpuProfile* profile = cpuProfiler_->StopProfiling(
+            v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked());
+        if (!profile) return;
+
+        struct Entry { unsigned hits = 0; std::string location; };
+        std::unordered_map<std::string, Entry> self;
+        unsigned total = 0;
+        std::vector<const v8::CpuProfileNode*> stack{profile->GetTopDownRoot()};
+        while (!stack.empty()) {
+            const v8::CpuProfileNode* node = stack.back();
+            stack.pop_back();
+            const unsigned hits = node->GetHitCount();
+            total += hits;
+            if (hits > 0) {
+                v8::String::Utf8Value fn(isolate_, node->GetFunctionName());
+                v8::String::Utf8Value url(isolate_, node->GetScriptResourceName());
+                std::string name = *fn && **fn ? *fn : "(anonymous)";
+                std::string file = *url && **url ? *url : "(native)";
+                const size_t slash = file.find_last_of('/');
+                if (slash != std::string::npos) file = file.substr(slash + 1);
+                auto& entry = self[name + " @ " + file];
+                entry.hits += hits;
+                entry.location = file + ":" + std::to_string(node->GetLineNumber());
+            }
+            for (int i = 0; i < node->GetChildrenCount(); i++) stack.push_back(node->GetChild(i));
+        }
+        std::vector<std::pair<std::string, Entry>> rows(self.begin(), self.end());
+        std::sort(rows.begin(), rows.end(),
+                  [](const auto& a, const auto& b) { return a.second.hits > b.second.hits; });
+        std::cout << "TN_JS_CPU_PROFILE_TOTAL:" << total << std::endl;
+        for (size_t i = 0; i < rows.size() && i < 60; i++) {
+            std::cout << "TN_JS_CPU_PROFILE:" << rows[i].second.hits << "\t"
+                      << (total ? 100.0 * rows[i].second.hits / total : 0.0) << "\t"
+                      << rows[i].first << "\t" << rows[i].second.location << std::endl;
+        }
+        profile->Delete();
+        cpuProfiler_->Dispose();
+        cpuProfiler_ = nullptr;
+    }
+#endif
+
     ~V8Engine() override {
         std::cout << "[V8] Destroying engine..." << std::endl;
+#if TN_ANDROID_JS_PROFILE
+        dumpCpuProfile();
+#endif
         // Clean up any remaining frame handles
         for (auto* handle : frameHandles_) {
             releasePersistent(handle);
@@ -178,6 +269,7 @@ public:
         for (auto* ref : nativeFunctionRefs_) {
             ref->persistent.Reset();
             delete ref->function;
+            delete ref->method;
             delete ref;
         }
         nativeFunctionRefs_.clear();
@@ -637,6 +729,9 @@ public:
 
         // Store the callback
         auto* fnPtr = new NativeFunction(fn);
+#if TN_ANDROID_JS_PROFILE
+        bridgeNames()[fnPtr] = name ? name : "<anon>";
+#endif
         v8::Local<v8::External> external = v8::External::New(isolate_, fnPtr);
 
         // Use Function::New instead of FunctionTemplate::New — lighter weight,
@@ -656,6 +751,42 @@ public:
             if (ref->owner) ref->owner->nativeFunctionRefs_.erase(ref);
             ref->persistent.Reset();
             delete ref->function;
+            delete ref;
+        }, v8::WeakCallbackType::kParameter);
+
+        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, func);
+        frameHandles_.insert(persistent);
+        return {persistent, isolate_};
+    }
+
+    bool supportsNativeMethods() const override { return true; }
+
+    JSValueHandle newMethod(const char* name, NativeMethod fn) override {
+        V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
+
+        // Same lifecycle as newFunction: store the callback, hand it to the trampoline through
+        // an External, and tie both to the JS function's GC lifetime.
+        auto* fnPtr = new NativeMethod(std::move(fn));
+#if TN_ANDROID_JS_PROFILE
+        bridgeNames()[fnPtr] = (name ? name : "<anon>") + std::string("#method");
+#endif
+        v8::Local<v8::External> external = v8::External::New(isolate_, fnPtr);
+
+        v8::Local<v8::Function> func = v8::Function::New(context, nativeMethodCallback, external).ToLocalChecked();
+
+        auto* functionRef = new NativeFunctionRef();
+        functionRef->persistent.Reset(isolate_, func);
+        functionRef->method = fnPtr;
+        functionRef->owner = this;
+        nativeFunctionRefs_.insert(functionRef);
+        functionRef->persistent.SetWeak(functionRef, [](const v8::WeakCallbackInfo<NativeFunctionRef>& data) {
+            NativeFunctionRef* ref = data.GetParameter();
+            if (ref->owner) ref->owner->nativeFunctionRefs_.erase(ref);
+            ref->persistent.Reset();
+            delete ref->function;
+            delete ref->method;
             delete ref;
         }, v8::WeakCallbackType::kParameter);
 
@@ -1185,6 +1316,28 @@ public:
         return result.As<v8::External>()->Value();
     }
 
+    bool setPrototypeOf(JSValueHandle object, JSValueHandle prototype) override {
+        V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
+
+        auto* objPersistent = (v8::Persistent<v8::Value>*)object.ptr;
+        v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
+        auto* protoPersistent = (v8::Persistent<v8::Value>*)prototype.ptr;
+
+        v8::TryCatch try_catch(isolate_);
+#if V8_MAJOR_VERSION >= 12
+        const auto result = objLocal->SetPrototypeV2(context, protoPersistent->Get(isolate_));
+#else
+        const auto result = objLocal->SetPrototype(context, protoPersistent->Get(isolate_));
+#endif
+        if (result.IsNothing()) {
+            reportException(try_catch);
+            return false;
+        }
+        return result.FromJust();
+    }
+
     // ========================================================================
     // Raw Context Access
     // ========================================================================
@@ -1450,6 +1603,15 @@ private:
 
         if (engine) engine->nativeCallbackDepth_ += 1;
 
+#if TN_ANDROID_JS_PROFILE
+        // PRD-222: count every crossing; time only top-level ones so nesting is not double counted.
+        const bool tnProfileTopLevel = engine && engine->nativeCallbackDepth_ == 1;
+        const auto tnProfileStart = std::chrono::steady_clock::now();
+        const uint64_t tnProfileCpuStart = tnProfileTopLevel ? threadCpuNs() : 0;
+        g_bridgeCalls += 1;
+        g_bridgeArgs += static_cast<uint64_t>(info.Length());
+#endif
+
         // Convert arguments into pooled Persistents, reusing both the arg vector (one per
         // nesting depth — one thread cannot run two callbacks at once at the same depth) and
         // the Persistent owners themselves.
@@ -1463,8 +1625,14 @@ private:
             args.push_back({engine->acquirePersistent(isolate, info[i]), isolate});
         }
 
+#if TN_ANDROID_JS_PROFILE
+        const auto tnPrologueEnd = std::chrono::steady_clock::now();
+#endif
         // Call the native function
         JSValueHandle result = (*fn)(isolate, args);
+#if TN_ANDROID_JS_PROFILE
+        const auto tnEpilogueStart = std::chrono::steady_clock::now();
+#endif
 
         // Set return value BEFORE cleaning up args (in case result is one of the args)
         if (result.ptr) {
@@ -1513,6 +1681,143 @@ private:
             }
             engine->releasePersistent(resPersistent);
         }
+#if TN_ANDROID_JS_PROFILE
+        {
+            const auto tnNow = std::chrono::steady_clock::now();
+            g_bridgeOverheadNs += static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(tnPrologueEnd - tnProfileStart).count()
+                + std::chrono::duration_cast<std::chrono::nanoseconds>(tnNow - tnEpilogueStart).count());
+            auto& stat = bridgeStats()[fn];
+            stat.calls += 1;
+            stat.ns += static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(tnEpilogueStart - tnPrologueEnd).count());
+        }
+        if (tnProfileTopLevel) {
+            g_bridgeNs += threadCpuNs() - tnProfileCpuStart;
+        }
+#endif
+        if (engine) engine->nativeCallbackDepth_ -= 1;
+    }
+
+    // Receiver-aware twin of nativeCallback: resolves the NativeMethod and the receiver's
+    // private data and mirrors the same argument-pooling, protected-handle skip, return-value
+    // transfer and profiling skeleton, so method crossings behave exactly like function
+    // crossings (PRD-222 per-class binding tables).
+    static void nativeMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+        v8::Isolate* isolate = info.GetIsolate();
+        V8EntryScope entry_scope(isolate);
+        v8::Local<v8::Context> context = isolate->GetCurrentContext();
+        entry_scope.enterContext(context);
+
+        auto* engine = static_cast<V8Engine*>(isolate->GetData(0));
+        if (engine && engine->nativeCallbackDepth_ == 0 &&
+            engine->exceptionFromNativeCallback_ && engine->hasException()
+#if V8_MAJOR_VERSION >= 13
+            && !isolate->HasPendingException()
+#endif
+        ) {
+            engine->getException();
+        }
+
+        // Get the native method from external data
+        v8::Local<v8::External> external = info.Data().As<v8::External>();
+        NativeMethod* fn = static_cast<NativeMethod*>(external->Value());
+        if (!engine || !fn) {
+            // No engine context to dispatch through or nothing stored; fail soft.
+            return;
+        }
+
+        // Resolve the receiver's private data. A detached call has no usable receiver; the
+        // callee sees nullptr and reports it.
+        void* receiverPrivate = nullptr;
+        if (info.This()->IsObject()) {
+            v8::Local<v8::Value> stored;
+            if (info.This().As<v8::Object>()
+                    ->GetPrivate(context, engine->privateKey_.Get(isolate))
+                    .ToLocal(&stored) &&
+                stored->IsExternal()) {
+                receiverPrivate = stored.As<v8::External>()->Value();
+            }
+        }
+
+        if (engine) engine->nativeCallbackDepth_ += 1;
+
+#if TN_ANDROID_JS_PROFILE
+        const bool tnProfileTopLevel = engine && engine->nativeCallbackDepth_ == 1;
+        const auto tnProfileStart = std::chrono::steady_clock::now();
+        const uint64_t tnProfileCpuStart = tnProfileTopLevel ? threadCpuNs() : 0;
+        g_bridgeCalls += 1;
+        g_bridgeArgs += static_cast<uint64_t>(info.Length());
+#endif
+
+        if ((int)engine->callbackArgsPool_.size() <= engine->nativeCallbackDepth_) {
+            engine->callbackArgsPool_.resize(engine->nativeCallbackDepth_ + 1);
+        }
+        std::vector<JSValueHandle>& args = engine->callbackArgsPool_[engine->nativeCallbackDepth_];
+        args.clear();
+        args.reserve(info.Length());
+        for (int i = 0; i < info.Length(); i++) {
+            args.push_back({engine->acquirePersistent(isolate, info[i]), isolate});
+        }
+
+#if TN_ANDROID_JS_PROFILE
+        const auto tnPrologueEnd = std::chrono::steady_clock::now();
+#endif
+        JSValueHandle result = (*fn)(*engine, receiverPrivate, args);
+#if TN_ANDROID_JS_PROFILE
+        const auto tnEpilogueStart = std::chrono::steady_clock::now();
+#endif
+
+        if (result.ptr) {
+            v8::Persistent<v8::Value>* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
+            info.GetReturnValue().Set(resPersistent->Get(isolate));
+        }
+
+        for (auto& arg : args) {
+            if (engine && engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end()) {
+                continue;
+            }
+            if (arg.ptr == result.ptr) {
+                continue;
+            }
+            engine->releasePersistent((v8::Persistent<v8::Value>*)arg.ptr);
+        }
+
+        bool resultWasArg = false;
+        for (auto& arg : args) {
+            if (arg.ptr == result.ptr) {
+                resultWasArg = true;
+                break;
+            }
+        }
+        if (result.ptr && resultWasArg &&
+            (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
+            auto* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
+            if (engine) engine->frameHandles_.erase(resPersistent);
+            engine->releasePersistent(resPersistent);
+        } else if (result.ptr && !resultWasArg &&
+            (!engine || engine->protectedHandles_.find(result.ptr) == engine->protectedHandles_.end())) {
+            v8::Persistent<v8::Value>* resPersistent = (v8::Persistent<v8::Value>*)result.ptr;
+            if (engine) {
+                engine->frameHandles_.erase(resPersistent);
+            }
+            engine->releasePersistent(resPersistent);
+        }
+#if TN_ANDROID_JS_PROFILE
+        {
+            const auto tnNow = std::chrono::steady_clock::now();
+            g_bridgeOverheadNs += static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(tnPrologueEnd - tnProfileStart).count()
+                + std::chrono::duration_cast<std::chrono::nanoseconds>(tnNow - tnEpilogueStart).count());
+            auto& stat = bridgeStats()[fn];
+            stat.calls += 1;
+            stat.ns += static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(tnEpilogueStart - tnPrologueEnd).count());
+        }
+        if (tnProfileTopLevel) {
+            g_bridgeNs += threadCpuNs() - tnProfileCpuStart;
+        }
+#endif
         if (engine) engine->nativeCallbackDepth_ -= 1;
     }
 
@@ -1524,6 +1829,9 @@ private:
     };
 
     v8::Isolate* isolate_ = nullptr;
+#if TN_ANDROID_JS_PROFILE
+    v8::CpuProfiler* cpuProfiler_ = nullptr;
+#endif
     v8::ArrayBuffer::Allocator* allocator_ = nullptr;
     v8::Global<v8::Context> context_;
     v8::Global<v8::Function> reflectSet_;

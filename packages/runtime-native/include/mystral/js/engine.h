@@ -11,6 +11,8 @@
 #include <string>
 #include <functional>
 #include <vector>
+#include <unordered_map>
+#include <ctime>
 #include <cstdint>
 #include <cstddef>
 
@@ -25,6 +27,46 @@ struct JSValueHandle {
     void* ptr = nullptr;
     void* ctx = nullptr;  // Context needed for some operations
 };
+
+// PRD-222 attribution probe: totals for every JS -> native callback crossing, incremented only
+// under TN_ANDROID_JS_PROFILE. g_bridgeNs counts top-level callbacks only, so nested callbacks are
+// not double counted; the difference between render-thread work and g_bridgeNs is time JavaScript
+// spent outside the native bridge.
+inline uint64_t g_bridgeCalls = 0;
+inline uint64_t g_bridgeNs = 0;
+inline uint64_t g_bridgeArgs = 0;
+// Trampoline-only cost: entry scope, argument Persistent promotion, protected-handle lookups and
+// release, excluding the native callee body itself.
+inline uint64_t g_bridgeOverheadNs = 0;
+// Wall time spent inside the JavaScript requestAnimationFrame dispatch (bridge time nests inside).
+inline uint64_t g_jsFrameNs = 0;
+// Screenshot mode leaves through _exit(), which runs no destructor, so the sampled JavaScript
+// profile has to be flushed explicitly from the exit path.
+inline std::function<void()> g_dumpCpuProfile;
+// Started on demand at the first eligible frame so shader compilation and asset decode during
+// startup do not contaminate the steady-state sample.
+inline std::function<void()> g_startCpuProfile;
+// Render-thread CPU clock, matching the threadCpuNs field the frame marker reports, so JS/bridge
+// shares are comparable with the frame's work figure instead of mixing wall and CPU time.
+inline uint64_t threadCpuNs() {
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+    timespec ts{};
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
+        return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull + static_cast<uint64_t>(ts.tv_nsec);
+    }
+#endif
+    return 0;
+}
+// Per-callback attribution: NativeFunction* -> display name, and NativeFunction* -> (calls, ns).
+inline std::unordered_map<const void*, std::string>& bridgeNames() {
+    static std::unordered_map<const void*, std::string> m;
+    return m;
+}
+struct BridgeStat { uint64_t calls = 0; uint64_t ns = 0; };
+inline std::unordered_map<const void*, BridgeStat>& bridgeStats() {
+    static std::unordered_map<const void*, BridgeStat> m;
+    return m;
+}
 
 enum class JSPropertyKind {
     Missing,
@@ -51,6 +93,17 @@ struct JSPropertyInfo {
  * Called from JavaScript with arguments, returns a value
  */
 using NativeFunction = std::function<JSValueHandle(void* ctx, const std::vector<JSValueHandle>& args)>;
+
+/**
+ * Native method signature: like NativeFunction, plus the receiver.
+ *
+ * `receiverPrivate` is the private data previously set on the receiver object with
+ * setPrivateData(), or nullptr when the receiver carries none or is not an object. A class's
+ * binding table installs once on a shared prototype and resolves its native handle from the
+ * receiver at call time, instead of capturing one wrapper's handle per instance.
+ */
+class Engine;
+using NativeMethod = std::function<JSValueHandle(Engine& engine, void* receiverPrivate, const std::vector<JSValueHandle>& args)>;
 
 /**
  * Engine type enumeration
@@ -202,6 +255,35 @@ public:
      * Create a function from a native callback
      */
     virtual JSValueHandle newFunction(const char* name, NativeFunction fn) = 0;
+
+    /**
+     * True when newMethod() returns usable functions on this engine build. Callers gate the
+     * per-class binding-table install on it and fall back to the per-instance install.
+     */
+    virtual bool supportsNativeMethods() const { return false; }
+
+    /**
+     * Create a function whose callback receives the call's receiver. A shared class prototype
+     * uses this so one binding table serves every wrapper instance instead of an install per
+     * call. Engines without a receiver-aware trampoline return a null handle; gate on
+     * supportsNativeMethods().
+     */
+    virtual JSValueHandle newMethod(const char* name, NativeMethod fn) {
+        (void)name;
+        (void)fn;
+        return {};
+    }
+
+    /**
+     * Re-point an ordinary object at another object as its prototype. Used to share one class
+     * binding table across all instances created from it. Returns false where unsupported or
+     * when the operation threw.
+     */
+    virtual bool setPrototypeOf(JSValueHandle object, JSValueHandle prototype) {
+        (void)object;
+        (void)prototype;
+        return false;
+    }
 
     // ========================================================================
     // Value Conversion

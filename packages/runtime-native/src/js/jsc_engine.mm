@@ -27,6 +27,8 @@ class JSCEngine : public Engine {
 public:
     struct NativeFunctionData {
         NativeFunction callback;
+        // Set instead of callback for receiver-aware methods (Engine::newMethod).
+        NativeMethod* method = nullptr;
         JSGlobalContextRef owner;
         JSCEngine* engine;
     };
@@ -83,6 +85,7 @@ public:
             if (functionPrototype_) JSValueUnprotect(context_, functionPrototype_);
             if (objectPrototype_) JSValueUnprotect(context_, objectPrototype_);
             if (getOwnPropertyDescriptor_) JSValueUnprotect(context_, getOwnPropertyDescriptor_);
+            if (objectDefineProperty_) JSValueUnprotect(context_, objectDefineProperty_);
             if (reflectHas_) JSValueUnprotect(context_, reflectHas_);
             if (reflectSet_) JSValueUnprotect(context_, reflectSet_);
             if (reflectGetPrototypeOf_) JSValueUnprotect(context_, reflectGetPrototypeOf_);
@@ -396,12 +399,34 @@ public:
     JSValueHandle newFunction(const char* name, NativeFunction fn) override {
         JSObjectRef funcObj = JSObjectMake(
             context_, nativeFunctionClass_,
-            new NativeFunctionData{std::move(fn), context_, this});
+            new NativeFunctionData{std::move(fn), nullptr, context_, this});
         if (functionPrototype_) {
             JSObjectSetPrototype(context_, funcObj, functionPrototype_);
         }
         JSStringRef propertyName = JSStringCreateWithUTF8CString("name");
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
+        JSObjectSetProperty(
+            context_, funcObj, propertyName, JSValueMakeString(context_, nameStr),
+            static_cast<JSPropertyAttributes>(
+                kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum),
+            nullptr);
+        JSStringRelease(propertyName);
+        JSStringRelease(nameStr);
+        return storeHandle((JSValueRef)funcObj);
+    }
+
+    bool supportsNativeMethods() const override { return true; }
+
+    JSValueHandle newMethod(const char* name, NativeMethod fn) override {
+        // Same class and lifetime as newFunction; only the callback slot differs.
+        JSObjectRef funcObj = JSObjectMake(
+            context_, nativeFunctionClass_,
+            new NativeFunctionData{NativeFunction{}, new NativeMethod(std::move(fn)), context_, this});
+        if (functionPrototype_) {
+            JSObjectSetPrototype(context_, funcObj, functionPrototype_);
+        }
+        JSStringRef propertyName = JSStringCreateWithUTF8CString("name");
+        JSStringRef nameStr = JSStringCreateWithUTF8CString(name ? name : "<anon>");
         JSObjectSetProperty(
             context_, funcObj, propertyName, JSValueMakeString(context_, nameStr),
             static_cast<JSPropertyAttributes>(
@@ -511,7 +536,7 @@ public:
         JSStringRef nameStr = JSStringCreateWithUTF8CString(name);
         JSValueRef propertyName = JSValueMakeString(context_, nameStr);
         JSStringRelease(nameStr);
-        return setPropertyWithReflect(
+        return defineOwnDataProperty(
             (JSObjectRef)obj.ptr, propertyName, (JSValueRef)value.ptr);
     }
 
@@ -836,6 +861,22 @@ public:
         return it != privateDataMap_.end() ? it->second : nullptr;
     }
 
+    bool setPrototypeOf(JSValueHandle object, JSValueHandle prototype) override {
+        // JSObjectSetPrototype accepts undefined for a null prototype; anything else reports
+        // through the exception out-parameter, which this records before failing closed.
+        JSValueRef exception = nullptr;
+        JSObjectSetPrototype(
+            context_,
+            static_cast<JSObjectRef>(object.ptr),
+            prototype.ptr ? static_cast<JSValueRef>(prototype.ptr) : JSValueMakeUndefined(context_),
+            &exception);
+        if (exception) {
+            recordException(exception);
+            return false;
+        }
+        return true;
+    }
+
     // ========================================================================
     // Raw Context Access
     // ========================================================================
@@ -881,6 +922,15 @@ private:
         if (descriptorValue && JSValueIsObject(context_, descriptorValue)) {
             getOwnPropertyDescriptor_ = (JSObjectRef)descriptorValue;
             JSValueProtect(context_, getOwnPropertyDescriptor_);
+        }
+
+        JSStringRef definePropertyName = JSStringCreateWithUTF8CString("defineProperty");
+        JSValueRef definePropertyValue = JSObjectGetProperty(
+            context_, (JSObjectRef)objectValue, definePropertyName, nullptr);
+        JSStringRelease(definePropertyName);
+        if (definePropertyValue && JSValueIsObject(context_, definePropertyValue)) {
+            objectDefineProperty_ = (JSObjectRef)definePropertyValue;
+            JSValueProtect(context_, objectDefineProperty_);
         }
 
         JSStringRef reflectName = JSStringCreateWithUTF8CString("Reflect");
@@ -930,6 +980,43 @@ private:
             return false;
         }
         return JSValueToBoolean(context_, result);
+    }
+
+    bool defineOwnDataProperty(
+        JSObjectRef object,
+        JSValueRef property,
+        JSValueRef value) {
+        if (!objectDefineProperty_) {
+            throwException("JavaScriptCore Object.defineProperty intrinsic is unavailable");
+            return false;
+        }
+        JSObjectRef descriptor = JSObjectMake(context_, nullptr, nullptr);
+        JSObjectSetPrototype(context_, descriptor, JSValueMakeNull(context_));
+        JSValueRef exception = nullptr;
+        const auto setDescriptorProperty = [this, descriptor, &exception](
+            const char* name, JSValueRef descriptorValue) {
+            JSStringRef propertyName = JSStringCreateWithUTF8CString(name);
+            JSObjectSetProperty(
+                context_, descriptor, propertyName, descriptorValue,
+                kJSPropertyAttributeNone, &exception);
+            JSStringRelease(propertyName);
+            return exception == nullptr;
+        };
+        if (!setDescriptorProperty("value", value) ||
+            !setDescriptorProperty("writable", JSValueMakeBoolean(context_, true)) ||
+            !setDescriptorProperty("enumerable", JSValueMakeBoolean(context_, true)) ||
+            !setDescriptorProperty("configurable", JSValueMakeBoolean(context_, true))) {
+            recordException(exception);
+            return false;
+        }
+        JSValueRef args[] = {object, property, descriptor};
+        JSObjectCallAsFunction(
+            context_, objectDefineProperty_, nullptr, 3, args, &exception);
+        if (exception != nullptr) {
+            recordException(exception);
+            return false;
+        }
+        return true;
     }
 
     bool getBooleanProperty(JSObjectRef object, const char* name, bool& result) {
@@ -1037,6 +1124,9 @@ private:
     }
 
     static void finalizeNativeFunction(JSObjectRef object) {
+        // The single-expression cast is part of this file's asserted binding contract
+        // (webgpu-bindings-contract.test.mjs); the method slot dies with the same data.
+        delete static_cast<NativeFunctionData*>(JSObjectGetPrivate(object))->method;
         delete static_cast<NativeFunctionData*>(JSObjectGetPrivate(object));
     }
 
@@ -1066,8 +1156,22 @@ private:
             args.push_back({(void*)arguments[i], (void*)ctx});
         }
 
-        // Call the native function
-        JSValueHandle result = callbackData->callback((void*)ctx, args);
+        // Call the native function — or, for a receiver-aware method, resolve the receiver's
+        // private data and dispatch through it. A detached call passes nullptr and the callee
+        // reports the missing receiver.
+        JSValueHandle result;
+        if (callbackData->method) {
+            void* receiverPrivate = nullptr;
+            if (thisObject && JSValueIsObject(ctx, thisObject)) {
+                const auto it = callbackData->engine->privateDataMap_.find(thisObject);
+                if (it != callbackData->engine->privateDataMap_.end()) {
+                    receiverPrivate = it->second;
+                }
+            }
+            result = (*callbackData->method)(*callbackData->engine, receiverPrivate, args);
+        } else {
+            result = callbackData->callback((void*)ctx, args);
+        }
         if (callbackData->engine) callbackData->engine->nativeCallbackDepth_ -= 1;
         const bool callbackException = callbackData->engine &&
             callbackData->engine->exceptionFromNativeCallback_ &&
@@ -1094,6 +1198,7 @@ private:
     JSContextGroupRef contextGroup_ = nullptr;
     JSGlobalContextRef context_ = nullptr;
     JSObjectRef getOwnPropertyDescriptor_ = nullptr;
+    JSObjectRef objectDefineProperty_ = nullptr;
     JSObjectRef reflectHas_ = nullptr;
     JSObjectRef reflectSet_ = nullptr;
     JSObjectRef reflectGetPrototypeOf_ = nullptr;

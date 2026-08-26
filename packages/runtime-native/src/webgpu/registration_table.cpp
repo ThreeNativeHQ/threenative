@@ -372,13 +372,20 @@ bool installBindingTable(
     for (size_t index = 0; index < table.registrations.size(); ++index) {
         const auto& registration = table.registrations[index];
         const auto destination = destinations[index];
-        const auto function = engine->newFunction(
-            registration.name,
-            [engine, state, registration, destination](
-                void*,
-                const std::vector<js::JSValueHandle>& args) {
-                return dispatch(engine, state, registration, destination, args);
-            });
+        js::JSValueHandle function;
+        if (registration.prebuiltFunction && registration.prebuiltFunction->ptr) {
+            // Pre-built receiver-aware method function: skip creation, keep every other
+            // guarantee below identical.
+            function = *registration.prebuiltFunction;
+        } else {
+            function = engine->newFunction(
+                registration.name,
+                [engine, state, registration, destination](
+                    void*,
+                    const std::vector<js::JSValueHandle>& args) {
+                    return dispatch(engine, state, registration, destination, args);
+                });
+        }
         const bool functionCreated = function.ptr != nullptr;
         const bool pendingException = engine->hasException();
         if (functionCreated) {

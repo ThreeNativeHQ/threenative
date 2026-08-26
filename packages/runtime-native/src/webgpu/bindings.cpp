@@ -434,6 +434,8 @@ void destroyBindingsState(BindingsState*& state) {
             releaseRenderPipelineRegistryEntry(
                 state, state->renderPipelineRegistry.begin()->first);
         }
+        state->shaderModuleMetadata->releaseAll(&wgpuShaderModuleRelease);
+        state->shaderModuleMetadata.reset();
         for (const auto& entry : state->encoderRenderPassMap) {
             if (entry.second) {
                 wgpuRenderPassEncoderEnd(entry.second);
@@ -630,6 +632,7 @@ static uint64_t readRenderThreadCpuNs() {
 }
 
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
+    if (state->frameEndCount == 226 && js::g_startCpuProfile) js::g_startCpuProfile();
     const uint64_t nowCpuNs = readRenderThreadCpuNs();
     const uint64_t renderThreadCpuNs =
         (state->lastRenderThreadCpuNs != 0 && nowCpuNs > state->lastRenderThreadCpuNs)
@@ -679,6 +682,11 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"writeBufferMediumNs\":" << state->androidJsNativeProfile.writeBufferMediumNs
            << ",\"writeBufferLargeCalls\":" << state->androidJsNativeProfile.writeBufferLargeCalls
            << ",\"writeBufferLargeNs\":" << state->androidJsNativeProfile.writeBufferLargeNs
+           << ",\"bridgeCalls\":" << js::g_bridgeCalls
+           << ",\"bridgeNs\":" << js::g_bridgeNs
+           << ",\"bridgeArgs\":" << js::g_bridgeArgs
+           << ",\"bridgeOverheadNs\":" << js::g_bridgeOverheadNs
+           << ",\"jsFrameNs\":" << js::g_jsFrameNs
            << ",\"threadCpuNs\":" << renderThreadCpuNs
            << ",\"submitPollNs\":" << submitPollNs
            << ",\"presentNs\":" << presentNs
@@ -704,6 +712,23 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"writeBuffer\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::WriteBuffer)]
            << ",\"endRenderPass\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::EndRenderPass)]
            << "}}";
+    {
+        std::vector<std::pair<const void*, js::BridgeStat>> top(
+            js::bridgeStats().begin(), js::bridgeStats().end());
+        std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.second.ns > b.second.ns; });
+        std::ostringstream byName;
+        byName << "TN_BRIDGE_BY_NAME:{\"frame\":" << state->frameEndCount << ",\"top\":[";
+        for (size_t i = 0; i < top.size() && i < 25; i++) {
+            const auto it = js::bridgeNames().find(top[i].first);
+            const std::string label = it == js::bridgeNames().end() ? "<unnamed>" : it->second;
+            if (i) byName << ",";
+            byName << "{\"name\":\"" << label << "\",\"calls\":" << top[i].second.calls
+                   << ",\"ns\":" << top[i].second.ns << "}";
+        }
+        byName << "]}";
+        std::cout << byName.str() << std::endl;
+        js::bridgeStats().clear();
+    }
     const std::string uploadMarker = uploadOutput.str();
     const std::string marker = output.str();
     std::cout << uploadMarker << std::endl;
@@ -713,6 +738,11 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
     __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", marker.c_str());
 #endif
     state->androidJsNativeProfile = {};
+    js::g_bridgeCalls = 0;
+    js::g_bridgeNs = 0;
+    js::g_bridgeArgs = 0;
+    js::g_bridgeOverheadNs = 0;
+    js::g_jsFrameNs = 0;
 }
 #endif
 
@@ -4136,6 +4166,111 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     return jsRenderPass;
 }
 
+// ---------------------------------------------------------------------------
+// Per-class binding tables (PRD-222).
+//
+// Every WebGPU object previously installed its method table per instance, per
+// creating call, through the full transactional machinery — measured at
+// 64 µs for device.createCommandEncoder against Chrome's 919 ns
+// (docs/bugs/webgpu-binding-table-installed-per-call-2026-08-26.md). GPUCommandEncoder,
+// the largest single measured tax, instead installs its table ONCE on a shared
+// prototype below, and each wrapper instance points at it. Receiver-aware
+// methods resolve their native handle from the receiver's private data.
+// ---------------------------------------------------------------------------
+
+/** Validation requires a non-null handler even when a row installs a prebuilt function. */
+static js::JSValueHandle tnWebgpuClassRowPlaceholder(
+    BindingsState* state, BindingDestination, const std::vector<js::JSValueHandle>&) {
+    // Never dispatched: prebuiltFunction rows bypass BindingHandler entirely.
+    return state->engine->newUndefined();
+}
+
+/**
+ * Creates one receiver-aware method function that adapts a captured-handle handler
+ * (tnWebgpuHandler38/63 shape) to resolve its encoder from the receiving wrapper instead of a
+ * per-instance closure capture.
+ */
+static js::JSValueHandle makeCommandEncoderMethod(
+    BindingsState* state,
+    const char* name,
+    js::JSValueHandle (*method)(
+        BindingsState*, WGPUCommandEncoder, const std::vector<js::JSValueHandle>&),
+    const char* missingReceiverError) {
+    auto* engine = state->engine;
+    return engine->newMethod(
+        name,
+        [state, method, missingReceiverError](
+            js::Engine& engineRef, void* receiverPrivate,
+            const std::vector<js::JSValueHandle>& args) {
+            const auto encoder = static_cast<WGPUCommandEncoder>(receiverPrivate);
+            if (!encoder) {
+                engineRef.throwException(missingReceiverError);
+                return engineRef.newUndefined();
+            }
+            return method(state, encoder, args);
+        });
+}
+
+/**
+ * Builds the shared GPUCommandEncoder prototype the first time an encoder is created, then
+ * returns it through outPrototype for every instance afterwards. Returns false — without side
+ * effects on instances — whenever the engine cannot carry receiver-aware methods or the one-time
+ * transaction fails; callers fall back to the legacy per-instance install.
+ */
+static bool ensureCommandEncoderClassTable(
+    BindingsState* state, js::JSValueHandle& outPrototype) {
+    auto* engine = state->engine;
+    if (!engine->supportsNativeMethods()) return false;
+    if (state->commandEncoderPrototype.ptr) {
+        outPrototype = state->commandEncoderPrototype;
+        return true;
+    }
+
+    const auto prototype = engine->newObject();
+    if (!prototype.ptr || engine->hasException()) return false;
+
+    const auto beginRenderPassFn = makeCommandEncoderMethod(
+        state, "beginRenderPass", &tnWebgpuHandler38,
+        "beginRenderPass called with no command encoder receiver");
+    const auto finishFn = makeCommandEncoderMethod(
+        state, "finish", &tnWebgpuHandler63,
+        "finish called with no command encoder receiver");
+    if (!beginRenderPassFn.ptr || !finishFn.ptr || engine->hasException()) {
+        if (engine->hasException()) engine->getException();  // consume; caller falls back
+        return false;
+    }
+
+    // One transactional install for the whole class: the snapshot/verify/rollback guarantees
+    // run once here instead of per instance, which is the point of the change.
+    if (!installBindingTable(engine, state, bindingTable({
+        {"GPUCommandEncoder", "beginRenderPass", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &beginRenderPassFn},
+        {"GPUCommandEncoder", "beginComputePass", 0, nullptr,
+         &tnWebgpuHandler53, prototype},
+        {"GPUCommandEncoder", "copyBufferToBuffer", 0, nullptr,
+         &tnWebgpuHandler58, prototype},
+        {"GPUCommandEncoder", "copyBufferToTexture", 0, nullptr,
+         &tnWebgpuHandler59, prototype},
+        {"GPUCommandEncoder", "copyTextureToBuffer", 0, nullptr,
+         &tnWebgpuHandler60, prototype},
+        {"GPUCommandEncoder", "copyTextureToTexture", 0, nullptr,
+         &tnWebgpuHandler61, prototype},
+        {"GPUCommandEncoder", "clearBuffer", 0, nullptr,
+         &tnWebgpuHandler62, prototype},
+        {"GPUCommandEncoder", "finish", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &finishFn},
+    }))) {
+        return false;
+    }
+
+    // The prototype carries frozen methods holding no native handles, so it lives as long as
+    // the binding state does.
+    engine->freezeHandle(prototype);
+    state->commandEncoderPrototype = prototype;
+    outPrototype = prototype;
+    return true;
+}
+
 static void rollbackCommandEncoder(
     BindingsState* state,
     WGPUCommandEncoder encoder,
@@ -4184,6 +4319,17 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                             state->engine->suspendFrameTracking();
                             auto jsEncoder = state->engine->newObject();
                             state->engine->setPrivateData(jsEncoder, encoder);
+
+                            // Fast path: point this instance at the class's one-time prototype
+                            // instead of reinstalling eight methods transactionally per call.
+                            js::JSValueHandle commandEncoderPrototype{};
+                            if (ensureCommandEncoderClassTable(state, commandEncoderPrototype) &&
+                                state->engine->setPrototypeOf(jsEncoder, commandEncoderPrototype)) {
+                                state->engine->resumeFrameTracking();
+                                return jsEncoder;
+                            }
+                            // Legacy per-call install: retained unchanged so the fast path can
+                            // be reverted in one commit.
                             // Capture encoder pointer for use in closures
                             WGPUCommandEncoder capturedEncoder = encoder;
                             // encoder.beginRenderPass(descriptor)
@@ -4306,10 +4452,10 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                             auto vertexEntryProp = state->engine->getProperty(vertex, "entryPoint");
                             const bool hasVertexEntry = !state->engine->isUndefined(vertexEntryProp);
                             const auto vertexMetadata =
-                                state->shaderModuleMetadata.find(vsModule);
+                                state->shaderModuleMetadata->entries.find(vsModule);
                             std::string vertexEntry = hasVertexEntry
                                 ? state->engine->toString(vertexEntryProp)
-                                : vertexMetadata != state->shaderModuleMetadata.end()
+                                : vertexMetadata != state->shaderModuleMetadata->entries.end()
                                     ? vertexMetadata->second.vertexEntryPoint
                                     : "";
                             if (vertexEntry.empty()) {
@@ -4330,9 +4476,9 @@ static js::JSValueHandle tnWebgpuHandler35(BindingsState* state, BindingDestinat
                                     fragmentEntry = state->engine->toString(fragEntryProp);
                                 } else {
                                     const auto fragmentMetadata =
-                                        state->shaderModuleMetadata.find(fsModule);
+                                        state->shaderModuleMetadata->entries.find(fsModule);
                                     fragmentEntry = fragmentMetadata !=
-                                            state->shaderModuleMetadata.end()
+                                            state->shaderModuleMetadata->entries.end()
                                         ? fragmentMetadata->second.fragmentEntryPoint
                                         : "";
                                     if (fragmentEntry.empty()) {
@@ -4700,10 +4846,21 @@ static js::JSValueHandle tnWebgpuHandler34(BindingsState* state, BindingDestinat
                                 return state->engine->newUndefined();
                             auto jsShader = state->engine->newObject();
                             state->engine->setPrivateData(jsShader, shaderModule);
-                            state->shaderModuleMetadata[shaderModule] = {
+                            state->shaderModuleMetadata->entries[shaderModule] = {
                                 singleWgslEntryPoint(code, "vertex"),
                                 singleWgslEntryPoint(code, "fragment"),
                             };
+                            state->engine->registerRelease(jsShader, [
+                                metadata = std::weak_ptr<ShaderModuleMetadataStore>(
+                                    state->shaderModuleMetadata),
+                                shaderModule
+                            ]() {
+                                const auto shaderModuleMetadata = metadata.lock();
+                                if (shaderModuleMetadata) {
+                                    shaderModuleMetadata->release(
+                                        shaderModule, &wgpuShaderModuleRelease);
+                                }
+                            });
                             return jsShader;
 }
 

@@ -40,6 +40,8 @@ namespace js {
 
 struct QuickJSNativeCallbackData {
     NativeFunction* function = nullptr;
+    // Set instead of function for receiver-aware methods (Engine::newMethod).
+    NativeMethod* method = nullptr;
 };
 
 static void quickjsNativeCallbackFinalizer(JSRuntime*, JSValueConst value) {
@@ -47,6 +49,7 @@ static void quickjsNativeCallbackFinalizer(JSRuntime*, JSValueConst value) {
     auto* data = static_cast<QuickJSNativeCallbackData*>(JS_GetOpaque(value, classId));
     if (!data) return;
     delete data->function;
+    delete data->method;
     delete data;
 }
 
@@ -543,7 +546,7 @@ public:
     }
 
     JSValueHandle newFunction(const char* name, NativeFunction fn) override {
-        auto* callbackData = new QuickJSNativeCallbackData{new NativeFunction(std::move(fn))};
+        auto* callbackData = new QuickJSNativeCallbackData{new NativeFunction(std::move(fn)), nullptr};
         JSValue dataObject = JS_NewObjectClass(context_, nativeCallbackDataClassId_);
         if (JS_IsException(dataObject)) {
             delete callbackData->function;
@@ -553,6 +556,27 @@ public:
         JS_SetOpaque(dataObject, callbackData);
 
         JSValue func = JS_NewCFunctionData(context_, &nativeCallback, 0, 0, 1, &dataObject);
+        JS_FreeValue(context_, dataObject);
+        if (JS_IsException(func)) return {nullptr, context_};
+        (void)name;
+        return storeHandle(func);
+    }
+
+    bool supportsNativeMethods() const override { return true; }
+
+    JSValueHandle newMethod(const char* name, NativeMethod fn) override {
+        auto* callbackData = new QuickJSNativeCallbackData{nullptr, new NativeMethod(std::move(fn))};
+        JSValue dataObject = JS_NewObjectClass(context_, nativeCallbackDataClassId_);
+        if (JS_IsException(dataObject)) {
+            delete callbackData->method;
+            delete callbackData;
+            return {nullptr, context_};
+        }
+        JS_SetOpaque(dataObject, callbackData);
+
+        // Same JS_NewCFunctionData plumbing as newFunction: the method's func_data[0] carries
+        // the callback holder, and the trampoline resolves the receiver at call time.
+        JSValue func = JS_NewCFunctionData(context_, &nativeMethodCallback, 0, 0, 1, &dataObject);
         JS_FreeValue(context_, dataObject);
         if (JS_IsException(func)) return {nullptr, context_};
         (void)name;
@@ -649,7 +673,9 @@ public:
     bool setProperty(JSValueHandle obj, const char* name, JSValueHandle value) override {
         JSValue* objVal = (JSValue*)obj.ptr;
         JSValue* val = (JSValue*)value.ptr;
-        const int result = JS_SetPropertyStr(context_, *objVal, name, JS_DupValue(context_, *val));
+        const int result = JS_DefinePropertyValueStr(
+            context_, *objVal, name, JS_DupValue(context_, *val),
+            JS_PROP_C_W_E | JS_PROP_THROW);
         if (result < 0) return capturePendingException();
         return true;
     }
@@ -906,6 +932,14 @@ public:
         return it != privateDataMap_.end() ? it->second : nullptr;
     }
 
+    bool setPrototypeOf(JSValueHandle object, JSValueHandle prototype) override {
+        // 1 sets the prototype, 0 refuses an exotic target, -1 latches a pending exception.
+        return JS_SetPrototype(
+                   context_,
+                   *static_cast<JSValue*>(object.ptr),
+                   *static_cast<JSValue*>(prototype.ptr)) == 1;
+    }
+
     // ========================================================================
     // Raw Context Access
     // ========================================================================
@@ -1068,6 +1102,93 @@ private:
 
         // Clean up argument copies. A protected argument remains owned by the native callback;
         // the returned argument handle is transferred or duplicated above.
+        for (auto& arg : args) {
+            if (engine && engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end()) {
+                continue;
+            }
+            if (arg.ptr == result.ptr) continue;
+            JSValue* val = (JSValue*)arg.ptr;
+            JS_FreeValue(ctx, *val);
+            delete val;
+        }
+        if (engine) engine->nativeCallbackDepth_ -= 1;
+        return returned;
+    }
+
+    // Receiver-aware twin of nativeCallback: resolves the NativeMethod and the receiver's
+    // private data and mirrors the same argument-copying, exception transfer and ownership
+    // skeleton. A detached call passes receiverPrivate = nullptr; the callee reports it.
+    static JSValue nativeMethodCallback(JSContext* ctx, JSValueConst this_val,
+                                        int argc, JSValueConst* argv, int magic, JSValue* func_data) {
+        (void)magic;
+        auto* engine = static_cast<QuickJSEngine*>(JS_GetContextOpaque(ctx));
+        if (engine && engine->nativeCallbackDepth_ == 0 &&
+            engine->exceptionFromNativeCallback_ && engine->hasException()) {
+            engine->getException();
+        }
+        auto* callbackData = engine
+            ? static_cast<QuickJSNativeCallbackData*>(
+                JS_GetOpaque(func_data[0], engine->nativeCallbackDataClassId_))
+            : nullptr;
+        if (!callbackData || !callbackData->method) return JS_UNDEFINED;
+
+        void* receiverPrivate = nullptr;
+        if (!JS_IsObject(this_val)) {
+            // Detached call: keep going so the callee can report the missing receiver.
+        } else {
+            const auto it = engine->privateDataMap_.find(JS_VALUE_GET_PTR(this_val));
+            if (it != engine->privateDataMap_.end()) receiverPrivate = it->second;
+        }
+
+        NativeMethod* fn = callbackData->method;
+
+        if (engine) engine->nativeCallbackDepth_ += 1;
+
+        std::vector<JSValueHandle> args;
+        args.reserve(argc);
+        for (int i = 0; i < argc; i++) {
+            JSValue* stored = new JSValue(JS_DupValue(ctx, argv[i]));
+            args.push_back({stored, ctx});
+        }
+
+        JSValueHandle result = (*fn)(*engine, receiverPrivate, args);
+
+        JSValue* returnedHandle = result.ptr ? static_cast<JSValue*>(result.ptr) : nullptr;
+        const bool resultIsProtected = returnedHandle && engine &&
+            engine->protectedHandles_.find(result.ptr) != engine->protectedHandles_.end();
+
+        const bool callbackException = engine && engine->exceptionFromNativeCallback_ &&
+            engine->hasException();
+        if (callbackException) {
+            if (returnedHandle && !resultIsProtected) {
+                engine->frameHandles_.erase(result.ptr);
+                JS_FreeValue(ctx, *returnedHandle);
+                delete returnedHandle;
+            }
+            for (auto& arg : args) {
+                if (engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end() ||
+                    arg.ptr == result.ptr) {
+                    continue;
+                }
+                JSValue* val = (JSValue*)arg.ptr;
+                JS_FreeValue(ctx, *val);
+                delete val;
+            }
+            engine->nativeCallbackDepth_ -= 1;
+            return JS_Throw(ctx, engine->takeNativeCallbackException());
+        }
+
+        JSValue returned = JS_UNDEFINED;
+        if (returnedHandle) {
+            if (resultIsProtected) {
+                returned = duplicateProtectedNativeCallbackResult(ctx, result);
+            } else {
+                returned = *returnedHandle;
+                if (engine) engine->frameHandles_.erase(result.ptr);
+                delete returnedHandle;
+            }
+        }
+
         for (auto& arg : args) {
             if (engine && engine->protectedHandles_.find(arg.ptr) != engine->protectedHandles_.end()) {
                 continue;
