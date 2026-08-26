@@ -24,6 +24,7 @@
 #include "mystral/webgpu/wrapper_factories.h"
 #include "mystral/cold_start.h"
 #include "mystral/stall_budget.h"
+#include "mystral/webgpu/render_pass_wrapper_pool.h"
 #include "runtime_scripts.h"
 #include "mystral/webgpu/checked_handle.h"
 #include <ctime>
@@ -1921,25 +1922,6 @@ static BindingHandler makeCapturedPairHandler(
         return handler(state, first, second, args);
     };
 }
-
-// Hand out a wrapper whose previous pass has already ended. Growing the pool is the fail-closed
-// branch: a live pass never shares a wrapper with another live pass.
-static BindingsState::RenderPassWrapper* acquireRenderPassWrapper(BindingsState* state) {
-    for (auto& candidate : state->renderPassWrappers) {
-        if (candidate->object.ptr == nullptr) return candidate.get();
-        const WGPURenderPassEncoder previous = candidate->pass ? *candidate->pass : nullptr;
-        bool live = false;
-        if (previous != nullptr) {
-            for (const auto& entry : state->encoderRenderPassMap) {
-                if (entry.second == previous) { live = true; break; }
-            }
-        }
-        if (!live) return candidate.get();
-    }
-    state->renderPassWrappers.push_back(std::make_unique<BindingsState::RenderPassWrapper>());
-    return state->renderPassWrappers.back().get();
-}
-
 
 /** Install the table-driven WebGPU surfaces after state has been initialized. */
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
@@ -4068,7 +4050,9 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     // Reuse a pooled wrapper so the renderer's call sites keep
                                     // seeing one receiver shape and one callee per method. Acquire before
                                     // publishing this pass: opaque native handle addresses can be recycled.
-                                    auto* passWrapper = acquireRenderPassWrapper(state);
+                                    auto* passWrapper = acquireRenderPassWrapper(
+                                        state->renderPassWrappers, state->encoderRenderPassMap,
+                                        [](const js::JSValueHandle& object) { return object.ptr == nullptr; });
                                     const bool freshRenderPassWrapper =
                                         passWrapper->object.ptr == nullptr;
                                     if (freshRenderPassWrapper) {
@@ -4081,14 +4065,18 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         // must leave the per-frame handle set.
                                         state->engine->freezeHandle(passWrapper->object);
                                     }
-                                    *passWrapper->pass = renderPass;
-                                    *passWrapper->encoder = encoderToUse;
+                                    rebindRenderPassWrapper(
+                                        *passWrapper, renderPass, encoderToUse,
+                                        [state](js::JSValueHandle object, WGPURenderPassEncoder pass) {
+                                            state->engine->setPrivateData(object, pass);
+                                        });
                                     auto jsRenderPass = passWrapper->object;
-                                    state->engine->setPrivateData(jsRenderPass, renderPass);
                                     const auto discardRenderPassWrapper = [&]() {
-                                        if (!freshRenderPassWrapper) return;
-                                        state->engine->freeHandle(passWrapper->object);
-                                        passWrapper->object = {};
+                                        discardFreshRenderPassWrapper(
+                                            *passWrapper, freshRenderPassWrapper,
+                                            [state](js::JSValueHandle object) {
+                                                state->engine->freeHandle(object);
+                                            });
                                     };
                                     WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
                                     const auto rollbackRenderPass = [&]() {

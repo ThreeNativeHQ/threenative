@@ -194,17 +194,17 @@ test("render-pass wrappers are reused so V8 inline caches stay warm across frame
 
 test("render-pass reuse acquires before publish and preserves reuse-only lifetime rules", () => {
   const beginRenderPass = bindings.slice(bindings.indexOf("static js::JSValueHandle tnWebgpuHandler38"));
-  const acquireAt = beginRenderPass.indexOf("acquireRenderPassWrapper(state)");
+  const acquireAt = beginRenderPass.indexOf("auto* passWrapper = acquireRenderPassWrapper(");
   const publishAt = beginRenderPass.indexOf("state->encoderRenderPassMap[encoderToUse] = renderPass;");
-  const privateDataAt = beginRenderPass.indexOf("state->engine->setPrivateData(jsRenderPass, renderPass);");
+  const privateDataAt = beginRenderPass.indexOf("state->engine->setPrivateData(object, pass);");
   const freshAt = beginRenderPass.indexOf("if (freshRenderPassWrapper) {");
 
   assert.ok(acquireAt >= 0 && publishAt > acquireAt,
     "acquire before map publication so a recycled opaque handle cannot mark its idle wrapper live");
   assert.ok(privateDataAt > freshAt && privateDataAt < publishAt,
     "every reuse must overwrite private native data before JavaScript can observe the pass");
-  assert.match(beginRenderPass, /if \(!freshRenderPassWrapper\) return;[\s\S]*freeHandle\(passWrapper->object\)/u,
-    "rollback may dispose only a wrapper allocated by this begin call");
+  assert.match(beginRenderPass, /discardFreshRenderPassWrapper\(\s*\*passWrapper, freshRenderPassWrapper/u,
+    "beginRenderPass must delegate rollback disposal to the tested fresh-only lifecycle helper");
   assert.match(beginRenderPass, /if \(freshRenderPassWrapper\) \{[\s\S]*installBatchedPassEncoding/u,
     "batched method wrapping remains a first-allocation operation");
 });
