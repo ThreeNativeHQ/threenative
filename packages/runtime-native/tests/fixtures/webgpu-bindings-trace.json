@@ -52,6 +52,7 @@
     "GPURenderBundleEncoder.setIndexBuffer",
     "GPURenderBundleEncoder.setPipeline",
     "GPURenderBundleEncoder.setVertexBuffer",
+    "GPURenderPassEncoder.__tnReplayEnd",
     "GPURenderPassEncoder.draw",
     "GPURenderPassEncoder.drawIndexed",
     "GPURenderPassEncoder.drawIndexedIndirect",

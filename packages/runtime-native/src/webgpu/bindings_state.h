@@ -190,11 +190,32 @@ struct BindingsState {
     WGPUComputePassEncoder jsComputePass = nullptr;
     WGPUCommandEncoder jsCommandEncoder = nullptr;
     std::unordered_set<WGPUCommandEncoder> commandEncoderRegistry;
+    // Pooled GPURenderPassEncoder wrappers, reused across frames.
+    //
+    // Three.js begins a render pass every frame. Building a fresh JS object with ~15 freshly
+    // created method functions each time hands every call site in the renderer a new receiver
+    // shape and a new callee, which pushes V8's inline caches into the megamorphic stub cache —
+    // 2.7 ms/frame on a Pixel 8 (PRD-222 F13). A pooled wrapper keeps both stable; the native
+    // pass its handlers act on is rebound through `pass` instead of captured by value.
+    //
+    // A pooled wrapper is only handed out when its previous pass is no longer live, which is
+    // exactly "not a value in encoderRenderPassMap" — that map is maintained by begin, end and
+    // every rollback path. The pool grows rather than reusing a live wrapper, so genuinely
+    // concurrent passes never share one.
+    struct RenderPassWrapper {
+        js::JSValueHandle object{};
+        std::shared_ptr<WGPURenderPassEncoder> pass;
+        std::shared_ptr<WGPUCommandEncoder> encoder;
+    };
+    std::vector<std::unique_ptr<RenderPassWrapper>> renderPassWrappers;
     std::unordered_map<WGPUCommandEncoder, WGPURenderPassEncoder> encoderRenderPassMap;
     std::unordered_map<WGPUCommandEncoder, WGPUComputePassEncoder> encoderComputePassMap;
     bool surfaceRenderPassEnded = false;
     bool framePresentPending = false;
     uint64_t lastPresentNs = 0;
+    // Render-thread CPU clock at the previous profile emission. Wall-clock phase timings on a
+    // FIFO-presented surface are mostly vblank wait; the delta of this clock is the work.
+    uint64_t lastRenderThreadCpuNs = 0;
     uint64_t presentCount = 0;
     uint64_t textureBytesLive = 0;
     uint64_t textureBytesCreated = 0;

@@ -26,6 +26,7 @@
 #include "mystral/stall_budget.h"
 #include "runtime_scripts.h"
 #include "mystral/webgpu/checked_handle.h"
+#include <ctime>
 #include <iostream>
 #include <vector>
 #include <unordered_map>
@@ -616,7 +617,25 @@ static uint64_t endProfiledBinding(
     return elapsedNs;
 }
 
+// Render-thread CPU time, so an A/B can be judged on work done rather than on frames that a
+// FIFO present has already paced. Zero where the platform has no per-thread CPU clock.
+static uint64_t readRenderThreadCpuNs() {
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+    timespec ts{};
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
+        return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull + static_cast<uint64_t>(ts.tv_nsec);
+    }
+#endif
+    return 0;
+}
+
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
+    const uint64_t nowCpuNs = readRenderThreadCpuNs();
+    const uint64_t renderThreadCpuNs =
+        (state->lastRenderThreadCpuNs != 0 && nowCpuNs > state->lastRenderThreadCpuNs)
+            ? nowCpuNs - state->lastRenderThreadCpuNs
+            : 0;
+    state->lastRenderThreadCpuNs = nowCpuNs;
     const auto& counts = state->androidJsNativeProfile.counts;
     const auto& commandNs = state->androidJsNativeProfile.commandNs;
     uint64_t calls = 0;
@@ -660,6 +679,7 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"writeBufferMediumNs\":" << state->androidJsNativeProfile.writeBufferMediumNs
            << ",\"writeBufferLargeCalls\":" << state->androidJsNativeProfile.writeBufferLargeCalls
            << ",\"writeBufferLargeNs\":" << state->androidJsNativeProfile.writeBufferLargeNs
+           << ",\"threadCpuNs\":" << renderThreadCpuNs
            << ",\"submitPollNs\":" << submitPollNs
            << ",\"presentNs\":" << presentNs
            << ",\"frame\":" << state->frameEndCount
@@ -1866,6 +1886,30 @@ static BindingHandler makeCapturedHandler(
     };
 }
 
+// Bind a handler to a slot rather than to a value, so a pooled wrapper's methods follow the
+// object they belong to when its native handle is rebound on the next frame.
+template <typename T>
+static BindingHandler makeSlotHandler(
+    std::shared_ptr<T> slot,
+    js::JSValueHandle (*handler)(BindingsState*, T, const std::vector<js::JSValueHandle>&)) {
+    return [slot, handler](BindingsState* state, BindingDestination,
+                           const std::vector<js::JSValueHandle>& args) {
+        return handler(state, *slot, args);
+    };
+}
+
+template <typename T, typename U>
+static BindingHandler makeSlotPairHandler(
+    std::shared_ptr<T> first,
+    std::shared_ptr<U> second,
+    js::JSValueHandle (*handler)(
+        BindingsState*, T, U, const std::vector<js::JSValueHandle>&)) {
+    return [first, second, handler](BindingsState* state, BindingDestination,
+                                    const std::vector<js::JSValueHandle>& args) {
+        return handler(state, *first, *second, args);
+    };
+}
+
 template <typename T, typename U>
 static BindingHandler makeCapturedPairHandler(
     T first,
@@ -1877,6 +1921,25 @@ static BindingHandler makeCapturedPairHandler(
         return handler(state, first, second, args);
     };
 }
+
+// Hand out a wrapper whose previous pass has already ended. Growing the pool is the fail-closed
+// branch: a live pass never shares a wrapper with another live pass.
+static BindingsState::RenderPassWrapper* acquireRenderPassWrapper(BindingsState* state) {
+    for (auto& candidate : state->renderPassWrappers) {
+        if (candidate->object.ptr == nullptr) return candidate.get();
+        const WGPURenderPassEncoder previous = candidate->pass ? *candidate->pass : nullptr;
+        bool live = false;
+        if (previous != nullptr) {
+            for (const auto& entry : state->encoderRenderPassMap) {
+                if (entry.second == previous) { live = true; break; }
+            }
+        }
+        if (!live) return candidate.get();
+    }
+    state->renderPassWrappers.push_back(std::make_unique<BindingsState::RenderPassWrapper>());
+    return state->renderPassWrappers.back().get();
+}
+
 
 /** Install the table-driven WebGPU surfaces after state has been initialized. */
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
@@ -2529,7 +2592,7 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                             state->engine->setProperty(
                                 jsBindGroup, "_bindGroupId",
                                 state->engine->newNumber((double)bindGroupId));
-                            state->engine->registerRelease(jsBindGroup, [state, bindGroup, bindGroupId]() {
+                            state->engine->registerRelease(jsBindGroup, [bindGroup, bindGroupId, state]() {
                                 state->bindGroupRegistry.erase(bindGroupId);
                                 wgpuBindGroupRelease(bindGroup);
                             });
@@ -4007,8 +4070,30 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
                                     // Suspend frame tracking while creating render pass wrapper
                                     state->engine->suspendFrameTracking();
-                                    auto jsRenderPass = state->engine->newObject();
+                                    // Reuse a pooled wrapper so the renderer's call sites keep
+                                    // seeing one receiver shape and one callee per method.
+                                    auto* passWrapper = acquireRenderPassWrapper(state);
+                                    const bool freshRenderPassWrapper =
+                                        passWrapper->object.ptr == nullptr;
+                                    if (freshRenderPassWrapper) {
+                                        passWrapper->pass =
+                                            std::make_shared<WGPURenderPassEncoder>(nullptr);
+                                        passWrapper->encoder =
+                                            std::make_shared<WGPUCommandEncoder>(nullptr);
+                                        passWrapper->object = state->engine->newObject();
+                                        // The wrapper outlives the frame that created it, so it
+                                        // must leave the per-frame handle set.
+                                        state->engine->freezeHandle(passWrapper->object);
+                                    }
+                                    *passWrapper->pass = renderPass;
+                                    *passWrapper->encoder = encoderToUse;
+                                    auto jsRenderPass = passWrapper->object;
                                     state->engine->setPrivateData(jsRenderPass, renderPass);
+                                    const auto discardRenderPassWrapper = [&]() {
+                                        if (!freshRenderPassWrapper) return;
+                                        state->engine->freeHandle(passWrapper->object);
+                                        passWrapper->object = {};
+                                    };
                                     WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
                                     const auto rollbackRenderPass = [&]() {
                                         auto it = state->encoderRenderPassMap.find(encoderToUse);
@@ -4031,56 +4116,58 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         state->surfaceRenderEncoder = previousSurfaceRenderEncoder;
                                         state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
                                     };
+                                    if (freshRenderPassWrapper) {
                                     // renderPass.setPipeline(pipeline)
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler39)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler39)
                                     , jsRenderPass},
                                     // renderPass.setBindGroup(index, bindGroup, dynamicOffsets?)
                                         {"GPURenderPassEncoder", "setBindGroup", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler40)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler40)
                                     , jsRenderPass},
                                     // renderPass.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
                                         {"GPURenderPassEncoder", "draw", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler41)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler41)
                                     , jsRenderPass},
                                     // renderPass.setVertexBuffer(slot, buffer, offset?, size?)
                                         {"GPURenderPassEncoder", "setVertexBuffer", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler42)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler42)
                                     , jsRenderPass},
                                     // renderPass.setIndexBuffer(buffer, format, offset?, size?)
                                         {"GPURenderPassEncoder", "setIndexBuffer", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler43)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler43)
                                     , jsRenderPass},
                                     // renderPass.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
                                         {"GPURenderPassEncoder", "drawIndexed", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler44)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler44)
                                     , jsRenderPass},
                                     // renderPass.drawIndirect(indirectBuffer, indirectOffset)
                                         {"GPURenderPassEncoder", "drawIndirect", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler45)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler45)
                                     , jsRenderPass},
                                     // renderPass.drawIndexedIndirect(indirectBuffer, indirectOffset)
                                         {"GPURenderPassEncoder", "drawIndexedIndirect", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler46)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler46)
                                     , jsRenderPass},
                                     // renderPass.setViewport(x, y, width, height, minDepth, maxDepth)
                                         {"GPURenderPassEncoder", "setViewport", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler47)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler47)
                                     , jsRenderPass},
                                     // renderPass.setScissorRect(x, y, width, height)
                                         {"GPURenderPassEncoder", "setScissorRect", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler48)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler48)
                                     , jsRenderPass},
                                     // renderPass.setBlendConstant(color)
                                         {"GPURenderPassEncoder", "setBlendConstant", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler49)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler49)
                                     , jsRenderPass},
                                     // renderPass.setStencilReference(reference)
                                         {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler50)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler50)
                                     , jsRenderPass}}))) {
                                         rollbackRenderPass();
+                                        discardRenderPassWrapper();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
@@ -4089,18 +4176,20 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     WGPURenderPassEncoder capturedRenderPassForBundles = renderPass;
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
-                                        makeCapturedHandler(renderPass, &tnWebgpuHandler51)
+                                        makeSlotHandler(passWrapper->pass, &tnWebgpuHandler51)
                                     , jsRenderPass}}))) {
                                         rollbackRenderPass();
+                                        discardRenderPassWrapper();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
                                     // renderPass.end() - capture encoder and render pass for cleanup
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "end", 0, nullptr,
-                                        makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuHandler52)
+                                        makeSlotPairHandler(passWrapper->encoder, passWrapper->pass, &tnWebgpuHandler52)
                                     , jsRenderPass}}))) {
                                         rollbackRenderPass();
+                                        discardRenderPassWrapper();
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
@@ -4110,7 +4199,7 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     // array to this binding explicitly.
                                     if (!installBindingTable(state->engine, state, bindingTable({
                                         {"GPURenderPassEncoder", "__tnReplayEnd", 0, nullptr,
-                                        makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuBatchedPassEnd)
+                                        makeSlotPairHandler(passWrapper->encoder, passWrapper->pass, &tnWebgpuBatchedPassEnd)
                                     , jsRenderPass}}))) {
                                         std::cerr << "[WebGPU] replay binding not installed;"
                                                   << " keeping per-op encoding" << std::endl;
@@ -4118,6 +4207,7 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         installBatchedPassEncoding(state, jsRenderPass);
                                     }
 #endif
+                                    }
                                     // Resume frame tracking
                                     state->engine->resumeFrameTracking();
                                     return jsRenderPass;

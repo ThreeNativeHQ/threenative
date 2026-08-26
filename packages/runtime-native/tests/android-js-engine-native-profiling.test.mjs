@@ -126,8 +126,9 @@ test("native profiling reports direct and bundled render commands per submit", (
   assert.match(bindings, /androidJsProfileBufferRegistry/u);
   assert.equal(
     (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
-    10,
-    "render commands, queue uploads, and render-pass finalization must be timed independently",
+    12,
+    "render commands, queue uploads, and render-pass finalization must be timed independently; "
+      + "the batched pass replay ends its own pass on both the replayed and fallback paths",
   );
   assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
 
@@ -162,4 +163,31 @@ test("measurement installs the immutable archived APK it reports", () => {
     /"--apk",\s+archivedApkPath,[\s\S]*"--skip-build"/u,
   );
   assert.match(measurementRunner, /TN_ANDROID_JS_SKIP_INSTALL_NOT_EVIDENCE_ELIGIBLE/u);
+});
+
+test("the native profile marker reports render-thread CPU, not just wall time", () => {
+  // Wall-clock phase timings on a FIFO-presented surface are dominated by vblank waits, which
+  // is why desktop A/Bs cannot be judged on fps (PRD-222 F11). CLOCK_THREAD_CPUTIME_ID on the
+  // render thread measures the work itself and is comparable across platforms.
+  assert.match(bindings, /CLOCK_THREAD_CPUTIME_ID/u);
+  assert.match(bindings, /\\"threadCpuNs\\":/u);
+  assert.match(bindings, /renderThreadCpuNs/u);
+});
+
+test("render-pass wrappers are reused so V8 inline caches stay warm across frames", () => {
+  // A fresh wrapper object with freshly created method functions on every beginRenderPass gives
+  // every renderer call site a new receiver shape and a new callee, which drives V8 into its
+  // megamorphic stub cache — 2.7 ms/frame on a Pixel 8 (PRD-222 F13). Wrappers are pooled and a
+  // pooled wrapper is only handed out when its previous pass is no longer live.
+  const state = source("../src/webgpu/bindings_state.h");
+  assert.match(state, /struct RenderPassWrapper/u);
+  assert.match(state, /renderPassWrappers/u);
+  assert.match(bindings, /acquireRenderPassWrapper/u);
+  assert.match(bindings, /makeSlotHandler/u);
+  // The pass a wrapper's handlers act on is rebound per begin rather than captured by value.
+  assert.doesNotMatch(
+    bindings,
+    /makeCapturedHandler\(renderPass, &tnWebgpuHandler39\)/u,
+    "the render-pass command table must bind through the wrapper's slot",
+  );
 });
