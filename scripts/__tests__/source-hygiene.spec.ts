@@ -21,14 +21,7 @@ describe("shipped sources contain no NUL bytes", () => {
   test("every tracked text source under packages, examples and scripts is NUL-free", () => {
     const files = execFileSync(
       "git",
-      [
-        "-C",
-        repoRoot,
-        "ls-files",
-        "packages/*/src/**",
-        "examples/*/src/**",
-        "scripts/**/*.ts",
-      ],
+      ["-C", repoRoot, "ls-files", "packages/*/src/**", "examples/*/src/**", "scripts/**/*.ts"],
       { encoding: "utf8" },
     )
       .split("\n")

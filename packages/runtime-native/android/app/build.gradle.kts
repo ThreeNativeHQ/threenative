@@ -93,8 +93,18 @@ fun Provider<String>.asCmakeBoolean(propertyName: String): String = map { value 
 
 // Every ABI this APK targets. `copyV8Snapshot` and `abiFilters` both read this list, so the set of
 // slices shipped and the set of snapshots staged cannot drift apart — which is the defect this
-// single declaration exists to make impossible.
-val threeNativeAbis = listOf("arm64-v8a", "x86_64")
+// single declaration exists to make impossible. `-PthreenativeAbis=arm64-v8a` builds one slice,
+// which is how a device measurement loop halves its native compile and install time.
+val supportedThreeNativeAbis = setOf("arm64-v8a", "x86_64")
+val threeNativeAbis = providers.gradleProperty("threenativeAbis")
+    .orElse("arm64-v8a,x86_64")
+    .map { value -> value.split(',').map(String::trim).filter(String::isNotEmpty).distinct() }
+    .get()
+if (threeNativeAbis.isEmpty() || threeNativeAbis.any { it !in supportedThreeNativeAbis }) {
+    throw GradleException(
+        "-PthreenativeAbis must name arm64-v8a and/or x86_64, received: ${threeNativeAbis.joinToString()}"
+    )
+}
 
 // Per-ABI APKs instead of one universal APK. Opt-in: see the `splits` block below.
 val threeNativeAbiSplits =

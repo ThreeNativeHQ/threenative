@@ -258,13 +258,23 @@ static bool acquireMappedUploadStagingBlock(BindingsState* state) {
         staging.current.buffer, WGPUMapMode_Write, 0, UploadStaging::kBlockBytes,
         onUploadStagingMapped, &mapData);
 #endif
+    // Non-blocking spin, then exactly one blocking poll as the safety valve. A blocking poll
+    // here waits out the GPU's in-flight work and serializes the CPU against it — measured as
+    // a ~2x render regression on Pixel 8 — so the common path must complete during the spin
+    // (a recycled block's map finishes on the first round; a fresh buffer needs one poll).
+    // Abandoning a pending map is not an option: its callback writes into this frame's
+    // mapData after return, so exhaustion falls through to the blocking poll instead.
     int polls = 0;
-    while (!mapData.completed && polls < 10000) {
+    while (!mapData.completed && polls < 400) {
 #if defined(MYSTRAL_WEBGPU_WGPU)
-        wgpuDevicePoll(state->device, true, nullptr);
+        wgpuDevicePoll(state->device, false, nullptr);
 #endif
+        std::this_thread::sleep_for(std::chrono::microseconds(50));
         polls++;
     }
+#if defined(MYSTRAL_WEBGPU_WGPU)
+    if (!mapData.completed) wgpuDevicePoll(state->device, true, nullptr);
+#endif
     if (!mapData.completed ||
         !(staging.current.mapped =
               static_cast<uint8_t*>(wgpuBufferGetMappedRange(
