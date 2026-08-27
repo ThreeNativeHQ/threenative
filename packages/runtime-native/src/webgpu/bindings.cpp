@@ -1944,6 +1944,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 static bool installWebGPUBindingSurfaces(BindingsState* state, js::Engine* engine) {
     return installWebGPUBindingTables(state, engine);
 }
+/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
 
 static js::JSValueHandle tnWebgpuHandler88(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
                     // Get the stored context from the global (we need a way to access it)
@@ -4323,7 +4324,8 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                             // Fast path: point this instance at the class's one-time prototype
                             // instead of reinstalling eight methods transactionally per call.
                             js::JSValueHandle commandEncoderPrototype{};
-                            if (ensureCommandEncoderClassTable(state, commandEncoderPrototype) &&
+                            if (!state->engine->hasException() &&
+                                ensureCommandEncoderClassTable(state, commandEncoderPrototype) &&
                                 state->engine->setPrototypeOf(jsEncoder, commandEncoderPrototype)) {
                                 state->engine->resumeFrameTracking();
                                 return jsEncoder;
@@ -6205,7 +6207,7 @@ static js::JSValueHandle tnWebgpuHandler02(BindingsState* state, BindingDestinat
 static js::JSValueHandle tnWebgpuHandler01(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
             // No-op in native runtime
             return args.empty() ? state->engine->newUndefined() : args[0];
-}/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
+}
 static js::JSValueHandle tnWebgpuHandler89(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
     // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
     // presents above the ceiling. `@threenative/core` wraps this as the game-facing name; the

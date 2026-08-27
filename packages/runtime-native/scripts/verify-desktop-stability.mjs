@@ -15,12 +15,17 @@
 // `docs/verification/prd-210-2026-08-23.md` and are not claimed here.
 
 import { existsSync, mkdirSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  buildNativeTarget,
+  desktopBuildDirectory,
+  nativeTestExecutable,
+  resolveCmake,
+  run,
+} from "./native-test-lane.mjs";
 
 const runtimeRoot = join(fileURLToPath(new URL("..", import.meta.url)));
-const windows = process.platform === "win32";
 
 const proofs = [
   {
@@ -40,49 +45,16 @@ const proofs = [
   },
 ];
 
-function buildPreset() {
-  return process.platform === "darwin" ? "tn-macos" : windows ? "tn-windows" : "tn-linux";
-}
-
-function resolveCmake() {
-  const venvCmake = join(
-    runtimeRoot,
-    ".runtime",
-    "tools-venv",
-    windows ? "Scripts" : "bin",
-    windows ? "cmake.exe" : "cmake",
-  );
-  const cmake =
-    spawnSync("cmake", ["--version"], { stdio: "ignore" }).status === 0 ? "cmake" : venvCmake;
-  if (cmake === venvCmake && !existsSync(venvCmake))
-    throw new Error("cmake was not found on PATH or in .runtime/tools-venv; run pnpm native:build");
-  return cmake;
-}
-
-function run(command, args, timeout) {
-  const result = spawnSync(command, args, {
-    cwd: runtimeRoot,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    timeout,
-  });
-  if (result.error) throw result.error;
-  const log = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-  if (result.status !== 0) throw new Error(`${command} exited ${result.status}:\n${log}`);
-  return log;
-}
-
 export function verifyDesktopStability() {
   const cmake = resolveCmake();
-  const buildDir = join(runtimeRoot, "build", buildPreset());
-  if (!existsSync(buildDir))
-    throw new Error(`${buildDir} does not exist; run pnpm native:build`);
+  const buildDir = desktopBuildDirectory();
+  if (!existsSync(buildDir)) throw new Error(`${buildDir} does not exist; run pnpm native:build`);
   mkdirSync(join(runtimeRoot, "artifacts"), { recursive: true });
   const logs = [];
   for (const proof of proofs) {
-    run(cmake, ["--build", buildDir, "--target", proof.target, "--parallel"], 1_800_000);
-    const executable = join(buildDir, windows ? `${proof.target}.exe` : proof.target);
-    const log = run(executable, [], 120_000);
+    buildNativeTarget(cmake, buildDir, proof.target);
+    const executable = nativeTestExecutable(buildDir, proof.target);
+    const log = run(executable, [], { timeout: 120_000 });
     // Fail closed: an executable that ran but printed no pass line is a failure, not a skip.
     if (!log.includes(proof.passLine))
       throw new Error(`${proof.target} did not report a pass:\n${log}`);

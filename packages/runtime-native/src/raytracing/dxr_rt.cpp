@@ -726,13 +726,7 @@ RTGeometryHandle DXRBackend::createGeometry(const RTGeometryDesc& desc) {
         }
     }
 
-    uint32_t id = nextGeometryId_++;
-    geometries_[id] = std::move(geometry);
-
-    RTGeometryHandle handle;
-    handle._handle = geometries_[id].get();
-    handle._id = id;
-    return handle;
+    return allocateRtHandle<RTGeometryHandle>(nextGeometryId_, geometries_, std::move(geometry));
 }
 
 void DXRBackend::destroyGeometry(RTGeometryHandle geometry) {
@@ -856,13 +850,7 @@ RTBLASHandle DXRBackend::createBLAS(RTGeometryHandle* geometries, size_t count) 
     // Clean up scratch buffer
     destroyBuffer(scratchBuffer);
 
-    uint32_t id = nextBLASId_++;
-    blases_[id] = std::move(blas);
-
-    RTBLASHandle handle;
-    handle._handle = blases_[id].get();
-    handle._id = id;
-    return handle;
+    return allocateRtHandle<RTBLASHandle>(nextBLASId_, blases_, std::move(blas));
 }
 
 void DXRBackend::destroyBLAS(RTBLASHandle blas) {
@@ -1007,13 +995,7 @@ RTTLASHandle DXRBackend::createTLAS(const RTTLASInstance* instances, size_t coun
     // Clean up scratch buffer
     destroyBuffer(scratchBuffer);
 
-    uint32_t id = nextTLASId_++;
-    tlases_[id] = std::move(tlas);
-
-    RTTLASHandle handle;
-    handle._handle = tlases_[id].get();
-    handle._id = id;
-    return handle;
+    return allocateRtHandle<RTTLASHandle>(nextTLASId_, tlases_, std::move(tlas));
 }
 
 void DXRBackend::updateTLAS(RTTLASHandle tlas, const RTTLASInstance* instances, size_t count) {

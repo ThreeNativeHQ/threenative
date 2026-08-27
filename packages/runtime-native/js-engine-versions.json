@@ -1,0 +1,37 @@
+{
+  "$comment": [
+    "Declared JavaScript engine versions per platform, and the acknowledged skew between them.",
+    "This file exists because a two-major-version V8 skew between desktop and Android went",
+    "unnoticed while PRD-222 hunted an Android-only frame-rate defect on desktop, where the",
+    "defect cannot reproduce. Nothing compared the two pins, so nothing reported it.",
+    "tests/js-engine-version-skew.test.mjs fails when download-deps.mjs disagrees with this file,",
+    "when installed headers disagree with their pin, or when the skew grows beyond maxMajorSkew."
+  ],
+  "engines": {
+    "desktop": {
+      "engine": "V8",
+      "depKey": "v8",
+      "pin": "v13.1.201.22",
+      "major": 13,
+      "source": "kuoruan/libv8",
+      "tiers": ["ignition", "sparkplug", "maglev", "turbofan"]
+    },
+    "android": {
+      "engine": "V8",
+      "depKey": "v8-android",
+      "pin": "11.110.1",
+      "major": 11,
+      "source": "Kudo/v8-android-buildscripts (v8-android-jit)",
+      "tiers": ["ignition", "sparkplug", "turbofan"]
+    }
+  },
+  "acknowledgedSkew": {
+    "between": ["desktop", "android"],
+    "majorSkew": 2,
+    "maxMajorSkew": 2,
+    "reason": "The Android prebuilt is the React Native V8 build; its newest upstream release is V8 11.0.226, which predates Maglev (V8 11.4, default in 11.7). Android therefore runs one optimizing tier short of both the desktop host and the Chrome it is benchmarked against.",
+    "consequence": "Any desktop-versus-Android performance comparison is confounded, and a desktop A/B cannot prove or refute an Android-only regression whose cause is engine tiering. Desktop measured parity with Chrome at ~21 ms/frame while the same scene showed a 3.1x gap on a Pixel 8.",
+    "closesWhen": "The Android prebuilt reaches a V8 major with Maglev, or V8 is built in-repo for Android. Raising maxMajorSkew instead of fixing the pin requires a recorded reason here.",
+    "evidence": "docs/verification/prd-222-reassessment-2026-08-26.md"
+  }
+}

@@ -737,22 +737,13 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
       predictedDraws += 1;
     }
   }
-  // A material group is one draw however many geometries it folds — that prediction is what
-  // makes a town of unique buildings worth projecting at all. Its members were each already
-  // counted once by their own below-floor geometry groups, so making the group batch *nets* its
-  // members out and adds the one draw back; a group below the floor changes nothing.
-  for (let index = 0; index < workspace.activeMaterialGroupCount; index += 1) {
-    const group = workspace.activeMaterialGroups[index] as IProjectionMaterialGroup;
-    if (group.memberCount < MIN_BATCH_MEMBERS) continue;
-    // Claim the members while counting them: their own below-floor geometry groups would
-    // otherwise sweep them onto the exact lane this same frame.
-    for (let member = 0; member < group.memberCount; member += 1) {
-      workspace.materialClaims.set(group.members[member] as Mesh, workspace.scanNumber);
-    }
-    workspace.materialGroups[workspace.materialGroupCount] = group;
-    workspace.materialGroupCount += 1;
-    predictedDraws += 1 - group.memberCount;
-  }
+  // Material-keyed groups are not counted as a fold. On the WebGPU backend a BatchedMesh still
+  // executes one multidraw sub-draw per visible member, so packing copies saves render objects,
+  // not draw commands — and the packed-copy path drew a real town (displaced geometry, flat
+  // walls) with every scene-graph invariant pristine. The members stay counted once by their own
+  // below-floor geometry groups, nothing is claimed, and the worthwhile ratio below declines the
+  // scene onto the exact lane, which renders it correctly. Registering material groups again is
+  // a backend-aware-prediction question, and it needs a visual conformance proof first.
   return predictedDraws;
 }
 

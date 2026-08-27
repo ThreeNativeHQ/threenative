@@ -286,3 +286,52 @@ wrong frames, which this subsystem exists to prevent.
   them, all value-identical and all sharing one `PlaneGeometry`. They are hidden after `settle()`
   so they are not part of the drawn cost, but the pool would be one instanced group if it shared
   its material. Game-side tidy-up, worth doing, not this bug.
+
+## Reversal record (2026-08-26): the fold is gated back off — it draws broken pixels
+
+The consumer game this filing used as its specimen (`sandbox/fps-framework`, the Bayview town
+scene) rendered **visually broken** through the packed-copy lane on desktop Chrome/WebGPU
+(Vulkan): from some vantages a whole street of houses drew as one giant flat untextured slab, a
+shutter texture smeared across an enormous surface, and facade pieces floated free — starting a
+few seconds after load, exactly when the projection flips on. The user report was "the right-side
+house had the correct walls and texture, now it doesn't"; the same view rendered correctly the
+day before the lane landed.
+
+Evidence chain, all captured 2026-08-26:
+
+- **Pixel A/B, same vantage, same inputs, headed Chromium:** with the projection declined
+  (`minMeshes` forced past the scene size) the street renders correctly, textured, complete. With
+  the projection engaged the slab is there. Reproduced on the PRD-223 staging install
+  (`staging-263981b0`) *and* on a tarball built fresh from `main` (`d5f458f0`) — the fold is on
+  main too, so this was never branch-local.
+- **Live scene-graph audit, on screen, at the moment of the artifact:** every material batch
+  pristine — instance matrices equal to their sources' `matrixWorld` (max element diff 0), no
+  zombie instances, packed index ranges contiguous and every sampled packed index inside its own
+  vertex reservation, `_multiDrawCount` equal to the visible instance count. The JS state the
+  renderer is handed is *correct*; the pixels are not.
+- **No device loss, no console errors** in the artifact runs (a separate, reproducible
+  `mappedAtCreation` failure storm — Chromium Dawn's message after device loss — was triggered
+  once by forcing all 835 renderables onto the exact lane, and does not occur in the
+  artifact-producing runs).
+- **Minimal three r185.1 reproduction cannot trigger it:** static packing, per-frame visibility
+  churn, moving instances, an engine-style mid-run batch rebuild, and both Uint16/Uint32 index
+  paths all render correctly in isolation — the break needs the game's real scene around it.
+
+On the WebGPU backend the fold never saved a draw command: a `BatchedMesh` executes one
+`drawIndexed` per visible member (`_multiDrawCount == instance count` in every audit), so the
+−35 % frame win above was render-object count, not draw count — and it was bought with a render
+path that breaks real scenes in ways the unit corpus cannot see (vitest runs node-stubbed; no
+pixel assertion exists for packed copies).
+
+**The fix (this record's resolution):** `predictDraws` no longer claims material groups or nets
+their members out — members stay counted once by their own below-floor geometry groups, the
+worthwhile ratio declines geometry-unique scenes onto the exact lane, and the reason is honest
+(`notWorthwhile`). The packed-copy machinery in `projection-apply.ts` (stream watch, demotion,
+negative-scale refusal) stays in place for a backend-aware prediction, but re-admitting the fold
+requires a visual conformance proof — a playtest or conformance case that renders a geometry-
+unique scene through the mirror and compares pixels against the authored scene — before it ships
+again. Red/green: the "folds meshes that differ only in geometry" row was rewritten to assert the
+decline (red against the fold, green after), the two packed-copy reconciliation rows were removed
+with their lane's premise, and the "never make a scene worse" row kept its graph-snapshot
+invariant. Gates at commit time: renderProjection spec 56/56, core suite 466/466, typecheck,
+lint — all exit 0.

@@ -2,8 +2,14 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  buildNativeTarget,
+  configurePhysicsVerificationBuild,
+  nativeTestExecutable,
+  resolveCmake,
+  run,
+} from "./native-test-lane.mjs";
 import { inspectScreenshot } from "./verify-desktop-core.mjs";
 
 const runtimeRoot = join(fileURLToPath(new URL("..", import.meta.url)));
@@ -13,48 +19,26 @@ const bundle = join(exampleRoot, "dist", "native-smoke.js");
 const webPhysicsPlaytest = join(exampleRoot, "playtests", "physics.playtest.json");
 const desktopPhysicsPlaytest = join(exampleRoot, "playtests", "physics-desktop.playtest.json");
 
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd ?? workspaceRoot,
-    encoding: "utf8",
-    env: options.env ?? process.env,
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: options.timeout ?? 120_000,
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new Error(`${command} exited ${result.status}:\n${result.stdout ?? ""}\n${result.stderr ?? ""}`);
-  return `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-}
-
 function buildPhysicsBundle() {
-  return run("pnpm", ["--dir", exampleRoot, "exec", "vite", "build", "--config", "vite.config.ts"], {
-    env: {
-      ...process.env,
-      THREENATIVE_NATIVE_BACKEND: "enabled",
-      THREENATIVE_PHYSICS_PROOF: "enabled",
-      THREENATIVE_PLAYTEST_BRIDGE: "disabled",
+  return run(
+    "pnpm",
+    ["--dir", exampleRoot, "exec", "vite", "build", "--config", "vite.config.ts"],
+    {
+      cwd: workspaceRoot,
+      env: {
+        ...process.env,
+        THREENATIVE_NATIVE_BACKEND: "enabled",
+        THREENATIVE_PHYSICS_PROOF: "enabled",
+        THREENATIVE_PLAYTEST_BRIDGE: "disabled",
+      },
     },
-  });
+  );
 }
 
 function buildSmokeBundle() {
-  return run("pnpm", ["--filter", "threenative-native-smoke", "build"]);
-}
-
-function nativeBinary() {
-  const preset =
-    process.platform === "darwin"
-      ? "tn-macos"
-      : process.platform === "win32"
-        ? "tn-windows"
-        : "tn-linux";
-  return join(
-    runtimeRoot,
-    "build",
-    preset,
-    process.platform === "win32" ? "mystral.exe" : "mystral",
-  );
+  return run("pnpm", ["--filter", "threenative-native-smoke", "build"], {
+    cwd: workspaceRoot,
+  });
 }
 
 function parseQuery(log) {
@@ -101,7 +85,8 @@ function readPhysicsPlaytestPair() {
 function valueAtPath(value, path) {
   let current = value;
   for (const part of path.split(".")) {
-    if (current === null || typeof current !== "object" || !Object.hasOwn(current, part)) return undefined;
+    if (current === null || typeof current !== "object" || !Object.hasOwn(current, part))
+      return undefined;
     current = current[part];
   }
   return current;
@@ -118,8 +103,14 @@ function requireDesktopPlaytestAssertions(scenario, observation) {
   if (!Array.isArray(resources) || resources.length === 0)
     throw new Error("desktop physics playtest must declare resource assertions");
   for (const [index, assertion] of resources.entries()) {
-    if (assertion?.id !== "GameState" || typeof assertion.path !== "string" || !Object.hasOwn(assertion, "equals"))
-      throw new Error(`desktop physics playtest resource assertion ${index} is not an equality check`);
+    if (
+      assertion?.id !== "GameState" ||
+      typeof assertion.path !== "string" ||
+      !Object.hasOwn(assertion, "equals")
+    )
+      throw new Error(
+        `desktop physics playtest resource assertion ${index} is not an equality check`,
+      );
     const actual = valueAtPath(observation, assertion.path);
     if (actual === undefined || JSON.stringify(actual) !== JSON.stringify(assertion.equals))
       throw new Error(
@@ -137,7 +128,9 @@ function requireDesktopPlaytestAssertions(scenario, observation) {
   if (reach !== undefined) {
     const finalStep = scenario.steps.at(-1)?.label;
     if (reach.atStep !== finalStep)
-      throw new Error(`desktop physics playtest movement step '${reach.atStep}' was not the final observed step`);
+      throw new Error(
+        `desktop physics playtest movement step '${reach.atStep}' was not the final observed step`,
+      );
     if (vectorDistance(after, reach.position) > reach.maxDistance)
       throw new Error(`desktop physics playtest final position exceeded ${reach.maxDistance}`);
   }
@@ -164,8 +157,8 @@ function requireQuery(value) {
     );
 }
 
-function runDesktopPhysics(scenario) {
-  const binary = nativeBinary();
+function runDesktopPhysics(scenario, buildDirectory) {
+  const binary = nativeTestExecutable(buildDirectory, "mystral");
   if (!existsSync(binary)) throw new Error(`native runtime binary is missing: ${binary}`);
   const screenshot = join(runtimeRoot, "artifacts", "desktop-physics-query.png");
   mkdirSync(join(runtimeRoot, "artifacts"), { recursive: true });
@@ -195,49 +188,19 @@ function runDesktopPhysics(scenario) {
   return { assertionCount, query };
 }
 
-function buildPreset() {
-  return process.platform === "darwin"
-    ? "tn-macos"
-    : process.platform === "win32"
-      ? "tn-windows"
-      : "tn-linux";
-}
-
 // The regular desktop scene does not call the actuation methods. Execute the runtime's own JS
 // engine against the binding target so the proof crosses JS -> C++ -> C ABI -> Rapier.
 function runActuationBindingsProof() {
-  const windows = process.platform === "win32";
-  const venvCmake = join(
-    runtimeRoot,
-    ".runtime",
-    "tools-venv",
-    windows ? "Scripts" : "bin",
-    windows ? "cmake.exe" : "cmake",
-  );
-  const cmake =
-    spawnSync("cmake", ["--version"], { stdio: "ignore" }).status === 0
-      ? "cmake"
-      : venvCmake;
-  if (cmake === venvCmake && !existsSync(venvCmake))
-    throw new Error("cmake was not found on PATH or in .runtime/tools-venv; run pnpm native:build");
-
-  // The C ABI this proof exercises lives in the Rust staticlib, and nothing else in this gate
-  // builds the *desktop* one — `build-native-physics.mjs` defaults to `--android`. So the link
-  // step happily reached for a two-day-old `.a` that predated `tn_physics_apply_body_force` and
-  // its three neighbours, and the gate failed with four undefined references that looked like a
-  // C++ problem and were really a stale artifact. Build it here, where it is consumed.
-  run(process.execPath, [join(runtimeRoot, "scripts", "build-native-physics.mjs"), "--desktop"], {
-    timeout: 1_800_000,
-  });
-
-  const buildDir = join(runtimeRoot, "build", buildPreset());
+  const cmake = resolveCmake();
+  const buildDir = configurePhysicsVerificationBuild(cmake);
   const target = "threenative-physics-actuation-bindings-test";
-  run(cmake, ["--build", buildDir, "--target", target, "--parallel"], { timeout: 900_000 });
-  const executable = join(buildDir, windows ? `${target}.exe` : target);
+  buildNativeTarget(cmake, buildDir, target, 900_000);
+  buildNativeTarget(cmake, buildDir, "mystral", 900_000);
+  const executable = nativeTestExecutable(buildDir, target);
   const log = run(executable, [], { timeout: 120_000 });
   if (!log.includes("native physics actuation bindings passed"))
     throw new Error(`actuation bindings proof did not report a pass:\n${log}`);
-  return log;
+  return buildDir;
 }
 
 function main() {
@@ -247,9 +210,9 @@ function main() {
   let bundleImportError;
   try {
     try {
-      runActuationBindingsProof();
+      const buildDirectory = runActuationBindingsProof();
       console.info("desktop physics actuation bindings proof passed");
-      const result = runDesktopPhysics(desktop);
+      const result = runDesktopPhysics(desktop, buildDirectory);
       console.info(`desktop physics playtest proof passed: ${result.assertionCount} assertions`);
       console.info(`desktop physics query proof passed: ${JSON.stringify(result.query)}`);
     } catch (error) {

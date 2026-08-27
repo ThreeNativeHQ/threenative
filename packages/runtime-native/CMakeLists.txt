@@ -1769,6 +1769,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-handle-lifetime-test EXCLUDE_FROM_ALL
         tests/handle_lifetime_test.cpp)
     target_link_libraries(threenative-handle-lifetime-test PRIVATE mystral-runtime)
+    add_executable(threenative-rt-handle-allocation-test EXCLUDE_FROM_ALL
+        tests/rt_handle_allocation_test.cpp)
+    target_include_directories(threenative-rt-handle-allocation-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_executable(threenative-js-engine-contract-test EXCLUDE_FROM_ALL
         tests/js_engine_contract_test.cpp)
     target_link_libraries(threenative-js-engine-contract-test PRIVATE mystral-runtime)

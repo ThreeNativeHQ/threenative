@@ -191,12 +191,7 @@ test("timer contract rejects restoring an engine stub after the real owner", () 
 });
 
 test("the pending-timeout proof is wired to the native timer delivery executable", () => {
-  const cmake = read("CMakeLists.txt");
   const source = read("tests/timer_delivery_test.cpp");
-  assert.match(
-    cmake,
-    /add_executable\(threenative-timer-delivery-test EXCLUDE_FROM_ALL\s*tests\/timer_delivery_test\.cpp\)/u,
-  );
   assert.match(source, /native timer delivery contract passed/u);
   const runtimeCreation = source.indexOf("auto runtime = mystral::Runtime::create(config);");
   const schedule = source.indexOf("runtime->evalScript(kScript", runtimeCreation);

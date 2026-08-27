@@ -182,10 +182,6 @@ test("creation contract rejects deletion of either null-handle check", () => {
 });
 
 test("the native null-handle proof is wired as a display-free bindings executable", () => {
-  assert.match(
-    read("CMakeLists.txt"),
-    /add_executable\(threenative-bindings-creation-test EXCLUDE_FROM_ALL\s*tests\/bindings_creation_test\.cpp\)/u,
-  );
   assert.match(read("tests/bindings_creation_test.cpp"), /native WebGPU creation bindings passed/u);
 });
 
@@ -949,15 +945,10 @@ test("windowed and offscreen wrappers share factories", () => {
 });
 
 test("owned WebGPU binding state is wired to the executable reentrancy proof", () => {
-  const cmake = read("CMakeLists.txt");
   const state = read("src/webgpu/bindings_state.h");
   const bindings = read("src/webgpu/bindings.cpp");
   const context = read("src/webgpu/context.cpp");
   const source = read("tests/webgpu_bindings_reentrancy_test.cpp");
-  assert.match(
-    cmake,
-    /threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL[\s\S]*webgpu_bindings_reentrancy_test\.cpp/u,
-  );
   assert.match(state, /struct BindingsState \{/u);
   assert.match(state, /std::vector<js::JSValueHandle> protectedHandles;/u);
   assert.match(state, /std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;/u);

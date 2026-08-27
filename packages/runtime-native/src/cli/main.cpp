@@ -10,6 +10,7 @@
  *   mystral --help                             Show help
  */
 
+#include "mystral/js/engine.h"
 #include "mystral/runtime.h"
 #include "tool_dispatch.h"
 #include "mystral/platform/ui_overlay.h"
@@ -993,25 +994,18 @@ bool convertWebPToMP4(const std::string& webpPath, const std::string& mp4Path, i
     return success;
 }
 
-int runScript(const CLIOptions& opts) {
-    std::ifstream script(opts.scriptPath);
-    if (!script.is_open() && opts.scriptPath != mystral::vfs::getEmbeddedEntryPath()) {
-        std::cerr << "Error: Cannot open file: " << opts.scriptPath << std::endl;
-        return 1;
-    }
-
+static void setupHeadlessEnvironment(const CLIOptions& opts) {
     // Enable headless mode via environment variable (SDL3 uses this)
     if (opts.headless) {
-        #ifdef _WIN32
+#ifdef _WIN32
         _putenv_s("MYSTRAL_HEADLESS", "1");
-        #else
+#else
         setenv("MYSTRAL_HEADLESS", "1", 1);
-        #endif
+#endif
     }
+}
 
-    bool screenshotMode = !opts.screenshotPath.empty();
-    bool videoMode = !opts.videoPath.empty();
-
+static void printRunBanner(const CLIOptions& opts, bool screenshotMode, bool videoMode) {
     if (!opts.quiet) {
         std::cout << "=== ThreeNative Native Runtime ===" << std::endl;
         std::cout << "Version: " << mystral::getVersion() << std::endl;
@@ -1037,7 +1031,9 @@ int runScript(const CLIOptions& opts) {
         }
         std::cout << std::endl;
     }
+}
 
+static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOptions& opts) {
     // Check for debug mode via environment variable
     bool debugMode = opts.debug;
     const char* debugEnv = std::getenv("MYSTRAL_DEBUG");
@@ -1070,12 +1066,10 @@ int runScript(const CLIOptions& opts) {
         }
     }
 
-    auto runtime = mystral::Runtime::create(config);
-    if (!runtime) {
-        std::cerr << "Error: Failed to create runtime!" << std::endl;
-        return 1;
-    }
+    return mystral::Runtime::create(config);
+}
 
+static bool attachUiOverlayIfConfigured(const CLIOptions& opts, mystral::Runtime&) {
     // The UI layer, if the game asked for it. After the runtime exists because the overlay
     // attaches to the window the runtime owns, and before the loop starts so the first frame the
     // player sees already has its HUD.
@@ -1094,11 +1088,14 @@ int runScript(const CLIOptions& opts) {
         if (!std::filesystem::is_directory(uiRoot, exists)) {
             std::cerr << "TN_UI_BUNDLE_MISSING: the web UI renderer was requested but "
                       << uiRoot.string() << " is not a directory." << std::endl;
-            return 1;
+            return false;
         }
         mystral::platform::attachDesktopUiOverlay(uiRoot.string());
     }
+    return true;
+}
 
+static bool wirePlaytestMailboxBridge(std::unique_ptr<mystral::Runtime>& runtime) {
     // Desktop playtests use the same native mailbox bridge as Android and iOS. The runner passes
     // the temporary root through the process environment so packaged game entries do not need a
     // playtest-specific source wrapper or a platform branch.
@@ -1113,611 +1110,503 @@ int runScript(const CLIOptions& opts) {
             + ",response:" + javascriptString(response) + "};";
         if (!runtime->evalScript(mailbox, "threenative-playtest-mailbox.js")) {
             std::cerr << "Error: Failed to configure the desktop playtest mailbox." << std::endl;
-            return 1;
+            return false;
         }
         std::cout << "[Mystral] Desktop playtest mailbox configured" << std::endl;
     }
+    return true;
+}
 
-    // Load and execute the script
+static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) {
+    auto startTime = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame < opts.frames; frame++) {
+        // Raised before each frame of a screenshot run so the final presented frame is the
+        // one in the capture buffer at save time. Non-screenshot runs never raise it and
+        // pay neither the framebuffer copy nor its wait.
+        runtime.requestFrameScreenshot();
+        if (!runtime.pollEvents()) {
+            if (!opts.quiet) {
+                std::cerr << "Warning: Runtime quit early at frame " << frame << std::endl;
+            }
+            break;
+        }
+        // saveScreenshot() owns the GPU readback fence, so no fixed delay is needed here.
+    }
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    bool success = runtime.saveScreenshot(opts.screenshotPath);
+    if (!opts.quiet) {
+        if (success) {
+            std::cout << "Screenshot saved: " << opts.screenshotPath << std::endl;
+            std::cout << "Rendered " << opts.frames << " frames in " << duration.count() << "ms" << std::endl;
+            // One present per frame is what lets a second pass -- the canvas-layer overlay --
+            // composite onto the world instead of taking a swapchain image of its own.
+            std::cout << "TN_PRESENTS:" << runtime.getPresentCount() << std::endl;
+        } else {
+            std::cerr << "Error: Failed to save screenshot!" << std::endl;
+        }
+    }
+
+    // The screenshot is saved, so avoid cleanup crashes that can show the macOS crash dialog.
+#if TN_ANDROID_JS_PROFILE
+    if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
+#endif
+    std::cout.flush();
+    std::cerr.flush();
+    _exit(success ? 0 : 1);
+}
+
+#if !TN_ENABLE_VIDEO
+static int runVideoMode(const CLIOptions&, std::unique_ptr<mystral::Runtime>&) {
+    std::cerr << "Error: Video recording is disabled in this build (configure with -DTN_ENABLE_VIDEO=ON)" << std::endl;
+    return 1;
+}
+#else
+#ifdef MYSTRAL_HAS_WEBP_MUX
+static int runLegacyWebPVideo(const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
+    if (!opts.quiet) {
+        std::cout << "[Video] Falling back to legacy WebP recorder..." << std::endl;
+    }
+    std::string webpPath = opts.videoPath;
+    std::string mp4Path;
+    bool needsConversion = opts.convertToMp4;
+    if (needsConversion) {
+        mp4Path = opts.videoPath;
+        size_t dotPos = mp4Path.rfind('.');
+        if (dotPos != std::string::npos) mp4Path = mp4Path.substr(0, dotPos) + ".mp4";
+        else mp4Path = mp4Path + ".mp4";
+        dotPos = webpPath.rfind('.');
+        if (dotPos != std::string::npos) {
+            std::string ext = webpPath.substr(dotPos);
+            if (ext != ".webp" && ext != ".WEBP") webpPath = webpPath.substr(0, dotPos) + ".webp";
+        } else {
+            webpPath = webpPath + ".webp";
+        }
+    }
+
+    WebPVideoRecorder legacyRecorder(opts.width, opts.height, opts.videoFps, opts.videoQuality);
+    if (!legacyRecorder.isValid()) {
+        std::cerr << "Error: Failed to create video recorder" << std::endl;
+        return 1;
+    }
+    if (!opts.quiet) {
+        std::cout << "[Video] Recording " << (opts.endFrame - opts.startFrame + 1) << " frames..." << std::endl;
+    }
+
+    std::queue<std::vector<uint8_t>> frameQueue;
+    std::mutex queueMutex;
+    std::condition_variable queueCondition;
+    std::atomic<bool> encodingDone{false};
+    std::atomic<int> encodedFrames{0};
+    const int maxQueuedFrames = 30;
+    std::thread encoderThread([&]() {
+        while (true) {
+            std::vector<uint8_t> frameData;
+            {
+                std::unique_lock<std::mutex> lock(queueMutex);
+                queueCondition.wait(lock, [&]() {
+                    return encodingDone.load(std::memory_order_acquire) || !frameQueue.empty();
+                });
+                if (frameQueue.empty() && encodingDone.load(std::memory_order_acquire)) break;
+                frameData = std::move(frameQueue.front());
+                frameQueue.pop();
+            }
+            if (!frameData.empty()) {
+                legacyRecorder.addFrame(frameData.data());
+                encodedFrames++;
+            }
+        }
+    });
+
+    auto startTime = std::chrono::high_resolution_clock::now();
+    int capturedFrames = 0;
+    for (int frame = 0; frame <= opts.endFrame; frame++) {
+        if (!runtime->pollEvents()) {
+            if (!opts.quiet) std::cerr << "[Video] Runtime quit early at frame " << frame << std::endl;
+            break;
+        }
+        if (frame >= opts.startFrame) {
+            std::vector<uint8_t> frameData;
+            uint32_t frameWidth, frameHeight;
+            if (runtime->captureFrame(frameData, frameWidth, frameHeight)) {
+                bool queued = false;
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    if (frameQueue.size() < static_cast<size_t>(maxQueuedFrames)) {
+                        frameQueue.push(std::move(frameData));
+                        queued = true;
+                    }
+                }
+                if (queued) queueCondition.notify_one();
+                if (queued) {
+                    capturedFrames++;
+                    if (!opts.quiet && capturedFrames % 60 == 0) {
+                        std::cout << "[Video] Captured frame " << capturedFrames << "/" << (opts.endFrame - opts.startFrame + 1)
+                                  << " (queue: " << frameQueue.size() << ", encoded: " << encodedFrames.load() << ")" << std::endl;
+                    }
+                }
+            }
+        }
+    }
+    encodingDone = true;
+    queueCondition.notify_one();
+    encoderThread.join();
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    runtime.reset();
+    SDL_PumpEvents();
+
+    bool success = legacyRecorder.save(webpPath);
+    if (success) {
+        if (!opts.quiet) {
+            std::cout << "[Video] Saved WebP: " << webpPath << std::endl;
+            std::cout << "[Video] Recorded " << capturedFrames << " frames in " << duration.count() << "ms" << std::endl;
+        }
+        if (needsConversion && convertWebPToMP4(webpPath, mp4Path, opts.videoFps, true, opts.quiet)) {
+            if (!opts.quiet) {
+                std::cout << "[Video] Converted to MP4: " << mp4Path << std::endl;
+            }
+        }
+    }
+    std::cout.flush();
+    std::cerr.flush();
+    _exit(success ? 0 : 1);
+}
+#endif
+
+static int runVideoRecorder(const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime,
+                            std::unique_ptr<mystral::video::VideoRecorder>& recorder,
+                            const std::string& outputPath) {
+    if (!opts.quiet) {
+        std::cout << "[Video] Using " << recorder->getTypeName() << std::endl;
+        std::cout << "[Video] Recording " << (opts.endFrame - opts.startFrame + 1) << " frames to " << outputPath << std::endl;
+    }
+    mystral::video::VideoRecorderConfig recConfig;
+    recConfig.fps = opts.videoFps;
+    recConfig.width = opts.width;
+    recConfig.height = opts.height;
+    recConfig.quality = opts.videoQuality;
+    recConfig.convertToMp4 = opts.convertToMp4;
+    if (!recorder->startRecording(runtime->getSDLWindow(), outputPath, recConfig)) {
+        std::cerr << "Error: Failed to start video recording" << std::endl;
+        return 1;
+    }
+
+    auto startTime = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame <= opts.endFrame; frame++) {
+        if (!runtime->pollEvents()) {
+            if (!opts.quiet) std::cerr << "[Video] Runtime quit early at frame " << frame << std::endl;
+            break;
+        }
+        if (frame >= opts.startFrame) {
+            void* texture = runtime->getCurrentTexture();
+            if (texture) recorder->captureFrame(texture, opts.width, opts.height);
+        }
+        recorder->processFrame();
+        if (!opts.quiet && frame >= opts.startFrame && (frame - opts.startFrame) % 60 == 0) {
+            auto stats = recorder->getStats();
+            std::cout << "[Video] Frame " << (frame - opts.startFrame) << "/" << (opts.endFrame - opts.startFrame + 1)
+                      << " (captured: " << stats.capturedFrames << ", dropped: " << stats.droppedFrames << ")" << std::endl;
+        }
+    }
+    bool success = recorder->stopRecording();
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    if (success) {
+        auto stats = recorder->getStats();
+        if (!opts.quiet) {
+            std::cout << "[Video] Recording complete: " << outputPath << std::endl;
+            std::cout << "[Video] Captured " << stats.capturedFrames << " frames in " << duration.count() << "ms" << std::endl;
+            if (stats.droppedFrames > 0) {
+                std::cout << "[Video] Dropped " << stats.droppedFrames << " frames" << std::endl;
+            }
+        }
+    }
+    recorder.reset();
+    runtime.reset();
+    SDL_PumpEvents();
+    std::cout.flush();
+    std::cerr.flush();
+    _exit(success ? 0 : 1);
+}
+
+static int runVideoMode(const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
+    if (opts.endFrame < 0) {
+        std::cerr << "Error: --end-frame is required for video recording" << std::endl;
+        std::cerr << "Example: mystral run game.js --video output.mp4 --end-frame 300" << std::endl;
+        return 1;
+    }
+    if (opts.endFrame <= opts.startFrame) {
+        std::cerr << "Error: --end-frame must be greater than --start-frame" << std::endl;
+        return 1;
+    }
+
+    bool useNative = opts.useNativeCapture && mystral::video::VideoRecorder::isNativeCaptureAvailable();
+    std::string outputPath = opts.videoPath;
+    if (useNative) {
+        size_t dotPos = outputPath.rfind('.');
+        if (dotPos != std::string::npos) {
+            std::string ext = outputPath.substr(dotPos);
+            if (ext != ".mp4" && ext != ".MP4") outputPath = outputPath.substr(0, dotPos) + ".mp4";
+        } else {
+            outputPath += ".mp4";
+        }
+    }
+
+    std::unique_ptr<mystral::video::VideoRecorder> recorder;
+    if (useNative) {
+        recorder = mystral::video::VideoRecorder::create(nullptr, nullptr, nullptr, runtime->getWebGPUBindingsState());
+    } else {
+        recorder = mystral::video::VideoRecorder::create(
+            static_cast<WGPUDevice>(runtime->getWGPUDevice()),
+            static_cast<WGPUQueue>(runtime->getWGPUQueue()),
+            static_cast<WGPUInstance>(runtime->getWGPUInstance()),
+            runtime->getWebGPUBindingsState());
+    }
+    if (!recorder) {
+#ifdef MYSTRAL_HAS_WEBP_MUX
+        return runLegacyWebPVideo(opts, runtime);
+#else
+        std::cerr << "Error: Video recording requires libwebpmux (build with MYSTRAL_HAS_WEBP_MUX)" << std::endl;
+        return 1;
+#endif
+    }
+    return runVideoRecorder(opts, runtime, recorder, outputPath);
+}
+#endif
+
+#if TN_ENABLE_DEBUG_SERVER
+static std::string handleKeyboardDebugCommand(const std::string& method, const std::string& params) {
+    std::string subMethod = method.substr(9);
+    std::string keyName = extractJsonString(params, "key");
+    if (subMethod == "press") {
+        SDL_Scancode scancode = keyNameToScancode(keyName);
+        if (scancode == SDL_SCANCODE_UNKNOWN) return "{\"error\":\"Unknown key: " + keyName + "\"}";
+        injectKeyboardEvent(scancode, true);
+        injectKeyboardEvent(scancode, false);
+        return "{}";
+    }
+    if (subMethod == "down" || subMethod == "up") {
+        SDL_Scancode scancode = keyNameToScancode(keyName);
+        if (scancode == SDL_SCANCODE_UNKNOWN) return "{\"error\":\"Unknown key: " + keyName + "\"}";
+        injectKeyboardEvent(scancode, subMethod == "down");
+        return "{}";
+    }
+    if (subMethod == "type") {
+        std::string text = extractJsonString(params, "text");
+        for (char character : text) {
+            SDL_Scancode scancode = keyNameToScancode(std::string(1, character));
+            if (scancode != SDL_SCANCODE_UNKNOWN) {
+                injectKeyboardEvent(scancode, true);
+                injectKeyboardEvent(scancode, false);
+            }
+        }
+        return "{}";
+    }
+    return "{\"error\":\"Unknown keyboard method: " + subMethod + "\"}";
+}
+
+static std::string handleMouseDebugCommand(const std::string& method, const std::string& params) {
+    std::string subMethod = method.substr(6);
+    float x = static_cast<float>(extractJsonNumber(params, "x", 0));
+    float y = static_cast<float>(extractJsonNumber(params, "y", 0));
+    std::string buttonStr = extractJsonString(params, "button");
+    int button = SDL_BUTTON_LEFT;
+    if (buttonStr == "right") button = SDL_BUTTON_RIGHT;
+    else if (buttonStr == "middle") button = SDL_BUTTON_MIDDLE;
+    if (subMethod == "move") {
+        injectMouseMotion(x, y);
+        return "{}";
+    }
+    if (subMethod == "click") {
+        injectMouseButton(x, y, button, true);
+        injectMouseButton(x, y, button, false);
+        return "{}";
+    }
+    if (subMethod == "down" || subMethod == "up") {
+        injectMouseButton(x, y, button, subMethod == "down");
+        return "{}";
+    }
+    return "{\"error\":\"Unknown mouse method: " + subMethod + "\"}";
+}
+
+static std::string handleGamepadDebugCommand(const std::string& method, const std::string& params) {
+    std::string subMethod = method.substr(8);
+    if (subMethod == "press") {
+        std::string buttonStr = extractJsonString(params, "button");
+        SDL_GamepadButton button = SDL_GAMEPAD_BUTTON_INVALID;
+        if (buttonStr == "A" || buttonStr == "a") button = SDL_GAMEPAD_BUTTON_SOUTH;
+        else if (buttonStr == "B" || buttonStr == "b") button = SDL_GAMEPAD_BUTTON_EAST;
+        else if (buttonStr == "X" || buttonStr == "x") button = SDL_GAMEPAD_BUTTON_WEST;
+        else if (buttonStr == "Y" || buttonStr == "y") button = SDL_GAMEPAD_BUTTON_NORTH;
+        else if (buttonStr == "LB" || buttonStr == "L1") button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+        else if (buttonStr == "RB" || buttonStr == "R1") button = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER;
+        else if (buttonStr == "Back" || buttonStr == "Select") button = SDL_GAMEPAD_BUTTON_BACK;
+        else if (buttonStr == "Start") button = SDL_GAMEPAD_BUTTON_START;
+        else if (buttonStr == "Guide" || buttonStr == "Home") button = SDL_GAMEPAD_BUTTON_GUIDE;
+        else if (buttonStr == "LS" || buttonStr == "L3") button = SDL_GAMEPAD_BUTTON_LEFT_STICK;
+        else if (buttonStr == "RS" || buttonStr == "R3") button = SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+        else if (buttonStr == "DPadUp") button = SDL_GAMEPAD_BUTTON_DPAD_UP;
+        else if (buttonStr == "DPadDown") button = SDL_GAMEPAD_BUTTON_DPAD_DOWN;
+        else if (buttonStr == "DPadLeft") button = SDL_GAMEPAD_BUTTON_DPAD_LEFT;
+        else if (buttonStr == "DPadRight") button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+        if (button == SDL_GAMEPAD_BUTTON_INVALID) return "{\"error\":\"Unknown gamepad button: " + buttonStr + "\"}";
+        SDL_Event event;
+        SDL_zero(event);
+        event.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+        event.gbutton.button = button;
+        event.gbutton.down = true;
+        SDL_PushEvent(&event);
+        event.type = SDL_EVENT_GAMEPAD_BUTTON_UP;
+        event.gbutton.down = false;
+        SDL_PushEvent(&event);
+        return "{}";
+    }
+    if (subMethod == "axis") {
+        std::string axisStr = extractJsonString(params, "axis");
+        float x = static_cast<float>(extractJsonNumber(params, "x", 0));
+        float y = static_cast<float>(extractJsonNumber(params, "y", 0));
+        SDL_GamepadAxis axisX = SDL_GAMEPAD_AXIS_INVALID;
+        SDL_GamepadAxis axisY = SDL_GAMEPAD_AXIS_INVALID;
+        if (axisStr == "leftStick" || axisStr == "left") {
+            axisX = SDL_GAMEPAD_AXIS_LEFTX;
+            axisY = SDL_GAMEPAD_AXIS_LEFTY;
+        } else if (axisStr == "rightStick" || axisStr == "right") {
+            axisX = SDL_GAMEPAD_AXIS_RIGHTX;
+            axisY = SDL_GAMEPAD_AXIS_RIGHTY;
+        }
+        if (axisX == SDL_GAMEPAD_AXIS_INVALID) return "{\"error\":\"Unknown gamepad axis: " + axisStr + "\"}";
+        SDL_Event event;
+        SDL_zero(event);
+        event.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
+        event.gaxis.axis = axisX;
+        event.gaxis.value = static_cast<int16_t>(x * 32767);
+        SDL_PushEvent(&event);
+        event.gaxis.axis = axisY;
+        event.gaxis.value = static_cast<int16_t>(y * 32767);
+        SDL_PushEvent(&event);
+        return "{}";
+    }
+    return "{\"error\":\"Unknown gamepad method: " + subMethod + "\"}";
+}
+
+static std::string handleDebugCommand(mystral::Runtime& runtime, int frameCount,
+                                      const std::string& method, const std::string& params) {
+    if (method == "getFrameCount" || method == "waitForFrame") {
+        return "{\"frame\":" + std::to_string(frameCount) + "}";
+    }
+    if (method == "screenshot") {
+        std::vector<uint8_t> frameData;
+        uint32_t width, height;
+        if (runtime.captureFrame(frameData, width, height)) {
+            std::vector<uint8_t> pngData;
+            if (stbi_write_png_to_func(pngWriteCallback, &pngData, width, height, 4, frameData.data(), width * 4)) {
+                std::string base64 = base64Encode(pngData.data(), pngData.size());
+                return "{\"data\":\"" + base64 + "\",\"width\":" + std::to_string(width) + ",\"height\":" + std::to_string(height) + "}";
+            }
+            return "{\"error\":\"Failed to encode PNG\"}";
+        }
+        return "{\"error\":\"Failed to capture frame\"}";
+    }
+    if (method.rfind("keyboard.", 0) == 0) return handleKeyboardDebugCommand(method, params);
+    if (method.rfind("mouse.", 0) == 0) return handleMouseDebugCommand(method, params);
+    if (method.rfind("gamepad.", 0) == 0) return handleGamepadDebugCommand(method, params);
+    if (method == "evaluate") return "{\"error\":\"evaluate not yet implemented\"}";
+    return "{\"error\":\"Unknown method: " + method + "\"}";
+}
+
+static std::unique_ptr<mystral::debug::DebugServer> createDebugServer(
+    const CLIOptions& opts, mystral::Runtime& runtime, int& frameCount) {
+    if (opts.debugPort <= 0) return nullptr;
+    auto debugServer = std::make_unique<mystral::debug::DebugServer>(opts.debugPort);
+    if (!debugServer->start()) {
+        std::cerr << "Warning: Failed to start debug server on port " << opts.debugPort << std::endl;
+        return nullptr;
+    }
+    mystral::Runtime* runtimePointer = &runtime;
+    int* frameCountPointer = &frameCount;
+    debugServer->setCommandHandler(
+        [runtimePointer, frameCountPointer](const std::string& method, const std::string& params) {
+            return handleDebugCommand(*runtimePointer, *frameCountPointer, method, params);
+        });
+    if (!opts.quiet) {
+        std::cout << "[DebugServer] Listening on ws://127.0.0.1:" << opts.debugPort << std::endl;
+    }
+    return debugServer;
+}
+#endif
+
+static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
+#if !TN_ENABLE_DEBUG_SERVER
+    if (opts.debugPort > 0) {
+        std::cerr << "Error: Debug server is disabled in this build (configure with -DTN_ENABLE_DEBUG_SERVER=ON)" << std::endl;
+        return 1;
+    }
+#else
+    std::unique_ptr<mystral::debug::DebugServer> debugServer;
+    int frameCount = 0;
+    debugServer = createDebugServer(opts, runtime, frameCount);
+    if (debugServer) {
+        while (runtime.pollEvents()) {
+            frameCount++;
+            if (debugServer->getClientCount() > 0) {
+                debugServer->broadcastEvent("frameRendered", "{\"frame\":" + std::to_string(frameCount) + "}");
+            }
+        }
+        int exitCode = runtime.getExitCode();
+        debugServer->broadcastEvent("exit", "{\"code\":" + std::to_string(exitCode) + "}");
+        debugServer->stop();
+    } else
+#endif
+    {
+        runtime.run();
+    }
+
+    int exitCode = runtime.getExitCode();
+    if (!opts.quiet) std::cout << "=== Script finished ===" << std::endl;
+#ifdef __APPLE__
+    // SDL3's audio callback threads can prevent graceful shutdown, so give them a moment then kill.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    kill(getpid(), SIGKILL);
+    return exitCode;
+#elif !defined(_WIN32)
+    _exit(exitCode);
+#else
+    ExitProcess(exitCode);
+#endif
+}
+
+static int driveMainLoop(const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
+    if (!opts.screenshotPath.empty()) return runScreenshotMode(opts, *runtime);
+    if (!opts.videoPath.empty()) return runVideoMode(opts, runtime);
+    return runNormalMode(opts, *runtime);
+}
+
+int runScript(const CLIOptions& opts) {
+    std::ifstream script(opts.scriptPath);
+    if (!script.is_open() && opts.scriptPath != mystral::vfs::getEmbeddedEntryPath()) {
+        std::cerr << "Error: Cannot open file: " << opts.scriptPath << std::endl;
+        return 1;
+    }
+
+    setupHeadlessEnvironment(opts);
+    bool screenshotMode = !opts.screenshotPath.empty();
+    bool videoMode = !opts.videoPath.empty();
+    printRunBanner(opts, screenshotMode, videoMode);
+    auto runtime = createConfiguredRuntime(opts);
+    if (!runtime) {
+        std::cerr << "Error: Failed to create runtime!" << std::endl;
+        return 1;
+    }
+    if (!attachUiOverlayIfConfigured(opts, *runtime)) return 1;
+    if (!wirePlaytestMailboxBridge(runtime)) return 1;
+    // Load and execute the script after host bridges exist and before mode dispatch starts.
     if (!runtime->loadScript(opts.scriptPath)) {
         std::cerr << "Error: Failed to evaluate script!" << std::endl;
         return 1;
     }
-
-    if (screenshotMode) {
-        // Screenshot mode: run for N frames, take screenshot, quit
-        auto startTime = std::chrono::high_resolution_clock::now();
-
-        for (int frame = 0; frame < opts.frames; frame++) {
-            // Raised before each frame of a screenshot run so the final presented frame is the
-            // one in the capture buffer at save time. Non-screenshot runs never raise it and
-            // pay neither the framebuffer copy nor its wait.
-            runtime->requestFrameScreenshot();
-            if (!runtime->pollEvents()) {
-                if (!opts.quiet) {
-                    std::cerr << "Warning: Runtime quit early at frame " << frame << std::endl;
-                }
-                break;
-            }
-
-            // saveScreenshot() owns the GPU readback fence, so no fixed delay is needed here.
-        }
-
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-        // Take screenshot
-        bool success = runtime->saveScreenshot(opts.screenshotPath);
-
-        if (!opts.quiet) {
-            if (success) {
-                std::cout << "Screenshot saved: " << opts.screenshotPath << std::endl;
-                std::cout << "Rendered " << opts.frames << " frames in " << duration.count() << "ms" << std::endl;
-                // One present per frame is what lets a second pass -- the canvas-layer overlay --
-                // composite onto the world instead of taking a swapchain image of its own. The
-                // host used to present inside every queue.submit, so a frame that rendered an
-                // overlay presented twice and only the first reached the display.
-                std::cout << "TN_PRESENTS:" << runtime->getPresentCount() << std::endl;
-            } else {
-                std::cerr << "Error: Failed to save screenshot!" << std::endl;
-            }
-        }
-
-        // In screenshot mode, use _exit() to avoid cleanup crashes
-        // that can trigger the macOS crash dialog. The screenshot is
-        // already saved, so we don't need graceful shutdown.
-        std::cout.flush();
-        std::cerr.flush();
-        _exit(success ? 0 : 1);
-    } else if (videoMode) {
-#if !TN_ENABLE_VIDEO
-        std::cerr << "Error: Video recording is disabled in this build (configure with -DTN_ENABLE_VIDEO=ON)" << std::endl;
-        return 1;
-#else
-        // Video recording mode
-        // Try native OS-level capture first (ScreenCaptureKit on macOS, Windows.Graphics.Capture on Windows)
-        // Falls back to GPU readback + WebP encoding if native capture is not available
-
-        // Validate options
-        if (opts.endFrame < 0) {
-            std::cerr << "Error: --end-frame is required for video recording" << std::endl;
-            std::cerr << "Example: mystral run game.js --video output.mp4 --end-frame 300" << std::endl;
-            return 1;
-        }
-
-        if (opts.endFrame <= opts.startFrame) {
-            std::cerr << "Error: --end-frame must be greater than --start-frame" << std::endl;
-            return 1;
-        }
-
-        // Check if native capture is available and requested
-        bool useNative = opts.useNativeCapture && mystral::video::VideoRecorder::isNativeCaptureAvailable();
-
-        // Determine output path
-        std::string outputPath = opts.videoPath;
-
-        // Native capture outputs MP4 directly; GPU capture uses WebP
-        if (useNative) {
-            // Ensure output path ends with .mp4 for native capture
-            size_t dotPos = outputPath.rfind('.');
-            if (dotPos != std::string::npos) {
-                std::string ext = outputPath.substr(dotPos);
-                if (ext != ".mp4" && ext != ".MP4") {
-                    outputPath = outputPath.substr(0, dotPos) + ".mp4";
-                }
-            } else {
-                outputPath += ".mp4";
-            }
-        }
-
-        // Create video recorder (factory selects appropriate backend)
-        std::unique_ptr<mystral::video::VideoRecorder> recorder;
-        if (useNative) {
-            recorder = mystral::video::VideoRecorder::create(
-                nullptr,
-                nullptr,
-                nullptr,
-                runtime->getWebGPUBindingsState());
-        } else {
-            // GPU readback mode requires WebGPU handles
-            recorder = mystral::video::VideoRecorder::create(
-                static_cast<WGPUDevice>(runtime->getWGPUDevice()),
-                static_cast<WGPUQueue>(runtime->getWGPUQueue()),
-                static_cast<WGPUInstance>(runtime->getWGPUInstance()),
-                runtime->getWebGPUBindingsState()
-            );
-        }
-
-        if (!recorder) {
-#ifdef MYSTRAL_HAS_WEBP_MUX
-            // Fall back to legacy WebP recorder
-            if (!opts.quiet) {
-                std::cout << "[Video] Falling back to legacy WebP recorder..." << std::endl;
-            }
-
-            // Determine output paths for WebP fallback
-            std::string webpPath = opts.videoPath;
-            std::string mp4Path;
-            bool needsConversion = opts.convertToMp4;
-
-            // If output ends with .mp4, convert the path to .webp for intermediate file
-            if (needsConversion) {
-                mp4Path = opts.videoPath;
-                size_t dotPos = mp4Path.rfind('.');
-                if (dotPos != std::string::npos) {
-                    mp4Path = mp4Path.substr(0, dotPos) + ".mp4";
-                } else {
-                    mp4Path = mp4Path + ".mp4";
-                }
-
-                dotPos = webpPath.rfind('.');
-                if (dotPos != std::string::npos) {
-                    std::string ext = webpPath.substr(dotPos);
-                    if (ext != ".webp" && ext != ".WEBP") {
-                        webpPath = webpPath.substr(0, dotPos) + ".webp";
-                    }
-                } else {
-                    webpPath = webpPath + ".webp";
-                }
-            }
-
-            // Create legacy WebP recorder
-            WebPVideoRecorder legacyRecorder(opts.width, opts.height, opts.videoFps, opts.videoQuality);
-            if (!legacyRecorder.isValid()) {
-                std::cerr << "Error: Failed to create video recorder" << std::endl;
-                return 1;
-            }
-
-            if (!opts.quiet) {
-                std::cout << "[Video] Recording " << (opts.endFrame - opts.startFrame + 1) << " frames..." << std::endl;
-            }
-
-            // Frame queue for async encoding
-            std::queue<std::vector<uint8_t>> frameQueue;
-            std::mutex queueMutex;
-            std::condition_variable queueCondition;
-            std::atomic<bool> encodingDone{false};
-            std::atomic<int> encodedFrames{0};
-            const int maxQueuedFrames = 30;
-
-            // Start encoder thread
-            std::thread encoderThread([&]() {
-                while (true) {
-                    std::vector<uint8_t> frameData;
-                    {
-                        std::unique_lock<std::mutex> lock(queueMutex);
-                        queueCondition.wait(lock, [&]() {
-                            return encodingDone.load(std::memory_order_acquire) || !frameQueue.empty();
-                        });
-                        if (frameQueue.empty() && encodingDone.load(std::memory_order_acquire)) break;
-                        frameData = std::move(frameQueue.front());
-                        frameQueue.pop();
-                    }
-
-                    if (!frameData.empty()) {
-                        legacyRecorder.addFrame(frameData.data());
-                        encodedFrames++;
-                    }
-                }
-            });
-
-            auto startTime = std::chrono::high_resolution_clock::now();
-            int capturedFrames = 0;
-
-            for (int frame = 0; frame <= opts.endFrame; frame++) {
-                if (!runtime->pollEvents()) {
-                    if (!opts.quiet) {
-                        std::cerr << "[Video] Runtime quit early at frame " << frame << std::endl;
-                    }
-                    break;
-                }
-
-                if (frame >= opts.startFrame) {
-                    std::vector<uint8_t> frameData;
-                    uint32_t frameWidth, frameHeight;
-
-                    if (runtime->captureFrame(frameData, frameWidth, frameHeight)) {
-                        bool queued = false;
-                        {
-                            std::lock_guard<std::mutex> lock(queueMutex);
-                            if (frameQueue.size() < static_cast<size_t>(maxQueuedFrames)) {
-                                frameQueue.push(std::move(frameData));
-                                queued = true;
-                            }
-                        }
-                        if (queued) queueCondition.notify_one();
-
-                        if (queued) {
-                            capturedFrames++;
-                            if (!opts.quiet && capturedFrames % 60 == 0) {
-                                std::cout << "[Video] Captured frame " << capturedFrames << "/" << (opts.endFrame - opts.startFrame + 1)
-                                          << " (queue: " << frameQueue.size() << ", encoded: " << encodedFrames.load() << ")" << std::endl;
-                            }
-                        }
-                    }
-                }
-            }
-
-            encodingDone = true;
-            queueCondition.notify_one();
-            encoderThread.join();
-
-            auto endTime = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-            runtime.reset();
-            SDL_PumpEvents();
-
-            bool success = legacyRecorder.save(webpPath);
-
-            if (success) {
-                if (!opts.quiet) {
-                    std::cout << "[Video] Saved WebP: " << webpPath << std::endl;
-                    std::cout << "[Video] Recorded " << capturedFrames << " frames in " << duration.count() << "ms" << std::endl;
-                }
-
-                if (needsConversion) {
-                    if (convertWebPToMP4(webpPath, mp4Path, opts.videoFps, true, opts.quiet)) {
-                        if (!opts.quiet) {
-                            std::cout << "[Video] Converted to MP4: " << mp4Path << std::endl;
-                        }
-                    }
-                }
-            }
-
-            std::cout.flush();
-            std::cerr.flush();
-            _exit(success ? 0 : 1);
-#else
-            std::cerr << "Error: Video recording requires libwebpmux (build with MYSTRAL_HAS_WEBP_MUX)" << std::endl;
-            return 1;
-#endif
-        }
-
-        // Using new VideoRecorder API
-        if (!opts.quiet) {
-            std::cout << "[Video] Using " << recorder->getTypeName() << std::endl;
-            std::cout << "[Video] Recording " << (opts.endFrame - opts.startFrame + 1) << " frames to " << outputPath << std::endl;
-        }
-
-        // Configure recording
-        mystral::video::VideoRecorderConfig recConfig;
-        recConfig.fps = opts.videoFps;
-        recConfig.width = opts.width;
-        recConfig.height = opts.height;
-        recConfig.quality = opts.videoQuality;
-        recConfig.convertToMp4 = opts.convertToMp4;
-
-        // Start recording
-        if (!recorder->startRecording(runtime->getSDLWindow(), outputPath, recConfig)) {
-            std::cerr << "Error: Failed to start video recording" << std::endl;
-            return 1;
-        }
-
-        auto startTime = std::chrono::high_resolution_clock::now();
-
-        // Main recording loop
-        for (int frame = 0; frame <= opts.endFrame; frame++) {
-            if (!runtime->pollEvents()) {
-                if (!opts.quiet) {
-                    std::cerr << "[Video] Runtime quit early at frame " << frame << std::endl;
-                }
-                break;
-            }
-
-            // Capture frame (for GPU readback recorder; no-op for native capture)
-            if (frame >= opts.startFrame) {
-                void* texture = runtime->getCurrentTexture();
-                if (texture) {
-                    recorder->captureFrame(texture, opts.width, opts.height);
-                }
-            }
-
-            // Process any pending capture operations
-            recorder->processFrame();
-
-            // Progress reporting
-            if (!opts.quiet && frame >= opts.startFrame && (frame - opts.startFrame) % 60 == 0) {
-                auto stats = recorder->getStats();
-                std::cout << "[Video] Frame " << (frame - opts.startFrame) << "/" << (opts.endFrame - opts.startFrame + 1)
-                          << " (captured: " << stats.capturedFrames << ", dropped: " << stats.droppedFrames << ")" << std::endl;
-            }
-        }
-
-        // Stop recording
-        bool success = recorder->stopRecording();
-
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-        if (success) {
-            auto stats = recorder->getStats();
-            if (!opts.quiet) {
-                std::cout << "[Video] Recording complete: " << outputPath << std::endl;
-                std::cout << "[Video] Captured " << stats.capturedFrames << " frames in " << duration.count() << "ms" << std::endl;
-                if (stats.droppedFrames > 0) {
-                    std::cout << "[Video] Dropped " << stats.droppedFrames << " frames" << std::endl;
-                }
-            }
-        }
-
-        // Cleanup
-        recorder.reset();
-        runtime.reset();
-        SDL_PumpEvents();
-
-        std::cout.flush();
-        std::cerr.flush();
-        _exit(success ? 0 : 1);
-#endif
-    } else {
-        // Normal mode: run main loop until quit
-        // If debug server is enabled, we need to use a manual loop
-#if !TN_ENABLE_DEBUG_SERVER
-        if (opts.debugPort > 0) {
-            std::cerr << "Error: Debug server is disabled in this build (configure with -DTN_ENABLE_DEBUG_SERVER=ON)" << std::endl;
-            return 1;
-        }
-#else
-        std::unique_ptr<mystral::debug::DebugServer> debugServer;
-        int frameCount = 0;
-
-        if (opts.debugPort > 0) {
-            debugServer = std::make_unique<mystral::debug::DebugServer>(opts.debugPort);
-            if (!debugServer->start()) {
-                std::cerr << "Warning: Failed to start debug server on port " << opts.debugPort << std::endl;
-                debugServer.reset();
-            } else {
-                // Set up command handler
-                debugServer->setCommandHandler([&](const std::string& method, const std::string& params) -> std::string {
-                    // Handle getFrameCount
-                    if (method == "getFrameCount") {
-                        return "{\"frame\":" + std::to_string(frameCount) + "}";
-                    }
-
-                    // Handle screenshot
-                    if (method == "screenshot") {
-                        std::vector<uint8_t> frameData;
-                        uint32_t width, height;
-                        if (runtime->captureFrame(frameData, width, height)) {
-                            // Encode to PNG
-                            std::vector<uint8_t> pngData;
-                            if (stbi_write_png_to_func(pngWriteCallback, &pngData, width, height, 4, frameData.data(), width * 4)) {
-                                // Base64 encode
-                                std::string base64 = base64Encode(pngData.data(), pngData.size());
-                                return "{\"data\":\"" + base64 + "\",\"width\":" + std::to_string(width) + ",\"height\":" + std::to_string(height) + "}";
-                            }
-                            return "{\"error\":\"Failed to encode PNG\"}";
-                        }
-                        return "{\"error\":\"Failed to capture frame\"}";
-                    }
-
-                    // Handle keyboard.press, keyboard.down, keyboard.up, keyboard.type
-                    if (method.rfind("keyboard.", 0) == 0) {
-                        std::string subMethod = method.substr(9); // After "keyboard."
-                        std::string keyName = extractJsonString(params, "key");
-
-                        if (subMethod == "press") {
-                            SDL_Scancode scancode = keyNameToScancode(keyName);
-                            if (scancode == SDL_SCANCODE_UNKNOWN) {
-                                return "{\"error\":\"Unknown key: " + keyName + "\"}";
-                            }
-                            injectKeyboardEvent(scancode, true);
-                            injectKeyboardEvent(scancode, false);
-                            return "{}";
-                        }
-                        if (subMethod == "down") {
-                            SDL_Scancode scancode = keyNameToScancode(keyName);
-                            if (scancode == SDL_SCANCODE_UNKNOWN) {
-                                return "{\"error\":\"Unknown key: " + keyName + "\"}";
-                            }
-                            injectKeyboardEvent(scancode, true);
-                            return "{}";
-                        }
-                        if (subMethod == "up") {
-                            SDL_Scancode scancode = keyNameToScancode(keyName);
-                            if (scancode == SDL_SCANCODE_UNKNOWN) {
-                                return "{\"error\":\"Unknown key: " + keyName + "\"}";
-                            }
-                            injectKeyboardEvent(scancode, false);
-                            return "{}";
-                        }
-                        if (subMethod == "type") {
-                            std::string text = extractJsonString(params, "text");
-                            for (char c : text) {
-                                std::string keyStr(1, c);
-                                SDL_Scancode scancode = keyNameToScancode(keyStr);
-                                if (scancode != SDL_SCANCODE_UNKNOWN) {
-                                    injectKeyboardEvent(scancode, true);
-                                    injectKeyboardEvent(scancode, false);
-                                }
-                            }
-                            return "{}";
-                        }
-                        return "{\"error\":\"Unknown keyboard method: " + subMethod + "\"}";
-                    }
-
-                    // Handle mouse.move, mouse.click, mouse.down, mouse.up
-                    if (method.rfind("mouse.", 0) == 0) {
-                        std::string subMethod = method.substr(6); // After "mouse."
-                        float x = static_cast<float>(extractJsonNumber(params, "x", 0));
-                        float y = static_cast<float>(extractJsonNumber(params, "y", 0));
-                        std::string buttonStr = extractJsonString(params, "button");
-                        int button = SDL_BUTTON_LEFT;
-                        if (buttonStr == "right") button = SDL_BUTTON_RIGHT;
-                        else if (buttonStr == "middle") button = SDL_BUTTON_MIDDLE;
-
-                        if (subMethod == "move") {
-                            injectMouseMotion(x, y);
-                            return "{}";
-                        }
-                        if (subMethod == "click") {
-                            injectMouseButton(x, y, button, true);
-                            injectMouseButton(x, y, button, false);
-                            return "{}";
-                        }
-                        if (subMethod == "down") {
-                            injectMouseButton(x, y, button, true);
-                            return "{}";
-                        }
-                        if (subMethod == "up") {
-                            injectMouseButton(x, y, button, false);
-                            return "{}";
-                        }
-                        return "{\"error\":\"Unknown mouse method: " + subMethod + "\"}";
-                    }
-
-                    // Handle gamepad.press, gamepad.axis
-                    if (method.rfind("gamepad.", 0) == 0) {
-                        std::string subMethod = method.substr(8); // After "gamepad."
-
-                        if (subMethod == "press") {
-                            std::string buttonStr = extractJsonString(params, "button");
-                            // Map button names to SDL gamepad button enum
-                            SDL_GamepadButton button = SDL_GAMEPAD_BUTTON_INVALID;
-                            if (buttonStr == "A" || buttonStr == "a") button = SDL_GAMEPAD_BUTTON_SOUTH;
-                            else if (buttonStr == "B" || buttonStr == "b") button = SDL_GAMEPAD_BUTTON_EAST;
-                            else if (buttonStr == "X" || buttonStr == "x") button = SDL_GAMEPAD_BUTTON_WEST;
-                            else if (buttonStr == "Y" || buttonStr == "y") button = SDL_GAMEPAD_BUTTON_NORTH;
-                            else if (buttonStr == "LB" || buttonStr == "L1") button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
-                            else if (buttonStr == "RB" || buttonStr == "R1") button = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER;
-                            else if (buttonStr == "Back" || buttonStr == "Select") button = SDL_GAMEPAD_BUTTON_BACK;
-                            else if (buttonStr == "Start") button = SDL_GAMEPAD_BUTTON_START;
-                            else if (buttonStr == "Guide" || buttonStr == "Home") button = SDL_GAMEPAD_BUTTON_GUIDE;
-                            else if (buttonStr == "LS" || buttonStr == "L3") button = SDL_GAMEPAD_BUTTON_LEFT_STICK;
-                            else if (buttonStr == "RS" || buttonStr == "R3") button = SDL_GAMEPAD_BUTTON_RIGHT_STICK;
-                            else if (buttonStr == "DPadUp") button = SDL_GAMEPAD_BUTTON_DPAD_UP;
-                            else if (buttonStr == "DPadDown") button = SDL_GAMEPAD_BUTTON_DPAD_DOWN;
-                            else if (buttonStr == "DPadLeft") button = SDL_GAMEPAD_BUTTON_DPAD_LEFT;
-                            else if (buttonStr == "DPadRight") button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
-
-                            if (button == SDL_GAMEPAD_BUTTON_INVALID) {
-                                return "{\"error\":\"Unknown gamepad button: " + buttonStr + "\"}";
-                            }
-
-                            // Inject button press and release
-                            SDL_Event event;
-                            SDL_zero(event);
-                            event.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
-                            event.gbutton.button = button;
-                            event.gbutton.down = true;
-                            SDL_PushEvent(&event);
-
-                            event.type = SDL_EVENT_GAMEPAD_BUTTON_UP;
-                            event.gbutton.down = false;
-                            SDL_PushEvent(&event);
-                            return "{}";
-                        }
-                        if (subMethod == "axis") {
-                            std::string axisStr = extractJsonString(params, "axis");
-                            float x = static_cast<float>(extractJsonNumber(params, "x", 0));
-                            float y = static_cast<float>(extractJsonNumber(params, "y", 0));
-
-                            SDL_GamepadAxis axisX = SDL_GAMEPAD_AXIS_INVALID;
-                            SDL_GamepadAxis axisY = SDL_GAMEPAD_AXIS_INVALID;
-                            if (axisStr == "leftStick" || axisStr == "left") {
-                                axisX = SDL_GAMEPAD_AXIS_LEFTX;
-                                axisY = SDL_GAMEPAD_AXIS_LEFTY;
-                            } else if (axisStr == "rightStick" || axisStr == "right") {
-                                axisX = SDL_GAMEPAD_AXIS_RIGHTX;
-                                axisY = SDL_GAMEPAD_AXIS_RIGHTY;
-                            }
-
-                            if (axisX == SDL_GAMEPAD_AXIS_INVALID) {
-                                return "{\"error\":\"Unknown gamepad axis: " + axisStr + "\"}";
-                            }
-
-                            // Inject axis events (values are -32768 to 32767)
-                            SDL_Event event;
-                            SDL_zero(event);
-                            event.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
-                            event.gaxis.axis = axisX;
-                            event.gaxis.value = static_cast<int16_t>(x * 32767);
-                            SDL_PushEvent(&event);
-
-                            event.gaxis.axis = axisY;
-                            event.gaxis.value = static_cast<int16_t>(y * 32767);
-                            SDL_PushEvent(&event);
-                            return "{}";
-                        }
-                        return "{\"error\":\"Unknown gamepad method: " + subMethod + "\"}";
-                    }
-
-                    // Handle waitForFrame - returns empty to signal async handling
-                    if (method == "waitForFrame") {
-                        // This would need to be handled asynchronously
-                        // For now, immediately return current frame
-                        return "{\"frame\":" + std::to_string(frameCount) + "}";
-                    }
-
-                    // Handle evaluate - execute JS in the runtime
-                    if (method == "evaluate") {
-                        // Would need to call runtime->evaluate() if available
-                        return "{\"error\":\"evaluate not yet implemented\"}";
-                    }
-
-                    return "{\"error\":\"Unknown method: " + method + "\"}";
-                });
-
-                if (!opts.quiet) {
-                    std::cout << "[DebugServer] Listening on ws://127.0.0.1:" << opts.debugPort << std::endl;
-                }
-            }
-        }
-
-        if (debugServer) {
-            // Manual loop with debug server
-            while (runtime->pollEvents()) {
-                frameCount++;
-
-                // Broadcast frameRendered event to connected clients
-                if (debugServer->getClientCount() > 0) {
-                    debugServer->broadcastEvent("frameRendered", "{\"frame\":" + std::to_string(frameCount) + "}");
-                }
-
-                // pollEvents() already drives timers, microtasks, input, and frame callbacks.
-                // A fixed delay here only adds one millisecond to every debug response.
-            }
-
-            // Broadcast exit event
-            int exitCode = runtime->getExitCode();
-            debugServer->broadcastEvent("exit", "{\"code\":" + std::to_string(exitCode) + "}");
-            debugServer->stop();
-        } else
-#endif
-        {
-            // Standard run loop (no debug server)
-            runtime->run();
-        }
-
-        // Get exit code from process.exit() if called
-        int exitCode = runtime->getExitCode();
-
-        if (!opts.quiet) {
-            std::cout << "=== Script finished ===" << std::endl;
-        }
-
-        // Note: On macOS, SDL3's audio callback threads can prevent graceful shutdown.
-        // The CoreAudio subsystem sometimes blocks even _exit(). SIGKILL is the only
-        // reliable way to terminate. This is safe because all user-visible state
-        // (files, screenshots) has already been written.
-        // TODO: File SDL3 issue about CoreAudio callback blocking process exit.
-#ifdef __APPLE__
-        // Give the audio callback a brief moment to notice shutdown
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        // SIGKILL is the only reliable termination on macOS with audio
-        // Note: We lose the exit code here, but this is the only reliable way to exit
-        kill(getpid(), SIGKILL);
-        // Unreachable, but suppresses compiler warning
-        return exitCode;
-#elif !defined(_WIN32)
-        _exit(exitCode);
-#else
-        ExitProcess(exitCode);
-#endif
-    }
-
-    return 0;
+    return driveMainLoop(opts, runtime);
 }
 
 int main(int argc, char* argv[]) {

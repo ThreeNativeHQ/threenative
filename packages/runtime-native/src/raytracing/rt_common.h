@@ -14,6 +14,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
+#include <utility>
 
 namespace mystral {
 namespace rt {
@@ -77,6 +79,21 @@ struct RTTLASHandle {
     void* _handle = nullptr;
     uint32_t _id = 0;
 };
+
+template <typename Handle, typename Resource>
+Handle allocateRtHandle(
+    uint32_t& nextId,
+    std::unordered_map<uint32_t, std::unique_ptr<Resource>>& table,
+    std::unique_ptr<Resource> resource
+) {
+    const uint32_t id = nextId++;
+    table[id] = std::move(resource);
+
+    Handle handle;
+    handle._id = id;
+    handle._handle = table[id].get();
+    return handle;
+}
 
 // ============================================================================
 // Ray Tracing Options

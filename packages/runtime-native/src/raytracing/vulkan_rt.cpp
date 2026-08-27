@@ -908,13 +908,7 @@ RTGeometryHandle VulkanRTBackend::createGeometry(const RTGeometryDesc& desc) {
         vkUnmapMemory(device_, geometry->indexBuffer.memory);
     }
 
-    uint32_t id = nextGeometryId_++;
-    geometries_[id] = std::move(geometry);
-
-    RTGeometryHandle handle;
-    handle._handle = geometries_[id].get();
-    handle._id = id;
-    return handle;
+    return allocateRtHandle<RTGeometryHandle>(nextGeometryId_, geometries_, std::move(geometry));
 }
 
 void VulkanRTBackend::destroyGeometry(RTGeometryHandle geometry) {
@@ -1050,13 +1044,7 @@ RTBLASHandle VulkanRTBackend::createBLAS(RTGeometryHandle* geometries, size_t co
     // Clean up scratch buffer
     destroyBuffer(scratchBuffer);
 
-    uint32_t id = nextBLASId_++;
-    blases_[id] = std::move(blas);
-
-    RTBLASHandle handle;
-    handle._handle = blases_[id].get();
-    handle._id = id;
-    return handle;
+    return allocateRtHandle<RTBLASHandle>(nextBLASId_, blases_, std::move(blas));
 }
 
 void VulkanRTBackend::destroyBLAS(RTBLASHandle blas) {
@@ -1219,13 +1207,7 @@ RTTLASHandle VulkanRTBackend::createTLAS(const RTTLASInstance* instances, size_t
     // Clean up scratch buffer
     destroyBuffer(scratchBuffer);
 
-    uint32_t id = nextTLASId_++;
-    tlases_[id] = std::move(tlas);
-
-    RTTLASHandle handle;
-    handle._handle = tlases_[id].get();
-    handle._id = id;
-    return handle;
+    return allocateRtHandle<RTTLASHandle>(nextTLASId_, tlases_, std::move(tlas));
 }
 
 void VulkanRTBackend::updateTLAS(RTTLASHandle tlas, const RTTLASInstance* instances, size_t count) {

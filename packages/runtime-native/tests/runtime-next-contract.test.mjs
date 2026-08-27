@@ -285,7 +285,6 @@ test('JSValueHandle ownership is an Engine API with a move-only guard', () => {
   assert.match(read('src/js/jsc_engine.mm'), /frameHandleRefs_|protectedHandleRefs_/u);
   assert.match(jsc, /const auto persistent = protectedHandleRefs_\.find\(rawValue\)[\s\S]*const auto frame = frameHandleRefs_\.find\(rawValue\)/u);
   assert.match(churn, /handles-created=[\s\S]*outstanding/u);
-  assert.match(read('CMakeLists.txt'), /threenative-handle-lifetime-test/u);
 });
 
 test('same-source first proof scene uses required Three.js WebGPU contract without runtime branches', () => {

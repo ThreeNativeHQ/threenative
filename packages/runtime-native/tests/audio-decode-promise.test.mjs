@@ -66,7 +66,7 @@ test("the proof covers every engine the build carries and fails closed on none",
   );
   assert.match(
     read("scripts/verify-desktop-audio.mjs"),
-    /-DMYSTRAL_USE_V8=ON", "-DMYSTRAL_USE_QUICKJS=ON/u,
+    /-DMYSTRAL_USE_V8=ON"[\s\S]*?"-DMYSTRAL_USE_QUICKJS=ON/u,
     "--dual must build the engine pair the QuickJS result came from",
   );
 });

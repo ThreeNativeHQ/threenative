@@ -10,6 +10,7 @@
 
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
+#include <deque>
 #include <iostream>
 #include <optional>
 #if defined(__ANDROID__)
@@ -1857,7 +1858,7 @@ private:
     static constexpr size_t kPersistentPoolCap = 4096;
     // One arg vector per callback nesting depth, reused across callbacks on this thread.
     // A crossing used to heap-allocate its argument vector even when it had arguments.
-    std::vector<std::vector<JSValueHandle>> callbackArgsPool_;
+    std::deque<std::vector<JSValueHandle>> callbackArgsPool_;
     bool inFrame_ = false;  // True during animation frame execution
     bool frameTrackingSuspended_ = false;  // When true, skip frame tracking for new allocations
     int nativeCallbackDepth_ = 0;

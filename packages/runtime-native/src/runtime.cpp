@@ -1266,12 +1266,18 @@ private:
         auto callbacks = std::move(rafCallbacks_);
         rafCallbacks_.clear();
 
+#if TN_ANDROID_JS_PROFILE
+        const uint64_t tnJsFrameStart = js::threadCpuNs();
+#endif
         // Call each callback
         for (auto& raf : callbacks) {
             std::vector<js::JSValueHandle> args = {jsEngine_->newNumber(timestamp)};
             jsEngine_->call(raf.callback, jsEngine_->newUndefined(), args);
             jsEngine_->freeHandle(raf.callback);
         }
+#if TN_ANDROID_JS_PROFILE
+        js::g_jsFrameNs += js::threadCpuNs() - tnJsFrameStart;
+#endif
     }
 
     void setupTimers() {

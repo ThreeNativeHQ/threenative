@@ -471,13 +471,7 @@ RTGeometryHandle MetalRTBackend::createGeometry(const RTGeometryDesc& desc) {
         }
 
         // Store geometry and return handle
-        uint32_t id = nextGeometryId_++;
-        geometries_[id] = std::move(geometry);
-
-        RTGeometryHandle handle;
-        handle._id = id;
-        handle._handle = geometries_[id].get();
-        return handle;
+        return allocateRtHandle<RTGeometryHandle>(nextGeometryId_, geometries_, std::move(geometry));
     }
 }
 
@@ -555,12 +549,8 @@ RTBLASHandle MetalRTBackend::createBLAS(RTGeometryHandle* geometries, size_t cou
         blas->accelerationStructure = accelerationStructure;
 
         // Store BLAS and return handle
-        uint32_t id = nextBLASId_++;
-        blases_[id] = std::move(blas);
-
-        RTBLASHandle handle;
-        handle._id = id;
-        handle._handle = blases_[id].get();
+        RTBLASHandle handle =
+            allocateRtHandle<RTBLASHandle>(nextBLASId_, blases_, std::move(blas));
 
         std::cout << "[MetalRT] Created BLAS with " << count << " geometries" << std::endl;
         return handle;
@@ -653,12 +643,8 @@ RTTLASHandle MetalRTBackend::createTLAS(const RTTLASInstance* instances, size_t 
         tlas->accelerationStructure = accelerationStructure;
 
         // Store TLAS and return handle
-        uint32_t id = nextTLASId_++;
-        tlases_[id] = std::move(tlas);
-
-        RTTLASHandle handle;
-        handle._id = id;
-        handle._handle = tlases_[id].get();
+        RTTLASHandle handle =
+            allocateRtHandle<RTTLASHandle>(nextTLASId_, tlases_, std::move(tlas));
 
         std::cout << "[MetalRT] Created TLAS with " << count << " instances" << std::endl;
         return handle;
