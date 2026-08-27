@@ -5608,7 +5608,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     std::unordered_map<uint32_t, WGPUComputePassEncoder> computePasses;
     std::unordered_map<uint32_t, WGPUCommandEncoder> computeOwners;
     std::unordered_map<uint32_t, WGPUCommandBuffer> commandBuffers;
-    state->frameOpStreamLastOrder.clear();
+    if (state->captureFrameOpStreamTrace) state->frameOpStreamLastOrder.clear();
     auto fail = [&](const std::string& detail) {
         const std::string message = "frame op stream: " + detail;
         std::cerr << "[WebGPU] Frame op stream replay failed: " << detail << std::endl;
@@ -5625,19 +5625,22 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     auto readExtent = [&]() { return WGPUExtent3D{r.u32(), r.u32(), r.u32()}; };
     static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy"};
     uint32_t seen = 0;
+    uint32_t replaySubmits = 0;
     while (r.cursor < bytes && r.ok) {
         const size_t start = r.cursor;
         r.recordEnd = bytes;
         const uint32_t opcode = r.u32(), recordBytes = r.u32();
         if (!r.ok || opcode == 0 || opcode >= std::size(names) || recordBytes < 8 || (recordBytes & 7) || start + recordBytes > bytes) { fail("malformed record header"); break; }
         r.recordEnd = start + recordBytes;
-        state->frameOpStreamLastOrder.emplace_back(names[opcode]);
+        if (state->captureFrameOpStreamTrace) {
+            state->frameOpStreamLastOrder.emplace_back(names[opcode]);
+        }
         seen += 1;
 #if TN_ANDROID_JS_PROFILE
         const auto opProfileStart = beginProfiledBinding();
 #endif
         switch (opcode) {
-            case 1: { const uint32_t id = r.u32(); const double off = r.f64(); const uint32_t n = r.u32(); const auto info = state->bufferRegistry.find(id); if (!std::isfinite(off) || off < 0 || std::floor(off) != off || static_cast<uint64_t>(off) % 4 || (n & 3) || r.cursor + n > r.recordEnd || info == state->bufferRegistry.end() || static_cast<uint64_t>(off) > info->second.size || n > info->second.size - static_cast<uint64_t>(off)) { fail(info == state->bufferRegistry.end() ? "unknown buffer id " + std::to_string(id) : "invalid writeBuffer bounds"); break; } WGPUBuffer b = info->second.buffer; wgpuQueueWriteBuffer(state->queue, b, static_cast<uint64_t>(off), data + r.cursor, n);
+            case 1: { const uint32_t id = r.u32(); const double off = r.f64(); const uint32_t n = r.u32(); const auto info = state->bufferRegistry.find(id); if (!std::isfinite(off) || off < 0 || std::floor(off) != off || static_cast<uint64_t>(off) % 4 || (n & 3) || r.cursor + n > r.recordEnd || info == state->bufferRegistry.end() || static_cast<uint64_t>(off) > info->second.size || n > info->second.size - static_cast<uint64_t>(off)) { fail(info == state->bufferRegistry.end() ? "unknown buffer id " + std::to_string(id) : "invalid writeBuffer bounds"); break; } WGPUBuffer b = info->second.buffer; if (!stageWriteInUploadStaging(state, b, static_cast<uint64_t>(off), data + r.cursor, n, n)) wgpuQueueWriteBuffer(state->queue, b, static_cast<uint64_t>(off), data + r.cursor, n);
 #if TN_ANDROID_JS_PROFILE
                 state->androidJsNativeProfile.writeBufferBytes += n;
                 state->androidJsNativeProfile.writeBufferTargets.insert(b);
@@ -5679,12 +5682,14 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                     values.emplace_back(id, it->second);
                 }
                 if (r.ok) {
+                    flushUploadStaging(state);
                     std::vector<WGPUCommandBuffer> rawBuffers;
                     for (const auto& value : values) rawBuffers.push_back(value.second);
                     wgpuQueueSubmit(state->queue, rawBuffers.size(), rawBuffers.data());
 #if TN_ANDROID_JS_PROFILE
                     state->androidJsNativeProfile.submits += 1;
 #endif
+                    replaySubmits += 1;
                     for (const auto& [id, commandBuffer] : values) {
                         wgpuCommandBufferRelease(commandBuffer);
                         commandBuffers.erase(id);
@@ -5697,10 +5702,10 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                 }
                 break;
             }
-            case 30: { WGPUImageCopyTexture_Compat d{};readTextureCopy(d);WGPUTextureDataLayout_Compat l{};l.offset=r.f64();l.bytesPerRow=r.u32();l.rowsPerImage=r.u32();auto z=readExtent();if(!l.rowsPerImage)l.rowsPerImage=z.height;const uint32_t n=r.u32();if(r.cursor+n>r.recordEnd){fail("upload payload exceeds record");break;}wgpuQueueWriteTexture(state->queue,&d,data+r.cursor,n,&l,&z);r.cursor=(r.cursor+n+7)&~size_t(7);break; }
-            case 31: { const uint32_t sourceWidth=r.u32(),sourceHeight=r.u32(),originX=r.u32(),originY=r.u32(),flipY=r.u32();WGPUImageCopyTexture_Compat d{};readTextureCopy(d);auto z=readExtent();const uint32_t n=r.u32();if(!sourceWidth||!sourceHeight||r.cursor+n>r.recordEnd||uint64_t(sourceWidth)*sourceHeight*4>n||originX+z.width>sourceWidth||originY+z.height>sourceHeight){fail("external image payload bounds invalid");break;}std::vector<uint8_t> cropped(uint64_t(z.width)*z.height*4);for(uint32_t y=0;y<z.height;y++){const uint32_t sourceY=flipY?(originY+z.height-1-y):(originY+y);std::memcpy(cropped.data()+uint64_t(y)*z.width*4,data+r.cursor+(uint64_t(sourceY)*sourceWidth+originX)*4,uint64_t(z.width)*4);}WGPUTextureDataLayout_Compat l{};l.bytesPerRow=z.width*4;l.rowsPerImage=z.height;wgpuQueueWriteTexture(state->queue,&d,cropped.data(),cropped.size(),&l,&z);r.cursor=(r.cursor+n+7)&~size_t(7);break; }
-            case 32: { const uint32_t id=r.u32(); if(!state->bufferRegistry.contains(id))fail("unknown buffer id");else releaseBufferRegistryEntry(state,id); break; }
-            case 33: { const uint32_t id=r.u32(); if(!state->textureRegistry.contains(id))fail("unknown texture id");else releaseTextureRegistryEntry(state,id); break; }
+            case 30: { WGPUImageCopyTexture_Compat d{};readTextureCopy(d);WGPUTextureDataLayout_Compat l{};l.offset=r.f64();l.bytesPerRow=r.u32();l.rowsPerImage=r.u32();auto z=readExtent();if(!l.rowsPerImage)l.rowsPerImage=z.height;const uint32_t n=r.u32();if(r.cursor+n>r.recordEnd){fail("upload payload exceeds record");break;}flushUploadStaging(state);wgpuQueueWriteTexture(state->queue,&d,data+r.cursor,n,&l,&z);r.cursor=(r.cursor+n+7)&~size_t(7);break; }
+            case 31: { const uint32_t sourceWidth=r.u32(),sourceHeight=r.u32(),originX=r.u32(),originY=r.u32(),flipY=r.u32();WGPUImageCopyTexture_Compat d{};readTextureCopy(d);auto z=readExtent();const uint32_t n=r.u32();if(!sourceWidth||!sourceHeight||r.cursor+n>r.recordEnd||uint64_t(sourceWidth)*sourceHeight*4>n||originX+z.width>sourceWidth||originY+z.height>sourceHeight){fail("external image payload bounds invalid");break;}std::vector<uint8_t> cropped(uint64_t(z.width)*z.height*4);for(uint32_t y=0;y<z.height;y++){const uint32_t sourceY=flipY?(originY+z.height-1-y):(originY+y);std::memcpy(cropped.data()+uint64_t(y)*z.width*4,data+r.cursor+(uint64_t(sourceY)*sourceWidth+originX)*4,uint64_t(z.width)*4);}WGPUTextureDataLayout_Compat l{};l.bytesPerRow=z.width*4;l.rowsPerImage=z.height;flushUploadStaging(state);wgpuQueueWriteTexture(state->queue,&d,cropped.data(),cropped.size(),&l,&z);r.cursor=(r.cursor+n+7)&~size_t(7);break; }
+            case 32: { const uint32_t id=r.u32(); flushUploadStaging(state); if(!state->bufferRegistry.contains(id))fail("unknown buffer id");else releaseBufferRegistryEntry(state,id); break; }
+            case 33: { const uint32_t id=r.u32(); flushUploadStaging(state); if(!state->textureRegistry.contains(id))fail("unknown texture id");else releaseTextureRegistryEntry(state,id); break; }
         }
 #if TN_ANDROID_JS_PROFILE
         switch (opcode) {
@@ -5724,6 +5729,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
         if (!r.ok) break;
         r.cursor = r.recordEnd;
     }
+    flushUploadStaging(state);
     state->frameOpStreamLastOpCount = seen;
     if (r.ok && (!renderPasses.empty() || !computePasses.empty() || !encoders.empty() ||
                  !commandBuffers.empty())) {
@@ -5747,7 +5753,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
         }
         return false;
     }
-    state->submitCount += std::count(state->frameOpStreamLastOrder.begin(), state->frameOpStreamLastOrder.end(), "submit");
+    state->submitCount += replaySubmits;
     if (state->surface && state->currentTexture && state->surfaceRenderPassEnded) state->framePresentPending = true;
     return true;
 }

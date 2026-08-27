@@ -270,6 +270,7 @@ struct BindingsState {
     uint64_t frameOpStreamReplayCrossings = 0;
     uint64_t frameOpStreamDirectCommandCalls = 0;
     uint64_t frameOpStreamLastOpCount = 0;
+    bool captureFrameOpStreamTrace = false;
     std::vector<std::string> frameOpStreamLastOrder;
     std::vector<std::unique_ptr<WGPUBlendState>> blendStates;
     BufferMapData bufferMapData;

@@ -38,6 +38,9 @@ void runContract() {
     }
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
     auto* engine = state->engine;
+    expect(!state->captureFrameOpStreamTrace,
+           "production replay does not allocate an operation-name trace");
+    state->captureFrameOpStreamTrace = true;
 
     expect(engine->evalScript(
         R"JS((async () => {
@@ -97,6 +100,10 @@ void runContract() {
            "native replay preserves the exact operation order and census");
     expect(state->frameOpStreamLastOpCount == expectedOrder.size(),
            "native replay reports every operation exactly once");
+#if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
+    expect(!state->uploadStaging.retired.empty() || !state->uploadStaging.ready.empty(),
+           "packed writeBuffer uses the configured upload-staging backend");
+#endif
     expect(engine->evalScript(
         R"JS((async () => {
           await __tnUploadDst.mapAsync(GPUMapMode.READ, 0, 16);
