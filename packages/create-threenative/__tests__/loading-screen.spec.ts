@@ -377,13 +377,14 @@ describe("template loading screen", () => {
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
   });
 
-  it("waits for core readiness without starting a second unawaited compile", async () => {
+  it("waits for core readiness, then reveals without waiting on the unawaited prewarm", async () => {
     let ready: () => void = () => undefined;
     const readyPromise = new Promise<void>((resolve) => {
       ready = resolve;
     });
     const source = host();
     source.startup.whenReady = () => readyPromise;
+    // The prewarm's promise never settles here, which is the point: the reveal must not wait on it.
     source.renderer.compileAsync = vi.fn(() => new Promise<void>(() => undefined));
     createLoadingScreen(source);
 
@@ -393,7 +394,8 @@ describe("template loading screen", () => {
     ready();
     await readyPromise;
     await Promise.resolve();
-    expect(source.renderer.compileAsync).not.toHaveBeenCalled();
+    expect(source.renderer.compileAsync).toHaveBeenCalledOnce();
+    expect(source.renderer.compileAsync.mock.calls[0]).toEqual([source.scene, source.camera]);
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);
   });
@@ -408,7 +410,9 @@ describe("template loading screen", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(source.renderer.compileAsync).not.toHaveBeenCalled();
+    // Startup and compilation are both settled, and the screen still fires its one prewarm —
+    // now harmless, because the reveal never waits on it.
+    expect(source.renderer.compileAsync).toHaveBeenCalledOnce();
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);
   });
