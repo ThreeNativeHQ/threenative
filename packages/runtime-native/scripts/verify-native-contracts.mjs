@@ -36,6 +36,9 @@ export const executionContracts = {
   "threenative-command-encoder-class-table-test": {
     invocations: [{ args: [], passLine: "command-encoder-class-table: prototype=shared" }],
   },
+  "threenative-render-pass-class-table-test": {
+    invocations: [{ args: [], passLine: "render-pass-class-table: prototype=shared" }],
+  },
   "threenative-crash-handler-policy-test": {
     invocations: [{ args: [], passLine: "native crash-handler policy contract passed" }],
   },

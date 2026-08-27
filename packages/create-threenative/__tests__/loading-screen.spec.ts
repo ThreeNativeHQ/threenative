@@ -385,7 +385,8 @@ describe("template loading screen", () => {
     const source = host();
     source.startup.whenReady = () => readyPromise;
     // The prewarm's promise never settles here, which is the point: the reveal must not wait on it.
-    source.renderer.compileAsync = vi.fn(() => new Promise<void>(() => undefined));
+    const compileAsync = vi.fn(() => new Promise<void>(() => undefined));
+    source.renderer.compileAsync = compileAsync;
     createLoadingScreen(source);
 
     expect(source.canvasLayer.opaque).toBe(true);
@@ -395,7 +396,7 @@ describe("template loading screen", () => {
     await readyPromise;
     await Promise.resolve();
     expect(source.renderer.compileAsync).toHaveBeenCalledOnce();
-    expect(source.renderer.compileAsync.mock.calls[0]).toEqual([source.scene, source.camera]);
+    expect(compileAsync.mock.calls[0]).toEqual([source.scene, source.camera]);
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);
   });
