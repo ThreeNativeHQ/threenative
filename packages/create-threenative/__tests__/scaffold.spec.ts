@@ -28,17 +28,17 @@ const ENGINE_MCP = "threenative-engine-mcp";
 const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 
-// Refreshed by the stride-sync convention: AnimationPlayer now matches a travelling clip's rate
-// to the ground the body covers, which the capability manifest and every template's AGENTS.md
-// carry into the shipped scaffold.
+// Refreshed for the startup-readiness loading gate: each template's `src/render/loading.ts` was
+// reduced to the shared `startup.whenReady()` contract and every template's AGENTS.md carries
+// the readiness wording into the shipped scaffold.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "8bf4ba23cfd99cf8ff86e536067beafaa8016d2da96ebded4af4deb02ffad12a",
-  defense: "89633723d309e1fa6a8143bb1aa06ab83f51dc46890ebcdba9db808e3c44eaf6",
-  minimal: "272dae61c30b15bc7d0d9766f1b5558ad9408bcf03efbdd15fa089d666e3b95e",
-  platformer: "a82c5a0896efaa7aeac8177d93680fc8056cbd5c61be1bb0a02352be546ff39a",
-  racing: "b12e1ded12c93e818100300785649ac839dca5a184217b0f2b5fa97eae8846cf",
-  shooter: "0c8d6b515372baccef2159b066eadd8350d3cb2b40a4dbad843e44686efc435c",
-  starter: "70a2c106f8c693e764bb722667bb414ba340a1f5e34e154d6d2c1fc85d2301cf",
+  "action-rpg": "de1397782520d4cdf24d8e5919bfb60ac181ae942f4d996245340ef8cf87731b",
+  defense: "02234707f38cf90722debbf0cc430d6178f1a1e8a3664ee7a03da16b3a562a54",
+  minimal: "607d1e57c3e5e856ffa890401cfc251d8fb1176e9b784e366c8fcbdfb6a389c1",
+  platformer: "667c19d902c0cca0bb15b95599b20a42fc09118f2bf66bbe092fa70b86510114",
+  racing: "ea398a656744cb84fc641d6980787d374fb54552392feee124db7bc7a10293f8",
+  shooter: "ead26a189f6eca3e759c452751c0f90214ec6cdf951f3b96c43dc156a34796ce",
+  starter: "3323184934d8ba4f577d1047a8f095c5833013263369c28c076d12d15f73f0fe",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

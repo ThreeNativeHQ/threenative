@@ -7,6 +7,16 @@ export interface IStartupReadinessOptions {
   readonly frameBudgetMs?: number;
   /** Number of consecutive in-budget frames required after compilation settles. */
   readonly stableFrames?: number;
+  /**
+   * How long after first-use work settles the readiness still waits for sustained in-budget
+   * frames before resolving anyway. Default 10 000 ms.
+   *
+   * A host whose steady state runs entirely above `frameBudgetMs` would otherwise hold a loading
+   * screen open for as long as the game ran — the frame window must be bounded like every other
+   * launch-path wait, because a launch that is slower than it could be is a disappointment and a
+   * launch that never finishes is a bug.
+   */
+  readonly stableWindowMs?: number;
 }
 
 /**
@@ -21,16 +31,24 @@ export interface IStartupReadinessOptions {
 export const STARTUP_COMPILE_BUDGET_MS = 15_000;
 export const STARTUP_FRAME_BUDGET_MS = 50;
 export const STARTUP_STABLE_FRAMES = 5;
+/**
+ * How long the sustained-frame window may wait past compile settlement before resolving anyway.
+ * Above every observed healthy startup (five sub-50 ms frames inside one second) but short enough
+ * that a device running above budget forever still reaches its game in seconds, not never.
+ */
+export const STARTUP_STABLE_WINDOW_MS = 10_000;
 
 export class StartupReadiness {
   #compileBudgetMs: number;
   #frameBudgetMs: number;
   #stableFrameLimit: number;
+  #stableWindowMs: number;
   #compileSettled = false;
   #stableFrameCount = 0;
   #started = false;
   #ready = false;
   #compileTimer: ReturnType<typeof setTimeout> | undefined;
+  #windowTimer: ReturnType<typeof setTimeout> | undefined;
   #resolveReady: () => void = () => undefined;
   readonly #readyPromise: Promise<void>;
 
@@ -46,6 +64,10 @@ export class StartupReadiness {
     this.#stableFrameLimit = positiveInteger(
       options.stableFrames ?? STARTUP_STABLE_FRAMES,
       "stableFrames",
+    );
+    this.#stableWindowMs = positiveNumber(
+      options.stableWindowMs ?? STARTUP_STABLE_WINDOW_MS,
+      "stableWindowMs",
     );
     this.#readyPromise = new Promise<void>((resolve) => {
       this.#resolveReady = resolve;
@@ -100,8 +122,7 @@ export class StartupReadiness {
       this.#stableFrameCount = 0;
     }
     if (this.#stableFrameCount >= this.#stableFrameLimit) {
-      this.#ready = true;
-      this.#resolveReady();
+      this.#markReady();
     }
   }
 
@@ -110,6 +131,20 @@ export class StartupReadiness {
     this.#compileSettled = true;
     if (this.#compileTimer !== undefined) clearTimeout(this.#compileTimer);
     this.#compileTimer = undefined;
+    // The frame window is the last launch-path wait left, so it is bounded too: a host that never
+    // produces an in-budget frame still gets its world within `stableWindowMs`.
+    this.#windowTimer = setTimeout(() => {
+      this.#windowTimer = undefined;
+      this.#markReady();
+    }, this.#stableWindowMs);
+  }
+
+  #markReady(): void {
+    if (this.#ready) return;
+    this.#ready = true;
+    if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+    this.#windowTimer = undefined;
+    this.#resolveReady();
   }
 }
 
