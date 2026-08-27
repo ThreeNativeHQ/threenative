@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
 
+export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
 
 export type ScaffoldTemplate = string;

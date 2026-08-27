@@ -39,15 +39,16 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // The starter's name field also gained autoCapitalize/autoCorrect/spellCheck: a phone keyboard
 // rewrites what the player typed unless the field says not to.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Values recomputed after the prd-203 loading-gate restamp and the prd-219 starter/menu-flow
-  // bytes both landed on main, with the script that mirrors `scaffoldTreeHash`.
-  "action-rpg": "a9e4430f2a03555b1b578ffb35f4ffe4940579b50b1ec8c9d87bcec0d45ffc22",
-  defense: "d6c9b207cd81aab939481a126cec91678995a6f9fe5f4b6ed3cd945d23417248",
-  minimal: "b61a4ce22cf1f404186852b93d2aea1776f5f24f1a02959a73b13a902b2df509",
-  platformer: "b9572b2e470dc5d1c7f0c226c3e29c627afb8f8cc7addadcd682ecafb987b748",
-  racing: "d5c2239e7eb90401a17d918639ba57207d0dc3490704896af385001cc214c1e6",
-  shooter: "e57452d2f7c0f4cb7080e0b3d0946d9467b6ea6a87549cc56da9c6dee29e1087",
-  starter: "7527e5de08c8d6c9683d53408c39412c978958eb86799ca1995f3f746fc71ac5",
+  // Values recomputed after the engine-freshness dev guard joined every template's
+  // vite.config.ts (the stale-dev-server fix, 2026-08-27), with the script that mirrors
+  // `scaffoldTreeHash`.
+  "action-rpg": "005dab8d4bf7aa70c519caaafd101b8de34fe2642d943788d9001e412766cb47",
+  defense: "ce45c5e3916231121f509701221096fd4b372d8f1aca2efb1261fbc6be408d70",
+  minimal: "5a2e55fd77a28a779494a3f989b418e571f1f23be1621cc57a146e63ecbaa9e3",
+  platformer: "8bf2d182501f0590dd1393dde27e85225c5ed66a06e4f40dca6718bd0cabf437",
+  racing: "92ddc9eeebee86aa554b5fb1b2b509a65344aa8c20acc2ac4f7e488efdc902fd",
+  shooter: "f3a5edeb6e954f6366c72010f337fed90e92ce6dedf41592df53f2182b76ae30",
+  starter: "7986602817044c89ba1f7b4064ae05e78c71c7a65e36a6f8deb38f8b9ae434c2",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

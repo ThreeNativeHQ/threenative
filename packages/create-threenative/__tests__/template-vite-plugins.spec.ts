@@ -56,6 +56,20 @@ describe("template vite configs", () => {
     }
     expect(missing).toEqual([]);
   });
+
+  it("guards every template's dev server with the engine freshness plugin", async () => {
+    // Sandbox games install the engine from a tarball whose filename never changes, and a dev
+    // server booted before a reinstall serves the old build from memory — reported 2026-08-27
+    // as a regression of a fix that had already landed. Every template wires the guard, so the
+    // generated project's agent sees the stale build called out at boot instead of debugging
+    // yesterday's engine.
+    const unwired: string[] = [];
+    for (const template of await templates()) {
+      const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
+      if (!source.includes("createEngineFreshnessPlugin(")) unwired.push(`${template}: createEngineFreshnessPlugin()`);
+    }
+    expect(unwired).toEqual([]);
+  });
 });
 
 describe("template stylesheets", () => {
