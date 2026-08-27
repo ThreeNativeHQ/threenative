@@ -76,6 +76,10 @@ namespace canvas {
 
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 #include <webgpu/webgpu.h>
+
+// PRD-226 ablation arms — no-ops the hot backend entry points when TN_ABLATE_BACKEND is defined.
+// Must follow every webgpu declaration (it rewrites those names) and precede every handler body.
+#include "ablation.h"
 #if defined(MYSTRAL_WEBGPU_WGPU)
 #if __has_include(<webgpu/wgpu.h>)
 #include <webgpu/wgpu.h>

@@ -86,6 +86,9 @@ set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameL
 option(TN_WEBGPU_BATCHED_PASS "Record render-pass ops in JavaScript and replay them in one crossing at pass end" OFF)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
+# PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
+# picture by construction and must never ship. Asserted absent from every shipped preset.
+option(TN_ABLATE_BACKEND "PRD-226 arm A2: no-op the hot backend command entry points, keeping JS, trampoline and argument parsing intact" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
 
 if(TN_ENABLE_NATIVE_GLTF)
@@ -119,7 +122,14 @@ add_compile_definitions(
     TN_WEBGPU_BATCHED_PASS=$<BOOL:${TN_WEBGPU_BATCHED_PASS}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
+    TN_ABLATE_BACKEND=$<BOOL:${TN_ABLATE_BACKEND}>
 )
+
+if(TN_ABLATE_BACKEND)
+    message(WARNING
+        "TN_ABLATE_BACKEND is ON: this is a PRD-226 measurement build. It renders an incorrect "
+        "picture by construction and must not be shipped or used for any visual gate.")
+endif()
 
 # ============================================================================
 # Platform Detection
