@@ -323,7 +323,7 @@ reverse it is the owner's decision, not this document's** — the point of the P
 decision is now informed.
 
 **Answered 2026-08-16: the owner took V8 as the Android default**
-([PRD-130](../batch-26-08-16/PRD-130-android-default-js-engine.md)). Flipped and proved the same day
+([PRD-130](../mobile/PRD-130-android-default-js-engine.md)). Flipped and proved the same day
 in all three places the default is stated, both directions exercised on the Pixel 8 with the engine
 read from logcat: [`prd-130-phase-6-2026-08-16.md`](../../verification/prd-130-phase-6-2026-08-16.md).
 A fresh paired A/B on the same bundle put the top rung at 8.34 ms under V8 against 101.24 ms under

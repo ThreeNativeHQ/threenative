@@ -39,8 +39,8 @@ binding document.
 
 The repository currently records 148 done PRD files and 17 blocked PRD files. Active batches are
 [`agent-leverage/`](PRDs/agent-leverage/),
-[`batch-26-08-16/`](PRDs/batch-26-08-16/README.md), [`experiments/`](PRDs/experiments/),
-[`native-performance-fixes/`](PRDs/native-performance-fixes/),
+[`batch-26-08-16/`](PRDs/mobile/), [`experiments/`](PRDs/experiments/),
+[`performance/`](PRDs/performance/),
 [`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).
 The asset-pipeline series closed on 2026-08-22 as
 [`done/asset-pipeline/`](PRDs/done/asset-pipeline/README.md).
@@ -58,7 +58,7 @@ repository, along with the `hosting/` service that serves it (PRD-129). Nothing 
 is anything but MIT. The Studio PRDs stay here as the record of how it was built:
 [PRD-084](PRDs/done/PRD-084-threenative-studio.md),
 [PRD-085](PRDs/done/PRD-085-studio-wiring.md),
-[PRD-086](PRDs/PRD-086-studio-self-improvement-loop.md), and the
+[PRD-086](PRDs/done/PRD-086-studio-self-improvement-loop.md), and the
 [Studio hosting series](PRDs/studio-hosting/README.md) — all of them now describing work that
 lives elsewhere.
 

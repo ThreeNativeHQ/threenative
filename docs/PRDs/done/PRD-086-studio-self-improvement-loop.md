@@ -8,8 +8,8 @@ prd_contract: v1
 instruction the unattended loop hands to an agent every iteration, and it changes only when the
 bar changes. The harness it describes is `scripts/studio-probe.ts`,
 `scripts/studio-inspect.ts` and `scripts/studio-loop.ts`; the defects that motivated it are in
-[PRD-085](done/PRD-085-studio-wiring.md) and
-[`studio-wiring-2026-08-12.md`](../verification/studio-wiring-2026-08-12.md).
+[PRD-085](./PRD-085-studio-wiring.md) and
+[`studio-wiring-2026-08-12.md`](../../verification/studio-wiring-2026-08-12.md).
 
 **You are reading this because the loop gave you one failing check.** Fix that one thing. Not
 the architecture, not the file you happened to open, not a refactor you think is overdue. One

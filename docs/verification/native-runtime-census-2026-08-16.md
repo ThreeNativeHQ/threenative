@@ -48,7 +48,7 @@ gate now enforces what the census exists for: one judged verdict per counted are
 equality against the measured walk. Line drift shows up in `pnpm budgets` output as a trigger
 naming the drifted rows and the regeneration command.
 
-**Updated 2026-08-21 by [PRD-069](../PRDs/native-performance-fixes/PRD-069-per-draw-cost.md): +59 lines, 78,347 → 78,406.**
+**Updated 2026-08-21 by [PRD-069](../PRDs/performance/PRD-069-per-draw-cost.md): +59 lines, 78,347 → 78,406.**
 `src/` gained 14 lines (38,822 → 38,836) for the `TN_ANDROID_JS_PROFILE` flag that reports each
 frame's present on its first submit only, which removed a phantom ~2.6 ms/frame of native cost from
 the Pixel 8 profile; `scripts/` gained 21 (12,158 → 12,179) so the measurement script accepts the

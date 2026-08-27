@@ -900,7 +900,7 @@ recording all of the following in the same run:
    gap is in the WebGPU backend; if it is ~3×, the thread or the engine owns it.
 
 Discard the startup block explicitly — see
-[the loading-screen bug](../bugs/loading-screen-dismissed-before-scene-ready-2026-08-26.md), whose
+the loading-screen bug (record removed 2026-08-26 as obsolete), whose
 3× session-to-session swing silently corrupts whole-run averages — and record canvas backing-store
 size, `devicePixelRatio`, scene phase and warm-up for both arms, none of which the current Phase 0
 record preserves.
@@ -1108,7 +1108,7 @@ emitted from `emitAndroidJsNativeProfile` in `src/webgpu/bindings.cpp` as new ma
 
 | Record | Why it matters |
 | --- | --- |
-| [PRD-222 performance targets](../PRDs/PRD-222-performance-targets-per-platform.md) | Defines parity, the 30/58 fps Bayview bars, thermal validity, and device gates. |
+| [PRD-222 performance targets](../PRDs/performance/PRD-222-performance-targets-per-platform.md) | Defines parity, the 30/58 fps Bayview bars, thermal validity, and device gates. |
 | [Phase 0 Pixel 8 browser/native calibration](prd-222-2026-08-25.md) | Establishes 59.99 vs 19.15 fps on the same phone; evidence-retention limitations are explicit. |
 | [PRD-222 crossing-tax report and symbol correction](prd-222-2026-08-26.md) | Contains the raw attribution, then corrects the earlier unsymbolized interpretation. The correction outranks the opening diagnosis where they differ. |
 | [PRD-222 loop log](prd-222-loop-log.md) | Chronology F1–F13, iteration costs, upload-staging pair, and late bridge/latency arms. |

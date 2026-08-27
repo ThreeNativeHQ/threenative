@@ -1,6 +1,6 @@
 # Does the performance gate work on the emulator?
 
-2026-08-17. Asked because the regression gate added for [PRD-130](../PRDs/batch-26-08-16/PRD-130-android-default-js-engine.md)
+2026-08-17. Asked because the regression gate added for [PRD-130](../PRDs/mobile/PRD-130-android-default-js-engine.md)
 could only fire with a phone attached, which means it could never fire in CI.
 
 **Yes, and worse than on the phone. It is a tripwire with three working strands out of four.** Both

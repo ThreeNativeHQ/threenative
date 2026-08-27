@@ -1,6 +1,6 @@
 # Android engine size — what a phone actually downloads for V8
 
-2026-08-16. [PRD-130](../PRDs/batch-26-08-16/PRD-130-android-default-js-engine.md) Phase 3.
+2026-08-16. [PRD-130](../PRDs/mobile/PRD-130-android-default-js-engine.md) Phase 3.
 
 **The +25.6 MB the owner accepted is right.** It was arrived at by summing uncompressed native
 libraries — a different quantity from an artifact's size — and this measures it the other way, on

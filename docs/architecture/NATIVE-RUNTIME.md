@@ -9,7 +9,7 @@ re-record status here; it drifts.
 physical Android device (Pixel 8, arm64) has executed measured load tests; **no iOS hardware, no
 signed release build, and no published prebuilt distribution.** The phone runs are benchmark
 evidence, not a mobile-readiness claim — the qualification split is
-[PRD-128](../PRDs/batch-26-08-16/PRD-128-android-qualification-split.md).
+[PRD-128](../PRDs/mobile/PRD-128-android-qualification-split.md).
 **The native runtime is the host for cross-platform plumbing, while the game and its look
 stay in shared Three.js source; execution: PRD-047.**
 

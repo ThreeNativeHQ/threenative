@@ -21,8 +21,8 @@ itself rather than into a PRD's prose two days later.
 the hard half.
 
 **Blocks:** [PRD-117](../done/PRD-117-engine-load-test-godot.md) phone arm,
-[PRD-074](../native-performance-fixes/PRD-074-scene-collapse-regression-gate.md) Pixel 8 leg, and
-[PRD-066](../native-performance-fixes/PRD-066-android-device-frame-rate.md) Phases 2–5.
+[PRD-074](../performance/PRD-074-scene-collapse-regression-gate.md) Pixel 8 leg, and
+[PRD-066](../performance/PRD-066-android-device-frame-rate.md) Phases 2–5.
 
 **Does not block [PRD-118](../done/PRD-118-android-js-engine.md).** See §1 — PRD-118's retake needs a
 charged phone and no code at all.

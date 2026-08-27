@@ -13,7 +13,7 @@ a shim inside core), `threenative-sculpt`, and `threenative-engine`. What left i
 moved to a separate private repository (recorded in [`docs/README.md`](../README.md); PRDs
 [084](../PRDs/done/PRD-084-threenative-studio.md),
 [085](../PRDs/done/PRD-085-studio-wiring.md) and
-[086](../PRDs/PRD-086-studio-self-improvement-loop.md) remain as history), and its
+[086](../PRDs/done/PRD-086-studio-self-improvement-loop.md) remain as history), and its
 `scripts/studio-*` probes went with it. The owner's amendment stands either way: an agent edits
 plain TypeScript — a GUI that writes a scene is still closed.
 
