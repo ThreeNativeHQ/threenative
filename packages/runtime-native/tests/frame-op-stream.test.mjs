@@ -32,10 +32,11 @@ function records(buffer) {
   const view = new DataView(buffer);
   expect(view.getUint32(0, true)).toBe(0x544e4652);
   expect(view.getUint32(4, true)).toBe(1);
-  expect(view.getUint32(8, true)).toBe(buffer.byteLength);
+  const declaredBytes = view.getUint32(8, true);
+  expect(declaredBytes).toBeLessThanOrEqual(buffer.byteLength);
   const result = [];
   let cursor = 16;
-  while (cursor < buffer.byteLength) {
+  while (cursor < declaredBytes) {
     const bytes = view.getUint32(cursor + 4, true);
     result.push({ opcode: view.getUint32(cursor, true), cursor, bytes });
     expect(bytes).toBeGreaterThanOrEqual(8);
@@ -47,6 +48,15 @@ function records(buffer) {
 }
 
 describe("packed frame op stream", () => {
+  it("reuses its arena after the host synchronously drains a frame", () => {
+    const { queue, drain } = harness();
+    queue.writeBuffer({ _bufferId: 1 }, 0, new Uint32Array(1));
+    const first = drain();
+    queue.writeBuffer({ _bufferId: 1 }, 0, new Uint32Array(1));
+
+    expect(drain()).toBe(first);
+  });
+
   it("returns one packed buffer with eager upload bytes and ordered frame ops", () => {
     const { device, queue, drain } = harness();
     const source = new Uint32Array([1, 2, 3, 4]);

@@ -5,7 +5,7 @@
   const queue = host.queue;
   const magic = 0x544e4652;
   const version = 1;
-  let storage = new ArrayBuffer(65536);
+  let storage = new ArrayBuffer(1 << 20);
   let view = new DataView(storage);
   let cursor = 16;
   let opCount = 0;
@@ -110,7 +110,7 @@
       start + bytes > length
     )
       throw new RangeError("frame op stream: upload range exceeds source view");
-    return new Uint8Array(buffer, base + start, bytes).slice();
+    return new Uint8Array(buffer, base + start, bytes);
   };
   const renderPass = (encoderId, descriptor) => {
     const passId = nextId++;
@@ -412,9 +412,7 @@
     view.setUint32(4, version, true);
     view.setUint32(8, cursor, true);
     view.setUint32(12, opCount, true);
-    const frame = storage.slice(0, cursor);
-    storage = new ArrayBuffer(65536);
-    view = new DataView(storage);
+    const frame = storage;
     cursor = 16;
     opCount = 0;
     retained = [];

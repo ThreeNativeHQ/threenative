@@ -5603,7 +5603,9 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     if (!data || bytes < 16) { state->engine->throwException("frame op stream: truncated header"); return false; }
     PackedFrameReader r{data, bytes, 0, bytes, true};
     const uint32_t magic = r.u32(), version = r.u32(), declaredBytes = r.u32(), declaredOps = r.u32();
-    if (magic != 0x544e4652 || version != 1 || declaredBytes != bytes) { state->engine->throwException("frame op stream: invalid header"); return false; }
+    if (magic != 0x544e4652 || version != 1 || declaredBytes < 16 || declaredBytes > bytes) { state->engine->throwException("frame op stream: invalid header"); return false; }
+    r.size = declaredBytes;
+    r.recordEnd = declaredBytes;
     std::unordered_map<uint32_t, WGPUCommandEncoder> encoders;
     std::unordered_map<uint32_t, WGPURenderPassEncoder> renderPasses;
     std::unordered_map<uint32_t, WGPUCommandEncoder> renderOwners;
@@ -5628,11 +5630,11 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy"};
     uint32_t seen = 0;
     uint32_t replaySubmits = 0;
-    while (r.cursor < bytes && r.ok) {
+    while (r.cursor < declaredBytes && r.ok) {
         const size_t start = r.cursor;
-        r.recordEnd = bytes;
+        r.recordEnd = declaredBytes;
         const uint32_t opcode = r.u32(), recordBytes = r.u32();
-        if (!r.ok || opcode == 0 || opcode >= std::size(names) || recordBytes < 8 || (recordBytes & 7) || start + recordBytes > bytes) { fail("malformed record header"); break; }
+        if (!r.ok || opcode == 0 || opcode >= std::size(names) || recordBytes < 8 || (recordBytes & 7) || start + recordBytes > declaredBytes) { fail("malformed record header"); break; }
         r.recordEnd = start + recordBytes;
         if (state->captureFrameOpStreamTrace) {
             state->frameOpStreamLastOrder.emplace_back(names[opcode]);
@@ -5737,7 +5739,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                  !commandBuffers.empty())) {
         fail("frame ended with unfinished GPU objects");
     }
-    if (!r.ok || seen != declaredOps || r.cursor != bytes) {
+    if (!r.ok || seen != declaredOps || r.cursor != declaredBytes) {
         if (r.ok) fail("operation census mismatch");
         for (const auto& [id, pass] : renderPasses) {
             wgpuRenderPassEncoderEnd(pass);
