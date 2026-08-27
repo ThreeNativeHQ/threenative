@@ -1,0 +1,7 @@
+TN_ANDROID_JS_NATIVE:{"frame":225,"bindingNs":1,"calls":1,"threadCpuNs":1,"presentNs":0,"bridgeNs":1,"bridgeOverheadNs":1,"commands":{"drawIndexed":1},"commandNs":{"drawIndexed":1}}
+TN_ANDROID_JS_NATIVE:{"frame":226,"bindingNs":11,"calls":3,"threadCpuNs":100,"presentNs":10,"bridgeNs":30,"bridgeOverheadNs":9,"commands":{"drawIndexed":40},"commandNs":{"drawIndexed":11}}
+TN_ANDROID_JS_NATIVE:{"frame":226,"bindingNs":12,"calls":3,"threadCpuNs":110,"presentNs":0,"bridgeNs":33,"bridgeOverheadNs":12,"commands":{"drawIndexed":40},"commandNs":{"drawIndexed":12}}
+TN_ANDROID_JS_NATIVE:{"frame":226,"bindingNs":13,"calls":3,"threadCpuNs":120,"presentNs":0,"bridgeNs":36,"bridgeOverheadNs":15,"commands":{"drawIndexed":40},"commandNs":{"drawIndexed":13}}
+TN_ANDROID_JS_NATIVE:{"frame":227,"bindingNs":21,"calls":3,"threadCpuNs":200,"presentNs":20,"bridgeNs":60,"bridgeOverheadNs":18,"commands":{"drawIndexed":40},"commandNs":{"drawIndexed":21}}
+TN_ANDROID_JS_NATIVE:{"frame":227,"bindingNs":22,"calls":3,"threadCpuNs":220,"presentNs":0,"bridgeNs":66,"bridgeOverheadNs":24,"commands":{"drawIndexed":40},"commandNs":{"drawIndexed":22}}
+TN_ANDROID_JS_NATIVE:{"frame":227,"bindingNs":23,"calls":3,"threadCpuNs":240,"presentNs":0,"bridgeNs":72,"bridgeOverheadNs":30,"commands":{"drawIndexed":40},"commandNs":{"drawIndexed":23}}
