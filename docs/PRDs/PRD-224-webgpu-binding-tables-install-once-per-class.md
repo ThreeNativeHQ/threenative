@@ -76,15 +76,24 @@ kill switch. The cost is inside what binding bodies do after entry, not how many
 
 **Files (2):** `verify-desktop-core.mjs` runbook invocation (none added), verification record (NEW).
 
-- [ ] `gpubench.js` rerun on the current build: `createCommandEncoder` ≈ 3.8 µs sustained;
+- [x] `gpubench.js` rerun on the current build: `createCommandEncoder` ≈ 3.8 µs sustained;
       record current residuals for every class still on the legacy path.
-- [ ] Desktop `TN_FRAME_BUDGET` pair against the recorded native render.p50 pair (22.2 ms,
+      ([record](../verification/prd-224-phase1-pricing-2026-08-28.md) — measures **0.85 µs**,
+      below the expected 3.8 and at Chrome parity; residuals: `writeBuffer` ~1.1 µs flat,
+      control 5 ns.)
+- [x] Desktop `TN_FRAME_BUDGET` pair against the recorded native render.p50 pair (22.2 ms,
       Chrome 7.6–8.9 ms). Same display lane both arms — Xvfb and `:0` are different meters.
       Expect render.p50 to move materially below 22.2 ms. If it does NOT move, stop: the
       installed tax is real but off the critical path, and widening is refused until that is
       explained.
-- [ ] Whole-run averages are banned (see the loading-screen bug's 3× startup swing); frames
-      226–899 only.
+      ([record](../verification/prd-224-phase1-pricing-2026-08-28.md) — ran on `:0` against a
+      sha256'd `af36d3f3` control host; **NO-MOVE**, +0.25 ± ~0.5 ms across three matched
+      pairs; the stop rule's explanation is priced there. `97a4c808`'s mutation-OFF arm
+      agrees: flat. The recorded 22.2 ms itself no longer reproduces for non-PRD reasons —
+      machine state ~2.3× plus game-bundle drift, both measured in the record.)
+- [x] Whole-run averages are banned (see the loading-screen bug's 3× startup swing); frames
+      226–899 only. (Protocol followed throughout: per-window reporting only, w1 discarded,
+      w2 mapped to the 226–899 band; the mapping is written down in the record.)
 
 ### Phase 2 — Widen `GPURenderPassEncoder`
 
@@ -92,8 +101,13 @@ kill switch. The cost is inside what binding bodies do after entry, not how many
 single-site tax. It also needs the paired-state ruling (encoder↔pass pairing must resolve from
 receiver + argument, lifetime re-derived, not assumed).
 
-- [ ] `gpubench.js` extended to price `beginRenderPass`; green means an order-of-magnitude fall
-      (≥10×), pasted.
+- [x] `gpubench.js` extended to price `beginRenderPass`; green means an order-of-magnitude fall
+      (≥10×), pasted. ([record](../verification/prd-224-phase1-pricing-2026-08-28.md) —
+      extended and versioned at `ed1bb226`; same-file fall measures **8.5–9.9×** at matched
+      load: close to an order of magnitude, **not clearly ≥10× on the minimal-descriptor
+      probe**, and the record says so rather than rounding; `97a4c808`'s mutation-OFF rerun
+      reads ~9.7×, agreeing. The recorded in-game 154 748 ns red is a different meter and is
+      context, not evidence.)
 - [ ] Paired-state rows migrate explicitly; `state->encoderRenderPassMap` ruling written down.
 - [ ] Frame pair repeated; delta reported even when small.
 
