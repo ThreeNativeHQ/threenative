@@ -45,11 +45,11 @@ inline void sink(Ts&&...) {}
 // Uniform and attribute uploads — the highest-frequency single crossing on this scene.
 #define wgpuQueueWriteBuffer(...) TN_ABLATE_SINK(__VA_ARGS__)
 
-// Render bundles record the same commands through a second encoder type.
-#define wgpuRenderBundleEncoderSetPipeline(...) TN_ABLATE_SINK(__VA_ARGS__)
-#define wgpuRenderBundleEncoderSetBindGroup(...) TN_ABLATE_SINK(__VA_ARGS__)
-#define wgpuRenderBundleEncoderSetVertexBuffer(...) TN_ABLATE_SINK(__VA_ARGS__)
-#define wgpuRenderBundleEncoderSetIndexBuffer(...) TN_ABLATE_SINK(__VA_ARGS__)
-#define wgpuRenderBundleEncoderDrawIndexed(...) TN_ABLATE_SINK(__VA_ARGS__)
+// Render bundles are deliberately NOT ablated. A first attempt no-oped their setPipeline while
+// wgpuRenderBundleEncoderDraw still recorded, and wgpuRenderBundleEncoderFinish aborted the process
+// on "Render pipeline must be set" -- the arm died in ~2 s on every run. Bundles also cost nothing
+// on the measured scene (bundleDrawIndexed 0, executeBundles 0 per frame), so ablating them buys no
+// signal and only risks an invalid command stream. The rule this encodes: an arm must remove a
+// *complete* recording path or none of it, never half of one.
 
 #endif  // TN_ABLATE_BACKEND
