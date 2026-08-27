@@ -65,6 +65,7 @@ void runContract() {
             const pass = encoder.beginComputePass();
             pass.end();
             device.queue.submit([encoder.finish()]);
+            src.destroy(); // must stay ordered after submit; direct destruction invalidates replay.
             globalThis.__tnFrameCallbackRan = true;
           });
         })())JS",
@@ -86,7 +87,7 @@ void runContract() {
     const std::vector<std::string> expectedOrder = {
         "writeBuffer", "createCommandEncoder", "clearBuffer", "copyBufferToBuffer",
         "beginRenderPass", "render.end",
-        "beginComputePass", "compute.end", "finish", "submit"};
+        "beginComputePass", "compute.end", "finish", "submit", "buffer.destroy"};
     if (state->frameOpStreamLastOrder != expectedOrder) {
         std::cerr << "observed order:";
         for (const auto& op : state->frameOpStreamLastOrder) std::cerr << " " << op;
