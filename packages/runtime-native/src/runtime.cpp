@@ -1226,8 +1226,8 @@ private:
 
                 // Store callback
                 int id = nextRafId_++;
-                jsEngine_->freezeHandle(args[0]);
-                rafCallbacks_.push_back({id, args[0]});
+                const auto callback = jsEngine_->retainHandle(args[0]);
+                rafCallbacks_.push_back({id, callback});
 
                 return jsEngine_->newNumber(id);
             })
@@ -1338,7 +1338,7 @@ private:
         }
 
         int id = nextTimerId_++;
-        jsEngine_->freezeHandle(callback);
+        callback = jsEngine_->retainHandle(callback);
 
         auto ctx = std::make_unique<UvTimerContext>();
         ctx->id = id;
@@ -1464,12 +1464,12 @@ private:
                 }
 
                 int id = nextTimerId_++;
-                jsEngine_->freezeHandle(args[0]);
+                const auto callback = jsEngine_->retainHandle(args[0]);
 
                 auto targetTime = std::chrono::high_resolution_clock::now() +
                                   std::chrono::milliseconds(delay);
 
-                timerCallbacks_.push_back({id, args[0], targetTime, 0, false});
+                timerCallbacks_.push_back({id, callback, targetTime, 0, false});
 
                 return jsEngine_->newNumber(id);
             })
@@ -1510,12 +1510,12 @@ private:
                 if (delay < 1) delay = 1;
 
                 int id = nextTimerId_++;
-                jsEngine_->freezeHandle(args[0]);
+                const auto callback = jsEngine_->retainHandle(args[0]);
 
                 auto targetTime = std::chrono::high_resolution_clock::now() +
                                   std::chrono::milliseconds(delay);
 
-                timerCallbacks_.push_back({id, args[0], targetTime, delay, false});
+                timerCallbacks_.push_back({id, callback, targetTime, delay, false});
 
                 return jsEngine_->newNumber(id);
             })
@@ -1753,8 +1753,7 @@ private:
                 std::string path = resolveFetchFilePath(jsEngine_->toString(args[0]));
 
                 // Keep the callback alive until the asynchronous read completes.
-                auto callback = args[1];
-                jsEngine_->freezeHandle(callback);
+                const auto callback = jsEngine_->retainHandle(args[1]);
 
                 // Capture jsEngine pointer for the callback
                 auto* engine = jsEngine_.get();
@@ -1911,8 +1910,7 @@ private:
                 }
 
                 // Keep the callback alive until the asynchronous request completes.
-                auto callback = args[2];
-                jsEngine_->freezeHandle(callback);
+                const auto callback = jsEngine_->retainHandle(args[2]);
 
                 // Capture jsEngine pointer for the callback
                 auto* engine = jsEngine_.get();
@@ -2417,7 +2415,7 @@ private:
                     }
                 }
 
-                jsEngine_->freezeHandle(callback);
+                callback = jsEngine_->retainHandle(callback);
                 listeners.push_back({callback, useCapture});
 
                 // std::cout << "[DOM] canvas.addEventListener('" << eventType << "')" << std::endl;
@@ -2557,10 +2555,9 @@ private:
                 if (args.size() < 2) return jsEngine_->newUndefined();
 
                 std::string eventType = jsEngine_->toString(args[0]);
-                js::JSValueHandle callback = args[1];
+                js::JSValueHandle callback = jsEngine_->retainHandle(args[1]);
                 bool useCapture = args.size() > 2 ? jsEngine_->toBoolean(args[2]) : false;
 
-                jsEngine_->freezeHandle(callback);
                 eventListeners_["document"][eventType].push_back({callback, useCapture});
 
                 return jsEngine_->newUndefined();
@@ -2735,10 +2732,9 @@ private:
                 if (args.size() < 2) return jsEngine_->newUndefined();
 
                 std::string eventType = jsEngine_->toString(args[0]);
-                js::JSValueHandle callback = args[1];
+                js::JSValueHandle callback = jsEngine_->retainHandle(args[1]);
                 bool useCapture = args.size() > 2 ? jsEngine_->toBoolean(args[2]) : false;
 
-                jsEngine_->freezeHandle(callback);
                 eventListeners_["window"][eventType].push_back({callback, useCapture});
 
                 return jsEngine_->newUndefined();

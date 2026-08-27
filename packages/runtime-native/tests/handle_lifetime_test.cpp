@@ -82,8 +82,7 @@ int main(int argc, char** argv) {
     auto retainingCallback = engine->newFunction("retain", [enginePtr, &retainedCallbackArgument](
         void*, const std::vector<mystral::js::JSValueHandle>& args) {
         if (!args.empty()) {
-            retainedCallbackArgument = args[0];
-            enginePtr->freezeHandle(retainedCallbackArgument);
+            retainedCallbackArgument = enginePtr->retainHandle(args[0]);
         }
         return enginePtr->newUndefined();
     });

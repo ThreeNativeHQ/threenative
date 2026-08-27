@@ -26,6 +26,7 @@ namespace js {
 struct JSValueHandle {
     void* ptr = nullptr;
     void* ctx = nullptr;  // Context needed for some operations
+    bool borrowed = false;  // Callback-local value; valid only for the synchronous call.
 };
 
 // PRD-222 attribution probe: totals for every JS -> native callback crossing, incremented only
@@ -373,6 +374,12 @@ public:
      * Keep a value alive beyond the current frame.
      */
     virtual void freezeHandle(JSValueHandle value) = 0;
+
+    /** Return an owned handle that remains valid after the current native callback returns. */
+    virtual JSValueHandle retainHandle(JSValueHandle value) {
+        freezeHandle(value);
+        return value;
+    }
 
     /**
      * Release one handle owned by this Engine.

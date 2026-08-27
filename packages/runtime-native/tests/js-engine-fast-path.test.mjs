@@ -23,6 +23,10 @@ const wrapperFactories = readFileSync(
   fileURLToPath(new URL("../src/webgpu/wrapper_factories.cpp", import.meta.url)),
   "utf8",
 );
+const runtime = readFileSync(
+  fileURLToPath(new URL("../src/runtime.cpp", import.meta.url)),
+  "utf8",
+);
 
 test("all engine property writes create ordinary own data properties", () => {
   const v8SetProperty = v8Engine.match(
@@ -103,6 +107,20 @@ test("C++-only WebGPU metadata stays out of JavaScript property bags", () => {
       "utf8",
     ),
     /_textureId/u,
+  );
+});
+
+test("V8 native callbacks borrow local arguments until retention is requested", () => {
+  const nativeCallback = v8Engine.match(
+    /static void nativeCallback\([\s\S]*?static void nativeMethodCallback/u,
+  )?.[0] ?? "";
+  assert.doesNotMatch(nativeCallback, /acquirePersistent\(isolate, info\[i\]\)/u);
+  assert.match(nativeCallback, /callbackLocalsPool_/u);
+  assert.match(v8Engine, /retainHandle\(JSValueHandle value\) override/u);
+  assert.doesNotMatch(runtime, /freezeHandle\(callback\)/u);
+  assert.ok(
+    (runtime.match(/retainHandle\((?:args\[[012]\]|callback)\)/gu) ?? []).length >= 9,
+    "every callback stored beyond its native call must be retained",
   );
 });
 
