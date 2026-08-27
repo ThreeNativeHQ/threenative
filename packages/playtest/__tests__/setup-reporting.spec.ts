@@ -2,9 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   applyScenarioSetup,
-  failureReport,
-  requestedSetupRecords,
 } from "../src/runner/steps.js";
+import { failureReport, requestedSetupRecords } from "../src/runner/shared.js";
 import { buildReport } from "../src/runner/runner-support.js";
 import type { IPlaytestBridgeClient, PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 import type {

@@ -10,6 +10,7 @@ import {
   deviceMailboxPaths,
   type IDevicePlaytestTransport,
 } from "./deviceTransport.js";
+import { interruptedPlaytestError } from "./shared.js";
 import type { IStandalonePlaytestReport } from "./runner.js";
 
 export interface IDesktopPlaytestDependencies {
@@ -92,7 +93,7 @@ export async function runDesktopPlaytest(
       abortSignal: abortController.signal,
       abortCleanup: awaitSignalCleanup,
     });
-    if (abortController.signal.aborted) throw new Error("Desktop playtest interrupted by signal.");
+    if (abortController.signal.aborted) throw interruptedPlaytestError("desktop");
   } catch (error) {
     executionFailed = true;
     executionError = error;

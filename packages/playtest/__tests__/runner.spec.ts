@@ -1400,7 +1400,7 @@ test("a signal requests shared managed-server cleanup before exiting", async () 
   const setExitCode = vi.fn((code: number) => events.push(`exit-code:${code}`));
   const exit = vi.fn((code: number) => events.push(`exit:${code}`));
 
-  await handlePlaytestSignal(teardown, setExitCode, exit);
+  await handlePlaytestSignal(teardown, setExitCode, exit, "browser", () => undefined);
 
   expect(teardown).toHaveBeenCalledWith(true);
   expect(events).toEqual(["teardown:true", "teardown-settled", "exit-code:2", "exit:2"]);

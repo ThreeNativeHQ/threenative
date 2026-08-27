@@ -5,7 +5,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { discoverAdb } from "./android.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { DeviceMetricsRecorder, type IPlaytestDeviceMetricsObservation } from "./deviceMetrics.js";
-import { findFreePort } from "./sampling.js";
+import { findFreePort } from "./server.js";
 import { runStandalonePlaytest, type IStandalonePlaytestReport } from "./runner.js";
 import { runWithRemoteBrowser } from "./browserSession.js";
 

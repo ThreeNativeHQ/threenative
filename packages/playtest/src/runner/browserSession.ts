@@ -4,7 +4,7 @@ import type { IPlaytestScenario } from "../index.js";
 import type { IPlaytestBridgeClient } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import type { IPlaytestDeviceMetricsObservation } from "./deviceMetrics.js";
-import { boundedTeardownStep, openPageAndConnectBridge, settledTeardownValue } from "./sampling.js";
+import { boundedTeardownStep, openPageAndConnectBridge, settledTeardownValue } from "./server.js";
 
 /** Internal lifecycle contract for a browser the runner attaches to but does not own. */
 export interface IRemoteBrowserSession {

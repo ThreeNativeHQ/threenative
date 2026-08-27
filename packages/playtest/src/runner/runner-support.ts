@@ -1,4 +1,4 @@
-import { length } from "./sampling.js";
+import { entityPosition, isAnonymousMovementScenario, length, subtract } from "./shared.js";
 import type { IPlaytestDeviceMetricsObservation } from "./deviceMetrics.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -61,9 +61,10 @@ import {
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 // Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 import { componentObservations, buildObservations, collectTrivialityOptOuts } from "./steps.js";
-import { isAnonymousMovementScenario, observedMovementSample, entityPosition, entityRotation, subtract, resourceObservations, normalizedRuntimeDiagnostics, cameraReport, evaluateCamera } from "./sampling.js";
-import type { RunnerConsoleEntry } from "./runner.js";
-import type { IStandalonePlaytestReport, ILabeledPlaytestSample, IMovementSampleInterval } from "./runner.js";
+import { observedMovementSample, entityRotation, resourceObservations, normalizedRuntimeDiagnostics } from "./sampling.js";
+import { cameraReport, evaluateCamera } from "./camera.js";
+import type { IStandalonePlaytestReport } from "./shared.js";
+import type { ILabeledPlaytestSample, IMovementSampleInterval, RunnerConsoleEntry } from "./shared.js";
 // Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 
 export function preflightDisplay(
@@ -320,4 +321,3 @@ export function buildReport(
     url: config.url,
   };
 }
-

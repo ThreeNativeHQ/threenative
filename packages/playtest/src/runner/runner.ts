@@ -1,12 +1,27 @@
-import { applyScenarioSetup, waitFrames, observedEntityIds, observedResourceIds, captureVisualSurface, runStep, screenshotObservations, accumulatedPathLength, failureReport, sampleAfterTransition } from "./steps.js";
+import { applyScenarioSetup, waitFrames, captureVisualSurface, runStep, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
-import type { IPageLifecycle } from "./sampling.js";
-import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, isAnonymousMovementScenario, readCaptureProvenance, entityPosition, sampleHud, safePart, pairObservations, normalizedRuntimeDiagnostics, pageLifecycleDiagnostic, findFreePort, withPort } from "./sampling.js";
+import type { IPageLifecycle } from "./server.js";
+import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
+import { readCaptureProvenance, sampleHud, pairObservations, normalizedRuntimeDiagnostics } from "./sampling.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart } from "./shared.js";
+import {
+  failedDiagnosticsAssertion,
+  ManagedServerError,
+  MAX_FIXED_STEP_STARTUP_RETRIES,
+  STOPPED_LOOP_ERROR,
+  UNHANDLED_REJECTION_PREFIX,
+} from "./shared.js";
+import type {
+  IRunStepSamples,
+  IStandalonePlaytestReport,
+  ILabeledPlaytestSample,
+  IMovementSampleInterval,
+  RunnerConsoleEntry,
+} from "./shared.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { PNG } from "pngjs";
 import {
   evaluateRichPlaytestAssertions,
@@ -16,21 +31,10 @@ import {
   playtestStepWaitTicks,
   resolveDiagnosticsPolicy,
   type IPlaytestArtifactRequest,
-  type IPlaytestAssertionResult,
   type IPlaytestCaptureProvenance,
-  type IPlaytestDiagnosticsPolicy,
-  type IPlaytestDiagnostic,
   type IPlaytestFramebufferCoverageObservation,
-  type IPlaytestObservationSnapshot,
-  type IPlaytestObservations,
-  type IPlaytestPathAssertion,
-  type IPlaytestProtocolDiagnostic,
-  type IPlaytestReport,
-  type IPlaytestSampleRequest,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
-  type IPlaytestSetupRequest,
-  type IPlaytestTrivialityOptOut,
   type PlaytestVec3,
 } from "../index.js";
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
@@ -73,24 +77,10 @@ export { preflightDisplay, buildReport } from './runner-support.js';
 export { captureVisualSurface } from './steps.js';
 export { advanceFixedStep, playtestStepDrivesMovement } from './steps.js';
 export { isRuntimeReadout } from './sampling.js';
-export { resolveManagedServerCommand, substituteManagedPort, boundedTeardownStep, pageLifecycleDiagnostic } from './sampling.js';
+export { ManagedServerError, failedDiagnosticsAssertion } from './shared.js';
+export { resolveManagedServerCommand, substituteManagedPort, boundedTeardownStep, pageLifecycleDiagnostic } from './server.js';
+export type { IStandalonePlaytestReport, ILabeledPlaytestSample, IMovementSampleInterval, IRunStepSamples, RunnerConsoleEntry } from './shared.js';
 export { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
-
-export class ManagedServerError extends Error {
-  constructor(readonly diagnostic: IPlaytestProtocolDiagnostic) {
-    super(diagnostic.message);
-  }
-}
-
-export interface IStandalonePlaytestReport extends IPlaytestReport {
-  artifactDirectory: string;
-  pass: boolean;
-  runtime: "native" | "web";
-  scenario: string;
-  target: string;
-  trivialityOptOutCount: number;
-  url: string;
-}
 
 export async function handlePlaytestSignal(
   teardown: (stopManagedServer: boolean) => Promise<void>,
@@ -100,25 +90,17 @@ export async function handlePlaytestSignal(
   exit: (code: number) => void = (code) => {
     process.exit(code);
   },
+  target = "browser",
+  writeMessage: (message: string) => void = (message) => {
+    process.stderr.write(`${message}\n`);
+  },
 ): Promise<void> {
   await teardown(true).catch(() => undefined);
+  writeMessage(interruptedPlaytestError(target).message);
   setExitCode(2);
   exit(2);
 }
 
-export function failedDiagnosticsAssertion(policy: IPlaytestDiagnosticsPolicy): IPlaytestAssertionResult {
-  return {
-    details: {
-      consoleErrors: 0,
-      networkErrors: 0,
-      policy,
-      reason: "not-evaluated",
-      runtimeDiagnostics: 0,
-    },
-    id: "diagnostics",
-    pass: false,
-  };
-}
 
 export async function writeCaptureProvenance(
   artifactDirectory: string,
@@ -157,34 +139,6 @@ export async function writeObservationArtifacts(
     written.push(name);
   }
   return written;
-}
-
-export interface ILabeledPlaytestSample {
-  label: string;
-  signals: unknown[];
-  snapshot: IPlaytestObservationSnapshot;
-}
-
-export type RunnerConsoleEntry = {
-  source?: "browser-console" | "page-error" | "unhandled-rejection";
-  text: string;
-  type: string;
-};
-
-export const UNHANDLED_REJECTION_PREFIX = "__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:";
-export const MAX_FIXED_STEP_STARTUP_RETRIES = 120;
-export const STOPPED_LOOP_ERROR = "Cannot advance a stopped loop.";
-
-export interface IMovementSampleInterval {
-  after: IPlaytestObservationSnapshot;
-  before: IPlaytestObservationSnapshot;
-  inputDriven: boolean;
-}
-
-export interface IRunStepSamples {
-  afterInput?: IPlaytestObservationSnapshot;
-  afterStep?: IPlaytestObservationSnapshot;
-  inputDriven: boolean;
 }
 
 export interface IStandalonePlaytestRunOptions {
@@ -258,7 +212,12 @@ async function runStandalonePlaytestInternal(
     if (stopManagedServerOnTeardown) await stopServer();
   };
   const handleSignal = (): void => {
-    void handlePlaytestSignal((stopManagedServerOnSignal) => teardown(stopManagedServerOnSignal));
+    void handlePlaytestSignal(
+      (stopManagedServerOnSignal) => teardown(stopManagedServerOnSignal),
+      undefined,
+      undefined,
+      activeConfig.target ?? "browser",
+    );
   };
   process.once("SIGINT", handleSignal);
   process.once("SIGTERM", handleSignal);
@@ -664,4 +623,4 @@ export async function resolveManagedServerConfig(
   return { ...config, port, url: withPort(config.url, port) };
 }
 
-export { openPageAndConnectBridge } from './sampling.js';
+export { openPageAndConnectBridge } from './server.js';
