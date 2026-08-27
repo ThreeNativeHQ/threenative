@@ -14,6 +14,7 @@ const exampleRoot = join(workspaceRoot, "examples", "native-smoke");
 const bundle = join(exampleRoot, "dist", "native-smoke.js");
 const scenario = join(exampleRoot, "playtests", "loading-screen-desktop.playtest.json");
 const FIXED_STEP_WALL_WAITS_MS = [0, 1_000, 3_000];
+const LOADING_PROOF_BACKDROP_COLOR = 0x101820;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -64,7 +65,7 @@ function buildSmokeBundle() {
   return run("pnpm", ["--filter", "threenative-native-smoke", "build"]);
 }
 
-function countColor(path, color = 0xff00ff) {
+function countColor(path, color = LOADING_PROOF_BACKDROP_COLOR) {
   const png = PNG.sync.read(readFileSync(path));
   const red = (color >> 16) & 0xff;
   const green = (color >> 8) & 0xff;
@@ -78,14 +79,14 @@ function countColor(path, color = 0xff00ff) {
   return matched;
 }
 
-function inspectDismissedOverlay(path) {
-  const overlayPixels = countColor(path);
-  if (overlayPixels >= 256) {
+function inspectDismissedLoadingSurface(path) {
+  const loadingPixels = countColor(path);
+  if (loadingPixels >= 256) {
     throw new Error(
-      `canvas-layer overlay was still visible in settled screenshot ${path}: ${overlayPixels} magenta pixels`,
+      `loading surface was still visible in settled screenshot ${path}: ${loadingPixels} backdrop pixels`,
     );
   }
-  return { overlayPixels };
+  return { loadingPixels };
 }
 
 function requireMarkers(consolePath) {
@@ -205,11 +206,15 @@ async function runLoadingPlaytest() {
     const settledScreenshot = join(artifactDirectory, "startup-settled.png");
     const consolePath = join(artifactDirectory, "console.json");
     inspectScreenshot(startupScreenshot);
-    const startupOverlay = inspectOverlay(startupScreenshot);
+    const startupSurface = inspectOverlay(startupScreenshot, {
+      color: LOADING_PROOF_BACKDROP_COLOR,
+    });
     inspectScreenshot(midScreenshot);
-    const midOverlay = inspectOverlay(midScreenshot);
+    const midSurface = inspectOverlay(midScreenshot, {
+      color: LOADING_PROOF_BACKDROP_COLOR,
+    });
     inspectScreenshot(settledScreenshot);
-    const settledOverlay = inspectDismissedOverlay(settledScreenshot);
+    const settledSurface = inspectDismissedLoadingSurface(settledScreenshot);
     const markers = requireMarkers(consolePath);
     const evidence = {
       artifactDirectory,
@@ -217,9 +222,9 @@ async function runLoadingPlaytest() {
       markers,
       pass: true,
       screenshots: {
-        settled: { ...settledOverlay, path: settledScreenshot },
-        midStall: { ...midOverlay, path: midScreenshot },
-        startup: { ...startupOverlay, path: startupScreenshot },
+        settled: { ...settledSurface, path: settledScreenshot },
+        midStall: { loadingPixels: midSurface.overlayPixels, path: midScreenshot },
+        startup: { loadingPixels: startupSurface.overlayPixels, path: startupScreenshot },
       },
     };
     writeFileSync(join(artifactDirectory, "loading-proof.json"), `${JSON.stringify(evidence, null, 2)}\n`);
@@ -239,7 +244,7 @@ async function main() {
   try {
     const evidence = await runLoadingPlaytest();
     console.info(
-      `desktop loading playtest proof passed: ${evidence.screenshots.startup.overlayPixels} startup overlay pixels, ${evidence.screenshots.settled.overlayPixels} settled overlay pixels`,
+      `desktop loading playtest proof passed: ${evidence.screenshots.startup.loadingPixels} startup loading pixels, ${evidence.screenshots.settled.loadingPixels} settled loading pixels`,
     );
     console.info(`desktop loading proof artifacts: ${evidence.artifactDirectory}`);
   } catch (error) {

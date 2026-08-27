@@ -76,6 +76,7 @@ declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
 export const OVERLAY_COLOR = 0xff00ff;
 export const OVERLAY_SIZE = 64;
 export const OVERLAY_INSET = 16;
+const LOADING_PROOF_OVERLAY_COLOR = 0x000000;
 const PROOF_BACKDROP_COLOR = 0x101820;
 const PROOF_ACCENT_COLORS = [0x00ffff, 0xffff00, 0x00ff00, 0xff8800, 0x4488ff, 0xffffff, 0x8800ff];
 const LOADING_PROOF_COMPILE_TIMEOUT_MS = 3_000;
@@ -288,7 +289,11 @@ class NativeSmoke extends Scene<ISmokeState> {
     // a magenta pixel there means the overlay pass survived. `verify-desktop-core.mjs` asserts it.
     const overlay = new Mesh(
       new PlaneGeometry(OVERLAY_SIZE, OVERLAY_SIZE),
-      new MeshBasicMaterial({ color: OVERLAY_COLOR, depthTest: false, depthWrite: false }),
+      new MeshBasicMaterial({
+        color: __TN_LOADING_PROOF__ ? LOADING_PROOF_OVERLAY_COLOR : OVERLAY_COLOR,
+        depthTest: false,
+        depthWrite: false,
+      }),
     );
     overlay.frustumCulled = false;
     ctx.canvasLayer.scene.add(overlay);
