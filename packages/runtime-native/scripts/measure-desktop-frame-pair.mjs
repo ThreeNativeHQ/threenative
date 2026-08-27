@@ -139,6 +139,10 @@ function validateEligibleSample(sample) {
   ]) {
     finiteNonNegative(sample[field], field);
   }
+  const presentWorkNs = finiteNonNegative(
+    sample.presentThreadCpuNs ?? sample.presentNs,
+    sample.presentThreadCpuNs === undefined ? "presentNs" : "presentThreadCpuNs",
+  );
   const commands = requireObject(sample.commands, "commands");
   const commandTimes = requireObject(sample.commandNs, "commandNs");
   const indexedDraws =
@@ -156,7 +160,7 @@ function validateEligibleSample(sample) {
   if (!Number.isInteger(submits) || submits <= 0) {
     throw new DesktopFramePairError("TN_DESKTOP_PAIR_INVALID_NUMBER:submits");
   }
-  return { ...sample, commandNs, indexedDraws, submits };
+  return { ...sample, commandNs, indexedDraws, presentWorkNs, submits };
 }
 
 function summarizeFrame(frame, samples) {
@@ -180,7 +184,7 @@ function summarizeFrame(frame, samples) {
     frame,
     indexedDraws,
     submits,
-    workNs: sum("threadCpuNs") - sum("presentNs"),
+    workNs: sum("threadCpuNs") - sum("presentWorkNs"),
   };
 }
 
@@ -373,7 +377,7 @@ export function runPair(options, dependencies = {}) {
       minimumIndexedDrawsExclusive: MINIMUM_INDEXED_DRAWS,
       minimumSubmits: MINIMUM_SUBMITS,
       warmup: "discard global launches 1 and 2",
-      work: "sum(threadCpuNs)-sum(presentNs)",
+      work: "sum(threadCpuNs)-sum(presentThreadCpuNs ?? presentNs)",
     },
     runs: [],
     schemaVersion: 1,

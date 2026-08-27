@@ -695,6 +695,7 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"threadCpuNs\":" << renderThreadCpuNs
            << ",\"submitPollNs\":" << submitPollNs
            << ",\"presentNs\":" << presentNs
+           << ",\"presentThreadCpuNs\":" << state->lastPresentThreadCpuNs
            << ",\"frame\":" << state->frameEndCount
            << ",\"commands\":{\"setPipeline\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetPipeline)]
            << ",\"setBindGroup\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetBindGroup)]
@@ -7255,9 +7256,15 @@ static void presentPendingSurface(BindingsState* state) {
     state->presentCount += 1;
     if (state->verboseLogging) std::cout << "[WebGPU] Presenting surface" << std::endl;
     const auto presentStart = std::chrono::steady_clock::now();
+    const uint64_t presentThreadCpuStart = readRenderThreadCpuNs();
     const bool presented = state->requiresSrgbPresentationBridge
         ? presentLinearTextureToSrgbSurface(state, state->currentTextureView)
         : (wgpuSurfacePresent(state->surface), true);
+    const uint64_t presentThreadCpuEnd = readRenderThreadCpuNs();
+    state->lastPresentThreadCpuNs =
+        presentThreadCpuEnd > presentThreadCpuStart
+            ? presentThreadCpuEnd - presentThreadCpuStart
+            : 0;
     state->lastPresentNs = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - presentStart

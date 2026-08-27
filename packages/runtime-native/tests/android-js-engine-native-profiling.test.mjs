@@ -119,6 +119,7 @@ test("native profiling reports direct and bundled render commands per submit", (
     "bindingNs",
     "submitPollNs",
     "presentNs",
+    "presentThreadCpuNs",
   ]) {
     assert.ok(marker.includes(`\\\"${field}\\\"`), `profile marker must contain ${field}`);
   }
@@ -126,9 +127,8 @@ test("native profiling reports direct and bundled render commands per submit", (
   assert.match(bindings, /androidJsProfileBufferRegistry/u);
   assert.equal(
     (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
-    12,
-    "render commands, queue uploads, and render-pass finalization must be timed independently; "
-      + "the batched pass replay ends its own pass on both the replayed and fallback paths",
+    19,
+    "direct and packed-replay commands, queue uploads, and render-pass finalization must be timed independently",
   );
   assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
 

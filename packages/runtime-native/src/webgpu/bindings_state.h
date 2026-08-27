@@ -226,6 +226,7 @@ struct BindingsState {
     bool surfaceRenderPassEnded = false;
     bool framePresentPending = false;
     uint64_t lastPresentNs = 0;
+    uint64_t lastPresentThreadCpuNs = 0;
     // Render-thread CPU clock at the previous profile emission. Wall-clock phase timings on a
     // FIFO-presented surface are mostly vblank wait; the delta of this clock is the work.
     uint64_t lastRenderThreadCpuNs = 0;

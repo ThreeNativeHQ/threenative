@@ -93,6 +93,12 @@ test("one batched candidate marker accounts for all submits while legacy markers
   assert.equal(legacy.frames[0].submits, 3);
 });
 
+test("batched work subtracts present CPU time instead of incompatible present wall time", () => {
+  const batchedLog =
+    'TN_ANDROID_JS_NATIVE:{"frame":226,"submits":3,"bindingNs":36,"calls":9,"threadCpuNs":330,"presentNs":400,"presentThreadCpuNs":10,"bridgeNs":99,"bridgeOverheadNs":36,"commands":{"drawIndexed":120},"commandNs":{"drawIndexed":36}}';
+  assert.equal(parseFrameMarkers(batchedLog).frames[0].workNs, 320);
+});
+
 test("F15 alternates arms and discards only global launches one and two", () => {
   const plan = buildLaunchPlan(3);
   assert.deepEqual(
