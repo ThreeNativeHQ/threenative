@@ -40,7 +40,13 @@ js::JSValueHandle createTextureViewBinding(
 
     auto jsView = state->engine->newObject();
     state->engine->setPrivateData(jsView, view);
+    const uint64_t viewId = state->nextTextureViewId++;
+    state->textureViewRegistry[viewId] = view;
+    state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
     state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
+    state->engine->registerRelease(jsView, [state, view, viewId]() {
+        if (state->textureViewRegistry.erase(viewId) != 0) wgpuTextureViewRelease(view);
+    });
     return jsView;
 }
 
@@ -122,6 +128,7 @@ js::JSValueHandle createTextureWrapper(
     const WGPUTexture texture = static_cast<WGPUTexture>(textureHandle);
     auto jsTexture = state->engine->newObject();
     state->engine->setPrivateData(jsTexture, texture);
+    state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber(textureId));
     state->engine->setProperty(jsTexture, "width", state->engine->newNumber(width));
     state->engine->setProperty(jsTexture, "height", state->engine->newNumber(height));
     state->engine->setProperty(jsTexture, "depthOrArrayLayers", state->engine->newNumber(1));

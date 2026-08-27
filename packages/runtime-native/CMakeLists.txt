@@ -83,7 +83,6 @@ option(TN_ENABLE_UI_OVERLAY "Enable the ThreeNative desktop UI overlay" OFF)
 option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
 option(TN_WEBGPU_UPLOAD_STAGING "Stage queue.writeBuffer calls into mapped blocks flushed at queue boundaries (wgpu-native builds)" ON)
 set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameLatency into the surface configuration (wgpu-native builds); 0 keeps the backend default of 2")
-option(TN_WEBGPU_BATCHED_PASS "Record render-pass ops in JavaScript and replay them in one crossing at pass end" OFF)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
 # PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
@@ -119,7 +118,6 @@ add_compile_definitions(
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
     TN_WEBGPU_UPLOAD_STAGING=$<BOOL:${TN_WEBGPU_UPLOAD_STAGING}>
     TN_WEBGPU_DESIRED_FRAME_LATENCY=${TN_WEBGPU_DESIRED_FRAME_LATENCY}
-    TN_WEBGPU_BATCHED_PASS=$<BOOL:${TN_WEBGPU_BATCHED_PASS}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
     TN_ABLATE_BACKEND=$<BOOL:${TN_ABLATE_BACKEND}>
@@ -1135,7 +1133,7 @@ set(TN_RUNTIME_SCRIPT_NAMES
     image-support-init
     onload-trigger
     install-async-pipelines
-    batched-pass-encoder
+    frame-op-stream
     image-bitmap-polyfill
     webtransport-polyfill
     webtransport-stub
@@ -1792,6 +1790,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-render-pass-class-table-test EXCLUDE_FROM_ALL
         tests/render_pass_class_table_test.cpp)
     target_link_libraries(threenative-render-pass-class-table-test PRIVATE mystral-runtime)
+    add_executable(threenative-frame-op-stream-replay-test EXCLUDE_FROM_ALL
+        tests/frame_op_stream_replay_test.cpp)
+    target_link_libraries(threenative-frame-op-stream-replay-test PRIVATE mystral-runtime)
     add_executable(threenative-shader-module-metadata-test EXCLUDE_FROM_ALL
         tests/shader_module_metadata_test.cpp)
     target_link_libraries(threenative-shader-module-metadata-test PRIVATE mystral-runtime)
@@ -1809,6 +1810,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${DAWN_INCLUDE_DIR})
         target_include_directories(threenative-render-pass-class-table-test PRIVATE
             ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-frame-op-stream-replay-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
         get_target_property(WGPU_TEST_INCLUDES wgpu::wgpu INTERFACE_INCLUDE_DIRECTORIES)
         target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
@@ -1818,6 +1821,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         target_include_directories(threenative-command-encoder-class-table-test PRIVATE
             ${WGPU_TEST_INCLUDES})
         target_include_directories(threenative-render-pass-class-table-test PRIVATE
+            ${WGPU_TEST_INCLUDES})
+        target_include_directories(threenative-frame-op-stream-replay-test PRIVATE
             ${WGPU_TEST_INCLUDES})
     endif()
 

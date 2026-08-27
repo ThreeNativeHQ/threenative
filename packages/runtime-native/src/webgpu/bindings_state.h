@@ -113,6 +113,7 @@ struct AndroidJsNativeProfile {
     uint64_t counts[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t commandNs[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t bindingNs = 0;
+    uint64_t submits = 0;
     uint64_t bundlesExecuted = 0;
     uint64_t writeBufferBytes = 0;
     uint64_t writeBufferSmallCalls = 0;
@@ -255,14 +256,20 @@ struct BindingsState {
     uint64_t nextComputePipelineId = 1;
     std::unordered_map<uint64_t, WGPURenderPipeline> renderPipelineRegistry;
     uint64_t nextRenderPipelineId = 1;
-    // Bind groups join the id registry so a batched pass stream can name them numerically
-    // (see runtime-scripts/batched-pass-encoder.js).
+    // Resources referenced by the packed frame stream have stable numeric registry ids.
     std::unordered_map<uint64_t, WGPUBindGroup> bindGroupRegistry;
     uint64_t nextBindGroupId = 1;
-#if TN_WEBGPU_BATCHED_PASS
-    // Cached installer function from batched-pass-encoder.js; frozen on first use.
-    js::JSValueHandle batchedPassInstaller{};
-#endif
+    std::unordered_map<uint64_t, WGPUTextureView> textureViewRegistry;
+    uint64_t nextTextureViewId = 1;
+    std::unordered_map<uint64_t, WGPURenderBundle> renderBundleRegistry;
+    uint64_t nextRenderBundleId = 1;
+    // Production frame recorder drain, installed when requestDevice creates the device wrapper.
+    // The host invokes it once after all rAF callbacks and replays the returned operations here.
+    js::JSValueHandle frameOpStreamDrain{};
+    uint64_t frameOpStreamReplayCrossings = 0;
+    uint64_t frameOpStreamDirectCommandCalls = 0;
+    uint64_t frameOpStreamLastOpCount = 0;
+    std::vector<std::string> frameOpStreamLastOrder;
     std::vector<std::unique_ptr<WGPUBlendState>> blendStates;
     BufferMapData bufferMapData;
     std::unordered_map<int, std::unique_ptr<OffscreenCanvas>> offscreenCanvases;

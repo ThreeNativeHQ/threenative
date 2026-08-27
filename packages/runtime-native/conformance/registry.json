@@ -925,6 +925,19 @@
       "required": true
     },
     {
+      "id": "91-frame-upload-stream",
+      "title": "steady-state frame upload stream",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/frame-upload-stream.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "97-input-restart-lifetime",
       "title": "listener removal survives a stop-restart cycle",
       "category": "runtime",

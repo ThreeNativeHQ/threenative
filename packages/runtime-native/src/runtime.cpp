@@ -1088,9 +1088,10 @@ public:
         // Execute requestAnimationFrame callbacks (renders a frame)
         executeAnimationFrameCallbacks();
 
-        // Free non-protected handles, per-frame native allocations, and Dawn resources
-        jsEngine_->clearFrameHandles();
+        // Replay the JS-recorded WebGPU frame while descriptor and upload handles are still live.
         webgpu::endDawnFrame(bindingsState_);
+        // Free non-protected handles only after the replay boundary consumed the frame stream.
+        jsEngine_->clearFrameHandles();
 
         // Desktop screenshot requests are serviced by the host after the frame has presented. This
         // is file polling only; the game does not receive a per-frame JS/C++ callback.

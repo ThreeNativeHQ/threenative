@@ -3,6 +3,7 @@
 #include <cstring>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "bindings_state.h"
@@ -193,6 +194,13 @@ js::JSValueHandle dispatch(
     BindingDestination destination,
     const std::vector<js::JSValueHandle>& args) {
     if (!requireArguments(engine, registration, args)) return engine->newUndefined();
+    const std::string_view surface(registration.surface);
+    const std::string_view name(registration.name);
+    const bool steadyStateCommand =
+        surface == "GPUQueue" || surface == "GPUCommandEncoder" ||
+        surface == "GPURenderPassEncoder" || surface == "GPUComputePassEncoder" ||
+        (surface == "GPUDevice" && name == "createCommandEncoder");
+    if (steadyStateCommand) state->frameOpStreamDirectCommandCalls += 1;
     return registration.handler(state, destination, args);
 }
 

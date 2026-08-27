@@ -677,6 +677,7 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
     output << "TN_ANDROID_JS_NATIVE:{\"engine\":\"" << state->engine->getName()
            << "\",\"calls\":" << calls
            << ",\"bindingNs\":" << state->androidJsNativeProfile.bindingNs
+           << ",\"submits\":" << state->androidJsNativeProfile.submits
            << ",\"bundlesExecuted\":" << state->androidJsNativeProfile.bundlesExecuted
            << ",\"writeBufferBytes\":" << state->androidJsNativeProfile.writeBufferBytes
            << ",\"writeBufferDistinctTargets\":" << state->androidJsNativeProfile.writeBufferTargets.size()
@@ -2182,6 +2183,13 @@ static js::JSValueHandle tnWebgpuHandler79(BindingsState* state, WGPURenderBundl
                                     WGPURenderBundle bundle = wgpuRenderBundleEncoderFinish(capturedEncoder, &desc);
                                     auto jsBundle = state->engine->newObject();
                                     state->engine->setPrivateData(jsBundle, bundle);
+                                    const uint64_t bundleId = state->nextRenderBundleId++;
+                                    state->renderBundleRegistry[bundleId] = bundle;
+                                    state->engine->setProperty(jsBundle, "_renderBundleId", state->engine->newNumber(bundleId));
+                                    state->engine->registerRelease(jsBundle, [state, bundle, bundleId]() {
+                                        state->renderBundleRegistry.erase(bundleId);
+                                        wgpuRenderBundleRelease(bundle);
+                                    });
                                     state->engine->setProperty(jsBundle, "_type", state->engine->newString("renderBundle"));
                                     if (state->verboseLogging) std::cout << "[WebGPU] Render bundle finished" << std::endl;
                                     return jsBundle;
@@ -2418,8 +2426,12 @@ static js::JSValueHandle tnWebgpuHandler71(BindingsState* state, BindingDestinat
                                 return state->engine->newUndefined();
                             auto jsView = state->engine->newObject();
                             state->engine->setPrivateData(jsView, view);
+                            const uint64_t viewId = state->nextTextureViewId++;
+                            state->textureViewRegistry[viewId] = view;
+                            state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
                             state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
-                            state->engine->registerRelease(jsView, [view]() {
+                            state->engine->registerRelease(jsView, [state, view, viewId]() {
+                                state->textureViewRegistry.erase(viewId);
                                 wgpuTextureViewRelease(view);
                             });
                             if (state->verboseLogging) std::cout << "[WebGPU] Created texture view" << std::endl;
@@ -2902,8 +2914,12 @@ static js::JSValueHandle tnWebgpuHandler65(BindingsState* state, uint64_t textur
                                         return state->engine->newUndefined();
                                     auto jsView = state->engine->newObject();
                                     state->engine->setPrivateData(jsView, view);
+                                    const uint64_t viewId = state->nextTextureViewId++;
+                                    state->textureViewRegistry[viewId] = view;
+                                    state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
                                     state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
-                                    state->engine->registerRelease(jsView, [view]() {
+                                    state->engine->registerRelease(jsView, [state, view, viewId]() {
+                                        state->textureViewRegistry.erase(viewId);
                                         wgpuTextureViewRelease(view);
                                     });
                                     return jsView;
@@ -3374,280 +3390,6 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                     return jsComputePass;
 }
 
-#if TN_WEBGPU_BATCHED_PASS
-
-// Registry lookups for a batched pass stream. An unknown id fails closed: replay throws
-// rather than silently dropping the op, because a dropped bind group or buffer would render
-// wrong and read as a game bug.
-static WGPUBuffer batchedBufferForId(BindingsState* state, double id) {
-    if (!(id >= 0)) return nullptr;
-    const auto it = state->bufferRegistry.find(static_cast<uint64_t>(id));
-    return it == state->bufferRegistry.end() ? nullptr : it->second.buffer;
-}
-
-static WGPUBindGroup batchedBindGroupForId(BindingsState* state, double id) {
-    if (!(id >= 0)) return nullptr;
-    const auto it = state->bindGroupRegistry.find(static_cast<uint64_t>(id));
-    return it == state->bindGroupRegistry.end() ? nullptr : it->second;
-}
-
-static WGPURenderPipeline batchedRenderPipelineForId(BindingsState* state, double id) {
-    if (!(id >= 0)) return nullptr;
-    const auto it = state->renderPipelineRegistry.find(static_cast<uint64_t>(id));
-    return it == state->renderPipelineRegistry.end() ? nullptr : it->second;
-}
-
-// Replays the op stream recorded by runtime-scripts/batched-pass-encoder.js against the
-// captured pass encoder. The stream is f64 slots; slot 0 is the live slot count and ops run
-// from slot 1. Returns false after throwing when an opcode or id cannot be resolved.
-static bool tnReplayBatchedPassOps(
-    BindingsState* state, WGPURenderPassEncoder pass, const double* slots, size_t count) {
-    static constexpr int OP_SET_PIPELINE = 1;
-    static constexpr int OP_SET_BIND_GROUP = 2;
-    static constexpr int OP_SET_VERTEX_BUFFER = 3;
-    static constexpr int OP_SET_INDEX_BUFFER = 4;
-    static constexpr int OP_DRAW = 5;
-    static constexpr int OP_DRAW_INDEXED = 6;
-    static constexpr int OP_SET_VIEWPORT = 7;
-    static constexpr int OP_SET_SCISSOR_RECT = 8;
-    static constexpr int OP_SET_STENCIL_REFERENCE = 9;
-    static constexpr int OP_SET_BLEND_CONSTANT = 10;
-
-    size_t i = 1;  // slots[0] is the live length: ops occupy slots [1, count)
-    // Every opcode validates its full stride against `count` before reading. A short or
-    // corrupted stream must throw cleanly, never read past the recorded region — the buffer
-    // is a live ArrayBuffer, and an out-of-bounds read here is memory-unsafe, not just a
-    // wrong frame.
-    auto strideFits = [&](size_t lastSlotIndex) -> bool {
-        if (lastSlotIndex < count) return true;
-        state->engine->throwException("batched pass: op stream truncated");
-        return false;
-    };
-    while (i < count) {
-        switch (static_cast<int>(slots[i])) {
-            case OP_SET_PIPELINE: {
-                if (!strideFits(i + 1)) return false;
-                const WGPURenderPipeline pipeline =
-                    batchedRenderPipelineForId(state, slots[i + 1]);
-                if (!pipeline) {
-                    state->engine->throwException("batched pass: unknown pipeline id");
-                    return false;
-                }
-                wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-                i += 2;
-                break;
-            }
-            case OP_SET_BIND_GROUP: {
-                if (!strideFits(i + 3)) return false;
-                const uint32_t groupIndex = static_cast<uint32_t>(slots[i + 1]);
-                const WGPUBindGroup bindGroup = batchedBindGroupForId(state, slots[i + 2]);
-                if (!bindGroup) {
-                    state->engine->throwException("batched pass: unknown bind group id");
-                    return false;
-                }
-                const double rawOffsetCount = slots[i + 3];
-                // A negative or oversized count would overflow the size_t arithmetic below;
-                // bound it by the stream length before trusting it.
-                if (!(rawOffsetCount >= 0) ||
-                    static_cast<double>(count) < rawOffsetCount ||
-                    i + 3 + static_cast<size_t>(rawOffsetCount) > count) {
-                    state->engine->throwException("batched pass: truncated dynamic offsets");
-                    return false;
-                }
-                const size_t offsetCount = static_cast<size_t>(rawOffsetCount);
-                std::vector<uint32_t> offsets(offsetCount);
-                for (size_t k = 0; k < offsetCount; k++) {
-                    offsets[k] = static_cast<uint32_t>(slots[i + 4 + k]);
-                }
-                wgpuRenderPassEncoderSetBindGroup(
-                    pass, groupIndex, bindGroup, offsets.size(),
-                    offsets.empty() ? nullptr : offsets.data());
-                i += 4 + offsetCount;
-                break;
-            }
-            case OP_SET_VERTEX_BUFFER: {
-                if (!strideFits(i + 4)) return false;
-                const WGPUBuffer buffer = batchedBufferForId(state, slots[i + 2]);
-                if (!buffer) {
-                    state->engine->throwException("batched pass: unknown vertex buffer id");
-                    return false;
-                }
-                const uint64_t size = slots[i + 4] < 0
-                    ? WGPU_WHOLE_SIZE
-                    : static_cast<uint64_t>(slots[i + 4]);
-                wgpuRenderPassEncoderSetVertexBuffer(
-                    pass, static_cast<uint32_t>(slots[i + 1]), buffer,
-                    static_cast<uint64_t>(slots[i + 3]), size);
-                i += 5;
-                break;
-            }
-            case OP_SET_INDEX_BUFFER: {
-                if (!strideFits(i + 4)) return false;
-                const WGPUBuffer buffer = batchedBufferForId(state, slots[i + 2]);
-                if (!buffer) {
-                    state->engine->throwException("batched pass: unknown index buffer id");
-                    return false;
-                }
-                WGPUIndexFormat format = WGPUIndexFormat_Uint16;
-                switch (static_cast<int>(slots[i + 1])) {
-                    case 1: format = WGPUIndexFormat_Uint32; break;
-                    case 0: format = WGPUIndexFormat_Uint16; break;
-                    default:
-                        state->engine->throwException("batched pass: unknown index format");
-                        return false;
-                }
-                const uint64_t size = slots[i + 4] < 0
-                    ? WGPU_WHOLE_SIZE
-                    : static_cast<uint64_t>(slots[i + 4]);
-                wgpuRenderPassEncoderSetIndexBuffer(
-                    pass, buffer, format, static_cast<uint64_t>(slots[i + 3]), size);
-                i += 5;
-                break;
-            }
-            case OP_DRAW:
-                if (!strideFits(i + 4)) return false;
-                wgpuRenderPassEncoderDraw(
-                    pass, static_cast<uint32_t>(slots[i + 1]),
-                    static_cast<uint32_t>(slots[i + 2]),
-                    static_cast<uint32_t>(slots[i + 3]),
-                    static_cast<uint32_t>(slots[i + 4]));
-                i += 6;
-                break;
-            case OP_DRAW_INDEXED:
-                if (!strideFits(i + 5)) return false;
-                wgpuRenderPassEncoderDrawIndexed(
-                    pass, static_cast<uint32_t>(slots[i + 1]),
-                    static_cast<uint32_t>(slots[i + 2]),
-                    static_cast<uint32_t>(slots[i + 3]),
-                    static_cast<int32_t>(slots[i + 4]),
-                    static_cast<uint32_t>(slots[i + 5]));
-                i += 7;
-                break;
-            case OP_SET_VIEWPORT:
-                if (!strideFits(i + 6)) return false;
-                wgpuRenderPassEncoderSetViewport(
-                    pass, (float)slots[i + 1], (float)slots[i + 2], (float)slots[i + 3],
-                    (float)slots[i + 4], (float)slots[i + 5], (float)slots[i + 6]);
-                i += 8;
-                break;
-            case OP_SET_SCISSOR_RECT:
-                if (!strideFits(i + 4)) return false;
-                wgpuRenderPassEncoderSetScissorRect(
-                    pass, static_cast<uint32_t>(slots[i + 1]),
-                    static_cast<uint32_t>(slots[i + 2]),
-                    static_cast<uint32_t>(slots[i + 3]),
-                    static_cast<uint32_t>(slots[i + 4]));
-                i += 6;
-                break;
-            case OP_SET_STENCIL_REFERENCE:
-                if (!strideFits(i + 1)) return false;
-                wgpuRenderPassEncoderSetStencilReference(
-                    pass, static_cast<uint32_t>(slots[i + 1]));
-                i += 3;
-                break;
-            case OP_SET_BLEND_CONSTANT: {
-                if (!strideFits(i + 4)) return false;
-                WGPUColor color = {(float)slots[i + 1], (float)slots[i + 2],
-                                   (float)slots[i + 3], (float)slots[i + 4]};
-                wgpuRenderPassEncoderSetBlendConstant(pass, &color);
-                i += 6;
-                break;
-            }
-            default:
-                state->engine->throwException("batched pass: unknown opcode");
-                return false;
-        }
-    }
-    return true;
-}
-
-// The `end` binding installed on batched passes: one crossing replays the recorded stream,
-// then performs exactly tnWebgpuHandler52's end-of-pass state transitions. args[0] carries
-// the Float64Array whose slot 0 holds the live length.
-static js::JSValueHandle tnWebgpuBatchedPassEnd(
-    BindingsState* state,
-    WGPUCommandEncoder capturedEncoderForEnd,
-    WGPURenderPassEncoder capturedRenderPass,
-    const std::vector<js::JSValueHandle>& args) {
-#if TN_ANDROID_JS_PROFILE
-                                            const auto profileStart = beginProfiledBinding();
-#endif
-                                            if (capturedRenderPass && !args.empty()) {
-                                                size_t dataBytes = 0;
-                                                void* data =
-                                                    state->engine->getArrayBufferData(args[0], &dataBytes);
-                                                if (data && dataBytes >= sizeof(double)) {
-                                                    const double* slots = static_cast<const double*>(data);
-                                                    const size_t count = static_cast<size_t>(slots[0]);
-                                                    if (count > 1 &&
-                                                        dataBytes / sizeof(double) >= count) {
-                                                        // Replay before ending so every op lands inside the pass.
-                                                        if (!tnReplayBatchedPassOps(
-                                                                state, capturedRenderPass, slots, count)) {
-#if TN_ANDROID_JS_PROFILE
-                                                            endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, profileStart);
-#endif
-                                                            return state->engine->newUndefined();
-                                                        }
-                                                    } else if (count > 0) {
-                                                        state->engine->throwException(
-                                                            "batched pass: op stream exceeds array bounds");
-                                                    }
-                                                }
-                                            }
-                                            auto passIt = state->encoderRenderPassMap.find(capturedEncoderForEnd);
-                                            if (capturedRenderPass && passIt != state->encoderRenderPassMap.end() &&
-                                                passIt->second == capturedRenderPass) {
-                                                wgpuRenderPassEncoderEnd(capturedRenderPass);
-                                                wgpuRenderPassEncoderRelease(capturedRenderPass);
-                                                // Remove from per-encoder map
-                                                state->encoderRenderPassMap.erase(passIt);
-                                                // Clear global if it matches
-                                                if (state->jsRenderPass == capturedRenderPass) {
-                                                    state->jsRenderPass = nullptr;
-                                                }
-                                                // Mark surface render pass as ended
-                                                if (state->surfaceRenderEncoder == capturedEncoderForEnd) {
-                                                    state->surfaceRenderPassEnded = true;
-                                                }
-                                            }
-#if TN_ANDROID_JS_PROFILE
-                                            endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, profileStart);
-#endif
-                                            return state->engine->newUndefined();
-}
-
-// Evaluates (once) and caches the installer function from batched-pass-encoder.js.
-static bool ensureBatchedPassInstaller(BindingsState* state) {
-    if (state->batchedPassInstaller.ptr) return true;
-    js::JSValueHandle installer = evalEmbeddedRuntimeScriptWithResult(
-        *state->engine, "batched-pass-encoder", "batched-pass-encoder.js");
-    if (!installer.ptr) {
-        std::cerr << "[WebGPU] batched pass encoding unavailable: installer missing" << std::endl;
-        return false;
-    }
-    // The factory must outlive this frame; an unfrozen handle dies with clearFrameHandles().
-    state->engine->freezeHandle(installer);
-    state->batchedPassInstaller = installer;
-    return true;
-}
-
-// Overrides the hot encoder methods with recording closures. The installer also replaces
-// `end`, closing over `__tnReplayEnd` so the recorded stream reaches the replay binding
-// even though three.js calls end() with no arguments. Best-effort: any failure leaves the
-// original per-op bindings in place.
-static void installBatchedPassEncoding(BindingsState* state, js::JSValueHandle passWrapper) {
-    if (!ensureBatchedPassInstaller(state)) return;
-    js::JSValueGuard installed(
-        *state->engine,
-        state->engine->call(state->batchedPassInstaller,
-                            state->engine->newUndefined(), {passWrapper}));
-    if (!installed || !state->engine->toBoolean(installed.get())) {
-        std::cerr << "[WebGPU] batched pass encoding declined for this pass" << std::endl;
-    }
-}
-
-#endif  // TN_WEBGPU_BATCHED_PASS
 
 static js::JSValueHandle tnWebgpuHandler52(
     BindingsState* state,
@@ -4168,20 +3910,6 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         state->engine->resumeFrameTracking();
                                         return state->engine->newUndefined();
                                     }
-#if TN_WEBGPU_BATCHED_PASS
-                                    // The replay binding sits under its own name: three.js calls end()
-                                    // with no arguments, so the batched `end` closure must hand the ops
-                                    // array to this binding explicitly.
-                                    if (!installBindingTable(state->engine, state, bindingTable({
-                                        {"GPURenderPassEncoder", "__tnReplayEnd", 0, nullptr,
-                                        makeCapturedPairHandler(encoderToUse, renderPass, &tnWebgpuBatchedPassEnd)
-                                    , jsRenderPass}}))) {
-                                        std::cerr << "[WebGPU] replay binding not installed;"
-                                                  << " keeping per-op encoding" << std::endl;
-                                    } else {
-                                        installBatchedPassEncoding(state, jsRenderPass);
-                                    }
-#endif
                                     // Resume frame tracking
                                     state->engine->resumeFrameTracking();
                                     return jsRenderPass;
@@ -4360,49 +4088,6 @@ static js::JSValueHandle makeRenderPassEndMethod(BindingsState* state) {
         });
 }
 
-#if TN_WEBGPU_BATCHED_PASS
-static js::JSValueHandle makeRenderPassBatchedEndMethod(BindingsState* state) {
-    auto* engine = state->engine;
-    return engine->newMethod(
-        "__tnReplayEnd",
-        [state](
-            js::Engine& engineRef, void* receiverPrivate,
-            const std::vector<js::JSValueHandle>& args) {
-            const auto pass = static_cast<WGPURenderPassEncoder>(receiverPrivate);
-            if (!pass) {
-                engineRef.throwException("__tnReplayEnd called with no render pass receiver");
-                return engineRef.newUndefined();
-            }
-            if (!args.empty()) {
-                size_t dataBytes = 0;
-                void* data = engineRef.getArrayBufferData(args[0], &dataBytes);
-                if (data && dataBytes >= sizeof(double)) {
-                    const double* slots = static_cast<const double*>(data);
-                    const size_t count = static_cast<size_t>(slots[0]);
-                    if (count > 1 && dataBytes / sizeof(double) >= count) {
-                        // Replay before ending so every op lands inside the pass.
-                        if (!tnReplayBatchedPassOps(state, pass, slots, count)) {
-                            return engineRef.newUndefined();
-                        }
-                    } else if (count > 0) {
-                        engineRef.throwException("batched pass: op stream exceeds array bounds");
-                    }
-                }
-            }
-            const auto encoder = encoderForLiveRenderPass(state, pass);
-            if (encoder) {
-                wgpuRenderPassEncoderEnd(pass);
-                wgpuRenderPassEncoderRelease(pass);
-                state->encoderRenderPassMap.erase(encoder);
-                if (state->jsRenderPass == pass) state->jsRenderPass = nullptr;
-                if (state->surfaceRenderEncoder == encoder) {
-                    state->surfaceRenderPassEnded = true;
-                }
-            }
-            return engineRef.newUndefined();
-        });
-}
-#endif
 
 /**
  * Builds the shared GPURenderPassEncoder prototype the first time a pass is created, then
@@ -4424,9 +4109,6 @@ static bool ensureRenderPassEncoderClassTable(
     if (!prototype.ptr || engine->hasException()) return false;
 
     const auto endFn = makeRenderPassEndMethod(state);
-#if TN_WEBGPU_BATCHED_PASS
-    const auto batchedEndFn = makeRenderPassBatchedEndMethod(state);
-#endif
     const auto setPipelineFn = makeRenderPassMethod(
         state, "setPipeline", &tnWebgpuHandler39,
         "setPipeline called with no render pass receiver");
@@ -4471,9 +4153,6 @@ static bool ensureRenderPassEncoderClassTable(
         && drawIndirectFn.ptr && drawIndexedIndirectFn.ptr && setViewportFn.ptr
         && setScissorRectFn.ptr && setBlendConstantFn.ptr && setStencilReferenceFn.ptr
         && executeBundlesFn.ptr
-#if TN_WEBGPU_BATCHED_PASS
-        && batchedEndFn.ptr
-#endif
         && !engine->hasException();
     if (!methodsReady) {
         if (engine->hasException()) engine->getException();  // consume; caller falls back
@@ -4511,10 +4190,6 @@ static bool ensureRenderPassEncoderClassTable(
          &tnWebgpuClassRowPlaceholder, prototype, &executeBundlesFn},
         {"GPURenderPassEncoder", "end", 0, nullptr,
          &tnWebgpuClassRowPlaceholder, prototype, &endFn},
-#if TN_WEBGPU_BATCHED_PASS
-        {"GPURenderPassEncoder", "__tnReplayEnd", 0, nullptr,
-         &tnWebgpuClassRowPlaceholder, prototype, &batchedEndFn},
-#endif
     }))) {
         return false;
     }
@@ -5836,6 +5511,9 @@ static js::JSValueHandle tnWebgpuHandler22(BindingsState* state, BindingDestinat
                             // Submit user command buffers first
                             state->submitCount++;
 #if TN_ANDROID_JS_PROFILE
+                            state->androidJsNativeProfile.submits += 1;
+#endif
+#if TN_ANDROID_JS_PROFILE
                             uint64_t submitPollNs = 0;
                             uint64_t presentNs = 0;
 #endif
@@ -5900,11 +5578,176 @@ static js::JSValueHandle tnWebgpuHandler22(BindingsState* state, BindingDestinat
                                 state->presentReportedSinceLastPresent = true;
                             }
 #endif
-#if TN_ANDROID_JS_PROFILE
-                            emitAndroidJsNativeProfile(state, submitPollNs, presentNs);
-#endif
                             return state->engine->newUndefined();
 }
+
+namespace {
+
+struct PackedFrameReader {
+    const uint8_t* data = nullptr;
+    size_t size = 0;
+    size_t cursor = 0;
+    size_t recordEnd = 0;
+    bool ok = true;
+    uint32_t u32() { uint32_t v = 0; if (!ok || cursor + 4 > recordEnd) { ok = false; return 0; } std::memcpy(&v, data + cursor, 4); cursor += 4; return v; }
+    double f64() { double v = 0; if (!ok || cursor + 8 > recordEnd) { ok = false; return 0; } std::memcpy(&v, data + cursor, 8); cursor += 8; return v; }
+};
+
+bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
+    size_t bytes = 0;
+    const auto* data = static_cast<const uint8_t*>(state->engine->getArrayBufferData(frame, &bytes));
+    if (!data || bytes < 16) { state->engine->throwException("frame op stream: truncated header"); return false; }
+    PackedFrameReader r{data, bytes, 0, bytes, true};
+    const uint32_t magic = r.u32(), version = r.u32(), declaredBytes = r.u32(), declaredOps = r.u32();
+    if (magic != 0x544e4652 || version != 1 || declaredBytes != bytes) { state->engine->throwException("frame op stream: invalid header"); return false; }
+    std::unordered_map<uint32_t, WGPUCommandEncoder> encoders;
+    std::unordered_map<uint32_t, WGPURenderPassEncoder> renderPasses;
+    std::unordered_map<uint32_t, WGPUCommandEncoder> renderOwners;
+    std::unordered_map<uint32_t, WGPUComputePassEncoder> computePasses;
+    std::unordered_map<uint32_t, WGPUCommandEncoder> computeOwners;
+    std::unordered_map<uint32_t, WGPUCommandBuffer> commandBuffers;
+    state->frameOpStreamLastOrder.clear();
+    auto fail = [&](const std::string& detail) {
+        const std::string message = "frame op stream: " + detail;
+        state->engine->throwException(message.c_str());
+        r.ok = false;
+    };
+    auto buffer = [&](uint32_t id) -> WGPUBuffer { const auto it = state->bufferRegistry.find(id); if (it == state->bufferRegistry.end()) { fail("unknown buffer id"); return nullptr; } return it->second.buffer; };
+    auto texture = [&](uint32_t id) -> WGPUTexture { const auto it = state->textureRegistry.find(id); if (it == state->textureRegistry.end()) { fail("unknown texture id"); return nullptr; } return it->second.texture; };
+    auto viewFor = [&](uint32_t id) -> WGPUTextureView { const auto it = state->textureViewRegistry.find(id); if (it == state->textureViewRegistry.end()) { fail("unknown texture view id"); return nullptr; } return it->second; };
+    auto encoder = [&](uint32_t id) -> WGPUCommandEncoder { const auto it = encoders.find(id); if (it == encoders.end()) { fail("unknown command encoder id"); return nullptr; } return it->second; };
+    auto renderPass = [&](uint32_t id) -> WGPURenderPassEncoder { const auto it = renderPasses.find(id); if (it == renderPasses.end()) { fail("unknown render pass id"); return nullptr; } return it->second; };
+    auto computePass = [&](uint32_t id) -> WGPUComputePassEncoder { const auto it = computePasses.find(id); if (it == computePasses.end()) { fail("unknown compute pass id"); return nullptr; } return it->second; };
+    auto readTextureCopy = [&](WGPUImageCopyTexture_Compat& copy) { copy.texture = texture(r.u32()); copy.mipLevel = r.u32(); copy.origin = {r.u32(), r.u32(), r.u32()}; const uint32_t aspect = r.u32(); copy.aspect = aspect == 1 ? WGPUTextureAspect_DepthOnly : aspect == 2 ? WGPUTextureAspect_StencilOnly : WGPUTextureAspect_All; };
+    auto readExtent = [&]() { return WGPUExtent3D{r.u32(), r.u32(), r.u32()}; };
+    static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture"};
+    uint32_t seen = 0;
+    while (r.cursor < bytes && r.ok) {
+        const size_t start = r.cursor;
+        r.recordEnd = bytes;
+        const uint32_t opcode = r.u32(), recordBytes = r.u32();
+        if (!r.ok || opcode == 0 || opcode >= std::size(names) || recordBytes < 8 || (recordBytes & 7) || start + recordBytes > bytes) { fail("malformed record header"); break; }
+        r.recordEnd = start + recordBytes;
+        state->frameOpStreamLastOrder.emplace_back(names[opcode]);
+        seen += 1;
+#if TN_ANDROID_JS_PROFILE
+        const auto opProfileStart = beginProfiledBinding();
+#endif
+        switch (opcode) {
+            case 1: { const uint32_t id = r.u32(); const double off = r.f64(); const uint32_t n = r.u32(); const auto info = state->bufferRegistry.find(id); if (!std::isfinite(off) || off < 0 || std::floor(off) != off || static_cast<uint64_t>(off) % 4 || (n & 3) || r.cursor + n > r.recordEnd || info == state->bufferRegistry.end() || static_cast<uint64_t>(off) > info->second.size || n > info->second.size - static_cast<uint64_t>(off)) { fail(info == state->bufferRegistry.end() ? "unknown buffer id" : "invalid writeBuffer bounds"); break; } WGPUBuffer b = info->second.buffer; wgpuQueueWriteBuffer(state->queue, b, static_cast<uint64_t>(off), data + r.cursor, n);
+#if TN_ANDROID_JS_PROFILE
+                state->androidJsNativeProfile.writeBufferBytes += n;
+                state->androidJsNativeProfile.writeBufferTargets.insert(b);
+#endif
+                r.cursor = (r.cursor + n + 7) & ~size_t(7); break; }
+            case 2: { const uint32_t id = r.u32(); if (!id || encoders.contains(id)) { fail("duplicate command encoder id"); break; } WGPUCommandEncoderDescriptor d{}; auto e = wgpuDeviceCreateCommandEncoder(state->device, &d); if (!e) { fail("createCommandEncoder failed"); break; } encoders[id] = e; break; }
+            case 3: { const uint32_t eid = r.u32(), pid = r.u32(), count = r.u32(); if (!pid || renderPasses.contains(pid)) { fail("duplicate render pass id"); break; } auto e = encoder(eid); bool touchesSurface = false; std::vector<WGPURenderPassColorAttachment> colors(count); for (auto& c : colors) { c.view = viewFor(r.u32()); touchesSurface = touchesSurface || c.view == state->currentTextureView; const uint32_t resolve = r.u32(); c.resolveTarget = resolve ? viewFor(resolve) : nullptr; c.loadOp = r.u32() ? WGPULoadOp_Load : WGPULoadOp_Clear; c.storeOp = r.u32() ? WGPUStoreOp_Discard : WGPUStoreOp_Store; c.clearValue = {r.f64(),r.f64(),r.f64(),r.f64()}; c.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; } WGPURenderPassDepthStencilAttachment depth{}; WGPURenderPassDescriptor d{}; d.colorAttachmentCount=colors.size(); d.colorAttachments=colors.data(); if (r.u32()) { depth.view=viewFor(r.u32()); depth.depthClearValue=r.f64(); depth.depthLoadOp=r.u32()?WGPULoadOp_Load:WGPULoadOp_Clear; depth.depthStoreOp=r.u32()?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.depthReadOnly=r.u32(); depth.stencilClearValue=r.u32(); const auto sl=r.u32(), ss=r.u32(); depth.stencilLoadOp=sl==2?WGPULoadOp_Undefined:sl?WGPULoadOp_Load:WGPULoadOp_Clear; depth.stencilStoreOp=ss==2?WGPUStoreOp_Undefined:ss?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.stencilReadOnly=r.u32(); d.depthStencilAttachment=&depth; } if (!r.ok) break; auto p=wgpuCommandEncoderBeginRenderPass(e,&d); if (!p) { fail("beginRenderPass failed"); break; } if (touchesSurface) { state->surfaceRenderEncoder=e; state->surfaceRenderPassEnded=false; } renderPasses[pid]=p; renderOwners[pid]=e; break; }
+            case 4: { auto p=renderPass(r.u32()); const auto it=state->renderPipelineRegistry.find(r.u32()); if(it==state->renderPipelineRegistry.end()) fail("unknown render pipeline id"); else wgpuRenderPassEncoderSetPipeline(p,it->second); break; }
+            case 5: { auto p=renderPass(r.u32()); const uint32_t index=r.u32(), gid=r.u32(), n=r.u32(); const auto it=state->bindGroupRegistry.find(gid); std::vector<uint32_t> values(n); for(auto& v:values)v=r.u32(); if(it==state->bindGroupRegistry.end()) fail("unknown bind group id"); else wgpuRenderPassEncoderSetBindGroup(p,index,it->second,n,values.data()); break; }
+            case 6: { auto p=renderPass(r.u32()); const uint32_t slot=r.u32(); auto b=buffer(r.u32()); const uint64_t off=static_cast<uint64_t>(r.f64()); const double z=r.f64(); wgpuRenderPassEncoderSetVertexBuffer(p,slot,b,off,z<0?WGPU_WHOLE_SIZE:static_cast<uint64_t>(z)); break; }
+            case 7: { auto p=renderPass(r.u32()); auto b=buffer(r.u32()); const auto f=r.u32()?WGPUIndexFormat_Uint32:WGPUIndexFormat_Uint16; const uint64_t off=static_cast<uint64_t>(r.f64()); const double z=r.f64(); wgpuRenderPassEncoderSetIndexBuffer(p,b,f,off,z<0?WGPU_WHOLE_SIZE:static_cast<uint64_t>(z)); break; }
+            case 8: { auto p=renderPass(r.u32()); const auto a=r.u32(),b=r.u32(),c=r.u32(),d=r.u32(); wgpuRenderPassEncoderDraw(p,a,b,c,d); break; }
+            case 9: { auto p=renderPass(r.u32()); const auto a=r.u32(),b=r.u32(),c=r.u32(); const int32_t d=static_cast<int32_t>(r.u32()); const auto e=r.u32(); wgpuRenderPassEncoderDrawIndexed(p,a,b,c,d,e); break; }
+            case 10: case 11: { auto p=renderPass(r.u32()); auto b=buffer(r.u32()); const uint64_t off=static_cast<uint64_t>(r.f64()); if(opcode==10) wgpuRenderPassEncoderDrawIndirect(p,b,off); else wgpuRenderPassEncoderDrawIndexedIndirect(p,b,off); break; }
+            case 12: { auto p=renderPass(r.u32()); const float x=r.f64(),y=r.f64(),w=r.f64(),h=r.f64(),a=r.f64(),b=r.f64(); wgpuRenderPassEncoderSetViewport(p,x,y,w,h,a,b); break; }
+            case 13: { auto p=renderPass(r.u32()); const auto x=r.u32(),y=r.u32(),w=r.u32(),h=r.u32(); wgpuRenderPassEncoderSetScissorRect(p,x,y,w,h); break; }
+            case 14: { auto p=renderPass(r.u32()); WGPUColor c{r.f64(),r.f64(),r.f64(),r.f64()}; wgpuRenderPassEncoderSetBlendConstant(p,&c); break; }
+            case 15: { auto p=renderPass(r.u32()); wgpuRenderPassEncoderSetStencilReference(p,r.u32()); break; }
+            case 16: { auto p=renderPass(r.u32()); const uint32_t n=r.u32(); std::vector<WGPURenderBundle> bundles; for(uint32_t i=0;i<n;i++){const auto it=state->renderBundleRegistry.find(r.u32());if(it==state->renderBundleRegistry.end()){fail("unknown render bundle id");break;}bundles.push_back(it->second);} if(r.ok)wgpuRenderPassEncoderExecuteBundles(p,bundles.size(),bundles.data()); break; }
+            case 17: { const uint32_t id=r.u32(); auto p=renderPass(id); wgpuRenderPassEncoderEnd(p); wgpuRenderPassEncoderRelease(p); if (renderOwners[id] == state->surfaceRenderEncoder) state->surfaceRenderPassEnded = true; renderPasses.erase(id); renderOwners.erase(id); break; }
+            case 18: { const uint32_t eid=r.u32(),pid=r.u32(); if(!pid||computePasses.contains(pid)){fail("duplicate compute pass id");break;} auto e=encoder(eid); WGPUComputePassDescriptor d{}; auto p=wgpuCommandEncoderBeginComputePass(e,&d); if(!p)fail("beginComputePass failed"); else {computePasses[pid]=p;computeOwners[pid]=e;} break; }
+            case 19: { auto p=computePass(r.u32()); const auto it=state->computePipelineRegistry.find(r.u32()); if(it==state->computePipelineRegistry.end())fail("unknown compute pipeline id");else wgpuComputePassEncoderSetPipeline(p,it->second); break; }
+            case 20: { auto p=computePass(r.u32());const auto index=r.u32(),gid=r.u32(),n=r.u32();std::vector<uint32_t> values(n);for(auto&v:values)v=r.u32();const auto it=state->bindGroupRegistry.find(gid);if(it==state->bindGroupRegistry.end())fail("unknown bind group id");else wgpuComputePassEncoderSetBindGroup(p,index,it->second,n,values.data());break; }
+            case 21: { auto p=computePass(r.u32());const auto x=r.u32(),y=r.u32(),z=r.u32();wgpuComputePassEncoderDispatchWorkgroups(p,x,y,z);break; }
+            case 22: { const auto id=r.u32();auto p=computePass(id);wgpuComputePassEncoderEnd(p);wgpuComputePassEncoderRelease(p);computePasses.erase(id);break; }
+            case 23: { auto e=encoder(r.u32());auto s=buffer(r.u32());const uint64_t so=r.f64();auto d=buffer(r.u32());const uint64_t od=r.f64(),z=r.f64();wgpuCommandEncoderCopyBufferToBuffer(e,s,so,d,od,z);break; }
+            case 24: { auto e=encoder(r.u32());WGPUImageCopyBuffer_Compat s{};s.buffer=buffer(r.u32());s.layout.offset=r.f64();s.layout.bytesPerRow=r.u32();s.layout.rowsPerImage=r.u32();WGPUImageCopyTexture_Compat d{};readTextureCopy(d);auto z=readExtent();wgpuCommandEncoderCopyBufferToTexture(e,&s,&d,&z);break; }
+            case 25: { auto e=encoder(r.u32());WGPUImageCopyTexture_Compat s{};readTextureCopy(s);WGPUImageCopyBuffer_Compat d{};d.buffer=buffer(r.u32());d.layout.offset=r.f64();d.layout.bytesPerRow=r.u32();d.layout.rowsPerImage=r.u32();auto z=readExtent();wgpuCommandEncoderCopyTextureToBuffer(e,&s,&d,&z);break; }
+            case 26: { auto e=encoder(r.u32());WGPUImageCopyTexture_Compat s{},d{};readTextureCopy(s);readTextureCopy(d);auto z=readExtent();wgpuCommandEncoderCopyTextureToTexture(e,&s,&d,&z);break; }
+            case 27: { auto e=encoder(r.u32());auto b=buffer(r.u32());const uint64_t o=r.f64();const double z=r.f64();wgpuCommandEncoderClearBuffer(e,b,o,z<0?WGPU_WHOLE_SIZE:static_cast<uint64_t>(z));break; }
+            case 28: { const auto eid=r.u32(),cid=r.u32();if(!cid||commandBuffers.contains(cid)){fail("duplicate command buffer id");break;}auto e=encoder(eid);WGPUCommandBufferDescriptor d{};auto c=wgpuCommandEncoderFinish(e,&d);if(!c)fail("finish failed");else commandBuffers[cid]=c;encoders.erase(eid);wgpuCommandEncoderRelease(e);break; }
+            case 29: {
+                const uint32_t n = r.u32();
+                std::vector<std::pair<uint32_t, WGPUCommandBuffer>> values;
+                for (uint32_t i = 0; i < n; i++) {
+                    const uint32_t id = r.u32();
+                    const auto it = commandBuffers.find(id);
+                    if (it == commandBuffers.end()) { fail("unknown command buffer id"); break; }
+                    values.emplace_back(id, it->second);
+                }
+                if (r.ok) {
+                    std::vector<WGPUCommandBuffer> rawBuffers;
+                    for (const auto& value : values) rawBuffers.push_back(value.second);
+                    wgpuQueueSubmit(state->queue, rawBuffers.size(), rawBuffers.data());
+#if TN_ANDROID_JS_PROFILE
+                    state->androidJsNativeProfile.submits += 1;
+#endif
+                    for (const auto& [id, commandBuffer] : values) {
+                        wgpuCommandBufferRelease(commandBuffer);
+                        commandBuffers.erase(id);
+                    }
+#if defined(MYSTRAL_WEBGPU_DAWN)
+                    wgpuDeviceTick(state->device);
+#elif defined(MYSTRAL_WEBGPU_WGPU)
+                    wgpuDevicePoll(state->device, false, nullptr);
+#endif
+                }
+                break;
+            }
+            case 30: { WGPUImageCopyTexture_Compat d{};readTextureCopy(d);WGPUTextureDataLayout_Compat l{};l.offset=r.f64();l.bytesPerRow=r.u32();l.rowsPerImage=r.u32();auto z=readExtent();const uint32_t n=r.u32();if(r.cursor+n>r.recordEnd){fail("upload payload exceeds record");break;}wgpuQueueWriteTexture(state->queue,&d,data+r.cursor,n,&l,&z);r.cursor=(r.cursor+n+7)&~size_t(7);break; }
+            case 31: { const uint32_t sourceWidth=r.u32(),sourceHeight=r.u32(),originX=r.u32(),originY=r.u32(),flipY=r.u32();WGPUImageCopyTexture_Compat d{};readTextureCopy(d);auto z=readExtent();const uint32_t n=r.u32();if(!sourceWidth||!sourceHeight||r.cursor+n>r.recordEnd||uint64_t(sourceWidth)*sourceHeight*4>n||originX+z.width>sourceWidth||originY+z.height>sourceHeight){fail("external image payload bounds invalid");break;}std::vector<uint8_t> cropped(uint64_t(z.width)*z.height*4);for(uint32_t y=0;y<z.height;y++){const uint32_t sourceY=flipY?(originY+z.height-1-y):(originY+y);std::memcpy(cropped.data()+uint64_t(y)*z.width*4,data+r.cursor+(uint64_t(sourceY)*sourceWidth+originX)*4,uint64_t(z.width)*4);}WGPUTextureDataLayout_Compat l{};l.bytesPerRow=z.width*4;l.rowsPerImage=z.height;wgpuQueueWriteTexture(state->queue,&d,cropped.data(),cropped.size(),&l,&z);r.cursor=(r.cursor+n+7)&~size_t(7);break; }
+        }
+#if TN_ANDROID_JS_PROFILE
+        switch (opcode) {
+            case 1: endProfiledBinding(state, ProfiledRenderCommand::WriteBuffer, opProfileStart); break;
+            case 4: endProfiledBinding(state, ProfiledRenderCommand::SetPipeline, opProfileStart); break;
+            case 5: endProfiledBinding(state, ProfiledRenderCommand::SetBindGroup, opProfileStart); break;
+            case 6: endProfiledBinding(state, ProfiledRenderCommand::SetVertexBuffer, opProfileStart); break;
+            case 7: endProfiledBinding(state, ProfiledRenderCommand::SetIndexBuffer, opProfileStart); break;
+            case 8: endProfiledBinding(state, ProfiledRenderCommand::Draw, opProfileStart); break;
+            case 9: endProfiledBinding(state, ProfiledRenderCommand::DrawIndexed, opProfileStart); break;
+            case 16: endProfiledBinding(state, ProfiledRenderCommand::ExecuteBundles, opProfileStart); break;
+            case 17: endProfiledBinding(state, ProfiledRenderCommand::EndRenderPass, opProfileStart); break;
+            default: break;
+        }
+#endif
+        if (!r.ok) break;
+        if (r.cursor > r.recordEnd) { fail("record length mismatch"); break; }
+        for (size_t padding = r.cursor; padding < r.recordEnd; ++padding) {
+            if (data[padding] != 0) { fail("non-zero record padding"); break; }
+        }
+        if (!r.ok) break;
+        r.cursor = r.recordEnd;
+    }
+    state->frameOpStreamLastOpCount = seen;
+    if (r.ok && (!renderPasses.empty() || !computePasses.empty() || !encoders.empty() ||
+                 !commandBuffers.empty())) {
+        fail("frame ended with unfinished GPU objects");
+    }
+    if (!r.ok || seen != declaredOps || r.cursor != bytes) {
+        if (r.ok) fail("operation census mismatch");
+        for (const auto& [id, pass] : renderPasses) {
+            wgpuRenderPassEncoderEnd(pass);
+            wgpuRenderPassEncoderRelease(pass);
+        }
+        for (const auto& [id, pass] : computePasses) {
+            wgpuComputePassEncoderEnd(pass);
+            wgpuComputePassEncoderRelease(pass);
+        }
+        for (const auto& [id, commandBuffer] : commandBuffers) {
+            wgpuCommandBufferRelease(commandBuffer);
+        }
+        for (const auto& [id, commandEncoder] : encoders) {
+            wgpuCommandEncoderRelease(commandEncoder);
+        }
+        return false;
+    }
+    state->submitCount += std::count(state->frameOpStreamLastOrder.begin(), state->frameOpStreamLastOrder.end(), "submit");
+    if (state->surface && state->currentTexture && state->surfaceRenderPassEnded) state->framePresentPending = true;
+    return true;
+}
+
+}  // namespace
 
 static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                     // Return a device object wrapping our native device
@@ -6085,6 +5928,23 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                         "device.lost"
                     );
                     state->engine->setProperty(device, "lost", deviceLostPromise);
+                    // Install the production frame recorder after every native method exists.
+                    // This ordering is deliberate: shared prototypes return early while wrappers
+                    // are built, so pass-local installation was a dead path. The device/queue
+                    // entry points are the stable surface that every command must cross through.
+                    const auto installer = evalEmbeddedRuntimeScriptWithResult(
+                        *state->engine, "frame-op-stream", "frame-op-stream.js");
+                    const auto host = state->engine->newObject();
+                    state->engine->setProperty(host, "device", device);
+                    state->engine->setProperty(host, "queue", queue);
+                    const auto drain = state->engine->call(
+                        installer, state->engine->newUndefined(), {host});
+                    if (!drain.ptr || state->engine->isNull(drain) || state->engine->hasException()) {
+                        state->engine->throwException("frame op stream: production recorder installation failed");
+                        return state->engine->newUndefined();
+                    }
+                    state->engine->freezeHandle(drain);
+                    state->frameOpStreamDrain = drain;
                     // Return the device directly
                     // await on a non-Promise just returns the value
                     return device;
@@ -6925,6 +6785,7 @@ void beginDawnFrame(BindingsState* state) {
     // frame rather than still loading, so everything after it and before the first present is the
     // gap the player watches a frozen loading screen through. PRD-218.
     mystral::stallBudget().markFirstFrameBegan();
+    state->frameOpStreamDirectCommandCalls = 0;
 
     // Otherwise a no-op: Dawn resource cleanup is handled by V8 weak callbacks
     // via Engine::registerRelease() — resources are released when
@@ -7428,6 +7289,12 @@ static void presentPendingSurface(BindingsState* state) {
     state->screenshotCapturedThisFrame = false;
 
     if (state->currentTextureView) {
+        for (auto it = state->textureViewRegistry.begin(); it != state->textureViewRegistry.end(); ++it) {
+            if (it->second == state->currentTextureView) {
+                state->textureViewRegistry.erase(it);
+                break;
+            }
+        }
         wgpuTextureViewRelease(state->currentTextureView);
         state->currentTextureView = nullptr;
     }
@@ -7519,6 +7386,23 @@ static void reportPresentTick(BindingsState* state, uint64_t frames) {
 }
 
 void endDawnFrame(BindingsState* state) {
+    // The one command-submission crossing for this frame. All requestAnimationFrame callbacks
+    // have returned, while descriptor objects and eager-copied upload payloads are still live.
+    if (state->frameOpStreamDrain.ptr) {
+        const auto frame = state->engine->call(
+            state->frameOpStreamDrain, state->engine->newUndefined(), {});
+        if (!state->engine->isNull(frame) && !state->engine->isUndefined(frame)) {
+            state->frameOpStreamReplayCrossings += 1;
+            if (!replayPackedFrameOpStream(state, frame) && !state->engine->hasException()) {
+                state->engine->throwException("frame op stream: replay failed");
+            }
+        }
+    }
+#if TN_ANDROID_JS_PROFILE
+    // Emission and counter reset belong to the once-per-frame replay boundary, never to an
+    // individual queue.submit (a frame may contain several submits).
+    emitAndroidJsNativeProfile(state, 0, state->lastPresentNs);
+#endif
     // Composite Canvas 2D content to WebGPU if the main canvas uses 2D context
     compositeCanvas2DToWebGPU(state);
 

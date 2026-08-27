@@ -16,6 +16,7 @@ const repoRoot = join(import.meta.dirname, "..", "..");
 const runtimeNative = join(repoRoot, "packages", "runtime-native");
 
 const ABLATION_FLAGS = ["TN_ABLATE_BACKEND"] as const;
+const OBSOLETE_MEASUREMENT_FLAGS = ["TN_WEBGPU_BATCHED_PASS", "threenativeBatchedPass"] as const;
 
 interface ICMakePresets {
   readonly configurePresets?: ReadonlyArray<{
@@ -56,6 +57,24 @@ describe("PRD-226 ablation flags never ship", () => {
     for (const flag of ABLATION_FLAGS) {
       expect(gradle.includes(flag), `build.gradle.kts must not name ${flag}`).toBe(false);
     }
+  });
+
+  it("ships no obsolete pass-only measurement switch or implementation", () => {
+    const productionFiles = [
+      join(runtimeNative, "CMakeLists.txt"),
+      join(runtimeNative, "android", "app", "build.gradle.kts"),
+      join(runtimeNative, "src", "webgpu", "bindings.cpp"),
+      join(runtimeNative, "src", "webgpu", "bindings_state.h"),
+    ];
+    for (const file of productionFiles) {
+      const source = readFileSync(file, "utf8");
+      for (const flag of OBSOLETE_MEASUREMENT_FLAGS) {
+        expect(source.includes(flag), `${file} must not name ${flag}`).toBe(false);
+      }
+    }
+    expect(() =>
+      readFileSync(join(runtimeNative, "src", "runtime-scripts", "batched-pass-encoder.js")),
+    ).toThrow();
   });
 
   it("guards the ablation header behind its flag", () => {
