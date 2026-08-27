@@ -1,5 +1,12 @@
 # Handover — the native 60 fps problem, 2026-08-27
 
+> **UPDATE, same day: the path was found.** Read
+> [PATH-TO-60FPS-2026-08-27.md](PATH-TO-60FPS-2026-08-27.md) first — it supersedes section 6's
+> "next steps" with a decided answer. Arm A3's fork was resolved from the profiled counters without
+> a new run, and the A2 backend term was independently cross-checked to 0.09 ms, which also closes
+> what arm A4 was scheduled to do. This document remains the reference for method rules, the
+> graveyard, rebuild commands and open caveats.
+
 Written for the next agent. Read this before touching anything performance-related in
 `packages/runtime-native`. It supersedes nothing; it tells you which of the existing records are
 still load-bearing and which are void.
