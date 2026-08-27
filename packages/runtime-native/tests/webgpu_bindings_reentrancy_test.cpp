@@ -1043,6 +1043,7 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
     const size_t renderPassesBefore = state->encoderRenderPassMap.size();
     const size_t computePassesBefore = state->encoderComputePassMap.size();
     const auto currentComputePassBefore = state->jsComputePass;
+    const bool frameRecorderActive = state->frameOpStreamDrain.ptr != nullptr;
     if (!runtime.evalScript(R"JS((() => {
         globalThis.__tnDynamicInstallDevice = navigator.gpu.requestAdapter().requestDevice();
         globalThis.__tnDynamicInstallWorkingEncoder =
@@ -1130,22 +1131,30 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
         state->renderPipelineRegistry.size() != renderPipelinesBefore ||
         state->nextRenderPipelineId != nextRenderPipelineIdBefore ||
         state->blendStates.size() != blendStatesBefore ||
-        state->commandEncoderRegistry.size() != commandEncodersBefore + 1 ||
+        state->commandEncoderRegistry.size() !=
+            commandEncodersBefore + (frameRecorderActive ? 0 : 1) ||
         state->encoderRenderPassMap.size() != renderPassesBefore ||
         state->encoderComputePassMap.size() != computePassesBefore ||
         state->jsComputePass != currentComputePassBefore ||
         !runtime.evalScript(
-            "if (__tnDynamicInstallBuffer !== undefined || "
-            "__tnDynamicInstallTexture !== undefined || "
-            "__tnDynamicInstallPipeline !== undefined || "
-            "__tnDynamicInstallRenderPipeline !== undefined || "
-            "__tnDynamicInstallPass !== undefined || "
-            "__tnDynamicInstallEncoder !== undefined || "
-            "__tnDynamicInstallBufferGetterCalls !== 1 || "
-            "__tnDynamicInstallTextureGetterCalls !== 1 || "
-            "typeof __tnDynamicInstallWorkingEncoder.finish !== 'function') "
-            "throw new Error('dynamic install did not fail closed'); "
-            "__tnDynamicInstallWorkingEncoder.finish();",
+            (std::string(
+                 "if (__tnDynamicInstallBuffer !== undefined || "
+                 "__tnDynamicInstallTexture !== undefined || "
+                 "__tnDynamicInstallPipeline !== undefined || "
+                 "__tnDynamicInstallRenderPipeline !== undefined || "
+                 "__tnDynamicInstallBufferGetterCalls !== 1 || "
+                 "__tnDynamicInstallTextureGetterCalls !== 1 || ") +
+             (frameRecorderActive
+                  ? "typeof __tnDynamicInstallPass !== 'object' || "
+                    "typeof __tnDynamicInstallEncoder !== 'object' || "
+                  : "__tnDynamicInstallPass !== undefined || "
+                    "__tnDynamicInstallEncoder !== undefined || ") +
+             "typeof __tnDynamicInstallWorkingEncoder.finish !== 'function') "
+             "throw new Error('dynamic install did not fail closed'); " +
+             (frameRecorderActive ? "__tnDynamicInstallPass.end(); " : "") +
+             "__tnDynamicInstallWorkingEncoder.finish(); " +
+             (frameRecorderActive ? "__tnDynamicInstallEncoder.finish();" : ""))
+                .c_str(),
             "webgpu-binding-dynamic-install-unwind-check.js")) {
         std::cerr << "dynamic install unwind retained native state" << std::endl;
         return false;
@@ -1168,8 +1177,11 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
         std::cerr << "dynamic install encoder control did not finish the older encoder" << std::endl;
         return false;
     }
-    if (state->commandEncoderRegistry.size() != commandEncodersBefore + 1 ||
-        state->jsCommandEncoder == currentCommandEncoderBefore) {
+    if (state->commandEncoderRegistry.size() !=
+            commandEncodersBefore + (frameRecorderActive ? 0 : 1) ||
+        (frameRecorderActive
+             ? state->jsCommandEncoder != currentCommandEncoderBefore
+             : state->jsCommandEncoder == currentCommandEncoderBefore)) {
         std::cerr << "dynamic install encoder control retained the wrong current encoder" << std::endl;
         return false;
     }
@@ -1278,6 +1290,33 @@ bool checkWrapperRollbackRestoresActiveState(mystral::Runtime& runtime) {
         return failed("render pass pointer, map, or surface state was not restored");
     }
 
+    const auto cleanup = [&]() {
+        return runtime.evalScript(R"JS((() => {
+            __tnRollbackComputePass.end();
+            __tnRollbackRenderPass.end();
+            __tnRollbackComputeEncoder.finish();
+            __tnRollbackRenderEncoder.finish();
+            __tnRollbackComputeFailureEncoder.finish();
+            __tnRollbackRenderFailureEncoder.finish();
+            __tnRollbackTexture.destroy();
+        })())JS", "webgpu-binding-wrapper-rollback-cleanup.js");
+    };
+
+    // The production frame recorder replaces createCommandEncoder on the device. Its encoder and
+    // pass objects are JS records, so they must leave the legacy native registry untouched. Keep
+    // the native rollback proof below for engines without the recorder capability.
+    if (state->frameOpStreamDrain.ptr) {
+        if (state->commandEncoderRegistry != encoderRegistryBefore ||
+            state->jsCommandEncoder != commandEncoderBefore ||
+            state->jsComputePass != computePassBefore ||
+            state->encoderComputePassMap != computeMapBefore ||
+            state->jsRenderPass != renderPassBefore ||
+            state->encoderRenderPassMap != renderMapBefore) {
+            return failed("frame recorder mutated legacy native encoder state");
+        }
+        return cleanup() || failed("frame recorder control cleanup");
+    }
+
     if (state->commandEncoderRegistry.size() < 2) {
         return failed("multi-encoder control did not create enough encoders");
     }
@@ -1303,15 +1342,7 @@ bool checkWrapperRollbackRestoresActiveState(mystral::Runtime& runtime) {
         return failed("command encoder or pass state was not restored");
     }
 
-    if (!runtime.evalScript(R"JS((() => {
-        __tnRollbackComputePass.end();
-        __tnRollbackRenderPass.end();
-        __tnRollbackComputeEncoder.finish();
-        __tnRollbackRenderEncoder.finish();
-        __tnRollbackComputeFailureEncoder.finish();
-        __tnRollbackRenderFailureEncoder.finish();
-        __tnRollbackTexture.destroy();
-    })())JS", "webgpu-binding-wrapper-rollback-cleanup.js")) {
+    if (!cleanup()) {
         return failed("control cleanup");
     }
     return true;
