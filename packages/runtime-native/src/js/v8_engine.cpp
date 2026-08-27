@@ -190,6 +190,9 @@ public:
             if (enabled[0] == '1') {
                 g_startCpuProfile = [this]() {
                     if (cpuProfiler_) return;
+                    V8EntryScope entryScope(isolate_);
+                    const auto context = context_.Get(isolate_);
+                    entryScope.enterContext(context);
                     cpuProfiler_ = v8::CpuProfiler::New(isolate_);
                     cpuProfiler_->SetSamplingInterval(200);
                     v8::HandleScope profileScope(isolate_);
@@ -210,8 +213,10 @@ public:
     // callers and the totals stay additive.
     void dumpCpuProfile() {
         if (!cpuProfiler_) return;
-        v8::HandleScope scope(isolate_);
+        V8EntryScope entryScope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
+        entryScope.enterContext(context);
+        v8::HandleScope scope(isolate_);
         v8::Context::Scope contextScope(context);
         v8::CpuProfile* profile = cpuProfiler_->StopProfiling(
             v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked());
