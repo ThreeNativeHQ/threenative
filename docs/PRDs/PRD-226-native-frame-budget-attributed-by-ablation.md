@@ -28,8 +28,15 @@ owner, so the Phase 5 backend option is struck. Filed after PRD-224's measuremen
 consecutive lever. Supersedes the lever queue in [the PRD-222 fix plan](../verification/prd-222-fix-plan.md);
 does not supersede PRD-222, which owns the target.
 
-**Goal:** Bayview reaches the **30 fps floor** on a cool physical Pixel 8, then **58 fps**. Standing
-owner goal is 60 — the maximum the platform gives, and Chrome already gets it on the same phone.
+**Goal, restated by the owner 2026-08-27: 60 fps or better on native. 30 fps is not acceptable.**
+The 30 fps "floor" that earlier records treat as the acceptance bar is demoted to a progress
+milestone; it is not a passing result.
+
+The panel is **120 Hz**, so presented frame rate is quantised to 120/n. Sixty fps means the whole
+frame fits in **16.67 ms**. It currently costs **43–48 ms**
+([meter audit](../verification/prd-226-device-meter-audited-2026-08-27.md)), so the target is a
+**~3× reduction — 28–33 ms per frame to remove.** Chrome already does the same scene at 60 fps on
+the same phone, so the number is reachable; it is not reachable by a lever.
 
 **Complexity:** +2 for new build-flag surface across the backend seam, +1 for a harness that must be
 provably self-consistent, +1 for a device lane on every claim = **HIGH mode**.
@@ -162,7 +169,8 @@ platform's bottleneck.
 
 ### Phase 4 — loop, with an exit
 
-- [ ] Repeat Phases 2–3 on the next term until Bayview clears 30 fps on device.
+- [ ] Repeat Phases 2–3 on the next term until Bayview clears **60 fps** on device. Report the
+      30 fps crossing when it happens, but do not stop there.
 - [ ] **Exit condition:** three consecutive terms closed for less than 2 ms of total device movement
       means the budget is wrong, not the levers. Return to Phase 1 and re-derive it; do not
       continue.
@@ -208,9 +216,12 @@ executed and what did not.
 - [ ] No optimisation commit under this PRD predates that budget.
 - [ ] Every lever carries pre-registered `calls/frame × Δns/call` arithmetic predicting ≥2 ms/frame,
       published before implementation.
-- [ ] **Bayview ≥ 30 fps median on a cool, discharging physical Pixel 8**, live windows only, three
-      captures, paired against the arm it replaces.
-- [ ] Then **≥ 58 fps** on the same lane, or an explicit written statement of the remaining term and
-      why it is not closable — the floor is the acceptance bar, the target is the goal.
+- [ ] **Bayview ≥ 60 fps median on a cool, discharging physical Pixel 8**, live windows only, three
+      captures, paired against the arm it replaces. **This is the acceptance bar.** 30 fps is a
+      progress milestone worth reporting, never a pass.
+- [ ] Every device fps claim is cross-checked against `dumpsys SurfaceFlinger --latency` on the
+      game's `(BLAST)` layer, which is independent of our own instrumentation. `dumpsys gfxinfo` is
+      **not** a valid meter here — it reports the Skia view pipeline, not the game's SurfaceView,
+      and reads ~5× flattering.
 - [ ] Web does not regress: `pnpm visuals` clean and desktop Chrome render.p50 unchanged.
 - [ ] Ablation flags are absent from every shipped preset, asserted by an executable.
