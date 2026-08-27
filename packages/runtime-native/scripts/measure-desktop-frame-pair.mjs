@@ -139,10 +139,9 @@ function validateEligibleSample(sample) {
   ]) {
     finiteNonNegative(sample[field], field);
   }
-  const presentWorkNs = finiteNonNegative(
-    sample.presentThreadCpuNs ?? sample.presentNs,
-    sample.presentThreadCpuNs === undefined ? "presentNs" : "presentThreadCpuNs",
-  );
+  // Legacy controls report present wall time only. Thread CPU already excludes time blocked in
+  // present, so subtracting the wall clock mixes units and can manufacture negative work.
+  const presentWorkNs = finiteNonNegative(sample.presentThreadCpuNs ?? 0, "presentThreadCpuNs");
   const commands = requireObject(sample.commands, "commands");
   const commandTimes = requireObject(sample.commandNs, "commandNs");
   const indexedDraws =
@@ -377,7 +376,7 @@ export function runPair(options, dependencies = {}) {
       minimumIndexedDrawsExclusive: MINIMUM_INDEXED_DRAWS,
       minimumSubmits: MINIMUM_SUBMITS,
       warmup: "discard global launches 1 and 2",
-      work: "sum(threadCpuNs)-sum(presentThreadCpuNs ?? presentNs)",
+      work: "sum(threadCpuNs)-sum(presentThreadCpuNs ?? 0); legacy presentNs is wall time",
     },
     runs: [],
     schemaVersion: 1,

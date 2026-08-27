@@ -62,13 +62,13 @@ test("frame parser reports per-frame and run medians for all registered terms", 
     frame: 226,
     indexedDraws: 120,
     submits: 3,
-    workNs: 320,
+    workNs: 330,
   });
   assert.deepEqual(result.mediansNs, {
     bridgeNs: 148.5,
     bridgeOverheadNs: 54,
     commandNs: 51,
-    workNs: 480,
+    workNs: 495,
   });
   assert.equal(median([9, 1, 5]), 5);
   assert.equal(median([10, 2, 4, 8]), 6);
@@ -87,7 +87,7 @@ test("one batched candidate marker accounts for all submits while legacy markers
     frame: 226,
     indexedDraws: 120,
     submits: 3,
-    workNs: 320,
+    workNs: 330,
   });
   const legacy = parseFrameMarkers(validLog);
   assert.equal(legacy.frames[0].submits, 3);
@@ -97,6 +97,7 @@ test("batched work subtracts present CPU time instead of incompatible present wa
   const batchedLog =
     'TN_ANDROID_JS_NATIVE:{"frame":226,"submits":3,"bindingNs":36,"calls":9,"threadCpuNs":330,"presentNs":400,"presentThreadCpuNs":10,"bridgeNs":99,"bridgeOverheadNs":36,"commands":{"drawIndexed":120},"commandNs":{"drawIndexed":36}}';
   assert.equal(parseFrameMarkers(batchedLog).frames[0].workNs, 320);
+  assert.equal(parseFrameMarkers(batchedLog.replace(',"presentThreadCpuNs":10', "")).frames[0].workNs, 330);
 });
 
 test("F15 alternates arms and discards only global launches one and two", () => {
