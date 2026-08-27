@@ -4,7 +4,14 @@ prd_contract: v1
 
 # PRD-226 — the native frame budget is attributed by ablation, then closed
 
-**Status:** OPEN — **Phase 1's gate is met: the budget is measured and published**
+**Status:** OPEN — **the ladder produced its answer, filed as
+[PRD-227 — the frame crosses once](PRD-227-the-frame-crosses-once.md)**
+([evidence](../verification/PATH-TO-60FPS-2026-08-27.md)). PRD-226 keeps the instrument, the method
+rules and the graveyard; PRD-227 owns the fix. Arm A4's job — an independent second route to the
+backend term — was closed without building it: the A2 ablation says 1.95 ms and the `commandNs`
+instrument says 2.037 ms, **0.09 ms apart**.
+
+**Phase 1's gate is met: the budget is measured and published**
 ([record](../verification/prd-226-budget-a0-a2-a5-2026-08-27.md)).
 
 ```
