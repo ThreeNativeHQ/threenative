@@ -113,6 +113,8 @@ struct AndroidJsNativeProfile {
     uint64_t counts[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t commandNs[static_cast<size_t>(ProfiledRenderCommand::Count)] = {};
     uint64_t bindingNs = 0;
+    uint64_t frameOpDrainNs = 0;
+    uint64_t frameOpReplayNs = 0;
     uint64_t submits = 0;
     uint64_t bundlesExecuted = 0;
     uint64_t writeBufferBytes = 0;

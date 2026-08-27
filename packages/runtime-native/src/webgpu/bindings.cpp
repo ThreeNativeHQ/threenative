@@ -677,6 +677,8 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
     output << "TN_ANDROID_JS_NATIVE:{\"engine\":\"" << state->engine->getName()
            << "\",\"calls\":" << calls
            << ",\"bindingNs\":" << state->androidJsNativeProfile.bindingNs
+           << ",\"frameOpDrainNs\":" << state->androidJsNativeProfile.frameOpDrainNs
+           << ",\"frameOpReplayNs\":" << state->androidJsNativeProfile.frameOpReplayNs
            << ",\"submits\":" << state->androidJsNativeProfile.submits
            << ",\"bundlesExecuted\":" << state->androidJsNativeProfile.bundlesExecuted
            << ",\"writeBufferBytes\":" << state->androidJsNativeProfile.writeBufferBytes
@@ -7406,11 +7408,31 @@ void endDawnFrame(BindingsState* state) {
     // The one command-submission crossing for this frame. All requestAnimationFrame callbacks
     // have returned, while descriptor objects and eager-copied upload payloads are still live.
     if (state->frameOpStreamDrain.ptr) {
+#if TN_ANDROID_JS_PROFILE
+        const uint64_t drainStartCpuNs = readRenderThreadCpuNs();
+#endif
         const auto frame = state->engine->call(
             state->frameOpStreamDrain, state->engine->newUndefined(), {});
+#if TN_ANDROID_JS_PROFILE
+        const uint64_t drainEndCpuNs = readRenderThreadCpuNs();
+        if (drainEndCpuNs > drainStartCpuNs) {
+            state->androidJsNativeProfile.frameOpDrainNs += drainEndCpuNs - drainStartCpuNs;
+        }
+#endif
         if (!state->engine->isNull(frame) && !state->engine->isUndefined(frame)) {
             state->frameOpStreamReplayCrossings += 1;
-            if (!replayPackedFrameOpStream(state, frame) && !state->engine->hasException()) {
+#if TN_ANDROID_JS_PROFILE
+            const uint64_t replayStartCpuNs = readRenderThreadCpuNs();
+#endif
+            const bool replayed = replayPackedFrameOpStream(state, frame);
+#if TN_ANDROID_JS_PROFILE
+            const uint64_t replayEndCpuNs = readRenderThreadCpuNs();
+            if (replayEndCpuNs > replayStartCpuNs) {
+                state->androidJsNativeProfile.frameOpReplayNs +=
+                    replayEndCpuNs - replayStartCpuNs;
+            }
+#endif
+            if (!replayed && !state->engine->hasException()) {
                 state->engine->throwException("frame op stream: replay failed");
             }
         }

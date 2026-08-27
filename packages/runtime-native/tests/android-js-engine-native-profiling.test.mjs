@@ -117,6 +117,8 @@ test("native profiling reports direct and bundled render commands per submit", (
     "setVertexBuffer",
     "setIndexBuffer",
     "bindingNs",
+    "frameOpDrainNs",
+    "frameOpReplayNs",
     "submitPollNs",
     "presentNs",
     "presentThreadCpuNs",
