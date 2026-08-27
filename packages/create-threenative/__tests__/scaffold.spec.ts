@@ -31,14 +31,23 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // Refreshed for the startup-readiness loading gate: each template's `src/render/loading.ts` was
 // reduced to the shared `startup.whenReady()` contract and every template's AGENTS.md carries
 // the readiness wording into the shipped scaffold.
+//
+// Refreshed by PRD-219, in the commit that changed the bytes. Two shipped things moved: the
+// starter's menu proof became cross-target (`noNetworkErrors` is a reasoned opt-out, because the
+// browser is the only target with a CDP network observer), and the capability manifest every
+// template embeds gained the Android viewport, rotation, tap and IME helpers that proof needed.
+// The starter's name field also gained autoCapitalize/autoCorrect/spellCheck: a phone keyboard
+// rewrites what the player typed unless the field says not to.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "de1397782520d4cdf24d8e5919bfb60ac181ae942f4d996245340ef8cf87731b",
-  defense: "02234707f38cf90722debbf0cc430d6178f1a1e8a3664ee7a03da16b3a562a54",
-  minimal: "607d1e57c3e5e856ffa890401cfc251d8fb1176e9b784e366c8fcbdfb6a389c1",
-  platformer: "667c19d902c0cca0bb15b95599b20a42fc09118f2bf66bbe092fa70b86510114",
-  racing: "ea398a656744cb84fc641d6980787d374fb54552392feee124db7bc7a10293f8",
-  shooter: "ead26a189f6eca3e759c452751c0f90214ec6cdf951f3b96c43dc156a34796ce",
-  starter: "3323184934d8ba4f577d1047a8f095c5833013263369c28c076d12d15f73f0fe",
+  // Values recomputed after the prd-203 loading-gate restamp and the prd-219 starter/menu-flow
+  // bytes both landed on main, with the script that mirrors `scaffoldTreeHash`.
+  "action-rpg": "a9e4430f2a03555b1b578ffb35f4ffe4940579b50b1ec8c9d87bcec0d45ffc22",
+  defense: "d6c9b207cd81aab939481a126cec91678995a6f9fe5f4b6ed3cd945d23417248",
+  minimal: "b61a4ce22cf1f404186852b93d2aea1776f5f24f1a02959a73b13a902b2df509",
+  platformer: "b9572b2e470dc5d1c7f0c226c3e29c627afb8f8cc7addadcd682ecafb987b748",
+  racing: "d5c2239e7eb90401a17d918639ba57207d0dc3490704896af385001cc214c1e6",
+  shooter: "8840130300bd0101ab2f9b2069fab21883a6c26f33296374ae6bc5be29e70eff",
+  starter: "8dfcbceba6bce76ec75aea46557bdf5669a6d4f784ba2fbeac15f1ae89fcf56f",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

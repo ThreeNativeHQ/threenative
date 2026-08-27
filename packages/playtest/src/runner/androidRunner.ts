@@ -59,12 +59,18 @@ export interface IDevicePlaytestDriver {
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
   deviceSerial?(): string | undefined;
   isAlive(): Promise<boolean>;
-  prepare(endpoint: string, mailboxRoot?: string): Promise<void>;
+  prepare(
+    endpoint: string,
+    mailboxRoot?: string,
+    viewport?: { height: number; width: number },
+  ): Promise<void>;
   readFile?(path: string): Promise<string | undefined>;
   removeFile?(path: string): Promise<void>;
   runAdb?(args: readonly string[]): Promise<string>;
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
+  tap?(x: number, y: number): Promise<void>;
+  hideKeyboard?(): Promise<boolean>;
   startScreenRecording?(): Promise<void>;
   stop(): Promise<void>;
   stopScreenRecording?(path: string): Promise<void>;
@@ -136,7 +142,11 @@ async function runDevicePlaytestInternal(
   await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
   await throwIfAborted(target);
-  const unsupported = unsupportedAssertion(scenario, target.name);
+  const unsupported = unsupportedAssertion(
+    scenario,
+    target.name,
+    typeof target.driver.tap === "function",
+  );
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
   if (
     target.name === "android"
@@ -181,7 +191,7 @@ async function runDevicePlaytestInternal(
     // only point at which the device's pre-launch thermal baseline is still readable.
     await metrics?.sampleNow("before").catch(() => undefined);
     metrics?.start();
-    await target.driver.prepare(endpoint, config.mailboxRoot);
+    await target.driver.prepare(endpoint, config.mailboxRoot, scenario.viewport);
     await throwIfAborted(target);
     bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs);
     await throwIfAborted(target);
@@ -254,6 +264,9 @@ async function runDevicePlaytestInternal(
           framebufferCoverage = unreadableCoverageObservation(error);
         }
       }
+      if (step.kind === "click") {
+        await executeDeviceClickStep(target, bridge, step, scenario.viewport);
+      }
       if (step.pointerPosition !== undefined) {
         const previousPointerButtons = pointerButtons;
         pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
@@ -272,6 +285,7 @@ async function runDevicePlaytestInternal(
       if (typeof pressed === "string") {
         if (!heldKeys.has(pressed)) {
           await transport.call("input.keyDown", { key: pressed });
+          await sendAndroidTextInput(target, pressed);
           heldKeys.add(pressed);
         }
       } else if (pressed !== undefined) {
@@ -284,6 +298,7 @@ async function runDevicePlaytestInternal(
         for (const key of pressed) {
           if (!heldKeys.has(key)) {
             await transport.call("input.keyDown", { key });
+            await sendAndroidTextInput(target, key);
             heldKeys.add(key);
           }
         }
@@ -527,6 +542,84 @@ async function setDevicePointers(
   await target.driver.setPointers?.(pointers);
 }
 
+async function executeDeviceClickStep(
+  target: IDevicePlaytestTarget,
+  bridge: IPlaytestBridgeClient | undefined,
+  step: IPlaytestScenario["steps"][number],
+  viewport: IPlaytestScenario["viewport"],
+): Promise<void> {
+  if (target.name !== "android" || typeof target.driver.tap !== "function") {
+    throw new PlaytestBridgeError(unsupportedDiagnostic(
+      "click steps",
+      "Run click steps on --target browser, or use an Android driver with OS pointer injection; native targets never fall back to keyboard input.",
+      target.name,
+    ));
+  }
+  const point = await deviceClickPoint(bridge, step);
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0
+    || point.x > viewport.width || point.y > viewport.height) {
+    throw new PlaytestBridgeError(unsupportedDiagnostic(
+      "click steps",
+      `Resolve the click target inside the ${viewport.width}x${viewport.height} viewport; Android touch injection uses viewport pixels.`,
+      target.name,
+    ));
+  }
+  // The soft keyboard first, and never as a nicety. On a physical device, focusing a text field
+  // opens an IME window over the bottom of the screen and the page reflows into what is left, so
+  // the menu rides up and this coordinate now points at a key. The tap would not miss quietly —
+  // it types into the field it was meant to submit. The emulator raises no IME, which is exactly
+  // why this went unseen there.
+  await target.driver.hideKeyboard?.();
+  await target.driver.tap(point.x, point.y);
+}
+
+async function deviceClickPoint(
+  bridge: IPlaytestBridgeClient | undefined,
+  step: IPlaytestScenario["steps"][number],
+): Promise<{ x: number; y: number }> {
+  const target = step.at;
+  if (target === undefined) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+      "Click step has no target.",
+      "Declare at as viewport pixels ({ x, y }) or a registered entity ({ entity }).",
+    ));
+  }
+  if (!("entity" in target)) return { x: target.x, y: target.y };
+  if (bridge === undefined) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+      `Click target entity '${target.entity}' cannot be resolved without a playtest bridge.`,
+      "Install the playtest bridge and register the clickable entity, or use explicit viewport pixels.",
+    ));
+  }
+  const snapshot = await bridge.sample({ entities: [target.entity] });
+  const bounds = snapshot.entities?.find((candidate) => candidate.id === target.entity)?.bounds;
+  if (bounds === undefined) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+      `Click target entity '${target.entity}' has no observed screen bounds.`,
+      "Register a visible entity with the playtest bridge, or use explicit viewport pixels.",
+    ));
+  }
+  return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+async function sendAndroidTextInput(target: IDevicePlaytestTarget, key: string): Promise<void> {
+  if (target.name !== "android" || target.driver.runAdb === undefined) return;
+  const keyEvent = androidKeyEventCode(key);
+  if (keyEvent === undefined) return;
+  // The game mailbox still receives input.keyDown above. This OS-level text event is the
+  // companion path for a focused WebView input; it never replaces the touch used to focus it.
+  await target.driver.runAdb(["shell", "input", "keyevent", keyEvent]);
+}
+
+function androidKeyEventCode(key: string): string | undefined {
+  if (key === " ") return "KEYCODE_SPACE";
+  const normalized = key.toUpperCase();
+  return /^[A-Z0-9]$/u.test(normalized) ? `KEYCODE_${normalized}` : undefined;
+}
+
 function isMailboxDriver(
   driver: IDevicePlaytestDriver,
 ): driver is IDevicePlaytestDriver & Required<Pick<IDevicePlaytestDriver, "readFile" | "removeFile" | "writeFile">> {
@@ -538,11 +631,13 @@ function isMailboxDriver(
 function unsupportedAssertion(
   scenario: IPlaytestScenario,
   target: "android" | "desktop" | "ios",
+  hasPointerTransport: boolean,
 ): IPlaytestProtocolDiagnostic | undefined {
-  if (scenario.steps.some((step) => step.kind === "click")) {
+  if (scenario.steps.some((step) => step.kind === "click")
+    && (target !== "android" || !hasPointerTransport)) {
     return unsupportedDiagnostic(
       "click steps",
-      "Run click steps on --target browser; native targets support explicit pointerPosition or pointers input, not browser UI clicks.",
+      "Run click steps on --target browser, or use an Android driver with OS pointer injection; native targets never fall back to keyboard input.",
       target,
     );
   }

@@ -25,9 +25,16 @@ export function MainMenuUi() {
         }}
       >
         <input
+          // A soft keyboard rewrites what the player typed unless the field says not to. On
+          // Android the IME capitalises the first letter of an empty field and offers
+          // corrections, so `a` `x` `o` arrives as "Axo" — the same three keystrokes that give
+          // "axo" in a browser. Every native text field a game ships wants these three.
+          autoCapitalize="none"
+          autoCorrect="off"
           className="pointer-events-auto w-56 border border-line bg-panel/80 px-3 py-2 text-center text-sm text-text placeholder:text-dim focus:border-lume focus:outline-none"
           data-tn-interactive
           maxLength={24}
+          spellCheck={false}
           onChange={(event) => setName(event.target.value)}
           placeholder="character name"
           type="text"
