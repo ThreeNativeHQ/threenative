@@ -278,64 +278,77 @@
       end: () => emit(22, () => u32(passId)),
     };
   };
-  device.createCommandEncoder = () => {
-    const encoderId = nextId++;
-    emit(2, () => u32(encoderId));
-    return {
-      beginRenderPass: (d) => renderPass(encoderId, d),
-      beginComputePass: () => computePass(encoderId),
-      copyBufferToBuffer: (s, so, d, do_, z) =>
+  const encoderIdKey = Symbol("frameOpEncoderId");
+  const commandEncoderPrototype = {
+      beginRenderPass(d) {
+        return renderPass(this[encoderIdKey], d);
+      },
+      beginComputePass() {
+        return computePass(this[encoderIdKey]);
+      },
+      copyBufferToBuffer(s, so, d, do_, z) {
         emit(23, () => {
-          u32(encoderId);
+          u32(this[encoderIdKey]);
           u32(id(s, "_bufferId", "buffer"));
           f64(so);
           u32(id(d, "_bufferId", "buffer"));
           f64(do_);
           f64(z);
-        }),
-      copyBufferToTexture: (s, d, z) =>
+        });
+      },
+      copyBufferToTexture(s, d, z) {
         emit(24, () => {
-          u32(encoderId);
+          u32(this[encoderIdKey]);
           u32(id(s.buffer, "_bufferId", "buffer"));
           f64(opt(s.offset, 0));
           u32(opt(s.bytesPerRow, 0));
           u32(opt(s.rowsPerImage, 0));
           textureCopy(d);
           extent(z);
-        }),
-      copyTextureToBuffer: (s, d, z) =>
+        });
+      },
+      copyTextureToBuffer(s, d, z) {
         emit(25, () => {
-          u32(encoderId);
+          u32(this[encoderIdKey]);
           textureCopy(s);
           u32(id(d.buffer, "_bufferId", "buffer"));
           f64(opt(d.offset, 0));
           u32(opt(d.bytesPerRow, 0));
           u32(opt(d.rowsPerImage, 0));
           extent(z);
-        }),
-      copyTextureToTexture: (s, d, z) =>
+        });
+      },
+      copyTextureToTexture(s, d, z) {
         emit(26, () => {
-          u32(encoderId);
+          u32(this[encoderIdKey]);
           textureCopy(s);
           textureCopy(d);
           extent(z);
-        }),
-      clearBuffer: (b, o, z) =>
+        });
+      },
+      clearBuffer(b, o, z) {
         emit(27, () => {
-          u32(encoderId);
+          u32(this[encoderIdKey]);
           u32(id(b, "_bufferId", "buffer"));
           f64(opt(o, 0));
           f64(opt(z, -1));
-        }),
-      finish: () => {
+        });
+      },
+      finish() {
         const commandId = nextId++;
         emit(28, () => {
-          u32(encoderId);
+          u32(this[encoderIdKey]);
           u32(commandId);
         });
         return { __tnCommandBufferId: commandId };
       },
-    };
+  };
+  device.createCommandEncoder = () => {
+    const encoderId = nextId++;
+    emit(2, () => u32(encoderId));
+    const encoder = Object.create(commandEncoderPrototype);
+    encoder[encoderIdKey] = encoderId;
+    return encoder;
   };
   const wrapDestroy = (resource, field, label, opcode) => {
     if (!resource || typeof resource.destroy !== "function") return resource;

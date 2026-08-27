@@ -11,6 +11,7 @@
 
 #include "../src/webgpu/bindings_state.h"
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -48,17 +49,33 @@ void runContract(mystral::js::Engine& engine) {
     expect(engine.setProperty(proto, "report", method), "method installs onto the prototype");
     engine.freezeHandle(method);
 
-    const auto first = engine.newObject();
-    const auto second = engine.newObject();
     static int one = 1;
     static int two = 2;
-    engine.setPrivateData(first, &one);
-    engine.setPrivateData(second, &two);
+    const bool fixedShape = engine.supportsNativeObjectTemplates();
+    const auto first = fixedShape
+        ? engine.newNativeObject("TNTestReceiver", &one)
+        : engine.newObject();
+    const auto second = fixedShape
+        ? engine.newNativeObject("TNTestReceiver", &two)
+        : engine.newObject();
+    if (!fixedShape) {
+        engine.setPrivateData(first, &one);
+        engine.setPrivateData(second, &two);
+    }
     expect(engine.setPrototypeOf(first, proto), "first instance adopts the class prototype");
     expect(engine.setPrototypeOf(second, proto), "second instance adopts the class prototype");
 
     engine.setGlobalProperty("__tnInstanceA", first);
     engine.setGlobalProperty("__tnInstanceB", second);
+
+    if (engine.getType() == mystral::js::EngineType::V8) {
+        expect(fixedShape, "V8 advertises fixed-shape native object templates");
+        const bool sameShape = engine.toBoolean(engine.evalScriptWithResult(
+            "%HaveSameMap(__tnInstanceA, __tnInstanceB)", "tn-fixed-shape.js"));
+        expect(sameShape, "two native wrappers of one class share one V8 hidden class");
+    } else {
+        expect(!fixedShape, "non-V8 engine keeps the explicitly gated legacy object path");
+    }
 
     const bool firstOk = engine.evalScript(
         "globalThis.__tnFirst = __tnInstanceA.report();", "tn-method-first.js");
@@ -154,6 +171,10 @@ void runRuntimeContract() {
         "tn-proto-identity.js"));
     expect(sharedPrototype, "both encoders share one class prototype");
 
+    const bool sameShape = engine->toBoolean(engine->evalScriptWithResult(
+        "%HaveSameMap(__encA, __encB)", "tn-runtime-fixed-shape.js"));
+    expect(sameShape, "two live GPUCommandEncoder wrappers share one V8 hidden class");
+
     const bool noOwnMethods = engine->toBoolean(engine->evalScriptWithResult(
         "!Object.hasOwn(__encA, 'beginRenderPass') && !Object.hasOwn(__encA, 'finish')",
         "tn-no-own-methods.js"));
@@ -187,6 +208,7 @@ void runRuntimeContract() {
 }  // namespace
 
 int main() {
+    setenv("TN_V8_FLAGS", "--allow-natives-syntax", 1);
     const auto engineV8 = mystral::js::createEngine(mystral::js::EngineType::V8);
     if (engineV8) runContract(*engineV8);
 

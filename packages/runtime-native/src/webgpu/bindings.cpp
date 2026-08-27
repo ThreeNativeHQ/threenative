@@ -2184,8 +2184,8 @@ static js::JSValueHandle tnWebgpuHandler80(BindingsState* state, BindingDestinat
 static js::JSValueHandle tnWebgpuHandler79(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
                                     WGPURenderBundleDescriptor desc = {};
                                     WGPURenderBundle bundle = wgpuRenderBundleEncoderFinish(capturedEncoder, &desc);
-                                    auto jsBundle = state->engine->newObject();
-                                    state->engine->setPrivateData(jsBundle, bundle);
+                                    auto jsBundle = createNativeWrapper(
+                                        state, "GPURenderBundle", bundle);
                                     const uint64_t bundleId = state->nextRenderBundleId++;
                                     state->renderBundleRegistry[bundleId] = bundle;
                                     state->engine->setProperty(jsBundle, "_renderBundleId", state->engine->newNumber(bundleId));
@@ -2311,8 +2311,8 @@ static js::JSValueHandle tnWebgpuHandler72(BindingsState* state, BindingDestinat
                                 state->engine->throwException("Failed to create render bundle encoder");
                                 return state->engine->newUndefined();
                             }
-                            auto jsEncoder = state->engine->newObject();
-                            state->engine->setPrivateData(jsEncoder, bundleEncoder);
+                            auto jsEncoder = createNativeWrapper(
+                                state, "GPURenderBundleEncoder", bundleEncoder);
                             // Capture for closures
                             WGPURenderBundleEncoder capturedEncoder = bundleEncoder;
                             // renderBundleEncoder.setPipeline(pipeline)
@@ -2427,8 +2427,7 @@ static js::JSValueHandle tnWebgpuHandler71(BindingsState* state, BindingDestinat
                             WGPUTextureView view = wgpuTextureCreateView(texture, &viewDesc);
                             if (!requireHandle(state->engine, view, "device.createTextureView"))
                                 return state->engine->newUndefined();
-                            auto jsView = state->engine->newObject();
-                            state->engine->setPrivateData(jsView, view);
+                            auto jsView = createNativeWrapper(state, "GPUTextureView", view);
                             const uint64_t viewId = state->nextTextureViewId++;
                             state->textureViewRegistry[viewId] = view;
                             state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
@@ -2464,8 +2463,8 @@ static js::JSValueHandle tnWebgpuHandler70(BindingsState* state, BindingDestinat
                             if (!requireHandle(state->engine, pipelineLayout, "device.createPipelineLayout",
                                                "bindGroupLayouts=" + std::to_string(layouts.size())))
                                 return state->engine->newUndefined();
-                            auto jsLayout = state->engine->newObject();
-                            state->engine->setPrivateData(jsLayout, pipelineLayout);
+                            auto jsLayout = createNativeWrapper(
+                                state, "GPUPipelineLayout", pipelineLayout);
                             if (state->verboseLogging) std::cout << "[WebGPU] Created pipeline layout with " << layoutCount << " bind group layouts" << std::endl;
                             return jsLayout;
 }
@@ -2589,10 +2588,10 @@ static js::JSValueHandle tnWebgpuHandler69(BindingsState* state, BindingDestinat
                             // Release auto-created texture views — Dawn holds its own
                             // internal references through the bind group
                             releaseAutoCreatedViews();
-                            auto jsBindGroup = state->engine->newObject();
+                            auto jsBindGroup = createNativeWrapper(
+                                state, "GPUBindGroup", bindGroup);
                             const uint64_t bindGroupId = state->nextBindGroupId++;
                             state->bindGroupRegistry[bindGroupId] = bindGroup;
-                            state->engine->setPrivateData(jsBindGroup, bindGroup);
                             state->engine->setProperty(
                                 jsBindGroup, "_bindGroupId",
                                 state->engine->newNumber((double)bindGroupId));
@@ -2712,8 +2711,8 @@ static js::JSValueHandle tnWebgpuHandler68(BindingsState* state, BindingDestinat
                             if (!requireHandle(state->engine, layout, "device.createBindGroupLayout",
                                                "entries=" + std::to_string(entryCount)))
                                 return state->engine->newUndefined();
-                            auto jsLayout = state->engine->newObject();
-                            state->engine->setPrivateData(jsLayout, layout);
+                            auto jsLayout = createNativeWrapper(
+                                state, "GPUBindGroupLayout", layout);
                             if (state->verboseLogging) std::cout << "[WebGPU] Created bind group layout with " << entryCount << " entries" << std::endl;
                             return jsLayout;
 }
@@ -2791,8 +2790,7 @@ static js::JSValueHandle tnWebgpuHandler67(BindingsState* state, BindingDestinat
                                 state->engine->throwException("Failed to create sampler");
                                 return state->engine->newUndefined();
                             }
-                            auto jsSampler = state->engine->newObject();
-                            state->engine->setPrivateData(jsSampler, sampler);
+                            auto jsSampler = createNativeWrapper(state, "GPUSampler", sampler);
                             state->engine->setProperty(jsSampler, "_type", state->engine->newString("sampler"));
                             if (state->verboseLogging) std::cout << "[WebGPU] Created sampler" << std::endl;
                             return jsSampler;
@@ -2915,8 +2913,8 @@ static js::JSValueHandle tnWebgpuHandler65(BindingsState* state, uint64_t textur
                                     if (!requireHandle(state->engine, view, "texture.createView",
                                                        "textureId=" + std::to_string(textureId)))
                                         return state->engine->newUndefined();
-                                    auto jsView = state->engine->newObject();
-                                    state->engine->setPrivateData(jsView, view);
+                                    auto jsView = createNativeWrapper(
+                                        state, "GPUTextureView", view);
                                     const uint64_t viewId = state->nextTextureViewId++;
                                     state->textureViewRegistry[viewId] = view;
                                     state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
@@ -2997,8 +2995,7 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
                                 return state->engine->newUndefined();
                             }
                             // Create JS wrapper
-                            auto jsTexture = state->engine->newObject();
-                            state->engine->setPrivateData(jsTexture, texture);
+                            auto jsTexture = createNativeWrapper(state, "GPUTexture", texture);
                             // Store texture properties
                             state->engine->setProperty(jsTexture, "width", state->engine->newNumber(width));
                             state->engine->setProperty(jsTexture, "height", state->engine->newNumber(height));
@@ -3101,8 +3098,8 @@ static js::JSValueHandle tnWebgpuHandler63(BindingsState* state, WGPUCommandEnco
                                             return state->engine->newUndefined();
                                         if (state->verboseLogging) std::cout << "[WebGPU] Command encoder finished, buffer: " << cmdBuffer << std::endl;
                                     }
-                                    auto jsCommandBuffer = state->engine->newObject();
-                                    state->engine->setPrivateData(jsCommandBuffer, cmdBuffer);
+                                    auto jsCommandBuffer = createNativeWrapper(
+                                        state, "GPUCommandBuffer", cmdBuffer);
                                     return jsCommandBuffer;
 }
 
@@ -3805,8 +3802,8 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     if (state->verboseLogging) std::cout << "[WebGPU] Render pass started (" << numAttachments << " attachments), clear: (" << firstR << "," << firstG << "," << firstB << "," << firstA << ")" << std::endl;
                                     // Suspend frame tracking while creating render pass wrapper
                                     state->engine->suspendFrameTracking();
-                                    auto jsRenderPass = state->engine->newObject();
-                                    state->engine->setPrivateData(jsRenderPass, renderPass);
+                                    auto jsRenderPass = createNativeWrapper(
+                                        state, "GPURenderPassEncoder", renderPass);
                                     // Fast path: point this instance at the class's one-time
                                     // prototype instead of reinstalling fifteen methods
                                     // transactionally per pass (PRD-224 phase 2).
@@ -4250,15 +4247,18 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                             // Suspend frame tracking while creating encoder wrapper
                             // This prevents the wrapper's methods from being garbage collected at frame end
                             state->engine->suspendFrameTracking();
-                            auto jsEncoder = state->engine->newObject();
-                            state->engine->setPrivateData(jsEncoder, encoder);
+                            auto jsEncoder = createNativeWrapper(
+                                state, "GPUCommandEncoder", encoder);
 
                             // Fast path: point this instance at the class's one-time prototype
                             // instead of reinstalling eight methods transactionally per call.
                             js::JSValueHandle commandEncoderPrototype{};
-                            if (!state->engine->hasException() &&
-                                ensureCommandEncoderClassTable(state, commandEncoderPrototype) &&
-                                state->engine->setPrototypeOf(jsEncoder, commandEncoderPrototype)) {
+                            const bool wrapperReady = !state->engine->hasException();
+                            const bool classReady = wrapperReady &&
+                                ensureCommandEncoderClassTable(state, commandEncoderPrototype);
+                            const bool prototypeReady = classReady &&
+                                state->engine->setPrototypeOf(jsEncoder, commandEncoderPrototype);
+                            if (prototypeReady) {
                                 state->engine->resumeFrameTracking();
                                 return jsEncoder;
                             }
@@ -4778,8 +4778,8 @@ static js::JSValueHandle tnWebgpuHandler34(BindingsState* state, BindingDestinat
                             if (!requireHandle(state->engine, shaderModule, "device.createShaderModule",
                                                "wgslBytes=" + std::to_string(code.size())))
                                 return state->engine->newUndefined();
-                            auto jsShader = state->engine->newObject();
-                            state->engine->setPrivateData(jsShader, shaderModule);
+                            auto jsShader = createNativeWrapper(
+                                state, "GPUShaderModule", shaderModule);
                             state->shaderModuleMetadata->entries[shaderModule] = {
                                 singleWgslEntryPoint(code, "vertex"),
                                 singleWgslEntryPoint(code, "fragment"),
@@ -4989,8 +4989,7 @@ static js::JSValueHandle tnWebgpuHandler29(BindingsState* state, BindingDestinat
 #if TN_ANDROID_JS_PROFILE
                             state->androidJsProfileBufferRegistry[buffer] = bufferInfo;
 #endif
-                            auto jsBuffer = state->engine->newObject();
-                            state->engine->setPrivateData(jsBuffer, buffer);
+                            auto jsBuffer = createNativeWrapper(state, "GPUBuffer", buffer);
                             state->engine->setProperty(jsBuffer, "size", state->engine->newNumber(size));
                             state->engine->setProperty(jsBuffer, "_bufferId", state->engine->newNumber((double)bufferId));
                             state->engine->setProperty(jsBuffer, "usage", state->engine->newNumber(usage));
@@ -5766,11 +5765,9 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
 
 static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                     // Return a device object wrapping our native device
-                    auto device = state->engine->newObject();
-                    state->engine->setPrivateData(device, state->device);
+                    auto device = createNativeWrapper(state, "GPUDevice", state->device);
                     // device.queue
-                    auto queue = state->engine->newObject();
-                    state->engine->setPrivateData(queue, state->queue);
+                    auto queue = createNativeWrapper(state, "GPUQueue", state->queue);
                     // queue.submit(commandBuffers)
                     if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUQueue", "submit", 0, nullptr,
@@ -6093,9 +6090,8 @@ static js::JSValueHandle getOffscreenCanvasContext(
                         if (state->verboseLogging) std::cout << "[Canvas] Creating offscreen WebGPU context" << std::endl;
                         // Suspend frame tracking - this context persists across frames
                         state->engine->suspendFrameTracking();
-                        auto canvasContext = state->engine->newObject();
-                        // Store reference to our surface
-                        state->engine->setPrivateData(canvasContext, state->surface);
+                        auto canvasContext = createNativeWrapper(
+                            state, "GPUCanvasContext", state->surface);
                         // context.canvas - reference back to canvas element
                         std::string globalName = "__offscreenCanvas_" + std::to_string(canvasId);
                         auto canvasElement = state->engine->getGlobalProperty(globalName.c_str());
@@ -6315,9 +6311,8 @@ static js::JSValueHandle tnWebgpuHandler03(BindingsState* state, BindingDestinat
                 return state->engine->newNull();
             }
             // Create GPUCanvasContext
-            auto canvasContext = state->engine->newObject();
-            // Store reference to our surface
-            state->engine->setPrivateData(canvasContext, state->surface);
+            auto canvasContext = createNativeWrapper(
+                state, "GPUCanvasContext", state->surface);
             // context.canvas - reference back to canvas
             auto canvas = state->engine->getGlobalProperty("canvas");
             state->engine->setProperty(canvasContext, "canvas", canvas);

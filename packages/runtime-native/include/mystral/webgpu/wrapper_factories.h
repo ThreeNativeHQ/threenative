@@ -8,6 +8,11 @@ namespace mystral::webgpu {
 
 struct BindingsState;
 
+js::JSValueHandle createNativeWrapper(
+    BindingsState* state,
+    const char* className,
+    void* nativeData);
+
 js::JSValueHandle createTextureWrapper(
     BindingsState* state,
     void* texture,

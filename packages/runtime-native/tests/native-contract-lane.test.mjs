@@ -24,9 +24,9 @@ function declaredTargets(source) {
 
 test("should fail when a declared test target is not executed", () => {
   const discovered = discoverNativeTestTargets(cmake);
-  // 22 through PRD-224 step 1; +1 for threenative-render-pass-class-table-test (PRD-224
-  // phase 2, 47d1adb3). Bump alongside any new add_executable contract target.
-  assert.equal(discovered.length, 23);
+  // 22 through PRD-224 step 1; +1 for the render-pass class table; +1 for PRD-227's executable
+  // packed frame-stream replay contract. Bump alongside any new add_executable contract target.
+  assert.equal(discovered.length, 24);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 

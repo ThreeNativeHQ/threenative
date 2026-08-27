@@ -283,6 +283,8 @@ public:
             entry.second.Reset();
         }
         moduleCache_.clear();
+        for (auto& entry : nativeObjectTemplates_) entry.second.Reset();
+        nativeObjectTemplates_.clear();
         reflectSet_.Reset();
         reflectGetPrototypeOf_.Reset();
         bindingDestinationPrototype_.Reset();
@@ -572,6 +574,40 @@ public:
             v8::True(isolate_)).Check();
         v8::Persistent<v8::Value>* persistent =
             acquirePersistent(isolate_, object);
+        frameHandles_.insert(persistent);
+        return {persistent, isolate_};
+    }
+
+    bool supportsNativeObjectTemplates() const override { return true; }
+
+    JSValueHandle newNativeObject(const char* className, void* nativeData) override {
+        V8EntryScope entryScope(isolate_);
+        const auto context = context_.Get(isolate_);
+        entryScope.enterContext(context);
+        if (!className || className[0] == '\0') {
+            throwException("native object class name must not be empty");
+            return {};
+        }
+
+        auto [it, inserted] = nativeObjectTemplates_.try_emplace(className);
+        if (inserted) {
+            const auto objectTemplate = v8::ObjectTemplate::New(isolate_);
+            objectTemplate->SetInternalFieldCount(1);
+            it->second.Reset(isolate_, objectTemplate);
+        }
+
+        v8::Local<v8::Object> object;
+        if (!it->second.Get(isolate_)->NewInstance(context).ToLocal(&object)) return {};
+        if (!object->SetPrototype(
+                context, bindingDestinationPrototype_.Get(isolate_)).FromMaybe(false)) {
+            return {};
+        }
+        object->SetAlignedPointerInInternalField(0, nativeData);
+        object->SetPrivate(
+            context,
+            bindingDestinationKey_.Get(isolate_),
+            v8::True(isolate_)).Check();
+        auto* persistent = acquirePersistent(isolate_, object);
         frameHandles_.insert(persistent);
         return {persistent, isolate_};
     }
@@ -1299,6 +1335,11 @@ public:
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
 
+        if (objLocal->InternalFieldCount() > 0) {
+            objLocal->SetAlignedPointerInInternalField(0, data);
+            return;
+        }
+
         // Use cached private key to avoid string allocation
         v8::Local<v8::Private> key = privateKey_.Get(isolate_);
         objLocal->SetPrivate(context, key, v8::External::New(isolate_, data));
@@ -1311,6 +1352,10 @@ public:
 
         v8::Persistent<v8::Value>* objPersistent = (v8::Persistent<v8::Value>*)obj.ptr;
         v8::Local<v8::Object> objLocal = objPersistent->Get(isolate_).As<v8::Object>();
+
+        if (objLocal->InternalFieldCount() > 0) {
+            return objLocal->GetAlignedPointerFromInternalField(0);
+        }
 
         // Use cached private key to avoid string allocation
         v8::Local<v8::Private> key = privateKey_.Get(isolate_);
@@ -1737,12 +1782,15 @@ private:
         // callee sees nullptr and reports it.
         void* receiverPrivate = nullptr;
         if (info.This()->IsObject()) {
-            v8::Local<v8::Value> stored;
-            if (info.This().As<v8::Object>()
-                    ->GetPrivate(context, engine->privateKey_.Get(isolate))
-                    .ToLocal(&stored) &&
-                stored->IsExternal()) {
-                receiverPrivate = stored.As<v8::External>()->Value();
+            const auto receiver = info.This().As<v8::Object>();
+            if (receiver->InternalFieldCount() > 0) {
+                receiverPrivate = receiver->GetAlignedPointerFromInternalField(0);
+            } else {
+                v8::Local<v8::Value> stored;
+                if (receiver->GetPrivate(context, engine->privateKey_.Get(isolate))
+                        .ToLocal(&stored) && stored->IsExternal()) {
+                    receiverPrivate = stored.As<v8::External>()->Value();
+                }
             }
         }
 
@@ -1848,6 +1896,7 @@ private:
     std::string lastException_;
     std::chrono::high_resolution_clock::time_point startTime_;
     std::unordered_map<std::string, v8::Global<v8::Module>> moduleCache_;
+    std::unordered_map<std::string, v8::Global<v8::ObjectTemplate>> nativeObjectTemplates_;
     std::unordered_map<int, std::string> moduleIdToPath_;  // Reverse lookup: module hash -> path
     std::unordered_set<v8::Persistent<v8::Value>*> frameHandles_;  // Handles to free at end of frame
     std::unordered_set<void*> protectedHandles_;

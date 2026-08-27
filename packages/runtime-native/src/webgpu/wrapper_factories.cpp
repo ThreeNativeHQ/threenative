@@ -38,8 +38,7 @@ js::JSValueHandle createTextureViewBinding(
     state->currentTextureView = view;
     state->currentViewSourceTexture = it->second.texture;
 
-    auto jsView = state->engine->newObject();
-    state->engine->setPrivateData(jsView, view);
+    auto jsView = createNativeWrapper(state, "GPUTextureView", view);
     const uint64_t viewId = state->nextTextureViewId++;
     state->textureViewRegistry[viewId] = view;
     state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
@@ -86,8 +85,7 @@ js::JSValueHandle getPipelineBindGroupLayoutBinding(
         return state->engine->newUndefined();
     }
 
-    auto jsLayout = state->engine->newObject();
-    state->engine->setPrivateData(jsLayout, layout);
+    auto jsLayout = createNativeWrapper(state, "GPUBindGroupLayout", layout);
     state->engine->setProperty(jsLayout, "_type", state->engine->newString("bindGroupLayout"));
     return jsLayout;
 }
@@ -117,6 +115,18 @@ BindingHandler makePipelineBindGroupLayoutBinding(
 
 }  // namespace
 
+js::JSValueHandle createNativeWrapper(
+    BindingsState* state,
+    const char* className,
+    void* nativeData) {
+    if (state->engine->supportsNativeObjectTemplates()) {
+        return state->engine->newNativeObject(className, nativeData);
+    }
+    auto wrapper = state->engine->newObject();
+    state->engine->setPrivateData(wrapper, nativeData);
+    return wrapper;
+}
+
 js::JSValueHandle createTextureWrapper(
     BindingsState* state,
     void* textureHandle,
@@ -126,8 +136,7 @@ js::JSValueHandle createTextureWrapper(
     const char* format,
     bool rollbackRegistryEntry) {
     const WGPUTexture texture = static_cast<WGPUTexture>(textureHandle);
-    auto jsTexture = state->engine->newObject();
-    state->engine->setPrivateData(jsTexture, texture);
+    auto jsTexture = createNativeWrapper(state, "GPUTexture", texture);
     state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber(textureId));
     state->engine->setProperty(jsTexture, "width", state->engine->newNumber(width));
     state->engine->setProperty(jsTexture, "height", state->engine->newNumber(height));
@@ -151,8 +160,10 @@ js::JSValueHandle createPipelineWrapper(
     void* pipelineHandle,
     uint64_t pipelineId,
     bool renderPipeline) {
-    auto jsPipeline = state->engine->newObject();
-    state->engine->setPrivateData(jsPipeline, pipelineHandle);
+    auto jsPipeline = createNativeWrapper(
+        state,
+        renderPipeline ? "GPURenderPipeline" : "GPUComputePipeline",
+        pipelineHandle);
     state->engine->setProperty(jsPipeline, "_pipelineId", state->engine->newNumber((double)pipelineId));
     state->engine->setProperty(
         jsPipeline,

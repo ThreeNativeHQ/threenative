@@ -192,6 +192,24 @@ public:
     virtual JSValueHandle newNumber(double value) = 0;
     virtual JSValueHandle newString(const char* value) = 0;
     virtual JSValueHandle newObject() = 0;
+
+    /**
+     * True when this engine can instantiate native wrappers from one cached class template.
+     * V8 uses an ObjectTemplate with an internal field; engines without that capability keep
+     * the legacy ordinary-object/private-data path behind this explicit gate.
+     */
+    virtual bool supportsNativeObjectTemplates() const { return false; }
+
+    /**
+     * Instantiate a fixed-shape native wrapper for className and store nativeData without a
+     * JavaScript property lookup. Call only when supportsNativeObjectTemplates() is true.
+     */
+    virtual JSValueHandle newNativeObject(const char* className, void* nativeData) {
+        (void)className;
+        (void)nativeData;
+        return {};
+    }
+
     virtual JSValueHandle newArray(size_t length = 0) = 0;
 
     /**

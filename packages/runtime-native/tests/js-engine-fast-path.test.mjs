@@ -89,7 +89,6 @@ test("C++-only WebGPU metadata stays out of JavaScript property bags", () => {
   for (const name of [
     "_tnVertexEntryPoint",
     "_tnFragmentEntryPoint",
-    "_textureId",
     "_formatEnum",
     "_createViewTextureId",
   ]) {
@@ -98,6 +97,13 @@ test("C++-only WebGPU metadata stays out of JavaScript property bags", () => {
   }
   assert.match(bindings, /shaderModuleMetadata/u);
   assert.match(bindings, /findTextureInfoByHandle/u);
+  assert.match(
+    readFileSync(
+      fileURLToPath(new URL("../src/runtime-scripts/frame-op-stream.js", import.meta.url)),
+      "utf8",
+    ),
+    /_textureId/u,
+  );
 });
 
 test("shader metadata follows wrapper release with a state-lifetime fallback", () => {

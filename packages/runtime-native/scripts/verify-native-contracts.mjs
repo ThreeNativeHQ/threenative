@@ -36,6 +36,9 @@ export const executionContracts = {
   "threenative-command-encoder-class-table-test": {
     invocations: [{ args: [], passLine: "command-encoder-class-table: prototype=shared" }],
   },
+  "threenative-frame-op-stream-replay-test": {
+    invocations: [{ args: [], passLine: "frame op stream replay contract passed" }],
+  },
   "threenative-render-pass-class-table-test": {
     invocations: [{ args: [], passLine: "render-pass-class-table: prototype=shared" }],
   },

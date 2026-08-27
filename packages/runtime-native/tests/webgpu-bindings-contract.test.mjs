@@ -67,7 +67,7 @@ function assertBindGroupViewOwnership(candidate) {
   const failureRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureStart);
   const failureReturn = bindGroup.indexOf("return state->engine->newUndefined();", failureStart);
   const successRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureRelease + 1);
-  const wrapperCreation = bindGroup.indexOf("auto jsBindGroup = state->engine->newObject();");
+  const wrapperCreation = bindGroup.indexOf("auto jsBindGroup = createNativeWrapper(");
 
   assert.ok(failureStart >= 0, "createBindGroup must check the native handle");
   assert.ok(failureRelease > failureStart, "the failure path must release every created view");
