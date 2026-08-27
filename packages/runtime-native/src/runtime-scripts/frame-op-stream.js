@@ -101,11 +101,7 @@
     }
     u32(c.aspect === "depth-only" ? 1 : c.aspect === "stencil-only" ? 2 : 0);
   };
-  const upload = (data, dataOffset, size) => {
-    const buffer = data instanceof ArrayBuffer ? data : data.buffer;
-    const base = data instanceof ArrayBuffer ? 0 : data.byteOffset;
-    const length = data instanceof ArrayBuffer ? data.byteLength : data.byteLength;
-    const unit = typeof data.BYTES_PER_ELEMENT === "number" ? data.BYTES_PER_ELEMENT : 1;
+  const uploadRange = (buffer, base, length, unit, dataOffset, size) => {
     const start = opt(dataOffset, 0) * unit;
     const bytes = size === undefined ? length - start : size * unit;
     if (
@@ -117,6 +113,40 @@
     )
       throw new RangeError("frame op stream: upload range exceeds source view");
     return new Uint8Array(buffer, base + start, bytes);
+  };
+  const uploadView1 = (data, dataOffset, size) =>
+    uploadRange(data.buffer, data.byteOffset, data.byteLength, 1, dataOffset, size);
+  const uploadView2 = (data, dataOffset, size) =>
+    uploadRange(data.buffer, data.byteOffset, data.byteLength, 2, dataOffset, size);
+  const uploadView4 = (data, dataOffset, size) =>
+    uploadRange(data.buffer, data.byteOffset, data.byteLength, 4, dataOffset, size);
+  const uploadView8 = (data, dataOffset, size) =>
+    uploadRange(data.buffer, data.byteOffset, data.byteLength, 8, dataOffset, size);
+  const uploadDataView = (data, dataOffset, size) =>
+    uploadRange(data.buffer, data.byteOffset, data.byteLength, 1, dataOffset, size);
+  const isView1 = (data) =>
+    data instanceof Uint8Array ||
+    data instanceof Uint8ClampedArray ||
+    data instanceof Int8Array;
+  const isView2 = (data) =>
+    data instanceof Uint16Array ||
+    data instanceof Int16Array ||
+    (typeof Float16Array !== "undefined" && data instanceof Float16Array);
+  const isView4 = (data) =>
+    data instanceof Uint32Array || data instanceof Int32Array || data instanceof Float32Array;
+  const isView8 = (data) =>
+    data instanceof BigUint64Array ||
+    data instanceof BigInt64Array ||
+    data instanceof Float64Array;
+  const upload = (data, dataOffset, size) => {
+    if (data instanceof ArrayBuffer)
+      return uploadRange(data, 0, data.byteLength, 1, dataOffset, size);
+    if (isView1(data)) return uploadView1(data, dataOffset, size);
+    if (isView2(data)) return uploadView2(data, dataOffset, size);
+    if (isView4(data)) return uploadView4(data, dataOffset, size);
+    if (isView8(data)) return uploadView8(data, dataOffset, size);
+    if (data instanceof DataView) return uploadDataView(data, dataOffset, size);
+    throw new TypeError("frame op stream: upload source is not an ArrayBuffer or view");
   };
   const renderPass = (encoderId, descriptor) => {
     const passId = nextId++;

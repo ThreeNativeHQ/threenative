@@ -55,6 +55,13 @@ describe("packed frame op stream", () => {
     expect(source).toMatch(/const pipelineId = \(v/u);
   });
 
+  it("bounds upload property loads by typed-array width", () => {
+    expect(source).not.toMatch(/data\.BYTES_PER_ELEMENT/u);
+    expect(source).toMatch(/const uploadView4 =/u);
+    expect(source).toMatch(/data instanceof Float32Array/u);
+    expect(source).toMatch(/data instanceof Uint16Array/u);
+  });
+
   it("reuses its arena after the host synchronously drains a frame", () => {
     const { queue, drain } = harness();
     queue.writeBuffer({ _bufferId: 1 }, 0, new Uint32Array(1));
