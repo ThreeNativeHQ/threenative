@@ -4,13 +4,28 @@ prd_contract: v1
 
 # PRD-224 — WebGPU binding tables install once per class
 
-**Status:** PARTIAL — Phase 2's conversion landed at `47d1adb3` and is contract-proven (red
-3 failure(s)/exit 1 with the fast path disabled, green exit 0 restored; both pasted 2026-08-27 in
-[`docs/verification/prd-224-binding-tables-once-per-class-2026-08-27.md`](../verification/prd-224-binding-tables-once-per-class-2026-08-27.md)).
-Phases 1 (frame pricing), 3 (widen the remaining classes) and 4 (device arm) are NOT STARTED.
+**Status:** PARTIAL — **measured 2026-08-27, and the measurement changes what this PRD is worth.**
+Phases 2 and 4 are done; Phase 1 is done and **refutes this PRD's own ≥2 ms prediction**; Phase 3 is
+NOT STARTED and is now bounded at roughly 0.3 ms before anyone writes it. Evidence:
+[`docs/verification/prd-224-frame-pricing-and-device-arm-2026-08-27.md`](../verification/prd-224-frame-pricing-and-device-arm-2026-08-27.md).
+
+| Phase | State | What the executable said |
+| --- | --- | --- |
+| 1 — frame pricing | **DONE** | Paired desktop arms, three runs each: class tables ON **24.0207 ms** work/frame against OFF **24.0426 ms**. **Flat.** |
+| 2 — `GPURenderPassEncoder` | **DONE** | Landed `47d1adb3`, contract-proven (red 3 failure(s)/exit 1, green exit 0). Priced 2026-08-27: `beginRenderPass`+`end` 80,977 → 8,168 ns (**~9.7×**); `createCommandEncoder` 30,746 → 928 ns (**~33×**, Chrome parity at 919 ns). |
+| 3 — the remaining 37 classes | **NOT STARTED, and now questionable** | `writeBuffer` is the highest-frequency crossing at ~428 calls/frame and costs 1,130 ns against Chrome's 431 ns — ~0.3 ms of excess in total. Converting the rest cannot recover the ~14 ms render excess by this mechanism. |
+| 4 — device arm | **DONE (unpaired)** | Physical Pixel 8, fresh install, cold launch, cool phone: **20.44 fps median**, render.p50 33.56 ms. Against a 30 fps floor and a 58 fps target — **the Android FPS defect is not solved.** |
+
+The conversion is correct, keeps its contract, and buys a real per-call win worth keeping. It is
+**not** the lever that closes PRD-222, because Bayview calls these two classes about three times each
+per frame: the whole conversion is worth ≈0.3 ms of a 24 ms frame. The claim inherited from the
+2026-08-26 root-cause section — that the binding tax accounts for roughly half the render excess —
+is **not supported** by the ON/OFF A/B.
+
 Step 1 of the staged plan (`c9941d0a`, GPUCommandEncoder only, measured 78 835 → ~3 820 ns for
 `createCommandEncoder`) was PARTIAL BY INHERITANCE at filing time. Filed 2026-08-26 for the night
-batch; live at the PRD root since 2026-08-27.
+batch; live at the PRD root since 2026-08-27. **Stays live** — the open question is no longer
+"finish Phase 3" but "is Phase 3 worth writing", which the numbers above now inform.
 
 **Complexity:** +2 for the receiver-identity contract change across three engines, +1 for
 multi-class surface, +1 for design decisions per class = **HIGH mode**.

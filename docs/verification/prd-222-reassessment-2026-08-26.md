@@ -1,5 +1,17 @@
 # PRD-222 native Android FPS reassessment — 2026-08-26
 
+> ## SUPERSEDED IN PART, 2026-08-27 — read this correction before the box below
+>
+> The mechanism named below is real and was fixed for two classes (PRD-224 Phase 2). **Its
+> frame-level claim is refuted.** A paired ON/OFF A/B at HEAD measured `createCommandEncoder` at
+> **928 ns against 30,746 ns** — Chrome parity — while frame work stayed **flat: 24.0207 ms ON
+> against 24.0426 ms OFF**. Bayview issues these classes about three times per frame, so the whole
+> tax is ≈0.3 ms of a 24 ms frame, not "roughly half" of the 14.6 ms excess. The Pixel 8 at HEAD
+> measures **20.44 fps**. The render excess is **still unattributed**. Evidence:
+> [PRD-224 frame pricing and device arm](prd-224-frame-pricing-and-device-arm-2026-08-27.md);
+> loop-log **F14**. Everything in the box below is kept as the record of how the mechanism was
+> found — the mechanism stands, its predicted size does not.
+
 > ## Read this first — the answer, found 2026-08-26 late
 >
 > **Root cause: the native host re-installs an object's whole method table on every call that
