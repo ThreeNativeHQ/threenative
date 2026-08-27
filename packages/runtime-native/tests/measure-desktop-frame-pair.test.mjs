@@ -161,7 +161,7 @@ test("pair runner hashes immutable inputs, uses root Xvfb, and records every lau
     assert.ok(commands.every(({ command }) => command[0] === "sh"));
     assert.ok(commands.every(({ command }) => command[1].endsWith("/scripts/xvfb.sh")));
     assert.ok(commands.every(({ command }) => command.includes(bundle)));
-    assert.ok(commands.every(({ cwd }) => cwd === project));
+    assert.ok(commands.every(({ cwd }) => cwd === dirname(bundle)));
     assert.ok(report.runs.every((run) => run.loadavg === "0.25 0.50 0.75 1/100 123"));
     assert.deepEqual(JSON.parse(readFileSync(join(output, "report.json"), "utf8")), report);
   } finally {
