@@ -26,7 +26,7 @@ void expect(bool condition, const std::string& what) {
     }
 }
 
-void runContract(mystral::js::Engine& engine) {
+void runContract(mystral::js::Engine& engine, bool forceLegacyShape = false) {
     if (!engine.supportsNativeMethods()) {
         // Explicitly gated engines fall back to the legacy per-instance install; assert the
         // gate says no rather than half-supporting it.
@@ -51,7 +51,9 @@ void runContract(mystral::js::Engine& engine) {
 
     static int one = 1;
     static int two = 2;
-    const bool fixedShape = engine.supportsNativeObjectTemplates();
+    // Negative control: force the pre-PRD-227 property-bag path without changing production.
+    // V8's fixed-shape assertion below must turn red under this mutation.
+    const bool fixedShape = engine.supportsNativeObjectTemplates() && !forceLegacyShape;
     const auto first = fixedShape
         ? engine.newNativeObject("TNTestReceiver", &one)
         : engine.newObject();
@@ -61,6 +63,14 @@ void runContract(mystral::js::Engine& engine) {
     if (!fixedShape) {
         engine.setPrivateData(first, &one);
         engine.setPrivateData(second, &two);
+        if (forceLegacyShape && engine.getType() == mystral::js::EngineType::V8) {
+            // Reproduce the old Reflect.set property-bag assembly with different installation
+            // orders. These instances must diverge to different hidden classes.
+            engine.setProperty(first, "alpha", engine.newNumber(1));
+            engine.setProperty(first, "beta", engine.newNumber(2));
+            engine.setProperty(second, "beta", engine.newNumber(2));
+            engine.setProperty(second, "alpha", engine.newNumber(1));
+        }
     }
     expect(engine.setPrototypeOf(first, proto), "first instance adopts the class prototype");
     expect(engine.setPrototypeOf(second, proto), "second instance adopts the class prototype");
@@ -207,10 +217,12 @@ void runRuntimeContract() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     setenv("TN_V8_FLAGS", "--allow-natives-syntax", 1);
+    const bool forceLegacyShape =
+        argc > 1 && std::string(argv[1]) == "legacy-shape-control";
     const auto engineV8 = mystral::js::createEngine(mystral::js::EngineType::V8);
-    if (engineV8) runContract(*engineV8);
+    if (engineV8) runContract(*engineV8, forceLegacyShape);
 
     // Unavailable engines return null and are skipped loudly by createEngine itself.
     const auto engineQuickJs = mystral::js::createEngine(mystral::js::EngineType::QuickJS);
@@ -222,6 +234,9 @@ int main() {
     runRuntimeContract();
 
     if (failures != 0) {
+        if (forceLegacyShape) {
+            std::cerr << "RED observed: legacy wrapper shape rejected" << std::endl;
+        }
         std::cerr << "command-encoder-class-table contract: " << failures << " failure(s)"
                   << std::endl;
         return 1;
