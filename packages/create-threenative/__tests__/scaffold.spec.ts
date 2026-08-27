@@ -46,7 +46,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   defense: "8b4ee31fabb04d7892806e9599149fb7b029caf6fa11fcd4435d26f768118e27",
   minimal: "5a2e55fd77a28a779494a3f989b418e571f1f23be1621cc57a146e63ecbaa9e3",
   platformer: "38cfcf17875b2dfd25845e7825de5482f357a09ff4646cdcc47b966b50853a84",
-  racing: "aa3dabc0b13f6397a1e32a6dca8c4561f6054d1debf89bfb879d9a24433fa7d7",
+  // Refreshed after the racing camera roll moved from Euler assignment to local-axis rotation.
+  racing: "44e1894440b96ce69177b1c8ef607e4ad09983bc5e46036d67a27fe6840bb523",
   shooter: "f3a5edeb6e954f6366c72010f337fed90e92ce6dedf41592df53f2182b76ae30",
   starter: "7986602817044c89ba1f7b4064ae05e78c71c7a65e36a6f8deb38f8b9ae434c2",
 };

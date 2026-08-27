@@ -28,5 +28,5 @@ export function chaseCamera(
 }
 
 export function cameraRoll(camera: PerspectiveCamera, heading: Vector3): void {
-  camera.rotation.z = MathUtils.clamp(-heading.x * 0.018, -0.035, 0.035);
+  camera.rotateZ(MathUtils.clamp(-heading.x * 0.018, -0.035, 0.035));
 }

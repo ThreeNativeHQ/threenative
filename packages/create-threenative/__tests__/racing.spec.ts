@@ -2,8 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { PathFollow3D } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
-import { Vector3 } from "three";
+import { PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { cameraRoll, chaseCamera } from "../templates/racing/src/render/camera.js";
 import { toon } from "../templates/racing/src/render/palette.js";
 import { rankRacers, routeProgress } from "../templates/racing/src/track/Ranking.js";
 import { intersectRay } from "../templates/racing/src/track/Track.js";
@@ -11,6 +12,19 @@ import { intersectRay } from "../templates/racing/src/track/Track.js";
 const racingRoot = path.resolve("packages/create-threenative/templates/racing");
 
 describe("racing route promotion", () => {
+  it("keeps the horizon upright when the chase camera faces along the x axis", () => {
+    const camera = new PerspectiveCamera();
+    const target = new Vector3(2, 0.55, -18);
+    const heading = new Vector3(1, 0, 0);
+
+    chaseCamera(camera, target, heading, 1);
+    cameraRoll(camera, heading);
+
+    const renderedUp = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    expect(Math.abs(renderedUp.z)).toBeLessThan(0.05);
+    expect(renderedUp.y).toBeGreaterThan(0.8);
+  });
+
   it("keeps lap-aware progress and ranking in the racing template", () => {
     const route = new PathFollow3D({
       loop: true,
