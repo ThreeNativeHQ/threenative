@@ -4,8 +4,13 @@ prd_contract: v1
 
 # PRD-225 — Physics callback crashes are named or fixed
 
-**Status:** PROBE FIRST — filed 2026-08-26 for the night batch. Nothing in this file asserts the
-crash still reproduces; the first phase exists to answer that before any code moves.
+**Status:** DELIVERED 2026-08-27 — Phase 0 answered (not reproducing at HEAD: 10/10 clean
+fresh-install cold launches) and Phase 1' converted the green into the standing N-launch guard
+(`packages/runtime-native/scripts/device-physics-stability.mjs`). Evidence:
+[`docs/verification/prd-225-physics-callback-stability-2026-08-27.md`](../../verification/prd-225-physics-callback-stability-2026-08-27.md).
+Scope is part of the answer: both original disagreeing observations were physical Pixel 8; the
+10-launch answer is emulator-lane (x86_64) and the physical rerun stays open on the device lane.
+Filed 2026-08-26 for the night batch.
 
 **Complexity:** +1 probe harness, +2 native lifetime work if red = **MEDIUM mode**.
 
@@ -37,8 +42,10 @@ before touching code — no speculative guards.
 
 **Files (1):** verification record (NEW).
 
-- [ ] Install the current arm64 Bayview APK fresh (`pm clear` or uninstall/reinstall), then
-      cold-launch N=10, monitoring `pidof` + logcat tombstones through at least 60 s of live play.
+- [x] Install the current Bayview APK fresh (`pm clear` or uninstall/reinstall), then
+      cold-launch N=10, monitoring `pidof` + logcat tombstones through at least 60 s of live
+      play. (Run 2026-08-27 on the emulator lane, x86_64 — not arm64; the physical arm stays
+      open. See the verification record's scope section.)
 - [ ] Red criterion named up front: ≥1 SIGSEGV/tombstone inside gameplay windows (live windows,
       `update.mean ≥ 3 ms`) in 10 launches = reproduced. Zero in 10 = not reproducing at HEAD;
       record that honestly under Phase 1's contract below.
@@ -56,9 +63,11 @@ before touching code — no speculative guards.
 
 Zero deaths is a result, not silence:
 
-- [ ] The N=10 relaunch loop joins the device preflight / verification tooling so a regression
+- [x] The N=10 relaunch loop joins the device preflight / verification tooling so a regression
       reports itself on the next session rather than being rediscovered by hand mid-capture.
-- [ ] Refutation recorded in the loop log next to the original 5-of-9 observation.
+      (`packages/runtime-native/scripts/device-physics-stability.mjs`, one command.)
+- [x] Refutation recorded in the loop log next to the original 5-of-9 observation (F5 row, with
+      its scope limits inline).
 
 ## Verification
 
@@ -70,6 +79,8 @@ Record `docs/verification/prd-225-physics-callback-stability-<date>.md`.
 
 ## Acceptance Criteria
 
-- [ ] One dated answer exists: reproduces-at-HEAD yes/no, from ≥10 controlled launches.
-- [ ] Either the crash has a pinned minimal repro and a red-green fix, or the N=10 guard exists
-      so the question can never again depend on whoever noticed last time.
+- [x] One dated answer exists: reproduces-at-HEAD **no (emulator lane)**, from 10 controlled
+      launches; the physical rerun stays open on the device lane.
+- [x] Either the crash has a pinned minimal repro and a red-green fix, or the N=10 guard exists
+      so the question can never again depend on whoever noticed last time. (Guard path: the
+      guard exists.)

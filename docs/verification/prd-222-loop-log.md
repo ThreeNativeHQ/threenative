@@ -61,17 +61,25 @@ below is a step on the vblank-cell ladder (20 → 30 → 60), never smooth.
 
 ## Next actions
 
-1. Fix the physics SIGSEGV (F5) — biggest lever on iteration speed and battery.
+1. Rerun the physics stability guard on the physical Pixel 8 when it is next online
+   (`node packages/runtime-native/scripts/device-physics-stability.mjs --apk <apk> --package
+   <id> --serial <serial>`): the emulator lane refuted the SIGSEGV at HEAD (10/10 clean
+   fresh-install launches, 2026-08-27), but both original 5-of-9 observations were physical —
+   the physical rerun is what retires F5. The warm-upgrade path also remains unexercised.
 2. Tier-1 acceptance rerun of the upload-staging win on a cool, charged phone (this pair was
    matched-warm development evidence).
 3. File the direct-path readback defect (F6) with its probe as evidence.
-4. **Attack the per-value seam cost (F13), not the crossing count.** In order: drop the
+4. Android loading-gate capture on the Pixel (one pair): the loading-screen fix is
+   desktop-proven at `b6d3a9bf`/`ca419748`, but its own caveat says Android wgpu-native has
+   never been proven cheap. Parked here when the device stayed offline through night batch
+   2026-08-26 → 27 (connection refused, twice recorded).
+5. **Attack the per-value seam cost (F13), not the crossing count.** In order: drop the
    per-call `Isolate`/`Context` scopes and hoist the cached `ExternalReference`; replace
    `Reflect.set` with `Object::CreateDataProperty` and name-keyed `Object::Get` with internal
    fields; stop wrapping every crossed value in a `v8::Persistent`; then give WebGPU wrappers
    fixed shapes (`ObjectTemplate` + internal fields), which is the only item that reaches the
    3.9 ms/frame of megamorphic and dictionary property lookups on the JavaScript side.
-5. Do **not** re-rank `render_pass_end` as a lever: symbolized, the Mali driver is 2.3 ms of a
+6. Do **not** re-rank `render_pass_end` as a lever: symbolized, the Mali driver is 2.3 ms of a
    53 ms frame. The earlier 7.94% was inclusive of everything wgpu defers into `end()`.
 
 ## Device result, 2026-08-26 evening — upload staging v3, paired arms

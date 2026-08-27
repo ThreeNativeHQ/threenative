@@ -4,18 +4,20 @@ prd_contract: v1
 
 # PRD-224 — WebGPU binding tables install once per class
 
-**Status:** PARTIAL BY INHERITANCE — step 1 of
-[`docs/bugs/webgpu-binding-table-installed-per-call-2026-08-26.md`](../../bugs/webgpu-binding-table-installed-per-call-2026-08-26.md)'s
-staged plan landed at `c9941d0a` (GPUCommandEncoder only, measured 78 835 → ~3 820 ns for
-`createCommandEncoder`). Everything below — the frame-level pricing, the widening, the device arm —
-is NOT STARTED. Filed 2026-08-26 for the night batch.
+**Status:** PARTIAL — Phase 2's conversion landed at `47d1adb3` and is contract-proven (red
+3 failure(s)/exit 1 with the fast path disabled, green exit 0 restored; both pasted 2026-08-27 in
+[`docs/verification/prd-224-binding-tables-once-per-class-2026-08-27.md`](../verification/prd-224-binding-tables-once-per-class-2026-08-27.md)).
+Phases 1 (frame pricing), 3 (widen the remaining classes) and 4 (device arm) are NOT STARTED.
+Step 1 of the staged plan (`c9941d0a`, GPUCommandEncoder only, measured 78 835 → ~3 820 ns for
+`createCommandEncoder`) was PARTIAL BY INHERITANCE at filing time. Filed 2026-08-26 for the night
+batch; live at the PRD root since 2026-08-27.
 
 **Complexity:** +2 for the receiver-identity contract change across three engines, +1 for
 multi-class surface, +1 for design decisions per class = **HIGH mode**.
 
 ## Why this is the highest-value item tonight
 
-The root cause of the parity defect ([PRD-222 reassessment](../../verification/prd-222-reassessment-2026-08-26.md),
+The root cause of the parity defect ([PRD-222 reassessment](../verification/prd-222-reassessment-2026-08-26.md),
 ROOT CAUSE section): every WebGPU object handed to JavaScript installs its whole method table on
 **every call that creates it**, through transactional machinery designed for one-time installation.
 Measured per call against Chrome on the same machine:
