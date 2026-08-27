@@ -47,7 +47,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "b9572b2e470dc5d1c7f0c226c3e29c627afb8f8cc7addadcd682ecafb987b748",
   racing: "d5c2239e7eb90401a17d918639ba57207d0dc3490704896af385001cc214c1e6",
   shooter: "e57452d2f7c0f4cb7080e0b3d0946d9467b6ea6a87549cc56da9c6dee29e1087",
-  starter: "8dfcbceba6bce76ec75aea46557bdf5669a6d4f784ba2fbeac15f1ae89fcf56f",
+  starter: "7527e5de08c8d6c9683d53408c39412c978958eb86799ca1995f3f746fc71ac5",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -349,6 +349,21 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  it("keeps the starter's shipped assets mobile-shippable", async () => {
+    // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
+    // can ship there. The starter's demo assets are tiny enough that compression only ever grew
+    // them (150 -> 542 bytes on the 16x16 proof texture), so the template pins both to "none" —
+    // the exact red this prevents, hit on 2026-08-27: `build:android` on a machine with the
+    // Basis encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built
+    // clean the week before, purely because the encoder got installed in between.
+    const config = await readFile(
+      path.join(TEMPLATE_ROOT, "starter", "threenative.config.ts"),
+      "utf8",
+    );
+    expect(config).toMatch(/models:\s*"none"/u);
+    expect(config).toMatch(/textures:\s*"none"/u);
   });
 
   it("should generate the starter tree without catalog protocols", async () => {
