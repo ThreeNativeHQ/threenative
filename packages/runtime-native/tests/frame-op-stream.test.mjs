@@ -48,6 +48,13 @@ function records(buffer) {
 }
 
 describe("packed frame op stream", () => {
+  it("keeps resource id loads class-specific so V8 inline caches stay polymorphic", () => {
+    expect(source).not.toMatch(/v\?\.\[field\]|v\[field\]/u);
+    expect(source).toMatch(/const bufferId = \(v\) => resourceId\(v, v\?\._bufferId/u);
+    expect(source).toMatch(/const textureId = \(v\) => resourceId\(v, v\?\._textureId/u);
+    expect(source).toMatch(/const pipelineId = \(v/u);
+  });
+
   it("reuses its arena after the host synchronously drains a frame", () => {
     const { queue, drain } = harness();
     queue.writeBuffer({ _bufferId: 1 }, 0, new Uint32Array(1));

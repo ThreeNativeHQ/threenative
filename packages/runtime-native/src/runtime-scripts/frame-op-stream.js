@@ -56,13 +56,19 @@
     view.setUint32(start + 4, cursor - start, true);
     opCount++;
   };
-  const id = (v, field, label) => {
-    const n = v?.[field];
+  const resourceId = (v, n, label) => {
     if (!Number.isSafeInteger(n) || n <= 0)
       throw new TypeError(`frame op stream: ${label} has no numeric id`);
     retained.push(v);
     return n;
   };
+  const bufferId = (v) => resourceId(v, v?._bufferId, "buffer");
+  const textureId = (v) => resourceId(v, v?._textureId, "texture");
+  const textureViewId = (v) => resourceId(v, v?._textureViewId, "texture view");
+  const pipelineId = (v, label = "pipeline") => resourceId(v, v?._pipelineId, label);
+  const bindGroupId = (v) => resourceId(v, v?._bindGroupId, "bind group");
+  const renderBundleId = (v) => resourceId(v, v?._renderBundleId, "render bundle");
+  const commandBufferId = (v) => resourceId(v, v?.__tnCommandBufferId, "command buffer");
   const opt = (v, fallback) => (v === undefined ? fallback : v);
   const offsets = (v) => {
     const n = v == null ? 0 : v.length;
@@ -81,7 +87,7 @@
     }
   };
   const textureCopy = (c) => {
-    u32(id(c.texture, "_textureId", "texture"));
+    u32(textureId(c.texture));
     u32(opt(c.mipLevel, 0));
     const o = opt(c.origin, {});
     if (Array.isArray(o)) {
@@ -121,8 +127,8 @@
       u32(colors.length);
       for (const c of colors) {
         if (!c) throw new TypeError("frame op stream: null color attachment unsupported");
-        u32(id(c.view, "_textureViewId", "texture view"));
-        u32(c.resolveTarget ? id(c.resolveTarget, "_textureViewId", "resolve view") : 0);
+        u32(textureViewId(c.view));
+        u32(c.resolveTarget ? textureViewId(c.resolveTarget) : 0);
         u32(c.loadOp === "load" ? 1 : 0);
         u32(c.storeOp === "discard" ? 1 : 0);
         const x = opt(c.clearValue, {});
@@ -141,7 +147,7 @@
       const d = descriptor.depthStencilAttachment;
       u32(d ? 1 : 0);
       if (d) {
-        u32(id(d.view, "_textureViewId", "depth view"));
+        u32(textureViewId(d.view));
         f64(opt(d.depthClearValue, 1));
         u32(d.depthLoadOp === "load" ? 1 : 0);
         u32(d.depthStoreOp === "discard" ? 1 : 0);
@@ -156,27 +162,27 @@
       setPipeline: (p) =>
         emit(4, () => {
           u32(passId);
-          u32(id(p, "_pipelineId", "render pipeline"));
+          u32(pipelineId(p, "render pipeline"));
         }),
       setBindGroup: (i, g, o) =>
         emit(5, () => {
           u32(passId);
           u32(i);
-          u32(id(g, "_bindGroupId", "bind group"));
+          u32(bindGroupId(g));
           offsets(o);
         }),
       setVertexBuffer: (s, b, o, z) =>
         emit(6, () => {
           u32(passId);
           u32(s);
-          u32(id(b, "_bufferId", "buffer"));
+          u32(bufferId(b));
           f64(opt(o, 0));
           f64(opt(z, -1));
         }),
       setIndexBuffer: (b, f, o, z) =>
         emit(7, () => {
           u32(passId);
-          u32(id(b, "_bufferId", "buffer"));
+          u32(bufferId(b));
           u32(f === "uint32");
           f64(opt(o, 0));
           f64(opt(z, -1));
@@ -201,13 +207,13 @@
       drawIndirect: (b, o) =>
         emit(10, () => {
           u32(passId);
-          u32(id(b, "_bufferId", "buffer"));
+          u32(bufferId(b));
           f64(o);
         }),
       drawIndexedIndirect: (b, o) =>
         emit(11, () => {
           u32(passId);
-          u32(id(b, "_bufferId", "buffer"));
+          u32(bufferId(b));
           f64(o);
         }),
       setViewport: (...a) =>
@@ -244,7 +250,7 @@
         emit(16, () => {
           u32(passId);
           u32(a.length);
-          for (const b of a) u32(id(b, "_renderBundleId", "render bundle"));
+          for (const b of a) u32(renderBundleId(b));
         }),
       end: () => emit(17, () => u32(passId)),
     };
@@ -259,13 +265,13 @@
       setPipeline: (p) =>
         emit(19, () => {
           u32(passId);
-          u32(id(p, "_pipelineId", "compute pipeline"));
+          u32(pipelineId(p, "compute pipeline"));
         }),
       setBindGroup: (i, g, o) =>
         emit(20, () => {
           u32(passId);
           u32(i);
-          u32(id(g, "_bindGroupId", "bind group"));
+          u32(bindGroupId(g));
           offsets(o);
         }),
       dispatchWorkgroups: (x, y, z) =>
@@ -289,9 +295,9 @@
       copyBufferToBuffer(s, so, d, do_, z) {
         emit(23, () => {
           u32(this[encoderIdKey]);
-          u32(id(s, "_bufferId", "buffer"));
+          u32(bufferId(s));
           f64(so);
-          u32(id(d, "_bufferId", "buffer"));
+          u32(bufferId(d));
           f64(do_);
           f64(z);
         });
@@ -299,7 +305,7 @@
       copyBufferToTexture(s, d, z) {
         emit(24, () => {
           u32(this[encoderIdKey]);
-          u32(id(s.buffer, "_bufferId", "buffer"));
+          u32(bufferId(s.buffer));
           f64(opt(s.offset, 0));
           u32(opt(s.bytesPerRow, 0));
           u32(opt(s.rowsPerImage, 0));
@@ -311,7 +317,7 @@
         emit(25, () => {
           u32(this[encoderIdKey]);
           textureCopy(s);
-          u32(id(d.buffer, "_bufferId", "buffer"));
+          u32(bufferId(d.buffer));
           f64(opt(d.offset, 0));
           u32(opt(d.bytesPerRow, 0));
           u32(opt(d.rowsPerImage, 0));
@@ -329,7 +335,7 @@
       clearBuffer(b, o, z) {
         emit(27, () => {
           u32(this[encoderIdKey]);
-          u32(id(b, "_bufferId", "buffer"));
+          u32(bufferId(b));
           f64(opt(o, 0));
           f64(opt(z, -1));
         });
@@ -350,13 +356,13 @@
     encoder[encoderIdKey] = encoderId;
     return encoder;
   };
-  const wrapDestroy = (resource, field, label, opcode) => {
+  const wrapDestroy = (resource, readId, opcode) => {
     if (!resource || typeof resource.destroy !== "function") return resource;
     let destroyed = false;
     resource.destroy = () => {
       if (destroyed) return;
-      const resourceId = id(resource, field, label);
-      emit(opcode, () => u32(resourceId));
+      const id = readId(resource);
+      emit(opcode, () => u32(id));
       destroyed = true;
     };
     return resource;
@@ -364,9 +370,9 @@
   const createBuffer = device.createBuffer.bind(device);
   const createTexture = device.createTexture.bind(device);
   device.createBuffer = (descriptor) =>
-    wrapDestroy(createBuffer(descriptor), "_bufferId", "buffer", 32);
+    wrapDestroy(createBuffer(descriptor), bufferId, 32);
   device.createTexture = (descriptor) =>
-    wrapDestroy(createTexture(descriptor), "_textureId", "texture", 33);
+    wrapDestroy(createTexture(descriptor), textureId, 33);
   queue.writeBuffer = (b, o, d, do_, z) => {
     if (!Number.isSafeInteger(o) || o < 0 || o & 3)
       throw new RangeError(
@@ -376,7 +382,7 @@
     if (copy.byteLength & 3)
       throw new RangeError("frame op stream: writeBuffer size must be a multiple of 4");
     emit(1, () => {
-      u32(id(b, "_bufferId", "buffer"));
+      u32(bufferId(b));
       f64(o);
       u32(copy.byteLength);
       raw(copy);
@@ -417,7 +423,7 @@
   queue.submit = (a) =>
     emit(29, () => {
       u32(a.length);
-      for (const b of a) u32(id(b, "__tnCommandBufferId", "command buffer"));
+      for (const b of a) u32(commandBufferId(b));
     });
   return () => {
     if (!opCount) return null;
