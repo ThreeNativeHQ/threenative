@@ -43,6 +43,13 @@ test("frame parser enforces submit and indexed-draw thresholds", () => {
     () => parseFrameMarkers(exactlyOneHundredDraws),
     /TN_DESKTOP_PAIR_INDEXED_DRAWS_TOO_FEW:frame=226/u,
   );
+  const batchedTooFew =
+    'TN_ANDROID_JS_NATIVE:{"frame":226,"submits":2,"bindingNs":36,"calls":9,"threadCpuNs":330,"presentNs":10,"bridgeNs":99,"bridgeOverheadNs":36,"commands":{"drawIndexed":120},"commandNs":{"drawIndexed":36}}';
+  assert.throws(() => parseFrameMarkers(batchedTooFew), /TN_DESKTOP_PAIR_SUBMITS_TOO_FEW:frame=226/u);
+  assert.throws(
+    () => parseFrameMarkers(batchedTooFew.replace('"submits":2', '"submits":1.5')),
+    /TN_DESKTOP_PAIR_INVALID_NUMBER:submits/u,
+  );
 });
 
 test("frame parser reports per-frame and run medians for all registered terms", () => {
@@ -66,6 +73,24 @@ test("frame parser reports per-frame and run medians for all registered terms", 
   assert.equal(median([9, 1, 5]), 5);
   assert.equal(median([10, 2, 4, 8]), 6);
   assert.throws(() => median([]), /TN_DESKTOP_PAIR_MEDIAN_EMPTY/u);
+});
+
+test("one batched candidate marker accounts for all submits while legacy markers count as one each", () => {
+  const batchedLog =
+    'TN_ANDROID_JS_NATIVE:{"frame":226,"submits":3,"bindingNs":36,"calls":9,"threadCpuNs":330,"presentNs":10,"bridgeNs":99,"bridgeOverheadNs":36,"commands":{"drawIndexed":120},"commandNs":{"drawIndexed":36}}';
+  const batched = parseFrameMarkers(batchedLog);
+  assert.equal(batched.eligibleFrames, 1);
+  assert.deepEqual(batched.frames[0], {
+    bridgeNs: 99,
+    bridgeOverheadNs: 36,
+    commandNs: 36,
+    frame: 226,
+    indexedDraws: 120,
+    submits: 3,
+    workNs: 320,
+  });
+  const legacy = parseFrameMarkers(validLog);
+  assert.equal(legacy.frames[0].submits, 3);
 });
 
 test("F15 alternates arms and discards only global launches one and two", () => {

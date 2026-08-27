@@ -152,16 +152,21 @@ function validateEligibleSample(sample) {
     (total, [name, value]) => total + finiteNonNegative(value, `commandNs.${name}`),
     0,
   );
-  return { ...sample, commandNs, indexedDraws };
+  const submits = sample.submits === undefined ? 1 : sample.submits;
+  if (!Number.isInteger(submits) || submits <= 0) {
+    throw new DesktopFramePairError("TN_DESKTOP_PAIR_INVALID_NUMBER:submits");
+  }
+  return { ...sample, commandNs, indexedDraws, submits };
 }
 
 function summarizeFrame(frame, samples) {
-  if (samples.length < MINIMUM_SUBMITS) {
+  const sum = (field) => samples.reduce((total, sample) => total + sample[field], 0);
+  const submits = sum("submits");
+  if (submits < MINIMUM_SUBMITS) {
     throw new DesktopFramePairError(`TN_DESKTOP_PAIR_SUBMITS_TOO_FEW:frame=${frame}`, {
-      submits: samples.length,
+      submits,
     });
   }
-  const sum = (field) => samples.reduce((total, sample) => total + sample[field], 0);
   const indexedDraws = sum("indexedDraws");
   if (indexedDraws <= MINIMUM_INDEXED_DRAWS) {
     throw new DesktopFramePairError(`TN_DESKTOP_PAIR_INDEXED_DRAWS_TOO_FEW:frame=${frame}`, {
@@ -174,7 +179,7 @@ function summarizeFrame(frame, samples) {
     commandNs: sum("commandNs"),
     frame,
     indexedDraws,
-    submits: samples.length,
+    submits,
     workNs: sum("threadCpuNs") - sum("presentNs"),
   };
 }
