@@ -12,7 +12,7 @@ import {
 import { palette } from "./palette.js";
 
 /* BEGIN THREENATIVE LOADING APPEARANCE */
-/** Racing keeps its own amber composition; all behavior is authored here. */
+/** Action-RPG look and composition; edit this file, not framework configuration. */
 export const loading = {
   backgroundColor: palette.skyLow,
   backgroundImage: undefined as string | undefined,
@@ -22,7 +22,7 @@ export const loading = {
   progressColor: palette.accent,
   showStatus: false,
   trackColor: palette.skyHigh,
-  bar: { anchorX: 0.5, anchorY: 0.7, height: 9, maxWidth: 560, minWidth: 1, width: 0.64 },
+  bar: { anchorX: 0.5, anchorY: 0.74, height: 10, maxWidth: 500, width: 0.58 },
 } as const;
 /* END THREENATIVE LOADING APPEARANCE */
 
@@ -34,6 +34,7 @@ interface ILoadingHost {
     readonly scene: Scene;
     opaque: boolean;
   };
+  readonly renderer: { compileAsync(scene: Scene, camera: Camera): Promise<void> };
   readonly scene: Scene;
   readonly startup: { readonly progress: number; whenReady(): Promise<void> };
   readonly viewport?: {
@@ -291,6 +292,17 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   void (async () => {
     await host.startup.whenReady();
     if (done) return;
+    // Prewarm the world's shaders, but do not wait for them here. `whenReady()` already means the
+    // world is safe to show, and compiling a lit, post-processed scene takes far longer than the
+    // launch window: hold the screen for it and a playtest — which advances a fixed step as fast
+    // as the machine allows — runs an entire scenario behind the launch screen, so every capture
+    // photographs the loading bar instead of the game. The prewarm still happens; it no longer
+    // decides when the player sees the world.
+    try {
+      void host.renderer.compileAsync(host.scene, host.camera).catch(() => undefined);
+    } catch {
+      // A renderer without compileAsync is not a reason to keep the world hidden.
+    }
     finish();
   })();
 

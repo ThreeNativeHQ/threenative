@@ -21,6 +21,7 @@
     "visuals": "sh scripts/xvfb.sh tsx scripts/visual-gate.ts",
     "lint": "biome check .",
     "quality": "tsx scripts/check-quality.ts",
+    "stamp:template-loading": "tsx scripts/stamp-template-loading.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
     "gate:status": "tsx scripts/gate-cli.ts status",
     "gate:resume": "tsx scripts/gate-cli.ts resume",

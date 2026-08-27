@@ -1,3 +1,5 @@
+import { cp, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import {
   type Mesh,
   MeshBasicMaterial,
@@ -7,7 +9,39 @@ import {
   Texture,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import {
+  canonicalLoadingPath,
+  createProject,
+  restampTemplateLoadingCopies,
+  stampLoadingSource,
+} from "../src/index.js";
+import {
+  loading as actionLoading,
+  createLoadingScreen as createActionLoadingScreen,
+} from "../templates/action-rpg/src/render/loading.js";
+import {
+  createLoadingScreen as createDefenseLoadingScreen,
+  loading as defenseLoading,
+} from "../templates/defense/src/render/loading.js";
 import { createLoadingScreen, loading } from "../templates/platformer/src/render/loading.js";
+import {
+  createLoadingScreen as createRacingLoadingScreen,
+  loading as racingLoading,
+} from "../templates/racing/src/render/loading.js";
+import {
+  createLoadingScreen as createShooterLoadingScreen,
+  loading as shooterLoading,
+} from "../templates/shooter/src/render/loading.js";
+import {
+  createLoadingScreen as createStarterLoadingScreen,
+  loading as starterLoading,
+} from "../templates/starter/src/render/loading.js";
+
+const templateRoot = path.resolve("packages/create-threenative/templates");
+const stampedTemplates = ["action-rpg", "defense", "platformer", "racing", "shooter", "starter"];
+const loadingPath = (template: string): string =>
+  path.join(templateRoot, template, "src/render/loading.ts");
 
 /**
  * The loading screen is generated user source, but every scaffolded project starts from this copy,
@@ -56,6 +90,114 @@ function resizeCanvas(camera: OrthographicCamera, width: number, height: number)
 }
 
 describe("template loading screen", () => {
+  it("requires every full kit to ship the loading source", async () => {
+    for (const template of stampedTemplates) {
+      await expect(readFile(loadingPath(template), "utf8"), template).resolves.toContain(
+        "export function createLoadingScreen",
+      );
+    }
+  });
+
+  it("keeps every full kit stamped from the one canonical implementation", async () => {
+    const canonicalPath = canonicalLoadingPath(templateRoot);
+    const canonical = await readFile(canonicalPath, "utf8");
+    expect(canonicalPath).toContain("template-assets/loading.ts");
+    expect(canonical).toContain("BEGIN THREENATIVE LOADING APPEARANCE");
+
+    for (const template of stampedTemplates) {
+      const source = await readFile(loadingPath(template), "utf8");
+      expect(stampLoadingSource(canonical, source), template).toBe(source);
+      expect(source, template).not.toMatch(/@threenative\//u);
+      expect(source, template).not.toMatch(/function createStatus|const create\s*=/u);
+      expect(source.match(/export function createLoadingScreen/gu), template).toHaveLength(1);
+      expect(source.match(/function meshFor/gu), template).toHaveLength(1);
+      expect(source.match(/function statusMesh/gu), template).toHaveLength(1);
+    }
+  });
+
+  it("restamps a canonical structural edit while retaining each kit's appearance block", async () => {
+    const canonical = await readFile(canonicalLoadingPath(templateRoot), "utf8");
+    const source = await readFile(loadingPath("platformer"), "utf8");
+    const edited = canonical.replace("function meshFor(", "function canonicalMeshFor(");
+
+    expect(stampLoadingSource(edited, source)).toContain("function canonicalMeshFor(");
+    expect(stampLoadingSource(edited, source)).toContain("maxWidth: 1200");
+  });
+
+  it("restamps all six tracked copies from a canonical edit", async () => {
+    const root = await makeTempDir("threenative-loading-restamp-");
+    const stagedTemplates = path.join(root, "templates");
+    await cp(templateRoot, stagedTemplates, { recursive: true });
+    await cp(path.join(templateRoot, "../template-assets"), path.join(root, "template-assets"), {
+      recursive: true,
+    });
+
+    const canonicalPath = path.join(root, "template-assets", "loading.ts");
+    const canonical = await readFile(canonicalPath, "utf8");
+    const mutation = "function restampReviewRoundMeshFor(";
+    await writeFile(canonicalPath, canonical.replace("function meshFor(", mutation));
+    const originalSources = new Map(
+      await Promise.all(
+        stampedTemplates.map(
+          async (template) =>
+            [
+              template,
+              await readFile(loadingPath(template).replace(templateRoot, stagedTemplates), "utf8"),
+            ] as const,
+        ),
+      ),
+    );
+
+    const files = await restampTemplateLoadingCopies(stagedTemplates);
+    expect(files).toHaveLength(stampedTemplates.length);
+    for (const template of stampedTemplates) {
+      const source = await readFile(
+        loadingPath(template).replace(templateRoot, stagedTemplates),
+        "utf8",
+      );
+      expect(source, template).toContain(mutation);
+      expect(source, template).toContain("BEGIN THREENATIVE LOADING APPEARANCE");
+      expect(source, template).toBe(
+        stampLoadingSource(
+          canonical.replace("function meshFor(", mutation),
+          originalSources.get(template) ?? "",
+        ),
+      );
+    }
+  });
+
+  it("propagates a canonical edit through createProject while retaining the kit appearance", async () => {
+    const root = await makeTempDir("threenative-loading-scaffold-");
+    const stagedTemplates = path.join(root, "templates");
+    await cp(templateRoot, stagedTemplates, { recursive: true });
+    await cp(path.join(templateRoot, "..", "template-assets"), path.join(root, "template-assets"), {
+      recursive: true,
+    });
+    await cp(path.join(templateRoot, "..", "agent-docs"), path.join(root, "agent-docs"), {
+      recursive: true,
+    });
+
+    const canonicalPath = path.join(root, "template-assets", "loading.ts");
+    const canonical = await readFile(canonicalPath, "utf8");
+    const mutation = "function canonicalReviewRoundMeshFor(";
+    await writeFile(canonicalPath, canonical.replace("function meshFor(", mutation));
+
+    const templateSource = await readFile(loadingPath("platformer"), "utf8");
+    const appearance = templateSource.match(
+      /\/\* BEGIN THREENATIVE LOADING APPEARANCE \*\/[\s\S]*?\/\* END THREENATIVE LOADING APPEARANCE \*\//u,
+    )?.[0];
+    expect(appearance).toBeDefined();
+
+    const { target } = await createProject(
+      { install: false, target: "generated", template: "platformer" },
+      root,
+      stagedTemplates,
+    );
+    const generated = await readFile(path.join(target, "src/render/loading.ts"), "utf8");
+    expect(generated).toContain(mutation);
+    expect(generated).toContain(appearance as string);
+  });
+
   it("draws opaque quads only in the independent canvas layer", () => {
     const source = host();
     const worldChildren = [...source.scene.children];
@@ -97,6 +239,25 @@ describe("template loading screen", () => {
     expect(fill.scale.y).not.toBe(1);
     expect(fill.scale.y).toBeCloseTo(track.scale.y, 6);
     expect(fill.scale.x).toBeLessThan(track.scale.x);
+  });
+
+  it("preserves each kit's zero-progress minimum fill appearance", () => {
+    const kits = [
+      [actionLoading, createActionLoadingScreen, 1],
+      [defenseLoading, createDefenseLoadingScreen, 1],
+      [loading, createLoadingScreen, 2],
+      [racingLoading, createRacingLoadingScreen, 1],
+      [shooterLoading, createShooterLoadingScreen, 1],
+      [starterLoading, createStarterLoadingScreen, 1],
+    ] as const;
+
+    for (const [configuration, create, minimum] of kits) {
+      const source = host();
+      create(source);
+      const { fill } = quads(source.canvasLayer.scene);
+      expect(configuration.bar.minWidth).toBe(minimum);
+      expect(fill.scale.x).toBe(minimum);
+    }
   });
 
   it("never lets the fill outgrow the track, whatever progress reports", () => {
