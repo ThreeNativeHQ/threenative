@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-227 — the frame crosses once
 
-**Status:** PROPOSED — filed 2026-08-27 from the measured budget in
+**Status:** IN PROGRESS — P1 accepted; P2 executed and falsified; Phase 3 awaits a qualifying
+Pixel 8 battery state. Filed 2026-08-27 from the measured budget in
 [PATH-TO-60FPS](../verification/PATH-TO-60FPS-2026-08-27.md). This is the implementation PRD that
 PRD-226's ablation ladder was built to justify. PRD-226 stays live and owns the instrument; this one
 owns the fix.
@@ -91,29 +92,32 @@ different owners).
 
 **Falsification gate P1. Run this before any of Phase 2 exists.**
 
-- [ ] Op stream extended to every per-frame command, `queue.writeBuffer` included; recorded in JS,
+- [x] Op stream extended to every per-frame command, `queue.writeBuffer` included; recorded in JS,
       replayed and submitted from C++ in one crossing per frame.
-- [ ] Desktop profiled lane (Xvfb, **not `:0`** — voided at `d42d1a3d`), same-session control pair,
+- [x] Desktop profiled lane (Xvfb, **not `:0`** — voided at `d42d1a3d`), same-session control pair,
       F15 warm-up rule, load stamped, binaries sha256'd.
-- [ ] **Prediction, pre-registered:** `bridgeNs` collapses **9.15 → under 1.5 ms**; `work` falls
+- [x] **Prediction, pre-registered:** `bridgeNs` collapses **9.15 → under 1.5 ms**; `work` falls
       **23.9 → ≤17 ms**.
-- [ ] **Falsified if `bridgeNs` collapses but `work` does not.** That would put the seam's cost
+- [x] **Falsification evaluated and not triggered:** `bridgeNs` and `work` both crossed their
+      thresholds. If `bridgeNs` had collapsed but `work` had not, the seam's cost would be
       somewhere other than where this PRD puts it, and Change 2's premise dies with it. **Stop and
       re-derive; do not proceed to Phase 2.**
-- [ ] Red-green with its mutation named: disable the stream at its entry point → the replay
-      conformance executable fails; paste both.
+- [x] Red-green with its mutation named: the executable's disabled-stream control fails, and
+      disabling the stream at its request-device entry point returns `bridgeNs` to the direct-call
+      control; paste both.
 
 ### Phase 2 — Change 2, fixed-shape wrappers
 
-- [ ] `ObjectTemplate` + internal fields per WebGPU class; native handles resolved from internal
+- [x] `ObjectTemplate` + internal fields per WebGPU class; native handles resolved from internal
       fields, never by name lookup.
-- [ ] No `v8::Persistent` per crossed value; lifetime re-derived from the receiver.
+- [x] No `v8::Persistent` per crossed value; lifetime re-derived from the receiver.
 - [ ] Cross-engine: QuickJS and JSC lanes **exercised, not compile-checked**. Name the lane that ran;
       "compiled only" is not verification. An engine without the capability keeps the legacy path
       behind an explicit gate.
-- [ ] **Falsification gate P2:** fresh symbolized `simpleperf` on device — megamorphic stub cache +
-      name dictionary falls from **10.5% to under 3%** of render-thread self time. If it does not
-      move, three.js's inline caches are megamorphic for a reason other than our wrapper shapes.
+- [x] **Falsification gate P2 executed — FAIL:** fresh symbolized `simpleperf` measured
+      megamorphic stub cache + name dictionary at **11.84%**, not under 3%. Source-resolved V8 IC
+      logging names Three.js's node-material shader graph, not native wrapper shapes, as the
+      dominant steady-state population.
 
 ### Phase 3 — device acceptance
 
@@ -149,13 +153,13 @@ Record `docs/verification/prd-227-<phase>-<date>.md`, one file per run session.
 
 - [ ] **Bayview ≥ 60 fps median on a cool, discharging physical Pixel 8**, three captures,
       SurfaceFlinger-confirmed. This is the bar; 30 fps is a milestone to report, never a pass.
-- [ ] The frame issues **one crossing per frame** for command submission, asserted by an executable.
+- [x] The frame issues **one crossing per frame** for command submission, asserted by an executable.
       (Mutation: restore a direct per-call path for any recorded command → crossing-count assertion
       fails.)
-- [ ] Two wrappers of the same WebGPU class share one hidden class, asserted by an executable.
+- [x] Two wrappers of the same WebGPU class share one hidden class, asserted by an executable.
       (Mutation: revert to `Reflect.set` assembly → shape-identity test fails.)
-- [ ] Both changes are independently revertible, each with a negative control that fails on revert.
-- [ ] No ablation or measurement flag ships: `scripts/__tests__/ablation-flags-never-ship.spec.ts`
+- [x] Both changes are independently revertible, each with a negative control that fails on revert.
+- [x] No ablation or measurement flag ships: `scripts/__tests__/ablation-flags-never-ship.spec.ts`
       green.
 - [ ] Cross-engine coverage is **named**, not implied.
 - [ ] Web unchanged: `pnpm visuals` clean.

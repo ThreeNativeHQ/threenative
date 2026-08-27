@@ -26,7 +26,7 @@ void expectMalformed(mystral::webgpu::BindingsState* state, const char* expressi
     expect(exception.find(expected) != std::string::npos, what + ": " + exception);
 }
 
-void runContract() {
+void runContract(bool disableStreamControl) {
     mystral::RuntimeConfig config;
     config.width = 1;
     config.height = 1;
@@ -80,6 +80,8 @@ void runContract() {
         engine->processMicrotasks();
     }
     expect(state->frameOpStreamDrain.ptr, "production frame op stream is installed");
+    const auto installedDrain = state->frameOpStreamDrain;
+    if (disableStreamControl) state->frameOpStreamDrain = {};
     runtime->pollEvents();
     expect(engine->toBoolean(engine->getGlobalProperty("__tnFrameCallbackRan")),
            "commands ran inside a real requestAnimationFrame callback");
@@ -87,6 +89,11 @@ void runContract() {
            "writeBuffer, encoder, finish, and submit replay in one crossing");
     expect(state->frameOpStreamDirectCommandCalls == 0,
            "no recorded command reached a direct command callback");
+    if (disableStreamControl) {
+        // Restore ownership so teardown frees the protected handle and the remaining fail-closed
+        // parser controls can run. The crossing assertion above must already be red.
+        state->frameOpStreamDrain = installedDrain;
+    }
     const std::vector<std::string> expectedOrder = {
         "writeBuffer", "createCommandEncoder", "clearBuffer", "copyBufferToBuffer",
         "beginRenderPass", "render.end",
@@ -140,9 +147,14 @@ void runContract() {
 
 }  // namespace
 
-int main() {
-    runContract();
+int main(int argc, char** argv) {
+    const bool disableStreamControl =
+        argc > 1 && std::string(argv[1]) == "disabled-stream-control";
+    runContract(disableStreamControl);
     if (failures != 0) {
+        if (disableStreamControl) {
+            std::cerr << "RED observed: disabled frame stream rejected" << std::endl;
+        }
         std::cerr << failures << " frame op stream assertion(s) failed" << std::endl;
         return 1;
     }
