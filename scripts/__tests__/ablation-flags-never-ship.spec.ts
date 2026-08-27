@@ -52,20 +52,14 @@ describe("PRD-226 ablation flags never ship", () => {
   });
 
   it("enables no ablation flag in the shipped Android build", () => {
-    const gradle = readFileSync(
-      join(runtimeNative, "android", "app", "build.gradle.kts"),
-      "utf8",
-    );
+    const gradle = readFileSync(join(runtimeNative, "android", "app", "build.gradle.kts"), "utf8");
     for (const flag of ABLATION_FLAGS) {
       expect(gradle.includes(flag), `build.gradle.kts must not name ${flag}`).toBe(false);
     }
   });
 
   it("guards the ablation header behind its flag", () => {
-    const header = readFileSync(
-      join(runtimeNative, "src", "webgpu", "ablation.h"),
-      "utf8",
-    );
+    const header = readFileSync(join(runtimeNative, "src", "webgpu", "ablation.h"), "utf8");
     // Every redefinition lives inside the flag's #if; nothing leaks into a default build.
     const guarded = header.slice(header.indexOf("#if defined(TN_ABLATE_BACKEND)"));
     for (const line of header.split("\n")) {
