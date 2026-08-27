@@ -298,6 +298,7 @@ function assertImmutable(hashes, expectedHashes, globalLaunch) {
 
 function executeLaunch({ inputs, outputDirectory, planned, readLoad, spawn }) {
   const binary = inputs[planned.arm];
+  const projectRoot = resolve(dirname(inputs.bundle), "../..");
   const prefix = `${String(planned.globalLaunch).padStart(2, "0")}-${planned.arm}-run-${planned.run}`;
   const logPath = join(outputDirectory, `${prefix}.log`);
   const screenshotPath = join(outputDirectory, `${prefix}.png`);
@@ -323,7 +324,7 @@ function executeLaunch({ inputs, outputDirectory, planned, readLoad, spawn }) {
     startedAt: new Date().toISOString(),
   };
   const result = spawn(command[0], command.slice(1), {
-    cwd: workspaceRoot,
+    cwd: projectRoot,
     encoding: "utf8",
     env: { ...process.env, SDL_VIDEODRIVER: "x11" },
     maxBuffer: 128 * 1024 * 1024,

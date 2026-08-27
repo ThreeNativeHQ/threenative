@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -125,12 +125,14 @@ test("F15 alternates arms and discards only global launches one and two", () => 
 });
 
 test("pair runner hashes immutable inputs, uses root Xvfb, and records every launch", () => {
-  const temporaryDirectory = makeTempDirSync("desktop-frame-pair-");
+    const temporaryDirectory = makeTempDirSync("desktop-frame-pair-");
   try {
     const control = join(temporaryDirectory, "control");
     const candidate = join(temporaryDirectory, "candidate");
-    const bundle = join(temporaryDirectory, "bayview.js");
+    const project = join(temporaryDirectory, "bayview");
+    const bundle = join(project, ".threenative", "build", "game.js");
     const output = join(temporaryDirectory, "evidence");
+    mkdirSync(dirname(bundle), { recursive: true });
     writeFileSync(control, "control-binary");
     writeFileSync(candidate, "candidate-binary");
     writeFileSync(bundle, "bayview-bundle");
@@ -139,8 +141,8 @@ test("pair runner hashes immutable inputs, uses root Xvfb, and records every lau
       { bundle, candidate, control, output, runs: 2 },
       {
         readLoad: () => "0.25 0.50 0.75 1/100 123",
-        spawnSync: (command, args) => {
-          commands.push([command, ...args]);
+        spawnSync: (command, args, options) => {
+          commands.push({ command: [command, ...args], cwd: options.cwd });
           const screenshotAt = args.indexOf("--screenshot") + 1;
           writeFileSync(args[screenshotAt], "png-evidence");
           return { signal: null, status: 0, stderr: "", stdout: validLog };
@@ -156,9 +158,10 @@ test("pair runner hashes immutable inputs, uses root Xvfb, and records every lau
     assert.equal(report.arms.control.runs, 1);
     assert.equal(report.arms.candidate.runs, 1);
     assert.equal(new Set(report.runs.map((run) => run.hashes.bundle)).size, 1);
-    assert.ok(commands.every((command) => command[0] === "sh"));
-    assert.ok(commands.every((command) => command[1].endsWith("/scripts/xvfb.sh")));
-    assert.ok(commands.every((command) => command.includes(bundle)));
+    assert.ok(commands.every(({ command }) => command[0] === "sh"));
+    assert.ok(commands.every(({ command }) => command[1].endsWith("/scripts/xvfb.sh")));
+    assert.ok(commands.every(({ command }) => command.includes(bundle)));
+    assert.ok(commands.every(({ cwd }) => cwd === project));
     assert.ok(report.runs.every((run) => run.loadavg === "0.25 0.50 0.75 1/100 123"));
     assert.deepEqual(JSON.parse(readFileSync(join(output, "report.json"), "utf8")), report);
   } finally {
