@@ -6,7 +6,7 @@ const source = readFileSync(
   join(import.meta.dirname, "..", "src", "runtime-scripts", "frame-op-stream.js"),
   "utf8",
 );
-const factory = Function(`"use strict"; return (${source});`)();
+const factory = Function(`"use strict"; let factory; factory = ${source}\nreturn factory;`)();
 
 function harness() {
   const device = {
