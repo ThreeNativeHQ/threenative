@@ -63,7 +63,9 @@ function releaseFromManifest(manifest, key) {
 
 export function readRelease(manifestPath, key) {
   if (!existsSync(manifestPath)) {
-    throw new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
+    const error = new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
+    error.code = 'PREBUILT_RELEASE_MISSING';
+    throw error;
   }
   return releaseFromManifest(JSON.parse(readFileSync(manifestPath, 'utf8')), key);
 }
@@ -92,9 +94,11 @@ async function fetchRelease(manifestUrl, key) {
     );
   }
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       `Prebuilt release manifest fetch failed for '${key}' at ${url.href}: HTTP ${response.status}.`,
     );
+    if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
+    throw error;
   }
   return releaseFromManifest(await response.json(), key);
 }
@@ -149,6 +153,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
           console.error(
             `Could not record prebuilt install status: ${statusError instanceof Error ? statusError.message : String(statusError)}`,
           );
+        }
+        // An unpublished release is a packaging-state fact, not a broken download. The web game
+        // this install carries must not lose node_modules/.bin over an optional native binary;
+        // the native lanes fail closed later, on the missing binary itself.
+        if (error instanceof Error && error.code === 'PREBUILT_RELEASE_MISSING') {
+          console.warn(
+            `No prebuilt release is published for v${packageVersion} (${reason}). ` +
+              'Continuing without the native runtime; desktop and device lanes fail closed on the missing binary.',
+          );
+          return;
         }
         console.error(reason);
         process.exitCode = 1;

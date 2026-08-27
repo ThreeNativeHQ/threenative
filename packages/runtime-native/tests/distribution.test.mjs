@@ -12,6 +12,7 @@ import { PNG } from 'pngjs';
 import {
   PREBUILT_KEYS,
   RELEASE_REPOSITORY,
+  downloadReleaseArtifact,
   installPrebuilt,
   platformKey,
   readRelease,
@@ -135,6 +136,54 @@ test('records a failed prebuilt install with its release URL and reason', () => 
     url,
     version: '0.3.0',
   });
+});
+
+test('a 404 release manifest is recognised as a missing release, not a generic failure', async () => {
+  const server = createServer((request, response) => {
+    response.statusCode = 404;
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    await assert.rejects(
+      downloadReleaseArtifact('linux-x64', {
+        manifestUrl: `http://127.0.0.1:${address.port}/prebuilt-lock.json`,
+      }),
+      (error) => error.code === 'PREBUILT_RELEASE_MISSING',
+    );
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test('an unpublished release records the gap and finishes the consumer install', async () => {
+  const root = makeTempDirSync('threenative-prebuilt-missing-');
+  roots.push(root);
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  writeFileSync(
+    join(root, 'package.json'),
+    `${JSON.stringify({ name: '@threenative/runtime-native', version: '0.3.0' })}\n`,
+  );
+  // The shipped script itself, not a reimplementation: the subject is the install lifecycle.
+  writeFileSync(
+    join(root, 'scripts', 'install-prebuilt.mjs'),
+    readFileSync(join(import.meta.dirname, '..', 'scripts', 'install-prebuilt.mjs')),
+  );
+  const manifestPath = join(root, 'prebuilt-lock.json'); // deliberately absent
+  const result = await run(process.execPath, [join(root, 'scripts', 'install-prebuilt.mjs')], {
+    cwd: root,
+    env: { ...process.env, THREENATIVE_PREBUILT_MANIFEST: manifestPath },
+  });
+  // `run` rejects on a non-zero exit — the pre-fix install aborts here, which is the red.
+  const status = JSON.parse(readFileSync(join(root, 'prebuilt', 'install-status.json'), 'utf8'));
+  assert.equal(status.ok, false);
+  assert.match(status.reason, /linux-x64/);
+  assert.match(result.stderr, /no prebuilt release is published/iu);
 });
 
 test('exports the complete prebuilt key table consumed by release packaging', () => {
