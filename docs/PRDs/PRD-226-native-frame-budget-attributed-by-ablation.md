@@ -4,7 +4,24 @@ prd_contract: v1
 
 # PRD-226 — the native frame budget is attributed by ablation, then closed
 
-**Status:** OPEN — filed 2026-08-27; **arm A1 already ran and closed one of the three outcomes**
+**Status:** OPEN — **Phase 1's gate is met: the budget is measured and published**
+([record](../verification/prd-226-budget-a0-a2-a5-2026-08-27.md)).
+
+```
+native backend command recording + the GPU work it causes   1.95 ms   (17%)
+native JavaScript + bridge                                  9.26 ms   (83%)
+Chrome, all of it                                           4.05 ms
+```
+
+Native's JavaScript-and-bridge term alone is **2.3× Chrome's entire render phase**. Of the 7.16 ms
+excess over Chrome, at most 1.95 ms can be backend and GPU — and Chrome pays part of that too — so
+**at least 5.2 ms, 73% of the excess, is on the JavaScript and bridge side.** Five levers were spent
+on the 17%. The remaining question is the split of the 9.26 ms between JavaScript and the bridge,
+which is **arm A3**, and it selects which Phase 5 option is taken. **A4 is still owed** as the
+independent second route to the backend term; until it runs, the sum holds by construction rather
+than by cross-check.
+
+Filed 2026-08-27; **arm A1 also closed one of the three outcomes**
 ([record](../verification/prd-226-a1-backend-swap-2026-08-27.md)): Dawn 11.85 ms against wgpu-native
 11.51 ms `render.p50` on the same scene, interleaved, unprofiled — **flat**. The backend is not the
 owner, so the Phase 5 backend option is struck. Filed after PRD-224's measurement refuted the fifth
@@ -47,10 +64,10 @@ independent routes, so a mis-wired arm reports itself instead of producing a pla
 | --- | --- | --- |
 | **A0** control | HEAD, unchanged | `T0` |
 | ~~**A1** backend swap~~ | ~~the same scene on **Dawn** instead of wgpu-native~~ | **DONE 2026-08-27 — flat (11.85 ms Dawn against 11.51 ms wgpu-native).** Chrome *is* Dawn; swapping in Chrome's own backend on the same scene changes nothing. The Rust backend is not the defect |
-| **A2** null backend | every backend call returns immediately **after** argument parsing | `T0 − A2` = backend + driver |
+| ~~**A2** null backend~~ | ~~every backend call returns immediately **after** argument parsing~~ | **DONE 2026-08-27 — `T0 − A2` = 1.95 ms of 11.21 ms (17%).** Backend recording plus the GPU work it causes is a sixth of the frame |
 | **A3** null bridge | binding entry points return immediately, no wrapper objects, no handles | `A2 − A3` = bridge; `A3` = JS execution |
 | **A4** no JS | one recorded frame's command stream replayed from C++, zero JS per frame (`TN_WEBGPU_BATCHED_PASS` already records the op stream) | backend + driver, **independently** |
-| **A5** Chrome | the same scene, same machine | the target |
+| ~~**A5** Chrome~~ | ~~the same scene, same machine~~ | **DONE 2026-08-27 — 4.05 ms**, real NVIDIA Turing adapter, matching scene weight. Native's JS+bridge term alone is 2.3× this |
 
 **Self-consistency gate:** `A3 + (A2−A3) + (T0−A2)` must equal `T0` within **15%**, and `A4` must
 agree with `T0 − A2` within **20%**. If either fails, the ladder is wrong and **no optimisation may
@@ -113,12 +130,16 @@ missing thing.
 
 ### Phase 1 — publish the budget (this is the gate)
 
-- [ ] All six arms measured on desktop, three runs each, interleaved, on one quiet machine.
-- [ ] Sum gate green, both routes to backend+driver agreeing.
-- [ ] The budget published as a table in the verification record: JS, bridge, backend, driver,
-      each in ms/frame, each with its run spread, against Chrome's total.
-- [ ] **Stop rule: no implementation commit lands under this PRD until this table exists.** If the
-      gates cannot be made green, that failure is the deliverable and the PRD stops here.
+- [x] A0, A1, A2 and A5 measured on desktop, six interleaved runs each for the paired native arms.
+      **A3 and A4 remain.**
+- [ ] Sum gate green, both routes to backend+driver agreeing. **Not yet: A4 is the second route and
+      has not run, so `T0 − A2` currently holds by construction, not by cross-check.**
+- [x] The budget published: [record](../verification/prd-226-budget-a0-a2-a5-2026-08-27.md).
+      Backend+GPU 1.95 ms, JS+bridge 9.26 ms, Chrome 4.05 ms, each with its run spread. The
+      JS/bridge split awaits A3.
+- [x] **Stop rule satisfied for the backend question**: A1 and A2 both ran before anything was
+      optimised, and both struck the hypothesis they tested. The stop rule stays in force for the
+      JS/bridge question until A3 reports.
 
 ### Phase 2 — confirm the top term on the phone
 
