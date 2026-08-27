@@ -9,6 +9,7 @@ const SKIP_DIRECTORIES = new Set([
   "coverage",
   "test-results",
   ".runtime",
+  ".claude",
   ".cxx",
   ".gradle",
   ".test-tmp",
