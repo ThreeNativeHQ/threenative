@@ -74,7 +74,10 @@ below is a step on the vblank-cell ladder (20 → 30 → 60), never smooth.
    desktop-proven at `b6d3a9bf`/`ca419748`, but its own caveat says Android wgpu-native has
    never been proven cheap. Parked here when the device stayed offline through night batch
    2026-08-26 → 27 (connection refused, twice recorded).
-5. **Find the real owner of the render excess before writing another lever.** F14 measured the
+5. **Find the real owner of the render excess before writing another lever** — filed as
+   [PRD-226](../PRDs/PRD-226-native-frame-budget-attributed-by-ablation.md), an ablation ladder with
+   a self-consistency gate and a pre-registration rule that retroactively refuses Levers A and C,
+   F10 and PRD-224 Phase 3. F14 measured the
    binding-install tax end to end: it is ≈0.3 ms of a 24 ms frame, not the half-of-the-excess the
    2026-08-26 root-cause section predicted. Neither crossing count (F12) nor per-call install cost
    (F14) explains the ~14 ms desktop gap against Chrome, so the next step is attribution, not
