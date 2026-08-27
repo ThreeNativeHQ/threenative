@@ -3018,6 +3018,7 @@ static js::JSValueHandle tnWebgpuHandler64(BindingsState* state, BindingDestinat
                             textureInfo.accounted = false;
                             state->textureRegistry[textureId] = textureInfo;
                             // Store texture ID for lookup
+                            state->engine->setProperty(jsTexture, "_textureId", state->engine->newNumber(textureId));
                             if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUTexture", "createView", 0, nullptr,
                                 makeCapturedHandler(textureId, &tnWebgpuHandler65)
