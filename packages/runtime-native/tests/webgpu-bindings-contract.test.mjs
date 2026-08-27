@@ -903,6 +903,81 @@ test("GPUCommandEncoder installs its table once per class, not per call", () => 
   );
 });
 
+test("GPURenderPassEncoder installs its table once per class, and end() resolves its encoder from the map", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+
+  // The one-time class table carries all fifteen receiver-aware rows on the transactional path.
+  const builder = blockBetween(
+    bindings,
+    "static bool ensureRenderPassEncoderClassTable",
+    "static void rollbackCommandEncoder",
+  );
+  for (const name of [
+    "setPipeline",
+    "setBindGroup",
+    "draw",
+    "setVertexBuffer",
+    "setIndexBuffer",
+    "drawIndexed",
+    "drawIndirect",
+    "drawIndexedIndirect",
+    "setViewport",
+    "setScissorRect",
+    "setBlendConstant",
+    "setStencilReference",
+    "executeBundles",
+    "end",
+  ]) {
+    assert.match(builder, new RegExp(`"GPURenderPassEncoder",\\s*"${name}"`, "u"));
+  }
+  assert.match(builder, /supportsNativeMethods\(\)/u);
+  assert.match(builder, /makeRenderPassEndMethod/u);
+
+  // The paired-state ruling: no captured (encoder, pass) closure anywhere in the receiver-aware
+  // end — the encoder resolves from the receiver through encoderRenderPassMap at call time.
+  assert.match(builder, /encoderForLiveRenderPass/u);
+  assert.doesNotMatch(
+    blockBetween(bindings, "static js::JSValueHandle makeRenderPassEndMethod", "static bool ensureRenderPassEncoderClassTable"),
+    /makeCapturedPairHandler/u,
+  );
+
+  // Instance creation points at the shared prototype before any legacy fallback runs.
+  const beginPass = blockBetween(
+    bindings,
+    "static js::JSValueHandle tnWebgpuHandler38",
+    "static js::JSValueHandle tnWebgpuHandler37",
+  );
+  const assertClassWired = (beginPassSource) => {
+    assert.match(
+      beginPassSource,
+      /ensureRenderPassEncoderClassTable\(state, renderPassPrototype\)/u,
+    );
+    assert.match(
+      beginPassSource,
+      /setPrototypeOf\(jsRenderPass, renderPassPrototype\)/u,
+    );
+    assert.ok(
+      beginPassSource.indexOf("resumeFrameTracking") <
+        beginPassSource.indexOf("WGPURenderPassEncoder capturedRenderPassForCommands = renderPass"),
+      "fast path must return before the legacy per-call install",
+    );
+  };
+  assertClassWired(beginPass);
+
+  // Guard self-check: deleting the prototype attachment must fail this guard, so a revert to
+  // per-call installs cannot land green.
+  assert.throws(
+    () =>
+      assertClassWired(
+        beginPass.replace(
+          /js::JSValueHandle renderPassPrototype\{\};[\s\S]*?WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;/u,
+          "WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;",
+        ),
+      ),
+    /did not match|fast path/u,
+  );
+});
+
 test("texture and pipeline wrapper factories use the shared table dispatcher", () => {
   const factories = read("src/webgpu/wrapper_factories.cpp");
   assert.match(factories, /#include "mystral\/webgpu\/registration_table\.h"/u);

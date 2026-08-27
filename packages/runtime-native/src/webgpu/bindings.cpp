@@ -3901,6 +3901,10 @@ static js::JSValueHandle tnWebgpuHandler39(BindingsState* state, WGPURenderPassE
                                             return state->engine->newUndefined();
 }
 
+// Defined below the handler rows; handler38's wrapper creation takes this fast path first.
+static bool ensureRenderPassEncoderClassTable(
+    BindingsState* state, js::JSValueHandle& outPrototype);
+
 static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty()) {
                                         state->engine->throwException("beginRenderPass requires a descriptor");
@@ -4053,6 +4057,18 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                     state->engine->suspendFrameTracking();
                                     auto jsRenderPass = state->engine->newObject();
                                     state->engine->setPrivateData(jsRenderPass, renderPass);
+                                    // Fast path: point this instance at the class's one-time
+                                    // prototype instead of reinstalling fifteen methods
+                                    // transactionally per pass (PRD-224 phase 2).
+                                    js::JSValueHandle renderPassPrototype{};
+                                    if (!state->engine->hasException() &&
+                                        ensureRenderPassEncoderClassTable(state, renderPassPrototype) &&
+                                        state->engine->setPrototypeOf(jsRenderPass, renderPassPrototype)) {
+                                        state->engine->resumeFrameTracking();
+                                        return jsRenderPass;
+                                    }
+                                    // Legacy per-call install: retained unchanged so the fast
+                                    // path can be reverted in one commit.
                                     WGPURenderPassEncoder capturedRenderPassForCommands = renderPass;
                                     const auto rollbackRenderPass = [&]() {
                                         auto it = state->encoderRenderPassMap.find(encoderToUse);
@@ -4268,6 +4284,239 @@ static bool ensureCommandEncoderClassTable(
     // the binding state does.
     engine->freezeHandle(prototype);
     state->commandEncoderPrototype = prototype;
+    outPrototype = prototype;
+    return true;
+}
+
+/**
+ * Creates one receiver-aware GPURenderPassEncoder method that resolves the pass from the
+ * receiving wrapper's private data. Same shape as makeCommandEncoderMethod; handlers 39–51 only
+ * ever needed the pass, so a plain receiver resolve replaces the per-instance capture.
+ */
+static js::JSValueHandle makeRenderPassMethod(
+    BindingsState* state,
+    const char* name,
+    js::JSValueHandle (*method)(
+        BindingsState*, WGPURenderPassEncoder, const std::vector<js::JSValueHandle>&),
+    const char* missingReceiverError) {
+    auto* engine = state->engine;
+    return engine->newMethod(
+        name,
+        [state, method, missingReceiverError](
+            js::Engine& engineRef, void* receiverPrivate,
+            const std::vector<js::JSValueHandle>& args) {
+            const auto pass = static_cast<WGPURenderPassEncoder>(receiverPrivate);
+            if (!pass) {
+                engineRef.throwException(missingReceiverError);
+                return engineRef.newUndefined();
+            }
+            return method(state, pass, args);
+        });
+}
+
+/**
+ * The paired-state ruling for `end` (PRD-224 phase 2): the command encoder is NOT captured.
+ * It resolves from the receiver through `encoderRenderPassMap` — the one map beginRenderPass
+ * already maintains — so a shared prototype can serve every (encoder, pass) pairing. Lifetime
+ * is re-derived at the call, never assumed: a pass whose map entry is gone (already ended, or
+ * its encoder rolled back) takes the same silent no-op the captured handler's mismatch branch
+ * has always taken.
+ */
+static WGPUCommandEncoder encoderForLiveRenderPass(
+    BindingsState* state, WGPURenderPassEncoder pass) {
+    for (const auto& entry : state->encoderRenderPassMap) {
+        if (entry.second == pass) return entry.first;
+    }
+    return nullptr;
+}
+
+static js::JSValueHandle makeRenderPassEndMethod(BindingsState* state) {
+    auto* engine = state->engine;
+    return engine->newMethod(
+        "end",
+        [state](
+            js::Engine& engineRef, void* receiverPrivate,
+            const std::vector<js::JSValueHandle>&) {
+            const auto pass = static_cast<WGPURenderPassEncoder>(receiverPrivate);
+            if (!pass) {
+                engineRef.throwException("end called with no render pass receiver");
+                return engineRef.newUndefined();
+            }
+            const auto encoder = encoderForLiveRenderPass(state, pass);
+            if (encoder) {
+                wgpuRenderPassEncoderEnd(pass);
+                wgpuRenderPassEncoderRelease(pass);
+                state->encoderRenderPassMap.erase(encoder);
+                if (state->jsRenderPass == pass) state->jsRenderPass = nullptr;
+                if (state->surfaceRenderEncoder == encoder) {
+                    state->surfaceRenderPassEnded = true;
+                }
+            }
+            return engineRef.newUndefined();
+        });
+}
+
+#if TN_WEBGPU_BATCHED_PASS
+static js::JSValueHandle makeRenderPassBatchedEndMethod(BindingsState* state) {
+    auto* engine = state->engine;
+    return engine->newMethod(
+        "__tnReplayEnd",
+        [state](
+            js::Engine& engineRef, void* receiverPrivate,
+            const std::vector<js::JSValueHandle>& args) {
+            const auto pass = static_cast<WGPURenderPassEncoder>(receiverPrivate);
+            if (!pass) {
+                engineRef.throwException("__tnReplayEnd called with no render pass receiver");
+                return engineRef.newUndefined();
+            }
+            if (!args.empty()) {
+                size_t dataBytes = 0;
+                void* data = engineRef.getArrayBufferData(args[0], &dataBytes);
+                if (data && dataBytes >= sizeof(double)) {
+                    const double* slots = static_cast<const double*>(data);
+                    const size_t count = static_cast<size_t>(slots[0]);
+                    if (count > 1 && dataBytes / sizeof(double) >= count) {
+                        // Replay before ending so every op lands inside the pass.
+                        if (!tnReplayBatchedPassOps(state, pass, slots, count)) {
+                            return engineRef.newUndefined();
+                        }
+                    } else if (count > 0) {
+                        engineRef.throwException("batched pass: op stream exceeds array bounds");
+                    }
+                }
+            }
+            const auto encoder = encoderForLiveRenderPass(state, pass);
+            if (encoder) {
+                wgpuRenderPassEncoderEnd(pass);
+                wgpuRenderPassEncoderRelease(pass);
+                state->encoderRenderPassMap.erase(encoder);
+                if (state->jsRenderPass == pass) state->jsRenderPass = nullptr;
+                if (state->surfaceRenderEncoder == encoder) {
+                    state->surfaceRenderPassEnded = true;
+                }
+            }
+            return engineRef.newUndefined();
+        });
+}
+#endif
+
+/**
+ * Builds the shared GPURenderPassEncoder prototype the first time a pass is created, then
+ * returns it through outPrototype for every instance afterwards. Same contract as
+ * ensureCommandEncoderClassTable: false — with no side effects on instances — whenever the
+ * engine cannot carry receiver-aware methods or the one-time transaction fails, and the caller
+ * falls back to the legacy per-instance install.
+ */
+static bool ensureRenderPassEncoderClassTable(
+    BindingsState* state, js::JSValueHandle& outPrototype) {
+    auto* engine = state->engine;
+    if (!engine->supportsNativeMethods()) return false;
+    if (state->renderPassPrototype.ptr) {
+        outPrototype = state->renderPassPrototype;
+        return true;
+    }
+
+    const auto prototype = engine->newObject();
+    if (!prototype.ptr || engine->hasException()) return false;
+
+    const auto endFn = makeRenderPassEndMethod(state);
+#if TN_WEBGPU_BATCHED_PASS
+    const auto batchedEndFn = makeRenderPassBatchedEndMethod(state);
+#endif
+    const auto setPipelineFn = makeRenderPassMethod(
+        state, "setPipeline", &tnWebgpuHandler39,
+        "setPipeline called with no render pass receiver");
+    const auto setBindGroupFn = makeRenderPassMethod(
+        state, "setBindGroup", &tnWebgpuHandler40,
+        "setBindGroup called with no render pass receiver");
+    const auto drawFn = makeRenderPassMethod(
+        state, "draw", &tnWebgpuHandler41, "draw called with no render pass receiver");
+    const auto setVertexBufferFn = makeRenderPassMethod(
+        state, "setVertexBuffer", &tnWebgpuHandler42,
+        "setVertexBuffer called with no render pass receiver");
+    const auto setIndexBufferFn = makeRenderPassMethod(
+        state, "setIndexBuffer", &tnWebgpuHandler43,
+        "setIndexBuffer called with no render pass receiver");
+    const auto drawIndexedFn = makeRenderPassMethod(
+        state, "drawIndexed", &tnWebgpuHandler44,
+        "drawIndexed called with no render pass receiver");
+    const auto drawIndirectFn = makeRenderPassMethod(
+        state, "drawIndirect", &tnWebgpuHandler45,
+        "drawIndirect called with no render pass receiver");
+    const auto drawIndexedIndirectFn = makeRenderPassMethod(
+        state, "drawIndexedIndirect", &tnWebgpuHandler46,
+        "drawIndexedIndirect called with no render pass receiver");
+    const auto setViewportFn = makeRenderPassMethod(
+        state, "setViewport", &tnWebgpuHandler47,
+        "setViewport called with no render pass receiver");
+    const auto setScissorRectFn = makeRenderPassMethod(
+        state, "setScissorRect", &tnWebgpuHandler48,
+        "setScissorRect called with no render pass receiver");
+    const auto setBlendConstantFn = makeRenderPassMethod(
+        state, "setBlendConstant", &tnWebgpuHandler49,
+        "setBlendConstant called with no render pass receiver");
+    const auto setStencilReferenceFn = makeRenderPassMethod(
+        state, "setStencilReference", &tnWebgpuHandler50,
+        "setStencilReference called with no render pass receiver");
+    const auto executeBundlesFn = makeRenderPassMethod(
+        state, "executeBundles", &tnWebgpuHandler51,
+        "executeBundles called with no render pass receiver");
+    const bool methodsReady =
+        endFn.ptr && setPipelineFn.ptr && setBindGroupFn.ptr && drawFn.ptr
+        && setVertexBufferFn.ptr && setIndexBufferFn.ptr && drawIndexedFn.ptr
+        && drawIndirectFn.ptr && drawIndexedIndirectFn.ptr && setViewportFn.ptr
+        && setScissorRectFn.ptr && setBlendConstantFn.ptr && setStencilReferenceFn.ptr
+        && executeBundlesFn.ptr
+#if TN_WEBGPU_BATCHED_PASS
+        && batchedEndFn.ptr
+#endif
+        && !engine->hasException();
+    if (!methodsReady) {
+        if (engine->hasException()) engine->getException();  // consume; caller falls back
+        return false;
+    }
+
+    // One transactional install for the whole class: the snapshot/verify/rollback guarantees
+    // run once here instead of fourteen-plus times per pass, which is the point of the change.
+    if (!installBindingTable(engine, state, bindingTable({
+        {"GPURenderPassEncoder", "setPipeline", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setPipelineFn},
+        {"GPURenderPassEncoder", "setBindGroup", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setBindGroupFn},
+        {"GPURenderPassEncoder", "draw", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &drawFn},
+        {"GPURenderPassEncoder", "setVertexBuffer", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setVertexBufferFn},
+        {"GPURenderPassEncoder", "setIndexBuffer", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setIndexBufferFn},
+        {"GPURenderPassEncoder", "drawIndexed", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &drawIndexedFn},
+        {"GPURenderPassEncoder", "drawIndirect", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &drawIndirectFn},
+        {"GPURenderPassEncoder", "drawIndexedIndirect", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &drawIndexedIndirectFn},
+        {"GPURenderPassEncoder", "setViewport", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setViewportFn},
+        {"GPURenderPassEncoder", "setScissorRect", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setScissorRectFn},
+        {"GPURenderPassEncoder", "setBlendConstant", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setBlendConstantFn},
+        {"GPURenderPassEncoder", "setStencilReference", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &setStencilReferenceFn},
+        {"GPURenderPassEncoder", "executeBundles", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &executeBundlesFn},
+        {"GPURenderPassEncoder", "end", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &endFn},
+#if TN_WEBGPU_BATCHED_PASS
+        {"GPURenderPassEncoder", "__tnReplayEnd", 0, nullptr,
+         &tnWebgpuClassRowPlaceholder, prototype, &batchedEndFn},
+#endif
+    }))) {
+        return false;
+    }
+
+    engine->freezeHandle(prototype);
+    state->renderPassPrototype = prototype;
     outPrototype = prototype;
     return true;
 }

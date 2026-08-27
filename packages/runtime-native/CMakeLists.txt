@@ -1779,6 +1779,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-command-encoder-class-table-test EXCLUDE_FROM_ALL
         tests/command_encoder_class_table_test.cpp)
     target_link_libraries(threenative-command-encoder-class-table-test PRIVATE mystral-runtime)
+    add_executable(threenative-render-pass-class-table-test EXCLUDE_FROM_ALL
+        tests/render_pass_class_table_test.cpp)
+    target_link_libraries(threenative-render-pass-class-table-test PRIVATE mystral-runtime)
     add_executable(threenative-shader-module-metadata-test EXCLUDE_FROM_ALL
         tests/shader_module_metadata_test.cpp)
     target_link_libraries(threenative-shader-module-metadata-test PRIVATE mystral-runtime)
@@ -1794,6 +1797,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${DAWN_INCLUDE_DIR})
         target_include_directories(threenative-command-encoder-class-table-test PRIVATE
             ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-render-pass-class-table-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
         get_target_property(WGPU_TEST_INCLUDES wgpu::wgpu INTERFACE_INCLUDE_DIRECTORIES)
         target_include_directories(threenative-webgpu-bindings-reentrancy-test PRIVATE
@@ -1801,6 +1806,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         target_include_directories(threenative-shader-module-metadata-test PRIVATE
             ${WGPU_TEST_INCLUDES})
         target_include_directories(threenative-command-encoder-class-table-test PRIVATE
+            ${WGPU_TEST_INCLUDES})
+        target_include_directories(threenative-render-pass-class-table-test PRIVATE
             ${WGPU_TEST_INCLUDES})
     endif()
 

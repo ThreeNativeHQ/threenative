@@ -215,6 +215,10 @@ struct BindingsState {
     // Shared GPUCommandEncoder prototype carrying the once-installed binding table (PRD-222).
     // Empty until the first encoder wrapper exists; frozen methods hold no native handles.
     js::JSValueHandle commandEncoderPrototype = {};
+    // Same mechanism, widened to GPURenderPassEncoder (PRD-224 phase 2). The shared `end` (and
+    // the batched `__tnReplayEnd`) resolve their command encoder from the receiver through
+    // `encoderRenderPassMap` at call time — never captured — so one prototype serves every pass.
+    js::JSValueHandle renderPassPrototype = {};
     std::unordered_set<WGPUCommandEncoder> commandEncoderRegistry;
     std::unordered_map<WGPUCommandEncoder, WGPURenderPassEncoder> encoderRenderPassMap;
     std::unordered_map<WGPUCommandEncoder, WGPUComputePassEncoder> encoderComputePassMap;
