@@ -4,8 +4,11 @@ prd_contract: v1
 
 # PRD-226 — the native frame budget is attributed by ablation, then closed
 
-**Status:** PROPOSED — filed 2026-08-27 after PRD-224's measurement refuted the fifth consecutive
-lever. Supersedes the lever queue in [the PRD-222 fix plan](../verification/prd-222-fix-plan.md);
+**Status:** OPEN — filed 2026-08-27; **arm A1 already ran and closed one of the three outcomes**
+([record](../verification/prd-226-a1-backend-swap-2026-08-27.md)): Dawn 11.85 ms against wgpu-native
+11.51 ms `render.p50` on the same scene, interleaved, unprofiled — **flat**. The backend is not the
+owner, so the Phase 5 backend option is struck. Filed after PRD-224's measurement refuted the fifth
+consecutive lever. Supersedes the lever queue in [the PRD-222 fix plan](../verification/prd-222-fix-plan.md);
 does not supersede PRD-222, which owns the target.
 
 **Goal:** Bayview reaches the **30 fps floor** on a cool physical Pixel 8, then **58 fps**. Standing
@@ -43,7 +46,7 @@ independent routes, so a mis-wired arm reports itself instead of producing a pla
 | Arm | What it is | Term it yields |
 | --- | --- | --- |
 | **A0** control | HEAD, unchanged | `T0` |
-| **A1** backend swap | the same scene on **Dawn** instead of wgpu-native | Rust-backend delta — Chrome *is* Dawn, and this has never been A/B'd although both build directories already exist (`build/tn-linux` is Dawn, `build/tn-linux-wgpu` is wgpu-native) |
+| ~~**A1** backend swap~~ | ~~the same scene on **Dawn** instead of wgpu-native~~ | **DONE 2026-08-27 — flat (11.85 ms Dawn against 11.51 ms wgpu-native).** Chrome *is* Dawn; swapping in Chrome's own backend on the same scene changes nothing. The Rust backend is not the defect |
 | **A2** null backend | every backend call returns immediately **after** argument parsing | `T0 − A2` = backend + driver |
 | **A3** null bridge | binding entry points return immediately, no wrapper objects, no handles | `A2 − A3` = bridge; `A3` = JS execution |
 | **A4** no JS | one recorded frame's command stream replayed from C++, zero JS per frame (`TN_WEBGPU_BATCHED_PASS` already records the op stream) | backend + driver, **independently** |
@@ -96,6 +99,17 @@ missing thing.
 - [ ] Quiet-machine rule written into the runner: it refuses to record while 1-minute load exceeds
       a stated threshold, and stamps `sha256` of the binary it ran. Both PRD-224 lanes were
       polluted by unrelated load on 2026-08-27.
+- [ ] **Warm-up rule, measured by A1 and binding on every arm: discard the first two whole runs of a
+      session, not merely window 1 of each run.** A1 measured run 1 at 26.05 ms against 11.4–12.0 ms
+      for every run after, same binary and bundle, with machine load ruled out. Keeping run 1 is what
+      produced the ±100% spreads that made Levers A and C undecidable. Warmed, this lane's within-arm
+      spread is 0.6 ms and it resolves a ~1 ms lever.
+- [ ] **`fps` is banned as an arm meter on desktop, `:0` included.** A1's arms both sat at 59.6–59.8
+      fps, vsync-capped, while `render.p50` differed. F11 recorded this for Xvfb; it holds on `:0`.
+- [ ] **No cross-session absolute comparison.** The recorded 22.2 ms desktop baseline does not
+      reproduce: the same host revision priced ~2.3× cheaper on 2026-08-27, and the game bundle was
+      rebuilt by another lane (`update.mean` 1.5 ms against a baseline-era 4.0–4.9). Every arm in a
+      budget must come from one session on one bundle.
 
 ### Phase 1 — publish the budget (this is the gate)
 
@@ -146,9 +160,10 @@ Gated on Phase 1's budget; whichever the budget names, and none of them otherwis
       command stream once and C++ submits it; the op stream already exists behind
       `TN_WEBGPU_BATCHED_PASS`. F12 measured this at +5% for the encoder subset alone, so it is only
       justified if the budget shows the bridge term is large across *all* classes.
-- [ ] **If the backend owns it** — A1 already answers this. Chrome is Dawn; if Dawn is materially
-      faster on the same scene, the Android backend choice is the defect and the work is a
-      wgpu-native fix upstream or a backend swap on Android, not more binding work.
+- [x] ~~**If the backend owns it**~~ — **STRUCK 2026-08-27.** A1 ran: Dawn 11.85 ms against
+      wgpu-native 11.51 ms on the same scene, interleaved and unprofiled. Chrome's own backend is not
+      faster here, so the backend is not the owner and no upstream wgpu work or Android backend swap
+      is justified by this evidence.
 
 ## Verification
 
