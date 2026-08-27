@@ -37,10 +37,15 @@
       "label": "look-right",
       "pointerPosition": { "x": 0.75, "y": 0.5 },
       "holdTicks": 2,
-      "release": false,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "look-right-settle",
+      "waitTicks": 8,
+      "release": true,
       "screenshot": "input-look-right"
     },
-    { "kind": "wait", "label": "look-right-settle", "waitTicks": 8, "release": true },
     {
       "kind": "input",
       "label": "look-back",

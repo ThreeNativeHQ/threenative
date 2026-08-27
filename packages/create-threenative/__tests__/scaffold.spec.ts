@@ -46,7 +46,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   minimal: "b61a4ce22cf1f404186852b93d2aea1776f5f24f1a02959a73b13a902b2df509",
   platformer: "b9572b2e470dc5d1c7f0c226c3e29c627afb8f8cc7addadcd682ecafb987b748",
   racing: "d5c2239e7eb90401a17d918639ba57207d0dc3490704896af385001cc214c1e6",
-  shooter: "8840130300bd0101ab2f9b2069fab21883a6c26f33296374ae6bc5be29e70eff",
+  shooter: "e57452d2f7c0f4cb7080e0b3d0946d9467b6ea6a87549cc56da9c6dee29e1087",
   starter: "8dfcbceba6bce76ec75aea46557bdf5669a6d4f784ba2fbeac15f1ae89fcf56f",
 };
 

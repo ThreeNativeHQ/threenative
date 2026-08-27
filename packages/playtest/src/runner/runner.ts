@@ -363,6 +363,28 @@ async function runStandalonePlaytestInternal(
       await writeCaptureProvenance(activeConfig.artifactDirectory, captureProvenance);
     }
     let captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined;
+    /**
+     * One blank-capture grace window. An accelerated canvas can legitimately present nothing at
+     * the sampled instant — shader prewarm still settling, HMR re-present, a busy GPU — while the
+     * world is one present away from its first visible frame. Wait for two more animation frames
+     * (bounded by 500 ms) before the caller shoots again. Not a skip: whatever the second shot
+     * shows is final, so a genuinely blank surface still fails closed.
+     */
+    const presentationGrace = async (): Promise<void> => {
+      if (page === undefined || page.isClosed?.()) return;
+      await Promise.race([
+        page.evaluate(() => new Promise<void>((resolveFrames) => {
+          let remaining = 2;
+          const tick = (): void => {
+            remaining -= 1;
+            if (remaining <= 0) resolveFrames();
+            else requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        })),
+        new Promise<void>((resolveTimeout) => setTimeout(resolveTimeout, 500)),
+      ]);
+    };
     const capturePage = async (
       label: string,
       options: Parameters<Page["screenshot"]>[0],
@@ -387,8 +409,20 @@ async function runStandalonePlaytestInternal(
         return png;
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
-        captureFailure ??= { code: error.code, label: error.label, reason: error.reason };
-        return undefined;
+        await presentationGrace();
+        try {
+          png = await activePage.screenshot(options);
+        } catch {
+          // The first shot stands; its blank verdict is what gets reported below.
+        }
+        try {
+          assertCaptureNotBlank(png, label);
+          return png;
+        } catch (error2) {
+          if (!(error2 instanceof CaptureGuardError)) throw error2;
+          captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };
+          return undefined;
+        }
       }
     };
     const captureVisualPage = async (
@@ -409,6 +443,18 @@ async function runStandalonePlaytestInternal(
         return png;
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
+        await presentationGrace();
+        try {
+          const retry = await captureVisualSurface(activePage, artifactPath);
+          if (retry !== undefined) {
+            assertCaptureNotBlank(retry, label);
+            return retry;
+          }
+        } catch (error2) {
+          if (!(error2 instanceof CaptureGuardError)) throw error2;
+          captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };
+          return undefined;
+        }
         captureFailure ??= { code: error.code, label: error.label, reason: error.reason };
         return undefined;
       }
