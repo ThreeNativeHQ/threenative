@@ -43,10 +43,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // vite.config.ts (the stale-dev-server fix, 2026-08-27), with the script that mirrors
   // `scaffoldTreeHash`.
   "action-rpg": "005dab8d4bf7aa70c519caaafd101b8de34fe2642d943788d9001e412766cb47",
-  defense: "ce45c5e3916231121f509701221096fd4b372d8f1aca2efb1261fbc6be408d70",
+  defense: "8b4ee31fabb04d7892806e9599149fb7b029caf6fa11fcd4435d26f768118e27",
   minimal: "5a2e55fd77a28a779494a3f989b418e571f1f23be1621cc57a146e63ecbaa9e3",
-  platformer: "8bf2d182501f0590dd1393dde27e85225c5ed66a06e4f40dca6718bd0cabf437",
-  racing: "92ddc9eeebee86aa554b5fb1b2b509a65344aa8c20acc2ac4f7e488efdc902fd",
+  platformer: "38cfcf17875b2dfd25845e7825de5482f357a09ff4646cdcc47b966b50853a84",
+  racing: "aa3dabc0b13f6397a1e32a6dca8c4561f6054d1debf89bfb879d9a24433fa7d7",
   shooter: "f3a5edeb6e954f6366c72010f337fed90e92ce6dedf41592df53f2182b76ae30",
   starter: "7986602817044c89ba1f7b4064ae05e78c71c7a65e36a6f8deb38f8b9ae434c2",
 };
@@ -497,6 +497,16 @@ describe("create-threenative", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it.each(ALL_TEMPLATES)(
+    "should bind the game used by UI intents in the %s template",
+    async (template) => {
+      const source = await readFile(path.join(TEMPLATE_ROOT, template, "src/game.ts"), "utf8");
+      if (!source.includes("game.ui.onIntent")) return;
+      expect(source).toContain("const game = defineGame");
+      expect(source).toContain("export default game");
+    },
+  );
 
   it("should not ship recast in a build that never imports the navigation entry", async () => {
     const root = await makeTempDir("threenative-minimal-bundle-");

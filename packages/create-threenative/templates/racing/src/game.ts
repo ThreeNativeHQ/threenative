@@ -7,7 +7,7 @@ import { Boot } from "./scenes/Boot.js";
 import { Race } from "./scenes/Race.js";
 import type { GameState } from "./state.js";
 
-export default defineGame<GameState, IPhysicsContext>({
+const game = defineGame<GameState, IPhysicsContext>({
   input: {
     // The four directions of `input.vector("move")`. Declared rather than inherited from the
     // default binding, so the axis every scene reads is visible where the game is defined.
@@ -27,6 +27,8 @@ export default defineGame<GameState, IPhysicsContext>({
   seed: 90210,
   start: "boot",
 });
+
+export default game;
 
 /**
  * What the UI can ask the game to do.

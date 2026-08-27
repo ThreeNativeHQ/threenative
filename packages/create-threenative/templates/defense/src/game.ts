@@ -8,7 +8,7 @@ import { Boot } from "./scenes/Boot.js";
 import { Defense } from "./scenes/Defense.js";
 import type { GameState } from "./state.js";
 
-export default defineGame<GameState, DefensePhysics>({
+const game = defineGame<GameState, DefensePhysics>({
   input: {
     build: { pointer: true },
     move: {
@@ -28,6 +28,8 @@ export default defineGame<GameState, DefensePhysics>({
   seed: 92092,
   start: "boot",
 });
+
+export default game;
 
 /**
  * What the UI can ask the game to do.
