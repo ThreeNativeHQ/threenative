@@ -143,15 +143,41 @@ frame, non-blank 1280×720 screenshot). w2 is the decisive window (see protocol 
 | | xhead1 | 4.34 | 13.04 | 16.76 | 19.74 | 3.54 | |
 | 2 (head→base) | xhead2 | 2.86 | 12.83 | 16.25 | 19.49 | 3.68 | **+0.50** |
 | | xbase2 | 2.47 | **12.33** | 15.78 | 20.02 | 3.29 | |
+| 3a (base→head) — EXCLUDED, phase confound (F7) | xbase3 attempt 1 | 3.49 | 19.11 | 27.0 | 13.15 | **10.45** | — |
+| | xhead3 attempt 1 | 11.70 | 12.74 | 16.34 | 19.68 | 3.52 | |
+| 3b (base→head) — EXCLUDED, phase confound (F7) | xbase3 attempt 2 | 4.82 | 14.72 | 19.44 | 18.46 | 5.05 | −0.96* |
+| | xhead3 attempt 2 | 6.00 | 13.76 | 18.32 | 18.59 | 4.41 | |
 
-Raw w2 lines, all four runs:
+Raw w2 lines, all eight runs (pairs 1–2 decide; pair 3 shown for audit only):
 
 ```
 w2 fps=21.81 frames=300 hitches=0 frame.p50=15.72 render.p50=12.45 render.p95=14.91 render.mean=12.85 update.mean=2.98 hostGap.p50=28.46 substeps.mean=2.74   (xbase1)
 w2 fps=19.74 frames=300 hitches=0 frame.p50=16.76 render.p50=13.04 render.p95=14.78 render.mean=13.2  update.mean=3.54 hostGap.p50=33.66 substeps.mean=3.04   (xhead1)
 w2 fps=19.49 frames=300 hitches=0 frame.p50=16.25 render.p50=12.83 render.p95=16.26 render.mean=13.26 update.mean=3.68 hostGap.p50=33.78 substeps.mean=3.08   (xhead2)
 w2 fps=20.02 frames=300 hitches=0 frame.p50=15.78 render.p50=12.33 render.p95=14.56 render.mean=12.5  update.mean=3.29 hostGap.p50=33.76 substeps.mean=3     (xbase2)
+w2 fps=13.15 frames=300 hitches=0 frame.p50=27    render.p50=19.11 render.p95=36.59 render.mean=24.02 update.mean=10.45 hostGap.p50=40.21 substeps.mean=4.3  (xbase3 attempt 1 — heavy-match phase)
+w2 fps=19.68 frames=300 hitches=0 frame.p50=16.34 render.p50=12.74 render.p95=14.63 render.mean=12.92 update.mean=3.52 hostGap.p50=33.86 substeps.mean=3.05   (xhead3 attempt 1)
+w2 fps=18.46 frames=300 hitches=0 frame.p50=19.44 render.p50=14.72 render.p95=21.17 render.mean=16.11 update.mean=5.05 hostGap.p50=33.67 substeps.mean=3.12   (xbase3 attempt 2)
+w2 fps=18.59 frames=300 hitches=0 frame.p50=18.32 render.p50=13.76 render.p95=16.32 render.mean=14.15 update.mean=4.41 hostGap.p50=34.78 substeps.mean=3.23   (xhead3 attempt 2)
 ```
+
+\* attempt 3b's −0.96 carries a phase confound in the opposite direction (the base arm ran
++0.64 ms more simulation), so it is not comparable and both pair-3 attempts are excluded
+under the live-window/phase-classification rule (loop-log F7/F9): pairs 1–2 are the
+update-matched, order-alternated decision pairs and they agree tightly.
+
+### The voided `:0` first pass (retained per the night lead's instruction; never decision-grade)
+
+The redo's predecessor ran the same protocol on the machine's real display (`:0`,
+`SDL_VIDEODRIVER=x11`) across both host binaries: nine completed 900-frame arms (base1,
+base2, base3, base4, base5, head1, head3, head4, head5 — three matched interleaved pairs
+plus one exploratory pair taken 40 minutes apart) and two gpubench pass-pairs, plus three
+failed launches (two SIGSEGV, one screenshot-save failure). The night lead voided all of it
+after the user reported visible windows — display contention moves render.p50 more than any
+lever under test — and ordered a full Xvfb redo. The `:0` rows are retained in the record's
+prior revision (commit `89325fd5`) with this void marker; their three matched-pair deltas
+(−0.67 / +0.40 / +1.01 ms) were directional agreement only and are superseded by the Xvfb
+pairs above. No `:0` number is decision-grade anywhere in this file.
 
 The fps 19–22 and `hostGap.p50` ~28–34 ms are the Xvfb FIFO present throttle (loop-log F11) —
 fps is never the metric here; `render.p50` is, per protocol. The two pairs agree tightly
@@ -179,7 +205,9 @@ classes covering 6 of 3,214 calls.
 
 ## Decision
 
-**NO-MOVE.**
+**NO-MOVE — and NO-MOVE holds under Xvfb: the Xvfb pair deltas (+0.59 / +0.50 ms, matched
+pairs) agree with the voided `:0` pass's direction-of-no-effect, so the verdict does not
+change between lanes.**
 
 - Against the recorded 22.2 ms baseline: today's native render.p50 (12.3–13.0 ms, both arms,
   Xvfb lane) is ~45% below it — but the zero-conversion control arm lands there too, so the
@@ -240,8 +268,12 @@ call and flat per frame.**
 - **Machine quiet-ness.** The machine was fully quiet only until 09:49. The redo block ran
   at launch loads 1.84–6.08 (each row labelled) after the unrelated jest/tsc storms and the
   user's game session ended — near the machine's idle baseline, per the night lead's
-  sanction ("single digits / whatever this machine's idle baseline is"). The within-cycle
-  interleaving keeps each red/green and each pair's arms in the same load regime.
+  sanction ("single digits / whatever this machine's idle baseline is"). The Wine session
+  seen earlier was gone for the whole redo block (process table checked before each arm);
+  the only coexisting load was a Vite dev server started by another lane in the measurement
+  game's own sandbox (~15–38% CPU, first seen 12:43, not this lane's process, not killed) —
+  its cost lands in the per-row load labels. The within-cycle interleaving keeps each
+  red/green and each pair's arms in the same load regime.
 - **Launch failures across ~10 game launches:** 2 flaky SIGSEGVs at audio-source startup
   (exact signature: `Audio] Source registered, active sources: N` → `[Mystral] Caught signal
   SIGSEGV, exiting gracefully`, N = 24 on the first (base arm, launch 1 of that arm, ~09:44),

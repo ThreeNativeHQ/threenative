@@ -88,12 +88,14 @@ kill switch. The cost is inside what binding bodies do after entry, not how many
       explained.
       ([record](../verification/prd-224-phase1-pricing-2026-08-28.md) — ran on the private-Xvfb
       lane against a sha256'd `af36d3f3` control host; **NO-MOVE**, +0.50/+0.59 ms across two
-      matched pairs (head marginally slower); the stop rule's explanation is priced there.
-      `97a4c808`'s mutation-OFF arm agrees: flat. The recorded 22.2 ms itself no longer
-      reproduces for non-PRD reasons — machine state ~2.3× plus game-bundle drift, both
-      measured in the record, which also voids cross-day baselines as decision inputs. An
-      earlier `:0` pass of this same pair was voided by the night lead — user-visible windows —
-      and redone; the record's ledger names it.)
+      update-matched pairs (head marginally slower; a third pair was excluded for phase
+      confound per F7 — both its attempts are shown in the record); the stop rule's
+      explanation is priced there. `97a4c808`'s mutation-OFF arm agrees: flat. The recorded
+      22.2 ms itself no longer reproduces for non-PRD reasons — machine state ~2.3× plus
+      game-bundle drift, both measured in the record, which also voids cross-day baselines as
+      decision inputs. An earlier `:0` pass of this same pair was voided by the night lead —
+      user-visible windows — and redone; the record retains those rows marked void and
+      confirms the verdict holds on both lanes.)
 - [x] Whole-run averages are banned (see the loading-screen bug's 3× startup swing); frames
       226–899 only. (Protocol followed throughout: per-window reporting only, w1 discarded,
       w2 mapped to the 226–899 band; the mapping is written down in the record.)
