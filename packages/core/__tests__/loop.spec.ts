@@ -193,6 +193,25 @@ describe("FixedStepLoop", () => {
 
     expect(loop.tick()).toBe(3);
   });
+
+  it("reports the actual callback duration separately from presentation timestamps", () => {
+    let clock = 0;
+    const frameDurations: number[] = [];
+    const loop = new FixedStepLoop({
+      now: () => clock,
+      onFrame: (frameMs) => frameDurations.push(frameMs),
+      onRender: () => {
+        clock += 12;
+        return undefined;
+      },
+      onUpdate: () => undefined,
+    });
+
+    loop.stepFrame(0);
+    loop.stepFrame(1_000);
+
+    expect(frameDurations).toEqual([12, 12]);
+  });
 });
 
 describe("FixedStepLoop metrics collection", () => {

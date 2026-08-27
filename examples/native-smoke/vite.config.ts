@@ -60,6 +60,7 @@ const physicsScene =
 const nativeBackend =
   process.env.THREENATIVE_NATIVE_BACKEND === "enabled" ||
   process.env.THREENATIVE_PHYSICS_PROOF === "enabled";
+const loadingProof = process.env.THREENATIVE_LOADING_PROOF === "enabled";
 const packedFixture = resolve(import.meta.dirname, "physics-parity.scenario.json");
 const fixture = readFileSync(
   existsSync(packedFixture)
@@ -89,6 +90,7 @@ export default defineConfig({
     __TN_PHYSICS_SCENARIO_SHA256__: JSON.stringify(
       createHash("sha256").update(fixture).digest("hex"),
     ),
+    __TN_LOADING_PROOF__: JSON.stringify(loadingProof),
     __TN_PLAYTEST_ENABLED__: JSON.stringify(process.env.THREENATIVE_PLAYTEST_BRIDGE !== "disabled"),
     __TN_RUNTIME__: JSON.stringify(nativeBackend ? "native" : "web"),
   },

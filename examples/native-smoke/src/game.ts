@@ -19,6 +19,7 @@ import {
   Quaternion,
   Vector3,
 } from "three";
+import { WebGPURenderer } from "three/webgpu";
 
 interface ISmokeState extends Record<string, unknown> {
   airborne: boolean;
@@ -41,6 +42,9 @@ interface ISmokeState extends Record<string, unknown> {
   lastUiIntent: string;
   /** Published to the UI layer; the page transitions its sliding control while this is true. */
   slide: boolean;
+  /** Native loading proof: the overlay must remain visible until startup work settles. */
+  loadingVisible: boolean;
+  startupReady: boolean;
 }
 
 export interface ISmokeStatus {
@@ -55,6 +59,7 @@ declare global {
 }
 declare const __TN_RUNTIME__: "native" | "web";
 declare const __TN_PLAYTEST_ENABLED__: boolean;
+declare const __TN_LOADING_PROOF__: boolean;
 declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
   extraDrawControl: boolean;
   frameWindow: number;
@@ -71,6 +76,9 @@ declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
 export const OVERLAY_COLOR = 0xff00ff;
 export const OVERLAY_SIZE = 64;
 export const OVERLAY_INSET = 16;
+const PROOF_BACKDROP_COLOR = 0x101820;
+const PROOF_ACCENT_COLORS = [0x00ffff, 0xffff00, 0x00ff00, 0xff8800, 0x4488ff, 0xffffff, 0x8800ff];
+const LOADING_PROOF_COMPILE_TIMEOUT_MS = 3_000;
 
 export const status: ISmokeStatus = { frames: 0, ready: false };
 
@@ -168,7 +176,7 @@ function proveAudioDecodePromise(): void {
     .catch((error: unknown) => fail(`threw:${String(error)}`));
 }
 
-if (__TN_RUNTIME__ === "native" || isNative()) proveAudioDecodePromise();
+if ((__TN_RUNTIME__ === "native" || isNative()) && !__TN_LOADING_PROOF__) proveAudioDecodePromise();
 
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
@@ -247,6 +255,8 @@ class NativeSmoke extends Scene<ISmokeState> {
     uiIntents: 0,
     uiReady: false,
     uiRegions: 0,
+    loadingVisible: false,
+    startupReady: false,
   };
 
   override enter(ctx: ICtx<ISmokeState>) {
@@ -282,6 +292,32 @@ class NativeSmoke extends Scene<ISmokeState> {
     );
     overlay.frustumCulled = false;
     ctx.canvasLayer.scene.add(overlay);
+    const proofBackdrop = __TN_LOADING_PROOF__
+      ? new Mesh(
+          new PlaneGeometry(1, 1),
+          new MeshBasicMaterial({
+            color: PROOF_BACKDROP_COLOR,
+            depthTest: false,
+            depthWrite: false,
+          }),
+        )
+      : undefined;
+    if (proofBackdrop !== undefined) {
+      proofBackdrop.frustumCulled = false;
+      proofBackdrop.renderOrder = -1;
+      ctx.canvasLayer.scene.add(proofBackdrop);
+    }
+    const proofAccents = __TN_LOADING_PROOF__
+      ? PROOF_ACCENT_COLORS.map((color) => {
+          const accent = new Mesh(
+            new PlaneGeometry(8, OVERLAY_SIZE),
+            new MeshBasicMaterial({ color, depthTest: false, depthWrite: false }),
+          );
+          accent.frustumCulled = false;
+          ctx.canvasLayer.scene.add(accent);
+          return accent;
+        })
+      : [];
     // The layer's camera is pixel-sized and centred, so this parks the quad in the top-left.
     const place = ({ height, width }: { height: number; width: number }): void => {
       overlay.position.set(
@@ -289,9 +325,43 @@ class NativeSmoke extends Scene<ISmokeState> {
         height / 2 - OVERLAY_SIZE / 2 - OVERLAY_INSET,
         0,
       );
+      proofBackdrop?.scale.set(width, height, 1);
+      proofBackdrop?.position.set(0, 0, 0);
+      proofAccents.forEach((accent, index) => {
+        accent.position.set(
+          -width / 2 + OVERLAY_SIZE + OVERLAY_INSET + 4 + index * 8,
+          height / 2 - OVERLAY_SIZE / 2 - OVERLAY_INSET,
+          0,
+        );
+      });
     };
     place(ctx.viewport.size);
     ctx.viewport.onResize(place);
+    if (__TN_LOADING_PROOF__) {
+      ctx.canvasLayer.opaque = true;
+      ctx.state.set({ loadingVisible: true });
+      ctx.state.flush();
+      console.info("TN_LOADING_PROOF_OVERLAY_VISIBLE");
+      void ctx.startup.whenReady().then(() => {
+        ctx.canvasLayer.opaque = false;
+        overlay.removeFromParent();
+        overlay.geometry.dispose();
+        (overlay.material as MeshBasicMaterial).dispose();
+        if (proofBackdrop !== undefined) {
+          proofBackdrop.removeFromParent();
+          proofBackdrop.geometry.dispose();
+          (proofBackdrop.material as MeshBasicMaterial).dispose();
+        }
+        for (const accent of proofAccents) {
+          accent.removeFromParent();
+          accent.geometry.dispose();
+          (accent.material as MeshBasicMaterial).dispose();
+        }
+        ctx.state.set({ loadingVisible: false, startupReady: true });
+        ctx.state.flush();
+        console.info("TN_LOADING_PROOF_DISMISSED");
+      });
+    }
     const cube = ctx.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })));
     ctx.entities.add("cube", cube);
     const player = ctx.add(
@@ -366,6 +436,11 @@ class NativeSmoke extends Scene<ISmokeState> {
         maxPointers,
         movedWithTwoPointers,
         pointerDowns,
+        ...(__TN_LOADING_PROOF__
+          ? {
+              loadingVisible: frameCtx.canvasLayer.opaque,
+            }
+          : {}),
       });
       status.frames += 1;
       if (status.frames === 1) console.info("TN_NATIVE_SMOKE_FIRST_FRAME");
@@ -397,10 +472,39 @@ class NativeSmoke extends Scene<ISmokeState> {
   }
 }
 
+const loadingProofRenderer = __TN_LOADING_PROOF__
+  ? {
+      webgpuFactory: (canvas: HTMLCanvasElement, options: { antialias: boolean }) => {
+        const renderer = new WebGPURenderer({ canvas, ...options });
+        renderer.compileAsync = async () => {
+          const startedAt = performance.now();
+          console.info("TN_LOADING_PROOF_COMPILE_START");
+          // The proof scene's first world pass is the real native first-use work. Its compile
+          // promise is held here only to make the multi-second startup window deterministic: the
+          // native conformance run can sample the same process before and after the gate without
+          // depending on whether this machine's driver resolves compileAsync in milliseconds.
+          await new Promise<void>((resolve) =>
+            setTimeout(resolve, LOADING_PROOF_COMPILE_TIMEOUT_MS),
+          );
+          console.info(
+            `TN_LOADING_PROOF_COMPILE_END:${JSON.stringify({
+              elapsedMs: Math.round(performance.now() - startedAt),
+              outcome: "native-stall-fixture",
+            })}`,
+          );
+        };
+        return renderer;
+      },
+    }
+  : {};
+
 const game: ReturnType<typeof defineGame<ISmokeState>> = defineGame<ISmokeState>({
   canvas: runtimeCanvas,
   inputTarget: runtimeCanvas,
-  plugins: __TN_PLAYTEST_ENABLED__ ? [playtest()] : [],
+  plugins: __TN_PLAYTEST_ENABLED__
+    ? [playtest(__TN_LOADING_PROOF__ ? { holdUntilAttached: false } : {})]
+    : [],
+  renderer: loadingProofRenderer,
   scenes: { smoke: NativeSmoke },
   start: "smoke",
 });

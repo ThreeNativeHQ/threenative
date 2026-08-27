@@ -22,6 +22,11 @@ import { SceneRenderProjection } from "./renderProjection.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
+import {
+  STARTUP_COMPILE_BUDGET_MS,
+  type StartupCompile,
+  StartupReadiness,
+} from "./startup-readiness.js";
 import { type GameStore, createGameStore } from "./state.js";
 import { type IUiBridge, UI_READY_INTENT, connectUiBridge } from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
@@ -168,9 +173,10 @@ export interface IGameConfig<
    * loop presents nothing for the whole span. Warming those pipelines while the loading screen is
    * up is the obvious fix, and it is the one this option exists for.
    *
-   * It is off because on the native host it currently cannot work: **`renderer.compileAsync()`
-   * never resolves there**. Measured on the same device, both granularities were abandoned by
-   * their own budget having compiled nothing —
+   * It remains opt-in for callers that want to pay this cost before `start()` releases the held
+   * loop. On the native host it currently cannot complete: **`renderer.compileAsync()` never
+   * resolves there**. Measured on the same device, both granularities were abandoned by their own
+   * budget having compiled nothing —
    * `TN_WARMUP:{"compiled":0,"abandoned":1,"timedOut":true,"elapsedMs":15325}` for one
    * whole-scene call, and 6 of 490 in 15 s for the per-object walk — while the first frame
    * compiled the identical pipelines synchronously in 8.0 s. Turning this on today buys nothing
@@ -178,8 +184,10 @@ export interface IGameConfig<
    * promise; the seam is the async-pipeline shim in `runtime-native`'s WebGPU bindings.
    *
    * Set it to `{}` or an options object to enable it — on web, where `compileAsync` does resolve,
-   * it does what it says. Either way `TN_WARMUP` reports what happened, because turning a
-   * convention off must not turn its measurement off.
+   * it does what it says. The default loading layer has its own bounded post-enter readiness gate,
+   * so setting this option is not required for a loading screen to cover first-use work. Either
+   * way `TN_WARMUP` reports what happened, because turning a convention off must not turn its
+   * measurement off.
    */
   readonly warmUp?: IWarmUpOptions | false | true;
   readonly inputTarget?: EventTarget;
@@ -629,10 +637,44 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const projection = new SceneRenderProjection(threeScene);
     this.#projection = projection;
     let projectionSettled = false;
+    let worldRendered = false;
+    let loadingFramePresented = false;
     let markProjectionSettled: () => void = () => undefined;
     const projectionReady = new Promise<void>((resolve) => {
       markProjectionSettled = resolve;
     });
+    const startupReadiness = new StartupReadiness();
+    void startupReadiness.whenReady().then(() => {
+      projectionSettled = true;
+      markProjectionSettled();
+    });
+    const startupCompile: StartupCompile = async (): Promise<void> => {
+      if (this.#aborted || this.#renderer === undefined) return;
+      let report: IWarmUpReport | undefined;
+      let failure: string | undefined;
+      try {
+        projection.reconcile();
+        report = await warmUpScene(renderer, projection.root, camera, {
+          budgetMs: STARTUP_COMPILE_BUDGET_MS,
+        });
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error);
+      }
+      console.log(
+        `TN_STARTUP_WARMUP:${JSON.stringify(
+          report === undefined
+            ? { failed: failure ?? "unknown" }
+            : {
+                compiled: report.compiled,
+                slices: report.slices,
+                elapsedMs: Math.round(report.elapsedMs),
+                unsupported: report.unsupported,
+                abandoned: report.abandoned,
+                timedOut: report.timedOut,
+              },
+        )}`,
+      );
+    };
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
@@ -662,10 +704,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       raycastAll: (options, target) => picker.raycastAll(options, target),
       startup: {
         get phase() {
-          // The projection reaches its verdict on the first frame it reconciles rather than after
-          // an observation window, so there is no longer a span where the framework is watching
-          // the scene to decide. A loading screen still waits on `whenReady`; what it waits for is
-          // now the first projection build rather than a guess about what will move.
+          // The projection is reconciled before the first world draw, but readiness is not reported
+          // until first-use work and a sustained in-budget window have completed. An opaque loading
+          // layer cannot turn `whenReady()` into a first-present signal while work is still waiting
+          // behind it.
           if (projectionSettled) return "ready" as const;
           return "collapsing" as const;
         },
@@ -713,21 +755,36 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           }
         }
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
-        // a fast path nobody tests. Reconciling here — before the render, inside the same frame —
-        // is what lets a change the game made this tick reach the screen this tick instead of the
-        // next one. Scenes under its mesh floor get their own graph back and pay nothing.
-        this.#projection?.reconcile();
-        // Reconciling is unconditional -- a goto clears the graph before its destination enters,
-        // and the projection has to drop those objects on the very next frame. Settling is not:
-        // frames run during the boot hold, before the start scene has loaded, and a loading
-        // screen awaiting `startup.whenReady()` would be told the world is ready while its
-        // assets were still downloading.
-        if (!projectionSettled && this.#sceneEntered) {
-          projectionSettled = true;
-          markProjectionSettled();
-        }
+        // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
+        // before the render, inside the same frame, so a change the game made this tick reaches
+        // the screen this tick instead of the next one. Scenes under its mesh floor get their own
+        // graph back and pay nothing.
+        // A goto clears the graph before its destination enters, and the projection has to drop
+        // those objects on the very next frame. During the first-use hold, however, reconciling a
+        // large scene would be more work before the loader has even presented. Present one
+        // loader-only frame and keep reconciling skipped until first-use work settles; then the
+        // world pass and projection start together behind the still-opaque layer.
         let worldMetrics: IRenderPerformanceMetrics | undefined;
-        if (!canvasLayer.opaque) {
+        const firstWorldPass = !worldRendered && this.#sceneEntered;
+        const loaderHasPixels = canvasLayer.scene.children.length > 0;
+        const mustPresentLoader =
+          firstWorldPass && canvasLayer.opaque && loaderHasPixels && !loadingFramePresented;
+        if (firstWorldPass) {
+          startupReadiness.start(
+            canvasLayer.opaque &&
+              (this.#config.warmUp === undefined || this.#config.warmUp === false)
+              ? startupCompile
+              : undefined,
+          );
+        }
+        const waitingForFirstUse =
+          firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
+        if (!mustPresentLoader && !waitingForFirstUse) this.#projection?.reconcile();
+        if (
+          !mustPresentLoader &&
+          !waitingForFirstUse &&
+          (!canvasLayer.opaque || !startupReadiness.ready)
+        ) {
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no
           // second optional render path to leave untested.
@@ -736,8 +793,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           frameBudget?.addRender(budgetNow() - renderStart);
           // Same entering-window rule as onUpdate: nothing of the incoming scene draws before enter().
           if (this.#sceneEntered) this.#scene?.render(ctx);
+          if (this.#sceneEntered) {
+            worldRendered = true;
+          }
           if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
         }
+        if (mustPresentLoader) loadingFramePresented = true;
         if (canvasLayer.scene.children.length > 0) {
           const overlayStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
@@ -766,6 +827,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
       },
+      onFrame: (frameMs) => startupReadiness.observe(frameMs),
       step: this.#config.step,
     });
     loopState.current = gameLoop;
@@ -856,9 +918,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       let report: IWarmUpReport | undefined;
       let failure: string | undefined;
       try {
+        projection.reconcile();
         report = await warmUpScene(
           this.#renderer,
-          threeScene,
+          projection.root,
           camera,
           this.#config.warmUp === true ? {} : this.#config.warmUp,
         );

@@ -118,7 +118,228 @@ describe("IGame", () => {
     }
   });
 
-  it("draws only the CanvasLayer on every opaque frame and draws it last otherwise", async () => {
+  it("does not resolve startup readiness before compile and sustained frames behind an opaque layer", async () => {
+    const canvas = testCanvas();
+    const events: string[] = [];
+    let resolveCompile: () => void = () => undefined;
+    let frame: ((time: number) => void) | undefined;
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.add(new Mesh());
+        ctx.canvasLayer.scene.name = "overlay";
+        ctx.canvasLayer.scene.add(new Mesh());
+        ctx.canvasLayer.opaque = true;
+      }
+
+      override render(): void {
+        events.push("scene");
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          compileAsync: vi.fn(
+            () =>
+              new Promise<void>((resolve) => {
+                events.push("compile");
+                resolveCompile = resolve;
+              }),
+          ),
+          render: (scene: { name?: string }) => {
+            events.push(scene.name === "overlay" ? "overlay" : "world");
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: LoadingScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      const ctx = game.ctx;
+      if (ctx === undefined || frame === undefined) throw new Error("Game did not start its loop.");
+      let ready = false;
+      const readiness = ctx.startup.whenReady().then(() => {
+        ready = true;
+        events.push("ready");
+      });
+
+      expect(ctx.startup.phase).toBe("collapsing");
+      expect(ctx.startup.progress).toBe(0);
+      frame(16);
+      expect(events).toEqual(["overlay"]);
+      expect(ready).toBe(false);
+      expect(ctx.startup.phase).toBe("collapsing");
+      expect(ctx.startup.progress).toBe(0);
+      expect(ctx.canvasLayer.opaque).toBe(true);
+
+      await Promise.resolve();
+      const compileAsync = (game.ctx?.renderer.raw as { compileAsync: ReturnType<typeof vi.fn> })
+        .compileAsync;
+      expect(compileAsync).toHaveBeenCalledWith(ctx.scene, ctx.camera);
+      expect(events).toEqual(["overlay", "compile"]);
+
+      frame(32);
+      expect(events).toEqual(["overlay", "compile", "overlay"]);
+      expect(ready).toBe(false);
+
+      resolveCompile();
+      for (let index = 0; index < 4; index += 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
+      await Promise.resolve();
+      frame(48);
+      expect(events.slice(-3)).toEqual(["world", "scene", "overlay"]);
+      expect(ready).toBe(false);
+      const worldRendersBeforeStabilityWindow = events.filter((event) => event === "world").length;
+      for (const time of [64, 80, 96]) {
+        const worldRendersBeforeFrame = events.filter((event) => event === "world").length;
+        frame(time);
+        await Promise.resolve();
+        expect(ready).toBe(false);
+        expect(ctx.startup.phase).toBe("collapsing");
+        expect(events.slice(-3)).toEqual(["world", "scene", "overlay"]);
+        expect(events.filter((event) => event === "world").length).toBe(
+          worldRendersBeforeFrame + 1,
+        );
+      }
+      frame(112);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(ready).toBe(true);
+      expect(ctx.startup.phase).toBe("ready");
+      expect(ctx.startup.progress).toBe(1);
+      expect(events.filter((event) => event === "world").length).toBe(
+        worldRendersBeforeStabilityWindow + 4,
+      );
+      expect(events.slice(0, 5)).toEqual(["overlay", "compile", "overlay", "world", "scene"]);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("warms the projected root used by the first rendered world", async () => {
+    const canvas = testCanvas();
+    const compileRoots: unknown[] = [];
+    const renderedRoots: unknown[] = [];
+    let authoredRoot: unknown;
+    let frame: ((time: number) => void) | undefined;
+    class ProjectedScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        authoredRoot = ctx.scene;
+        const geometry = new SphereGeometry(0.1, 3, 2);
+        const material = new MeshBasicMaterial();
+        for (let index = 0; index < 400; index += 1) ctx.add(new Mesh(geometry, material));
+        ctx.canvasLayer.scene.add(new Mesh());
+        ctx.canvasLayer.opaque = true;
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: vi.fn((scene: unknown) => {
+            compileRoots.push(scene);
+            return Promise.resolve();
+          }),
+          domElement: canvas,
+          render: (scene: unknown) => renderedRoots.push(scene),
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: ProjectedScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (game.ctx === undefined || frame === undefined)
+        throw new Error("Game did not start its loop.");
+      frame(16);
+      for (let flush = 0; flush < 6; flush += 1) await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(compileRoots).toHaveLength(1);
+      expect(compileRoots[0]).not.toBe(authoredRoot);
+
+      frame(32);
+      expect(renderedRoots.at(-2)).toBe(compileRoots[0]);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("warms the projected root when explicit warm-up is enabled", async () => {
+    const canvas = testCanvas();
+    const compileRoots: unknown[] = [];
+    let authoredRoot: unknown;
+    class ExplicitWarmUpScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        authoredRoot = ctx.scene;
+        const geometry = new SphereGeometry(0.1, 3, 2);
+        const material = new MeshBasicMaterial();
+        for (let index = 0; index < 400; index += 1) ctx.add(new Mesh(geometry, material));
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: vi.fn((scene: unknown) => {
+            compileRoots.push(scene);
+            return Promise.resolve();
+          }),
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: ExplicitWarmUpScene },
+      start: "test",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+
+    try {
+      await game.start();
+      expect(compileRoots).toHaveLength(1);
+      expect(compileRoots[0]).not.toBe(authoredRoot);
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("renders the world behind an opaque CanvasLayer, then draws it last otherwise", async () => {
     const canvas = testCanvas();
     const draws: unknown[] = [];
     const renderInfo = { drawCalls: 0, triangles: 0 };
@@ -183,27 +404,33 @@ describe("IGame", () => {
       if (ctx === undefined || frame === undefined) throw new Error("Game did not start its loop.");
 
       frame(16);
-      frame(32);
-      expect(draws).toEqual([ctx.canvasLayer.scene, ctx.canvasLayer.scene]);
+      expect(draws).toEqual([ctx.canvasLayer.scene]);
       expect(renderHooks).toBe(0);
+
+      draws.length = 0;
+      for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      frame(32);
+      expect(draws).toEqual([ctx.scene, ctx.canvasLayer.scene]);
+      expect(renderHooks).toBe(1);
 
       draws.length = 0;
       ctx.canvasLayer.opaque = false;
       frame(48);
       expect(draws).toEqual([ctx.scene, ctx.canvasLayer.scene]);
-      expect(renderHooks).toBe(1);
+      expect(renderHooks).toBe(2);
 
       draws.length = 0;
       ctx.canvasLayer.scene.clear();
       frame(64);
       expect(draws).toEqual([ctx.scene]);
-      expect(renderHooks).toBe(2);
+      expect(renderHooks).toBe(3);
       const series = diagnostics?.() ?? [];
       // The frame budget ships on by default, so every sample carries its phase split; the
       // render-metric fields below are what this test is about.
       expect(series.every((sample) => sample.phases !== undefined)).toBe(true);
       expect(series.map(({ phases: _phases, ...sample }) => sample)).toEqual([
-        { drawCalls: 1, frameMs: 16, triangles: 2 },
+        { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 3, frameMs: 16, triangles: 30 },
       ]);
@@ -1154,6 +1381,7 @@ describe("IGame", () => {
         movingRoot.matrix.elements[12] = index;
         renderFrame(index * 17);
       }
+      await Promise.resolve();
       expect(game.ctx?.startup.phase).toBe("ready");
 
       updateMatrixWorld.mockClear();

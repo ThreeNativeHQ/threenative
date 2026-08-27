@@ -47,13 +47,13 @@ void | SceneFrame<TState, TPhysics>;
 
 export interface IStartupStatus {
   /**
-   * `observing` while the collapse watches what moves, `collapsing` during the single frame it
-   * bakes in, `ready` once the world is safe to show.
+   * `collapsing` until first-use work and a sustained in-budget frame window complete, `ready`
+   * once the world is safe to show.
    */
   readonly phase: "observing" | "collapsing" | "ready";
-  /** 0 to 1 across the observation window, then 1. Real progress for the part that has any. */
+  /** 0 while first-use work or the sustained frame window is pending, then 1. */
   readonly progress: number;
-  /** Resolves on every path, including a scene too small to collapse, so it is always awaitable. */
+  /** Resolves after first-use work and the sustained frame window, so it is always awaitable. */
   whenReady(): Promise<void>;
 }
 
@@ -88,12 +88,11 @@ export interface ICtx<
   /**
    * The framework's own startup work — what a loading screen waits on.
    *
-   * Two costs land before a game is ready and both are real: each shader is compiled the first
-   * time something using it is drawn, and the scene collapse runs inside a single frame. On a
-   * Pixel 8 that was 2.5 s of half-drawn map followed by a 3.2 s stall, measured.
+   * A shader may compile the first time something using it is drawn, and the render projection may
+   * do its first build in that same frame. Both costs are real and belong before the world is shown.
    *
    * Keeping the world hidden until `whenReady()` resolves does more than hide the mess: the
-   * shaders that would have been compiled for geometry the collapse then throws away are never
+   * shaders that would have been compiled for geometry the projection then discards are never
    * compiled at all, so waiting is *faster* than not waiting.
    */
   readonly startup: IStartupStatus;

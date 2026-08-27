@@ -7,6 +7,8 @@ export interface IFixedStepLoopOptions {
   readonly collectMetrics?: boolean;
   readonly onUpdate: (dt: number) => void;
   readonly onRender?: () => undefined | IRenderPerformanceMetrics;
+  /** Actual wall time spent in one simulation+render callback, for startup gates and diagnostics. */
+  readonly onFrame?: (frameMs: number) => void;
   readonly requestFrame?: (callback: (time: number) => void) => number;
   readonly cancelFrame?: (handle: number) => void;
   /**
@@ -37,6 +39,7 @@ export class FixedStepLoop {
   readonly maxSteps: number;
   #onUpdate: (dt: number) => void;
   #onRender: () => undefined | IRenderPerformanceMetrics;
+  #onFrame: (frameMs: number) => void;
   #requestFrame: (callback: (time: number) => void) => number;
   #cancelFrame: (handle: number) => void;
   #accumulator = 0;
@@ -77,6 +80,7 @@ export class FixedStepLoop {
     this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
     this.#onUpdate = options.onUpdate;
     this.#onRender = options.onRender ?? (() => undefined);
+    this.#onFrame = options.onFrame ?? (() => undefined);
     this.#requestFrame =
       options.requestFrame ??
       ((callback) =>
@@ -177,10 +181,12 @@ export class FixedStepLoop {
   }
 
   stepFrame(now: number): number {
+    const callbackStartedAt = this.#now();
     const budget = this.#budget;
     budget?.beginFrame(now, this.#now());
     let updates = 0;
     let frameMs: number | undefined;
+    let callbackMs: number | undefined;
     let metrics: IRenderPerformanceMetrics | undefined;
     let phases: IFramePhaseSample | undefined;
     try {
@@ -194,7 +200,12 @@ export class FixedStepLoop {
       // Close the budget before propagating that error so later frames report the real failure
       // instead of flooding the console with beginFrame calls against a poisoned budget.
       phases = budget?.endFrame(this.#now());
+      const callbackFinishedAt = this.#now();
+      if (Number.isFinite(callbackStartedAt) && Number.isFinite(callbackFinishedAt)) {
+        callbackMs = Math.max(0, callbackFinishedAt - callbackStartedAt);
+      }
     }
+    if (callbackMs !== undefined) this.#onFrame(callbackMs);
     if (this.#collectMetrics && frameMs !== undefined && frameMs > 0) {
       const sample: IRenderPerformanceSample = {
         frameMs,

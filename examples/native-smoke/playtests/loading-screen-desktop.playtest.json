@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "name": "native-loading-screen-spans-first-use-stall",
+  "target": "desktop",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [
+    {
+      "waitTicks": 1,
+      "label": "startup-stall",
+      "screenshot": "startup-stall"
+    },
+    {
+      "waitTicks": 1,
+      "label": "startup-mid-stall",
+      "screenshot": "startup-mid-stall"
+    },
+    {
+      "waitTicks": 1,
+      "label": "startup-settled",
+      "screenshot": "startup-settled"
+    }
+  ],
+  "artifacts": { "console": true, "screenshots": "after" },
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "loadingVisible",
+        "atSteps": [
+          { "label": "startup-stall", "equals": true },
+          { "label": "startup-mid-stall", "equals": true },
+          { "label": "startup-settled", "equals": false }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "startupReady",
+        "atSteps": [
+          { "label": "startup-stall", "equals": false },
+          { "label": "startup-mid-stall", "equals": false },
+          { "label": "startup-settled", "equals": true }
+        ]
+      }
+    ]
+  }
+}
