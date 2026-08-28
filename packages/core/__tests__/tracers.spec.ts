@@ -12,7 +12,14 @@ function makePool(count = 3, material = new MeshBasicMaterial()) {
 }
 
 function surfaceOf(parent: Group, slot: number): MeshBasicMaterial {
-  return (parent.children[slot] as Mesh).material as MeshBasicMaterial;
+  return (childOf(parent, slot) as Mesh).material as MeshBasicMaterial;
+}
+
+/** Fails closed: an absent slot is a pool defect, not an `undefined` to propagate. */
+function childOf(parent: Group, slot: number) {
+  const child = parent.children[slot];
+  if (child === undefined) throw new Error(`tracer pool has no slot ${slot}`);
+  return child;
 }
 
 describe("TracerPool3D", () => {
@@ -61,10 +68,10 @@ describe("TracerPool3D", () => {
 
     // A live slot stays submitted, and the next spawn wakes its slot.
     tracers.spawn(origin, forward, 10);
-    expect(parent.children[1].visible).toBe(true);
-    expect(parent.children[0].visible).toBe(false);
+    expect(childOf(parent, 1).visible).toBe(true);
+    expect(childOf(parent, 0).visible).toBe(false);
     tracers.update(99); // retires the live shot again
-    expect(parent.children[1].visible).toBe(false);
+    expect(childOf(parent, 1).visible).toBe(false);
   });
 
   it("treats distances under the minimum as a no-op", () => {
