@@ -84,7 +84,7 @@ on a hosted `macos-15` runner; the Android emulator is red on the hosted lane. T
 performance control records a provisional Pixel 8 measurement; physical-phone framework/device
 evidence remains unverified, and no stranger has played a ThreeNative game for five minutes. This
 is not mobile-ready. The external performance control is
-[`engine-load-test-summary-2026-08-15.md`](docs/verification/engine-load-test-summary-2026-08-15.md).
+[`runtime-perf-state.md`](docs/verification/runtime-perf-state.md).
 
 ## Contributing and development
 

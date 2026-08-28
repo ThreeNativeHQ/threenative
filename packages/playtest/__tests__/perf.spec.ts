@@ -1,9 +1,9 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   assessPerfMarkers,
   formatPerfReport,
@@ -147,7 +147,7 @@ describe("parsePerfArgs", () => {
 
 describe("perfCommand", () => {
   it("exits 0 on a passing file source and prints the report as JSON", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tn-perf-"));
+    const dir = await makeTempDir("tn-perf-");
     const path = join(dir, "host.log");
     await writeFile(path, sampleStream(), "utf8");
     const written: string[] = [];
@@ -164,7 +164,7 @@ describe("perfCommand", () => {
   });
 
   it("exits 1 when a bound fails and 2 when no markers arrived", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tn-perf-"));
+    const dir = await makeTempDir("tn-perf-");
     const failing = join(dir, "failing.log");
     await writeFile(failing, sampleStream(), "utf8");
     const boundSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -181,7 +181,7 @@ describe("perfCommand", () => {
   });
 
   it("exits 2, naming the defect, when a marker line is malformed", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tn-perf-"));
+    const dir = await makeTempDir("tn-perf-");
     const path = join(dir, "broken.log");
     await writeFile(path, `TN_FRAME_BUDGET:{"window":1,`, "utf8");
     const errors: string[] = [];

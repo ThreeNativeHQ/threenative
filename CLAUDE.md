@@ -146,6 +146,7 @@ Built here and easy to miss, which is how work gets redone by hand:
 | Score framework code against plain Three.js (the kill switch) | `pnpm tsx scripts/count-loc.ts` |
 | Run the same scene on web and native and diff it | `packages/runtime-native/conformance/registry.json`, `pnpm parity` |
 | Profile or benchmark the native host | `pnpm profile:native-cpu`, `pnpm bench:engines`, `examples/engine-load-test` |
+| Read the frame meters without opening a log | `packages/playtest` CLI: `perf --file <log>` / `--executable <bin> --host-arg …` / `--logcat <serial>` |
 | Ask what the next verification action is | `pnpm round:next`, `pnpm round:deletions`, `pnpm alpha:bar` |
 
 ## Verification

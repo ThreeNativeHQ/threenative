@@ -73,6 +73,27 @@ The negative-control scenarios in `examples/native-smoke/playtests/` (`-misspell
 `-wrong-value`) prove the device path still fails closed; run them when you change transport
 or observation code.
 
+## `perf` — read the frame meters without opening a log
+
+`threenative-playtest perf` parses `TN_FRAME_BUDGET` and `TN_HOST_GAP` out of one source —
+`--file <log>`, `--executable <bin>` with repeatable `--host-arg`, or `--logcat <serial>` — and
+reports fps, frame/render/hostGap p50/p95 per window plus the host-gap segments. It exists
+because every number in the Android-fps hunt was read from these markers by hand; the parser
+(`runner/perf.ts`) is that hand-read, encoded.
+
+Protocol rules are built in, not optional: **window 1 is discarded as startup** (it always
+lies), `--require-windows` (default 2) counts *steady* windows and a run with fewer exits **2**
+— not enough evidence, never an empty pass — and a marker line whose JSON cannot be parsed
+**throws** (`TN_PERF_MARKER_MALFORMED`) rather than silently vanishing. Optional bounds
+`--max-frame-p95 <ms>` / `--min-fps <fps>` fail with exit **1** on any steady-window violation;
+without bounds the command reports and exits 0. The host's `Present mode:` line is captured
+when the host logs one. `--text` renders the human-readable table; default output is JSON.
+
+Desktop spawn under a headless session rides the same Xvfb rule as any pixel run:
+`sh scripts/xvfb.sh threenative-playtest perf --executable … --host-arg run --host-arg game.js …`.
+The command never launches a browser — the browser lane already bounds performance through
+`assert.performance` — and it never tunes anything; it is a meter reader.
+
 ## Device thermal, power and battery
 
 Every `--target android` run measures the phone around itself and reports it as
