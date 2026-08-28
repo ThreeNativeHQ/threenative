@@ -60,11 +60,11 @@ useless value ledger. **Standing total: 67/100**, on a scale that is not compara
 
 Evidence: [phase-1-2026-08-08.md](../verification/phase-1-2026-08-08.md) (axis 5, four
 genres), [round-3-2026-08-09.md](../verification/round-3-2026-08-09.md) (open-world),
-[native-gameplay-frame-rate-2026-08-11.md](../verification/native-gameplay-frame-rate-2026-08-11.md),
+[runtime-perf-state.md](../verification/runtime-perf-state.md),
 [native-visual-parity-2026-08-11.md](../verification/native-visual-parity-2026-08-11.md),
 [cold-start-and-hitches-2026-08-11.md](../verification/cold-start-and-hitches-2026-08-11.md)
 and
-[native-performance-benchmarks-2026-08-11.md](../verification/native-performance-benchmarks-2026-08-11.md)
+[runtime-perf-state.md](../verification/runtime-perf-state.md)
 (axis 4, physical device, plus the browser and Godot comparison),
 [tier-1-2026-08-10.md](../verification/tier-1-2026-08-10.md) (axis 4 reliability),
 [PRD-032](../PRDs/done/PRD-032-asset-discovery-mcp.md) and
@@ -145,7 +145,7 @@ every pair run through the scorer's equivalence gate before it was quoted.
 
 Knee at ≤20 ms p95 is **65 536 against 16 384** on desktop and on the phone. All three pairs
 report `GATE PASS`. The record is
-[engine-load-test-summary-2026-08-15.md](../verification/engine-load-test-summary-2026-08-15.md).
+[runtime-perf-state.md](../verification/runtime-perf-state.md).
 
 **And against vanilla Three.js, 11.6× on the same authored scene** — 20.90 ms to 1.80 ms at
 4 096 objects, because `SceneCollapse` turns 9 400 draw calls into 3. `defineGame` constructs
@@ -157,7 +157,7 @@ lines" showing up a second time.
 C++, not a framework defect and not a Three.js defect either — a standalone plain-three page
 shows Three's WebGPU backend already beating its own WebGL backend on that case. It is also the
 path `defineGame` collapses away, so a normally written game does not sit on it. See
-[three-webgpu-per-object-cost-2026-08-15.md](../verification/three-webgpu-per-object-cost-2026-08-15.md).
+[runtime-perf-state.md](../verification/runtime-perf-state.md).
 
 ## Where the claim is not earned — read before quoting any of the above
 
@@ -193,7 +193,7 @@ Ranked by how much the sentence at the top would move, cheapest first.
 | 3 | **An honest asset-MCP win** — a rerun where the MCP arm beats the no-MCP control | Axis 2 is capped at 10/20 until then | A rerun of PRD-032's live-agent gate |
 | 4 | **Two consecutive green iOS-simulator lanes** | Lets us say *iOS simulator*, still never *iPhone* | [PRD-045](../PRDs/done/PRD-045-playtest-on-device.md) — hosted simulator evidence is recorded; no physical-device claim follows |
 | 5 | **Tier 1 aggregate green** | Beta rows 4–5; licenses the desktop+Android sentence outright | [PRD-064](../PRDs/PRD-064-tier-1-native-reliability.md) — the Android emulator lane is `27/40` |
-| 6 | **A controlled engine benchmark** — one scene spec built in both engines, everything moving so no pass can fold it | Turns "holds the budget on this game" into a defensible engine-class claim | Nothing but time; [the benchmark record](../verification/native-performance-benchmarks-2026-08-11.md) specifies it |
+| 6 | **A controlled engine benchmark** — one scene spec built in both engines, everything moving so no pass can fold it | Turns "holds the budget on this game" into a defensible engine-class claim | Nothing but time; [the benchmark record](../verification/runtime-perf-state.md) specifies it |
 
 ## The one-line claim, in two versions
 

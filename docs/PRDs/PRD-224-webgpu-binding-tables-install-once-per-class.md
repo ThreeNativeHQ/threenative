@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** PARTIAL — **measured 2026-08-27, and the measurement changes what this PRD is worth.**
 Phases 2 and 4 are done; Phase 1 is done and **refutes this PRD's own ≥2 ms prediction**; Phase 3 is
 NOT STARTED and is now bounded at roughly 0.3 ms before anyone writes it. Evidence:
-[`docs/verification/prd-224-frame-pricing-and-device-arm-2026-08-27.md`](../verification/prd-224-frame-pricing-and-device-arm-2026-08-27.md).
+[`docs/verification/runtime-perf-state.md`](../verification/runtime-perf-state.md).
 
 | Phase | State | What the executable said |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ multi-class surface, +1 for design decisions per class = **HIGH mode**.
 
 ## Why this is the highest-value item tonight
 
-The root cause of the parity defect ([PRD-222 reassessment](../verification/prd-222-reassessment-2026-08-26.md),
+The root cause of the parity defect ([PRD-222 reassessment](../verification/runtime-perf-state.md),
 ROOT CAUSE section): every WebGPU object handed to JavaScript installs its whole method table on
 **every call that creates it**, through transactional machinery designed for one-time installation.
 Measured per call against Chrome on the same machine:
@@ -78,7 +78,7 @@ kill switch. The cost is inside what binding bodies do after entry, not how many
 
 - [x] `gpubench.js` rerun on the current build: `createCommandEncoder` ≈ 3.8 µs sustained;
       record current residuals for every class still on the legacy path.
-      ([record](../verification/prd-224-phase1-pricing-2026-08-28.md) — measures **0.89–0.98 µs**
+      ([record](../verification/runtime-perf-state.md) — measures **0.89–0.98 µs**
       on the private-Xvfb lane, below the expected 3.8 and at Chrome parity; residuals:
       `writeBuffer` ~1.1 µs flat, control 5 ns.)
 - [x] Desktop `TN_FRAME_BUDGET` pair against the recorded native render.p50 pair (22.2 ms,
@@ -86,7 +86,7 @@ kill switch. The cost is inside what binding bodies do after entry, not how many
       Expect render.p50 to move materially below 22.2 ms. If it does NOT move, stop: the
       installed tax is real but off the critical path, and widening is refused until that is
       explained.
-      ([record](../verification/prd-224-phase1-pricing-2026-08-28.md) — ran on the private-Xvfb
+      ([record](../verification/runtime-perf-state.md) — ran on the private-Xvfb
       lane against a sha256'd `af36d3f3` control host; **NO-MOVE**, +0.50/+0.59 ms across two
       update-matched pairs (head marginally slower; a third pair was excluded for phase
       confound per F7 — both its attempts are shown in the record); the stop rule's
@@ -107,7 +107,7 @@ single-site tax. It also needs the paired-state ruling (encoder↔pass pairing m
 receiver + argument, lifetime re-derived, not assumed).
 
 - [x] `gpubench.js` extended to price `beginRenderPass`; green means an order-of-magnitude fall
-      (≥10×), pasted. ([record](../verification/prd-224-phase1-pricing-2026-08-28.md) —
+      (≥10×), pasted. ([record](../verification/runtime-perf-state.md) —
       extended and versioned at `ed1bb226`; same-file fall measures **8.5–9.9×** at matched
       load: close to an order of magnitude, **not clearly ≥10× on the minimal-descriptor
       probe**, and the record says so rather than rounding; `97a4c808`'s mutation-OFF rerun

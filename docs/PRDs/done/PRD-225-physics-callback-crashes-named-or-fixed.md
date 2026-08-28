@@ -20,8 +20,8 @@ Two recorded facts disagree about whether physics callbacks crash tonight:
 
 | Record | Observation |
 | --- | --- |
-| [PRD-222 reassessment trap table](../../verification/prd-222-reassessment-2026-08-26.md) | "Physics callback SIGSEGV — roughly 5 of 9 launches died in one session" |
-| [PRD-222 loop log](../../verification/prd-222-loop-log.md), staging-v3 pair | "zero SIGSEGV deaths in this pair after fresh installs" |
+| [PRD-222 reassessment trap table](../../verification/runtime-perf-state.md) | "Physics callback SIGSEGV — roughly 5 of 9 launches died in one session" |
+| [PRD-222 loop log](../../verification/runtime-perf-state.md), staging-v3 pair | "zero SIGSEGV deaths in this pair after fresh installs" |
 
 Both are Bayview on a physical Pixel 8. Candidate explanations for the disagreement, in order:
 the staging pair's **fresh installs** cleared state (a warm-upgrade path keeps dying); `ebcc480d`

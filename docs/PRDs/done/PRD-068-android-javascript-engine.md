@@ -10,7 +10,7 @@ runs the real game at **170 fps** once the scene's draw count drops from ~110 to
 the same build runs it at 57. The interpreter is not the binding constraint for this game, so no
 engine is ported and none of V8, JavaScriptCore or Hermes carries a measured per-mesh figure — each
 is recorded UNMEASURED with that reason in §15. Evidence:
-`docs/verification/native-gameplay-frame-rate-2026-08-11.md`. **The residual is per-draw
+`docs/verification/runtime-perf-state.md`. **The residual is per-draw
 JavaScript cost, ~118 µs per draw, which PRD-069 and PRD-072 own.**
 
 **The draw-count lever was then pulled, and it closed the gate this spike was serving.** Folding

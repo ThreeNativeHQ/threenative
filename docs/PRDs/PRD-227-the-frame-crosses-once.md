@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** IN PROGRESS — **P1 accepted and landed. P2 executed and falsified. Phase 4 executed,
 rejected by the owner, and reverted.** Phase 3 device acceptance, the hosted JSC execution lane,
 and the web gate remain open. Filed 2026-08-27 from the measured budget in
-[PATH-TO-60FPS](../verification/PATH-TO-60FPS-2026-08-27.md). This is the implementation PRD that
+[PATH-TO-60FPS](../verification/runtime-perf-state.md). This is the implementation PRD that
 PRD-226's ablation ladder was built to justify. PRD-226 stays live and owns the instrument; this one
 owns the fix.
 
@@ -16,7 +16,7 @@ Bayview's appearance was restored, and the device reads **20.02 fps — unchange
 work fell from 43–48 ms to 25.27 ms. **The frame rate is not work-bound.** It is pinned to a
 constant 50 ms present cadence that does not respond to workload at all.
 See [Resume here](#resume-here-2026-08-27) and
-[prd-227-cadence-lock-2026-08-27](../verification/prd-227-cadence-lock-2026-08-27.md).
+[prd-227-cadence-lock-2026-08-27](../verification/runtime-perf-state.md).
 
 **Goal: Bayview at 60 fps or better in the native host on a physical Pixel 8.** 30 fps is not a
 pass. The panel is 120 Hz, so the whole frame must fit in **16.67 ms**; it costs **43–48 ms** today.
@@ -134,7 +134,7 @@ different owners).
       disabling the stream at its request-device entry point returns `bridgeNs` to the direct-call
       control; paste both.
 
-**P1 result — accepted** (`cb64c892`, [prd-227-p1-2026-08-27](../verification/prd-227-p1-2026-08-27.md)).
+**P1 result — accepted** (`cb64c892`, [prd-227-p1-2026-08-27](../verification/runtime-perf-state.md)).
 Desktop Xvfb pair, same session:
 
 | Arm | work | bridge | overhead | command |
@@ -162,7 +162,7 @@ render-pass slots in place of the hash map (19.02 → 19.80 ms), and a typed-u32
       dominant steady-state population.
 
 **P2 disposition — falsified, closed to further attempts**
-([prd-227-p2-2026-08-27](../verification/prd-227-p2-2026-08-27.md), `f0639772`, `54b7354c`):
+([prd-227-p2-2026-08-27](../verification/runtime-perf-state.md), `f0639772`, `54b7354c`):
 
 | Arm | stub cache | dictionary | combined |
 | --- | ---: | ---: | ---: |
@@ -235,13 +235,13 @@ driver.
 
 ## Resume here (2026-08-27)
 
-> **START HERE:** [HANDOVER-hostgap-2026-08-27](../verification/HANDOVER-hostgap-2026-08-27.md) —
+> **START HERE:** [HANDOVER-hostgap-2026-08-27](../verification/runtime-perf-state.md) —
 > the executable version of this section, with the one task, the exact code sites, and the commands.
 > **Do not take "execute PRD-227" as a task.** Both of its named changes are finished; an agent told
 > to execute it invents lever ten.
 
 **The decisive test has now run.** Full record:
-[prd-227-cadence-lock-2026-08-27](../verification/prd-227-cadence-lock-2026-08-27.md).
+[prd-227-cadence-lock-2026-08-27](../verification/runtime-perf-state.md).
 
 ### What it found — the frame rate is not work-bound
 
@@ -261,7 +261,7 @@ SurfaceFlinger quantises hard on the game's own `(BLAST)` layer:
 ### And the display is 60 Hz, not 120
 
 `activeMode={… vsyncRate=60.00 Hz …}`. The panel supports 120 and the host never asks for it. Every
-prior document — including [prd-226-device-meter-audited](../verification/prd-226-device-meter-audited-2026-08-27.md)
+prior document — including [prd-226-device-meter-audited](../verification/runtime-perf-state.md)
 — computed quantisation on an 8.333 ms period the display was not using. **At 60 Hz the cells are
 16.67 / 33.33 / 50.00 ms.** We sit on the 3-period cell doing 25.27 ms of work — work that already
 fits in two periods with 8 ms to spare. **Landing the cell we have already earned is worth 30 fps

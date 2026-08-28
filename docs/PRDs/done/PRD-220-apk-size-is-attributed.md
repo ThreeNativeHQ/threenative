@@ -9,7 +9,7 @@ prd_contract: v1
 
 ## Context
 
-The fps-framework probe on 2026-08-24 (`docs/verification/fps-framework-mobile-perf-2026-08-24.md`)
+The fps-framework probe on 2026-08-24 (`docs/verification/runtime-perf-state.md`)
 measured the game's APK at **379 MB** and explicitly deferred the breakdown: *"APK size —
 separate investigation."* Nobody can currently say where those bytes are: which `.so`
 libraries, how many ABIs, whether debug symbols ship, whether the 346 MB texture upload seen

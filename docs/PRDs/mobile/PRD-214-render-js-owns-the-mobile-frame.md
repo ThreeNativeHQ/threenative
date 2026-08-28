@@ -163,7 +163,7 @@ idle to 423.7 mW**, against 1.0 GB of resident graphics memory. Whole-device dra
 −217 mA idle to −611 mA (peaks −1327 mA), and the phone heat-soaks 35.4 → 43.2 °C into thermal
 status 2 — at which point every other measurement on the device becomes unreliable. This lever is
 therefore also the thermal-headroom lever for the whole lane. Full numbers:
-`docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`.
+`docs/verification/runtime-perf-state.md`.
 
 It sits beside the existing first-ranked lever rather than replacing it: per-material-instance work
 and per-draw submission cost are different halves of the same 835 objects.

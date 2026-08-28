@@ -8,7 +8,7 @@ missing JIT is history.
 ## The budget
 
 **Desktop, profiled Xvfb lane, 619 eligible frames** (`work = threadCpu − present` = 23.9 ms/frame,
-[PATH-TO-60FPS](../verification/PATH-TO-60FPS-2026-08-27.md)):
+[PATH-TO-60FPS](../verification/runtime-perf-state.md)):
 
 | Term | ms | Share | Instrument |
 |---|---:|---:|---|
@@ -28,7 +28,7 @@ than a definition.
 **Quote the shares, not the absolute ms.** The ablation's absolutes were taken on `:0`, which a
 sibling lane voided in favour of Xvfb, and the machine has drifted since: PRD-224's same-session
 control arm reads **12.3–12.5 ms** `render.p50` today where 22.2 ms was recorded a day earlier
-([record](../verification/prd-224-phase1-pricing-2026-08-28.md)). Any A/B here must be a
+([record](../verification/runtime-perf-state.md)). Any A/B here must be a
 **same-session pair**; cross-day desktop absolutes mean nothing.
 
 **Pixel 8, Bayview, symbolized simpleperf, 37.7 ms/frame:**
@@ -88,7 +88,7 @@ is the outlier, and [PRD-227](../PRDs/PRD-227-the-frame-crosses-once.md) is maki
 ## Where we already stand against Godot 4.7.1
 
 Instanced rendering is a win on all three platforms and unbatched per-object rendering is a loss
-([summary](../verification/engine-load-test-summary-2026-08-15.md), scorer equivalence gate PASS):
+([summary](../verification/runtime-perf-state.md), scorer equivalence gate PASS):
 
 | Platform, instanced | ThreeNative p50 | Godot p50 | Margin |
 |---|---:|---:|---:|

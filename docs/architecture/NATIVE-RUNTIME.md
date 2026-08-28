@@ -112,7 +112,7 @@ web/host/device agreement with negative controls
 
 Both pass on emulated and simulated targets. **On physical hardware only 0a has moved**: a Pixel 8
 rendered and was measured against Godot 4.7.1
-([summary](../verification/engine-load-test-summary-2026-08-15.md)) on an unsigned release build.
+([summary](../verification/runtime-perf-state.md)) on an unsigned release build.
 Physics on a phone, iOS hardware, signing and soak are all open. **Emulator and simulator results
 never become physical-driver, arm64-performance or phone frame-rate evidence**, and no combination
 of them is a mobile-ready claim.

@@ -171,7 +171,7 @@ transparent, side, opacity, alphaTest, vertexColors, flatShading, depthWrite, bl
 
 ## Why it costs what it costs
 
-From `docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`, on the physical Pixel 8:
+From `docs/verification/runtime-perf-state.md`, on the physical Pixel 8:
 835 per-frame draws hold `SDLThread` at 93.6–110 %, lift the GPU rail `S2S_VDD_G3D` from 2.2 mW
 idle to 423.7 mW, take whole-device draw from −217 mA to −611 mA (peaks −1327 mA), and heat-soak
 the phone 35.4 → 43.2 °C into thermal status 2 — past which every other measurement on the device

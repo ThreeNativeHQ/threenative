@@ -146,7 +146,7 @@ Completed in the Phase 0 batch:
 
 - deterministic workload/statistics tests and `profile:native-cpu` collector scaffolding;
 - browser sandbox `examples/native-cpu-load-test/` with a visible `fox-scale` preset;
-- headed Chromium/Xvfb visual and metrics baseline recorded in `docs/verification/native-cpu-profile-fox-scale-2026-08-11.md`;
+- headed Chromium/Xvfb visual and metrics baseline recorded in `docs/verification/runtime-perf-state.md`;
 - software/headless presentation caveat documented so blank headless canvas captures do not become false failures or false passes.
 
 Still open for this experiment:

@@ -6,7 +6,7 @@ The 2026-08-11 measurements could not answer it. They compared two different fox
 Godot one renders real-time shadows, denser foliage and better-graded lighting, while ours reaches
 its frame rate partly by folding 2,282 objects into ~25 draws. Both differences push the result in
 our favour and neither is a property of the engine. See
-[native-performance-benchmarks-2026-08-11.md](../verification/native-performance-benchmarks-2026-08-11.md).
+[runtime-perf-state.md](../verification/runtime-perf-state.md).
 
 This file is the specification both arms implement. **An arm that cannot satisfy a row here is
 reported as failing that row, never quietly adjusted.**

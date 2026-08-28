@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-218 — fps-framework native: the loading screen hides a 12–14 s synchronous stall, the frame is one saturated thread, and cheap frames present uncapped
 
 **Status:** PARTIAL — worked 2026-08-24 on the physical Pixel 8. Evidence:
-`docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`.
+`docs/verification/runtime-perf-state.md`.
 
 | criterion | state |
 | --- | --- |
@@ -28,7 +28,7 @@ beside. **Remaining Phase 1 work is that ordering fix**, not more scheduling.
 version of it held the launch open forever (loop held, `substeps mean 0`, no error anywhere) and
 briefly reached the user as an enemy stuck in bind pose; it is now bounded per compile and overall,
 never rethrows, and always reports.
-Evidence: `docs/verification/fps-framework-mobile-perf-2026-08-24.md` (three cold launches of
+Evidence: `docs/verification/runtime-perf-state.md` (three cold launches of
 `com.threenative.bayview`, logcat markers, `top -H` thread sampling, screencaps).
 
 **Complexity:** +2 multi-package, +1 complex performance work, +1 for 5+ files = **4 → MEDIUM**,

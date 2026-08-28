@@ -206,7 +206,7 @@ in this order:
    `macos-15` runner; the Android emulator is red on the hosted lane; **no physical phone has
    run this and no stranger has played a ThreeNative game for five minutes.** Do not write
    "mobile-ready". Do not soften the Android line. Link
-   `docs/verification/engine-load-test-summary-2026-08-15.md` as the one external performance
+   `docs/verification/runtime-perf-state.md` as the one external performance
    control that exists.
 7. **Contributing / development.** The commands from `AGENTS.md` that a contributor needs —
    `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm lint`, `pnpm test`,

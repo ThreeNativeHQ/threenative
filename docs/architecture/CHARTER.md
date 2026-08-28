@@ -774,7 +774,7 @@ reporting failure `AGENTS.md` opens by naming.
 `maxTriangles`, requiring the `runtime.performance` capability — so a timing number is now
 verifiable rather than an intention. And a physical Pixel 8 has executed load tests against
 Godot 4.7.1 on web, desktop and the phone
-(`docs/verification/engine-load-test-summary-2026-08-15.md`). **That is benchmark evidence, not
+(`docs/verification/runtime-perf-state.md`). **That is benchmark evidence, not
 the mobile budget**: the workload was a cube ladder rather than the `platformer` template, the
 Android build was unsigned, and one run sat at 21% battery. The reference-workload rows in the
 table above remain unmeasured, and the mobile row still needs the phone, the template, and a

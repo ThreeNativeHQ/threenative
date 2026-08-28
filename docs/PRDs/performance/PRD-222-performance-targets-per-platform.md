@@ -43,7 +43,7 @@ The post-fix device rows come from the bug file's device record
 (`docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md`, commit `ba78ce42`),
 which this PRD named as the first measurement to collect. The headline floor is still missed at
 native resolution: 20.1 against a 30 fps Floor — but the margin math below says it is close.
-Phase 0's matched browser/native run is in `docs/verification/prd-222-2026-08-25.md`: Chrome
+Phase 0's matched browser/native run is in `docs/verification/runtime-perf-state.md`: Chrome
 measured 59.99 fps and native 19.15 fps, for 0.319 fps parity and 0.301 inverted render-p95 parity.
 
 Three things follow, and they shape every target below.
@@ -188,7 +188,7 @@ player actually gets.
 | whole-device current, steady state | — | **report it, do not gate it yet** |
 
 **This is the tier bayview currently fails and the others would hide.** Measured 2026-08-24
-(`docs/verification/prd-218-launch-stall-and-heat-2026-08-24.md`): the phone heat-soaked
+(`docs/verification/runtime-perf-state.md`): the phone heat-soaked
 35.4 → **43.2 °C into thermal status 2**, the GPU rail `S2S_VDD_G3D` went 2.2 mW idle to
 **423.7 mW**, and whole-device draw went −217 mA to −611 mA with peaks at −1327 mA. Past status 2
 every other measurement on the device becomes unreliable, which is the second reason this tier
@@ -381,5 +381,5 @@ Windows and macOS desktop (no host). *Taken since filing:* bayview's post-batch-
 — measured 2026-08-25, recorded in
 `docs/bugs/render-projection-cannot-batch-differing-geometries-2026-08-25.md` and in the table and
 findings above; the Phase 0 browser/native Pixel pair is recorded in
-`docs/verification/prd-222-2026-08-25.md`. What that scene still owes this PRD is its Tier 4
+`docs/verification/runtime-perf-state.md`. What that scene still owes this PRD is its Tier 4
 sustained run and green Phase 2/3 gates.

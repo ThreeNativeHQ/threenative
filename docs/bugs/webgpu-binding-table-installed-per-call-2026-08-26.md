@@ -73,7 +73,7 @@ one-time binding installation. At roughly 3,214 binding crossings per frame this
 largest identified term in a render phase that costs 22 ms where Chrome's costs 7.6 ms.
 
 Evidence and the full elimination trail are in
-[the PRD-222 reassessment](../verification/prd-222-reassessment-2026-08-26.md#root-cause-every-webgpu-binding-call-costs-58-70-what-chromes-costs).
+[the PRD-222 reassessment](../verification/runtime-perf-state.md#root-cause-every-webgpu-binding-call-costs-58-70-what-chromes-costs).
 
 ## The measurement
 

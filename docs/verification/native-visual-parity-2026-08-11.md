@@ -7,7 +7,7 @@
 > **55–71 fps while it was played** — it did not clear 60 during gameplay. The cause was ~93 HUD
 > draws that `SceneCollapse` excluded because they are camera-parented; the pass now folds them
 > and gameplay holds **83–116 fps, zero of 253 windows below 60**. The visual-parity findings
-> below stand. See `native-gameplay-frame-rate-2026-08-11.md`.
+> below stand. See `runtime-perf-state.md`.
 
 **Closed.** The fox platformer runs on a physical Pixel 8 with a picture that matches the
 pre-optimisation baseline, and the game contains no code that makes that happen. This

@@ -20,7 +20,7 @@ activeMode={..., vsyncRate=60.00 Hz, ...}
 
 `dumpsys display` reports both 60 and 120 Hz modes. The active mode remains 60 Hz while Bayview is
 foregrounded. The full same-device cadence record is
-[`prd-227-cadence-lock-2026-08-27.md`](../verification/prd-227-cadence-lock-2026-08-27.md): its
+[`runtime-perf-state.md`](../verification/runtime-perf-state.md): its
 SurfaceFlinger evidence shows Bayview presenting at about 20 fps on three 60 Hz intervals.
 
 This is **not the cause of that 20 fps result**. Bayview currently takes about 50 ms wall time per

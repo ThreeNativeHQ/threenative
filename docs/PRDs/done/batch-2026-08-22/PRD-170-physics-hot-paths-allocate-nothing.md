@@ -125,4 +125,4 @@ Measured verdict recorded honestly: hot-path allocations were already ~0.12 MB p
 and sit below instrument resolution end-to-end — claimed as hygiene, not frame time. Numeric
 contact keys rejected (Uint32 pairs exceed safe integer range; BigInt allocates more than the
 string). Evidence incl. bench numbers:
-`docs/verification/prd-170-physics-allocations-2026-08-22.md`.
+`docs/verification/runtime-perf-state.md`.

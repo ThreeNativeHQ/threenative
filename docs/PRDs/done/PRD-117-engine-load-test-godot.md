@@ -7,7 +7,7 @@ prd_contract: v1
 **Status: PARTIAL — executed 2026-08-15; web and desktop closed, phone arm and acceptance remain
 open.** The
 plan below was written before any of it ran, so tables in later sections may still show the
-shape rather than the result — `docs/verification/engine-load-test-summary-2026-08-15.md`
+shape rather than the result — `docs/verification/runtime-perf-state.md`
 is the record of what was actually measured, and it wins over any number here.
 
 Two comparisons now pass `checkEquivalence`: **web L2** (ThreeNative 3.9× faster at 16 384,
@@ -410,7 +410,7 @@ knee.
 `scripts/engine-load-test/run-android.ts` exists and `pnpm bench:engines --arm tn-android` drives
 the installed APK and collects its report from logcat. The battery precondition is enforced in code,
 not by discipline: below 50% the run refuses and names the override. Both arms have been measured on
-a Pixel 8 — see `docs/verification/engine-load-test-summary-2026-08-15.md`. The result is
+a Pixel 8 — see `docs/verification/runtime-perf-state.md`. The result is
 **provisional**: the device sat at 21–25%, so the criterion below is not yet formally satisfied.
 
 The ThreeNative arm now runs V8 rather than QuickJS (PRD-118), which is what made it competitive.

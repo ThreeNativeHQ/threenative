@@ -13,8 +13,8 @@ boundary: `queue.writeBuffer`'s direct `wgpuQueueWriteBuffer` fallthrough (`tnWe
 
 **Evidence status: recorded-secondhand.** The probe ran 2026-08-26 against a staging-OFF
 wgpu-native desktop build during the PRD-222 session; the observation is recorded in
-[the PRD-222 loop log, row F6](../verification/prd-222-loop-log.md) (see also
-[the session evidence file](../verification/prd-222-2026-08-26.md) for the staging work it sat
+[the PRD-222 loop log, row F6](../verification/runtime-perf-state.md) (see also
+[the session evidence file](../verification/runtime-perf-state.md) for the staging work it sat
 inside). The staging-OFF arm's own log did not survive (`/tmp`), so no output is reproduced here —
 the loop-log row is the record. What does survive: the probe source, inlined below so the filing
 is self-contained, and the staging-ON control arm's log (last seen at `/tmp/probe-on.log`, both
