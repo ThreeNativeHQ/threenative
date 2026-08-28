@@ -115,9 +115,19 @@ export interface IThreeNativeConfig {
     readonly preferWebGPU?: boolean;
     /** Portable drawing-buffer scale. CSS and UI layout dimensions are unchanged. */
     readonly resolutionScale?: number;
-    /** Android-only rendering overrides selected by the engine. */
+    /** Portable multisampling. Sampling and resolution are one pixel budget, not two. */
+    readonly antialias?: boolean;
+    /**
+     * Android-only rendering overrides selected by the engine.
+     *
+     * `antialias` belongs here beside `resolutionScale` because they spend the same budget: a
+     * tile-based mobile GPU resolves MSAA in tile memory and prices it quite differently from a
+     * desktop one, so a platform that scales resolution down must be able to buy sampling back
+     * on that same platform rather than accepting whatever the portable value happened to be.
+     */
     readonly android?: {
       readonly resolutionScale?: number;
+      readonly antialias?: boolean;
     };
   };
   readonly ui?: {

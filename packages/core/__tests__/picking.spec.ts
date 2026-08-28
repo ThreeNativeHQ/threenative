@@ -30,6 +30,13 @@ function renderer(canvas: HTMLCanvasElement) {
     renderOverlay: () => undefined,
     setOutputNode: () => undefined,
     setSize: () => undefined,
+    surface: () => ({
+      drawingBufferHeight: 1,
+      drawingBufferWidth: 1,
+      resolutionScale: 1,
+      sampleCount: 1,
+      scaleSource: "pinned" as const,
+    }),
     dispose: () => undefined,
   };
 }

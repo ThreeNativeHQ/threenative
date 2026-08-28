@@ -21,7 +21,7 @@ import { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
 import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
-import { resolveRendererResolutionScale } from "./renderer-config.js";
+import { resolveRendererAntialias, resolveRendererResolutionScale } from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
@@ -570,6 +570,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...this.#config.renderer,
       canvas: this.#config.canvas ?? this.#config.renderer?.canvas,
       preferWebGPU: this.#config.render?.preferWebGPU ?? this.#config.renderer?.preferWebGPU,
+      antialias: resolveRendererAntialias(
+        this.#config.render,
+        this.#config.renderer?.antialias,
+        getPlatform().os,
+      ),
       resolutionScale: resolveRendererResolutionScale(
         this.#config.render,
         this.#config.renderer?.resolutionScale,
@@ -747,7 +752,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const frameBudget =
       this.#config.frameBudget === false
         ? undefined
-        : new FrameBudget(this.#config.frameBudget ?? {});
+        : new FrameBudget({
+            ...this.#config.frameBudget,
+            // Last, so the engine's own renderer answers this and a game cannot report a
+            // resolution it is not drawing at. The window carries it in both pinned and auto
+            // modes: turning the convention off does not turn its measurement off.
+            readSurface: () => renderer.surface(),
+          });
     this.#frameBudget = frameBudget;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
     const gameLoop = new FixedStepLoop({

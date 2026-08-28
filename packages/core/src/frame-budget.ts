@@ -44,6 +44,55 @@ export interface IFramePhaseSample {
   readonly residual: number;
 }
 
+/**
+ * What the frame the window measured was actually drawn at.
+ *
+ * A resolution number without its sample count does not describe an image, and neither of them
+ * describes anything at all unless the window that carries the fps also carries them. This is
+ * reported whether the scale was pinned by the game or chosen by the engine: turning the
+ * convention off does not turn its measurement off.
+ */
+export interface IFrameSurfaceState {
+  /** The applied drawing-buffer scale, in `(0, 1]`. */
+  readonly resolutionScale: number;
+  /** `"pinned"` when the game fixed the number, `"auto"` when the engine chose it. */
+  readonly scaleSource: "pinned" | "auto";
+  /** Multisample count of the 3D drawing buffer; 1 when sampling is off. */
+  readonly sampleCount: number;
+  readonly drawingBufferWidth: number;
+  readonly drawingBufferHeight: number;
+}
+
+const SCALE_SOURCES: readonly IFrameSurfaceState["scaleSource"][] = ["pinned", "auto"];
+
+/** Fail closed: a surface that cannot describe an image is never reported as one. */
+function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
+  const { drawingBufferHeight, drawingBufferWidth, resolutionScale, sampleCount, scaleSource } =
+    surface;
+  if (!Number.isFinite(resolutionScale) || resolutionScale <= 0 || resolutionScale > 1)
+    throw new Error(
+      `Frame budget surface resolutionScale must be within (0, 1], received ${String(resolutionScale)}.`,
+    );
+  if (!SCALE_SOURCES.includes(scaleSource))
+    throw new Error(
+      `Frame budget surface scaleSource must name how the scale was chosen, received ${String(scaleSource)}.`,
+    );
+  if (!Number.isInteger(sampleCount) || sampleCount < 1)
+    throw new Error(
+      `Frame budget surface sampleCount must be an integer of at least one, received ${String(sampleCount)}.`,
+    );
+  for (const [name, value] of [
+    ["drawingBufferWidth", drawingBufferWidth],
+    ["drawingBufferHeight", drawingBufferHeight],
+  ] as const) {
+    if (!Number.isInteger(value) || value < 1)
+      throw new Error(
+        `Frame budget surface ${name} must be an integer of at least one, received ${String(value)}.`,
+      );
+  }
+  return { drawingBufferHeight, drawingBufferWidth, resolutionScale, sampleCount, scaleSource };
+}
+
 export interface IFrameBudgetSummary {
   readonly samples: number;
   readonly mean: number;
@@ -71,6 +120,12 @@ export interface IFrameBudgetWindow {
   readonly phases: Readonly<Record<FrameBudgetPhase, IFrameBudgetSummary>>;
   /** Each phase's mean as a fraction of the mean presented interval. */
   readonly shares: Readonly<Record<FrameBudgetPhase, number>>;
+  /**
+   * The resolution and sampling this window's frames were drawn at, when the loop reported one.
+   * Absent rather than defaulted: a consumer asserting on it must fail loudly instead of reading
+   * a fabricated `1.0` that no frame was ever drawn at.
+   */
+  readonly surface?: IFrameSurfaceState;
 }
 
 export interface IFrameBudgetOptions {
@@ -90,6 +145,11 @@ export interface IFrameBudgetOptions {
    * guessing when a window closed.
    */
   readonly onWindow?: (window: IFrameBudgetWindow) => void;
+  /**
+   * Reads what the frames were drawn at, called once per reported window. Wired by the frame
+   * loop, which is the only place that knows both the renderer and the window boundary.
+   */
+  readonly readSurface?: () => IFrameSurfaceState;
 }
 
 const DEFAULT_REPORT_EVERY = 300;
@@ -181,6 +241,7 @@ export class FrameBudget {
   #report: (line: string) => void;
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
+  #readSurface: (() => IFrameSurfaceState) | undefined;
   #scratch: Float64Array;
   #presented: Ring;
   #frame: Ring;
@@ -211,6 +272,7 @@ export class FrameBudget {
     this.#report = options.report ?? ((line) => console.log(line));
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
+    this.#readSurface = options.readSurface;
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
@@ -324,6 +386,8 @@ export class FrameBudget {
     };
     const share = (value: number): number =>
       presented.mean === 0 ? 0 : Math.round((value / presented.mean) * 1_000) / 1_000;
+    const surface =
+      this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
     return {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
@@ -339,6 +403,7 @@ export class FrameBudget {
         update: share(phases.update.mean),
       },
       substeps: this.#substeps.summarize(this.#scratch),
+      ...(surface === undefined ? {} : { surface }),
       window: this.#windowIndex + 1,
     };
   }
