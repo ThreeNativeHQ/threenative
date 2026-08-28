@@ -210,10 +210,11 @@ contract. Stop, re-derive, and re-file. Change B proceeds either way.
 | 5b | `antialias` in the Android override block | `config.ts:118–120`, `renderer-config.ts` | a block carrying `resolutionScale` alone | remove the key → a game cannot request per-platform sampling; the override unit test fails |
 | 6 | `timestamp-query` feature + `QuerySet` bindings | `bindings.cpp:2118`, `:5041`, three.js `TimestampQuery` path | two `if (featureName == "timestamp-query")` refusals | re-add the refusal → the bindings test that resolves a two-write query set fails |
 
-## The open decision, before any measurement — 60 Hz or 120 Hz is the baseline?
+## The baseline — DECIDED 2026-08-28: 60 Hz panel, 60 fps, p95 ≤ 14 ms
 
-**This is unresolved and every number in §1 depends on it. Settle it first; do not measure around
-it.** It caused a real confusion on 2026-08-28 and one wrong action (this author restored the
+**Decision: acceptance runs on a 60 Hz panel at `maxFps: 60`, and a frame is accepted at
+`presented p95 ≤ 14 ms`, not at 16.6.** 120 Hz remains a real arm, reported separately, and is
+never the gate. Rationale below; it was an open question for one session and this settles it.** It caused a real confusion on 2026-08-28 and one wrong action (this author restored the
 phone's 120 Hz mode mid-investigation, which invalidated the comparison rather than repairing it;
 the device was returned to 60 Hz).
 
@@ -232,21 +233,44 @@ The facts, not the preference:
 Both runs are valid measurements of *different machines*. Neither is an error. The error is that
 neither run stated which machine it was on, which is what Change A's reporting item fixes.
 
-**Recommendation, for the owner to accept or reject:** make **60 Hz the acceptance baseline** and
-120 Hz a second, separately reported arm.
+### Why 60 Hz, and why 14 ms
 
-- The game ships a 60 fps target, and Smooth Display off is an ordinary user setting — many target
-  phones have no high-refresh mode at all. A green obtained only at 120 Hz is a green on an easier
-  machine than the shipping default.
-- A 60 Hz panel makes the 16.67 ms cliff unforgiving, which is the honest bar: it demands real
-  headroom rather than a frame that merely lands near budget.
-- Under this baseline the 49.93 fps reading is a **genuine failure to fix**, not an artifact — and
-  the resolution ladder that was being walked (0.36 → 0.32 → 0.28) is a defensible response to it,
-  not a mistake. What was missing was only the statement of which panel each rung ran on.
+**1. Test the config the templates ship.** Every generated template ships `display.maxFps: 60`. A
+gate run at 120 Hz tests a configuration no template ships. That is the whole argument by itself;
+the rest is supporting.
 
-If instead the owner accepts 120 Hz as the baseline, then §1.3.3 and §1.3.4 stand as written and
-Bayview's shipped `maxFps` must move to 120 to match — but say so explicitly, because today the
-record and the shipped config disagree.
+**2. 60 Hz is the floor of the device population, and the floor is what a baseline means.** Holding
+60 fps on a 60 Hz panel implies holding it on a 120 Hz one. The converse is false, and this session
+measured exactly that false direction: 70.358 fps at 120 Hz, 49.93 fps at 60 Hz, *smaller* buffer.
+This phone's factory default is in fact the 120 Hz mode (`defaultMode 2`) — which is precisely why
+the baseline cannot be "whatever the phone happens to be set to." It must be pinned and stated.
+
+**3. It removes the confound permanently.** At 60 Hz there is one present interval and an fps
+reading is unambiguous. A 60 fps cap on a 120 Hz panel produces a mixed 8/16 ms histogram whose
+mean flatters a frame that is genuinely over budget — the finer granularity hides missed frames
+instead of reporting them.
+
+**4. Industry practice is a stable 60 with high-refresh as an opt-in mode.** Mobile titles that
+support 90/120 ship it as a performance toggle gated on device tier and thermals, not as the
+certification target. Consistency is the shipped property; peak rate is a setting.
+
+**5. The 14 ms bar is the part that actually matters.** Accepting at 16.6 ms accepts a frame with
+zero headroom, which fails minutes later as the device warms — §1.3.3's own accepted run already
+showed 13 spikes and a 74.72 ms worst frame. **14 ms is ~84 % of the 16.67 ms budget**, leaving
+room for thermal drift, GC, and a scene busier than the measured spot. A game that needs all
+16.6 ms is not a 60 fps game; it is a game that reads 60 fps once.
+
+### What this decision costs, stated plainly
+
+Under it, **Bayview at `resolutionScale` 0.32 fails.** Render p95 was 15.5–17.8 ms — over the 14 ms
+bar and straddling the 16.67 cliff, which is what produced 678 frames at 33 ms. That is a real
+result, not an artifact, and the resolution ladder the concurrent lane was walking
+(0.36 → 0.32 → 0.28) is a legitimate response to it. Nothing about that work is invalidated; it was
+only ever missing the statement of which panel each rung ran on.
+
+It also means §1.3.3 and §1.3.4's greens were obtained on an easier machine than the shipped
+default. They stay in the record as **120 Hz arms**, correctly labelled, and stop being quoted as
+the acceptance.
 
 ### The gap that let this happen
 
@@ -262,8 +286,9 @@ this; it is the cheapest item in the PRD and it removes the whole class.
 
 **Falsification gate. Run this first. It is a measurement phase and lands no product code.**
 
-- [ ] **Settle the baseline-Hz question above and write the answer into this PRD** before a single
-      arm is run. Every fps number below is meaningless until it names its panel.
+- [ ] Baseline is **decided** (60 Hz panel, `maxFps: 60`, accept at presented p95 ≤ 14 ms). Pin the
+      panel before the first arm: `settings put system peak_refresh_rate 60.0`, confirm
+      `mActiveSfDisplayMode` reports 60.0 and `low_power` is `0`, and record both in the run.
 
 - [ ] Five-point scale ladder on the physical Pixel 8 — 1.0, 0.72, 0.55, 0.44, 0.36 — at
       **120 Hz mailbox, uncapped**, so no point is clipped by a 60 Hz cap the way 0.36 was.
@@ -359,9 +384,11 @@ discarded, never silently kept. Anything not run is named as not run.
 
 ## Acceptance Criteria
 
-- [ ] **A scaffolded template with no hand-authored resolution constant reaches its configured
-      `maxFps` on a physical Pixel 8**, three captures, SurfaceFlinger-confirmed, at its shipped
-      appearance. 30 fps is a milestone to report, never a pass.
+- [ ] **A scaffolded template with no hand-authored resolution constant sustains 60 fps at
+      presented p95 ≤ 14 ms on a physical Pixel 8 pinned to its 60 Hz mode**, three captures,
+      SurfaceFlinger-confirmed, at its shipped appearance. 30 fps is a milestone to report, never a
+      pass, and a p95 between 14 and 16.6 ms is a report, not a pass.
+- [ ] The 120 Hz arm is run and reported **separately**, and no acceptance cites it.
 - [ ] `renderer.resolutionScale` validates, plumbs to all four targets, and the active scale is reported
       in every frame-budget window **in both pinned and auto modes**. (Mutation: delete the
       validation branch → range test red; strip the Android manifest metadata → packaging test red.)
