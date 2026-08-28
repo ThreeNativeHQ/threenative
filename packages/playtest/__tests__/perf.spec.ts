@@ -68,6 +68,24 @@ describe("parsePerformanceMarkers", () => {
     expect(parsed.presentMode).toBe("mailbox (vsync=false)");
   });
 
+  it("counts a frame-budget window once when Android mirrors it to both runtime log tags", () => {
+    const mirrored = [
+      budgetLine(1, 59.99, 17.3, 7.0),
+      budgetLine(2, 66.93, 13.1, 6.7),
+      budgetLine(3, 68.35, 12.7, 6.7),
+    ].flatMap((line) => [
+      `I MystralStdio: [log] ${line}`,
+      `I MystralJS: [log] ${line}`,
+    ]).join("\n");
+
+    const parsed = parsePerformanceMarkers(mirrored);
+    const report = assessPerfMarkers(parsed, { minFps: 60, requireWindows: 2 }, "logcat: pixel");
+
+    expect(parsed.budgets.map(({ window }) => window)).toEqual([1, 2, 3]);
+    expect(report.discardedWindows).toEqual([1]);
+    expect(report.pass).toBe(true);
+  });
+
   it("throws, naming the marker, when a marker line carries unparsable JSON", () => {
     // The package rule: a meter line that cannot be read must fail, never silently vanish —
     // an absent window and an unreadable window are different defects and both are failures.

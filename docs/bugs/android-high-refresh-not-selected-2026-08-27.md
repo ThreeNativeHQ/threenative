@@ -1,7 +1,7 @@
-# Android games can select 120 Hz and present above 60; sustained acceptance is pending — 2026-08-27
+# Android games select 120 Hz and sustain above 60 fps — 2026-08-27
 
-**Status:** implementation and >60 path green — the Pixel 8 selects physical 120 Hz and Bayview
-reaches 66.84 / 63.01 fps through supported config; cool sustained acceptance remains open
+**Status:** Bayview acceptance green — the Pixel 8 selects physical 120 Hz and sustains
+63.45–72.52 fps through supported config; a separate cheap-scene >100 ceiling arm remains pending
 **Severity:** medium — it does not explain a game that misses 60 fps, but it prevents a cheap game
 from reaching 90/120 Hz through any supported ThreeNative contract
 **Reported:** 2026-08-27, physical Pixel 8 (`shiba`), Bayview
@@ -31,9 +31,8 @@ With Battery Saver off, the supported request genuinely selects physical active 
 A second red then remained: FIFO presentation forced an 11–12 ms Bayview frame that missed one
 8.33 ms interval down to the 60 Hz divisor. The supported green now packages
 `display.maxFps: 120`, selects mailbox for a high-refresh opt-in, and leaves the 1–60 fps default
-range on FIFO. A valid-start Wi-Fi run reached 66.84 and 63.01 fps for its first 600 steady frames.
-The phone then crossed to thermal status 1 and later windows fell below 60, so sustained acceptance
-remains open.
+range on FIFO. The accepted Wi-Fi run holds 63.45–72.52 fps for 11 steady windows / 3,300 frames,
+with zero hitches and thermal status 0 before and after.
 
 ## Causes — fixed
 
@@ -99,17 +98,20 @@ or compositor will deliver 120 fps.
    the 120 request and the Pixel 8 selects its physical 120 Hz mode.
 4. **Above-60 presentation — done:** mailbox is selected and the first 600 steady frames measure
    66.84 and 63.01 fps; SurfaceFlinger records real 8 ms intervals.
-5. **Sustained throughput — pending:** recharge, cool and unplug the Pixel, collect at least 1,200
-   steady real-time frames, confirm the mode remains 120 Hz, and cross-check the game meter with
-   SurfaceFlinger. The last attempt cooled to status 0 / 35.5 °C skin but reached 49% battery.
+5. **Sustained throughput — done:** 11 steady windows / 3,300 frames all pass 60 fps at
+   63.45–72.52. SurfaceFlinger independently reports 70.358 fps over 3,634 frames at physical
+   120 Hz, with zero dropped frames. The device stays at thermal status 0.
 6. **Cheap-scene ceiling — pending after Bayview:** a cheap scene must exceed 100 presents/s to
    prove the new path is not merely a mode-selection signal.
 
-## Next measurement
+## Accepted physical evidence
 
-Charge the Pixel to at least 55%, leave ADB on Wi-Fi, then unplug and disable Battery Saver. Cool to
-thermal status 0 with skin at most 35 °C. Run the already-built APK
-`a519e4043de40c532c29e53a9d0175952959160d36dd41d1de041d669084e0c4` with the approved 2400×1080
-UI and 0.36 3D scale. Collect four steady 300-frame windows and capture active display mode,
-`TN_FRAME_BUDGET`, `TN_PRESENTS_TICK`, and SurfaceFlinger cadence. Every steady window above 60 fps
-closes the owner's immediate goal; the cheap-scene >100 presents/s arm then closes this filing.
+APK `a519e4043de40c532c29e53a9d0175952959160d36dd41d1de041d669084e0c4` kept the approved
+2400×1080 UI and 0.36 3D scale. The run started at 60%, discharging, 33.4 °C battery, 33.7 °C skin
+and thermal status 0; Battery Saver was disabled after unplug and verified with `low_power=0`.
+`threenative-playtest perf --require-windows 4 --min-fps 60` exits 0 / `PASS` on the 11 steady
+windows. The post-run device remained at status 0, 34.0 °C battery and 38.7 °C skin.
+
+The remaining cheap-scene arm is not part of the owner's Bayview 60+ goal. It should use the same
+physical-mode, Battery Saver and SurfaceFlinger checks and exceed 100 presents/s before this broader
+host-ceiling filing is archived.

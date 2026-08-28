@@ -105,11 +105,21 @@ const PRESENT_MODE_PATTERN = /Present mode: (\S+ \(vsync=(?:true|false)\))/u;
  */
 export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const budgets: IFrameBudgetWindowJson[] = [];
+  const budgetPayloads = new Set<string>();
   const hostGaps: IHostGapWindowJson[] = [];
   let presentMode: string | undefined;
   for (const line of text.split("\n")) {
     const budget = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
-    if (budget !== undefined) budgets.push(budget);
+    if (budget !== undefined) {
+      // Android mirrors console output through MystralStdio and MystralJS. One measured window is
+      // therefore present twice in logcat with the exact same payload; count that observation once
+      // without hiding a second payload whose measurements differ.
+      const payload = JSON.stringify(budget);
+      if (!budgetPayloads.has(payload)) {
+        budgetPayloads.add(payload);
+        budgets.push(budget);
+      }
+    }
     const hostGap = parseMarkerLine<IHostGapWindowJson>(line, HOST_GAP_MARKER);
     if (hostGap !== undefined) hostGaps.push(hostGap);
     const mode = PRESENT_MODE_PATTERN.exec(line);
