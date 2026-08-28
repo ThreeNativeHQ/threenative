@@ -12,23 +12,21 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
-## 1. The open defect: native Android fps
+## 1. Native Android fps: the 60 Hz budget is reached; tail hitches remain
 
-**Goal (owner): 60 fps+ on a physical Pixel 8; 30 fps is a milestone, never a pass.** The previous
-claim that Chrome runs the same Bayview scene at **59.99 fps is falsified**. On 2026-08-27 the
-foreground, visible, focused Chrome tab was measured in landscape with consecutive rAF timestamps
-and independently through SurfaceFlinger. Chrome produced 23.27–30.37 fps; SurfaceFlinger agreed at
-29.839 fps during the cross-check. Chrome selected the 120 Hz display mode during that capture, so
-the application was missing a 120 Hz budget rather than being capped by a 60 Hz panel.
+**Goal (owner): 60 fps+ on a physical Pixel 8; 30 fps is a milestone, never a pass.** On 2026-08-28
+Bayview reached the active 60 Hz display budget on the physical Pixel 8 while keeping the UI at the
+full 2400×1080 presentation size. The game-owned 3D surface renders at scale 0.36 (864×389) and is
+composited behind that full-resolution UI. The earlier claim that Chrome ran the scene at 59.99 fps
+remains falsified; it is unrelated to this new native measurement.
 
-| Where it stands (2026-08-27 evening) | value |
+| Where it stands (2026-08-28 acceptance) | value |
 | --- | ---: |
-| Best known arm: **720p mailbox** (`wm size 720×1600` + `present_uncapped=1`) | **34.39 fps** (SurfaceFlinger: 34.2) |
-| 1080p, any present mode / frame latency | 20.0–20.9 fps, invariant |
-| Chrome landscape, 864×303 canvas, same Bayview source | 23.27–30.37 fps (SurfaceFlinger: 29.839 in the paired cross-check) |
-| CPU side of the frame (JS render + replay + misc) | ~36 ms (render ~27 after Change 1 moved work out of the meter; replay ~8; misc ~1) |
-| GPU tail at present, 1080p | ~14 ms — but see §1.2: the GPU frame itself is ~63 ms |
-| GPU tail at present, 720p | 0.91 ms |
+| Pixel 8, Mali-G715/Vulkan, unplugged, active 60 Hz | presented p50 **16.66 ms** (nominal **60.02 fps**) |
+| Last four steady 300-frame windows | **59.81–59.99 fps**, zero window hitches |
+| 2,009-frame tail | p95 22.87 ms; p99 32.40 ms; worst 74.72 ms; 13 spikes |
+| Presentation contract | UI 2400×1080; 3D 864×389, scaled by the compositor |
+| Settled browser render budget | 232 draws; 665,531 triangles; diagnostics empty |
 
 ### 1.1 The model that fits every measurement
 
@@ -67,7 +65,7 @@ The pass experiments then found two material costs:
 The flat-material arm was diagnostic only. It did not become a proposed fix, and the original
 textures, materials and shadows were restored immediately after measurement.
 
-### 1.3 Current owner and the next implementation
+### 1.3 Owner and implementation history
 
 **Layer verdict: the primary 20–30 fps defect is game-owned Bayview render construction.** The
 secondary viewport-density and high-refresh-selection defects are engine-owned, but neither can
@@ -88,14 +86,15 @@ Evidence gathered from the live Chrome game:
   created zero batches. Identical material is insufficient on WebGPU because `BatchedMesh` still
   issues multidraw sub-draws; safe instancing needs shared geometry identity.
 
-**Next fix:** change Bayview's generated render source to reuse canonical primitive geometries and
-express dimensions through mesh transforms. Start with the 201 `BoxGeometry` objects, then the 84
-cylinders and 22 planes. Preserve each authored mesh, material, surface tag, transform, raycast and
-physics object; do not merge away gameplay identity. Once geometry identity is shared, the existing
-core projection can instance compatible `(geometry, material, castShadow, receiveShadow, layers)`
-groups in its private render mirror. The measured grouping predicts the town's 363 render
-candidates can fall to about 84, which should remove roughly 279 main-pass candidates and many of
-the same shadow-pass candidates. This is a prediction, not a measured fps result.
+**2026-08-27 next fix (now landed):** change Bayview's generated render source to reuse canonical
+primitive geometries and express dimensions through mesh transforms. Start with the 201
+`BoxGeometry` objects, then the 84 cylinders and 22 planes. Preserve each authored mesh, material,
+surface tag, transform, raycast and physics object; do not merge away gameplay identity. Once
+geometry identity is shared, the existing core projection can instance compatible `(geometry,
+material, castShadow, receiveShadow, layers)` groups in its private render mirror. The measured
+grouping predicts the town's 363 render candidates can fall to about 84, which should remove roughly
+279 main-pass candidates and many of the same shadow-pass candidates. This is a prediction, not a
+measured fps result.
 
 ### 1.3.1 Geometry identity sharing — landed 2026-08-27 (late), web red-green + first device arms
 
@@ -192,7 +191,7 @@ fixed mip via `material.envNode`, keeping the look the hemisphere cannot), the f
 per-draw question, **not** covered by that evidence), and CPU is already inside budget. The named
 next instrument (§1.5) remains GPU timestamps to split the town pass into dispatch vs fragment.
 
-Red-green handoff:
+Red-green handoff (completed by §1.3.3):
 
 1. Add a Bayview playtest that currently fails with a steady `maxDrawCalls` threshold and still
    asserts the town triangle floor/nonblank frame.
@@ -203,12 +202,65 @@ Red-green handoff:
 4. Re-run web rAF + SurfaceFlinger and native `TN_FRAME_BUDGET` + SurfaceFlinger on a cool device;
    only then choose the next lever between the 2048² game shadow and native pixel density.
 
+### 1.3.3 Bayview reaches the native 60 Hz budget without shrinking the UI (2026-08-28)
+
+**Layer verdict:** the fix belongs to Bayview's generated render source, not an engine package. The
+resolution is a decision about how this game looks, and the project rule puts appearance decisions
+in generated `src/render/` or game source. Web, desktop and non-Android paths remain at scale 1.
+
+Two sandbox commits close the central frame-budget gap:
+
+- `f83103f` uses a fixed roughness-0.8 PMREM IBL node, keeps dominant town/truck/awning shadows,
+  removes shadows from small moving targets and effects, and holds the settled browser scene to 232
+  draws and 665,531 triangles.
+- `95d8729` changes only Android native's 3D resolution scale from 0.44 to 0.36. The physical
+  overlay/UI surface remains 2400×1080; SurfaceFlinger reports the game surface transform at about
+  2.777×, consistent with an 864×389 3D buffer scaled to the display.
+
+Red-green on the same physical Pixel 8:
+
+| Arm | steady result | verdict |
+| --- | ---: | --- |
+| scale 0.44 | 56.31–58.28 fps | red |
+| scale 0.40 | 58.51–59.31 fps | insufficient |
+| scale 0.36 | last four windows 59.81–59.99 fps | 60 Hz frame budget reached |
+
+Acceptance used the intended Mali-G715 Vulkan adapter, normal real-time ticks, an unplugged device,
+and the active 60 Hz display mode. Before the run the battery was 73%, device temperature 32.8 °C,
+and Android thermal status 0 (`NONE`). The measured workload stayed in `playing` with five live
+enemies, AI, physics, audio, HUD, PBR materials and retained dominant shadows. A controlled clone
+reset the steady-state accumulator after startup and collected 2,009 frames over about 33.5 s:
+
+| Metric | Result |
+| --- | ---: |
+| presented frame time | p50 16.66 ms; p95 22.87 ms; p99 32.40 ms |
+| p50-derived nominal rate | 60.02 fps |
+| worst / spikes | 74.72 ms / 13 frames above the spike threshold |
+| largest section peaks | outside-game 73.45 ms; enemies 62.42 ms; game frame 62.80 ms |
+| section p99 | outside-game 30.86 ms; enemies 3.05 ms; game frame 3.58 ms |
+
+This proves the nominal 60 Hz budget on the current display mode; it does **not** prove throughput
+above 60 fps. The remaining defect is tail smoothness: central frame pacing is at budget, while 13
+of 2,009 frames spiked and the worst frame reached 74.72 ms.
+
+The temporary reset/logger used for the exact 2,009-frame aggregate was removed before the final
+APK. The clean rebuild has SHA-256
+`3d072453ee23932d5153678cc0d5e7900a44c0c890d7a8cc57586635812f8b95`; a clean open reported
+Mali-G715/Vulkan, `TN_RENDER_SCALE` 0.36, `TN_NATIVE_SMOKE_READY:webgpu`, and
+`TN_NATIVE_SMOKE_FIRST_FRAME`. The physical Android input smoke then fired the weapon: its artifact
+contains the muzzle flash and the HUD changed from 30 to 29 rounds.
+
+Verification status: sandbox typecheck and Android build pass; all 23 behavior scenarios pass; the
+settled draw-budget scenario passes at 232 draws with empty diagnostics. The aggregate `pnpm test`
+still exits nonzero in its final scale audit because two pre-existing content checks fail (`door`
+missing and a 1.000 m muzzle-flash quad above the 0.3 m limit). This Android-only branch cannot
+affect that web content audit. The sandbox has no lint script.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
-- **Native CSS-pixel parity:** Chrome landscape renders 864×303 (261,792 pixels), while native
-  renders 2400×1080 (2,592,000 pixels), 9.9× as many. Chrome reports DPR 2.625; native currently
-  exposes physical window dimensions with DPR 1. This is an engine viewport seam, but Chrome's
-  ~30 fps proves it is not the primary defect.
+- **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1. Bayview
+  now handles its cost in generated game source by rendering only the 3D surface at 0.36 while the
+  UI stays at 2400×1080. A general engine-level CSS-pixel contract remains unresolved.
 - **High-refresh selection:** native has a private software cap initialized to 60 and does not ask
   Android for a high-refresh mode. Chrome selected 120 Hz automatically. The separate filed bug is
   `docs/bugs/android-high-refresh-not-selected-2026-08-27.md`; its proposed public contract is
@@ -218,9 +270,9 @@ Red-green handoff:
 ### 1.5 Untried, named
 
 Dawn on Android; any GPU-side timestamp timing (the drain is wall-clock algebra, not correlated
-spans); shared-geometry Bayview implementation; matched native/Chrome logical-pixel capture after
-draw collapse; cross-engine QuickJS/JSC lanes; 720p FIFO with the instrument; three-capture
-acceptance for any arm above (all runs to date are diagnostic grade).
+spans); matched native/Chrome logical-pixel capture after draw collapse; cross-engine QuickJS/JSC
+lanes; a high-refresh (>60 Hz) device arm after native requests that display mode; attribution and
+removal of the 13 steady-state tail spikes.
 
 ---
 
