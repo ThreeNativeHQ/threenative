@@ -329,7 +329,19 @@ node -e 'import("./packages/runtime-native/scripts/device-preflight.mjs").then(a
 
 Its output — `activeRefreshHz`, `supportedRefreshHz`, `peakRefreshRateSetting`,
 `minRefreshRateSetting`, `lowPower` — is pasted into the run record for **every** arm. An arm
-without it is not an arm.
+without it is not an arm. Verified on the phone 2026-08-28; it returns, for example:
+
+```json
+{"serial":"…","batteryPercent":55,"charging":false,"chargingSource":"NONE","thermalStatus":"NONE",
+ "thermalStatusCode":0,"screenOn":true,"activeRefreshHz":60,
+ "supportedRefreshHz":[120,60,40,30,24,20],"peakRefreshRateSetting":60,
+ "minRefreshRateSetting":60,"lowPower":false,"provisional":[]}
+```
+
+**Charge the phone on a real charger before starting.** It was at 55 % on 2026-08-28, barely over
+the 50 % floor, and this phase is **ten arms** — five scale rungs plus five `(scale × samples)`
+rungs. The adb cable does not charge this device. Expect the battery floor, not thermal, to end the
+session first.
 
 Then, per rung, cold launch and read both meters:
 
