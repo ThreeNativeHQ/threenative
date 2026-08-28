@@ -1,0 +1,61 @@
+{
+  "name": "defense-pointer-placement",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 40,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "hover",
+      "pointerPosition": { "x": 0.31678, "y": 0.41783 },
+      "waitTicks": 5,
+      "release": true,
+      "screenshot": "hovered"
+    },
+    {
+      "kind": "input",
+      "label": "press",
+      "pointerPosition": { "x": 0.31678, "y": 0.41783, "buttons": 1 },
+      "waitTicks": 2,
+      "release": true
+    },
+    { "kind": "wait", "label": "placed", "waitTicks": 2, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "state",
+        "path": "spent",
+        "atSteps": [{ "label": "hover", "equals": 0 }, { "label": "placed", "equals": 40 }]
+      },
+      {
+        "id": "state",
+        "path": "towers",
+        "atSteps": [{ "label": "hover", "equals": 0 }, { "label": "placed", "equals": 1 }]
+      }
+    ],
+    "components": [
+      {
+        "entity": "build-preview",
+        "component": "hovered",
+        "atSteps": [{ "label": "hover", "equals": true }]
+      },
+      {
+        "entity": "build-preview",
+        "component": "tile",
+        "atSteps": [
+          { "label": "hover", "equals": "build-tile-2-3" },
+          { "label": "placed", "equals": "build-tile-2-3" }
+        ]
+      },
+      {
+        "entity": "build-preview",
+        "component": "placedTile",
+        "atSteps": [{ "label": "placed", "equals": "build-tile-2-3" }]
+      }
+    ]
+  },
+  "artifacts": { "screenshots": "before-after" }
+}

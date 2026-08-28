@@ -316,6 +316,21 @@ export class PathFollow3D { … }
 const follower = new PathFollow3D(curve, { loop: true });
 ```
 
+### `PointerEvents3D`
+
+`class` — Dispatch portable pointer events from the game surface to registered Three.js objects.
+
+```ts
+export class PointerEvents3D implements IPointerEvents3D { … }
+```
+
+- **Use when:** let the player click on a thing in the world · show a 3D object while a pointer hovers over it · handle touch and mouse taps on a loaded model without naming its child meshes
+- **Constraints:** listeners are side-table registrations; Three.js prototypes are never patched · one raycast serves each active pointer and no raycast runs when nothing is registered
+
+```ts
+ctx.pointer.on(tile, "tapped", (event) => place(event.point));
+```
+
 ### `posedBounds`
 
 `function` — Measure a Three.js pose for grounded or attachment-aware checks.

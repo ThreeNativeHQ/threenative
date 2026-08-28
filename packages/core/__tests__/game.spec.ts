@@ -481,6 +481,23 @@ describe("IGame", () => {
     game.stop();
   });
 
+  it("should expose pointer events on the running context", async () => {
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { test: EmptyScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      expect(game.ctx?.pointer).toBeDefined();
+      expect(typeof game.ctx?.pointer.on).toBe("function");
+      expect(typeof game.ctx?.pointer.drag).toBe("function");
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should default to window when inputTarget is omitted", async () => {
     const originalWindow = globalThis.window;
     const windowTarget = new EventTarget();

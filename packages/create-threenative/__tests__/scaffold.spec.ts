@@ -44,13 +44,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // holds the frame budget instead of the game hand-authoring a resolution constant.
   // Recomputed after Biome reformatted nine template files: the previous values were measured
   // before that formatting ran and were therefore stale the moment they were committed.
-  "action-rpg": "4229783b897791764b708990f686a87a3e86cfb27e5c4e035f1d4fe9cf9880ac",
-  defense: "2069eafd127b35b89adf856f2087b7cdd5bb09c2b50337521271da2625419636",
-  minimal: "81783acebe32339ccc51623a186af197bb48196f133e77c3f5be3b0567a8c366",
-  platformer: "bf0619518da5b602cace0b691f5df77bacba0463ee81e81ee0af44ba6b0e7e9d",
-  racing: "2f5846f31af48e459ec18425f8034edacbfb312dce004268c7c48e089f12fcd9",
-  shooter: "23e8fa8029a7fd9e496214ed97dee8003d54c94e6fb527e588c348911a4b0196",
-  starter: "85b4fd037e2e8d1af45a70bfa23f97d6ac4eb87d31edd64b38869a3721fdf935",
+  // Recomputed again for PRD-237: the shared capability reference now documents PointerEvents3D,
+  // which changes the generated reference bytes embedded in every scaffold.
+  "action-rpg": "76bd594241dde65ef24828047e55845fb8a5c23993d47bc46155a1dbaed598b9",
+  defense: "542c6d29d150541031e3275105a93feabaa8e8e67584cbca10121bae6286a20f",
+  minimal: "c25031a1fd05e214693ac56040bd23c4a327dc5d166f8aeb5e769e6bdf842827",
+  platformer: "8113a7dc0a17c7208eb53328aa0ce0ae9006d4860e7ced492e22cc23ddac8b76",
+  racing: "fbfe6a2c8692dcd3fc6d6cbafa15964294ff9ff2fc81d104395d6cfa057551dd",
+  shooter: "67792c6c3a262636f01fd960ba5f1e86cf5dc6c788db0aacbcf5ef35b13f226c",
+  starter: "2daa76932466ad9b5b4f0d840cd5fcc3dea0f1634823bafd0516e9a2ad1d8c60",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

@@ -4,6 +4,7 @@ import type { CanvasLayer } from "./canvas-layer.js";
 import type { Registry } from "./entities.js";
 import type { InputMap } from "./input.js";
 import type { IRaycastOptions } from "./picking.js";
+import type { IPointerEvents3D } from "./pointer-events.js";
 import type { IRandom } from "./random.js";
 import type { IRendererLike } from "./renderer.js";
 import type { ScheduleHandle } from "./schedule.js";
@@ -70,6 +71,7 @@ export interface ICtx<
   readonly entities: Registry;
   readonly add: (object: Object3D) => Object3D;
   readonly input: InputMap;
+  readonly pointer: IPointerEvents3D;
   readonly assets: IAssetLoader;
   readonly after: (delay: number, callback: () => void) => ScheduleHandle;
   readonly every: (callback: (dt: number) => void) => ScheduleHandle;

@@ -19,6 +19,7 @@ import {
 import { GPUParticles3D } from "./particles.js";
 import { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
+import { PointerEvents3D } from "./pointer-events.js";
 import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import { resolveRendererAntialias, resolveRendererScaleSetting } from "./renderer-config.js";
@@ -425,6 +426,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #entities: Registry | undefined;
   #random: IRandom | undefined;
   #picker: ScenePicker | undefined;
+  #pointerEvents: PointerEvents3D | undefined;
   #scheduler: Scheduler | undefined;
   #frameBudget: FrameBudget | undefined;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
@@ -523,6 +525,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
     this.#sceneFrame = undefined;
     this.#scene?.exit(ctx);
+    this.#pointerEvents?.clear();
     this.#sceneEntered = false;
     this.#scheduler?.clear();
     this.#entities?.clear();
@@ -658,6 +661,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       viewport,
     });
     this.#picker = picker;
+    const pointerEvents = new PointerEvents3D({
+      screen: (position, target) => {
+        const rect = (
+          canvas as { getBoundingClientRect?: () => DOMRect }
+        ).getBoundingClientRect?.();
+        return rect === undefined
+          ? target.copy(position)
+          : target.set(position.x - rect.left, position.y - rect.top);
+      },
+    });
+    this.#pointerEvents = pointerEvents;
     const loopState: { current?: FixedStepLoop } = {};
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
@@ -725,6 +739,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       goto: (name) => this.#goto(name, ctx),
       input: this.#input,
+      pointer: pointerEvents,
       physics: undefined as TPhysics,
       random,
       raycast: (options) => picker.raycast(options),
@@ -874,6 +889,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (this.#paused) return;
         this.#input?.tick();
         scheduler.tick(dt);
+        pointerEvents.tick(input.raw.pointers, picker, input.raw.pointer);
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
@@ -1100,6 +1116,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#ctx = undefined;
     this.#loop = undefined;
     this.#random = undefined;
+    this.#pointerEvents?.dispose();
+    this.#pointerEvents = undefined;
     this.#picker?.dispose();
     this.#picker = undefined;
     this.#scheduler = undefined;
