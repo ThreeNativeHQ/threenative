@@ -214,12 +214,11 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     }
     LOGI("maxFps=%u", config.maxFps);
 #if TN_ANDROID_VSYNC
-    // FIFO quantizes a frame that misses one high-refresh interval to an integer divisor: on a
-    // 120 Hz Pixel, an otherwise healthy 11-12 ms frame is forced down to 60 fps. Keep the
-    // conservative FIFO default through 60 fps, but use the runtime's supported mailbox/immediate
-    // path when a game explicitly asks for high refresh or uncapped presentation. The software
-    // maxFps ceiling still applies after every successful present.
-    config.vsync = config.maxFps != 0 && config.maxFps <= 60;
+    // FIFO quantizes a missed vblank to an integer divisor: at physical 60 Hz, a 10-14 ms frame
+    // with a small scheduling miss becomes a 33 ms frame. Keep FIFO below the full-refresh target,
+    // but use the runtime's supported mailbox/immediate path for 60, high refresh and uncapped
+    // presentation. The software maxFps ceiling still applies after every successful present.
+    config.vsync = config.maxFps != 0 && config.maxFps < 60;
 #else
     config.vsync = false;
 #endif
