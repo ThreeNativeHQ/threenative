@@ -235,6 +235,11 @@ driver.
 
 ## Resume here (2026-08-27)
 
+> **START HERE:** [HANDOVER-hostgap-2026-08-27](../verification/HANDOVER-hostgap-2026-08-27.md) —
+> the executable version of this section, with the one task, the exact code sites, and the commands.
+> **Do not take "execute PRD-227" as a task.** Both of its named changes are finished; an agent told
+> to execute it invents lever ten.
+
 **The decisive test has now run.** Full record:
 [prd-227-cadence-lock-2026-08-27](../verification/prd-227-cadence-lock-2026-08-27.md).
 
