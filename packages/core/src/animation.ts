@@ -18,7 +18,8 @@ export interface IAnimationPlayerOptions {
    * On by default, because a model whose feet do not agree with its motion is the single most
    * common thing wrong with a character in a game built here, and every game solves it the same
    * way. Set `false` to keep the authored rate; the measurement below stays live either way and
-   * says that it was overridden.
+   * says that it was overridden. The convention re-times locomotion only: a `"once"` clip — a
+   * death, a flinch — always plays at its authored rate.
    */
   readonly strideSync?: boolean;
   /**
@@ -66,7 +67,10 @@ const CLIP_GROUND_FLOOR = 1e-3;
 
 export interface IAnimationPlayOptions {
   readonly fade?: number;
-  /** `"loop"` (default) repeats; `"once"` plays through and holds the last frame. */
+  /**
+   * `"loop"` (default) repeats; `"once"` plays through and holds the last frame. A `"once"` clip
+   * also keeps its authored rate — stride sync re-times locomotion, not events.
+   */
   readonly mode?: "loop" | "once";
 }
 
@@ -221,13 +225,18 @@ export class AnimationPlayer {
     const wanted =
       groundSpeed < STRIDE_SPEED_FLOOR ? STRIDE_RATE_MIN : groundSpeed / clipGroundSpeed;
     const rate = Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted));
-    if (this.#strideSync) action.setEffectiveTimeScale(rate);
+    // A `"once"` clip is an event — a death, a flinch, a reload — and plays at the rate the
+    // event happens at, however still the body stands: its own root motion is the movement, so
+    // re-timing it against a stationary body only slows the event down. A travelling death clip
+    // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
+    const applies = this.#strideSync && this.#mode === "loop";
+    if (applies) action.setEffectiveTimeScale(rate);
     this.#stride = {
       clipGroundSpeed,
       groundSpeed,
       overridden: !this.#strideSync,
       rate,
-      synced: this.#strideSync,
+      synced: applies,
     };
   }
 

@@ -19,7 +19,7 @@ export class AnimationPlayer { … }
 ```
 
 - **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving
-- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it
+- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only
 - **Overrides:** strideSync controls whether the matched rate is applied while stride is still measured
 
 ```ts

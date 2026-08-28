@@ -293,4 +293,43 @@ describe("AnimationPlayer stride sync", () => {
     expect(player.stride.rate).toBeGreaterThan(0);
     expect(player.stride.rate).toBeLessThan(1);
   });
+
+  /**
+   * Measured in `sandbox/fps-framework` on 2026-08-27: the enemy death clips carry 0.23–0.36 m/s
+   * of hips root motion (the fall itself), and a dying body stands still, so stride sync clamped
+   * every death to `STRIDE_RATE_MIN` — a 2.8 s fall spread over 19 s, and the corpse stood
+   * upright through its whole respawn window. A `"once"` clip is an event — a death, a flinch, a
+   * reload — authored at the rate the event happens at; the convention re-times locomotion, and
+   * this is not locomotion.
+   */
+  it("leaves a one-shot clip at its authored rate even when the clip travels", () => {
+    const death = new AnimationClip("death", 2, [
+      // Two seconds carrying the rig two metres along +z — root motion, like a fall.
+      new VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 0, 0, 2]),
+    ]);
+    const { player } = character({ clips: [death] });
+    player.play("death", { mode: "once" });
+    player.update(1 / 60);
+    player.update(1 / 60); // the body did not move at all — a corpse never does
+    expect(player.mixer.clipAction(player.clip("death")).getEffectiveTimeScale()).toBe(1);
+    // The convention scopes itself out; the game did not override anything.
+    expect(player.stride.synced).toBe(false);
+    expect(player.stride.overridden).toBe(false);
+  });
+
+  /** Backstop for the scoping above: a one-shot must not switch the convention off wholesale. */
+  it("still re-times loop clips on the same player after a one-shot", () => {
+    const death = new AnimationClip("death", 2, [
+      new VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 0, 0, 2]),
+    ]);
+    const { body, player } = character({ clips: [death, walkClip()] });
+    player.play("death", { mode: "once" });
+    player.update(1 / 60);
+    player.play("walk");
+    player.update(1 / 60);
+    body.position.z += 2 * (1 / 60);
+    player.update(1 / 60);
+    expect(player.stride.rate).toBeCloseTo(2, 1);
+    expect(player.stride.synced).toBe(true);
+  });
 });

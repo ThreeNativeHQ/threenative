@@ -20,6 +20,7 @@ export const version = "0.3.0";
  * @situation stop a walking character's feet from sliding or spinning
  * @situation match a walk or run cycle to how fast a character is moving
  * @constraint name the body a game moves as strideRoot when the animated rig is a child of it
+ * @constraint a one-shot clip always plays at its authored rate; the matched rate re-times loops only
  * @override strideSync controls whether the matched rate is applied while stride is still measured
  * @example const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
  */

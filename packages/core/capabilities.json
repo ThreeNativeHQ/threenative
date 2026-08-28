@@ -2,7 +2,8 @@
   "entries": [
     {
       "constraints": [
-        "name the body a game moves as strideRoot when the animated rig is a child of it"
+        "name the body a game moves as strideRoot when the animated rig is a child of it",
+        "a one-shot clip always plays at its authored rate; the matched rate re-times loops only"
       ],
       "example": "const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });",
       "importPath": "@threenative/core",
