@@ -593,6 +593,43 @@ Consequences, both binding:
    It is in every template's `AGENTS.md` as part of the pixel budget. That is worse than an absent
    feature: a game turns it on, sees no cost, and concludes sampling is free.
 
+### 1.3.9 The sampling table, re-measured against a flag that works (2026-08-28)
+
+The `(scale × samples)` ladder was withdrawn twice today — first on suspicion, then on proof that
+`renderer.antialias` never reached the GPU. With the compatibility-mode fix in (`d476ec36`,
+`b674c4cb`) and `surface.sampleCount` reading **4** on device, it was run again. Bayview, physical
+Pixel 8, 120 Hz, uncapped present, `maxFps: 240`, pinned scales, cold launch per arm.
+
+| scale | samples | presented p50 | presented p95 | render p50 | fps | live windows |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.32 | 1× | 18.24 | 24.42 | 10.37 | 53.40 | 8 |
+| 0.32 | **4×** | 21.45 | 27.12 | 12.50 | 46.76 | 29 |
+| 0.44 | 1× | 19.48 | 27.85 | 9.71 | 49.33 | 4 |
+| 0.44 | **4×** | 24.30 | 27.21 | 14.05 | 41.63 | 25 |
+| 0.55 | 4× | 30.91 | 45.90 | 16.67 | 32.77 | 4 |
+
+```
+scale 0.32: 4x MSAA costs +3.21 ms presented p50, -6.64 fps
+scale 0.44: 4x MSAA costs +4.82 ms presented p50, -7.70 fps
+```
+
+**The withdrawn table said the opposite.** "MSAA is free below 0.5 Mpx" was the reading of an inert
+flag compared against itself. Measured against a flag that works, **4× MSAA costs more than a full
+resolution rung**: +3.21 ms at 0.27 Mpx is more than the 0.32 → 0.27 step buys back, and the cost
+grows with pixels rather than sitting in tile memory for free. Mali-G715 resolving MSAA in tile
+memory does not make it free on this scene.
+
+**Change C's rule, from measurement: spend resolution before samples, and leave `antialias`
+opt-in.** The scaler moves resolution only, which is now the measured-correct behaviour rather
+than a placeholder. A game that wants sampling can afford it by pinning a lower scale, and the
+per-window `sampleCount` beside the scale is what lets it see the trade it made.
+
+**Two arms are thin and named as such.** `0.44/1×` and `0.55/4×` hold four live windows each; the
+80-second arms did not fill three windows once MSAA slowed the frame, which is why the two 4× arms
+were re-run at 220 seconds (29 and 25 live windows) and why the reader refused the short ones
+rather than reporting them. `0.55/1×` was refused outright and there is **no valid 0.55 pair** —
+the +7.47 ms once recorded at that rung stays withdrawn and is not replaced.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1

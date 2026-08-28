@@ -397,7 +397,11 @@ adb shell dumpsys SurfaceFlinger --timestats -dump    # cross-check, per method 
 - [ ] **Second ladder, `(scale × samples)`:** at minimum 0.32/1×, 0.32/4×, 0.44/1×, 0.44/4×,
       0.55/4×. Mali-G715 resolves MSAA in tile memory, so the cost is not the naive 4× and the
       pairing must be measured, never assumed. This table chooses Change C's defaults.
-      **RUN, THEN WITHDRAWN THE SAME DAY.** The arms read +0.07 ms at 0.32, −0.40 ms at 0.44 and
+      **RUN, WITHDRAWN, AND RE-RUN AGAINST A WORKING FLAG (§1.3.9).** The answer reversed: 4× MSAA
+      costs **+3.21 ms at 0.32** and **+4.82 ms at 0.44** — more than a full resolution rung —
+      so **Change C's rule is spend resolution before samples and leave `antialias` opt-in**,
+      which is the behaviour the scaler already has. The original run below is kept as the record
+      of how an inert flag reads. *Historic:* The arms read +0.07 ms at 0.32, −0.40 ms at 0.44 and
       +7.47 ms at 0.55, which looked like a tile-memory cliff. It is not safe to use:
       `TN_GPU_TEXTURES` is byte-identical between every `antialias: true` arm and its `false` twin,
       so **the flag may never have reached a sample count on the native path** — in which case the
@@ -518,9 +522,10 @@ presented interval when a panel is setting that interval.
       a 3-window reach only ever sees the up-then-down leg and the guard is dead code. The reach is
       derived from the table instead (tightest down-up leg, plus one).
 - [x] A pinned `resolutionScale` constructs no scaler at all, asserted by an executable.
-- [ ] **OPEN — the table it was to be read from is withdrawn.** See Phase 0's `(scale × samples)`
-      item: the `antialias` arms may have measured an inert flag. The scaler moves resolution only,
-      which is the safe behaviour while the sample cost is unknown.
+- [x] **Order of spend, measured (§1.3.9): resolution before samples.** 4× MSAA costs +3.21 ms at
+      0.32 and +4.82 ms at 0.44 — more than a resolution rung buys back — so the scaler moving
+      resolution only is the measured-correct behaviour, and `antialias` stays an opt-in a game
+      pays for deliberately with the per-window `sampleCount` to see the trade.
 - [x] The scaler never touches the overlay, never changes camera framing, and never alters aspect
       — every resize passes `updateStyle: false`, asserted.
 - [x] **Red-green, mutation named:** `return this.#step(1)` → `return undefined` (downward step
@@ -605,7 +610,7 @@ Named so the next session starts here rather than re-deriving the state.
    table and therefore belongs in an edit to that section, not in the implementation.**
 4. **Change C's sample half is stated but not implemented.** The scaler moves resolution only. The
    measured rule is in Phase 0 above.
-5. **Re-measure `(scale × samples)` now that sampling works.** `renderer.antialias` was inert on
+5. **Done (§1.3.9).** ~~Re-measure `(scale × samples)` now that sampling works.~~ `renderer.antialias` was inert on
    native because three read one missing feature and classified the whole runtime as a
    compatibility device (`d476ec36`, §1.3.8). Fixed and verified `sampleCount 1 → 4`, but the
    ladder that was to choose Change C's default was run against the inert flag and must be run
