@@ -427,6 +427,48 @@ Artifacts: `<bayview>/artifacts/prd228/<arm>/` — `apk.sha256`, `config.txt`, `
 `battery-before.txt`, `battery-after.txt`, `logcat-kept.txt`, `sf-kept.txt`, and the discarded run
 beside each. Harness: `tools/prd228-arm.sh`, `tools/prd228-ladder.sh`, `tools/prd228-read.mjs`.
 
+### 1.3.6 The adaptive scaler on the device — it works, and it reaches the floor (2026-08-28)
+
+**First device run of `resolutionScale: "auto"`.** Bayview, `display.maxFps: 60`, 60 Hz panel,
+FIFO, engine core built from this tree and installed as a tarball with the installed bytes
+verified (`threenative-core-0.3.0-auto-scale-3242a17bf93a.tgz`; `dist/index.js` contains
+`scaleSource`). APK sha256 `b898ed4c…`. **Caveat on the record: the phone was on AC** —
+`preflight-before.json` says `"charging":true,"chargingSource":"AC"` — so this is a functional
+verification of the loop, **not an acceptance arm**. Thermal NONE at start, LIGHT at the end.
+
+The scaler walked every pre-registered rung by itself, one step per window plus its cooldown:
+
+| window | scale | drawing buffer | fps | presented p50 | presented p95 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1.00 | 2400×1080 | 28.99 | 33.55 | 38.46 |
+| 4 | 0.72 | 1728×778 | 35.65 | 27.00 | 35.25 |
+| 8 | 0.52 | 1248×562 | 43.35 | 22.07 | 30.62 |
+| 10 | 0.44 | 1056×475 | 48.95 | 19.84 | 26.27 |
+| 14 | 0.32 | 768×346 | 48.59 | 19.77 | 27.36 |
+| 18 | 0.23 | 552×248 | **55.37** | 17.04 | 23.40 |
+
+SurfaceFlinger, game `(BLAST)` layer, whole run including the descent: **41.123 fps** — lower than
+the last window because it averages every rung walked through, which is the point of the next
+paragraph. Every window carried `surface: {resolutionScale, scaleSource:"auto", sampleCount,
+drawingBufferWidth, drawingBufferHeight}`; the reporting defect that let the record say 0.36 while
+the tree said 0.32 is closed end to end on a physical device.
+
+**Two results, both actionable:**
+
+1. **It reached the floor and did not reach 60.** Exactly what §1.3.5's 13.79 ms intercept
+   predicts: 83 % of Bayview's frame does not scale with pixels, so no resolution reaches the
+   target. The window now reports `atFloor` and `perf --text` prints "AT FLOOR, budget not met",
+   because a window reporting 0.23 and nothing else reads as a budget met at a low resolution.
+   **Bayview's remaining work is in the fixed term, not the fill rate.**
+2. **The descent cost about three minutes.** Falling one rung per window plus one cooldown window,
+   at 300 frames per window and ~30 fps at the top of the ladder, is ~20 s per rung and ten rungs
+   from the ceiling. A game that starts at DPR-1 physical therefore spends minutes visibly at
+   29 fps before settling. That is the pre-registered controller behaving exactly as specified and
+   it is still a bad first impression. **Open, not fixed here:** a first-window multi-rung jump —
+   the slope in §1.3.5 predicts the landing rung from one window's presented p50 in closed form —
+   would reach the settling point in one step instead of ten. It is a change to PRD-228's Phase 2
+   table, so it is filed rather than tuned in.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1
