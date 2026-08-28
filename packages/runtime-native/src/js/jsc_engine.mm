@@ -862,18 +862,12 @@ public:
     }
 
     bool setPrototypeOf(JSValueHandle object, JSValueHandle prototype) override {
-        // JSObjectSetPrototype accepts undefined for a null prototype; anything else reports
-        // through the exception out-parameter, which this records before failing closed.
-        JSValueRef exception = nullptr;
+        // JavaScriptCore's C API accepts undefined for a null prototype and does not expose an
+        // exception out-parameter for prototype installation.
         JSObjectSetPrototype(
             context_,
             static_cast<JSObjectRef>(object.ptr),
-            prototype.ptr ? static_cast<JSValueRef>(prototype.ptr) : JSValueMakeUndefined(context_),
-            &exception);
-        if (exception) {
-            recordException(exception);
-            return false;
-        }
+            prototype.ptr ? static_cast<JSValueRef>(prototype.ptr) : JSValueMakeUndefined(context_));
         return true;
     }
 

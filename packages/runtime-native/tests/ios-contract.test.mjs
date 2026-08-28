@@ -117,6 +117,20 @@ test('Linux can validate the iOS lane without claiming simulator execution', () 
   assert.equal(report.threeVersion, '0.185.1');
 });
 
+test('JSC prototype installation uses the three-argument Xcode 16.4 API', () => {
+  const jsc = readFileSync(join(root, 'src/js/jsc_engine.mm'), 'utf8');
+  const setPrototypeOf = jsc.slice(
+    jsc.indexOf('bool setPrototypeOf('),
+    jsc.indexOf('// Raw Context Access'),
+  );
+
+  assert.match(
+    setPrototypeOf,
+    /JSObjectSetPrototype\(\s*context_,\s*static_cast<JSObjectRef>\(object\.ptr\),\s*prototype\.ptr[\s\S]*?JSValueMakeUndefined\(context_\)\s*\);/u,
+  );
+  assert.doesNotMatch(setPrototypeOf, /JSObjectSetPrototype\([\s\S]*?&exception\s*\);/u);
+});
+
 test('iOS executable verifier builds and exercises native physics fail closed', () => {
   const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
   assert.match(verifier, /download-deps\.mjs', '--only', 'stb'/u);
