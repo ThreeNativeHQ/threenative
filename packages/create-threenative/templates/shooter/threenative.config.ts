@@ -12,6 +12,7 @@ export default {
     orientation: "landscape",
     fullscreen: true,
     keepScreenOn: true,
+    maxFps: 60,
   },
   window: {
     title: "__PROJECT_NAME__",

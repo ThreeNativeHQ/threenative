@@ -200,6 +200,19 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
         }
     }
     LOGI("backgroundMode=%s", mystral::platform::backgroundModeName(config.backgroundMode));
+    if (argc > 7 && argv[7] && argv[7][0] != '\0') {
+        try {
+            const std::string value = argv[7];
+            size_t consumed = 0;
+            const unsigned long parsed = std::stoul(value, &consumed);
+            if (consumed != value.size() || parsed > 1000) throw std::out_of_range("maxFps");
+            config.maxFps = static_cast<uint32_t>(parsed);
+        } catch (const std::exception&) {
+            LOGE("TN_PRESENTATION_CAP_INVALID: TN_MAX_FPS must be 0..1000, got '%s'", argv[7]);
+            return 2;
+        }
+    }
+    LOGI("maxFps=%u", config.maxFps);
 #if TN_ANDROID_VSYNC
     config.vsync = true;
 #else

@@ -32,6 +32,7 @@ export interface IResolvedThreeNativeConfig {
     readonly orientation: ThreeNativeOrientation;
     readonly fullscreen: boolean;
     readonly keepScreenOn: boolean;
+    readonly maxFps: number;
   };
   readonly window: {
     readonly title: string;
@@ -169,6 +170,17 @@ function positiveInteger(value: unknown, fallback: number, code: string, label: 
   if (value === undefined) return fallback;
   if (!Number.isSafeInteger(value) || (value as number) <= 0) {
     fail(code, `${label} must be a positive integer.`);
+  }
+  return value as number;
+}
+
+function maxFpsValue(value: unknown): number {
+  if (value === undefined) return 60;
+  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > 1000) {
+    fail(
+      "TN_CONFIG_MAX_FPS_INVALID",
+      "display.maxFps must be a whole number between 0 (uncapped) and 1000.",
+    );
   }
   return value as number;
 }
@@ -721,7 +733,7 @@ async function validateIconVariants(
 
 function validateDisplay(raw: unknown): IResolvedThreeNativeConfig["display"] {
   const display = assertRecord(raw, "display");
-  assertKeys(display, "display", ["orientation", "fullscreen", "keepScreenOn"]);
+  assertKeys(display, "display", ["orientation", "fullscreen", "keepScreenOn", "maxFps"]);
   const orientation = display.orientation === undefined ? "landscape" : display.orientation;
   if (
     typeof orientation !== "string" ||
@@ -746,6 +758,7 @@ function validateDisplay(raw: unknown): IResolvedThreeNativeConfig["display"] {
       "TN_CONFIG_KEEP_SCREEN_ON_INVALID",
       "display.keepScreenOn",
     ),
+    maxFps: maxFpsValue(display.maxFps),
   };
 }
 

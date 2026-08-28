@@ -143,7 +143,7 @@ test("resume rebuilds the surface Android destroyed, and republishes it", () => 
   );
   assert.match(
     runtime,
-    /webgpu_->configureSurface\(width_, height_, config_\.vsync\)/u,
+    /webgpu_->configureSurface\(width_, height_,\s*config_\.vsync && !platform::presentUncapped\(\)\)/u,
     "a rebuilt surface presents nothing until it is configured",
   );
   assert.match(

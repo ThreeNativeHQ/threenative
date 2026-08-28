@@ -23,7 +23,7 @@ import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
 export const DEFAULT_IOS_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.13', build: 1 },
-  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false },
+  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
   window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
 };
 const IOS_ORIENTATIONS = {
@@ -128,6 +128,7 @@ export function renderIosInfoPlist(source, orientation = 'landscape') {
   rendered = plistKey(rendered, 'CFBundleVersion', config.app.build);
   rendered = plistBoolean(rendered, 'TNFullscreen', config.display.fullscreen);
   rendered = plistBoolean(rendered, 'TNKeepScreenOn', config.display.keepScreenOn);
+  rendered = plistInteger(rendered, 'TNMaxFps', config.display.maxFps);
   rendered = plistKey(rendered, 'TNWindowTitle', config.window.title);
   rendered = plistInteger(rendered, 'TNWindowWidth', config.window.width);
   rendered = plistInteger(rendered, 'TNWindowHeight', config.window.height);

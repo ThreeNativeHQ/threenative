@@ -12,13 +12,15 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
-## 1. Native Android fps: the 60 Hz budget is reached; tail hitches remain
+## 1. Native Android fps: 60 Hz is reached; 120 Hz is selected; >60 fps is pending
 
 **Goal (owner): 60 fps+ on a physical Pixel 8; 30 fps is a milestone, never a pass.** On 2026-08-28
 Bayview reached the active 60 Hz display budget on the physical Pixel 8 while keeping the UI at the
 full 2400×1080 presentation size. The game-owned 3D surface renders at scale 0.36 (864×389) and is
 composited behind that full-resolution UI. The earlier claim that Chrome ran the scene at 59.99 fps
-remains falsified; it is unrelated to this new native measurement.
+remains falsified; it is unrelated to this new native measurement. A supported `display.maxFps: 120`
+path now selects the Pixel's 120 Hz mode, but throughput acceptance still needs a cool, unplugged
+1,000+ frame run.
 
 | Where it stands (2026-08-28 acceptance) | value |
 | --- | ---: |
@@ -27,6 +29,7 @@ remains falsified; it is unrelated to this new native measurement.
 | 2,009-frame tail | p95 22.87 ms; p99 32.40 ms; worst 74.72 ms; 13 spikes |
 | Presentation contract | UI 2400×1080; 3D 864×389, scaled by the compositor |
 | Settled browser render budget | 232 draws; 665,531 triangles; diagnostics empty |
+| High-refresh selection | supported 120 fps request applied; Pixel active at 120 Hz; throughput pending |
 
 ### 1.1 The model that fits every measurement
 
@@ -256,23 +259,63 @@ still exits nonzero in its final scale audit because two pre-existing content ch
 missing and a 1.000 m muzzle-flash quad above the 0.3 m limit). This Android-only branch cannot
 affect that web content audit. The sandbox has no lint script.
 
+### 1.3.4 Supported 120 Hz selection — implementation and device mode green (2026-08-28)
+
+**Layer verdict:** the missing high-refresh contract was engine-owned. A game cannot portably tell
+Android which display mode to prefer, so the public config, native packagers, runtime pacing and
+Android surface lifecycle now carry one value:
+
+```ts
+export default {
+  display: { maxFps: 120 },
+} satisfies IThreeNativeConfig;
+```
+
+`display.maxFps` defaults to 60, accepts whole numbers from 0 through 1000, and uses 0 for uncapped.
+The runtime applies it before the first frame. Android packages it as `TN_MAX_FPS`, passes the same
+value to the native pacing cap, calls `Surface.setFrameRate()` on API 30+, and reapplies the request
+on resume and whenever Android creates or replaces the surface. Every generated template states
+the conservative 60 fps default; a game opts into 120 without changing its UI or render source.
+Desktop and iOS carry the same software ceiling through their packaged config.
+
+Red-green proof in the engine tree:
+
+| Gate | Result |
+| --- | ---: |
+| config validation/default and all generated templates | **311/311 passed** |
+| Android/iOS/desktop packaging and runtime contracts | **577 passed, 1 unrelated preflight failure** |
+| Android arm64 host + Java activity build | **passed** |
+| desktop runtime and CLI compile | **passed** |
+| root typecheck | max-fps path clean; blocked by 3 pre-existing tracer-test nullability errors |
+
+The final Bayview APK has SHA-256
+`1848a04ef1befa27c64b20bf464c5af1258e4bde7ddfde4d3e195fe3348f673e`. Its manifest contains
+`TN_MAX_FPS=120`; the approved 2400×1080 overlay bundle is byte-identical to the 60 Hz build. On the
+physical Pixel 8 the host reported `maxFps=120`, `Presentation cap: 120 fps`, and an applied
+`TN_DISPLAY_FRAME_RATE_REQUEST`. Android then reported active display mode 2 at 120 Hz,
+`renderFrameRate=120.00001`, and the Bayview UID frame-rate override at 120. Mode selection is green.
+
+The first throughput smoke is deliberately **not an acceptance result**: USB power, 38.4 °C battery
+temperature and thermal status 1 (`LIGHT`) violated the measurement preconditions. Its last hot
+window was 31.85 fps. The next gate is one real-time, cool, unplugged run with at least 1,000 steady
+frames while the 120 Hz mode remains active; only that run can establish the requested >60 fps.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1. Bayview
   now handles its cost in generated game source by rendering only the 3D surface at 0.36 while the
   UI stays at 2400×1080. A general engine-level CSS-pixel contract remains unresolved.
-- **High-refresh selection:** native has a private software cap initialized to 60 and does not ask
-  Android for a high-refresh mode. Chrome selected 120 Hz automatically. The separate filed bug is
-  `docs/bugs/android-high-refresh-not-selected-2026-08-27.md`; its proposed public contract is
-  `display.maxFps` with default 60, 0 uncapped and 120 opt-in, driving both pacing and Android's
-  frame-rate request.
+- **High-refresh selection:** the supported `display.maxFps` contract and Android frame-rate request
+  are implemented, and the Pixel 8 selects 120 Hz. Only the cool sustained-throughput acceptance is
+  still open; the mode-selection defect itself is fixed. The evidence and remaining gate are in
+  `docs/bugs/android-high-refresh-not-selected-2026-08-27.md`.
 
 ### 1.5 Untried, named
 
 Dawn on Android; any GPU-side timestamp timing (the drain is wall-clock algebra, not correlated
 spans); matched native/Chrome logical-pixel capture after draw collapse; cross-engine QuickJS/JSC
-lanes; a high-refresh (>60 Hz) device arm after native requests that display mode; attribution and
-removal of the 13 steady-state tail spikes.
+lanes; a cool 1,000+ frame Bayview throughput arm while the selected mode stays at 120 Hz;
+attribution and removal of the 13 steady-state tail spikes.
 
 ---
 

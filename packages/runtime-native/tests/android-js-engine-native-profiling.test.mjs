@@ -13,6 +13,8 @@ const androidMain = source("../src/platform/android_main.cpp");
 const runtime = source("../src/runtime.cpp");
 const context = source("../src/webgpu/context.cpp");
 const bindings = source("../src/webgpu/bindings.cpp");
+const runtimeHeader = source("../include/mystral/runtime.h");
+const bindingsHeader = source("../include/mystral/webgpu/bindings.h");
 const nativeSmoke = source("../../../examples/native-smoke/src/game.ts");
 const measurementRunner = source("../scripts/measure-android-js-engine.mjs");
 
@@ -79,13 +81,24 @@ test("writeBuffer stages into mapped blocks flushed at every queue boundary", ()
 
 test("RuntimeConfig vsync selects and preserves a supported presentation mode", () => {
   assert.match(androidMain, /config\.vsync = (?:true|false)/u);
-  assert.match(runtime, /configureSurface\(width_, height_, config_\.vsync\)/u);
+  assert.match(
+    runtime,
+    /configureSurface\(width_, height_,\s*config_\.vsync && !platform::presentUncapped\(\)\)/u,
+  );
   assert.match(runtime, /getPresentMode\(\)/u);
   assert.match(context, /capabilities\.presentModes\[i\] == WGPUPresentMode_Immediate/u);
   assert.match(context, /capabilities\.presentModes\[i\] == WGPUPresentMode_Mailbox/u);
   assert.match(context, /Uncapped presentation requested but unsupported; refusing FIFO fallback/u);
   assert.match(context, /configureSurface\(width, height, vsync_\)/u);
   assert.match(bindings, /config\.presentMode = state->presentMode/u);
+});
+
+test("display.maxFps configures the native presentation ceiling", () => {
+  assert.match(runtimeHeader, /uint32_t maxFps = 60/u);
+  assert.match(bindingsHeader, /setPresentationCapHz\(uint32_t/u);
+  assert.match(runtime, /setPresentationCapHz\(config_\.maxFps\)/u);
+  assert.match(androidMain, /config\.maxFps/u);
+  assert.match(bindings, /TN_PRESENTS_TICK:[\s\S]*capHz/u);
 });
 
 test("native profiling reports direct and bundled render commands per submit", () => {

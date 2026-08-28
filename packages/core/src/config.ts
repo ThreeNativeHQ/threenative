@@ -73,6 +73,12 @@ export interface IThreeNativeConfig {
     readonly fullscreen?: boolean;
     readonly keepScreenOn?: boolean;
     /**
+     * Maximum native presentation rate in frames per second. Defaults to 60; `0` removes the
+     * software ceiling. Android also submits this value as the surface's preferred frame rate,
+     * which the display policy may decline because of hardware, power, or thermal state.
+     */
+    readonly maxFps?: number;
+    /**
      * What the native host does when the player leaves the app — presses the power button,
      * switches away, minimizes the window. `"pause"` (the default) stops running frames and
      * suspends audio until the app comes back; `"continue"` keeps rendering off-screen, which a

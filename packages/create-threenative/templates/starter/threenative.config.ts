@@ -13,6 +13,7 @@ export default {
     orientation: "landscape", // Mobile viewport orientation.
     fullscreen: true, // Keep the game surface edge to edge.
     keepScreenOn: true, // Do not dim during a play session.
+    maxFps: 60, // Set 120 to opt into a supported high-refresh display mode.
   },
   window: {
     title: "__PROJECT_NAME__", // Desktop window title.

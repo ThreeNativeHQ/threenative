@@ -81,7 +81,12 @@ describe("threenative build", () => {
         version: "1.2.3",
       },
       bootSplash: { backgroundColor: "#123456", image: "public/launch.png" },
-      display: { fullscreen: true, keepScreenOn: false, orientation: "landscape" as const },
+      display: {
+        fullscreen: true,
+        keepScreenOn: false,
+        maxFps: 60,
+        orientation: "landscape" as const,
+      },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
       ui: { renderer: "native" as const },

@@ -94,6 +94,7 @@ public final class Bundle {
   private final Map<String, Object> values = new HashMap<>();
 
   public void putBoolean(String key, boolean value) { values.put(key, value); }
+  public void putInt(String key, int value) { values.put(key, value); }
   public void putString(String key, String value) { values.put(key, value); }
   public boolean getBoolean(String key, boolean fallback) {
     Object value = values.get(key);
@@ -102,6 +103,10 @@ public final class Bundle {
   public String getString(String key, String fallback) {
     Object value = values.get(key);
     return value instanceof String ? (String) value : fallback;
+  }
+  public int getInt(String key, int fallback) {
+    Object value = values.get(key);
+    return value instanceof Integer ? (Integer) value : fallback;
   }
   // The one-argument overload. applyOrientation calls it, and without it here this whole probe
   // failed to compile, so the orientation fix shipped with no compiling test at all.
@@ -150,6 +155,45 @@ public final class Intent {
 public interface WindowManager {
   final class LayoutParams {
     public static final int FLAG_KEEP_SCREEN_ON = 0x00000080;
+  }
+}
+`,
+    'android/os/Build.java': `package android.os;
+
+public final class Build {
+  public static final class VERSION { public static int SDK_INT = 35; }
+  public static final class VERSION_CODES { public static final int R = 30; }
+}
+`,
+    'android/util/Log.java': `package android.util;
+
+public final class Log {
+  public static int i(String tag, String message) { return 0; }
+  public static int w(String tag, String message) { return 0; }
+}
+`,
+    'android/view/Surface.java': `package android.view;
+
+public final class Surface {
+  public static final int FRAME_RATE_COMPATIBILITY_DEFAULT = 0;
+  public float requestedFrameRate = -1.0f;
+  public int requestCount = 0;
+  public boolean isValid() { return true; }
+  public void setFrameRate(float frameRate, int compatibility) {
+    requestedFrameRate = frameRate;
+    requestCount += 1;
+  }
+}
+`,
+    'android/view/SurfaceHolder.java': `package android.view;
+
+public interface SurfaceHolder {
+  Surface getSurface();
+  void addCallback(Callback callback);
+  interface Callback {
+    void surfaceCreated(SurfaceHolder holder);
+    void surfaceChanged(SurfaceHolder holder, int format, int width, int height);
+    void surfaceDestroyed(SurfaceHolder holder);
   }
 }
 `,
@@ -205,6 +249,20 @@ public final class ActivityInfo {
   public static final int SCREEN_ORIENTATION_FULL_USER = 13;
 }
 `,
+    'org/libsdl/app/SDLSurface.java': `package org.libsdl.app;
+
+import android.view.Surface;
+import android.view.SurfaceHolder;
+
+public final class SDLSurface {
+  private final Surface surface = new Surface();
+  private final SurfaceHolder holder = new SurfaceHolder() {
+    public Surface getSurface() { return surface; }
+    public void addCallback(SurfaceHolder.Callback callback) { callback.surfaceCreated(this); }
+  };
+  public SurfaceHolder getHolder() { return holder; }
+}
+`,
     'org/libsdl/app/SDLActivity.java': `package org.libsdl.app;
 
 import android.content.Intent;
@@ -214,11 +272,13 @@ import android.view.Window;
 import java.io.File;
 
 public class SDLActivity {
+  protected static SDLSurface mSurface = new SDLSurface();
   private PackageManager packageManager = new PackageManager(null);
   private final Intent intent = new Intent();
   private final Window window = new Window();
 
   protected void onCreate(Bundle state) {}
+  protected void onResume() {}
   protected String[] getLibraries() { return new String[0]; }
   protected String getMainFunction() { return ""; }
   protected String[] getArguments() { return new String[0]; }
@@ -235,6 +295,8 @@ public class SDLActivity {
   }
   public void configureMetadata(Bundle metadata) { packageManager = new PackageManager(metadata); }
   public void runOnUiThread(Runnable action) { action.run(); }
+  public float requestedFrameRate() { return mSurface.getHolder().getSurface().requestedFrameRate; }
+  public int frameRateRequestCount() { return mSurface.getHolder().getSurface().requestCount; }
 }
 `,
     'com/threenative/runtime/TnUiOverlay.java': `package com.threenative.runtime;
@@ -264,6 +326,7 @@ import android.view.WindowManager;
 public final class MetadataProbe {
   private static final class ProbeActivity extends MystralActivity {
     public void create() { onCreate(null); }
+    public void resume() { onResume(); }
     public String[] arguments() { return getArguments(); }
     public void applySdlOrientation() { setOrientationBis(1080, 2400, true, ""); }
   }
@@ -278,6 +341,7 @@ public final class MetadataProbe {
     metadata.putString("TN_WINDOW_TITLE", "Fox \\\"Deluxe\\\"");
     metadata.putBoolean("TN_FULLSCREEN", false);
     metadata.putString("TN_ORIENTATION", "landscape");
+    metadata.putInt("TN_MAX_FPS", 120);
 
     ProbeActivity activity = new ProbeActivity();
     activity.configureMetadata(metadata);
@@ -291,6 +355,13 @@ public final class MetadataProbe {
     require("Fox \\\"Deluxe\\\"".equals(arguments[3]),
       "window title metadata was not retrieved");
     require("false".equals(arguments[4]), "fullscreen metadata was not retrieved");
+    require("120".equals(arguments[6]), "max-fps metadata was not forwarded to native");
+    require(activity.requestedFrameRate() == 120.0f,
+      "max-fps metadata was not requested from the Android surface");
+    int requestsBeforeResume = activity.frameRateRequestCount();
+    activity.resume();
+    require(activity.frameRateRequestCount() > requestsBeforeResume,
+      "the Android surface frame-rate request was not reapplied on resume");
     // Android 16+ overrides a manifest orientation for apps it treats as non-adaptive, which is
     // how a landscape-declared game launched portrait on a Pixel 8. Re-requesting it in onCreate
     // is the belt to the manifest property's braces; this asserts that it happens.
@@ -381,7 +452,7 @@ test('real Android packaging emits configured and no-config artifacts through th
       icons: { android: { foreground, monochrome, background: '#111827' } },
     },
     bootSplash: { backgroundColor: '#0d1b2a', image: splash },
-    display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true },
+    display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true, maxFps: 120 },
     window: { title: 'Fox Desktop', width: 1024, height: 576, resizable: false },
   };
 
@@ -399,6 +470,7 @@ test('real Android packaging emits configured and no-config artifacts through th
   assert.ok(activity);
   assert.match(application, /TN_KEEP_SCREEN_ON" android:value="true"/u);
   assert.match(application, /TN_FULLSCREEN" android:value="false"/u);
+  assert.match(application, /TN_MAX_FPS" android:value="120"/u);
   assert.match(application, /TN_WINDOW_TITLE" android:value="@string\/window_title"/u);
   assert.doesNotMatch(activity, /TN_KEEP_SCREEN_ON|TN_FULLSCREEN|TN_WINDOW_TITLE/u);
   assert.match(strings, /<string name="app_name">Fox<\/string>/u);
@@ -438,6 +510,7 @@ test('real Android packaging emits configured and no-config artifacts through th
   assert.match(defaultManifest, /android:screenOrientation="landscape"/u);
   assert.match(defaultManifest, /TN_KEEP_SCREEN_ON" android:value="false"/u);
   assert.match(defaultManifest, /TN_FULLSCREEN" android:value="true"/u);
+  assert.match(defaultManifest, /TN_MAX_FPS" android:value="60"/u);
   assert.match(defaultStrings, /<string name="app_name">ThreeNative<\/string>/u);
 });
 

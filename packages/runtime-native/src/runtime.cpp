@@ -350,6 +350,12 @@ public:
     bool initialize() {
         std::cout << "[Mystral] Initializing runtime..." << std::endl;
         std::cout << "[Mystral] Window: " << width_ << "x" << height_ << std::endl;
+        if (!webgpu::setPresentationCapHz(config_.maxFps)) {
+            std::cerr << "TN_PRESENTATION_CAP_INVALID: maxFps must be between 0 and 1000."
+                      << std::endl;
+            return false;
+        }
+        std::cout << "[Mystral] Presentation cap: " << config_.maxFps << " fps" << std::endl;
 
         // NOTE: Crash handlers are installed AFTER full initialization
         // because Metal/WebGPU may use signals internally during setup

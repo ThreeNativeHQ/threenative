@@ -45,6 +45,9 @@ void setOffscreenTexture(BindingsState* state, void* texture, void* textureView)
 void beginDawnFrame(BindingsState* state);
 void endDawnFrame(BindingsState* state);
 
+// Set the process presentation ceiling before frames begin. Returns false for unsupported values.
+bool setPresentationCapHz(uint32_t hz);
+
 void* getCurrentRenderedTexture(BindingsState* state);
 uint32_t getCurrentTextureWidth(BindingsState* state);
 uint32_t getCurrentTextureHeight(BindingsState* state);

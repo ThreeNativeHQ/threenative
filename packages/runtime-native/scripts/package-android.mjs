@@ -155,7 +155,7 @@ function androidPaths(root = runtimeRoot) {
 
 export const DEFAULT_ANDROID_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
-  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, backgroundMode: 'pause' },
+  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60, backgroundMode: 'pause' },
   window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
   // `native` is PRD-216's CanvasLayer renderer: no WebView, no CSS, no second process. A game
   // that never states a renderer therefore ships no overlay, which is what acceptance criterion 5
@@ -339,6 +339,7 @@ export function renderAndroidManifest(source, orientation = 'landscape') {
     );
   }
   rendered = upsertApplicationMetadata(rendered, 'TN_KEEP_SCREEN_ON', String(config.display.keepScreenOn));
+  rendered = upsertApplicationMetadata(rendered, 'TN_MAX_FPS', String(config.display.maxFps));
   // `display.backgroundMode`. Carried as metadata beside the others so the activity can hand it to
   // the native host, which decides whether the render loop parks when the player leaves. Fail
   // closed on a value nobody defined: an unrecognized mode ships as 'pause'.

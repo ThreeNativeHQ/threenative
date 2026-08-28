@@ -4,7 +4,11 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Insets;
+import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
+import android.view.Surface;
+import android.view.SurfaceHolder;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowManager;
@@ -24,8 +28,26 @@ import org.libsdl.app.SDLActivity;
  */
 public class MystralActivity extends SDLActivity {
 
+    private static final String LOG_TAG = "MystralRuntime";
+
     /** The transparent WebView the UI renders into, or null when this game ships no overlay. */
     private TnUiOverlay uiOverlay;
+
+    /** Reapply the preference whenever Android replaces the drawable surface. */
+    private final SurfaceHolder.Callback frameRateCallback = new SurfaceHolder.Callback() {
+        @Override
+        public void surfaceCreated(SurfaceHolder holder) {
+            requestPreferredFrameRate(holder, applicationMetadata());
+        }
+
+        @Override
+        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+            requestPreferredFrameRate(holder, applicationMetadata());
+        }
+
+        @Override
+        public void surfaceDestroyed(SurfaceHolder holder) {}
+    };
 
     private Bundle applicationMetadata() {
         try {
@@ -60,7 +82,43 @@ public class MystralActivity extends SDLActivity {
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
+        installPreferredFrameRate(metadata);
         attachUiOverlay(metadata);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mSurface != null) requestPreferredFrameRate(mSurface.getHolder(), applicationMetadata());
+    }
+
+    private void installPreferredFrameRate(Bundle metadata) {
+        if (mSurface == null) {
+            Log.w(LOG_TAG, "TN_DISPLAY_FRAME_RATE_REQUEST:{\"applied\":false,\"reason\":\"surface-missing\"}");
+            return;
+        }
+        SurfaceHolder holder = mSurface.getHolder();
+        holder.addCallback(frameRateCallback);
+        requestPreferredFrameRate(holder, metadata);
+    }
+
+    private void requestPreferredFrameRate(SurfaceHolder holder, Bundle metadata) {
+        int maxFps = metadata == null ? 60 : metadata.getInt("TN_MAX_FPS", 60);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Log.i(LOG_TAG, "TN_DISPLAY_FRAME_RATE_REQUEST:{\"maxFps\":" + maxFps + ",\"applied\":false,\"reason\":\"api<30\"}");
+            return;
+        }
+        Surface surface = holder == null ? null : holder.getSurface();
+        if (surface == null || !surface.isValid()) {
+            Log.w(LOG_TAG, "TN_DISPLAY_FRAME_RATE_REQUEST:{\"maxFps\":" + maxFps + ",\"applied\":false,\"reason\":\"surface-invalid\"}");
+            return;
+        }
+        try {
+            surface.setFrameRate((float) maxFps, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+            Log.i(LOG_TAG, "TN_DISPLAY_FRAME_RATE_REQUEST:{\"maxFps\":" + maxFps + ",\"applied\":true}");
+        } catch (RuntimeException exception) {
+            Log.w(LOG_TAG, "TN_DISPLAY_FRAME_RATE_REQUEST:{\"maxFps\":" + maxFps + ",\"applied\":false,\"reason\":\"" + exception.getClass().getSimpleName() + "\"}");
+        }
     }
 
     /**
@@ -180,6 +238,7 @@ public class MystralActivity extends SDLActivity {
         // screen. This default must match the native one in `platform/lifecycle.cpp`, or an APK
         // that carries no metadata runs one mode while the host reports the other.
         String backgroundMode = metadata == null ? "pause" : metadata.getString("TN_BACKGROUND_MODE", "pause");
+        int maxFps = metadata == null ? 60 : metadata.getInt("TN_MAX_FPS", 60);
         if (mailboxRoot == null) {
             java.io.File externalFiles = getExternalFilesDir(null);
             mailboxRoot = externalFiles == null ? getFilesDir().getAbsolutePath() : externalFiles.getAbsolutePath();
@@ -190,7 +249,8 @@ public class MystralActivity extends SDLActivity {
             mailboxRoot,
             title,
             Boolean.toString(fullscreen),
-            backgroundMode == null ? "pause" : backgroundMode
+            backgroundMode == null ? "pause" : backgroundMode,
+            Integer.toString(maxFps)
         };
     }
 }

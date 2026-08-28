@@ -130,6 +130,13 @@ static uint32_t g_presentationCapHz = 60;
 /** The pacing deadline for the next present. Zero until the first paced frame. */
 static std::chrono::steady_clock::time_point g_nextPresentDeadline{};
 
+bool setPresentationCapHz(uint32_t hz) {
+    if (hz > 1000) return false;
+    g_presentationCapHz = hz;
+    g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
+    return true;
+}
+
 /**
  * Holds the loop back to the presentation ceiling, after a frame that actually presented.
  *
@@ -6333,8 +6340,8 @@ static js::JSValueHandle tnWebgpuHandler01(BindingsState* state, BindingDestinat
 }
 static js::JSValueHandle tnWebgpuHandler89(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
     // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
-    // presents above the ceiling. `@threenative/core` wraps this as the game-facing name; the
-    // global is the host half of the contract and is recorded in shim-manifest.json.
+    // presents above the ceiling. This global is a private diagnostic seam; the supported
+    // game-facing override is static `display.maxFps` config, applied before the runtime starts.
     //
     // Fail closed on a rate the runtime cannot honour: a game that asks for -1 or 5000 has a bug,
     // and silently clamping it would make the next frame-rate measurement a fiction.
@@ -6347,8 +6354,7 @@ static js::JSValueHandle tnWebgpuHandler89(BindingsState* state, BindingDestinat
             "per second between 0 (uncapped) and 1000.");
         return state->engine->newUndefined();
     }
-    g_presentationCapHz = static_cast<uint32_t>(hz);
-    g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
+    setPresentationCapHz(static_cast<uint32_t>(hz));
     return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
 }
 

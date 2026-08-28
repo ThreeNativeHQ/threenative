@@ -93,6 +93,7 @@ int main(int, char**) {
         config.height = 0;
         config.title = title.UTF8String;
         config.fullscreen = fullscreen;
+        config.maxFps = info[@"TNMaxFps"] == nil ? 60 : [info[@"TNMaxFps"] unsignedIntValue];
         config.resizable = false;
         refreshIosSafeAreaInsets();
         id safeAreaObserver = [[NSNotificationCenter defaultCenter]

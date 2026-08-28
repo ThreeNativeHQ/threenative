@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <queue>
 #include <array>
+#include <cmath>
 
 // WebP animation encoding (for video recording)
 #ifdef MYSTRAL_HAS_WEBP_MUX
@@ -538,6 +539,7 @@ struct CLIOptions {
     bool quiet = false;
     bool noSdl = false;  // Run without SDL (headless GPU, no window)
     bool vsync = true;   // --no-vsync selects an uncapped present mode (immediate/mailbox)
+    uint32_t maxFps = 60;
 
     // Video recording mode
     std::string videoPath;      // Output video path
@@ -589,6 +591,10 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
     if (width > 0) opts.width = static_cast<int>(width);
     if (height > 0) opts.height = static_cast<int>(height);
     opts.resizable = extractJsonBool(config, "resizable", opts.resizable);
+    const double maxFps = extractJsonNumber(config, "maxFps", opts.maxFps);
+    if (maxFps >= 0 && maxFps <= 1000 && std::floor(maxFps) == maxFps) {
+        opts.maxFps = static_cast<uint32_t>(maxFps);
+    }
     // `ui.renderer`, flattened by the packager to `uiRenderer` because `renderer` already means
     // the WebGPU preference here. Anything but "web" is the native renderer, which ships no
     // overlay at all — the same fail-closed reading the Android manifest metadata gets.
@@ -1050,6 +1056,7 @@ static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOption
     config.noSdl = opts.noSdl;
     config.watch = opts.watch;
     config.vsync = opts.vsync;
+    config.maxFps = opts.maxFps;
     config.debug = debugMode;
 
     // `display.backgroundMode` on desktop. Android carries it as manifest metadata; there is no

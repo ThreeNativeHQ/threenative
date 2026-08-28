@@ -91,7 +91,7 @@ describe("threenative.config.ts", () => {
       root,
       `export default {
         app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
-        display: { orientation: "portrait", fullscreen: false, keepScreenOn: true },
+        display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
         window: { title: "Fox Desktop", width: 1024, height: 576, resizable: false },
         nativeEntry: "src/game.ts",
         renderer: { preferWebGPU: false },
@@ -100,7 +100,7 @@ describe("threenative.config.ts", () => {
 
     await expect(loadConfig(root)).resolves.toEqual({
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
-      display: { orientation: "portrait", fullscreen: false, keepScreenOn: true },
+      display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
       window: { title: "Fox Desktop", width: 1024, height: 576, resizable: false },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
@@ -117,7 +117,7 @@ describe("threenative.config.ts", () => {
 
     await expect(loadConfig(root)).resolves.toMatchObject({
       app: { id: "com.threenative.foxgame", name: "fox-game", version: "0.1.13", build: 1 },
-      display: { orientation: "landscape", fullscreen: true, keepScreenOn: false },
+      display: { orientation: "landscape", fullscreen: true, keepScreenOn: false, maxFps: 60 },
       window: { title: "fox-game", width: 1280, height: 720, resizable: true },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
@@ -401,6 +401,15 @@ describe("threenative.config.ts", () => {
     await config(root, 'export default { display: { orientation: "sideways" } };');
     await expect(loadConfig(root)).rejects.toThrow(/TN_NATIVE_ORIENTATION_INVALID/u);
   });
+
+  it.each([-1, 60.5, 1001, "120"])(
+    "rejects invalid display.maxFps %j with the named code",
+    async (maxFps) => {
+      const root = await project();
+      await config(root, `export default { display: { maxFps: ${JSON.stringify(maxFps)} } };`);
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_MAX_FPS_INVALID/u);
+    },
+  );
 
   it("rejects bad app ids with the named code", async () => {
     const root = await project();

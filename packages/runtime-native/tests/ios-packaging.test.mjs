@@ -165,7 +165,7 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
         icons: { ios: { dark, tinted } },
       },
       bootSplash: { backgroundColor: '#0d1b2a', image: launch },
-      display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true },
+      display: { orientation: 'portrait', fullscreen: false, keepScreenOn: true, maxFps: 120 },
       window: { title: 'Vulpine Window', width: 1111, height: 777, resizable: false },
     },
     output,
@@ -209,6 +209,7 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     /<string>UIInterfaceOrientationPortrait<\/string>/u,
     /<key>TNFullscreen<\/key>\s*<false\/>/u,
     /<key>TNKeepScreenOn<\/key>\s*<true\/>/u,
+    /<key>TNMaxFps<\/key>\s*<integer>120<\/integer>/u,
     /<key>TNWindowTitle<\/key>\s*<string>Vulpine Window<\/string>/u,
     /<key>TNWindowWidth<\/key>\s*<integer>1111<\/integer>/u,
     /<key>TNWindowHeight<\/key>\s*<integer>777<\/integer>/u,
@@ -220,6 +221,10 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     assert.match(plist, pattern);
   }
   assert.doesNotMatch(plist, /UIInterfaceOrientationLandscape/u);
+  assert.match(
+    readFileSync(new URL('../ios/main.mm', import.meta.url), 'utf8'),
+    /config\.maxFps\s*=\s*info\[@"TNMaxFps"\][^;]*\[info\[@"TNMaxFps"\] unsignedIntValue\]/u,
+  );
   assert.equal(report.icon, icon);
   assert.equal(report.iconArtifact, 'Assets.car');
 });

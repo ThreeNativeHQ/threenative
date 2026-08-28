@@ -24,7 +24,7 @@ const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 export const DEFAULT_DESKTOP_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
-  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false },
+  display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
   window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
 };
 
@@ -176,6 +176,7 @@ export function stageDesktopFiles(
     // `renderer` already exists at the top level as the WebGPU preference — a nested lookup for a
     // second `renderer` would find the wrong one. Anything but "web" is the native renderer.
     packaged.uiRenderer = config.ui?.renderer === 'web' ? 'web' : 'native';
+    packaged.maxFps = config.display?.maxFps ?? 60;
     if (icon !== undefined) {
       if (!existsSync(icon) || !statSync(icon).isFile()) {
         throw new Error(`TN_CONFIG_BRAND_DESKTOP_MISSING: app icon does not exist: ${icon}`);

@@ -64,7 +64,7 @@ test('desktop staging embeds the resolved window contract for the native host', 
     const staging = join(root, 'staging');
     const config = {
       app: { id: 'com.studio.foxgame', name: 'Fox', version: '1.2.3', build: 7 },
-      display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false },
+      display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 120 },
       window: { title: 'Fox Desktop', width: 1024, height: 576, resizable: false },
     };
     writeFileSync(bundle, 'export default 1;');
@@ -76,7 +76,7 @@ test('desktop staging embeds the resolved window contract for the native host', 
     // that would find the wrong one. A game that states nothing gets the native renderer.
     assert.deepEqual(
       JSON.parse(readFileSync(join(staging, '.threenative', 'config.json'), 'utf8')),
-      { ...config, uiRenderer: 'native' },
+      { ...config, maxFps: 120, uiRenderer: 'native' },
     );
     const web = join(root, 'staging-web');
     stageDesktopFiles(bundle, undefined, web, { ...config, ui: { renderer: 'web' } });
@@ -91,6 +91,8 @@ test('desktop staging embeds the resolved window contract for the native host', 
     assert.match(host, /extractJsonNumber\(config, "width"/u);
     assert.match(host, /extractJsonNumber\(config, "height"/u);
     assert.match(host, /extractJsonBool\(config, "resizable"/u);
+    assert.match(host, /extractJsonNumber\(config, "maxFps"/u);
+    assert.match(host, /config\.maxFps = opts\.maxFps/u);
   } finally {
     rmSync(root, { force: true, recursive: true });
   }

@@ -39,17 +39,15 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // The starter's name field also gained autoCapitalize/autoCorrect/spellCheck: a phone keyboard
 // rewrites what the player typed unless the field says not to.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Values recomputed after the engine-freshness dev guard joined every template's
-  // vite.config.ts (the stale-dev-server fix, 2026-08-27), with the script that mirrors
-  // `scaffoldTreeHash`.
-  "action-rpg": "005dab8d4bf7aa70c519caaafd101b8de34fe2642d943788d9001e412766cb47",
-  defense: "8b4ee31fabb04d7892806e9599149fb7b029caf6fa11fcd4435d26f768118e27",
-  minimal: "5a2e55fd77a28a779494a3f989b418e571f1f23be1621cc57a146e63ecbaa9e3",
-  platformer: "38cfcf17875b2dfd25845e7825de5482f357a09ff4646cdcc47b966b50853a84",
-  // Refreshed after the racing camera roll moved from Euler assignment to local-axis rotation.
-  racing: "44e1894440b96ce69177b1c8ef607e4ad09983bc5e46036d67a27fe6840bb523",
-  shooter: "f3a5edeb6e954f6366c72010f337fed90e92ce6dedf41592df53f2182b76ae30",
-  starter: "7986602817044c89ba1f7b4064ae05e78c71c7a65e36a6f8deb38f8b9ae434c2",
+  // Values recomputed after every template began showing the 60 fps default and the
+  // `display.maxFps: 120` high-refresh opt-in, with the script that mirrors `scaffoldTreeHash`.
+  "action-rpg": "49ddc268256ac36840591479a26db6eb4770a2602b5a302f7615bbf16775d85e",
+  defense: "e9382a493c0bb89e14ddb49ca0e3447e4181bdc0b6f342fa51f82f236a05d226",
+  minimal: "306b13bbbbbb0649d7eb077b51a08a9a986b6c6294b0e13be99f6f121b745ec6",
+  platformer: "c8e47251127c61de8d96c02ede2a1430d34fdf8179d6ebf72f7f549cf18da9d7",
+  racing: "1bb7b50650243fd69a3ac0f52ebab40fe7cf861d691f32269366a3c310c5741d",
+  shooter: "54e63d8f0e7c760fbbd8a6730ef16869e16ff91e33457a7513b3c9410b670f51",
+  starter: "f9a2f7eba34f81111b94e15d2e5312d552b2d51b6fc62c8cd624c788ef1bce66",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
