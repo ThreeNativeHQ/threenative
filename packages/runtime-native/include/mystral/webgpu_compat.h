@@ -46,6 +46,10 @@ typedef WGPUSurfaceDescriptorFromAndroidNativeWindow WGPUSurfaceDescriptorFromAn
 // Dawn proc initialization - not needed for wgpu-native
 #define WGPU_NEEDS_PROC_INIT 0
 
+// Pass timestamp writes (wgpu-native keeps one struct per pass kind; Dawn merged them)
+typedef WGPURenderPassTimestampWrites WGPURenderPassTimestampWrites_Compat;
+typedef WGPUComputePassTimestampWrites WGPUComputePassTimestampWrites_Compat;
+
 // Texture copy types
 typedef WGPUImageCopyTexture WGPUImageCopyTexture_Compat;
 typedef WGPUImageCopyBuffer WGPUImageCopyBuffer_Compat;
@@ -129,6 +133,10 @@ typedef WGPUSurfaceSourceAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNat
 
 // Dawn proc initialization - Dawn requires setting up procs before use
 #define WGPU_NEEDS_PROC_INIT 1
+
+// Pass timestamp writes (Dawn uses one struct for render and compute passes alike)
+typedef WGPUPassTimestampWrites WGPURenderPassTimestampWrites_Compat;
+typedef WGPUPassTimestampWrites WGPUComputePassTimestampWrites_Compat;
 
 // Texture copy types (Dawn renamed Image* to Texel*)
 typedef WGPUTexelCopyTextureInfo WGPUImageCopyTexture_Compat;

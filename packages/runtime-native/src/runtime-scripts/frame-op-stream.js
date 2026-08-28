@@ -148,6 +148,22 @@
     if (data instanceof DataView) return uploadDataView(data, dataOffset, size);
     throw new TypeError("frame op stream: upload source is not an ArrayBuffer or view");
   };
+  // GPU timestamps around a pass. Written as a trailing optional block so the record stays the
+  // same shape for the passes that ask for none — which is every pass in a shipped frame until a
+  // profiler asks otherwise. A query set is named by id, never by handle: the stream carries ids.
+  const timestampWrites = (t) => {
+    if (!t || !t.querySet) {
+      u32(0);
+      return;
+    }
+    const id = t.querySet._querySetId;
+    if (typeof id !== "number")
+      throw new TypeError("frame op stream: timestampWrites.querySet is not a GPUQuerySet");
+    u32(1);
+    u32(id);
+    u32(t.beginningOfPassWriteIndex === undefined ? 0xffffffff : t.beginningOfPassWriteIndex);
+    u32(t.endOfPassWriteIndex === undefined ? 0xffffffff : t.endOfPassWriteIndex);
+  };
   const renderPass = (encoderId, descriptor) => {
     const passId = nextId++;
     emit(3, () => {
@@ -187,6 +203,7 @@
         u32(d.stencilStoreOp === "store" ? 0 : d.stencilStoreOp === "discard" ? 1 : 2);
         u32(opt(d.stencilReadOnly, false));
       }
+      timestampWrites(descriptor.timestampWrites);
     });
     return {
       setPipeline: (p) =>
@@ -285,11 +302,12 @@
       end: () => emit(17, () => u32(passId)),
     };
   };
-  const computePass = (encoderId) => {
+  const computePass = (encoderId, descriptor) => {
     const passId = nextId++;
     emit(18, () => {
       u32(encoderId);
       u32(passId);
+      timestampWrites(descriptor && descriptor.timestampWrites);
     });
     return {
       setPipeline: (p) =>
@@ -319,8 +337,8 @@
       beginRenderPass(d) {
         return renderPass(this[encoderIdKey], d);
       },
-      beginComputePass() {
-        return computePass(this[encoderIdKey]);
+      beginComputePass(d) {
+        return computePass(this[encoderIdKey], d);
       },
       copyBufferToBuffer(s, so, d, do_, z) {
         emit(23, () => {
@@ -368,6 +386,19 @@
           u32(bufferId(b));
           f64(opt(o, 0));
           f64(opt(z, -1));
+        });
+      },
+      resolveQuerySet(querySet, firstQuery, queryCount, destination, destinationOffset) {
+        const id = querySet && querySet._querySetId;
+        if (typeof id !== "number")
+          throw new TypeError("frame op stream: resolveQuerySet needs a GPUQuerySet");
+        emit(34, () => {
+          u32(this[encoderIdKey]);
+          u32(id);
+          u32(firstQuery);
+          u32(queryCount);
+          u32(bufferId(destination));
+          f64(opt(destinationOffset, 0));
         });
       },
       finish() {

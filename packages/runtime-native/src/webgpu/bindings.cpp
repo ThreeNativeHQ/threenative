@@ -1800,6 +1800,10 @@ static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
     if (featureName == "texture-compression-etc2") return WGPUFeatureName_TextureCompressionETC2;
     if (featureName == "texture-compression-astc") return WGPUFeatureName_TextureCompressionASTC;
     if (featureName == "float32-filterable") return WGPUFeatureName_Float32Filterable;
+    // Implemented as of PRD-228: QuerySet, timestampWrites on render and compute passes, and
+    // resolveQuerySet. Answered from the real adapter and device below, so an adapter without it
+    // still reports false — the feature is advertised because it works, not because it is named.
+    if (featureName == "timestamp-query") return WGPUFeatureName_TimestampQuery;
     return static_cast<WGPUFeatureName>(0);
 }
 
@@ -2114,10 +2118,6 @@ static js::JSValueHandle tnWebgpuHandler82(BindingsState* state, BindingDestinat
                     // This is supported by Dawn on all backends
                     if (featureName == "indirect-first-instance") {
                         return state->engine->newBoolean(true);
-                    }
-                    // timestamp-query is NOT supported yet - bindings not implemented
-                    if (featureName == "timestamp-query") {
-                        return state->engine->newBoolean(false);
                     }
                     // Answered from the real adapter so feature-dependent consumers (three's
                     // KTX2Loader.detectSupport among them) request what the hardware has.
@@ -2724,6 +2724,142 @@ static js::JSValueHandle tnWebgpuHandler68(BindingsState* state, BindingDestinat
                             return jsLayout;
 }
 
+
+// device.createQuerySet(descriptor) -> GPUQuerySet
+//
+// The instrument PRD-228 was filed to build. Every GPU number in the perf record before this was
+// obtained by ablating scene content and differencing a blocking device poll in a diagnostic
+// build that never ships: that gives a total per object and can never give a cost per pass stage.
+static js::JSValueHandle tnWebgpuHandlerCreateQuerySet(
+    BindingsState* state, BindingDestination, const std::vector<js::JSValueHandle>& args) {
+    if (args.empty()) {
+        state->engine->throwException("createQuerySet requires a descriptor");
+        return state->engine->newUndefined();
+    }
+    const auto descriptor = args[0];
+    const auto typeProp = state->engine->getProperty(descriptor, "type");
+    const std::string type =
+        state->engine->isUndefined(typeProp) ? std::string() : state->engine->toString(typeProp);
+    if (type != "timestamp" && type != "occlusion") {
+        state->engine->throwException("createQuerySet type must be 'timestamp' or 'occlusion'");
+        return state->engine->newUndefined();
+    }
+    const auto countProp = state->engine->getProperty(descriptor, "count");
+    const double rawCount = state->engine->isUndefined(countProp)
+                                ? -1.0
+                                : state->engine->toNumber(countProp);
+    if (!(rawCount >= 1.0) || rawCount != std::floor(rawCount) || rawCount > 4096.0) {
+        state->engine->throwException("createQuerySet count must be an integer from 1 to 4096");
+        return state->engine->newUndefined();
+    }
+    const WGPUQueryType queryType =
+        type == "timestamp" ? WGPUQueryType_Timestamp : WGPUQueryType_Occlusion;
+    // Fail by name, before the device call, when the feature was never granted. A query set
+    // created against a device without the feature is a validation error whose message names
+    // neither the call nor the reason.
+    if (queryType == WGPUQueryType_Timestamp &&
+        wgpuDeviceHasFeature(state->device, WGPUFeatureName_TimestampQuery) == 0) {
+        state->engine->throwException(
+            "createQuerySet: this device was not granted 'timestamp-query'");
+        return state->engine->newUndefined();
+    }
+    WGPUQuerySetDescriptor querySetDesc = {};
+    querySetDesc.type = queryType;
+    querySetDesc.count = static_cast<uint32_t>(rawCount);
+    WGPUQuerySet querySet = wgpuDeviceCreateQuerySet(state->device, &querySetDesc);
+    if (!querySet) {
+        state->engine->throwException("Failed to create query set");
+        return state->engine->newUndefined();
+    }
+    auto jsQuerySet = createNativeWrapper(state, "GPUQuerySet", querySet);
+    const uint64_t querySetId = state->nextQuerySetId++;
+    state->querySetRegistry[querySetId] = querySet;
+    state->engine->setProperty(jsQuerySet, "_querySetId",
+                               state->engine->newNumber((double)querySetId));
+    state->engine->setProperty(jsQuerySet, "type", state->engine->newString(type.c_str()));
+    state->engine->setProperty(jsQuerySet, "count",
+                               state->engine->newNumber((double)querySetDesc.count));
+    state->engine->registerRelease(jsQuerySet, [state, querySet, querySetId]() {
+        state->querySetRegistry.erase(querySetId);
+        wgpuQuerySetRelease(querySet);
+    });
+    if (state->verboseLogging)
+        std::cout << "[WebGPU] Created " << type << " query set of " << querySetDesc.count
+                  << std::endl;
+    return jsQuerySet;
+}
+
+/** Resolves a JS query-set wrapper to its native handle, or null with the exception already set. */
+static WGPUQuerySet querySetFromJs(BindingsState* state, js::JSValueHandle value, const char* call) {
+    if (state->engine->isUndefined(value) || state->engine->isNull(value)) {
+        state->engine->throwException((std::string(call) + " requires a GPUQuerySet").c_str());
+        return nullptr;
+    }
+    const auto idProp = state->engine->getProperty(value, "_querySetId");
+    if (state->engine->isUndefined(idProp)) {
+        state->engine->throwException(
+            (std::string(call) + ": argument is not a GPUQuerySet from this device").c_str());
+        return nullptr;
+    }
+    const auto it =
+        state->querySetRegistry.find(static_cast<uint64_t>(state->engine->toNumber(idProp)));
+    if (it == state->querySetRegistry.end()) {
+        state->engine->throwException(
+            (std::string(call) + ": query set was already destroyed").c_str());
+        return nullptr;
+    }
+    return it->second;
+}
+
+
+/**
+ * Parses `timestampWrites` from a render or compute pass descriptor.
+ *
+ * Returns false with an exception already set when the block is present but unusable; a caller
+ * that asked to be timed and silently was not is worse than one that failed, because the number
+ * it reads afterwards looks like a measurement.
+ */
+template <typename TimestampWrites>
+static bool readTimestampWrites(
+    BindingsState* state,
+    js::JSValueHandle descriptor,
+    const char* call,
+    TimestampWrites& writes,
+    bool& present) {
+    present = false;
+    const auto block = state->engine->getProperty(descriptor, "timestampWrites");
+    if (state->engine->isUndefined(block) || state->engine->isNull(block)) return true;
+    WGPUQuerySet querySet = querySetFromJs(state, state->engine->getProperty(block, "querySet"), call);
+    if (!querySet) return false;
+    const auto readIndex = [&](const char* name, uint32_t& out) {
+        const auto prop = state->engine->getProperty(block, name);
+        if (state->engine->isUndefined(prop) || state->engine->isNull(prop)) {
+            out = WGPU_QUERY_SET_INDEX_UNDEFINED;
+            return true;
+        }
+        const double raw = state->engine->toNumber(prop);
+        if (!(raw >= 0.0) || raw != std::floor(raw)) {
+            state->engine->throwException(
+                (std::string(call) + ": timestampWrites." + name + " must be a query index").c_str());
+            return false;
+        }
+        out = static_cast<uint32_t>(raw);
+        return true;
+    };
+    writes = {};
+    writes.querySet = querySet;
+    if (!readIndex("beginningOfPassWriteIndex", writes.beginningOfPassWriteIndex)) return false;
+    if (!readIndex("endOfPassWriteIndex", writes.endOfPassWriteIndex)) return false;
+    if (writes.beginningOfPassWriteIndex == WGPU_QUERY_SET_INDEX_UNDEFINED &&
+        writes.endOfPassWriteIndex == WGPU_QUERY_SET_INDEX_UNDEFINED) {
+        state->engine->throwException(
+            (std::string(call) + ": timestampWrites names no query index to write").c_str());
+        return false;
+    }
+    present = true;
+    return true;
+}
+
 static js::JSValueHandle tnWebgpuHandler67(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             WGPUSamplerDescriptor samplerDesc = {};
                             // Default values
@@ -3291,6 +3427,47 @@ static js::JSValueHandle tnWebgpuHandler58(BindingsState* state, BindingDestinat
                                     return state->engine->newUndefined();
 }
 
+
+// encoder.resolveQuerySet(querySet, firstQuery, queryCount, destination, destinationOffset)
+//
+// Timestamps land in an opaque query set; this is the only way to get them into a buffer the
+// game can map and read. Fails by name on every malformed argument: a resolve that quietly did
+// nothing leaves stale or zeroed bytes that read exactly like a measurement of a fast pass.
+static js::JSValueHandle tnWebgpuHandlerResolveQuerySet(
+    BindingsState* state, BindingDestination, const std::vector<js::JSValueHandle>& args) {
+    if (args.size() < 5) {
+        state->engine->throwException(
+            "resolveQuerySet requires (querySet, firstQuery, queryCount, destination, destinationOffset)");
+        return state->engine->newUndefined();
+    }
+    if (!state->jsCommandEncoder) {
+        state->engine->throwException("resolveQuerySet called with no command encoder");
+        return state->engine->newUndefined();
+    }
+    WGPUQuerySet querySet = querySetFromJs(state, args[0], "resolveQuerySet");
+    if (!querySet) return state->engine->newUndefined();
+    WGPUBuffer destination = (WGPUBuffer)state->engine->getPrivateData(args[3]);
+    if (!destination) {
+        state->engine->throwException("resolveQuerySet destination is not a GPUBuffer");
+        return state->engine->newUndefined();
+    }
+    const double firstQuery = state->engine->toNumber(args[1]);
+    const double queryCount = state->engine->toNumber(args[2]);
+    const double destinationOffset = state->engine->toNumber(args[4]);
+    if (!(firstQuery >= 0.0) || firstQuery != std::floor(firstQuery) || !(queryCount >= 1.0) ||
+        queryCount != std::floor(queryCount) || !(destinationOffset >= 0.0) ||
+        destinationOffset != std::floor(destinationOffset)) {
+        state->engine->throwException(
+            "resolveQuerySet firstQuery, queryCount and destinationOffset must be non-negative integers");
+        return state->engine->newUndefined();
+    }
+    wgpuCommandEncoderResolveQuerySet(
+        state->jsCommandEncoder, querySet, static_cast<uint32_t>(firstQuery),
+        static_cast<uint32_t>(queryCount), destination,
+        static_cast<uint64_t>(destinationOffset));
+    return state->engine->newUndefined();
+}
+
 static js::JSValueHandle tnWebgpuHandler57(
     BindingsState* state,
     WGPUCommandEncoder capturedEncoder,
@@ -3345,6 +3522,16 @@ static js::JSValueHandle tnWebgpuHandler53(BindingsState* state, BindingDestinat
                                         return state->engine->newUndefined();
                                     }
                                     WGPUComputePassDescriptor computePassDesc = {};
+                                    WGPUComputePassTimestampWrites_Compat computeTimestampWrites = {};
+                                    bool hasComputeTimestampWrites = false;
+                                    if (!args.empty() &&
+                                        !readTimestampWrites(state, args[0],
+                                                             "commandEncoder.beginComputePass",
+                                                             computeTimestampWrites,
+                                                             hasComputeTimestampWrites))
+                                        return state->engine->newUndefined();
+                                    if (hasComputeTimestampWrites)
+                                        computePassDesc.timestampWrites = &computeTimestampWrites;
                                     WGPUCommandEncoder capturedEncoder = state->jsCommandEncoder;
                                     WGPUComputePassEncoder computePass =
                                         wgpuCommandEncoderBeginComputePass(capturedEncoder, &computePassDesc);
@@ -3794,6 +3981,21 @@ static js::JSValueHandle tnWebgpuHandler38(BindingsState* state, WGPUCommandEnco
                                         renderPassDesc.depthStencilAttachment = &depthStencilAttachment;
                                         if (state->verboseLogging) std::cout << "[WebGPU] Render pass with depth attachment, clear=" << depthStencilAttachment.depthClearValue << std::endl;
                                     }
+                                    // Optional GPU timestamps around this pass. Parsed before the
+                                    // pass begins so a malformed block fails the call rather than
+                                    // producing an untimed pass whose readback looks measured.
+                                    WGPURenderPassTimestampWrites_Compat renderTimestampWrites = {};
+                                    bool hasRenderTimestampWrites = false;
+                                    if (!readTimestampWrites(state, descriptor,
+                                                             "commandEncoder.beginRenderPass",
+                                                             renderTimestampWrites,
+                                                             hasRenderTimestampWrites)) {
+                                        state->surfaceRenderEncoder = previousSurfaceRenderEncoder;
+                                        state->surfaceRenderPassEnded = previousSurfaceRenderPassEnded;
+                                        return state->engine->newUndefined();
+                                    }
+                                    if (hasRenderTimestampWrites)
+                                        renderPassDesc.timestampWrites = &renderTimestampWrites;
                                     // Begin render pass on the captured encoder (not the global)
                                     WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoderToUse, &renderPassDesc);
                                     if (!requireHandle(state->engine, renderPass, "commandEncoder.beginRenderPass",
@@ -4006,6 +4208,8 @@ static bool ensureCommandEncoderClassTable(
          &tnWebgpuHandler53, prototype},
         {"GPUCommandEncoder", "copyBufferToBuffer", 0, nullptr,
          &tnWebgpuHandler58, prototype},
+        {"GPUCommandEncoder", "resolveQuerySet", 0, nullptr,
+         &tnWebgpuHandlerResolveQuerySet, prototype},
         {"GPUCommandEncoder", "copyBufferToTexture", 0, nullptr,
          &tnWebgpuHandler59, prototype},
         {"GPUCommandEncoder", "copyTextureToBuffer", 0, nullptr,
@@ -4295,6 +4499,10 @@ static js::JSValueHandle tnWebgpuHandler37(BindingsState* state, BindingDestinat
                             if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPUCommandEncoder", "copyBufferToBuffer", 0, nullptr,
                                 &tnWebgpuHandler58
+                            , jsEncoder},
+                            // encoder.resolveQuerySet(querySet, firstQuery, queryCount, destination, destinationOffset)
+                                {"GPUCommandEncoder", "resolveQuerySet", 0, nullptr,
+                                &tnWebgpuHandlerResolveQuerySet
                             , jsEncoder},
                             // encoder.copyBufferToTexture(source, destination, copySize)
                                                             {"GPUCommandEncoder", "copyBufferToTexture", 0, nullptr,
@@ -5038,10 +5246,6 @@ static js::JSValueHandle tnWebgpuHandler28(BindingsState* state, BindingDestinat
                             if (featureName == "indirect-first-instance") {
                                 return state->engine->newBoolean(true);
                             }
-                            // timestamp-query is NOT supported yet - bindings not implemented
-                            if (featureName == "timestamp-query") {
-                                return state->engine->newBoolean(false);
-                            }
                             // This Dawn has no Undefined member; 0 is outside the enum's values
                             // and never a valid feature, so it stands in as the sentinel.
                             WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
@@ -5631,9 +5835,12 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     auto encoder = [&](uint32_t id) -> WGPUCommandEncoder { const auto it = encoders.find(id); if (it == encoders.end()) { fail("unknown command encoder id"); return nullptr; } return it->second; };
     auto renderPass = [&](uint32_t id) -> WGPURenderPassEncoder { const auto it = renderPasses.find(id); if (it == renderPasses.end()) { fail("unknown render pass id"); return nullptr; } return it->second; };
     auto computePass = [&](uint32_t id) -> WGPUComputePassEncoder { const auto it = computePasses.find(id); if (it == computePasses.end()) { fail("unknown compute pass id"); return nullptr; } return it->second; };
+    // Query sets are created outside the frame (they outlive it), so the stream only ever names
+    // one by id. An unknown id fails the frame rather than silently skipping the timing.
+    auto querySetFor = [&](uint32_t id) -> WGPUQuerySet { const auto it = state->querySetRegistry.find(id); if (it == state->querySetRegistry.end()) { fail("unknown query set id " + std::to_string(id)); return nullptr; } return it->second; };
     auto readTextureCopy = [&](WGPUImageCopyTexture_Compat& copy) { copy.texture = texture(r.u32()); copy.mipLevel = r.u32(); copy.origin = {r.u32(), r.u32(), r.u32()}; const uint32_t aspect = r.u32(); copy.aspect = aspect == 1 ? WGPUTextureAspect_DepthOnly : aspect == 2 ? WGPUTextureAspect_StencilOnly : WGPUTextureAspect_All; };
     auto readExtent = [&]() { return WGPUExtent3D{r.u32(), r.u32(), r.u32()}; };
-    static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy"};
+    static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet", "querySet.destroy"};
     uint32_t seen = 0;
     uint32_t replaySubmits = 0;
     while (r.cursor < declaredBytes && r.ok) {
@@ -5657,7 +5864,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
 #endif
                 r.cursor = (r.cursor + n + 7) & ~size_t(7); break; }
             case 2: { const uint32_t id = r.u32(); if (!id || encoders.find(id) != encoders.end()) { fail("duplicate command encoder id"); break; } WGPUCommandEncoderDescriptor d{}; auto e = wgpuDeviceCreateCommandEncoder(state->device, &d); if (!e) { fail("createCommandEncoder failed"); break; } encoders[id] = e; break; }
-            case 3: { const uint32_t eid = r.u32(), pid = r.u32(), count = r.u32(); if (!pid || renderPasses.find(pid) != renderPasses.end()) { fail("duplicate render pass id"); break; } auto e = encoder(eid); bool touchesSurface = false; std::vector<WGPURenderPassColorAttachment> colors(count); for (auto& c : colors) { c.view = viewFor(r.u32()); touchesSurface = touchesSurface || c.view == state->currentTextureView; const uint32_t resolve = r.u32(); c.resolveTarget = resolve ? viewFor(resolve) : nullptr; c.loadOp = r.u32() ? WGPULoadOp_Load : WGPULoadOp_Clear; c.storeOp = r.u32() ? WGPUStoreOp_Discard : WGPUStoreOp_Store; c.clearValue = {r.f64(),r.f64(),r.f64(),r.f64()}; c.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; } WGPURenderPassDepthStencilAttachment depth{}; WGPURenderPassDescriptor d{}; d.colorAttachmentCount=colors.size(); d.colorAttachments=colors.data(); if (r.u32()) { depth.view=viewFor(r.u32()); depth.depthClearValue=r.f64(); depth.depthLoadOp=r.u32()?WGPULoadOp_Load:WGPULoadOp_Clear; depth.depthStoreOp=r.u32()?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.depthReadOnly=r.u32(); depth.stencilClearValue=r.u32(); const auto sl=r.u32(), ss=r.u32(); depth.stencilLoadOp=sl==2?WGPULoadOp_Undefined:sl?WGPULoadOp_Load:WGPULoadOp_Clear; depth.stencilStoreOp=ss==2?WGPUStoreOp_Undefined:ss?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.stencilReadOnly=r.u32(); d.depthStencilAttachment=&depth; } if (!r.ok) break; auto p=wgpuCommandEncoderBeginRenderPass(e,&d); if (!p) { fail("beginRenderPass failed"); break; } if (touchesSurface) { state->surfaceRenderEncoder=e; state->surfaceRenderPassEnded=false; } renderPasses[pid]=p; renderOwners[pid]=e; break; }
+            case 3: { const uint32_t eid = r.u32(), pid = r.u32(), count = r.u32(); if (!pid || renderPasses.find(pid) != renderPasses.end()) { fail("duplicate render pass id"); break; } auto e = encoder(eid); bool touchesSurface = false; std::vector<WGPURenderPassColorAttachment> colors(count); for (auto& c : colors) { c.view = viewFor(r.u32()); touchesSurface = touchesSurface || c.view == state->currentTextureView; const uint32_t resolve = r.u32(); c.resolveTarget = resolve ? viewFor(resolve) : nullptr; c.loadOp = r.u32() ? WGPULoadOp_Load : WGPULoadOp_Clear; c.storeOp = r.u32() ? WGPUStoreOp_Discard : WGPUStoreOp_Store; c.clearValue = {r.f64(),r.f64(),r.f64(),r.f64()}; c.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; } WGPURenderPassDepthStencilAttachment depth{}; WGPURenderPassDescriptor d{}; d.colorAttachmentCount=colors.size(); d.colorAttachments=colors.data(); if (r.u32()) { depth.view=viewFor(r.u32()); depth.depthClearValue=r.f64(); depth.depthLoadOp=r.u32()?WGPULoadOp_Load:WGPULoadOp_Clear; depth.depthStoreOp=r.u32()?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.depthReadOnly=r.u32(); depth.stencilClearValue=r.u32(); const auto sl=r.u32(), ss=r.u32(); depth.stencilLoadOp=sl==2?WGPULoadOp_Undefined:sl?WGPULoadOp_Load:WGPULoadOp_Clear; depth.stencilStoreOp=ss==2?WGPUStoreOp_Undefined:ss?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.stencilReadOnly=r.u32(); d.depthStencilAttachment=&depth; } WGPURenderPassTimestampWrites_Compat rtw{}; if (r.u32()) { rtw.querySet = querySetFor(r.u32()); rtw.beginningOfPassWriteIndex = r.u32(); rtw.endOfPassWriteIndex = r.u32(); if (!rtw.querySet) break; d.timestampWrites = &rtw; } if (!r.ok) break; auto p=wgpuCommandEncoderBeginRenderPass(e,&d); if (!p) { fail("beginRenderPass failed"); break; } if (touchesSurface) { state->surfaceRenderEncoder=e; state->surfaceRenderPassEnded=false; } renderPasses[pid]=p; renderOwners[pid]=e; break; }
             case 4: { auto p=renderPass(r.u32()); const auto it=state->renderPipelineRegistry.find(r.u32()); if(it==state->renderPipelineRegistry.end()) fail("unknown render pipeline id"); else wgpuRenderPassEncoderSetPipeline(p,it->second); break; }
             case 5: { auto p=renderPass(r.u32()); const uint32_t index=r.u32(), gid=r.u32(), n=r.u32(); const auto it=state->bindGroupRegistry.find(gid); std::vector<uint32_t> values(n); for(auto& v:values)v=r.u32(); if(it==state->bindGroupRegistry.end()) fail("unknown bind group id"); else wgpuRenderPassEncoderSetBindGroup(p,index,it->second,n,values.data()); break; }
             case 6: { auto p=renderPass(r.u32()); const uint32_t slot=r.u32(); auto b=buffer(r.u32()); const uint64_t off=static_cast<uint64_t>(r.f64()); const double z=r.f64(); wgpuRenderPassEncoderSetVertexBuffer(p,slot,b,off,z<0?WGPU_WHOLE_SIZE:static_cast<uint64_t>(z)); break; }
@@ -5671,7 +5878,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
             case 15: { auto p=renderPass(r.u32()); wgpuRenderPassEncoderSetStencilReference(p,r.u32()); break; }
             case 16: { auto p=renderPass(r.u32()); const uint32_t n=r.u32(); std::vector<WGPURenderBundle> bundles; for(uint32_t i=0;i<n;i++){const auto it=state->renderBundleRegistry.find(r.u32());if(it==state->renderBundleRegistry.end()){fail("unknown render bundle id");break;}bundles.push_back(it->second);} if(r.ok)wgpuRenderPassEncoderExecuteBundles(p,bundles.size(),bundles.data()); break; }
             case 17: { const uint32_t id=r.u32(); auto p=renderPass(id); wgpuRenderPassEncoderEnd(p); wgpuRenderPassEncoderRelease(p); if (renderOwners[id] == state->surfaceRenderEncoder) state->surfaceRenderPassEnded = true; renderPasses.erase(id); renderOwners.erase(id); break; }
-            case 18: { const uint32_t eid=r.u32(),pid=r.u32(); if(!pid||computePasses.find(pid)!=computePasses.end()){fail("duplicate compute pass id");break;} auto e=encoder(eid); WGPUComputePassDescriptor d{}; auto p=wgpuCommandEncoderBeginComputePass(e,&d); if(!p)fail("beginComputePass failed"); else {computePasses[pid]=p;computeOwners[pid]=e;} break; }
+            case 18: { const uint32_t eid=r.u32(),pid=r.u32(); if(!pid||computePasses.find(pid)!=computePasses.end()){fail("duplicate compute pass id");break;} auto e=encoder(eid); WGPUComputePassDescriptor d{}; WGPUComputePassTimestampWrites_Compat ctw{}; if (r.u32()) { ctw.querySet = querySetFor(r.u32()); ctw.beginningOfPassWriteIndex = r.u32(); ctw.endOfPassWriteIndex = r.u32(); if (!ctw.querySet) break; d.timestampWrites = &ctw; } if (!r.ok) break; auto p=wgpuCommandEncoderBeginComputePass(e,&d); if(!p)fail("beginComputePass failed"); else {computePasses[pid]=p;computeOwners[pid]=e;} break; }
             case 19: { auto p=computePass(r.u32()); const auto it=state->computePipelineRegistry.find(r.u32()); if(it==state->computePipelineRegistry.end())fail("unknown compute pipeline id");else wgpuComputePassEncoderSetPipeline(p,it->second); break; }
             case 20: { auto p=computePass(r.u32());const auto index=r.u32(),gid=r.u32(),n=r.u32();std::vector<uint32_t> values(n);for(auto&v:values)v=r.u32();const auto it=state->bindGroupRegistry.find(gid);if(it==state->bindGroupRegistry.end())fail("unknown bind group id");else wgpuComputePassEncoderSetBindGroup(p,index,it->second,n,values.data());break; }
             case 21: { auto p=computePass(r.u32());const auto x=r.u32(),y=r.u32(),z=r.u32();wgpuComputePassEncoderDispatchWorkgroups(p,x,y,z);break; }
@@ -5716,6 +5923,10 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
             case 31: { const uint32_t sourceWidth=r.u32(),sourceHeight=r.u32(),originX=r.u32(),originY=r.u32(),flipY=r.u32();WGPUImageCopyTexture_Compat d{};readTextureCopy(d);auto z=readExtent();const uint32_t n=r.u32();if(!sourceWidth||!sourceHeight||r.cursor+n>r.recordEnd||uint64_t(sourceWidth)*sourceHeight*4>n||originX+z.width>sourceWidth||originY+z.height>sourceHeight){fail("external image payload bounds invalid");break;}std::vector<uint8_t> cropped(uint64_t(z.width)*z.height*4);for(uint32_t y=0;y<z.height;y++){const uint32_t sourceY=flipY?(originY+z.height-1-y):(originY+y);std::memcpy(cropped.data()+uint64_t(y)*z.width*4,data+r.cursor+(uint64_t(sourceY)*sourceWidth+originX)*4,uint64_t(z.width)*4);}WGPUTextureDataLayout_Compat l{};l.bytesPerRow=z.width*4;l.rowsPerImage=z.height;flushUploadStaging(state);wgpuQueueWriteTexture(state->queue,&d,cropped.data(),cropped.size(),&l,&z);r.cursor=(r.cursor+n+7)&~size_t(7);break; }
             case 32: { const uint32_t id=r.u32(); flushUploadStaging(state); if(state->bufferRegistry.find(id)==state->bufferRegistry.end())fail("unknown buffer id");else releaseBufferRegistryEntry(state,id); break; }
             case 33: { const uint32_t id=r.u32(); flushUploadStaging(state); if(state->textureRegistry.find(id)==state->textureRegistry.end())fail("unknown texture id");else releaseTextureRegistryEntry(state,id); break; }
+            // resolveQuerySet: the only way timestamps leave the query set for a buffer the game
+            // can map. An unknown query set or buffer fails the frame; a resolve that quietly did
+            // nothing leaves bytes that read exactly like a measurement of a very fast pass.
+            case 34: { auto e=encoder(r.u32()); auto q=querySetFor(r.u32()); const uint32_t first=r.u32(), count=r.u32(); auto dst=buffer(r.u32()); const double offset=r.f64(); if(!r.ok||!e||!q||!dst)break; if(!(offset>=0.0)){fail("resolveQuerySet destinationOffset must be non-negative");break;} wgpuCommandEncoderResolveQuerySet(e,q,first,count,dst,(uint64_t)offset); break; }
         }
 #if TN_ANDROID_JS_PROFILE
         switch (opcode) {
@@ -5900,6 +6111,11 @@ static js::JSValueHandle tnWebgpuHandler21(BindingsState* state, BindingDestinat
                     if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createTexture", 0, nullptr,
                         &tnWebgpuHandler64
+                    , device}}))) return state->engine->newUndefined();
+                    // device.createQuerySet(descriptor)
+                    if (!installBindingTable(state->engine, state, bindingTable({
+                        {"GPUDevice", "createQuerySet", 0, nullptr,
+                        &tnWebgpuHandlerCreateQuerySet
                     , device}}))) return state->engine->newUndefined();
                     // device.createSampler(descriptor?)
                     if (!installBindingTable(state->engine, state, bindingTable({

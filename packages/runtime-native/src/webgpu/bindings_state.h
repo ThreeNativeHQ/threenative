@@ -279,6 +279,11 @@ struct BindingsState {
     uint64_t nextTextureViewId = 1;
     std::unordered_map<uint64_t, WGPURenderBundle> renderBundleRegistry;
     uint64_t nextRenderBundleId = 1;
+    // Timestamp query sets. Registered by id like every other resource the packed frame stream
+    // references, because `timestampWrites` names a query set from inside a pass descriptor and
+    // the stream carries ids, never handles.
+    std::unordered_map<uint64_t, WGPUQuerySet> querySetRegistry;
+    uint64_t nextQuerySetId = 1;
     // Production frame recorder drain, installed when requestDevice creates the device wrapper.
     // The host invokes it once after all rAF callbacks and replays the returned operations here.
     js::JSValueHandle frameOpStreamDrain{};

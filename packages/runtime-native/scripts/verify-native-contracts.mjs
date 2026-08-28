@@ -110,6 +110,11 @@ export const executionContracts = {
       },
     ],
   },
+  // PRD-228 Change B. Needs no display: it drives the real bindings through a headless Runtime,
+  // times a compute dispatch at both ends and resolves the query set into a mappable buffer.
+  "threenative-timestamp-query-test": {
+    invocations: [{ args: [], passLine: "native timestamp-query bindings contract passed" }],
+  },
   "threenative-timer-delivery-test": {
     invocations: [{ args: [], passLine: "native timer delivery contract passed" }],
   },

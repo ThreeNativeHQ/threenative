@@ -406,7 +406,7 @@ bool Context::initializeHeadless() {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[4];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -417,6 +417,13 @@ bool Context::initializeHeadless() {
             requiredFeaturesAndroid[featureCount++] = compression;
         }
     }
+    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
+    // feature — never behind a diagnostic flag — so the same code path measures on device and in
+    // Chrome, and an adapter without it keeps today's behaviour.
+    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
+    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
+              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
+    if (hasTimestampQuery_ && featureCount < 4) requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesAndroid : nullptr;
     hasIndirectFirstInstance_ = false;
@@ -430,7 +437,7 @@ bool Context::initializeHeadless() {
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[5];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -446,6 +453,13 @@ bool Context::initializeHeadless() {
             requiredFeaturesDawn[featureCount++] = compression;
         }
     }
+    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
+    // feature — never behind a diagnostic flag — so the same code path measures on device and in
+    // Chrome, and an adapter without it keeps today's behaviour.
+    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
+    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
+              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
+    if (hasTimestampQuery_ && featureCount < 5) requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesDawn : nullptr;
 #elif defined(MYSTRAL_WEBGPU_WGPU)
@@ -455,7 +469,7 @@ bool Context::initializeHeadless() {
     requiredLimits.limits = adapterLimits.limits;
     deviceDesc.requiredLimits = &requiredLimits;
 
-    WGPUFeatureName requiredFeaturesWGPU[4];
+    WGPUFeatureName requiredFeaturesWGPU[5];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -475,6 +489,13 @@ bool Context::initializeHeadless() {
             requiredFeaturesWGPU[featureCount++] = compression;
         }
     }
+    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
+    // feature — never behind a diagnostic flag — so the same code path measures on device and in
+    // Chrome, and an adapter without it keeps today's behaviour.
+    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
+    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
+              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
+    if (hasTimestampQuery_ && featureCount < 5) requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesWGPU : nullptr;
 #endif
@@ -735,7 +756,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[4];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -770,7 +791,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // This feature allows instance_index in shaders to include firstInstance offset
     // Compression features are likewise requested when supported so JS-side consumers
     // (three's KTX2Loader.detectSupport among them) see what this GPU can upload.
-    WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[5];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -810,7 +831,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
 
     // Check if IndirectFirstInstance is supported before requesting it
     // This feature allows instance_index in shaders to include firstInstance offset
-    WGPUFeatureName requiredFeaturesWGPU[1];
+    WGPUFeatureName requiredFeaturesWGPU[2];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;
@@ -982,7 +1003,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[3];
+    WGPUFeatureName requiredFeaturesAndroid[4];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -1010,7 +1031,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesDawn[4];
+    WGPUFeatureName requiredFeaturesDawn[5];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -1044,6 +1065,13 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         featureCount = 1;
         hasIndirectFirstInstance_ = true;
     }
+    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
+    // feature — never behind a diagnostic flag — so the same code path measures on device and in
+    // Chrome, and an adapter without it keeps today's behaviour.
+    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
+    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
+              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
+    if (hasTimestampQuery_ && featureCount < 2) requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesWGPU : nullptr;
 #endif

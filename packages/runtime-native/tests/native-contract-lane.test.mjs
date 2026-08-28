@@ -25,9 +25,9 @@ function declaredTargets(source) {
 test("should fail when a declared test target is not executed", () => {
   const discovered = discoverNativeTestTargets(cmake);
   // 22 through PRD-224 step 1; +1 for the render-pass class table; +1 for PRD-227's executable
-  // packed frame-stream replay contract; +1 for the canvas 2D dirty-tracking contract. Bump
-  // alongside any new add_executable contract target.
-  assert.equal(discovered.length, 25);
+  // packed frame-stream replay contract; +1 for the canvas 2D dirty-tracking contract; +1 for
+  // PRD-228's timestamp-query bindings. Bump alongside any new add_executable contract target.
+  assert.equal(discovered.length, 26);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 

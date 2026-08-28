@@ -1765,6 +1765,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/bindings_creation_test.cpp)
     target_link_libraries(threenative-bindings-creation-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-timestamp-query-test EXCLUDE_FROM_ALL
+        tests/timestamp_query_test.cpp)
+    target_link_libraries(threenative-timestamp-query-test PRIVATE mystral-runtime)
+
     add_executable(threenative-timer-delivery-test EXCLUDE_FROM_ALL
         tests/timer_delivery_test.cpp)
     target_link_libraries(threenative-timer-delivery-test PRIVATE mystral-runtime)

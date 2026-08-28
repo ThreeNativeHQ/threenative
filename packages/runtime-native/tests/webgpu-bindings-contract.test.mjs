@@ -1062,9 +1062,12 @@ test("owned WebGPU binding state is wired to the executable reentrancy proof", (
     /static/u,
   );
 
+  // The array is sized to the features actually requested; it grew to four when PRD-228 added
+  // timestamp-query. The literal is spelled out here on purpose — a stale one makes this
+  // negative control a no-op that passes while proving nothing.
   const sharedFeatureMutation = context.replace(
-    "WGPUFeatureName requiredFeaturesAndroid[3];",
-    "static WGPUFeatureName requiredFeaturesAndroid[3];",
+    "WGPUFeatureName requiredFeaturesAndroid[4];",
+    "static WGPUFeatureName requiredFeaturesAndroid[4];",
   );
   assert.throws(
     () =>

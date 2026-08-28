@@ -177,6 +177,16 @@ public:
     // Check if IndirectFirstInstance feature is available
     // This affects whether instance_index in shaders includes firstInstance offset
     bool hasIndirectFirstInstance() const { return hasIndirectFirstInstance_; }
+    /**
+     * Whether this device was granted `timestamp-query`.
+     *
+     * The only way to price one pass stage rather than infer it from a blocking device poll:
+     * every GPU number in the perf record before this was wall-clock algebra around an ablated
+     * scene, which gives a total per object and can never give a cost per pass. Requested as an
+     * ordinary optional feature, so an adapter without it degrades to that older behaviour with
+     * a reported reason rather than failing to start.
+     */
+    bool hasTimestampQuery() const { return hasTimestampQuery_; }
 
     // Platform types for createSurface
     enum PlatformType {
@@ -208,6 +218,7 @@ private:
 
     bool initialized_ = false;
     bool hasIndirectFirstInstance_ = false;  // Whether INDIRECT_FIRST_INSTANCE feature is available
+    bool hasTimestampQuery_ = false;         // Whether TIMESTAMP_QUERY was advertised and granted
     bool headless_ = false;  // Running without SDL/window
 
     // Offscreen rendering (for headless mode)
