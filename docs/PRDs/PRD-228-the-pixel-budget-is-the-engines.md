@@ -237,7 +237,8 @@ contract. Stop, re-derive, and re-file. Change B proceeds either way.
 ## The baseline — DECIDED 2026-08-28: 60 Hz panel, 60 fps, p95 ≤ 14 ms
 
 **Decision: acceptance runs on a 60 Hz panel at `maxFps: 60`, and a frame is accepted at
-`presented p95 ≤ 14 ms`, not at 16.6.** 120 Hz remains a real arm, reported separately, and is
+`frame p95 ≤ 14 ms` — amended from `presented p95` on 2026-08-28, see immediately below — not at
+16.6.** 120 Hz remains a real arm, reported separately, and is
 never the gate. Rationale below; it was an open question for one session and this settles it.** It caused a real confusion on 2026-08-28 and one wrong action (this author restored the
 phone's 120 Hz mode mid-investigation, which invalidated the comparison rather than repairing it;
 the device was returned to 60 Hz).
@@ -256,6 +257,26 @@ The facts, not the preference:
 
 Both runs are valid measurements of *different machines*. Neither is an error. The error is that
 neither run stated which machine it was on, which is what Change A's reporting item fixes.
+
+### Amended 2026-08-28, from the device: the 14 ms bar may not be read off `presented`
+
+**`presented p95 ≤ 14 ms` is unreachable on the very panel this baseline pins.** Under FIFO the
+presented interval is the panel's period: a game locked perfectly at 60 fps on a 60 Hz panel
+reports presented p50 16.67 ms and p95 around 17.6–18.4 ms, and no amount of headroom moves it.
+This is the same error as the Phase 2 trigger amended below, found the same way and on the same
+run — the bar was written as though `presented` measured the game's cost, and it measures the
+panel's cadence.
+
+**The bar keeps its meaning and changes its meter: `frame p95 ≤ 14 ms`** — the frame callback's
+own duration, which is the work — **plus fps at the configured target, plus SurfaceFlinger
+confirming no dropped frames.** 14 ms remains ~84 % of the 16.67 ms budget and still refuses a
+frame with zero headroom; what changes is that it is measured on the thing that can vary.
+
+Evidence, §1.3.7: a scaffolded platformer holding 60 fps at full 2400×1080 read `frame p95`
+6.51–8.70 ms against `presented p95` 17.2–18.9 ms across 65 windows, with SurfaceFlinger
+reporting 19,372 of 19,562 frames at 16 ms, **zero dropped and zero janky**. Under the old wording
+that run fails; under this one it passes, and the second reading is the one that describes the
+game.
 
 ### Why 60 Hz, and why 14 ms
 
@@ -586,9 +607,11 @@ discarded, never silently kept. Anything not run is named as not run.
 ## Acceptance Criteria
 
 - [ ] **A scaffolded template with no hand-authored resolution constant sustains 60 fps at
-      presented p95 ≤ 14 ms on a physical Pixel 8 pinned to its 60 Hz mode**, three captures,
-      SurfaceFlinger-confirmed, at its shipped appearance. 30 fps is a milestone to report, never a
-      pass, and a p95 between 14 and 16.6 ms is a report, not a pass.
+      `frame p95 ≤ 14 ms` on a physical Pixel 8 pinned to its 60 Hz mode**, three captures,
+      SurfaceFlinger-confirmed, at its shipped appearance. **Met once, on AC** (§1.3.7): 59.99–60.02
+      fps across 59 consecutive windows at full 2400×1080, `frame p95` 6.51–8.70 ms, 19,372 of
+      19,562 SurfaceFlinger frames at 16 ms with zero dropped and zero janky. **Outstanding: the
+      run was charging, and the criterion asks for three captures.** Re-run unplugged, three times.
 - [ ] The 120 Hz arm is run and reported **separately**, and no acceptance cites it.
 - [ ] `renderer.resolutionScale` validates, plumbs to all four targets, and the active scale is reported
       in every frame-budget window **in both pinned and auto modes**. (Mutation: delete the

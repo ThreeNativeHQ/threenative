@@ -469,6 +469,55 @@ the tree said 0.32 is closed end to end on a physical device.
    would reach the settling point in one step instead of ten. It is a change to PRD-228's Phase 2
    table, so it is filed rather than tuned in.
 
+### 1.3.7 A scaffolded template holds 60 fps at full resolution, and the bug that found (2026-08-28)
+
+**PRD-228 Phase 4's headline criterion, met once — with two caveats stated below.** A platformer
+template scaffolded by `pnpm sandbox` into `sandbox/prd228-accept`: never hand-tuned,
+`display.maxFps: 60`, `renderer.resolutionScale: "auto"`, and **no resolution constant anywhere in
+its source** (`grep -rn resolutionScale src/` is empty). Engine installed from tarballs like a
+user's machine, installed bytes verified. APK sha256 `fd71c9c0…`.
+
+| | |
+| --- | ---: |
+| Settled scale | **1.00 — full 2400×1080** |
+| Windows held at that scale | **59 consecutive** (7–65), ~17,700 frames, ~5 minutes |
+| fps | **59.99–60.02** |
+| `frame` p95 (the game's own work) | **6.51–8.70 ms** of a 16.67 ms budget |
+| `presented` p95 (the panel's cadence) | 17.23–18.87 ms |
+| SurfaceFlinger, game `(BLAST)` layer | **61.734 fps**, 19,372 of 19,562 frames at 16 ms, **0 dropped, 0 janky** |
+| `atFloor` | false throughout |
+
+The scaler dipped to 0.85 on the cold-start window (51.52 fps while loading), then climbed back to
+1.00 at window 7 and never moved again.
+
+**Caveats, on the record:** the phone was on **AC** — `preflight-before.json` says
+`"charging":true` — and the criterion asks for three captures; this is one. Thermal was LIGHT at
+the start of the long run and LIGHT at the end.
+
+#### The defect this arm found, which is the reason it was worth running
+
+The **first** run of this template walked to the floor. Same game, same 60 fps, and the scaler
+took it from 2400×1080 to **552×248** across 20 windows and then reported `atFloor: true` —
+claiming the budget was not met while it was being met at 59.99 fps.
+
+The cause: **under FIFO the presented interval is the panel's period, not the game's cost.** The
+controller's pre-registered down-trigger was `presented p95 > 14 ms`; a game locked at 60 fps on a
+60 Hz panel reports presented p95 around 17.5 ms, so that condition is true forever. The template
+had `frame p95` of 7.99 ms out of 16.67 at full resolution — enormous headroom — and the
+controller destroyed its image quality anyway. **This affected every shipped configuration**,
+since `maxFps: 60` on a 60 Hz panel is the decided baseline.
+
+Fixed in `6898e5ee`: the trigger is **fps against the configured target**, which is correct capped
+and uncapped because it comes from the mean presented interval and dropped frames pull it down on
+their own. `presented p95` survives only as the up-step's tail guard, where a capped panel's own
+p95 floor near 1.05× budget sits inside the 1.15× bar.
+
+**The same error was in PRD-228's acceptance bar** — "accept at presented p95 ≤ 14 ms" is
+unreachable on the panel that same decision pins. Amended there to `frame p95 ≤ 14 ms` plus fps at
+target plus SurfaceFlinger confirming no dropped frames. **The general lesson, worth carrying:**
+on a vsync-capped target, `presented` measures the panel and `frame` measures the game. Any bar or
+trigger written against `presented` is measuring the display.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1
