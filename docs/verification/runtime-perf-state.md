@@ -14,27 +14,34 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ## 1. The open defect: native Android fps
 
-**Goal (owner): 60 fps+ on a physical Pixel 8; 30 fps is a milestone, never a pass.** Chrome runs
-the same Bayview scene at **59.99 fps** on the same phone, so it is physically reachable. The
-panel is **60 Hz** (active mode; the 120 Hz assumption in older records is wrong — cells are
-16.67 ms apart).
+**Goal (owner): 60 fps+ on a physical Pixel 8; 30 fps is a milestone, never a pass.** The previous
+claim that Chrome runs the same Bayview scene at **59.99 fps is falsified**. On 2026-08-27 the
+foreground, visible, focused Chrome tab was measured in landscape with consecutive rAF timestamps
+and independently through SurfaceFlinger. Chrome produced 23.27–30.37 fps; SurfaceFlinger agreed at
+29.839 fps during the cross-check. Chrome selected the 120 Hz display mode during that capture, so
+the application was missing a 120 Hz budget rather than being capped by a 60 Hz panel.
 
 | Where it stands (2026-08-27 evening) | value |
 | --- | ---: |
 | Best known arm: **720p mailbox** (`wm size 720×1600` + `present_uncapped=1`) | **34.39 fps** (SurfaceFlinger: 34.2) |
 | 1080p, any present mode / frame latency | 20.0–20.9 fps, invariant |
+| Chrome landscape, 864×303 canvas, same Bayview source | 23.27–30.37 fps (SurfaceFlinger: 29.839 in the paired cross-check) |
 | CPU side of the frame (JS render + replay + misc) | ~36 ms (render ~27 after Change 1 moved work out of the meter; replay ~8; misc ~1) |
 | GPU tail at present, 1080p | ~14 ms — but see §1.2: the GPU frame itself is ~63 ms |
 | GPU tail at present, 720p | 0.91 ms |
 
 ### 1.1 The model that fits every measurement
 
+```text
+Bayview submits about 818 draws: about 496 in the main pass + about 322 in the shadow pass.
+1080p native adds expensive fragment work: the diagnostic estimates a ~63 ms GPU frame.
+Chrome draws only 864×303 but is still ~30 fps: draw/pass count is load-bearing, not just pixels.
+60 fps needs CPU ≤ 16.7 ms AND GPU ≤ 16.7 ms; 100 fps needs both ≤ 10 ms.
 ```
-period ≈ CPU-side work + GPU work, serialized at present
-1080p:  36 + GPU ≈ 63 ms GPU frame  →  ~20 fps  (blocking drain in the diagnostic)
-720p:   36 + ~1  ≈ 33 ms           →  34 fps  (CPU-bound)
-60 fps needs CPU ≤ 16.7 AND GPU ≤ 16.7 AND real pipelining (frames in flight)
-```
+
+Native and Chrome therefore tell the same story at different pixel costs. The full-resolution native
+surface makes the fragment-heavy town materials worse, but it is not the origin of the 20–30 fps
+class. Bayview is already outside budget at one tenth of the native pixel count.
 
 ### 1.2 The fork already taken: Road B — GPU work
 
@@ -45,19 +52,125 @@ both**. The pre-registered fork selects **Road B: the GPU owns the full-resoluti
 present-seam fix cannot recover 46+ ms. Road A (Dawn on Android / wgpu-native present patch) is
 *untried on device*, not refuted — it is parked behind Road B.
 
-**Next change, pre-registered and not yet run** — a game-owned Bayview A/B, not a framework
-change: disable only the **224 frustum-culling-disabled decal materials (~54 % of draws)** in
-Bayview game source; prediction: gpuDrain 49 → ≤ 34 ms (≥ 15 ms GPU-frame cut). Decision rule:
-material cut → price a shippable render-scale feature; immaterial → profile GPU passes. Do not
-sneak render scale in. Separate feature decision on file: a game-facing render-scale knob banks
-the 34 fps 720p/mailbox win without `wm size`.
+The pre-registered decal experiment was run and **falsified**. Hiding all 224 decal slots while
+retaining allocation and placement changed gpuDrain 50.468 → 49.867 ms, only −0.601 ms and below
+the 2 ms decision threshold. Source was restored.
 
-### 1.3 Untried, named
+The pass experiments then found two material costs:
+
+| Diagnostic arm, 1080p native | period p50 | frameReplay p50 | gpuDrain p50 | verdict |
+| --- | ---: | ---: | ---: | --- |
+| Normal textured town + 2048² sun shadow | 110.898 ms | 12.711 ms | 50.468 ms | control |
+| Sun shadow disabled only | 86.750 ms | 6.766 ms | 46.022 ms | material, but insufficient |
+| Shadow disabled + flat-material bypass | 68.201 ms | 6.405 ms | 28.314 ms | town shader costs ~17.708 ms of GPU drain at 1080p |
+
+The flat-material arm was diagnostic only. It did not become a proposed fix, and the original
+textures, materials and shadows were restored immediately after measurement.
+
+### 1.3 Current owner and the next implementation
+
+**Layer verdict: the primary 20–30 fps defect is game-owned Bayview render construction.** The
+secondary viewport-density and high-refresh-selection defects are engine-owned, but neither can
+turn an 818-draw Chrome frame into a 100 fps frame.
+
+Evidence gathered from the live Chrome game:
+
+- Core calls one world render per game frame. Three.js adds exactly one shadow render because
+  Bayview enables a dynamic 2048² directional shadow. There is no duplicate engine world render.
+- A settled frame reports 804–818 draws and about 1.03–1.11 million submitted triangles. Disabling
+  only the sun shadow reduces this to 496 draws and about 570,000 triangles; a warmed development
+  sample reached 43.19 fps, still below 60.
+- The authored scene has 830 meshes; 492 are effectively visible. The `town` root alone owns 363
+  visible meshes and 215 of the scene's 287 shadow casters.
+- Those 363 town meshes use 50 materials but **363 distinct geometry identities**. Runtime grouping
+  found 295 meshes compatible with only 16 canonical topology/material/shadow-flag groups.
+- Core's projection correctly reported `notWorthwhile`: it would draw 835 of 835 candidates and
+  created zero batches. Identical material is insufficient on WebGPU because `BatchedMesh` still
+  issues multidraw sub-draws; safe instancing needs shared geometry identity.
+
+**Next fix:** change Bayview's generated render source to reuse canonical primitive geometries and
+express dimensions through mesh transforms. Start with the 201 `BoxGeometry` objects, then the 84
+cylinders and 22 planes. Preserve each authored mesh, material, surface tag, transform, raycast and
+physics object; do not merge away gameplay identity. Once geometry identity is shared, the existing
+core projection can instance compatible `(geometry, material, castShadow, receiveShadow, layers)`
+groups in its private render mirror. The measured grouping predicts the town's 363 render
+candidates can fall to about 84, which should remove roughly 279 main-pass candidates and many of
+the same shadow-pass candidates. This is a prediction, not a measured fps result.
+
+### 1.3.1 Geometry identity sharing — landed 2026-08-27 (late), web red-green + first device arms
+
+Landed in `sandbox/fps-framework` (`1be75de`): every plain box/plane/straight-cylinder solid in
+`town.ts` now shares one canonical unit geometry and expresses dimensions through `mesh.scale`
+(pixel-identical for axis-aligned primitives); frustum cylinders (bollards, pier posts) cache by
+shape like `roundedBox` already did. Materials, transforms, surface tags, colliders, raycast and
+physics identity untouched; triangles hold at ~1.03M. The projection now reports `projecting:true`,
+**11 instanced batches, 227 projected objects, 619 draw candidates (was 835)**, exact lane:
+`renderOrder 336` (mostly the decal pool's hidden slots), `tooFewToBatch 140` (van/boat merged
+parts, misc singletons), `transparent 75`, `skinned 40` (soldiers), `instanced 12` (palms).
+
+Red-green, same scenario (`playtests/draw-budget.playtest.json`), same session, adapter turing,
+headed (the runner's private Xvfb lane still lands on SwiftShader — adapter check in
+`artifacts/playtest/capture.json`; capture lane must run `--headed` on `:0` here):
+
+| Arm | settled drawCalls (render entity, in-frame capture) | triangles | verdict |
+| --- | ---: | ---: | --- |
+| geometry fix stashed (red) | 780 | 1,033,449 | FAIL `lte 550` |
+| shared unit geometry (green) | 492 | 1,038,265 | PASS, exit 0 |
+
+The scenario's `render` entity now captures `renderer.info` inside the frame callback — a
+between-frames read sees zeros because `renderer.info` resets at each render, which silently
+produced 0/0 in the first attempt. `performance.maxDrawCalls` (max over the whole bridge series)
+is **unusable as a gate for this game**: the series includes the startup authored-scene phase
+(~1345 draws for ~100 frames until startup readiness settles), so its max never goes below ~1370
+in any arm. The steady entity gate replaced it.
+
+Desktop native (Xvfb, 900 frames, post-fix): **render.p50 5.37 ms** (bug-hunt record: 10.83 after
+`caa78a11`, 12.35 before) — the draw collapse halves desktop render cost. frameReplay p50 1.3 ms.
+Desktop fps is not a verdict (present throttles); the render.p50 is.
+
+Device, first arms of the session — **thermally confounded later in the session (battery 29.4 →
+33.6 °C, status 0 → 1, phone charging at 50 % throughout; no clean cool-device A/B yet)**:
+
+| Arm | pre-fix | post-fix | read |
+| --- | ---: | ---: | --- |
+| 1080p FIFO | 20.0–20.9 (doc) | 20.71 steady, JS frame p50 24.0 | flat — GPU/period-bound (period 48.1, present 16.3) |
+| 720p mailbox | 34.39 (SF 34.2, doc) | 31.4–33.0 (SF cross-check 33.644) | inside session drift; phase split: render 14.9, hostGap 9.4 (replay 5.9, present 4.8), residual 4.4 |
+
+Phase reading of the post-fix 720p mailbox frame: render p50 14.9 ms ≈ 492 draws × ~30 µs/draw of
+three.js WebGPU submission; replay ~5.9 ms also scales with draw count. Reaching 60 fps needs the
+JS frame + host ≈ 16.7 ms — the draw count must fall below ~300 or per-draw cost must fall, and
+the 1080p arm additionally needs the fragment cost down (2048² shadow is a GPU constant across
+viewport sizes).
+
+Red-green handoff:
+
+1. Add a Bayview playtest that currently fails with a steady `maxDrawCalls` threshold and still
+   asserts the town triangle floor/nonblank frame.
+2. Share canonical geometry in `sandbox/fps-framework/src/render/`; do not change textures or
+   materials.
+3. Require `TN_RENDER_PROJECTION` to report `projecting:true`, a nonzero batch count and a materially
+   lower renderer draw count before measuring fps.
+4. Re-run web rAF + SurfaceFlinger and native `TN_FRAME_BUDGET` + SurfaceFlinger on a cool device;
+   only then choose the next lever between the 2048² game shadow and native pixel density.
+
+### 1.4 Secondary engine defects, after draw collapse
+
+- **Native CSS-pixel parity:** Chrome landscape renders 864×303 (261,792 pixels), while native
+  renders 2400×1080 (2,592,000 pixels), 9.9× as many. Chrome reports DPR 2.625; native currently
+  exposes physical window dimensions with DPR 1. This is an engine viewport seam, but Chrome's
+  ~30 fps proves it is not the primary defect.
+- **High-refresh selection:** native has a private software cap initialized to 60 and does not ask
+  Android for a high-refresh mode. Chrome selected 120 Hz automatically. The separate filed bug is
+  `docs/bugs/android-high-refresh-not-selected-2026-08-27.md`; its proposed public contract is
+  `display.maxFps` with default 60, 0 uncapped and 120 opt-in, driving both pacing and Android's
+  frame-rate request.
+
+### 1.5 Untried, named
 
 Dawn on Android; any GPU-side timestamp timing (the drain is wall-clock algebra, not correlated
-spans); Chrome-on-device attribution (its 59.99 fps has no breakdown, CSS viewport unrecorded);
-cross-engine QuickJS/JSC lanes; 720p FIFO with the instrument; three-capture acceptance for any
-arm above (all runs to date are single captures, diagnostic grade).
+spans); shared-geometry Bayview implementation; matched native/Chrome logical-pixel capture after
+draw collapse; cross-engine QuickJS/JSC lanes; 720p FIFO with the instrument; three-capture
+acceptance for any arm above (all runs to date are diagnostic grade).
 
 ---
 
@@ -208,11 +321,11 @@ Building a device APK: `THREENATIVE_RUNTIME_SOURCE=<engine>/packages/runtime-nat
 | Wrapper shapes / megamorphic ICs? | Falsified as our defect — owner is three.js node-material graph; P2 made it worse. |
 | Crossing count? | ~1 µs/crossing; F12's −1,900 bought +5 %. Per-value cost is the real seam term. |
 | GC / V8 heap? | 0.2 % of wall clock steady. Not a lever. |
-| Fill rate / resolution? | GPU-frame-time at 1080p ≈ 63 ms — the GPU owns the full-res frame (Road B). |
+| Fill rate / resolution? | Material at 1080p: GPU-frame-time ≈63 ms and native draws 9.9× Chrome's landscape pixels. Not sufficient: Chrome is still ~30 fps at 864×303. |
 | Present mode / swapchain depth? | Not the limiter (mailbox arm flat at 1080p; latency flat everywhere). |
 | Composited web UI overlay? | Measured free twice. Not the owner. |
 | Host-loop segments (events/audio/timers/microtasks/handles/screenshot)? | All < 1 ms on device steady state. Dead. |
-| Is native slower than Chrome because of Android? | No — desktop native ≈ Android native per-frame; Android just has no budget to hide it. |
+| Is native slower than Chrome because of Android? | No matched parity claim remains. Chrome is ~30 fps at 864×303; native is ~20 fps at 2400×1080. The shared draw workload is primary and native's physical-pixel viewport compounds it. |
 | Is native fast enough in principle? | Yes — fox platformer, 2026-08-11: ~106 fps median uncapped vs Godot 53.7–59.5 (unfair comparison, different games — see §6). |
 
 ---
@@ -241,16 +354,16 @@ Building a device APK: `THREENATIVE_RUNTIME_SOURCE=<engine>/packages/runtime-nat
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,
 `maxDrawCalls`, `maxTriangles` from the bridge's `performanceSeries` — fail-closed on missing
-samples. `TN_HOST_GAP` has **no code parser anywhere**: every number in §1–§2 was read from logs
-by hand. A `perf` subcommand in the playtest CLI (parse both markers from captured console/logcat,
-report p50/p95 per segment, fail closed, name the GPU adapter) is the agreed next harness change;
-until it lands, the recipes in §4 are the protocol.
+samples. The `perf` subcommand of the playtest CLI (landed 2026-08-27) parses both markers from
+a captured log, a spawned desktop host, or device logcat, reports p50/p95 per window and per
+host-gap segment, discards window 1, and fails closed on missing evidence — the recipes in §4
+remain the protocol for what it does not cover (SurfaceFlinger cross-check, device builds).
 
 ## 8. Deleted-record index (evidence lives in git history)
 
 | Deleted record | What it carried that this file does not |
 | --- | --- |
-| `prd-222-2026-08-25.md` | Phase 0 parity protocol: Chrome 59.99 vs native 19.15 fps same build 32 s apart; thermal-validity table |
+| `prd-222-2026-08-25.md` | Phase 0's Chrome 59.99 vs native 19.15 claim, now falsified by rAF + SurfaceFlinger; thermal-validity table |
 | `prd-222-2026-08-26.md` | F8 crossing attribution; writeBuffer handler anatomy; paired arm logs |
 | `prd-222-fix-plan.md` | The F13 lever list and the `threadCpuNs` desktop meter recipe |
 | `prd-222-loop-log.md` | F1–F16 full text, iteration-cycle costs, device-arm tables, protocol traps |
