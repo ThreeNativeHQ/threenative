@@ -7,6 +7,7 @@ import {
   parseBatteryState,
   parseScreenState,
   parseThermalState,
+  suppressPlayProtectOnAdbInstalls,
 } from "../scripts/device-preflight.mjs";
 
 const baseOptions = {
@@ -258,5 +259,103 @@ describe("assertDeviceReady", () => {
       fixture,
     );
     assert.deepEqual(state.provisional, ["battery", "charging", "thermal", "screen"]);
+  });
+});
+
+describe("suppressPlayProtectOnAdbInstalls", () => {
+  function verifierFixture(overrides = {}) {
+    const calls = [];
+    const values = new Map();
+    return {
+      calls,
+      adb: (args) => {
+        if (overrides.throwOn === args.join(" ")) {
+          throw new Error("adb: device offline");
+        }
+        calls.push([...args]);
+        const command = args.join(" ");
+        const put = /^shell settings put global (\S+) 0$/u.exec(command);
+        if (put) {
+          values.set(put[1], overrides.failPut === put[1] ? "1" : "0");
+          return "";
+        }
+        const get = /^shell settings get global (\S+)$/u.exec(command);
+        if (get) return `${values.get(get[1]) ?? "null"}\n`;
+        throw new Error(`unexpected adb fixture command: ${command}`);
+      },
+    };
+  }
+
+  test("puts the three adb-install verifier settings and reads each back", () => {
+    const fixture = verifierFixture();
+    const suppressed = suppressPlayProtectOnAdbInstalls("37251FDJH0037Z", fixture);
+    assert.deepEqual(suppressed, [
+      "package_verifier_enable",
+      "upload_apk_enable",
+      "verifier_verify_adb_installs",
+    ]);
+    assert.deepEqual(fixture.calls.map((args) => args.join(" ")), [
+      "shell settings put global package_verifier_enable 0",
+      "shell settings get global package_verifier_enable",
+      "shell settings put global upload_apk_enable 0",
+      "shell settings get global upload_apk_enable",
+      "shell settings put global verifier_verify_adb_installs 0",
+      "shell settings get global verifier_verify_adb_installs",
+    ]);
+  });
+
+  test("fails closed when a setting does not take", () => {
+    const fixture = verifierFixture({ failPut: "verifier_verify_adb_installs" });
+    assert.throws(
+      () => suppressPlayProtectOnAdbInstalls("37251FDJH0037Z", fixture),
+      (error) => {
+        assert(error instanceof DevicePreflightError);
+        assert.equal(error.code, "TN_DEVICE_PREFLIGHT_PLAY_PROTECT");
+        assert.match(error.message, /verifier_verify_adb_installs/u);
+        assert.match(error.message, /observed '1'/u);
+        return true;
+      },
+    );
+  });
+
+  test("fails closed when adb itself fails on a put", () => {
+    const fixture = verifierFixture({ throwOn: "shell settings put global package_verifier_enable 0" });
+    assert.throws(
+      () => suppressPlayProtectOnAdbInstalls("37251FDJH0037Z", fixture),
+      (error) => {
+        assert(error instanceof DevicePreflightError);
+        assert.equal(error.code, "TN_DEVICE_PREFLIGHT_PLAY_PROTECT");
+        assert.match(error.message, /package_verifier_enable/u);
+        assert.match(error.message, /device offline/u);
+        return true;
+      },
+    );
+  });
+
+  test("requires a serial", () => {
+    assert.throws(
+      () => suppressPlayProtectOnAdbInstalls("", verifierFixture()),
+      /TN_DEVICE_PREFLIGHT_NO_DEVICE/u,
+    );
+  });
+
+  test("wired before the install in every lane that installs an APK", () => {
+    const installers = [
+      ["device-physics-stability.mjs", /adb\(\['install'/u],
+      ["measure-android-js-engine.mjs", /"install", "-r", "-t"/u],
+      ["profile-production.mjs", /'install', '-r'/u],
+      ["qualify-physical-mobile.mjs", /"install", "--no-streaming"/u],
+      ["verify-android-first-proof.mjs", /common\('install'/u],
+      ["verify-android-physics-parity.mjs", /"install", "-r"/u],
+    ];
+    for (const [script, installPattern] of installers) {
+      const source = readFileSync(new URL(`../scripts/${script}`, import.meta.url), "utf8");
+      const suppression = /suppressPlayProtectOnAdbInstalls\(/u.exec(source);
+      const install = installPattern.exec(source);
+      assert(
+        suppression !== null && install !== null && suppression.index < install.index,
+        `${script} installs an APK without calling suppressPlayProtectOnAdbInstalls first`,
+      );
+    }
   });
 });

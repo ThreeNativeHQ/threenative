@@ -60,3 +60,14 @@ export declare function assertDeviceReady(
   options: IDeviceReadyOptions,
   dependencies?: IDevicePreflightDependencies,
 ): Promise<IDeviceCondition>;
+
+/**
+ * Turn off Play Protect's verifier dialog for `adb install` on this device, and fail closed when
+ * the device does not accept it — the dialog is a modal that eats injected touches mid-run.
+ */
+export declare function suppressPlayProtectOnAdbInstalls(
+  serial: string,
+  dependencies?: Pick<IDevicePreflightDependencies, "adb" | "environment"> & {
+    adb?: (args: readonly string[]) => string;
+  },
+): string[];

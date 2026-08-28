@@ -215,6 +215,46 @@ function conditionFailure(condition, threshold, observed) {
   return { condition, threshold, observed };
 }
 
+// The Play Protect verifier dialog ("Android App Compatibility") appears on every `adb install`
+// of a newly versioned APK, and its own "don't show again" is keyed to the APK rather than the
+// device, so the next build asks again (Pixel 8, 2026-08-27). These three global settings turn
+// verification off for installs and persist on the device across builds and reboots. The dialog
+// is a modal that eats injected touches mid-run, so a suppression that silently failed is worse
+// than none: the readback below fails closed with a named error.
+const PLAY_PROTECT_INSTALL_SETTINGS = [
+  "package_verifier_enable",
+  "upload_apk_enable",
+  "verifier_verify_adb_installs",
+];
+
+export function suppressPlayProtectOnAdbInstalls(serial, dependencies = {}) {
+  if (typeof serial !== "string" || serial.length === 0) {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
+  }
+  const execute = dependencies.adb ?? ((args) => runAdb(serial, args, dependencies.environment));
+  for (const setting of PLAY_PROTECT_INSTALL_SETTINGS) {
+    let observed;
+    try {
+      execute(["shell", "settings", "put", "global", setting, "0"]);
+      observed = String(execute(["shell", "settings", "get", "global", setting])).trim();
+    } catch (error) {
+      throw new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
+        `could not disable adb-install verification for ${setting}: ${error?.message ?? error}`,
+        { serial, setting },
+      );
+    }
+    if (observed !== "0") {
+      throw new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
+        `settings put global ${setting} 0 did not take (observed '${observed}'); the Play Protect install dialog will appear`,
+        { serial, setting, observed },
+      );
+    }
+  }
+  return [...PLAY_PROTECT_INSTALL_SETTINGS];
+}
+
 export async function assertDeviceReady(serial, options, dependencies = {}) {
   if (typeof serial !== "string" || serial.length === 0) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
