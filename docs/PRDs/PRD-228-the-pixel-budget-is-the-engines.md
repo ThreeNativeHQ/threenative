@@ -414,12 +414,29 @@ adb shell dumpsys SurfaceFlinger --timestats -dump    # cross-check, per method 
       had rejected exactly what the templates now ship, caught by the scaffold build gate.
 - [x] `antialias` added to the Android override block and resolved on the same seam. **Landed
       `ca121bf8`.**
-- [ ] **OPEN — the last Phase 1 item.** `devicePixelRatio` reports the real ratio; the canvas
-      reports logical pixels; the 3D drawing buffer is `logical × dpr × resolutionScale`; the
-      overlay surface is untouched. Deliberately not attempted in the same session as the ladder:
-      it changes what every native game's canvas reports, and the arithmetic has to keep the
-      drawing buffer byte-identical (`logical × dpr` *is* today's physical) or every tuned game
-      moves. Needs a device arm to prove it moved nothing.
+- [ ] **OPEN — the last Phase 1 item, and larger than it looks.** Scoped 2026-08-28 rather than
+      started, because starting it unverified would be worse than specifying it:
+      - **There is no display-density source anywhere in the runtime.** `grep` for
+        `AConfiguration_getDensity`, `SDL_GetWindowDisplayScale`, `SDL_GetDisplayContentScale`,
+        `densityDpi` across `packages/runtime-native/src` and `include` returns nothing. The ratio
+        has to be brought up on **three** platforms before a single line of `runtime.cpp:2980`
+        changes — Android (`AConfiguration_getDensity` / the activity's `DisplayMetrics`), desktop
+        and iOS (SDL's display-scale query). That is the actual work; the `1.0` literal is the last
+        line of it.
+      - **The drawing buffer must come out byte-identical.** `logical × dpr` *is* today's physical
+        surface, so the arithmetic `logical × dpr × resolutionScale` reproduces exactly what ships
+        now — but only if the `× dpr` lands in the same commit as the logical canvas. Split them
+        and every tuned native game silently drops 2.6× in resolution on a Pixel 8.
+      - **The defect is UI layout, not the 3D buffer.** §1.4's complaint is that CSS-facing
+        dimensions are physical: a layout written against a "CSS pixel" canvas 2400 px wide renders
+        tiny. So the fix that matters is `window.innerWidth/innerHeight` and
+        `canvas.clientWidth/clientHeight` becoming logical, with `canvas.width/height` — the
+        backing store — staying physical, exactly as the web platform defines those four.
+      - **Whether *web* should also render at real device density is a separate decision and is
+        not this item.** Web deliberately ships DPR 1 today (`renderer.ts`: "the default is
+        intentional DPR 1"). Unifying it would render every retina browser game at 4× the fill and
+        needs its own `pnpm visuals` gate and its own owner decision. It is only safe to consider
+        now that `resolutionScale: "auto"` exists to absorb it.
 - [x] `TN_FRAME_BUDGET` gains all five fields plus `atFloor`, nested under `surface` rather than
       spread across the window's top level — the window already groups `phases` and `shares`, and
       every named field is present. Emitted in every window in both modes. **Landed `ca121bf8`**,
