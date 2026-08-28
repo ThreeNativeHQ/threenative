@@ -87,7 +87,13 @@ Also `62f8f8a0`: invariant pin (below), not a fix.
   `lint/complexity/noExcessiveCognitiveComplexity` errors in `examples/abyss-framework/src/`
   (`replay-proof.ts` complexity 22, `Abyss.ts` 42, others), files untouched for days and unchanged
   in this session's commits — left to their owner, not refactored out of scope. The session's own
-  files are biome-clean. `pnpm test` result recorded below in this list once the run completed.
+  files are biome-clean. `pnpm test`: **573 passed / 4 failed** — one failure was this session's
+  (`b5021ce5` declared the canvas test target but missed the contract-lane count bump and its
+  execution contract; fixed in `08e7f393`, test now 5/5), three are other sessions' commits and
+  were not repaired from this lane: `android-js-engine-native-profiling` (vsync regex vs
+  `b3dc53d2`'s runtime.cpp change), `lifecycle-pause` (same commit), and `device-preflight`
+  (PRD-225's `7294660b` added an install lane without the suppress call the preflight gate walks
+  for).
 - Not run this session: device lane (PRD-227 Phase 3 owns it; no post-P1 device ms/frame capture
   was taken), `pnpm native:verify:desktop` (300-frame desktop proof — lane 3 rebuilt the physics
   artifact and ran its contract tests, but the full desktop frame proof was not re-run),
