@@ -52,6 +52,21 @@ describe("TracerPool3D", () => {
     for (const slot of [0, 1]) expect(surfaceOf(parent, slot).opacity).toBe(0);
   });
 
+  it("settle hides idle slots and spawn re-shows the slot it fires", () => {
+    const { parent, tracers } = makePool(2);
+    tracers.spawn(origin, forward, 10);
+    tracers.update(99); // the shot retires
+    tracers.settle();
+    for (const child of parent.children) expect(child.visible).toBe(false);
+
+    // A live slot stays submitted, and the next spawn wakes its slot.
+    tracers.spawn(origin, forward, 10);
+    expect(parent.children[1].visible).toBe(true);
+    expect(parent.children[0].visible).toBe(false);
+    tracers.update(99); // retires the live shot again
+    expect(parent.children[1].visible).toBe(false);
+  });
+
   it("treats distances under the minimum as a no-op", () => {
     const { parent, tracers } = makePool(2);
     tracers.spawn(origin, forward, 0.049);

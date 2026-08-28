@@ -105,6 +105,7 @@ export class TracerPool3D {
   readonly #peakOpacity: number;
   readonly #quaternion = new Quaternion();
   readonly #segmentLength: number;
+  #settled = false;
   readonly #slots: readonly ITracerSlot[];
   readonly #speed: number;
 
@@ -149,6 +150,22 @@ export class TracerPool3D {
   }
 
   /**
+   * Stop submitting the slots that are not carrying a shot.
+   *
+   * The pool is resident from construction at zero opacity so its pipeline compiles during
+   * loading; the cost is a draw per dead streak every frame forever, and on a phone the draw call
+   * is the expensive part, not the triangles. Once compiled the pipeline is cached, so `spawn`
+   * re-showing a slot is free. Call this a second or two into the scene, after `prewarm` — not on
+   * the first frame, or the compile this exists to force will not have happened yet.
+   */
+  settle(): void {
+    this.#settled = true;
+    for (const slot of this.#slots) {
+      if (slot.life <= 0) slot.mesh.visible = false;
+    }
+  }
+
+  /**
    * Draw one round travelling from `from` along `direction` for `distance` metres.
    * `options` carries the game's per-shot variation; omit it for the pool defaults.
    */
@@ -182,6 +199,7 @@ export class TracerPool3D {
     slot.mesh.position.copy(from).addScaledVector(this.#direction, lead);
     slot.mesh.quaternion.copy(this.#quaternion);
     slot.mesh.scale.set(widthScale, segmentLength, widthScale);
+    if (this.#settled) slot.mesh.visible = true;
     (slot.mesh.material as Material).opacity = this.#peakOpacity;
     slot.life = shotLifetime;
     slot.lifetime = shotLifetime;
@@ -198,6 +216,7 @@ export class TracerPool3D {
       if (slot.life <= 0 || slot.travel >= slot.maxTravel) {
         slot.life = 0;
         (slot.mesh.material as Material).opacity = 0;
+        if (this.#settled) slot.mesh.visible = false;
         continue;
       }
       (slot.mesh.material as Material).opacity =
