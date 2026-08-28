@@ -85,6 +85,7 @@ type ProjectionCandidate = Mesh & {
 function specializedLaneReason(
   object: Object3D,
   candidate: ProjectionCandidate,
+  checkLodAncestors: boolean,
 ): ProjectionExactReason | undefined {
   if (candidate.isSprite === true) return "sprite";
   if (candidate.isPoints === true || candidate.isLine === true) return "points";
@@ -94,8 +95,10 @@ function specializedLaneReason(
   if (candidate.customDepthMaterial != null || candidate.customDistanceMaterial != null) {
     return "customDepthMaterial";
   }
-  for (let node: Object3D | null = object; node !== null; node = node.parent) {
-    if ((node as { isLOD?: boolean }).isLOD === true) return "lod";
+  if (checkLodAncestors) {
+    for (let node: Object3D | null = object; node !== null; node = node.parent) {
+      if ((node as { isLOD?: boolean }).isLOD === true) return "lod";
+    }
   }
   return undefined;
 }
@@ -125,8 +128,27 @@ function geometryLaneReason(geometry: BufferGeometry): ProjectionExactReason | u
  * ineligible set to be enumerated before a low draw count means anything.
  */
 export function exactLaneReason(object: Object3D): ProjectionExactReason | undefined {
-  const candidate = object as ProjectionCandidate;
-  const specialized = specializedLaneReason(object, candidate);
+  return laneReasonOf(object, object as ProjectionCandidate, true);
+}
+
+/**
+ * The scan-internal lane classification.
+ *
+ * Identical to `exactLaneReason` minus the LOD ancestor walk, which the scan can skip: the walk
+ * classifies each `LOD` on arrival and never descends into one, so no object visited during a
+ * scan can have an LOD ancestor, and checking for one is a full parent-chain read per renderable
+ * per frame that can never fire.
+ */
+function walkLaneReason(object: Object3D): ProjectionExactReason | undefined {
+  return laneReasonOf(object, object as ProjectionCandidate, false);
+}
+
+function laneReasonOf(
+  object: Object3D,
+  candidate: ProjectionCandidate,
+  checkLodAncestors: boolean,
+): ProjectionExactReason | undefined {
+  const specialized = specializedLaneReason(object, candidate, checkLodAncestors);
   if (specialized !== undefined) return specialized;
   const geometry = candidate.geometry;
   if (geometry === undefined) return "unsupportedGeometry";
@@ -681,7 +703,7 @@ function visitProjectionObject(
   if (!isRenderable(object)) return;
   state.renderables += 1;
   workspace.seen.add(object);
-  const reason = exactLaneReason(object);
+  const reason = walkLaneReason(object);
   if (reason === undefined && isMesh(object)) {
     workspace.eligible[workspace.eligibleCount] = object;
     workspace.eligibleCount += 1;

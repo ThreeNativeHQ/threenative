@@ -386,7 +386,6 @@ export class ProjectionMirror {
     this.#retireMaterialBatches(seen);
     this.#retireProxies(seen);
     this.#retireLights(lights, lightCount);
-    this.#retireState(seen);
   }
 
   #retireBatches(seen: { has(object: Object3D): boolean }): void {
@@ -443,12 +442,6 @@ export class ProjectionMirror {
       const proxy = this.#lightProxies.get(light) as Light;
       this.scene.remove(proxy);
       this.#lightProxies.delete(light);
-    }
-  }
-
-  #retireState(seen: { has(object: Object3D): boolean }): void {
-    for (const object of this.#state.keys()) {
-      if (!seen.has(object)) this.#state.delete(object);
     }
   }
 
