@@ -15,6 +15,7 @@ import { CaptureLockTimeoutError, formatLockTimeoutLine } from "./captureLock.js
 import { diagnoseDevice, diagnoseHarness, formatDoctorReport, readDeviceProbe, readHarnessEnvironment } from "./doctor.js";
 import { formatSceneOverview, observeScene, summariseScene } from "./sceneOverview.js";
 import { initStandalonePlaytest } from "./init.js";
+import { perfCommand } from "./perf.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
 import { runAndroidBrowserPlaytest, runAndroidBrowserPlaytests } from "./androidBrowserRunner.js";
 import { runDesktopPlaytest } from "./desktopRunner.js";
@@ -211,6 +212,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return 0;
     }
     if (argv[0] === "doctor") return await doctorCommand(argv.slice(1));
+    if (argv[0] === "perf") return await perfCommand(argv.slice(1));
     if (argv[0] === "init") {
       const result = await initStandalonePlaytest(process.cwd());
       process.stdout.write(`${JSON.stringify({ ...result, pass: true }, null, 2)}\n`);
