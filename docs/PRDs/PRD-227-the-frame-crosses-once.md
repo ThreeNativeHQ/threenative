@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-227 — the frame crosses once
 
-**Status:** IN PROGRESS — P1 accepted; P2 executed and falsified; Phase 3 awaits a qualifying
-Pixel 8 battery state. Filed 2026-08-27 from the measured budget in
+**Status:** IN PROGRESS — P1 accepted; P2 executed and falsified; Phase 4 is implemented in
+Bayview. Phase 3 device acceptance, the hosted JSC execution lane, and the web gate remain open.
+Filed 2026-08-27 from the measured budget in
 [PATH-TO-60FPS](../verification/PATH-TO-60FPS-2026-08-27.md). This is the implementation PRD that
 PRD-226's ablation ladder was built to justify. PRD-226 stays live and owns the instrument; this one
 owns the fix.
@@ -52,8 +53,9 @@ Removes: per-crossing dispatch in `libmystral`, the API-scaffolding half of the 
 ### Change 2 — wrapper objects get fixed shapes
 
 Every WebGPU wrapper is a property bag assembled from C++ with `Reflect.set`, read back by name
-through `Object::Get`, with a `v8::Persistent` per crossed value. Replace with `ObjectTemplate` +
-internal fields; stop wrapping every crossed value in a Persistent.
+through `Object::Get`, with a `v8::Persistent` per crossed callback argument. Replace with
+`ObjectTemplate` + internal fields; borrow callback arguments for the duration of the native call.
+Callback results still receive an owned handle when they cross back into JavaScript.
 
 Removes: the megamorphic stub cache and name-dictionary lookups — **3.9 ms/frame on device** — that
 three.js pays because we hand it a new object shape every frame and its inline caches go
@@ -84,7 +86,7 @@ different owners).
 | 1 | Op stream covering every per-frame command | runtime WebGPU bindings, all games | 5,713 per-call crossings | disable the stream → `bridgeNs` returns to ~9 ms in the profiled lane; conformance replay test fails |
 | 2 | `queue.writeBuffer` recorded into the stream | uniform/attribute upload path | 428 direct crossings/frame | staging + stream both off → upload probe red |
 | 3 | `ObjectTemplate` + internal fields for WebGPU wrappers | every wrapper handed to three.js | `Reflect.set` property bags read by name | shape-identity test: two wrappers of one class must share a hidden class; revert → red |
-| 4 | No `v8::Persistent` per crossed value | all crossed values | per-value Persistent + weak ref | handle-lifetime test fails on premature collection |
+| 4 | No `v8::Persistent` per crossed callback argument | native callback inputs | per-argument Persistent + weak ref | handle-lifetime test fails on premature collection |
 
 ## Execution Phases
 
@@ -110,7 +112,8 @@ different owners).
 
 - [x] `ObjectTemplate` + internal fields per WebGPU class; native handles resolved from internal
       fields, never by name lookup.
-- [x] No `v8::Persistent` per crossed value; lifetime re-derived from the receiver.
+- [x] No `v8::Persistent` per crossed callback argument; arguments are borrowed for the native
+      call and wrapper lifetime is re-derived from the receiver.
 - [ ] Cross-engine: QuickJS and JSC lanes **exercised, not compile-checked**. Name the lane that ran;
       "compiled only" is not verification. An engine without the capability keeps the legacy path
       behind an explicit gate.
@@ -124,9 +127,11 @@ different owners).
 - [ ] Cool, **discharging** Pixel 8 (`doctor --device` first; charger waiver recorded or absent),
       fresh install, cold launch, live windows only (`update.mean ≥ 3 ms`), window 1 discarded,
       three captures.
-- [ ] **Every fps claim cross-checked against `dumpsys SurfaceFlinger --latency`** on the game's
-      `(BLAST)` layer. `dumpsys gfxinfo` is **not** a valid meter here — it reports the Skia view
-      pipeline and reads ~5× flattering.
+- [ ] **Every fps claim cross-checked against SurfaceFlinger** on the game's exact `(BLAST)` layer:
+      `dumpsys SurfaceFlinger --latency` when it emits presentation rows, otherwise the current
+      AOSP `--timestats -clear/-enable/-dump/-disable` path with its `averageFPS` and
+      `present2present` histogram. `dumpsys gfxinfo` is **not** a valid meter here — it reports the
+      Skia view pipeline and reads ~5× flattering.
 - [ ] Web does not regress: `pnpm visuals` clean, desktop Chrome `render.p50` unchanged.
 
 ### Phase 4 — the named fallback, if the margin does not hold
@@ -154,8 +159,7 @@ Record `docs/verification/prd-227-<phase>-<date>.md`, one file per run session.
 - [ ] **Bayview ≥ 60 fps median on a cool, discharging physical Pixel 8**, three captures,
       SurfaceFlinger-confirmed. This is the bar; 30 fps is a milestone to report, never a pass.
 - [x] The frame issues **one crossing per frame** for command submission, asserted by an executable.
-      (Mutation: restore a direct per-call path for any recorded command → crossing-count assertion
-      fails.)
+      (Mutation: disable the stream drain → the executable rejects the direct-call control.)
 - [x] Two wrappers of the same WebGPU class share one hidden class, asserted by an executable.
       (Mutation: revert to `Reflect.set` assembly → shape-identity test fails.)
 - [x] Both changes are independently revertible, each with a negative control that fails on revert.
