@@ -57,7 +57,8 @@ Diagrams are Mermaid, never ASCII.
 
 | What you are adding | Where |
 | --- | --- |
-| Anything a screenshot shows — materials, shaders, TSL, lights, tonemapping, post, framing | `packages/create-threenative/templates/*/src/render/`, as generated user source |
+| Anything that **decides** how it looks — materials, shaders, TSL, lights, tonemapping, post, framing — and any preset or default that picks one of them for the game | `packages/create-threenative/templates/*/src/render/`, as generated user source |
+| The **mechanism** that puts something on screen — pooling, lifetime, billboarding, instancing, dispatch, culling — when every appearance parameter comes from the game. Not "does a screenshot show it": `GPUParticles3D` is in every particle screenshot and owns none of the look | `packages/core/src/` |
 | Gameplay | an example or a template — never a package |
 | Plumbing every game repeats and no game should write | `packages/core/src/` |
 | Physics or navigation (carries the WASM dep) | `packages/physics/src/` |
