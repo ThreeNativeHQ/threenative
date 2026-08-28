@@ -7419,6 +7419,7 @@ void endDawnFrame(BindingsState* state) {
     state->framePhaseDrainNs = 0;
     state->framePhaseReplayNs = 0;
     state->framePhasePresentNs = 0;
+    state->framePhaseGpuDrainNs = 0;
     state->framePhasePollNs = 0;
     state->framePhaseOtherNs = 0;
     if (state->frameOpStreamDrain.ptr) {
@@ -7480,6 +7481,18 @@ void endDawnFrame(BindingsState* state) {
     // Only a frame that reached the display is paced. See paceToPresentationCap().
     if (state->presentCount != presentsBefore) paceToPresentationCap();
 
+#if TN_WEBGPU_GPU_DRAIN_PROFILE && defined(MYSTRAL_WEBGPU_WGPU)
+    // Diagnostic builds only: measure the GPU work still outstanding after present and pacing.
+    // A blocking device poll serializes the frame and must never be enabled in a shipped build.
+    if (state->device) {
+        const steady::time_point gpuDrainBegin = steady::now();
+        wgpuDevicePoll(state->device, true, nullptr);
+        state->framePhaseGpuDrainNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - gpuDrainBegin)
+                .count());
+    }
+#endif
+
     // One line a second, by the clock and not by the frame count.
     //
     // `% 60` alone is one line a second only if the loop runs at 60 Hz. When a game fails to start
@@ -7518,12 +7531,13 @@ void endDawnFrame(BindingsState* state) {
                 .count());
         state->framePhasePollNs = pollNs;
     }
-    // The remainder after the four named phases: profiling emission, canvas 2D compositing and
+    // The remainder after the named phases: profiling emission, canvas 2D compositing and
     // the present-pacing bookkeeping. Clamped at zero against clock jitter.
     const uint64_t phaseTotalNs = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - phaseBegin).count());
     const uint64_t namedNs = state->framePhaseDrainNs + state->framePhaseReplayNs +
-                             state->framePhasePresentNs + state->framePhasePollNs;
+                             state->framePhasePresentNs + state->framePhaseGpuDrainNs +
+                             state->framePhasePollNs;
     state->framePhaseOtherNs =
         phaseTotalNs > namedNs ? phaseTotalNs - namedNs : 0;
 }

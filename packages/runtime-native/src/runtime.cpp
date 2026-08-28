@@ -194,6 +194,7 @@ struct HostGapMeter {
         kFrameDrain,     // endDawnFrame: the packed frame-stream drain call into JS
         kFrameReplay,    // endDawnFrame: C++ replay of the packed stream
         kPresent,        // endDawnFrame: presentPendingSurface (screenshot copy rides inside)
+        kGpuDrain,       // diagnostic post-present blocking poll; adds to period/next hostGap
         kDevicePoll,     // endDawnFrame: wgpuDevicePoll(false) / wgpuDeviceTick
         kEndFrameOther,  // endDawnFrame remainder: profile emission, 2D composite, pacing
         kHandles,        // clearFrameHandles
@@ -203,7 +204,7 @@ struct HostGapMeter {
 
     static constexpr std::array<const char*, kSegmentCount> kNames = {
         "events", "io", "audio", "timers", "microtasks", "preFrame",
-        "frameDrain", "frameReplay", "present", "devicePoll", "endFrameOther",
+        "frameDrain", "frameReplay", "present", "gpuDrain", "devicePoll", "endFrameOther",
         "handles", "screenshot",
     };
 
@@ -252,10 +253,11 @@ struct HostGapMeter {
     // endDawnFrame timed its own interior in bindings.cpp; absorb that split here. Values are
     // nanoseconds; the sample stores microseconds. Repeated calls accumulate, like begin/end.
     void recordEndFramePhases(uint64_t drainNs, uint64_t replayNs, uint64_t presentNs,
-                              uint64_t pollNs, uint64_t otherNs) {
+                              uint64_t gpuDrainNs, uint64_t pollNs, uint64_t otherNs) {
         current_.micros[kFrameDrain] += drainNs / 1000;
         current_.micros[kFrameReplay] += replayNs / 1000;
         current_.micros[kPresent] += presentNs / 1000;
+        current_.micros[kGpuDrain] += gpuDrainNs / 1000;
         current_.micros[kDevicePoll] += pollNs / 1000;
         current_.micros[kEndFrameOther] += otherNs / 1000;
     }
@@ -1284,8 +1286,8 @@ public:
         // inside endDawnFrame; fold it into this frame's sample.
         hostGapMeter_.recordEndFramePhases(
             bindingsState_->framePhaseDrainNs, bindingsState_->framePhaseReplayNs,
-            bindingsState_->framePhasePresentNs, bindingsState_->framePhasePollNs,
-            bindingsState_->framePhaseOtherNs);
+            bindingsState_->framePhasePresentNs, bindingsState_->framePhaseGpuDrainNs,
+            bindingsState_->framePhasePollNs, bindingsState_->framePhaseOtherNs);
 
         // Free non-protected handles only after the replay boundary consumed the frame stream.
         hostGapMeter_.begin(HostGapMeter::kHandles);

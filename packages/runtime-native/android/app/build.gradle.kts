@@ -74,6 +74,7 @@ val generatedThreeNativeAssets = layout.buildDirectory.dir("generated/threenativ
 val nativeVsync = providers.gradleProperty("threenativeVsync").orElse("true")
 val uploadStaging = providers.gradleProperty("threenativeUploadStaging").orElse("true")
 val frameLatency = providers.gradleProperty("threenativeFrameLatency").orElse("0")
+val gpuDrainProfile = providers.gradleProperty("threenativeGpuDrainProfile").orElse("false")
 val nativeJsProfile = providers.gradleProperty("threenativeJsProfile").orElse("false")
 val nativeJsProfileBusyLoop = providers.gradleProperty("threenativeJsProfileBusyLoop").orElse("false")
 // V8 is the Android default, decided by the product owner on 2026-08-16 (PRD-130) on PRD-118's
@@ -333,6 +334,7 @@ android {
                     "-DTN_ANDROID_VSYNC=${nativeVsync.asCmakeBoolean("PthreenativeVsync")}",
                     "-DTN_WEBGPU_UPLOAD_STAGING=${uploadStaging.asCmakeBoolean("PthreenativeUploadStaging")}",
                     "-DTN_WEBGPU_DESIRED_FRAME_LATENCY=${frameLatency.get()}",
+                    "-DTN_WEBGPU_GPU_DRAIN_PROFILE=${gpuDrainProfile.asCmakeBoolean("PthreenativeGpuDrainProfile")}",
                     "-DTN_ANDROID_JS_PROFILE=${nativeJsProfile.asCmakeBoolean("PthreenativeJsProfile")}",
                     "-DTN_ANDROID_JS_PROFILE_BUSY_LOOP=${nativeJsProfileBusyLoop.asCmakeBoolean("PthreenativeJsProfileBusyLoop")}",
                 )

@@ -237,6 +237,9 @@ struct BindingsState {
     uint64_t framePhaseDrainNs = 0;
     uint64_t framePhaseReplayNs = 0;
     uint64_t framePhasePresentNs = 0;
+    // Diagnostic-only blocking wait after present. It adds to the callback period and is observed
+    // in the following callback's residual hostGap, because that meter spans host work between rAFs.
+    uint64_t framePhaseGpuDrainNs = 0;
     uint64_t framePhasePollNs = 0;
     uint64_t framePhaseOtherNs = 0;
     // Render-thread CPU clock at the previous profile emission. Wall-clock phase timings on a
