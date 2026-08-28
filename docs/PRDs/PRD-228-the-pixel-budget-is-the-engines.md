@@ -434,14 +434,40 @@ implementation until it looks right.
 | --- | --- | --- |
 | Rungs | `1.00, 0.85, 0.72, 0.61, 0.52, 0.44, 0.38, 0.32, 0.27, 0.23` | ratio 0.85 linear ⇒ **0.72× pixels per step**. Coarse on purpose: every step reallocates render targets on WebGPU, so fine granularity buys smoothness with hitches. |
 | Decision unit | one **300-frame** frame-budget window | the meter already emits exactly this; no new sampling path. |
-| Down-step trigger | presented **p95 > 14.0 ms** for **1** window | the accepted bar. React to a deficit immediately. |
-| Up-step trigger | presented **p95 < 11.5 ms** for **4 consecutive** windows | 11.5 ms × the ~1.2× blended cost of one step up lands ≈ 13.8 ms, inside the bar. Asymmetric by design: fall fast, climb slowly. |
+| Down-step trigger | **`fps < 0.98 × display.maxFps`** for **1** window | react to a deficit immediately. |
+| Up-step trigger | **`fps ≥ 0.98 × maxFps` and `presented p95 ≤ 1.15 × budget`** for **4 consecutive** windows | asymmetric by design: fall fast, climb slowly. The tail term is what stops it climbing into a frame that is hitting its average target while dropping frames. |
 | Cooldown | discard the **1** window after any step | the resize frame is itself a hitch and must never feed the controller. |
-| Ceiling / floor | `1.00` / `0.23` | at the floor with p95 still over budget the scaler **stops and reports**; it must not pretend the budget was met. |
-| Oscillation guard | two down→up→down cycles across the same rung boundary within 3 windows each ⇒ pin the lower rung for the session, report `scaleSource: "auto-pinned"` | thermal edges produce exactly this, and a visibly pumping resolution is worse than a slightly soft one. |
+| Ceiling / floor | `1.00` / `0.23` | at the floor still under target the scaler **stops and reports** `atFloor`; it must not pretend the budget was met. |
+| Oscillation guard | two down→up→down cycles across the same rung boundary, each leg within `cooldown + upWindows + 1` windows ⇒ pin the lower rung for the session, report `scaleSource: "auto-pinned"` | thermal edges produce exactly this, and a visibly pumping resolution is worse than a marginally softer one. The PRD's original 3-window reach could never fire — by the rest of this table a down-then-up leg costs at least 5 windows. |
 
-`p95`, never `p50` — the tail is what a player sees, and §1.3.3's own accepted run had a 74.72 ms
-worst frame behind a 16.66 ms p50.
+### Amended 2026-08-28, from the device, before the second implementation
+
+**The original triggers were `presented p95 > 14.0 ms` down and `< 11.5 ms` up. They are wrong on
+a vsync-capped panel, which is every shipped configuration.** Under FIFO the presented interval is
+the *panel's* period, not the game's cost: a game locked perfectly at 60 fps on a 60 Hz panel
+reports presented p50 16.67 ms and p95 ≈ 17.5 ms, so `p95 > 14` is true forever and the scaler
+walks to the floor on a game that was already meeting its target.
+
+That is measured, not argued. A scaffolded platformer template — never hand-tuned, `maxFps: 60`,
+no resolution constant in its source — held **59.99–60.02 fps from the second window onward at
+every rung**, with `frame p95 = 7.99 ms` of a 16.67 ms budget at full 2400×1080. It had enormous
+headroom and the controller destroyed its image quality anyway, ending at 552×248 and reporting
+`atFloor: true` — claiming the budget was *not* met while it was being met at 59.99 fps. Recorded
+in §1.3.7.
+
+**fps is the signal that is correct in both regimes.** It is derived from the mean presented
+interval, so dropped frames pull it down on their own; a game that misses its target misses it
+whether or not a panel is capping the top. `presented p95` survives only as an up-step tail guard,
+where a capped panel's floor of ~1.05 × budget sits comfortably under the 1.15 × bar.
+
+**Known and accepted:** `display.maxFps` above the panel's refresh rate is not satisfiable, so a
+game asking for 120 on a 60 Hz panel walks to the floor and reports `atFloor`. That is the honest
+answer — the target genuinely is not being met — and it is why `atFloor` is reported rather than
+inferred.
+
+The tail still matters — §1.3.3's own accepted run had a 74.72 ms worst frame behind a 16.66 ms
+p50 — which is why it is the up-step's guard. What changed is that the tail may not be read off the
+presented interval when a panel is setting that interval.
 
 - [x] Controller implemented to the table above, values in one named constant block
       (`RESOLUTION_SCALER`). **Landed `ac75e3e8`.** **One correction to the pre-registered table,

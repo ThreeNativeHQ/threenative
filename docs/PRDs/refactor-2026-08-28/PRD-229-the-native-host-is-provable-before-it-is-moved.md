@@ -11,16 +11,19 @@ No phase has executed; one pre-phase scouting measurement has, and is recorded i
 Every number below is measured at `7b729e2d` unless it says otherwise.
 
 **Goal, in the owner's words: harden it first, so we catch the regression if we do some shit.**
-`packages/runtime-native` is a core module. This PRD does not begin by moving code. It begins by
-building the instrument that would notice if moving code broke something, proves that instrument
-can go red, and only then moves code — one surface at a time, behind that instrument.
+`packages/runtime-native` is a core module. **This PRD moves no product code at all.** It builds
+the instrument that would notice if moving code broke something, and proves that instrument can go
+red. The moving is [PRD-230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md), which
+does not start until this one is green.
+
+This is the first PRD of [the runtime-native refactor batch](./README.md).
 
 **Complexity:** +3 (10+ files) +2 (per-frame state and lifetime logic) +2 (package + root gate +
 CI lane) = **7 → HIGH mode.** Mandatory checkpoint after every phase.
 
 ## Why this order and not the obvious one
 
-The obvious PRD splits `bindings.cpp` (7,768 lines) first. That PRD fails, for a reason that is
+The obvious batch splits `bindings.cpp` (7,768 lines) first. That batch fails, for a reason that is
 measurable today:
 
 **There is no instrument that would notice.** The package has **zero** coverage instrumentation,
@@ -108,8 +111,8 @@ matched to the shipping one.**
 
 ## Solution
 
-Six hardening phases, then the refactor, then a re-measure. The hardening phases are worth landing
-**even if the refactor is never done** — which is the test of whether they are the right first move.
+Six phases, none of which touch product code. They are worth landing **even if the refactor is
+never done** — which is the test of whether they are the right first move.
 
 ```mermaid
 flowchart TD
@@ -119,10 +122,7 @@ flowchart TD
     P2 --> P5[P5 source-text assertions become behaviour tests]
     P1 --> P6[P6 coverage and perf floors become gates]
     P5 --> P6
-    P6 --> P7[P7 rename the 87 handlers]
-    P7 --> P8[P8 split BindingsState]
-    P8 --> P9[P9 split bindings.cpp, one surface per commit]
-    P9 --> P10[P10 re-measure: coverage, perf, device]
+    P6 --> X[PRD-230: the bindings move]
 ```
 
 **Key decisions:**
@@ -138,9 +138,6 @@ flowchart TD
 - **A tenth build directory is accepted, reluctantly.** `build/` already holds nine. Consolidating
   them is real work and is explicitly *not* in this PRD; adding `build/tn-linux-coverage` and
   `build/tn-linux-asan` alongside them, and documenting the matrix, is.
-- **The refactor phases carry no behaviour change by construction.** Renames are verified as
-  identifier-only diffs; splits move whole functions without editing their bodies. Any phase that
-  needs to *change* a body is out of scope and gets its own PRD.
 - **Perf is gated on `render.p50`, never on desktop fps.** The desktop lane presents through Xvfb,
   whose present throttle pins fps and hides work. The device lane owns fps verdicts.
 
@@ -160,9 +157,9 @@ is incomplete.
 | 5 | `.clang-tidy` + `.clang-format` | `CMakeLists.txt` (`CMAKE_CXX_CLANG_TIDY`); `scripts/check-quality.ts` stops reporting the hole | the `lint-coverage-hole` finding | finding disappears from `pnpm quality` | introducing a `bugprone-use-after-move` violation fails the build |
 | 6 | `scripts/check-native-coverage.ts` | `scripts/check-budgets.ts` (`pnpm budgets`) | nothing | n/a | lowering a floor by hand without evidence fails; deleting a test drops coverage and fails |
 | 7 | Behaviour tests replacing text assertions | the executables they drive, via `ctest` | the source-text half of 27 vitest files | those assertions deleted in the same commit | renaming the C++ symbol keeps them green; breaking the behaviour makes them red |
-| 8 | Renamed handler symbols (87) | `installWebGPUBindingTables` registration rows | `tnWebgpuHandlerNN` | yes, same commit | `git diff -w --word-diff` shows identifier changes only |
-| 9 | `BindingsState` sub-structs | every `bindings.cpp` accessor | flat ~100-field struct | yes, same commit | compiler; plus the behaviour tests from #7 |
-| 10 | Per-surface `bindings_*.cpp` TUs | `CMakeLists.txt` `target_sources` | monolith sections | yes, per surface | per-surface behaviour tests stay green; single-TU compile time drops |
+
+Rows for the renames, the state split and the per-surface TUs live in
+[PRD-230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md).
 
 ### Reachability
 
@@ -380,98 +377,6 @@ it reds.
 
 ---
 
-#### Phase 7: The 87 handlers get their names back
-
-**Only starts when Phases 1–6 are green.** From here on, every phase is a behaviour-preserving move
-under the instruments those phases built.
-
-**Files:** `src/webgpu/bindings.cpp` (EDIT), the record. One commit.
-
-**Implementation:**
-- [ ] Each `tnWebgpuHandlerNN` takes the name of the surface and method its registration row already
-      declares — `handleGpuQueueWriteBuffer`, `handleHtmlCanvasElementGetContext`, and so on. The
-      mapping is derivable from the `bindingTable({…})` row that references it.
-- [ ] `readability-identifier-naming` from Phase 4 keeps the new convention.
-
-**Verification (mechanical — this is the point of the phase):**
-- [ ] `git diff -w --word-diff` contains **identifier changes only** — no reordered, added or
-      removed statements. Pasted into the record.
-- [ ] Every Phase 5 behaviour test green; `ctest` green; ASan lane green.
-- [ ] Coverage unchanged within noise. A rename cannot change coverage; a drop means something else
-      moved.
-
-**Revert check:** the phase changes no behaviour, and that is asserted rather than assumed — the
-identifier-only diff check above is the assertion.
-
----
-
-#### Phase 8: `BindingsState` becomes cohesive sub-structs
-
-**Files:** `src/webgpu/bindings_state.h` (EDIT), `src/webgpu/bindings.cpp` (EDIT),
-`src/webgpu/registration_table.cpp` / `wrapper_factories.cpp` (EDIT as needed), the record.
-One commit.
-
-**Implementation:**
-- [ ] Group the ~100 fields into `ResourceRegistries`, `PresentationState`, `FrameProfiling`,
-      `ScreenshotCapture`, `Canvas2DComposite`; device and engine handles stay at the top level.
-- [ ] Access becomes `state->registries.textureRegistry`. The compiler finds every site.
-- [ ] `#if TN_ANDROID_JS_PROFILE` members move inside `FrameProfiling`, so the struct's conditional
-      shape stops leaking into the top level.
-- [ ] **No field is added, removed, renamed in meaning, or given a different default.** Field
-      *placement* changes; field *identity* does not.
-
-**Verification:** Phase 5 behaviour tests, `ctest`, ASan lane, coverage floors, and the perf A/B
-against the Phase 6 baseline. Struct layout affects cache behaviour, so the A/B is **mandatory
-here**, not optional.
-
-**Revert check:** the Phase 5 tests cover every property the state struct serves; reverting the
-split leaves them green (it is a pure refactor) while a *wrong* split reds them.
-
----
-
-#### Phase 9: `bindings.cpp` splits, one surface per commit
-
-**Not one phase — one commit per surface, each with its own checkpoint.** Ordered so the most
-independent surfaces move first and the most churned move last:
-
-1. `bindings_canvas2d_composite.cpp` — the 325-line compositor, most self-contained
-2. `bindings_screenshot.cpp`
-3. `bindings_presentation.cpp` — surface acquire, sRGB bridge, present
-4. `bindings_resources.cpp` — buffer/texture/view/sampler creation and registries
-5. `bindings_pipelines.cpp` — shader modules, pipelines, bind groups
-6. `bindings_commands.cpp` — encoder, render and compute passes
-7. `bindings_frame_stream.cpp` — packed replay
-8. `bindings.cpp` — what remains: install tables, device/adapter, state lifecycle
-
-**Files per commit:** the new TU, `bindings.cpp`, `CMakeLists.txt` (`target_sources`), the record.
-
-**Implementation per commit:**
-- [ ] Functions move **verbatim**. If a body must change to compile, the change is a shared header
-      declaration or a namespace qualification — never logic.
-- [ ] The diff is reviewed as move-only: `git diff -M --stat` should show moves dominating.
-
-**Verification per commit:** `ctest`, ASan lane, Phase 5 behaviour tests, coverage floors, the perf
-A/B — and the payoff measurement: **single-TU compile time, recorded per commit**, starting from the
-measured 16 s.
-
-**Revert check:** each surface's behaviour tests exist before its move (Phase 5 ordered them that
-way); reverting a move leaves them green, breaking a move reds them.
-
----
-
-#### Phase 10: Re-measure, and say what did not run
-
-**Files:** `docs/verification/native-coverage-*.md` (EDIT), `runtime-perf-state.md` (EDIT),
-`native-runtime-census-2026-08-16.md` (EDIT via `pnpm census` — generated, never retyped), this
-PRD's evidence section.
-
-- [ ] Coverage after vs before, per subsystem.
-- [ ] `render.p50` and `TN_HOST_GAP` shares after vs before, same command, same machine.
-- [ ] Single-TU compile times after vs before.
-- [ ] **Device lane**: a Pixel 8 run is the only thing that can speak to fps. If no device run
-      happens, this PRD records **"no device result claimed"** and stays open on that row rather
-      than closing on desktop evidence.
-
 ## Acceptance criteria
 
 Consumer-scoped. Each is checkable by someone who did not write the code.
@@ -482,12 +387,9 @@ Consumer-scoped. Each is checkable by someone who did not write the code.
 - [ ] **`pnpm budgets` fails when native coverage drops**, naming the subsystem that lost it. (Phase 6)
 - [ ] **A use-after-free introduced anywhere in the six lifetime paths is reported by name before
       the change lands.** (Phase 3)
-- [ ] **An agent grepping `GPUQueue.writeBuffer` in `packages/runtime-native/src` finds the handler
-      that implements it.** (Phase 7)
-- [ ] **`render.p50` after the last split is within 2% of the recorded pre-refactor baseline**, and
-      no `TN_HOST_GAP` sub-phase moved more than 2 points of share. (Phases 6–10)
-- [ ] **Editing one WebGPU surface rebuilds one TU, not 7,768 lines** — compile time recorded per
-      surface. (Phase 9)
+- [ ] **The pre-refactor perf baseline is recorded and reproducible** — `render.p50` and every
+      `TN_HOST_GAP` sub-phase, with the exact command — so PRD-230 has something to be measured
+      against. (Phase 6)
 - [ ] **`pnpm parity` reports the same conformance rows green as before the refactor**, with no row
       newly blocked. (Every phase)
 
@@ -505,12 +407,10 @@ Consumer-scoped. Each is checkable by someone who did not write the code.
 
 | Risk | Mitigation |
 | --- | --- |
-| **The tree is under active perf work** — `bindings.cpp` took 60 commits in 90 days, `bindings_state.h` 23. A wide mechanical diff rots in hours. | Phases 7–9 land as single commits in one sitting each, on a day the perf lane is paused. Phases 1–6 are additive and can land any time. |
-| **A "pure refactor" that is not pure.** | Phase 7's identifier-only diff check; Phase 9's move-only diff review; behaviour tests before each move, never after. |
+| **The tree is under active perf work** — `bindings.cpp` took 60 commits in 90 days. | Every phase here is additive: new options, new scripts, new gates. Nothing in this PRD conflicts with a perf lane. That is deliberate, and it is why the hardening is separated from the moving. |
 | **Coverage theatre** — a number that rises while proving nothing. | Per-subsystem floors, zero-hit files counted, uncompiled files named separately, blocked targets named, and every gate carries an observed red. |
-| **Struct-layout perf regression in Phase 8.** | Mandatory perf A/B at that phase; 2% budget; revert rather than explain. |
 | **The sanitizer lane drowns in third-party noise and gets disabled.** | Narrow dated suppressions with a reason each; a blanket suppression is a phase failure. |
-| **Scope creep.** | Out of scope by name: completing the backend-dialect adapter (217 `#if`s), extracting the profiling concern, splitting `runtime.cpp`'s DOM/fetch shims, deduplicating the `scripts/` tier, consolidating the nine build directories, and any whole-tree reformat. Each is a separate PRD; the analysis report ranks them. |
+| **Scope creep.** | Out of scope by name: moving any product code (PRD-230), the backend-dialect adapter (PRD-231), the profiling extraction (PRD-232), `runtime.cpp`'s shims (PRD-233), the `scripts/` tier (PRD-234), the build-directory matrix (PRD-235), and any whole-tree reformat. |
 
 ## Verification evidence
 
@@ -529,5 +429,5 @@ Filled during implementation. Nothing here is claimed until it has executed and 
 - Result: NOT RUN
 - Negative controls observed: —
 
-### Phases 2–10
+### Phases 2–6
 - NOT RUN

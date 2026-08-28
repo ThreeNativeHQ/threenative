@@ -24,12 +24,24 @@ export const RESOLUTION_SCALER = {
    */
   rungs: [1.0, 0.85, 0.72, 0.61, 0.52, 0.44, 0.38, 0.32, 0.27, 0.23] as const,
   /**
-   * Triggers as fractions of the frame budget rather than absolute milliseconds, so a game that
-   * ships `display.maxFps: 30` gets the same headroom the 60 fps bar was chosen for. At 60 they
-   * reproduce the pre-registered 14.0 ms and 11.5 ms exactly.
+   * The signal is **fps against the configured target**, not the presented interval.
+   *
+   * Amended 2026-08-28 from a device arm, before the second implementation. The original triggers
+   * were `presented p95 > 14 ms` down and `< 11.5 ms` up. Under FIFO the presented interval is the
+   * *panel's* period, not the game's cost: a game locked at 60 fps on a 60 Hz panel reports
+   * presented p95 around 17.5 ms, so `> 14` is true forever. A scaffolded template holding
+   * 59.99 fps with a `frame p95` of 7.99 ms out of 16.67 was walked to 552x248 and then told it
+   * had run out of room. fps is correct in both regimes: it comes from the mean presented
+   * interval, so dropped frames pull it down on their own, and a missed target is missed whether
+   * or not a panel caps the top.
    */
-  downFraction: 14 / (1000 / 60),
-  upFraction: 11.5 / (1000 / 60),
+  targetFpsFraction: 0.98,
+  /**
+   * The tail guard on the up-step only. A frame that hits its average target while dropping frames
+   * has headroom on paper and none in the hand. A vsync-capped panel's own p95 floor sits near
+   * 1.05x the budget, comfortably inside this.
+   */
+  upTailFraction: 1.15,
   /** React to a deficit immediately; climb only on sustained evidence. Asymmetric by design. */
   downWindows: 1,
   upWindows: 4,
@@ -55,14 +67,18 @@ export interface IResolutionScalerOptions {
   readonly start?: number;
 }
 
-/** The only shape the scaler reads: one closed frame-budget window's presented tail. */
+/** The only shape the scaler reads: one closed frame-budget window's fps and presented tail. */
 export interface IScalerWindow {
+  /** Frames per second this window achieved, from the mean presented interval. */
+  readonly fps: number;
   readonly presented: { readonly p95: number };
 }
 
 export class ResolutionScaler {
-  readonly downMs: number;
-  readonly upMs: number;
+  /** fps at or above this is meeting the target. */
+  readonly targetFps: number;
+  /** presented p95 above this is dropping frames, whatever the mean says. */
+  readonly tailMs: number;
   #index: number;
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
@@ -82,9 +98,8 @@ export class ResolutionScaler {
       throw new Error(
         `ResolutionScaler targetFps must be a finite number greater than zero, received ${String(targetFps)}.`,
       );
-    const budgetMs = 1000 / targetFps;
-    this.downMs = budgetMs * RESOLUTION_SCALER.downFraction;
-    this.upMs = budgetMs * RESOLUTION_SCALER.upFraction;
+    this.targetFps = targetFps * RESOLUTION_SCALER.targetFpsFraction;
+    this.tailMs = (1000 / targetFps) * RESOLUTION_SCALER.upTailFraction;
     const index = start === undefined ? 0 : RESOLUTION_SCALER.rungs.indexOf(start as never);
     if (index < 0)
       throw new Error(
@@ -123,8 +138,7 @@ export class ResolutionScaler {
       this.#cooldown -= 1;
       return undefined;
     }
-    const p95 = window.presented.p95;
-    if (p95 > this.downMs) {
+    if (window.fps < this.targetFps) {
       this.#cleanWindows = 0;
       if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
         this.#atFloor = true;
@@ -133,7 +147,7 @@ export class ResolutionScaler {
       return this.#step(1);
     }
     this.#atFloor = false;
-    if (p95 >= this.upMs) {
+    if (window.presented.p95 > this.tailMs) {
       this.#cleanWindows = 0;
       return undefined;
     }
