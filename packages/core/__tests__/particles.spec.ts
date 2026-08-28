@@ -33,6 +33,8 @@ function renderer(dispatched: unknown[]): IRendererLike {
     renderOverlay: () => undefined,
     setOutputNode: () => undefined,
     setSize: () => undefined,
+    gpuFrameMs: () => undefined,
+    resolveGpuFrame: () => undefined,
     setResolutionScale: () => undefined,
     surface: () => ({
       atFloor: false,

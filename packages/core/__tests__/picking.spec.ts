@@ -30,6 +30,8 @@ function renderer(canvas: HTMLCanvasElement) {
     renderOverlay: () => undefined,
     setOutputNode: () => undefined,
     setSize: () => undefined,
+    gpuFrameMs: () => undefined,
+    resolveGpuFrame: () => undefined,
     setResolutionScale: () => undefined,
     surface: () => ({
       atFloor: false,

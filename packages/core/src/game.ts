@@ -779,6 +779,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             onWindow: (reported) => {
               if (this.#config.frameBudget !== false)
                 this.#config.frameBudget?.onWindow?.(reported);
+              // Kick the next resolve after the window that reported the last one, so reading it
+              // never waits on the GPU inside a frame. Before the scaler guard: a pinned game
+              // measures exactly as much as an auto one.
+              renderer.resolveGpuFrame();
               if (scaler === undefined) return;
               const stepped = scaler.observe(reported);
               if (stepped !== undefined) renderer.setResolutionScale(stepped, scaler.scaleSource);
@@ -786,6 +790,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // Last, so the engine's own renderer answers this and a game cannot report a
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
+            readGpuMs: () => renderer.gpuFrameMs(),
             readSurface: () =>
               scaler === undefined
                 ? renderer.surface()

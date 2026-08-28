@@ -108,6 +108,18 @@ export interface IRendererLike {
   setOutputNode(node: unknown): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   /**
+   * The GPU time the last resolved frame actually cost, in milliseconds, or `undefined` when the
+   * adapter has no `timestamp-query` and there is nothing to report.
+   *
+   * Every GPU number in this repository's performance record before this was wall-clock algebra:
+   * ablate scene content, difference a blocking device poll in a diagnostic build that never
+   * ships. This is the measurement itself. Resolving is asynchronous and off the frame path — the
+   * caller reads whatever the last resolve produced.
+   */
+  gpuFrameMs(): number | undefined;
+  /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
+  resolveGpuFrame(): void;
+  /**
    * Moves the drawing-buffer scale, re-applying it immediately. The adaptive scaler is the only
    * caller; a pinned game never reaches this, which is what makes "pinned" mean pinned.
    */
@@ -157,6 +169,9 @@ export interface IRendererOptions {
 
 type RendererInstance = {
   autoClear?: boolean;
+  /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
+  info?: { render?: { timestamp?: number } };
+  resolveTimestampsAsync?: (type?: string) => Promise<number | undefined>;
   /** Three answers an `antialias` request with a sample count; 0 means one sample per pixel. */
   samples?: number;
   domElement: HTMLCanvasElement;
@@ -196,6 +211,17 @@ function wrapRenderer(
   let outputPipeline: RenderPipeline | undefined;
 
   return {
+    gpuFrameMs: () => {
+      const timestamp = raw.info?.render?.timestamp;
+      return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0
+        ? timestamp
+        : undefined;
+    },
+    resolveGpuFrame: () => {
+      // Fire and forget: a rejected resolve means this adapter has no timestamps, which is a
+      // reported absence rather than a frame-time error.
+      void raw.resolveTimestampsAsync?.()?.catch(() => undefined);
+    },
     setResolutionScale: (scale, scaleSource) => {
       state.resolutionScale = scale;
       state.scaleSource = scaleSource;
@@ -322,7 +348,14 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   const applied = { height: 1, width: 1 };
   const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
   const preferWebGPU = options.preferWebGPU ?? true;
-  const rendererParameters = { antialias: options.antialias ?? true } as const;
+  // `trackTimestamp` asks three to bracket its passes with GPU timestamps. It costs two queries
+  // per pass and is inert on an adapter without `timestamp-query`, which is why it is on rather
+  // than behind a flag: a measurement that only exists in a diagnostic build is the arrangement
+  // that left every GPU number in the record as wall-clock algebra.
+  const rendererParameters = {
+    antialias: options.antialias ?? true,
+    trackTimestamp: true,
+  } as const;
   let renderer: IRendererLike | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {

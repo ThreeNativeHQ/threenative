@@ -86,3 +86,34 @@ describe("frame-budget surface reporting", () => {
     expect(budget.window().surface).toBeUndefined();
   });
 });
+
+describe("frame-budget GPU time", () => {
+  it("reports the GPU milliseconds the adapter measured", () => {
+    const budget = new FrameBudget({
+      readGpuMs: () => 4.25,
+      readSurface: () => PINNED,
+      report: () => {},
+      reportEvery: 4,
+    });
+    driveWindow(budget, 4);
+    expect(budget.window().gpuMs).toBe(4.25);
+  });
+
+  it("omits it entirely when the adapter has no timestamps", () => {
+    // An adapter without `timestamp-query` and a frame that genuinely cost no GPU time are
+    // different facts; a zero would merge them.
+    const budget = new FrameBudget({ readSurface: () => PINNED, report: () => {}, reportEvery: 4 });
+    driveWindow(budget, 4);
+    expect(budget.window().gpuMs).toBeUndefined();
+  });
+
+  it("refuses a negative GPU time rather than reporting it", () => {
+    const budget = new FrameBudget({
+      readGpuMs: () => -1,
+      readSurface: () => PINNED,
+      report: () => {},
+      reportEvery: 4,
+    });
+    expect(() => driveWindow(budget, 4)).toThrow(/gpuMs/u);
+  });
+});

@@ -47,6 +47,8 @@ export interface IFrameBudgetWindowJson {
   readonly hitches: number;
   readonly phases?: Readonly<Record<string, IPerfSummary>>;
   readonly surface?: IFrameSurfaceJson;
+  /** GPU milliseconds from `timestamp-query`, absent when the adapter has none. */
+  readonly gpuMs?: number;
   readonly window: number;
 }
 
@@ -355,7 +357,10 @@ export function formatPerfReport(report: IPerfReport): string {
         // the scale here would read as a budget met at a low resolution.
         (surface.atFloor === true ? " — AT FLOOR, budget not met" : ""),
   );
-  lines.push("window  fps     frame p50/p95    render p50/p95   hostGap p50/p95");
+  const anyGpu = report.budgets.some((window) => window.gpuMs !== undefined);
+  lines.push(
+    `window  fps     frame p50/p95    render p50/p95   hostGap p50/p95${anyGpu ? "  gpu ms" : ""}`,
+  );
   for (const window of report.budgets) {
     const label = report.discardedWindows.includes(window.window) ? `${window.window}*` : String(window.window);
     lines.push(
@@ -365,6 +370,7 @@ export function formatPerfReport(report: IPerfReport): string {
         summary(window.frame).padEnd(16),
         summary(window.phases?.render).padEnd(16),
         summary(window.phases?.hostGap),
+        ...(anyGpu ? [` ${window.gpuMs === undefined ? "—" : window.gpuMs.toFixed(2)}`] : []),
       ].join(" "),
     );
   }

@@ -159,6 +159,13 @@ export interface IFrameBudgetWindow {
    * a fabricated `1.0` that no frame was ever drawn at.
    */
   readonly surface?: IFrameSurfaceState;
+  /**
+   * GPU milliseconds for a frame in this window, from `timestamp-query`, when the adapter has it.
+   *
+   * Absent rather than zero when there is nothing to report: an adapter without timestamps and a
+   * frame that genuinely cost no GPU time are different facts, and a zero would merge them.
+   */
+  readonly gpuMs?: number;
 }
 
 export interface IFrameBudgetOptions {
@@ -183,6 +190,8 @@ export interface IFrameBudgetOptions {
    * loop, which is the only place that knows both the renderer and the window boundary.
    */
   readonly readSurface?: () => IFrameSurfaceState;
+  /** Reads the last resolved GPU frame time, called once per reported window. */
+  readonly readGpuMs?: () => number | undefined;
 }
 
 const DEFAULT_REPORT_EVERY = 300;
@@ -275,6 +284,7 @@ export class FrameBudget {
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
   #readSurface: (() => IFrameSurfaceState) | undefined;
+  #readGpuMs: (() => number | undefined) | undefined;
   #scratch: Float64Array;
   #presented: Ring;
   #frame: Ring;
@@ -306,6 +316,7 @@ export class FrameBudget {
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
     this.#readSurface = options.readSurface;
+    this.#readGpuMs = options.readGpuMs;
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
@@ -421,6 +432,11 @@ export class FrameBudget {
       presented.mean === 0 ? 0 : Math.round((value / presented.mean) * 1_000) / 1_000;
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
+    const gpuMs = this.#readGpuMs?.();
+    if (gpuMs !== undefined && (!Number.isFinite(gpuMs) || gpuMs < 0))
+      throw new Error(
+        `Frame budget gpuMs must be a non-negative number, received ${String(gpuMs)}.`,
+      );
     return {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
@@ -436,6 +452,7 @@ export class FrameBudget {
         update: share(phases.update.mean),
       },
       substeps: this.#substeps.summarize(this.#scratch),
+      ...(gpuMs === undefined ? {} : { gpuMs: round(gpuMs) }),
       ...(surface === undefined ? {} : { surface }),
       window: this.#windowIndex + 1,
     };
