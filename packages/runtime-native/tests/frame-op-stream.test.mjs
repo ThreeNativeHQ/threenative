@@ -6,6 +6,10 @@ const source = readFileSync(
   join(import.meta.dirname, "..", "src", "runtime-scripts", "frame-op-stream.js"),
   "utf8",
 );
+const nativeSource = readFileSync(
+  join(import.meta.dirname, "..", "src", "webgpu", "bindings.cpp"),
+  "utf8",
+);
 const factory = Function(`"use strict"; let factory; factory = ${source}\nreturn factory;`)();
 
 function harness() {
@@ -48,6 +52,15 @@ function records(buffer) {
 }
 
 describe("packed frame op stream", () => {
+  it("keeps native replay compatible with the runtime's C++17 toolchains", () => {
+    const replay = nativeSource.slice(
+      nativeSource.indexOf("bool replayPackedFrameOpStream("),
+      nativeSource.indexOf("static js::JSValueHandle", nativeSource.indexOf("bool replayPackedFrameOpStream(")),
+    );
+
+    expect(replay).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
+  });
+
   it("keeps resource id loads class-specific so V8 inline caches stay polymorphic", () => {
     expect(source).not.toMatch(/v\?\.\[field\]|v\[field\]/u);
     expect(source).toMatch(/const bufferId = \(v\) => resourceId\(v, v\?\._bufferId/u);
