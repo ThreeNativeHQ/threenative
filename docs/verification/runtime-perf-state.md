@@ -142,6 +142,56 @@ JS frame + host ≈ 16.7 ms — the draw count must fall below ~300 or per-draw 
 the 1080p arm additionally needs the fragment cost down (2048² shadow is a GPU constant across
 viewport sizes).
 
+### 1.3.2 Draw collapse completed + the GPU attribution (2026-08-28, ~01:00–02:00)
+
+Second and third game commits (`d9dc879` and the material commit): ten targets share unit
+primitives (60 → ~7 draws); every parked pool settles after the 2 s prewarm window — breakable
+shards (27), muzzle-flash cards (7), and engine tracer streaks (28, `TracerPool3D.settle` landed
+in core with a unit test, tarball `…tracer-settle-c73594118297`); `game.ts` now brackets the
+projection reconcile inside the frame-budget render phase (its cost used to hide in `residual`);
+town materials sample triplanar top-2 dominant-axis (`triTop2` in `townMaterials.ts`) and take the
+1.618× breakup crossfade on the colour map only. Web settled draws: **780 → 492 → 403 → 315**,
+triangles flat ~1.037M, pixel-diff of the spawn view against the 492-draw frame: **0 of 921,600
+pixels differ by more than 8** — the material change is look-neutral.
+
+Device, 720p mailbox (`wm size 720x1600` + `present_uncapped=1`), as the phone cooled through the
+session: 34.6 → 37.1 → **47.2 → 53.1 → 50.9 fps steady** (presented 18.7, frame p50 9.3, render
+8.8). The earlier 34–37 readings were thermally depressed (battery 33–34 °C after back-to-back
+runs; the 29–31 °C windows read 47–53). **Best measured: 53 fps; 60 not reached.** The remaining
+gap is the GPU frame (~18–19 ms at 720p against a 16.7 budget; the CPU chain is done at 9.3).
+
+GPU attribution — the drain build (`-PthreenativeGpuDrainProfile=true`), 720p, ablations via
+localStorage gates the host reads from `files/mystral/storage/<cwd-stem>.json` (push with
+`run-as com.threenative.bayview cp /data/local/tmp/<f> files/mystral/storage/default.json`):
+
+| Arm | gpuDrain p50 ms |
+| --- | ---: |
+| full scene, full materials, shadow on | 27.57 |
+| shadow OFF | 27.89 (≈0 — the shadow is not a GPU cost) |
+| shadow off + flat town materials | 24.22 (materials ≈ 3.3) |
+| + town hidden | 13.55 (flat town pass ≈ 11.5) |
+| + sky and soldiers hidden | 6.66 (soldiers + sky ≈ 6.9) |
+| + `scene.environment` null | **0.35 — the IBL is ~6.3 ms on a nearly-empty scene** |
+| full scene, IBL null | 22.24 (IBL ≈ 5.3 across the covered scene) |
+
+Conclusion: the 720p GPU frame is spread per-pixel — IBL ~5–6, the flat town pass ~9–11
+(geometry/dispatch/PBR core, not the texture fetches: `triTop2` cut fetches 24 → 10 and moved
+gpuDrain not at all), material graphs ~2.5, soldiers/sky ~7 — over a true floor of 0.35. The
+1080p arm stays GPU-bound (present 14.4 of a 49 ms period; 20.2 fps, unchanged by the CPU wins).
+
+Falsified this session (do not re-derive): 1024² shadow map (33.0 vs 34.6 — flat at 720p
+mailbox); PCFSoft/shadow cost (~0); town texture fetches as the GPU cost (top-2 flat); the
+hemisphere-fill IBL replacement (−5.3 ms GPU but visibly darker in shaded faces at two tuning
+attempts — `TN_NO_IBL` gate ships off by default; the A/B screenshots are
+`/tmp/draw-budget-tritop.png` (IBL) vs `/tmp/draw-budget-hemisphere*.png`).
+
+The designed path to 60 (each measured, none yet a pass): the GPU needs −2 ms of the ~18.7
+presented — candidates in order: a cheap single-fetch IBL approximation (TSL `pmremTexture` at a
+fixed mip via `material.envNode`, keeping the look the hemisphere cannot), the flat town pass's
+9–11 ms (three's PBR core + dispatch for ~315 draws — the GPU-side twin of the closed CPU
+per-draw question, **not** covered by that evidence), and CPU is already inside budget. The named
+next instrument (§1.5) remains GPU timestamps to split the town pass into dispatch vs fragment.
+
 Red-green handoff:
 
 1. Add a Bayview playtest that currently fails with a steady `maxDrawCalls` threshold and still
