@@ -20,6 +20,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
 
 function parseArgs(argv) {
   const args = { launches: 10, windowSeconds: 62, quiet: false };
@@ -63,6 +64,12 @@ function main() {
   const scratch = mkdtempSync(join(tmpdir(), 'threenative-physics-stability-'));
   const launches = [];
   let failed = 0;
+
+  // The Play Protect verifier dialog is a modal that eats injected touches, so ten unattended
+  // launches behind it prove nothing. Suppress before the install, as every other install lane does.
+  suppressPlayProtectOnAdbInstalls(args.serial, {
+    adb: (adbArgs) => adb(adbArgs, { serial: args.serial }),
+  });
 
   say(args.quiet, `fresh install of ${args.apk}`);
   try {
