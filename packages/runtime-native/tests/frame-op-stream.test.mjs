@@ -55,7 +55,10 @@ describe("packed frame op stream", () => {
   it("keeps native replay compatible with the runtime's C++17 toolchains", () => {
     const replay = nativeSource.slice(
       nativeSource.indexOf("bool replayPackedFrameOpStream("),
-      nativeSource.indexOf("static js::JSValueHandle", nativeSource.indexOf("bool replayPackedFrameOpStream(")),
+      nativeSource.indexOf(
+        "static js::JSValueHandle",
+        nativeSource.indexOf("bool replayPackedFrameOpStream("),
+      ),
     );
 
     expect(replay).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
@@ -99,6 +102,81 @@ describe("packed frame op stream", () => {
     const upload = result[0].cursor;
     expect(Array.from(new Uint32Array(frame, upload + 24, 4))).toEqual([1, 2, 3, 4]);
     expect(drain()).toBeNull();
+  });
+
+  it("keeps render and compute pass methods on shared receiver-aware prototypes", () => {
+    const { device, drain } = harness();
+    const encoderA = device.createCommandEncoder();
+    const encoderB = device.createCommandEncoder();
+    const renderA = encoderA.beginRenderPass({ colorAttachments: [] });
+    const renderB = encoderB.beginRenderPass({ colorAttachments: [] });
+    const computeA = encoderA.beginComputePass();
+    const computeB = encoderB.beginComputePass();
+    const buffer = { _bufferId: 40 };
+    const group = { _bindGroupId: 41 };
+    const renderPipeline = { _pipelineId: 42 };
+    const computePipeline = { _pipelineId: 43 };
+    const bundle = { _renderBundleId: 44 };
+    const renderMethods = [
+      ["setPipeline", 4, [renderPipeline]],
+      ["setBindGroup", 5, [0, group]],
+      ["setVertexBuffer", 6, [0, buffer]],
+      ["setIndexBuffer", 7, [buffer, "uint32"]],
+      ["draw", 8, [3]],
+      ["drawIndexed", 9, [3]],
+      ["drawIndirect", 10, [buffer, 0]],
+      ["drawIndexedIndirect", 11, [buffer, 0]],
+      ["setViewport", 12, [0, 0, 1, 1, 0, 1]],
+      ["setScissorRect", 13, [0, 0, 1, 1]],
+      ["setBlendConstant", 14, [[0, 0, 0, 1]]],
+      ["setStencilReference", 15, [1]],
+      ["executeBundles", 16, [[bundle]]],
+      ["end", 17, []],
+    ];
+    const computeMethods = [
+      ["setPipeline", 19, [computePipeline]],
+      ["setBindGroup", 20, [0, group]],
+      ["dispatchWorkgroups", 21, [1]],
+      ["end", 22, []],
+    ];
+
+    expect(Object.getPrototypeOf(renderA)).toBe(Object.getPrototypeOf(renderB));
+    for (const [name, , args] of renderMethods) {
+      expect(Object.hasOwn(renderA, name), name).toBe(false);
+      expect(renderA[name], name).toBe(renderB[name]);
+      expect(() => renderA[name].call(undefined, ...args), name).toThrow(
+        /no render pass receiver/u,
+      );
+      renderA[name](...args);
+      renderB[name](...args);
+    }
+
+    expect(Object.getPrototypeOf(computeA)).toBe(Object.getPrototypeOf(computeB));
+    for (const [name, , args] of computeMethods) {
+      expect(Object.hasOwn(computeA, name), name).toBe(false);
+      expect(computeA[name], name).toBe(computeB[name]);
+      expect(() => computeA[name].call(undefined, ...args), name).toThrow(
+        /no compute pass receiver/u,
+      );
+      computeA[name](...args);
+      computeB[name](...args);
+    }
+
+    const frameRecords = records(drain());
+    for (const [, opcode] of renderMethods) {
+      const calls = frameRecords.result.filter((record) => record.opcode === opcode);
+      expect(calls, `render opcode ${opcode}`).toHaveLength(2);
+      expect(calls.map((record) => frameRecords.view.getUint32(record.cursor + 8, true))).toEqual([
+        3, 4,
+      ]);
+    }
+    for (const [, opcode] of computeMethods) {
+      const calls = frameRecords.result.filter((record) => record.opcode === opcode);
+      expect(calls, `compute opcode ${opcode}`).toHaveLength(2);
+      expect(calls.map((record) => frameRecords.view.getUint32(record.cursor + 8, true))).toEqual([
+        5, 6,
+      ]);
+    }
   });
 
   it("fails synchronously on invalid upload ranges, offsets, and resource ids", () => {

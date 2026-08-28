@@ -40,7 +40,7 @@ unchanged — it still uses gcc 16.1.1 in `build/tn-linux`.
 | Not invokable bare | 1 | `threenative-shutdown-lifetime-test` prints `usage: … http \| timer-watch <path>` — it takes an argument the vitest wrapper supplies; this run did not |
 | **Failed** | 1 | `threenative-render-pass-class-table-test` — see below |
 
-### The render-pass class-table contract does not hold in this build
+### Correction: the render-pass failure was a stale-binary comparison, not a configuration difference
 
 ```
 FAIL: render pass methods are prototype members, not per-instance own properties
@@ -49,21 +49,19 @@ FAIL: detached end() reports the missing receiver by name, got: Cannot read prop
 render-pass-class-table contract: 3 failure(s)
 ```
 
-The same executable built from the same source in `build/tn-linux` (gcc, Release) exits `0` and
-prints `render-pass-class-table: prototype=shared receivers=resolved pairing=map-resolved
-runtime=wired`. Both runs acquired a real adapter (`NVIDIA GeForce RTX 2080`, Vulkan backend), so
-this is not a headless-adapter difference.
+The originally compared `build/tn-linux` executable exited `0`, but it was stale: the executable
+was linked on 2026-08-27 while `bindings.cpp.o` had been rebuilt on 2026-08-28. Four clean builds
+(gcc/clang × Debug/Release) all produced the same three failures. A clean build at the exact
+scouting commit, `7b729e2d`, did too.
 
-**Cause unattributed.** The two builds differ in compiler (clang vs gcc) *and* in optimization
-(`Debug -O0` vs `Release`), and this run did not separate them. Recording it as observed, not
-explained.
+`git bisect` between `47d1adb3` and `7b729e2d` identified `fa72e6b3` (`replay packed WebGPU frame
+streams`) as the first bad commit. The packed-stream runtime script replaced render- and
+compute-pass wrappers with object literals carrying per-instance arrow methods. The existing C++
+contract correctly detected the regression once rebuilt.
 
-**Why it matters to PRD-229:** a coverage build and a sanitizer build are *different
-configurations*, and at least one C++ contract currently produces a different verdict in one. A
-coverage gate that runs a configuration where a contract fails for configuration reasons is a gate
-that cries wolf. PRD-229 Phase 1 must either match the shipping configuration except for
-instrumentation, or attribute and fix this first. This is the phase's first real blocker and it
-was found by taking the measurement rather than by planning it.
+The prerequisite repair and its red-green proof are recorded in
+[native-class-table-baseline-repair-2026-08-28](./native-class-table-baseline-repair-2026-08-28.md).
+The coverage compiler and optimization level are therefore not implicated.
 
 ## The number
 
