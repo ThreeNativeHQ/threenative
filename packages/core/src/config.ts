@@ -113,6 +113,12 @@ export interface IThreeNativeConfig {
   readonly nativeEntry?: string;
   readonly renderer?: {
     readonly preferWebGPU?: boolean;
+    /** Portable drawing-buffer scale. CSS and UI layout dimensions are unchanged. */
+    readonly resolutionScale?: number;
+    /** Android-only rendering overrides selected by the engine. */
+    readonly android?: {
+      readonly resolutionScale?: number;
+    };
   };
   readonly ui?: {
     /**

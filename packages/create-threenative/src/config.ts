@@ -44,6 +44,10 @@ export interface IResolvedThreeNativeConfig {
   readonly nativeEntry: string;
   readonly renderer: {
     readonly preferWebGPU: boolean;
+    readonly resolutionScale?: number;
+    readonly android?: {
+      readonly resolutionScale?: number;
+    };
   };
   readonly ui: {
     readonly renderer: ThreeNativeUiRenderer;
@@ -825,7 +829,22 @@ function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
 
 function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] {
   const renderer = assertRecord(raw, "renderer");
-  assertKeys(renderer, "renderer", ["preferWebGPU"]);
+  assertKeys(renderer, "renderer", ["preferWebGPU", "resolutionScale", "android"]);
+  const android = assertRecord(renderer.android, "renderer.android");
+  assertKeys(android, "renderer.android", ["resolutionScale"]);
+  const resolutionScale = renderer.resolutionScale;
+  const androidResolutionScale = android.resolutionScale;
+  for (const [name, value] of [
+    ["renderer.resolutionScale", resolutionScale],
+    ["renderer.android.resolutionScale", androidResolutionScale],
+  ] as const) {
+    if (
+      value !== undefined &&
+      (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    ) {
+      fail("TN_CONFIG_RENDERER_RESOLUTION_SCALE_INVALID", `${name} must be finite and positive.`);
+    }
+  }
   return {
     preferWebGPU: booleanValue(
       renderer.preferWebGPU,
@@ -833,6 +852,10 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
       "TN_CONFIG_RENDERER_INVALID",
       "renderer.preferWebGPU",
     ),
+    ...(resolutionScale === undefined ? {} : { resolutionScale: resolutionScale as number }),
+    ...(androidResolutionScale === undefined
+      ? {}
+      : { android: { resolutionScale: androidResolutionScale as number } }),
   };
 }
 

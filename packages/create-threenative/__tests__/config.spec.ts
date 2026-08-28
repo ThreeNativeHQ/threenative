@@ -108,6 +108,24 @@ describe("threenative.config.ts", () => {
     });
   });
 
+  it("preserves renderer resolution scale and the Android override", async () => {
+    const root = await project();
+    await config(
+      root,
+      `export default {
+        renderer: { resolutionScale: 0.75, android: { resolutionScale: 0.32 } },
+      };`,
+    );
+
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      renderer: {
+        preferWebGPU: true,
+        resolutionScale: 0.75,
+        android: { resolutionScale: 0.32 },
+      },
+    });
+  });
+
   it("uses package name defaults and the nativeEntry compatibility fallback without a config file", async () => {
     const root = await project("@studio/fox-game");
     await writeFile(
@@ -557,6 +575,15 @@ describe("threenative.config.ts", () => {
     const root = await project();
     await config(root, 'export default { renderer: { preferWebGPU: "yes" } };');
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_RENDERER_INVALID/u);
+  });
+
+  it.each([
+    "export default { renderer: { resolutionScale: 0 } };",
+    'export default { renderer: { android: { resolutionScale: "small" } } };',
+  ])("rejects an invalid renderer resolution scale with the named code", async (source) => {
+    const root = await project();
+    await config(root, source);
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_RENDERER_RESOLUTION_SCALE_INVALID/u);
   });
 
   it("rejects a config with no default export object", async () => {

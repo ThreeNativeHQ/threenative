@@ -7,6 +7,7 @@ import {
 } from "three";
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
+import type { IThreeNativeConfig } from "./config.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "./frame-budget.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
@@ -17,8 +18,10 @@ import {
 } from "./loop.js";
 import { GPUParticles3D } from "./particles.js";
 import { ScenePicker } from "./picking.js";
+import { getPlatform } from "./platform.js";
 import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
+import { resolveRendererResolutionScale } from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
@@ -198,7 +201,7 @@ export interface IGameConfig<
   readonly maxSteps?: number;
   readonly platform?: IGamePlatformSource;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
-  readonly render?: Pick<IRendererOptions, "preferWebGPU">;
+  readonly render?: NonNullable<IThreeNativeConfig["renderer"]>;
   readonly renderer?: IRendererOptions;
   readonly seed?: number;
   readonly scenes: Record<string, SceneConstructor<TState, TPhysics>>;
@@ -567,6 +570,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...this.#config.renderer,
       canvas: this.#config.canvas ?? this.#config.renderer?.canvas,
       preferWebGPU: this.#config.render?.preferWebGPU ?? this.#config.renderer?.preferWebGPU,
+      resolutionScale: resolveRendererResolutionScale(
+        this.#config.render,
+        this.#config.renderer?.resolutionScale,
+        getPlatform().os,
+      ),
       source: this.#config.renderer?.source ?? this.#config.platform?.renderer,
     });
     if (this.#aborted) {
