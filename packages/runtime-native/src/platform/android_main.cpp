@@ -214,10 +214,16 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     }
     LOGI("maxFps=%u", config.maxFps);
 #if TN_ANDROID_VSYNC
-    config.vsync = true;
+    // FIFO quantizes a frame that misses one high-refresh interval to an integer divisor: on a
+    // 120 Hz Pixel, an otherwise healthy 11-12 ms frame is forced down to 60 fps. Keep the
+    // conservative FIFO default through 60 fps, but use the runtime's supported mailbox/immediate
+    // path when a game explicitly asks for high refresh or uncapped presentation. The software
+    // maxFps ceiling still applies after every successful present.
+    config.vsync = config.maxFps != 0 && config.maxFps <= 60;
 #else
     config.vsync = false;
 #endif
+    LOGI("vsync=%s", config.vsync ? "true" : "false");
 
     LOGI("Creating Mystral runtime...");
 

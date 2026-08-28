@@ -80,7 +80,11 @@ test("writeBuffer stages into mapped blocks flushed at every queue boundary", ()
 });
 
 test("RuntimeConfig vsync selects and preserves a supported presentation mode", () => {
-  assert.match(androidMain, /config\.vsync = (?:true|false)/u);
+  assert.match(
+    androidMain,
+    /config\.vsync = config\.maxFps != 0 && config\.maxFps <= 60/u,
+    "Android high-refresh and uncapped requests must avoid FIFO's integer refresh-rate divisors",
+  );
   assert.match(
     runtime,
     /configureSurface\(width_, height_,\s*config_\.vsync && !platform::presentUncapped\(\)\)/u,

@@ -75,7 +75,9 @@ export interface IThreeNativeConfig {
     /**
      * Maximum native presentation rate in frames per second. Defaults to 60; `0` removes the
      * software ceiling. Android also submits this value as the surface's preferred frame rate,
-     * which the display policy may decline because of hardware, power, or thermal state.
+     * which the display policy may decline because of hardware, power, or thermal state. Android
+     * uses non-blocking presentation above 60 fps so a missed high-refresh interval does not fall
+     * to an integer refresh-rate divisor.
      */
     readonly maxFps?: number;
     /**

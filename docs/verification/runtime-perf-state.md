@@ -12,15 +12,17 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
-## 1. Native Android fps: 60 Hz is reached; 120 Hz is selected; >60 fps is pending
+## 1. Native Android fps: 60 Hz is reached; >60 fps works; sustained acceptance is pending
 
 **Goal (owner): 60 fps+ on a physical Pixel 8; 30 fps is a milestone, never a pass.** On 2026-08-28
 Bayview reached the active 60 Hz display budget on the physical Pixel 8 while keeping the UI at the
 full 2400×1080 presentation size. The game-owned 3D surface renders at scale 0.36 (864×389) and is
 composited behind that full-resolution UI. The earlier claim that Chrome ran the scene at 59.99 fps
-remains falsified; it is unrelated to this new native measurement. A supported `display.maxFps: 120`
-path now selects the Pixel's 120 Hz mode, but throughput acceptance still needs a cool, unplugged
-1,000+ frame run.
+remains falsified; it is unrelated to this native measurement. A supported `display.maxFps: 120`
+path now selects the Pixel's physical 120 Hz mode and uses mailbox presentation. The first two
+pre-throttle steady windows reached 66.84 and 63.01 fps, proving that the old 60 fps ceiling is
+gone. Sustained acceptance still needs 1,000+ steady frames that remain thermally valid; the next
+attempt is blocked only by the Pixel reaching 49% battery while cooling.
 
 | Where it stands (2026-08-28 acceptance) | value |
 | --- | ---: |
@@ -29,7 +31,7 @@ path now selects the Pixel's 120 Hz mode, but throughput acceptance still needs 
 | 2,009-frame tail | p95 22.87 ms; p99 32.40 ms; worst 74.72 ms; 13 spikes |
 | Presentation contract | UI 2400×1080; 3D 864×389, scaled by the compositor |
 | Settled browser render budget | 232 draws; 665,531 triangles; diagnostics empty |
-| High-refresh selection | supported 120 fps request applied; Pixel active at 120 Hz; throughput pending |
+| High-refresh path | physical 120 Hz + mailbox; first 600 steady frames **66.84 / 63.01 fps**; sustained acceptance pending |
 
 ### 1.1 The model that fits every measurement
 
@@ -259,7 +261,7 @@ still exits nonzero in its final scale audit because two pre-existing content ch
 missing and a 1.000 m muzzle-flash quad above the 0.3 m limit). This Android-only branch cannot
 affect that web content audit. The sandbox has no lint script.
 
-### 1.3.4 Supported 120 Hz selection — implementation and device mode green (2026-08-28)
+### 1.3.4 Supported 120 Hz + mailbox — >60 green, sustained gate power-blocked (2026-08-28)
 
 **Layer verdict:** the missing high-refresh contract was engine-owned. A game cannot portably tell
 Android which display mode to prefer, so the public config, native packagers, runtime pacing and
@@ -278,36 +280,58 @@ on resume and whenever Android creates or replaces the surface. Every generated 
 the conservative 60 fps default; a game opts into 120 without changing its UI or render source.
 Desktop and iOS carry the same software ceiling through their packaged config.
 
+The first mode-selection report was wrong: it read the app's 120 Hz override rather than the
+physical active SurfaceFlinger mode. A valid cool run exposed Android's
+`PRIORITY_LOW_POWER_MODE_RENDER_RATE max=60` vote because Battery Saver was on. The app voted 120,
+but the physical display stayed at 60 Hz; SurfaceFlinger measured 58.082 fps over 6,192 frames.
+After Battery Saver was disabled, SurfaceFlinger genuinely reported active mode 1 at 120 Hz.
+
+That exposed a second engine defect. FIFO presentation quantizes an 11–12 ms frame that misses one
+8.33 ms interval to the 60 Hz divisor. With the physical display at 120 Hz, Bayview's first FIFO
+steady window was still only 57.8 fps. The runtime now keeps FIFO for the conservative 1–60 fps
+range and uses its already-supported mailbox/immediate path when `maxFps` is 0 or above 60. The
+software ceiling remains active in either mode.
+
 Red-green proof in the engine tree:
 
 | Gate | Result |
 | --- | ---: |
 | config validation/default and all generated templates | **311/311 passed** |
+| focused Android presentation/packaging/lifecycle tests | **26/26 passed** |
 | Android/iOS/desktop packaging and runtime contracts | **577 passed, 1 unrelated preflight failure** |
 | Android arm64 host + Java activity build | **passed** |
 | desktop runtime and CLI compile | **passed** |
+| core typecheck | **passed** |
 | root typecheck | max-fps path clean; blocked by 3 pre-existing tracer-test nullability errors |
 
 The final Bayview APK has SHA-256
-`1848a04ef1befa27c64b20bf464c5af1258e4bde7ddfde4d3e195fe3348f673e`. Its manifest contains
-`TN_MAX_FPS=120`; the approved 2400×1080 overlay bundle is byte-identical to the 60 Hz build. On the
-physical Pixel 8 the host reported `maxFps=120`, `Presentation cap: 120 fps`, and an applied
-`TN_DISPLAY_FRAME_RATE_REQUEST`. Android then reported active display mode 2 at 120 Hz,
-`renderFrameRate=120.00001`, and the Bayview UID frame-rate override at 120. Mode selection is green.
+`a519e4043de40c532c29e53a9d0175952959160d36dd41d1de041d669084e0c4`. Its manifest contains
+`TN_MAX_FPS=120`; the approved 2400×1080 overlay HTML, JavaScript and CSS hashes match the staged UI
+bundle byte for byte. On the physical Pixel 8 the host reported `maxFps=120`, `vsync=false`, mailbox
+presentation and an applied `TN_DISPLAY_FRAME_RATE_REQUEST`. SurfaceFlinger independently reported
+physical active mode 1 at 120 Hz and a 120 Hz vote for the Bayview surface.
 
-The first throughput smoke is deliberately **not an acceptance result**: USB power, 38.4 °C battery
-temperature and thermal status 1 (`LIGHT`) violated the measurement preconditions. Its last hot
-window was 31.85 fps. The next gate is one real-time, cool, unplugged run with at least 1,000 steady
-frames while the 120 Hz mode remains active; only that run can establish the requested >60 fps.
+The first mailbox run started unplugged over Wi-Fi ADB at 51% battery, 38.3 °C battery temperature,
+37.0 °C skin and thermal status 0. After discarding startup, its first 600 steady frames measured
+66.84 and 63.01 fps with zero hitches. The device then crossed to thermal status 1 (39.5 °C skin):
+later windows fell to 57.84, 54.47 and 53.25 fps. SurfaceFlinger measured 56.957 fps over the whole
+2,542-frame surface lifetime and recorded 224 true 8 ms present intervals, confirming that mailbox
+removed the 60 Hz divisor even though the warmed run did not sustain the target.
+
+This is deliberately **not the sustained acceptance result**. Cooling reached status 0 and 35.5 °C
+skin, but battery reached 49%, below the binding 50% floor. Recharge to at least 55%, unplug, keep
+Wi-Fi ADB, disable Battery Saver, cool to status 0 / skin at most 35 °C, and collect four steady
+300-frame windows. All four must remain above 60 fps and SurfaceFlinger must remain at 120 Hz.
 
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1. Bayview
   now handles its cost in generated game source by rendering only the 3D surface at 0.36 while the
   UI stays at 2400×1080. A general engine-level CSS-pixel contract remains unresolved.
-- **High-refresh selection:** the supported `display.maxFps` contract and Android frame-rate request
-  are implemented, and the Pixel 8 selects 120 Hz. Only the cool sustained-throughput acceptance is
-  still open; the mode-selection defect itself is fixed. The evidence and remaining gate are in
+- **High-refresh selection:** the supported `display.maxFps` contract, Android frame-rate request
+  and high-refresh mailbox policy are implemented. With Battery Saver off, the Pixel 8 selects
+  physical 120 Hz and Bayview exceeds 60 fps while cool. Only the sustained-throughput acceptance
+  is still open. The evidence and remaining gate are in
   `docs/bugs/android-high-refresh-not-selected-2026-08-27.md`.
 
 ### 1.5 Untried, named
