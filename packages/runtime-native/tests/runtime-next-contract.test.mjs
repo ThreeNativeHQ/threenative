@@ -680,6 +680,25 @@ test('native AudioContext exposes the positional graph used by Three.js', () => 
     'Android QuickJS loads the shared audio proof as a classic script');
 });
 
+test('native audio ownership is independent of recyclable JavaScript handle owners', () => {
+  const audio = read('src/audio/audio_bindings.cpp');
+  assert.doesNotMatch(
+    audio,
+    /g_(?:audioContexts|audioBuffers|sourceNodes|sourceHandles|gainNodes|pannerNodes)\[js(?:Ctx|Buffer|Node)\.ptr\]/u,
+    'a recycled V8 Persistent address must not replace and destroy a live native audio object',
+  );
+  for (const registry of [
+    'g_audioContexts[ctxPtr]',
+    'g_audioBuffers[bufferPtr]',
+    'g_sourceNodes[nodePtr]',
+    'g_sourceHandles[nodePtr]',
+    'g_gainNodes[nodePtr]',
+    'g_pannerNodes[nodePtr]',
+  ]) {
+    assert.ok(audio.includes(registry), `${registry} must use stable native identity`);
+  }
+});
+
 
 test('all three Android engine-default sites agree', () => {
   // The Android default is stated in three places, and PRD-130 requires them to agree: a preset that

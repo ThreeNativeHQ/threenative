@@ -109,12 +109,10 @@ static js::JSValueHandle createPassiveAudioParamJS(js::Engine* engine, float ini
 js::JSValueHandle createAudioBufferJS(js::Engine* engine, std::shared_ptr<AudioBuffer> buffer) {
     auto jsBuffer = engine->newObject();
 
-    // Store native pointer
-    void* key = jsBuffer.ptr;
-    g_audioBuffers[key] = buffer;
-
-    // Store raw pointer as private data for lookup
+    // Native ownership is keyed by native identity. JSValueHandle::ptr is the address of an
+    // engine-owned handle carrier, which V8 recycles independently of the live JavaScript object.
     AudioBuffer* bufferPtr = buffer.get();
+    g_audioBuffers[bufferPtr] = buffer;
     engine->setPrivateData(jsBuffer, bufferPtr);
 
     // Properties
@@ -423,9 +421,9 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
 
             // Pass undefined for context (not needed for our implementation)
             auto jsNode = createSourceNodeJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
-            g_sourceNodes[jsNode.ptr] = std::move(node);
+            g_sourceNodes[nodePtr] = std::move(node);
             g_jsEngine->freezeHandle(jsNode);
-            g_sourceHandles[jsNode.ptr] = jsNode;
+            g_sourceHandles[nodePtr] = jsNode;
 
             return jsNode;
         })
@@ -439,7 +437,7 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
 
             // Pass undefined for context (not needed for our implementation)
             auto jsNode = createGainNodeJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
-            g_gainNodes[jsNode.ptr] = std::move(node);
+            g_gainNodes[nodePtr] = std::move(node);
 
             return jsNode;
         })
@@ -451,7 +449,7 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
             auto node = ctxPtr->createPanner();
             auto* nodePtr = node.get();
             auto jsNode = createPannerNodeJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
-            g_pannerNodes[jsNode.ptr] = std::move(node);
+            g_pannerNodes[nodePtr] = std::move(node);
             return jsNode;
         })
     );
@@ -564,7 +562,7 @@ void initializeAudioBindings(js::Engine* engine) {
             auto* ctxPtr = context.get();
 
             auto jsCtx = createAudioContextJS(g_jsEngine, ctxPtr);
-            g_audioContexts[jsCtx.ptr] = std::move(context);
+            g_audioContexts[ctxPtr] = std::move(context);
 
             return jsCtx;
         }
