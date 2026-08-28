@@ -124,9 +124,10 @@ different owners).
 
 ### Phase 3 — device acceptance
 
-- [ ] Cool, **discharging** Pixel 8 (`doctor --device` first; charger waiver recorded or absent),
-      fresh install, cold launch, live windows only (`update.mean ≥ 3 ms`), window 1 discarded,
-      three captures.
+- [ ] Pixel 8 with `doctor --device` recorded at both ends, fresh install, cold launch, live windows
+      only (`update.mean ≥ 3 ms`), window 1 discarded, three captures. The user explicitly waived
+      the charging/thermal prerequisite for this session; charger and thermal state remain reported
+      beside every result and the 60 fps bar is unchanged.
 - [ ] **Every fps claim cross-checked against SurfaceFlinger** on the game's exact `(BLAST)` layer:
       `dumpsys SurfaceFlinger --latency` when it emits presentation rows, otherwise the current
       AOSP `--timestats -clear/-enable/-dump/-disable` path with its `averageFPS` and
@@ -156,8 +157,9 @@ Record `docs/verification/prd-227-<phase>-<date>.md`, one file per run session.
 
 ## Acceptance Criteria
 
-- [ ] **Bayview ≥ 60 fps median on a cool, discharging physical Pixel 8**, three captures,
-      SurfaceFlinger-confirmed. This is the bar; 30 fps is a milestone to report, never a pass.
+- [ ] **Bayview ≥ 60 fps median on a physical Pixel 8**, three captures,
+      SurfaceFlinger-confirmed. Charger and thermal state are recorded under the explicit session
+      waiver above. This is the bar; 30 fps is a milestone to report, never a pass.
 - [x] The frame issues **one crossing per frame** for command submission, asserted by an executable.
       (Mutation: disable the stream drain → the executable rejects the direct-call control.)
 - [x] Two wrappers of the same WebGPU class share one hidden class, asserted by an executable.
