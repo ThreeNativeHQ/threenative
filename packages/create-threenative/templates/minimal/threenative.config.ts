@@ -25,5 +25,11 @@ export default {
     backgroundColor: "#0d1b2a",
   },
   nativeEntry: "src/game.ts",
-  renderer: { preferWebGPU: true }, // Use WebGPU when the host exposes it.
+  renderer: {
+    preferWebGPU: true, // Use WebGPU when the host exposes it.
+    // The engine holds the `display.maxFps` budget by scaling the 3D drawing buffer, and reports
+    // the scale it settled on in every `TN_FRAME_BUDGET` window. Replace with a number in (0, 1]
+    // to pin it — the loop stops and the reporting does not. CSS, UI and camera framing never move.
+    resolutionScale: "auto",
+  },
 } satisfies IThreeNativeConfig;

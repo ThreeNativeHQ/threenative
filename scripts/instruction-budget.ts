@@ -74,23 +74,35 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // cannot turn it off, so the line charges the mechanism, the `strideRoot` argument and the
   // `strideSync` override and nothing else. Measured: `defense`, the template sitting exactly at
   // the cap, renders 2753 against 2727.
-  defaultMaxWords: 2753,
+  // And a uniform +177 on 2026-08-28 (PRD-228): `renderer.resolutionScale` gained an `"auto"`
+  // loop and every template ships it on, so the engine holds the `display.maxFps` budget rather
+  // than the game hand-authoring a resolution constant — one real game spent an afternoon and
+  // three device rungs finding that constant. A convention missing from the templates' AGENTS.md
+  // does not exist, and this one has to name its override, its validation and its per-window
+  // reporting or a game can neither turn it off nor tell which resolution produced an fps number.
+  // The line charges the mechanism, the pinning number, the refusal, the `surface` payload, the
+  // three `scaleSource` values, the `antialias` override and the `display` wiring, nothing else.
+  // Measured per template, every cap moved by the same +142 because the line is shared:
+  // `defense`, the template sitting exactly at the default cap, renders 2930 against 2753.
+  // It is its own `agent-docs/pixel-budget.md` fragment: `performance-default.md` carries an
+  // executable 130-word cap of its own, and this is a different subject from the target table.
+  defaultMaxWords: 2930,
   // The same measured +26 rides every override below — +27 on `platformer` and `shooter`, whose
   // own wrapping splits one more word — because the stride-sync line is in the shared fragment, so all seven
   // templates carry it and none of them absorbed it in headroom.
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
-    platformer: 3130,
+    platformer: 3307,
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
-    shooter: 2818,
+    shooter: 2995,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
-    minimal: 3506,
+    minimal: 3683,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
     // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
-    starter: 3976,
+    starter: 4141,
   },
 };
 

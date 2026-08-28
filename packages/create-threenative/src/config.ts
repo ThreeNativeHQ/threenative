@@ -44,9 +44,11 @@ export interface IResolvedThreeNativeConfig {
   readonly nativeEntry: string;
   readonly renderer: {
     readonly preferWebGPU: boolean;
-    readonly resolutionScale?: number;
+    readonly resolutionScale?: number | "auto";
+    readonly antialias?: boolean;
     readonly android?: {
-      readonly resolutionScale?: number;
+      readonly resolutionScale?: number | "auto";
+      readonly antialias?: boolean;
     };
   };
   readonly ui: {
@@ -829,22 +831,34 @@ function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
 
 function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] {
   const renderer = assertRecord(raw, "renderer");
-  assertKeys(renderer, "renderer", ["preferWebGPU", "resolutionScale", "android"]);
+  assertKeys(renderer, "renderer", ["preferWebGPU", "resolutionScale", "antialias", "android"]);
   const android = assertRecord(renderer.android, "renderer.android");
-  assertKeys(android, "renderer.android", ["resolutionScale"]);
+  assertKeys(android, "renderer.android", ["resolutionScale", "antialias"]);
   const resolutionScale = renderer.resolutionScale;
   const androidResolutionScale = android.resolutionScale;
+  // The same rule the engine enforces at `resolveRendererScaleSetting`, stated here so a game
+  // learns it from a named config failure rather than from a renderer that throws mid-boot:
+  // "auto", or a number in (0, 1]. Above one asks for a buffer larger than the surface.
   for (const [name, value] of [
     ["renderer.resolutionScale", resolutionScale],
     ["renderer.android.resolutionScale", androidResolutionScale],
   ] as const) {
-    if (
-      value !== undefined &&
-      (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
-    ) {
-      fail("TN_CONFIG_RENDERER_RESOLUTION_SCALE_INVALID", `${name} must be finite and positive.`);
+    if (value === undefined || value === "auto") continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > 1) {
+      fail(
+        "TN_CONFIG_RENDERER_RESOLUTION_SCALE_INVALID",
+        `${name} must be "auto" or a number within (0, 1].`,
+      );
     }
   }
+  const antialias = booleanOrUndefined(renderer.antialias, "renderer.antialias");
+  const androidAntialias = booleanOrUndefined(android.antialias, "renderer.android.antialias");
+  const androidOverrides = {
+    ...(androidResolutionScale === undefined
+      ? {}
+      : { resolutionScale: androidResolutionScale as number | "auto" }),
+    ...(androidAntialias === undefined ? {} : { antialias: androidAntialias }),
+  };
   return {
     preferWebGPU: booleanValue(
       renderer.preferWebGPU,
@@ -852,11 +866,18 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
       "TN_CONFIG_RENDERER_INVALID",
       "renderer.preferWebGPU",
     ),
-    ...(resolutionScale === undefined ? {} : { resolutionScale: resolutionScale as number }),
-    ...(androidResolutionScale === undefined
+    ...(antialias === undefined ? {} : { antialias }),
+    ...(resolutionScale === undefined
       ? {}
-      : { android: { resolutionScale: androidResolutionScale as number } }),
+      : { resolutionScale: resolutionScale as number | "auto" }),
+    ...(Object.keys(androidOverrides).length === 0 ? {} : { android: androidOverrides }),
   };
+}
+
+function booleanOrUndefined(value: unknown, name: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") fail("TN_CONFIG_RENDERER_INVALID", `${name} must be a boolean.`);
+  return value as boolean;
 }
 
 const ASSET_TARGET_KEYS: readonly string[] = [

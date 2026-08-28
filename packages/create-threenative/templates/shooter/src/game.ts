@@ -29,6 +29,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     restart: { keys: ["KeyR"] },
   },
   plugins: [rapier(), replay(), playtest({ events: drainPlaytestEvents })],
+  display: config.display,
   render: config.renderer,
   scenes: { boot: Boot, play: Play },
   seed: 89089,

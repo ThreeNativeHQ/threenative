@@ -364,11 +364,76 @@ copy. A red-green parser regression now counts byte-equivalent frame-budget payl
 leaving differing observations visible. Its focused suite passes 16/16, the rebuilt CLI passes
 `publint`, and the same unchanged logcat source produces the exit-0 result above.
 
+### 1.3.5 The pixel ladder — PRD-228 Phase 0's falsification gate, PASSED (2026-08-28)
+
+**Verdict: Change A stands as a performance contract.** Five rungs, monotonic in pixel count, and
+a slope an order of magnitude above the 2 ms/Mpx floor the PRD pre-registered as its falsifier.
+
+**This is a 120 Hz arm, and it is a slope arm, not an acceptance.** It has to be. On the decided
+60 Hz baseline every rung at or under 16.7 ms reads exactly 16.7 ms — SurfaceFlinger's own
+`present2present` histogram for the earlier 60 Hz 0.32 arm is 16 ms and 33 ms bins with nothing
+between them. A panel cannot resolve a frame cost below its own vsync period, so the PRD's
+"uncapped ladder" was run at 120 Hz with `debug.threenative.present_uncapped 1` and
+`display.maxFps: 240`. Acceptance still runs at 60 Hz and no gate cites this table.
+
+Same commit, same session, same scene; one APK per rung, sha256 recorded; cold launch per method
+rule 4 with `pidof` proved empty; one discarded launch per arm plus two discarded whole runs at
+session start per rule 1; the first two windows of every kept run dropped; `device-preflight.mjs`
+run before each arm with `requireRefreshHz: 120`, `requireDischarging: true`, thermal NONE.
+
+| arm | scale | drawing buffer | Mpx | presented p50 | presented p95 | render p50 | our fps | SurfaceFlinger fps |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `b100` | 1.00 | 2400×1080 | 2.592 | 39.14 | 42.92 | 17.43 | 25.43 | **26.54** |
+| `b072` | 0.72 | 1728×778 | 1.344 | 28.48 | 34.49 | 14.38 | 35.15 | **37.01** |
+| `b055` | 0.55 | 1320×594 | 0.784 | 21.00 | 28.72 | 11.11 | 46.62 | **47.35** |
+| `b044` | 0.44 | 1056×475 | 0.502 | 18.16 | 25.85 | 10.08 | 53.50 | **54.28** |
+| `b032` | 0.32 | 768×346 | 0.266 | 16.73 | 24.32 | 9.28 | 57.62 | **61.84** |
+
+```text
+presented p50 = 9.94 ms/Mpx x pixels + 13.79 ms     R2 0.992, n=5, monotonic
+presented p95 = 8.14 ms/Mpx x pixels + 22.32 ms     R2 0.991
+render    p50 = 3.60 ms/Mpx x pixels +  8.50 ms     R2 0.970
+```
+
+SurfaceFlinger cross-check on the endpoints, game `(BLAST)` layer, `present2present`:
+`b100` = 33 ms×830 + 42 ms×826 (four and five vsyncs); `b032` = 16 ms×2810 + 8 ms×443. Both agree
+with our own fps to within 0.5–4.2 fps and neither shows the clamped single-bin signature.
+
+**Two results the PRD did not predict, and they matter more than the confirmation:**
+
+1. **The pre-registered 5.51 ms/Mpx was low by 1.8×.** It came from two cap-clipped points inside
+   a 0.09 Mpx span. Over a 2.33 Mpx span the slope is **9.94 ms/Mpx**, so Change A's predicted
+   saving for an untuned game is **2.256 Mpx × 9.94 = 22.4 ms/frame**, not the 12.4 ms filed.
+2. **The intercept is 13.79 ms of a 16.67 ms budget.** At zero pixels this scene would still cost
+   13.8 ms. Resolution scaling therefore buys Bayview about **2.9 ms of pixel budget at 60 fps and
+   0.2 ms against the decided 14 ms bar** — roughly 0.02 Mpx. Bayview cannot reach the accepted
+   baseline by scaling alone, whatever the scaler does, and the remaining work is in that fixed
+   term rather than in the fill rate. This is a measurement, not an inference from it.
+
+**Machine notes, so the next session does not re-derive them.** Battery Saver auto-armed at
+`low_power_trigger_level 75` the moment the charger came off at 56 % and had to be pinned off; the
+phone idles at 34–37 °C screen-on and never returned to the 31.5 °C the device lane usually asks
+for, so arms were gated on thermal status NONE with the temperature recorded at both ends instead,
+and rung order was scrambled (1.00, 0.72, 0.44, 0.32, 0.55) so thermal drift could not correlate
+with pixel count. Six arms cost 8 % of battery.
+
+**Method rule 9 is now wrong and needs replacing.** Its live-window test is `update.mean ≥ 3 ms`.
+PRD-227 cut the update phase to **0.46 ms** in steady state, so that threshold rejects every live
+window and accepts nothing. The classifier used here is: not one of the two windows after launch,
+`substeps.mean ≥ 1`, and `update.mean > 0.05` — with the whole `update.mean` series recorded per
+arm so the classification is auditable rather than asserted.
+
+Artifacts: `<bayview>/artifacts/prd228/<arm>/` — `apk.sha256`, `config.txt`, `preflight-before.json`,
+`battery-before.txt`, `battery-after.txt`, `logcat-kept.txt`, `sf-kept.txt`, and the discarded run
+beside each. Harness: `tools/prd228-arm.sh`, `tools/prd228-ladder.sh`, `tools/prd228-read.mjs`.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
-- **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1. Bayview
-  now handles its cost in generated game source by rendering only the 3D surface at 0.36 while the
-  UI stays at 2400×1080. A general engine-level CSS-pixel contract remains unresolved.
+- **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1
+  (`runtime.cpp:2980`, `:2612`). Since PRD-228 the engine owns the cost portably —
+  `renderer.resolutionScale` with an `"auto"` loop, reported in every frame-budget window — so a
+  game no longer pays it by hand in generated source. The ratio itself is still a lie and the
+  engine-level CSS-pixel contract is still open; it is PRD-228 Phase 1's remaining item.
 - **High-refresh selection (closed):** the supported `display.maxFps` contract, Android frame-rate
   request and high-refresh mailbox policy are implemented. With Battery Saver off, the Pixel 8
   selects physical 120 Hz and Bayview sustains 63.45–72.52 fps. The evidence is in
@@ -377,8 +442,9 @@ leaving differing observations visible. Its focused suite passes 16/16, the rebu
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
-`device-preflight.mjs`, `requireRefreshHz`), and `renderer.resolutionScale` as a portable contract
-(landed `696e86e3`; it still has no `"auto"` mode and is still not reported per window — PRD-228).
+`device-preflight.mjs`, `requireRefreshHz`); `renderer.resolutionScale` as a portable contract
+(landed `696e86e3`), its `"auto"` loop and its per-window reporting (PRD-228, §1.3.5); and the
+question of whether this scene is fill-bound at all, which §1.3.5 settled at 9.94 ms/Mpx.
 
 Dawn on Android; any GPU-side timestamp timing (the drain is wall-clock algebra, not correlated
 spans); matched native/Chrome logical-pixel capture after draw collapse; cross-engine QuickJS/JSC
@@ -477,8 +543,11 @@ kept green; their records were evidence, not open work.
 8. **No cross-session absolutes.** The 22.2 ms desktop baseline does not reproduce (machine state
    ~2.3×, bundle drift). Device pixel counts vs desktop differ 2.8×; never state a desktop
    millisecond as a device one. Profiled builds inflate absolutes — use ratios.
-9. **Live windows only** on device (`update.mean ≥ 3 ms`), or an end-screen idle reads as a
-   174 fps "win". Classify windows before comparing.
+9. **Live windows only** on device, or an end-screen idle reads as a 174 fps "win". Classify
+   windows before comparing. **The old test — `update.mean ≥ 3 ms` — is dead:** PRD-227 cut the
+   update phase to 0.46 ms in steady state, so it now rejects every live window (§1.3.5). Use: not
+   one of the two windows after launch, `substeps.mean ≥ 1`, `update.mean > 0.05`, and record the
+   `update.mean` series so the classification can be checked rather than taken on trust.
 10. Red-green with named mutations; never claim a gate you did not run; paste output. Device
     preflight (thermal/battery) per `packages/runtime-native/AGENTS.md`. Commit path-limited as
     you go — another lane may hold this tree.

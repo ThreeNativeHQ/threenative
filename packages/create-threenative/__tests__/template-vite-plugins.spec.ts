@@ -66,7 +66,8 @@ describe("template vite configs", () => {
     const unwired: string[] = [];
     for (const template of await templates()) {
       const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
-      if (!source.includes("createEngineFreshnessPlugin(")) unwired.push(`${template}: createEngineFreshnessPlugin()`);
+      if (!source.includes("createEngineFreshnessPlugin("))
+        unwired.push(`${template}: createEngineFreshnessPlugin()`);
     }
     expect(unwired).toEqual([]);
   });

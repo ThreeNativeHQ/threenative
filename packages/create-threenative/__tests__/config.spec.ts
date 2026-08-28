@@ -580,10 +580,32 @@ describe("threenative.config.ts", () => {
   it.each([
     "export default { renderer: { resolutionScale: 0 } };",
     'export default { renderer: { android: { resolutionScale: "small" } } };',
+    // Above one is a drawing buffer larger than the surface, which the engine refuses; the
+    // scaffold has to refuse it in the same place, or a game learns the rule from a crash.
+    "export default { renderer: { resolutionScale: 1.5 } };",
+    "export default { renderer: { android: { resolutionScale: 2 } } };",
   ])("rejects an invalid renderer resolution scale with the named code", async (source) => {
     const root = await project();
     await config(root, source);
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_RENDERER_RESOLUTION_SCALE_INVALID/u);
+  });
+
+  it('accepts the shipped "auto" scale and the Android sampling override', async () => {
+    // The templates ship `resolutionScale: "auto"`. A scaffold validator that rejects what the
+    // templates ship fails every generated project on its first command.
+    const root = await project();
+    await config(
+      root,
+      'export default { renderer: { resolutionScale: "auto", antialias: true,' +
+        " android: { resolutionScale: 0.44, antialias: false } } };",
+    );
+    const loaded = await loadConfig(root);
+    expect(loaded.renderer).toEqual({
+      android: { antialias: false, resolutionScale: 0.44 },
+      antialias: true,
+      preferWebGPU: true,
+      resolutionScale: "auto",
+    });
   });
 
   it("rejects a config with no default export object", async () => {

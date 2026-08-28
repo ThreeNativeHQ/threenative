@@ -23,6 +23,7 @@ const game = defineGame<GameState, DefensePhysics>({
     safeBuild: { keys: ["KeyB"] },
   },
   plugins: [rapier({ gravity: { x: 0, y: -9.8, z: 0 } }), playtest({ events })],
+  display: config.display,
   render: config.renderer,
   scenes: { boot: Boot, defense: Defense },
   seed: 92092,

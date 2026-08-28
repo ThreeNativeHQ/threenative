@@ -39,15 +39,16 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // The starter's name field also gained autoCapitalize/autoCorrect/spellCheck: a phone keyboard
 // rewrites what the player typed unless the field says not to.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Values recomputed after every template began showing the 60 fps default and the
-  // `display.maxFps: 120` high-refresh opt-in, with the script that mirrors `scaffoldTreeHash`.
-  "action-rpg": "49ddc268256ac36840591479a26db6eb4770a2602b5a302f7615bbf16775d85e",
-  defense: "e9382a493c0bb89e14ddb49ca0e3447e4181bdc0b6f342fa51f82f236a05d226",
-  minimal: "306b13bbbbbb0649d7eb077b51a08a9a986b6c6294b0e13be99f6f121b745ec6",
-  platformer: "c8e47251127c61de8d96c02ede2a1430d34fdf8179d6ebf72f7f549cf18da9d7",
-  racing: "1bb7b50650243fd69a3ac0f52ebab40fe7cf861d691f32269366a3c310c5741d",
-  shooter: "54e63d8f0e7c760fbbd8a6730ef16869e16ff91e33457a7513b3c9410b670f51",
-  starter: "f9a2f7eba34f81111b94e15d2e5312d552b2d51b6fc62c8cd624c788ef1bce66",
+  // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
+  // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
+  // holds the frame budget instead of the game hand-authoring a resolution constant.
+  "action-rpg": "ee48e5ae0528f9d447a5d48ca00a0db6e8c8efc5aa03c3ad7c9bf475258d2044",
+  defense: "3f317d58461e0616eeb07566abda3cf2140e8fc33d26c6742525a66bab53216b",
+  minimal: "81783acebe32339ccc51623a186af197bb48196f133e77c3f5be3b0567a8c366",
+  platformer: "10a5cdc26ef658375e43b60ca64297c8278cd4c02b0f11c4454cca657d1083c2",
+  racing: "ab098dd2340ad8b4c2acf07cc3a34a3a1732a5d9aece7fe6696f9f79f4f8f598",
+  shooter: "03f8828a38aba69e0e8eb01faf20b479fe0bd1a1fcc9eefc0f907b2e3f3ecd18",
+  starter: "c8237d8be9e489451f7757e56da92ab3b77596225f3efc54bcd4a8e513268bbb",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

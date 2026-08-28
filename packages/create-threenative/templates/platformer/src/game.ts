@@ -21,6 +21,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     jump: { buttons: [0], keys: ["Space"] },
   },
   plugins: [rapier({ gravity: { x: 0, y: -26, z: 0 } }), playtest({ events })],
+  display: config.display,
   render: config.renderer,
   scenes: { boot: Boot, level: Level },
   start: "boot",

@@ -1,4 +1,4 @@
-import { createHash, type Hash } from "node:crypto";
+import { type Hash, createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -36,12 +36,10 @@ export interface IEngineFreshnessVitePlugin {
   ): { optimizeDeps: { force: boolean } } | undefined;
   configureServer(server: {
     readonly config: { readonly root?: string };
-    readonly httpServer?:
-      | {
-          once(event: string, listener: () => void): unknown;
-          address(): { readonly port?: number } | string | null;
-        }
-      | null;
+    readonly httpServer?: {
+      once(event: string, listener: () => void): unknown;
+      address(): { readonly port?: number } | string | null;
+    } | null;
   }): void;
 }
 
@@ -134,8 +132,11 @@ export function createEngineFreshnessPlugin(): IEngineFreshnessVitePlugin {
       }
       if (processIsAlive(marker.pid)) {
         const where =
-          marker.port === undefined ? `pid ${marker.pid}` : `pid ${marker.pid} on port ${marker.port}`;
-        const how = marker.port === undefined ? "" : ` (lsof -ti tcp:${marker.port} | xargs -r kill)`;
+          marker.port === undefined
+            ? `pid ${marker.pid}`
+            : `pid ${marker.pid} on port ${marker.port}`;
+        const how =
+          marker.port === undefined ? "" : ` (lsof -ti tcp:${marker.port} | xargs -r kill)`;
         console.warn(
           `threenative: a dev server is still running at ${where}, serving engine build ` +
             `${marker.hash.slice(0, 8)}; the installed build is ${recordedHash.slice(0, 8)}. ` +
@@ -153,7 +154,9 @@ export function createEngineFreshnessPlugin(): IEngineFreshnessVitePlugin {
         mkdirSync(path.dirname(file), { recursive: true });
         writeFileSync(
           file,
-          JSON.stringify(port === undefined ? { hash, pid: process.pid } : { hash, pid: process.pid, port }),
+          JSON.stringify(
+            port === undefined ? { hash, pid: process.pid } : { hash, pid: process.pid, port },
+          ),
         );
       };
       const httpServer = server.httpServer;

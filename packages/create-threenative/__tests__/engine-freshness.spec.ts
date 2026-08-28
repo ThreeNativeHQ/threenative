@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -27,7 +27,10 @@ function seedEngine(root: string, body: string): void {
 
 function writeMarker(root: string, marker: unknown): void {
   mkdirSync(path.join(root, "node_modules", ".vite"), { recursive: true });
-  writeFileSync(path.join(root, "node_modules", ".vite", "threenative-engine-build.json"), JSON.stringify(marker));
+  writeFileSync(
+    path.join(root, "node_modules", ".vite", "threenative-engine-build.json"),
+    JSON.stringify(marker),
+  );
 }
 
 function readMarker(root: string): { hash: string; pid: number; port?: number } {
@@ -59,7 +62,10 @@ describe("engine freshness plugin", () => {
     const store = path.join(root, ".pnpm-store", "core");
     seedEngine(store, "export const build = 1;\n");
     mkdirSync(path.join(root, "node_modules", "@threenative"), { recursive: true });
-    symlinkSync(path.join(store, "node_modules", "@threenative", "core"), path.join(root, "node_modules", "@threenative", "core"));
+    symlinkSync(
+      path.join(store, "node_modules", "@threenative", "core"),
+      path.join(root, "node_modules", "@threenative", "core"),
+    );
     expect(await hashEngineDist(root)).toMatch(/^[0-9a-f]{64}$/u);
     const plugin = createEngineFreshnessPlugin();
     const httpServer = new EventEmitter() as EventEmitter & { address?: () => unknown };
@@ -109,7 +115,11 @@ describe("engine freshness plugin", () => {
       httpServer,
     } as never);
     httpServer.emit("listening");
-    expect(readMarker(root)).toEqual({ hash: await hashEngineDist(root), pid: process.pid, port: 4321 });
+    expect(readMarker(root)).toEqual({
+      hash: await hashEngineDist(root),
+      pid: process.pid,
+      port: 4321,
+    });
   });
 
   it("removes its marker when the server closes cleanly", async () => {

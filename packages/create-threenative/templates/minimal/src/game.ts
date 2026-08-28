@@ -20,6 +20,7 @@ const game = defineGame<GameState, IPhysicsContext>({
   // `playtest()` installs the bridge a scenario needs to observe entities and state. Without
   // it, semantic assertions fail closed with TN_PLAYTEST_BRIDGE_MISSING rather than passing.
   plugins: [rapier(), playtest()],
+  display: config.display,
   render: config.renderer,
   scenes: { play: Play },
   start: "play",

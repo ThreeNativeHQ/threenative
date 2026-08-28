@@ -31,6 +31,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     unequip: { keys: ["KeyU"] },
   },
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest({ events: drainPlaytestEvents })],
+  display: config.display,
   render: config.renderer,
   scenes: { boot: Boot, play: Play },
   seed: 93093,
