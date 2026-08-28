@@ -29,11 +29,11 @@ here and are not filed either. What survives is below.
 | [238](./PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | The render projection stops submitting instances the camera cannot see. Today it disables per-instance culling by an explicit, documented decision; this PRD prices that decision instead of assuming it. | [`agargaro/instanced-mesh`](https://github.com/agargaro/instanced-mesh), MIT — `src/core/feature/FrustumCulling.ts:172-196` | 6 → MEDIUM |
 | [239](./PRD-239-camera-intent-is-one-portable-gesture-stream.md) | Orbit / dolly / pan **intent** arrives the same on mouse wheel, two-finger pinch and gamepad stick. Framing stays in `src/render/camera.ts` where it already lives. | [`yomotsu/camera-controls`](https://github.com/yomotsu/camera-controls), MIT — the `ACTION` gesture table, `src/CameraControls.ts:314-342` | 5 → MEDIUM |
 | [240](./PRD-240-text-is-not-uppercase-only.md) | Text that is not 5×7 uppercase ASCII, in the HUD and in the world, on every target — via an **offline** bake, because the upstream runtime shaper is WASM and iOS has no WASM engine. | [`pmndrs/glyph`](https://github.com/pmndrs/glyph), MIT — bake CLI + `src/shaper.ts:89-92`, `:207` | 8 → HIGH |
-| [241](./PRD-241-a-sequence-is-one-cancellable-object.md) | `ctx.tween` gains easing, vector targets and sequencing, and a scene change cancels what it started. The smallest PRD in the batch and the one most likely to be refused under the kill switch. | [`agargaro/three.ez`](https://github.com/agargaro/three.ez) `src/tweening/` (1 069 lines), [`pmndrs/timeline`](https://github.com/pmndrs/timeline) — both MIT | 3 → LOW |
+| [241](./PRD-241-a-sequence-is-one-cancellable-object.md) | `ctx.tween` takes a curve **from the game** — the only gap the reading left standing. Sequencing, cancellation and vector targets all turned out to be solved already, and the PRD records why so nobody re-proposes a timeline DSL. | [`agargaro/three.ez`](https://github.com/agargaro/three.ez) `src/tweening/` (1 069 lines), [`pmndrs/timeline`](https://github.com/pmndrs/timeline) — both MIT | 3 → LOW |
 
 Order to attack: **237 → 239 → 238 → 240 → 241.** 237 and 239 are the two that change what a game
 author writes on day one. 238 is a measurement before it is a change, and may end in "the existing
-decision was right, recorded". 240 is the largest and carries a new package. 241 is optional.
+decision was right, recorded". 240 is the largest, and lands as an `@threenative/assets` pass plus a `core` runtime rather than as a new package. 241 is optional.
 
 ## Not filed — already shipped here
 
