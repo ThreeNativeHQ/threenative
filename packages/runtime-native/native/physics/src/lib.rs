@@ -1,8 +1,9 @@
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::na::{Quaternion, UnitQuaternion};
 use rapier3d::prelude::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ptr;
+use std::sync::Mutex;
 
 const TRANSFORM_WIDTH: usize = 8;
 const SLEEP_STATE_WIDTH: usize = 2;
@@ -163,11 +164,49 @@ struct CharacterEntry {
 }
 
 #[repr(i32)]
+#[derive(Debug, PartialEq, Eq)]
 enum ActuationStatus {
     Ok = 1,
     UnknownBody = 0,
     NotDynamic = -1,
     NonFinite = -2,
+}
+
+/// Receives the collision events Rapier fires while a step runs, so a transition reaches the
+/// game the step it happens instead of being rediscovered by polling every body pair every
+/// step. Rapier delivers each started/stopped transition exactly once here; the sink only
+/// records the pair and the direction.
+#[derive(Default)]
+struct CollisionEventCollector {
+    transitions: Mutex<Vec<(ColliderHandle, ColliderHandle, bool)>>,
+}
+
+impl EventHandler for CollisionEventCollector {
+    fn handle_collision_event(
+        &self,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        event: CollisionEvent,
+        _contact_pair: Option<&ContactPair>,
+    ) {
+        let (left, right, started) = match event {
+            CollisionEvent::Started(left, right, _) => (left, right, true),
+            CollisionEvent::Stopped(left, right, _) => (left, right, false),
+        };
+        if let Ok(mut transitions) = self.transitions.lock() {
+            transitions.push((left, right, started));
+        }
+    }
+
+    fn handle_contact_force_event(
+        &self,
+        _dt: Real,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        _contact_pair: &ContactPair,
+        _total_force_magnitude: Real,
+    ) {
+    }
 }
 
 pub struct Simulation {
@@ -185,7 +224,7 @@ pub struct Simulation {
     entries: BTreeMap<u32, BodyEntry>,
     joints: BTreeMap<u32, ImpulseJointHandle>,
     characters: BTreeMap<u32, CharacterEntry>,
-    colliding: BTreeSet<(u32, u32)>,
+    collision_events: CollisionEventCollector,
     events: VecDeque<[u32; EVENT_WIDTH]>,
     query_dirty: bool,
 }
@@ -213,7 +252,7 @@ impl Simulation {
             entries: BTreeMap::new(),
             joints: BTreeMap::new(),
             characters: BTreeMap::new(),
-            colliding: BTreeSet::new(),
+            collision_events: CollisionEventCollector::default(),
             events: VecDeque::new(),
             query_dirty: true,
         })
@@ -375,8 +414,6 @@ impl Simulation {
             &mut self.multibody_joints,
             true,
         );
-        self.colliding
-            .retain(|(left, right)| *left != id && *right != id);
         self.characters.remove(&id);
         self.joints
             .retain(|_, handle| self.impulse_joints.contains(*handle));
@@ -703,36 +740,38 @@ impl Simulation {
             &mut self.multibody_joints,
             &mut self.ccd,
             &(),
-            &(),
+            &self.collision_events,
         );
-        let entries: Vec<_> = self
-            .entries
-            .iter()
-            .map(|(id, entry)| (*id, entry.clone()))
-            .collect();
-        let mut current = BTreeSet::new();
-        for (index, (left_id, left)) in entries.iter().enumerate() {
-            for (right_id, right) in entries.iter().skip(index + 1) {
-                let touching = self
-                    .narrow_phase
-                    .contact_pair(left.collider, right.collider)
-                    .is_some_and(|pair| pair.has_any_active_contact)
-                    || self
-                        .narrow_phase
-                        .intersection_pair(left.collider, right.collider)
-                        .unwrap_or(false);
-                if touching {
-                    current.insert((*left_id, *right_id));
-                }
+        // Rapier delivered the started/stopped transitions while the step ran; translate
+        // collider handles back to body ids exactly the way the web path does
+        // (`packages/physics/src/simulation.ts` maps through `byCollider` and drops events
+        // whose colliders no longer resolve to a body, which is also what removal does).
+        let transitions = self
+            .collision_events
+            .transitions
+            .lock()
+            .map(|mut transitions| std::mem::take(&mut *transitions))
+            .unwrap_or_default();
+        if !transitions.is_empty() {
+            let collider_ids: HashMap<ColliderHandle, u32> = self
+                .entries
+                .iter()
+                .map(|(id, entry)| (entry.collider, *id))
+                .collect();
+            for (left, right, started) in transitions {
+                let (Some(left_id), Some(right_id)) =
+                    (collider_ids.get(&left), collider_ids.get(&right))
+                else {
+                    continue;
+                };
+                let (smaller, larger) = if left_id <= right_id {
+                    (*left_id, *right_id)
+                } else {
+                    (*right_id, *left_id)
+                };
+                self.events.push_back([smaller, larger, u32::from(started), 1]);
             }
         }
-        for pair in current.difference(&self.colliding) {
-            self.events.push_back([pair.0, pair.1, 1, 1]);
-        }
-        for pair in self.colliding.difference(&current) {
-            self.events.push_back([pair.0, pair.1, 0, 1]);
-        }
-        self.colliding = current;
         self.query_dirty = false;
         true
     }
@@ -1855,6 +1894,337 @@ mod tests {
         let character = simulation.characters[&2].clone();
         assert!(character.grounded);
         assert_eq!(character.ground_collider, Some(1));
+    }
+
+    // --- collision event delivery -------------------------------------------------------
+    //
+    // The record contract is the one `tn_physics_drain_collision_events` copies out and
+    // `packages/physics/src/plugin.ts` consumes: [leftId, rightId, started, 1], with the
+    // smaller id first. Parity target is the web path, which drains Rapier's own event
+    // queue (`packages/physics/src/simulation.ts:1181`) and drops events whose colliders
+    // no longer resolve to a body.
+
+    fn drain_events(simulation: &mut Simulation) -> Vec<[u32; EVENT_WIDTH]> {
+        let mut buffer = [0u32; 4096];
+        let count =
+            tn_physics_drain_collision_events(simulation, buffer.as_mut_ptr(), buffer.len());
+        assert!(count >= 0, "event drain rejected a sufficient buffer");
+        (0..count as usize)
+            .map(|index| {
+                [
+                    buffer[index * 4],
+                    buffer[index * 4 + 1],
+                    buffer[index * 4 + 2],
+                    buffer[index * 4 + 3],
+                ]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn collision_events_report_started_once_then_stopped_once() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: -9.81,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(0, 0.0, -0.5, 1)));
+        assert!(simulation.add_body(TnPhysicsBodyOptions {
+            id: 1,
+            body_type: 0,
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: 2.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.5,
+            shape_z: 0.5,
+            mass: 1.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        }));
+
+        let mut started = Vec::new();
+        for _ in 0..240 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            started = drain_events(&mut simulation);
+            if !started.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(
+            started,
+            vec![[0, 1, 1, 1]],
+            "a landing body must deliver exactly one started event, ids ascending"
+        );
+
+        // A resting body keeps its contact without re-emitting anything.
+        for _ in 0..10 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+        assert!(drain_events(&mut simulation).is_empty());
+
+        // Then the body leaves the floor and the pair must deliver exactly one stop.
+        assert_eq!(
+            simulation.set_body_linear_velocity(1, 30.0, 20.0, 0.0),
+            ActuationStatus::Ok
+        );
+        let mut stopped = Vec::new();
+        for _ in 0..240 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            stopped = drain_events(&mut simulation);
+            if !stopped.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(
+            stopped,
+            vec![[0, 1, 0, 1]],
+            "the separating pair must deliver exactly one stopped event"
+        );
+        for _ in 0..60 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+        assert!(drain_events(&mut simulation).is_empty());
+    }
+
+    #[test]
+    fn sensor_overlap_reports_started_and_stopped() {
+        // Kinematic-vs-fixed pairs sit outside Rapier's default ActiveCollisionTypes on both
+        // the web and native paths (areas reconcile through the query path instead), so this
+        // models the covered case: a kinematic sensor sweeping over a dynamic body.
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(TnPhysicsBodyOptions {
+            id: 0,
+            body_type: 0,
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.5,
+            shape_z: 0.5,
+            mass: 1.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        }));
+        assert!(simulation.add_body(TnPhysicsBodyOptions {
+            id: 1,
+            body_type: 2,
+            shape_type: 0,
+            position_x: 5.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.5,
+            shape_z: 0.5,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: true,
+        }));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+        assert!(drain_events(&mut simulation).is_empty());
+
+        // A pair born from a teleport is created on the step after the move (broadphase
+        // latency), so the event lands one step behind the transform — identically on the
+        // web path and under the old state poll. Delivery within a few steps, exactly once,
+        // is the contract.
+        assert!(simulation.set_body_transform(1, 0.1, 0.0, 0.0));
+        let mut started = Vec::new();
+        for _ in 0..3 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            started = drain_events(&mut simulation);
+            if !started.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(
+            started,
+            vec![[0, 1, 1, 1]],
+            "a sensor overlapping a dynamic body delivers one started event"
+        );
+
+        assert!(simulation.set_body_transform(1, 5.0, 0.0, 0.0));
+        let mut stopped = Vec::new();
+        for _ in 0..3 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            stopped = drain_events(&mut simulation);
+            if !stopped.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(
+            stopped,
+            vec![[0, 1, 0, 1]],
+            "a sensor leaving a dynamic body delivers one stopped event"
+        );
+    }
+
+    #[test]
+    fn events_for_removed_colliders_are_dropped() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: -9.81,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(0, 0.0, -0.5, 1)));
+        assert!(simulation.add_body(TnPhysicsBodyOptions {
+            id: 1,
+            body_type: 0,
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: 2.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.5,
+            shape_y: 0.5,
+            shape_z: 0.5,
+            mass: 1.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+        }));
+        let mut landed = false;
+        for _ in 0..240 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            if !drain_events(&mut simulation).is_empty() {
+                landed = true;
+                break;
+            }
+        }
+        assert!(landed, "the body must land before it is removed");
+
+        // The web path maps events through `byCollider` and skips any event whose
+        // collider no longer resolves to a body; removal must stay silent here too.
+        assert!(simulation.remove_body(1));
+        for _ in 0..5 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            let events = drain_events(&mut simulation);
+            for event in events {
+                assert_ne!(event[0], 1);
+                assert_ne!(event[1], 1);
+            }
+        }
+    }
+
+    #[test]
+    fn contact_event_collection_scales_with_bodies_not_pairs() {
+        // The event synthesis used to poll every body pair every step: O(n^2) narrow-phase
+        // graph lookups regardless of what actually happened. Rapier's own events are
+        // delivered per state transition, so steady-state per-step cost must not grow with
+        // the square of the body count. n dynamic boxes rest on one floor, none touching
+        // each other: n real contact pairs, zero transitions per settled step.
+        let build = |count: usize| -> Simulation {
+            let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+                gravity_x: 0.0,
+                gravity_y: -9.81,
+                gravity_z: 0.0,
+            })
+            .unwrap();
+            assert!(simulation.add_body(TnPhysicsBodyOptions {
+                id: 0,
+                body_type: 1,
+                shape_type: 0,
+                position_x: 0.0,
+                position_y: -0.5,
+                position_z: 0.0,
+                rotation_x: 0.0,
+                rotation_y: 0.0,
+                rotation_z: 0.0,
+                rotation_w: 1.0,
+                shape_x: count as f32,
+                shape_y: 0.5,
+                shape_z: 1.0,
+                mass: 0.0,
+                collision_layer: 1,
+                collision_mask: u16::MAX.into(),
+                sensor: false,
+            }));
+            for index in 0..count {
+                assert!(simulation.add_body(TnPhysicsBodyOptions {
+                    id: index as u32 + 1,
+                    body_type: 0,
+                    shape_type: 0,
+                    position_x: index as f32 * 1.5 - count as f32 * 0.75,
+                    position_y: 2.0,
+                    position_z: 0.0,
+                    rotation_x: 0.0,
+                    rotation_y: 0.0,
+                    rotation_z: 0.0,
+                    rotation_w: 1.0,
+                    shape_x: 0.5,
+                    shape_y: 0.5,
+                    shape_z: 0.5,
+                    mass: 1.0,
+                    collision_layer: 1,
+                    collision_mask: u16::MAX.into(),
+                    sensor: false,
+                }));
+            }
+            simulation
+        };
+        let settle_and_measure = |count: usize| -> u128 {
+            let mut simulation = build(count);
+            // Drop and settle: every box lands on the floor and emits its started event.
+            let mut started_events = 0;
+            for _ in 0..240 {
+                assert!(simulation.step(1.0 / 60.0, &[]));
+                started_events += drain_events(&mut simulation).len();
+            }
+            assert!(
+                started_events >= count,
+                "each of {count} boxes must deliver a started event, got {started_events}"
+            );
+            let mut best = u128::MAX;
+            for _ in 0..3 {
+                let start = std::time::Instant::now();
+                let steps = 200;
+                for _ in 0..steps {
+                    assert!(simulation.step(1.0 / 60.0, &[]));
+                    drain_events(&mut simulation);
+                }
+                best = best.min(start.elapsed().as_nanos() / steps);
+            }
+            best
+        };
+        let small = settle_and_measure(16);
+        let large = settle_and_measure(128);
+        let ratio = large as f64 / small as f64;
+        println!(
+            "contact-event scaling: n=16 {small} ns/step, n=128 {large} ns/step, ratio {ratio:.1}"
+        );
+        // The pairwise sweep measures ~60x here (8128+ pair lookups vs 120). Rapier's events
+        // are proportional to state changes, so the ratio sits near the pipeline's own
+        // growth (~8x for 8x the bodies). The bound is generous; the sweep fails it by 3x.
+        assert!(
+            ratio < 20.0,
+            "per-step cost grew {ratio:.1}x for 8x the bodies: event synthesis is still polling pairs"
+        );
     }
 
     #[test]

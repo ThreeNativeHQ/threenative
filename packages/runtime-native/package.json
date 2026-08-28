@@ -41,7 +41,7 @@
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
     "native:physics:cross": "node scripts/build-native-physics.mjs",
     "native:physics:measure": "node scripts/measure-physics-divergence.mjs",
-    "native:physics:parity": "pnpm --dir ../.. exec vitest run packages/physics/__tests__/parity.spec.ts && cargo test --manifest-path native/physics/Cargo.toml --test parity -- --nocapture",
+    "native:physics:parity": "pnpm --dir ../.. exec vitest run packages/physics/__tests__/parity.spec.ts && cargo test --manifest-path native/physics/Cargo.toml --lib --test parity -- --nocapture",
     "native:physics:parity:device": "node scripts/verify-android-physics-parity.mjs",
     "native:qualify:physical": "node scripts/qualify-physical-mobile.mjs",
     "native:verify:desktop": "node scripts/verify-desktop-audio.mjs && node scripts/verify-desktop-stability.mjs && node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs && node scripts/verify-native-contracts.mjs && pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs",

@@ -976,6 +976,16 @@
       "proof": "packages/runtime-native/tests/generated-shooter-input.test.mjs",
       "owner": "PRD-P2-7",
       "reason": "This proof drives a scaffolded generated game, not a conformance scene: registry tests[] rows are executed by the visual-parity lanes and must export startScene scenes, so a playtest scenario cannot live there without breaking those lanes. It is registered here so the versioned public registry still records it; the owning runner executes it on web and desktop, and an unreachable device lane is reported blocked, never passed."
+    },
+    {
+      "id": "native-physics-collision-events",
+      "title": "native physics collision events: started/stopped parity with the web EventQueue path, no per-step pair polling",
+      "category": "physics",
+      "status": "implemented",
+      "runner": "packages/runtime-native package.json native:physics:parity (cargo test --lib on the host toolchain); red-green tests live in native/physics/src/lib.rs",
+      "proof": "packages/runtime-native/native/physics/src/lib.rs",
+      "owner": "PRD-227",
+      "reason": "The native host synthesized collision events by polling every body pair every step (O(n^2) narrow-phase graph lookups; measured 25.7x step-cost growth from 16 to 128 bodies and ~0.2 ms/frame on the PRD-227-P2 device profile). The step now drains Rapier's own collision transitions through an EventHandler, the same event source the web path reads (packages/physics/src/simulation.ts drainCollisionEvents). The Rust tests assert the [leftId, rightId, started, 1] record contract the TypeScript consumer reads (packages/physics/src/plugin.ts), started-once/stopped-once delivery, sensor overlap parity, removal dropping unknown-collider events exactly like the web byCollider filter, and a scaling bound (8x bodies must not multiply per-step cost by more than 20x; measured 4.3x after the fix)."
     }
   ]
 }
