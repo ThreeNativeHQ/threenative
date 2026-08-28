@@ -153,6 +153,75 @@ export function parseScreenState(output) {
   );
 }
 
+/**
+ * The panel's *active* mode, not the app's vote and not the settings value.
+ *
+ * A Pixel 8 found with Smooth Display off reports `peak_refresh_rate 60.0` and an active mode of
+ * 60 Hz while `supportedModes` still lists 120 — so the app's `Surface.setFrameRate(120)` is
+ * clamped away rather than declined, and an fps arm silently measures a different machine than the
+ * one it believes. The tell in the data is a SurfaceFlinger histogram of 16 ms and 33 ms intervals
+ * with no 8 ms bucket. Reading it here is cheaper than recognising it later.
+ */
+export function parseActiveDisplayMode(output) {
+  const source = String(output);
+  const active = /mActiveSfDisplayMode\s*=\s*DisplayMode\{[^}]*?peakRefreshRate\s*=\s*([0-9.]+)/u.exec(
+    source,
+  );
+  if (!active) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_DISPLAY_PARSE",
+      "dumpsys display has no mActiveSfDisplayMode",
+      { condition: "display", observed: source.slice(0, 200) },
+    );
+  }
+  const supported = /mSupportedRefreshRates\s*=\s*\[([^\]]*)\]/u.exec(source);
+  const supportedRefreshHz = supported
+    ? supported[1]
+        .split(",")
+        .map((entry) => Number(entry.trim()))
+        .filter((entry) => Number.isFinite(entry))
+        .map((entry) => Math.round(entry))
+    : [];
+  return {
+    activeRefreshHz: Math.round(Number(active[1])),
+    supportedRefreshHz: [...new Set(supportedRefreshHz)].sort((a, b) => b - a),
+  };
+}
+
+/** `settings get` prints the literal `null` when a key was never written; that is "unset", not 0. */
+function settingNumber(value) {
+  const trimmed = String(value).trim();
+  if (trimmed === "" || trimmed === "null") return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? Math.round(parsed) : undefined;
+}
+
+export function parseRefreshRateSettings({ peak, min, lowPower }) {
+  const power = String(lowPower ?? "").trim();
+  if (power !== "" && power !== "null" && power !== "0" && power !== "1") {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_DISPLAY_PARSE",
+      `unrecognised low_power value: ${power}`,
+      { condition: "lowPower", observed: power },
+    );
+  }
+  return {
+    peakRefreshRateSetting: settingNumber(peak),
+    minRefreshRateSetting: settingNumber(min),
+    lowPower: power === "1",
+  };
+}
+
+async function readDisplayState(execute) {
+  const [display, peak, min, lowPower] = await Promise.all([
+    execute(["shell", "dumpsys", "display"]),
+    execute(["shell", "settings", "get", "system", "peak_refresh_rate"]),
+    execute(["shell", "settings", "get", "system", "min_refresh_rate"]),
+    execute(["shell", "settings", "get", "global", "low_power"]),
+  ]);
+  return { ...parseActiveDisplayMode(display), ...parseRefreshRateSettings({ peak, min, lowPower }) };
+}
+
 function adbPath(environment = process.env) {
   if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
   const sdk =
@@ -207,8 +276,27 @@ function normaliseOptions(options) {
   if (typeof allowEmulator !== "boolean") {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_OPTIONS", "allowEmulator must be a boolean");
   }
+  // Capture of the panel state is unconditional; the *gate* is opt-in, so a cold-start or physics
+  // arm is unaffected while an fps arm cannot run on a panel it did not declare.
+  const requireRefreshHz = options.requireRefreshHz;
+  if (
+    requireRefreshHz !== undefined &&
+    (!Number.isInteger(requireRefreshHz) || requireRefreshHz <= 0 || requireRefreshHz > 1000)
+  ) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_OPTIONS",
+      "requireRefreshHz must be a whole number of hertz between 1 and 1000",
+    );
+  }
   const maximumThermal = thermalStatusFromValue(maxThermalStatus);
-  return { allowEmulator, minBatteryPercent, requireDischarging, maximumThermal, allowOverride };
+  return {
+    allowEmulator,
+    minBatteryPercent,
+    requireDischarging,
+    maximumThermal,
+    allowOverride,
+    requireRefreshHz,
+  };
 }
 
 function conditionFailure(condition, threshold, observed) {
@@ -290,6 +378,7 @@ export async function assertDeviceReady(serial, options, dependencies = {}) {
   const battery = parseBatteryState(await execute(["shell", "dumpsys", "battery"]));
   const thermal = parseThermalState(await execute(["shell", "dumpsys", "thermalservice"]));
   const screen = parseScreenState(await execute(["shell", "dumpsys", "power"]));
+  const display = await readDisplayState(execute);
   const failures = [];
   if (battery.batteryPercent < configuration.minBatteryPercent) {
     failures.push(
@@ -315,6 +404,22 @@ export async function assertDeviceReady(serial, options, dependencies = {}) {
   if (!screen.screenOn) {
     failures.push(conditionFailure("screen", "on", "off"));
   }
+  if (configuration.requireRefreshHz !== undefined) {
+    if (display.activeRefreshHz !== configuration.requireRefreshHz) {
+      failures.push(
+        conditionFailure(
+          "refreshRate",
+          `${configuration.requireRefreshHz} Hz active`,
+          `${display.activeRefreshHz} Hz`,
+        ),
+      );
+    }
+    // Battery Saver clamps the panel's mode range, so a declared rate can be voted for and never
+    // applied. It is a separate cause from the Smooth Display setting and both have been observed.
+    if (display.lowPower) {
+      failures.push(conditionFailure("lowPower", "off", "on"));
+    }
+  }
 
   if (failures.length > 0 && !configuration.allowOverride) {
     const detail = failures
@@ -334,6 +439,11 @@ export async function assertDeviceReady(serial, options, dependencies = {}) {
     thermalStatus: thermal.thermalStatus,
     thermalStatusCode: thermal.thermalStatusCode,
     screenOn: screen.screenOn,
+    activeRefreshHz: display.activeRefreshHz,
+    supportedRefreshHz: display.supportedRefreshHz,
+    peakRefreshRateSetting: display.peakRefreshRateSetting,
+    minRefreshRateSetting: display.minRefreshRateSetting,
+    lowPower: display.lowPower,
     provisional: failures.map((failure) => failure.condition),
   };
 }
