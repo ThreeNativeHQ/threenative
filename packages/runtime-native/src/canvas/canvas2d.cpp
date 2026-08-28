@@ -347,6 +347,7 @@ void Canvas2DContext::resize(int width, int height) {
     width_ = width;
     height_ = height;
     impl_->resize(width, height);
+    markDirty();
 }
 
 // State Management
@@ -434,6 +435,7 @@ std::string Canvas2DContext::getTextBaseline() const {
 }
 
 void Canvas2DContext::fillText(const std::string& text, float x, float y) {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
 
@@ -464,6 +466,7 @@ void Canvas2DContext::fillText(const std::string& text, float x, float y) {
 }
 
 void Canvas2DContext::strokeText(const std::string& text, float x, float y) {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
 
@@ -522,6 +525,7 @@ TextMetrics Canvas2DContext::measureText(const std::string& text) {
 
 // Rectangles
 void Canvas2DContext::fillRect(float x, float y, float width, float height) {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
     impl_->canvas->drawRect(SkRect::MakeXYWH(x, y, width, height), impl_->makeFillPaint());
@@ -529,6 +533,7 @@ void Canvas2DContext::fillRect(float x, float y, float width, float height) {
 }
 
 void Canvas2DContext::strokeRect(float x, float y, float width, float height) {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
     impl_->canvas->drawRect(SkRect::MakeXYWH(x, y, width, height), impl_->makeStrokePaint());
@@ -536,6 +541,7 @@ void Canvas2DContext::strokeRect(float x, float y, float width, float height) {
 }
 
 void Canvas2DContext::clearRect(float x, float y, float width, float height) {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
     SkPaint clearPaint;
@@ -647,6 +653,7 @@ void Canvas2DContext::rect(float x, float y, float width, float height) {
 }
 
 void Canvas2DContext::fill() {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
     // snapshot() returns an SkPath without consuming the builder
@@ -655,6 +662,7 @@ void Canvas2DContext::fill() {
 }
 
 void Canvas2DContext::stroke() {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
     // snapshot() returns an SkPath without consuming the builder
@@ -747,6 +755,7 @@ ImageData Canvas2DContext::getImageData(int x, int y, int width, int height) {
 }
 
 void Canvas2DContext::putImageData(const ImageData& imageData, int x, int y) {
+    markDirty();
 #if defined(MYSTRAL_HAS_SKIA)
     if (!impl_->canvas) return;
 

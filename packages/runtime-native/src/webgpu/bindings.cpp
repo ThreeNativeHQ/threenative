@@ -6847,20 +6847,26 @@ void compositeCanvas2DToWebGPU(BindingsState* state) {
         state->canvas2DTextureHeight = height;
     }
 
-    // Upload pixel data to texture
-    WGPUImageCopyTexture_Compat destTexture = {};
-    destTexture.texture = state->canvas2DTexture;
-    destTexture.mipLevel = 0;
-    destTexture.origin = {0, 0, 0};
-    destTexture.aspect = WGPUTextureAspect_All;
+    // Upload pixel data to texture — but only when the canvas has drawn since the last
+    // upload. The fullscreen quad below still renders every frame (the surface texture is
+    // new each frame); skipping is only the width x height x 4 buffer copy, which for an
+    // unchanged canvas is the same pixels byte for byte.
+    if (state->mainCanvas2DContext->hasDirtyPixels()) {
+        WGPUImageCopyTexture_Compat destTexture = {};
+        destTexture.texture = state->canvas2DTexture;
+        destTexture.mipLevel = 0;
+        destTexture.origin = {0, 0, 0};
+        destTexture.aspect = WGPUTextureAspect_All;
 
-    WGPUTextureDataLayout_Compat dataLayout = {};
-    dataLayout.offset = 0;
-    dataLayout.bytesPerRow = width * 4;
-    dataLayout.rowsPerImage = height;
+        WGPUTextureDataLayout_Compat dataLayout = {};
+        dataLayout.offset = 0;
+        dataLayout.bytesPerRow = width * 4;
+        dataLayout.rowsPerImage = height;
 
-    WGPUExtent3D writeSize = {(uint32_t)width, (uint32_t)height, 1};
-    wgpuQueueWriteTexture(state->queue, &destTexture, pixelData, pixelDataSize, &dataLayout, &writeSize);
+        WGPUExtent3D writeSize = {(uint32_t)width, (uint32_t)height, 1};
+        wgpuQueueWriteTexture(state->queue, &destTexture, pixelData, pixelDataSize, &dataLayout, &writeSize);
+        state->mainCanvas2DContext->consumeDirtyPixels();
+    }
 
     // Create pipeline if needed
     if (!state->canvas2DPipeline) {

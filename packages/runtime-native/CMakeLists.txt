@@ -1747,6 +1747,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-dom-dispatch-lifetime-test EXCLUDE_FROM_ALL
         tests/dom_dispatch_lifetime_test.cpp)
     target_link_libraries(threenative-dom-dispatch-lifetime-test PRIVATE mystral-runtime)
+    add_executable(threenative-canvas2d-dirty-test EXCLUDE_FROM_ALL
+        tests/canvas2d_dirty_tracking_test.cpp)
+    target_link_libraries(threenative-canvas2d-dirty-test PRIVATE mystral-runtime)
 
     add_executable(threenative-input-restart-test EXCLUDE_FROM_ALL
         tests/input_restart_test.cpp)

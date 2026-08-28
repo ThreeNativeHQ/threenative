@@ -140,9 +140,29 @@ public:
     const uint8_t* getPixelData() const;
     size_t getPixelDataSize() const;
 
+    // ========================================================================
+    // Pixel-change tracking (for the GPU upload decision)
+    // ========================================================================
+    // True when pixels have changed since the compositor last uploaded them. Every
+    // rasterizing operation sets this; state, transform, measurement and read calls
+    // never do. A fresh context is dirty so its first upload always happens.
+    bool hasDirtyPixels() const { return dirtyPixels_; }
+
+    // Reports whether an upload is owed and clears the flag. The compositor calls
+    // this only after wgpuQueueWriteTexture succeeded, so a skipped frame retries.
+    bool consumeDirtyPixels() {
+        const bool dirty = dirtyPixels_;
+        dirtyPixels_ = false;
+        return dirty;
+    }
+
 private:
     int width_;
     int height_;
+    bool dirtyPixels_ = true;
+
+    // Rasterizing operations call this; not exposed so callers cannot force uploads.
+    void markDirty() { dirtyPixels_ = true; }
 
     // Skia implementation details (pimpl pattern)
     struct Impl;
