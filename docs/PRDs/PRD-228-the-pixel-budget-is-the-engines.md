@@ -486,6 +486,26 @@ implementation until it looks right.
 | Ceiling / floor | `1.00` / `0.23` | at the floor still under target the scaler **stops and reports** `atFloor`; it must not pretend the budget was met. |
 | Oscillation guard | two down→up→down cycles across the same rung boundary, each leg within `cooldown + upWindows + 1` windows ⇒ pin the lower rung for the session, report `scaleSource: "auto-pinned"` | thermal edges produce exactly this, and a visibly pumping resolution is worse than a marginally softer one. The PRD's original 3-window reach could never fire — by the rest of this table a down-then-up leg costs at least 5 windows. |
 
+### Amended 2026-08-28 (second): the descent may not cost three minutes
+
+**Measured problem, §1.3.6:** falling one rung per window plus one cooldown window is ~20 s per
+rung at the top of the ladder, and ten rungs from the ceiling. A game that starts at DPR-1
+physical therefore spends about **three minutes visibly at 29 fps** before it settles. That is the
+first-registered controller behaving exactly as specified, and it is still a bad first impression.
+
+Two changes, both derived from the table rather than fitted to a scene:
+
+| Parameter | Value | Why |
+| --- | --- | --- |
+| Warm-up | discard the **first 1** window outright | §1.3.7's template took its only down-step from a cold-start window reading 51.52 fps while still loading, then spent four windows climbing back. "Window 1 always lies" is already the perf CLI's rule; the controller should not be the one consumer that believes it. |
+| Down-step size | `ceil(log(target ÷ measured fps) ÷ log(1 ÷ 0.72))` rungs, capped at **4** | One window cannot separate the fixed cost from the pixel cost, so the jump attributes the whole deficit to pixels. That over-jumps a CPU-bound frame — which is the safe direction, because the up-step exists and the oscillation guard bounds the pumping, while under-jumping costs another twenty seconds per rung. The 0.72 is this table's own pixels-per-step, not a measured scene constant. |
+
+Worked against the two device runs already on record. Bayview's first live window read 28.99 fps
+against a 60 target: `log(2.07) ÷ log(1.389) = 2.2 → 3 rungs`, so 1.00 → 0.61 in one step and the
+floor in about four steps instead of ten — **roughly one minute instead of three**. The scaffolded
+template's spurious cold-start step disappears entirely, because the window that caused it is now
+discarded.
+
 ### Amended 2026-08-28, from the device, before the second implementation
 
 **The original triggers were `presented p95 > 14.0 ms` down and `< 11.5 ms` up. They are wrong on

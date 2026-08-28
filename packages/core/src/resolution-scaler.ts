@@ -48,6 +48,25 @@ export const RESOLUTION_SCALER = {
   /** The resize frame is itself a hitch and must never feed the controller. */
   cooldownWindows: 1,
   /**
+   * Windows discarded outright at the start. "Window 1 always lies" is already the perf CLI's
+   * rule; the controller was the one consumer that believed it. A scaffolded template took its
+   * only down-step from a cold-start window reading 51.52 fps while still loading, then spent
+   * four windows climbing back to where it started.
+   */
+  warmupWindows: 1,
+  /**
+   * The most rungs one down-step may cross.
+   *
+   * Falling one rung per decision costs about twenty seconds per rung at the top of the ladder,
+   * and the ladder is ten rungs deep — a game starting at DPR-1 physical spent about three
+   * minutes visibly at 29 fps before settling. The jump size comes from the deficit: one window
+   * cannot separate the fixed cost from the pixel cost, so it attributes the whole deficit to
+   * pixels. That over-jumps a CPU-bound frame, which is the safe direction — the up-step exists
+   * and the oscillation guard bounds the pumping, while under-jumping costs another twenty
+   * seconds a rung.
+   */
+  maxDownRungs: 4,
+  /**
    * Two down-up-down cycles across one boundary, each leg inside this many windows, pins it.
    *
    * The PRD pre-registered this reach as 3 windows. That value cannot fire: a down-then-up leg
@@ -59,6 +78,9 @@ export const RESOLUTION_SCALER = {
   oscillationCycles: 2,
   oscillationWindows: 1 + 4 + 1,
 } as const;
+
+/** Pixels retained per rung: 0.85 linear on each axis. */
+const RUNG_PIXEL_RATIO = 0.85 * 0.85;
 
 export interface IResolutionScalerOptions {
   /** The `display.maxFps` the loop is holding the budget against. */
@@ -83,11 +105,12 @@ export class ResolutionScaler {
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
   #cooldown = 0;
+  #warmup = RESOLUTION_SCALER.warmupWindows;
   #windowIndex = 0;
   // Oscillation state. A "boundary" is the higher of the two rungs a step crossed, so a fall
   // from 1.0 and the climb back to it are recognised as the same boundary.
   #guardBoundary = -1;
-  #guardDirection: -1 | 0 | 1 = 0;
+  #guardDirection = 0;
   #guardLegs = 0;
   #guardCycles = 0;
   #guardWindow = 0;
@@ -134,6 +157,10 @@ export class ResolutionScaler {
   observe(window: IScalerWindow): number | undefined {
     this.#windowIndex += 1;
     if (this.#scaleSource === "auto-pinned") return undefined;
+    if (this.#warmup > 0) {
+      this.#warmup -= 1;
+      return undefined;
+    }
     if (this.#cooldown > 0) {
       this.#cooldown -= 1;
       return undefined;
@@ -144,7 +171,7 @@ export class ResolutionScaler {
         this.#atFloor = true;
         return undefined;
       }
-      return this.#step(1);
+      return this.#step(this.#rungsToDrop(window.fps));
     }
     this.#atFloor = false;
     if (window.presented.p95 > this.tailMs) {
@@ -158,16 +185,35 @@ export class ResolutionScaler {
     return this.#step(-1);
   }
 
-  #step(direction: 1 | -1): number {
+  /**
+   * How many rungs one down-step should cross, from the fps deficit alone.
+   *
+   * Each rung is `0.72x` the pixels, so closing a deficit of `target / measured` needs
+   * `log(deficit) / log(1 / 0.72)` rungs if the whole frame scaled with pixels. It does not — but
+   * a single window cannot say how much of it does, and the up-step is there to give back what
+   * this takes too eagerly.
+   */
+  #rungsToDrop(fps: number): number {
+    if (!(fps > 0)) return RESOLUTION_SCALER.maxDownRungs;
+    const deficit = this.targetFps / fps;
+    if (!(deficit > 1)) return 1;
+    const rungs = Math.ceil(Math.log(deficit) / Math.log(1 / RUNG_PIXEL_RATIO));
+    return Math.min(Math.max(1, rungs), RESOLUTION_SCALER.maxDownRungs);
+  }
+
+  #step(direction: number): number {
     // The boundary a fall from rung n crosses is the same one the climb back to n crosses.
-    const boundary = direction === 1 ? this.#index : this.#index - 1;
-    this.#index += direction;
+    const boundary = direction > 0 ? this.#index : this.#index - 1;
+    this.#index = Math.min(
+      RESOLUTION_SCALER.rungs.length - 1,
+      Math.max(0, this.#index + direction),
+    );
     this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
     this.#noteForOscillationGuard(boundary, direction);
     return this.scale;
   }
 
-  #noteForOscillationGuard(boundary: number, direction: 1 | -1): void {
+  #noteForOscillationGuard(boundary: number, direction: number): void {
     const withinReach =
       this.#windowIndex - this.#guardWindow <= RESOLUTION_SCALER.oscillationWindows;
     const continues =
