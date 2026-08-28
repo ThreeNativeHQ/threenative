@@ -7,6 +7,7 @@ import { FRAME_BUDGET_MARKER, FrameBudget, type IFrameSurfaceState } from "../sr
  * resolution and sample count that produced it is not a measurement of anything in particular.
  */
 const PINNED: IFrameSurfaceState = {
+  atFloor: false,
   drawingBufferHeight: 346,
   drawingBufferWidth: 768,
   resolutionScale: 0.32,

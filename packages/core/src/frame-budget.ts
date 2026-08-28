@@ -65,6 +65,14 @@ export interface IFrameSurfaceState {
   readonly sampleCount: number;
   readonly drawingBufferWidth: number;
   readonly drawingBufferHeight: number;
+  /**
+   * True when the scaler is at its lowest rung and the tail is still over budget.
+   *
+   * A window that reports 0.23 and nothing else reads as a met budget at a low resolution. It is
+   * the opposite: the engine ran out of room and the game is still missing its target. Always
+   * false under a pinned scale, which has no floor to reach.
+   */
+  readonly atFloor: boolean;
 }
 
 const SCALE_SOURCES: readonly IFrameSurfaceState["scaleSource"][] = [
@@ -75,8 +83,18 @@ const SCALE_SOURCES: readonly IFrameSurfaceState["scaleSource"][] = [
 
 /** Fail closed: a surface that cannot describe an image is never reported as one. */
 function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
-  const { drawingBufferHeight, drawingBufferWidth, resolutionScale, sampleCount, scaleSource } =
-    surface;
+  const {
+    atFloor,
+    drawingBufferHeight,
+    drawingBufferWidth,
+    resolutionScale,
+    sampleCount,
+    scaleSource,
+  } = surface;
+  if (typeof atFloor !== "boolean")
+    throw new Error(
+      `Frame budget surface atFloor must say whether the scaler had room left, received ${String(atFloor)}.`,
+    );
   if (!Number.isFinite(resolutionScale) || resolutionScale <= 0 || resolutionScale > 1)
     throw new Error(
       `Frame budget surface resolutionScale must be within (0, 1], received ${String(resolutionScale)}.`,
@@ -98,7 +116,14 @@ function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
         `Frame budget surface ${name} must be an integer of at least one, received ${String(value)}.`,
       );
   }
-  return { drawingBufferHeight, drawingBufferWidth, resolutionScale, sampleCount, scaleSource };
+  return {
+    atFloor,
+    drawingBufferHeight,
+    drawingBufferWidth,
+    resolutionScale,
+    sampleCount,
+    scaleSource,
+  };
 }
 
 export interface IFrameBudgetSummary {

@@ -58,6 +58,7 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       expect(marker, "no frame-budget window was reported").toBeDefined();
       const reported = JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}");
       expect(reported.surface).toEqual({
+        atFloor: false,
         drawingBufferHeight: 540,
         drawingBufferWidth: 1200,
         resolutionScale: 0.5,

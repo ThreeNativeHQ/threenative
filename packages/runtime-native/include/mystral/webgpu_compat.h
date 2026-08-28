@@ -134,9 +134,16 @@ typedef WGPUSurfaceSourceAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNat
 // Dawn proc initialization - Dawn requires setting up procs before use
 #define WGPU_NEEDS_PROC_INIT 1
 
-// Pass timestamp writes (Dawn uses one struct for render and compute passes alike)
+// Pass timestamp writes. This branch covers two headers that disagree: Dawn merged the render
+// and compute structs into one, wgpu-native (including the Android aarch64 build) keeps them
+// separate. Splitting here rather than at the use site keeps the bindings backend-agnostic.
+#if defined(MYSTRAL_WEBGPU_DAWN)
 typedef WGPUPassTimestampWrites WGPURenderPassTimestampWrites_Compat;
 typedef WGPUPassTimestampWrites WGPUComputePassTimestampWrites_Compat;
+#else
+typedef WGPURenderPassTimestampWrites WGPURenderPassTimestampWrites_Compat;
+typedef WGPUComputePassTimestampWrites WGPUComputePassTimestampWrites_Compat;
+#endif
 
 // Texture copy types (Dawn renamed Image* to Texel*)
 typedef WGPUTexelCopyTextureInfo WGPUImageCopyTexture_Compat;

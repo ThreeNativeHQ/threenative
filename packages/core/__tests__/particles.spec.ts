@@ -35,6 +35,7 @@ function renderer(dispatched: unknown[]): IRendererLike {
     setSize: () => undefined,
     setResolutionScale: () => undefined,
     surface: () => ({
+      atFloor: false,
       drawingBufferHeight: 1,
       drawingBufferWidth: 1,
       resolutionScale: 1,

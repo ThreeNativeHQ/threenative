@@ -34,6 +34,7 @@ describe("renderer.surface()", () => {
   it("reports the applied scale and the drawing buffer it produced", async () => {
     const created = await renderer({ resolutionScale: 0.32 });
     expect(created.surface()).toEqual({
+      atFloor: false,
       drawingBufferHeight: 346,
       drawingBufferWidth: 768,
       resolutionScale: 0.32,
@@ -58,6 +59,7 @@ describe("renderer.surface()", () => {
   it("defaults to an unscaled, unsampled surface", async () => {
     const created = await renderer({});
     expect(created.surface()).toEqual({
+      atFloor: false,
       drawingBufferHeight: 1080,
       drawingBufferWidth: 2400,
       resolutionScale: 1,
@@ -73,6 +75,7 @@ describe("renderer.setResolutionScale()", () => {
     const created = await renderer({ resolutionScale: 1 });
     created.setResolutionScale(0.44, "auto");
     expect(created.surface()).toEqual({
+      atFloor: false,
       drawingBufferHeight: 475,
       drawingBufferWidth: 1056,
       resolutionScale: 0.44,

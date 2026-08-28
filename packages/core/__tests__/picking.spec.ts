@@ -32,6 +32,7 @@ function renderer(canvas: HTMLCanvasElement) {
     setSize: () => undefined,
     setResolutionScale: () => undefined,
     surface: () => ({
+      atFloor: false,
       drawingBufferHeight: 1,
       drawingBufferWidth: 1,
       resolutionScale: 1,

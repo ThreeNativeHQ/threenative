@@ -192,6 +192,9 @@ function wrapRenderer(
       reapply.resize?.();
     },
     surface: () => ({
+      // The renderer cannot be at a floor it does not know about; the loop that owns the scaler
+      // overrides this when one exists.
+      atFloor: false,
       drawingBufferHeight: applied.height,
       drawingBufferWidth: applied.width,
       resolutionScale: state.resolutionScale,

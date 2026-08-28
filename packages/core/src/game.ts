@@ -782,7 +782,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // Last, so the engine's own renderer answers this and a game cannot report a
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
-            readSurface: () => renderer.surface(),
+            readSurface: () =>
+              scaler === undefined
+                ? renderer.surface()
+                : { ...renderer.surface(), atFloor: scaler.atFloor },
           });
     this.#frameBudget = frameBudget;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();

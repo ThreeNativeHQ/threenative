@@ -86,6 +86,55 @@ describe('resolutionScale: "auto"', () => {
     expect(result).toEqual({ scale: 0.44, scaleSource: "pinned" });
   });
 
+  it("reports atFloor once the scaler has run out of rungs and the frame is still over budget", async () => {
+    // Measured on a physical Pixel 8 the same day: Bayview walked all ten rungs to 0.23 and was
+    // still under 60 fps, because 13.79 ms of its frame does not scale with pixels at all. A
+    // window reporting 0.23 and nothing else would read as a budget met at a low resolution.
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    const windows: Array<{ surface?: { atFloor: boolean; resolutionScale: number } }> = [];
+    const game = defineGame({
+      display: { maxFps: 60 },
+      frameBudget: { onWindow: (w) => windows.push(w), report: () => {}, reportEvery: 1 },
+      render: { resolutionScale: "auto" },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: Empty },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      // Ten rungs at one step plus one cooldown window each, then a few windows at the floor.
+      for (let index = 1; index <= 30; index += 1) frame(index * 60);
+      const last = windows.at(-1);
+      expect(last?.surface?.resolutionScale).toBe(0.23);
+      expect(last?.surface?.atFloor).toBe(true);
+      expect(windows[0]?.surface?.atFloor).toBe(false);
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
+
   it("moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface", async () => {
     // The arrangement the device ladder measured and accepted. A scaler that reframed the shot or
     // shrank the UI would buy its frame budget by changing the game, which is not mechanism.
