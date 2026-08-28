@@ -30,12 +30,22 @@ export interface IPerfSummary {
   readonly p95: number;
 }
 
+/** What the window's frames were drawn at, when the loop reported it. */
+export interface IFrameSurfaceJson {
+  readonly resolutionScale: number;
+  readonly scaleSource: string;
+  readonly sampleCount: number;
+  readonly drawingBufferWidth: number;
+  readonly drawingBufferHeight: number;
+}
+
 export interface IFrameBudgetWindowJson {
   readonly fps: number;
   readonly frames: number;
   readonly frame?: IPerfSummary;
   readonly hitches: number;
   readonly phases?: Readonly<Record<string, IPerfSummary>>;
+  readonly surface?: IFrameSurfaceJson;
   readonly window: number;
 }
 
@@ -331,6 +341,16 @@ function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string): number 
 export function formatPerfReport(report: IPerfReport): string {
   const lines: string[] = [`perf — ${report.budgets.length} window(s) from ${report.source}`];
   if (report.presentMode !== undefined) lines.push(`present mode: ${report.presentMode}`);
+  // Reported once, from the last window, next to the fps it explains. Named as unreported when
+  // absent rather than left off: a reader who sees no scale line must not assume a full-resolution
+  // single-sample frame, which is exactly how a perf record and its tree came to disagree.
+  const surface = report.budgets.at(-1)?.surface;
+  lines.push(
+    surface === undefined
+      ? "surface: unreported — this fps does not say what resolution or sampling produced it"
+      : `surface: scale ${surface.resolutionScale} ${surface.scaleSource}, ` +
+        `${surface.drawingBufferWidth}x${surface.drawingBufferHeight}, ${surface.sampleCount}x samples`,
+  );
   lines.push("window  fps     frame p50/p95    render p50/p95   hostGap p50/p95");
   for (const window of report.budgets) {
     const label = report.discardedWindows.includes(window.window) ? `${window.window}*` : String(window.window);
