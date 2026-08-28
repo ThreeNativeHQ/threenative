@@ -209,6 +209,16 @@ bool surfaceRevalidationDisabled() {
     return configured != nullptr && configured[0] == '1';
 }
 
+bool presentUncapped() {
+#if defined(__ANDROID__)
+    char property[PROP_VALUE_MAX] = {};
+    if (__system_property_get("debug.threenative.present_uncapped", property) > 0)
+        return property[0] == '1';
+#endif
+    const char* configured = std::getenv("THREENATIVE_PRESENT_UNCAPPED");
+    return configured != nullptr && configured[0] == '1';
+}
+
 void noteDroppedTimerFiring() { g_droppedTimerFirings.fetch_add(1, std::memory_order_relaxed); }
 
 uint64_t takeDroppedTimerFirings() {

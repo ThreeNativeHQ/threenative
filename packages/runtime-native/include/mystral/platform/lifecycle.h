@@ -141,6 +141,23 @@ void clearSurfaceRevalidationRequest();
  */
 bool surfaceRevalidationDisabled();
 
+/**
+ * True when the host should configure its surface with an uncapped present mode.
+ *
+ * Reads `debug.threenative.present_uncapped` (Android) or `THREENATIVE_PRESENT_UNCAPPED`
+ * (everywhere), `1` to enable, in the same shape as `surfaceRevalidationDisabled()`.
+ *
+ * The desktop CLI has carried `--no-vsync` since it existed; Android had no channel at all, so the
+ * one question the device could not be asked was whether its frame rate is set by the work or by
+ * the FIFO cadence. PRD-227 measured a frame pinned to exactly three 60 Hz vsyncs (50 ms) while
+ * doing 25.27 ms of work, unmoved by a 40% work reduction and unmoved by 2.25× fewer pixels. This
+ * is the one-variable comparison that separates those two, in one binary rather than two.
+ *
+ * Diagnostic only: it defaults off, and an uncapped present tears. Never enable it in a shipped
+ * config, a preset, or a CI lane.
+ */
+bool presentUncapped();
+
 /** Counts a timer firing dropped while paused, so the resume marker can report how many. */
 void noteDroppedTimerFiring();
 

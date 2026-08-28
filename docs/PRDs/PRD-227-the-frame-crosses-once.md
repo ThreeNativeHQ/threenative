@@ -112,6 +112,7 @@ different owners).
 | 2 | `queue.writeBuffer` recorded into the stream | uniform/attribute upload path | 428 direct crossings/frame | staging + stream both off → upload probe red |
 | 3 | `ObjectTemplate` + internal fields for WebGPU wrappers | every wrapper handed to three.js | `Reflect.set` property bags read by name | shape-identity test: two wrappers of one class must share a hidden class; revert → red |
 | 4 | No `v8::Persistent` per crossed callback argument | native callback inputs | per-argument Persistent + weak ref | handle-lifetime test fails on premature collection |
+| 5 | `platform::presentUncapped()` — an Android channel for the uncapped present mode | both `configureSurface` call sites in `runtime.cpp` | desktop-only `--no-vsync`, no device channel at all | set the property to `0` and the host reports `presentMode` `fifo`; to `1` and it reports `immediate`/`mailbox`, from `nativeHost.presentMode` |
 
 ## Execution Phases
 
@@ -263,11 +264,21 @@ with no further optimisation.**
 
 ### The next lever — two candidates, both in the host
 
-1. **Present mode.** `--no-vsync` exists on the desktop CLI and has **no Android channel**:
-   `grep -rniE vsync src/platform/ android/app/src/main/java/` returns nothing. Add it as a
-   `debug.threenative.*` system property, matching `crash_handlers.cpp` and `lifecycle.cpp`, then
-   run one uncapped device arm. If work is 25 ms and the cap is the pacing, this reads ~40 fps.
-   **Do this first — it is a property read and a rebuild.**
+1. **Present mode — the channel now exists.** `--no-vsync` had been desktop-CLI-only, so the one
+   question the device could not be asked was whether its rate is set by the work or by the FIFO
+   cadence. `platform::presentUncapped()` reads `debug.threenative.present_uncapped` (Android) or
+   `THREENATIVE_PRESENT_UNCAPPED` (everywhere), in the same shape as `surfaceRevalidationDisabled()`,
+   and both `configureSurface` call sites now honour it. Diagnostic, default off, and an uncapped
+   present tears — never ship it enabled.
+
+   ```sh
+   adb shell setprop debug.threenative.present_uncapped 1   # uncapped arm
+   adb shell setprop debug.threenative.present_uncapped 0   # control, same binary
+   ```
+
+   **Read it as a one-variable comparison in one binary.** If the uncapped arm rises toward the
+   ~40 fps that 25.27 ms of work implies, the cadence is the limiter and the fix is present pacing.
+   If it stays at ~20, the limiter is downstream of our present call and candidate 2 takes over.
 2. **The composited web UI layer.** Bayview's `config.json` sets `"ui": { "renderer": "web" }`
    (landed `3152feb`). SurfaceFlinger shows **several layers** in this app at independent rates
    (19.974, 8.024, 15.909, 62.500), and the budget's `overlay` phase reads a flat 0 because it does

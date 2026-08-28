@@ -387,7 +387,8 @@ public:
 
         // Configure surface with window dimensions
         LOGI("Configuring surface: %dx%d", width_, height_);
-        if (!webgpu_->configureSurface(width_, height_, config_.vsync)) {
+        if (!webgpu_->configureSurface(width_, height_,
+                                       config_.vsync && !platform::presentUncapped())) {
             std::cerr << "[Mystral] Failed to configure WebGPU surface" << std::endl;
             LOGE("Failed to configure WebGPU surface");
             return false;
@@ -944,7 +945,9 @@ public:
             width_ = static_cast<int>(windowWidth);
             height_ = static_cast<int>(windowHeight);
         }
-        if (!webgpu_->configureSurface(width_, height_, config_.vsync)) return false;
+        if (!webgpu_->configureSurface(width_, height_,
+                                       config_.vsync && !platform::presentUncapped()))
+            return false;
 
         webgpu::republishSurface(bindingsState_, webgpu_->getSurface(),
                                  webgpu_->getPreferredFormat(), webgpu_->getPresentMode(),
