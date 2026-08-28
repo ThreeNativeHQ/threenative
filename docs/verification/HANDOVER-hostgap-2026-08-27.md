@@ -5,6 +5,13 @@
 [PATH-TO-60FPS](PATH-TO-60FPS-2026-08-27.md), both of which are diagnosis on a model that has now
 mispredicted three times.
 
+> **UPDATE, same day: task 1 is done.** The instrument landed (`73e0baec`), the device runs ran,
+> and the answer is in
+> [prd-227-hostgap-decomposition-2026-08-27](prd-227-hostgap-decomposition-2026-08-27.md):
+> hostGap is ~8 ms of real replay work + ~14 ms of a GPU-tail wait in `present`, and mailbox+720p
+> reached 34.4 fps (SurfaceFlinger-confirmed). Task 2's swapchain/fence hypothesis is half-confirmed
+> — the wait exists but lives in `present` and tracks GPU work, not vblank. Do not re-run task 1.
+
 **Do not take "execute PRD-227" as your task.** Its two named changes are finished — Change 1 landed,
 Change 2 was falsified — so an agent told to execute it invents lever ten. Your task is task 1 below.
 
