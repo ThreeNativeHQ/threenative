@@ -605,15 +605,13 @@ Named so the next session starts here rather than re-deriving the state.
    table and therefore belongs in an edit to that section, not in the implementation.**
 4. **Change C's sample half is stated but not implemented.** The scaler moves resolution only. The
    measured rule is in Phase 0 above.
-5. **`renderer.antialias` does nothing on native, and it is shipped and documented.** Proven in
-   §1.3.8: `antialias: true` in the config yields `sampleCount: 1` on device and a texture census
-   with no multisampled attachment. The value reaches the bundle, `resolveRendererAntialias`
-   returns it, `createRenderer` passes it to `WebGPURenderer`, and three's own constructor would
-   set four samples — every link reads correct and the delivered frame is single-sampled, so the
-   break is below the config seam and is not located. **This is the highest-priority open defect
-   here**: it is named in every template's `AGENTS.md` as part of the pixel budget, so a game turns
-   it on, sees no cost, and concludes sampling is free. It also means Change C has no measured
-   default, because the `(scale × samples)` table compared an inert flag against itself.
+5. **Re-measure `(scale × samples)` now that sampling works.** `renderer.antialias` was inert on
+   native because three read one missing feature and classified the whole runtime as a
+   compatibility device (`d476ec36`, §1.3.8). Fixed and verified `sampleCount 1 → 4`, but the
+   ladder that was to choose Change C's default was run against the inert flag and must be run
+   again. **Change C has no measured default until then.** Note the fix also re-enables three's
+   core depth-texture, MRT-blending and shader paths on native, which is a wider behaviour change
+   than sampling and deserves its own visual check.
 6. **Phase 3's first use, re-scoped.** A pass-stage split is not obtainable from timestamp pairs;
    see that item. The instrument's first real use should be a per-pass breakdown of Bayview's
    frame, aimed at §1.3.5's 13.79 ms intercept rather than at its fill rate.

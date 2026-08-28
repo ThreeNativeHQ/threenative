@@ -561,6 +561,19 @@ surface: {"resolutionScale":1,"scaleSource":"auto","sampleCount":1,
 TN_GPU_TEXTURES: 2400x1080 rgba16float x2, 2400x1080 depth24plus x3, ... — no multisampled attachment
 ```
 
+**RESOLVED the same day — root cause found and fixed (`d476ec36`); the paragraph below is kept as
+the trail that led there.** three's WebGPU backend sets
+`this.compatibilityMode = !device.features.has("core-features-and-limits")` and then
+`if (this.compatibilityMode) renderer._samples = 0`. Our bindings had no entry for that feature
+name, so three concluded it was driving a reduced-capability **compatibility** device and disabled
+MSAA outright — along with switching its depth-texture, MRT-blending and shader texture-type paths,
+for every native game since the bindings were written. Compatibility mode is a feature *level* a
+caller opts into and this runtime never requests one, so the feature is now requested on the Dawn
+branches and answered truthfully at both query sites. Measured on the same probe before and after:
+`compatibilityMode true → false`, `hasCoreFeatures false → true`, `sampleCount 1 → 4`.
+**The `(scale × samples)` ladder stays withdrawn** — it was run against the inert flag and must be
+re-measured now that sampling actually reaches the GPU.
+
 **`sampleCount: 1` with sampling requested**, and a texture census identical in shape to the
 `antialias: false` runs. Traced as far as the evidence goes: the value is in the built bundle
 (`renderer: { preferWebGPU: true, resolutionScale: "auto", antialias: true }`),
