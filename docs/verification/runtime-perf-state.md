@@ -12,7 +12,21 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
-## 1. Native Android fps: sustained >60 fps is green on the physical Pixel 8
+## 1. Native Android fps — every green in this section is a **120 Hz arm**
+
+> **Baseline decided 2026-08-28 (PRD-228): acceptance runs on a 60 Hz panel at `maxFps: 60`, and
+> accepts at presented p95 ≤ 14 ms.** Every result in §1.3.3 and §1.3.4 below was measured with the
+> Pixel 8's Smooth Display on and the panel at physical 120 Hz. They remain true and they remain
+> useful — as **high-refresh arms**. They are no longer the acceptance, and no gate may cite them.
+>
+> The same day, at `resolutionScale` 0.32 on a **60 Hz** panel (Smooth Display off,
+> `peak_refresh_rate 60.0`, Battery Saver *off*), SurfaceFlinger measured **49.932 fps** over 2,943
+> frames — 2,255 × 16 ms + 678 × 33 ms, **zero 8 ms intervals**. Render p95 was 15.5–17.8 ms in both
+> configurations: the same frame, charged 33.3 ms on a 60 Hz panel and 25 ms on a 120 Hz one.
+> **Under the decided baseline Bayview does not yet pass.** `device-preflight.mjs` now reads and can
+> gate on the active panel mode (`requireRefreshHz`), so no later arm can repeat this ambiguity.
+
+### 1.0 The 120 Hz arm (previously stated as acceptance)
 
 **Goal (owner): 60 fps+ on a physical Pixel 8; 30 fps is a milestone, never a pass.** On 2026-08-28
 Bayview reached the active 60 Hz display budget on the physical Pixel 8 while keeping the UI at the
@@ -22,9 +36,10 @@ remains falsified; it is unrelated to this native measurement. A supported `disp
 path now selects the Pixel's physical 120 Hz mode and uses mailbox presentation. The accepted run
 held **63.45–72.52 fps across 11 steady windows / 3,300 frames**, with zero hitches and thermal
 status 0 before and after. SurfaceFlinger independently measured 70.358 fps over 3,634 surface
-frames at physical 120 Hz, with zero dropped frames. The owner's 60+ fps goal is met.
+frames at physical 120 Hz, with zero dropped frames. **On the 120 Hz arm the owner's 60+ fps goal is
+met; on the decided 60 Hz baseline it is not — see the note opening §1.**
 
-| Where it stands (2026-08-28 acceptance) | value |
+| Where it stands (2026-08-28, **120 Hz arm**) | value |
 | --- | ---: |
 | Pixel 8, Mali-G715/Vulkan, unplugged, active 120 Hz | **63.45–72.52 fps** |
 | 11 steady 300-frame windows | **3,300 frames**, zero hitches, every window above 60 fps |
@@ -252,7 +267,9 @@ of 2,009 frames spiked and the worst frame reached 74.72 ms.
 The temporary reset/logger used for the exact 2,009-frame aggregate was removed before the final
 APK. The clean rebuild has SHA-256
 `3d072453ee23932d5153678cc0d5e7900a44c0c890d7a8cc57586635812f8b95`; a clean open reported
-Mali-G715/Vulkan, `TN_RENDER_SCALE` 0.36, `TN_NATIVE_SMOKE_READY:webgpu`, and
+Mali-G715/Vulkan, `TN_RENDER_SCALE` 0.36 (**the live tree has since moved to
+`renderer.android.resolutionScale: 0.32`; this figure describes the accepted build, not HEAD**),
+`TN_NATIVE_SMOKE_READY:webgpu`, and
 `TN_NATIVE_SMOKE_FIRST_FRAME`. The physical Android input smoke then fired the weapon: its artifact
 contains the muzzle flash and the HUD changed from 30 to 29 rounds.
 
@@ -289,9 +306,12 @@ After Battery Saver was disabled, SurfaceFlinger genuinely reported active mode 
 
 That exposed a second engine defect. FIFO presentation quantizes an 11–12 ms frame that misses one
 8.33 ms interval to the 60 Hz divisor. With the physical display at 120 Hz, Bayview's first FIFO
-steady window was still only 57.8 fps. The runtime now keeps FIFO for the conservative 1–60 fps
-range and uses its already-supported mailbox/immediate path when `maxFps` is 0 or above 60. The
-software ceiling remains active in either mode.
+steady window was still only 57.8 fps. The runtime keeps FIFO **below** the full-refresh target and
+uses its already-supported mailbox/immediate path at 60, above 60 and uncapped — the code is
+`config.vsync = config.maxFps != 0 && config.maxFps < 60`
+(`packages/runtime-native/src/platform/android_main.cpp:221`), so **`maxFps: 60` selects mailbox,
+not FIFO**. An earlier revision of this paragraph said FIFO covered "1–60" and was wrong at the
+boundary. The software ceiling remains active in either mode.
 
 Red-green proof in the engine tree:
 
@@ -355,6 +375,10 @@ leaving differing observations visible. Its focused suite passes 16/16, the rebu
   `docs/bugs/android-high-refresh-not-selected-2026-08-27.md`.
 
 ### 1.5 Untried, named
+
+**Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
+`device-preflight.mjs`, `requireRefreshHz`), and `renderer.resolutionScale` as a portable contract
+(landed `696e86e3`; it still has no `"auto"` mode and is still not reported per window — PRD-228).
 
 Dawn on Android; any GPU-side timestamp timing (the drain is wall-clock algebra, not correlated
 spans); matched native/Chrome logical-pixel capture after draw collapse; cross-engine QuickJS/JSC
