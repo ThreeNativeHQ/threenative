@@ -99,6 +99,9 @@ test('iOS scaffold is root-linked to the exact shared core proof', () => {
     'TN_PLAYTEST_UNSUPPORTED_ON_TARGET',
   ]) assert.match(verifier, new RegExp(diagnostic));
   assert.match(verifier, /simctl', 'launch', '--terminate-running-process'/u);
+  assert.match(verifier, /simulator-launch-failure\.log/u);
+  assert.match(verifier, /FBSOpenApplicationServiceErrorDomain/u);
+  assert.match(verifier, /eventMessage CONTAINS/u);
   assert.doesNotMatch(verifier, /simctl', 'terminate'/u);
   assert.match(verifier, /toISOString\(\)\.slice\(0, 19\)\.replace\('T', ' '\)/u);
   const jsc = readFileSync(join(root, 'src/js/jsc_engine.mm'), 'utf8');

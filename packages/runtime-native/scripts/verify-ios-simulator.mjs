@@ -127,6 +127,23 @@ function unifiedLog(device, since) {
   ]);
 }
 
+function launchDiagnostics(device, since) {
+  const predicate = [
+    `process == "threenative-ios"`,
+    `eventMessage CONTAINS "${bundleId}"`,
+    `eventMessage CONTAINS "FBSOpenApplicationServiceErrorDomain"`,
+  ].join(' OR ');
+  const result = spawnSync('xcrun', [
+    'simctl', 'spawn', device, 'log', 'show', '--style', 'compact', '--start', since,
+    '--predicate', predicate,
+  ], {
+    cwd: workspaceRoot,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  return `${result.stdout || ''}\n${result.stderr || ''}`.trim();
+}
+
 function validateScreenshot(path) {
   const png = PNG.sync.read(readFileSync(path));
   let min = 255;
@@ -199,7 +216,14 @@ mkdirSync(artifactRoot, { recursive: true });
 const simulator = chooseSimulator();
 run('xcrun', ['simctl', 'install', simulator.udid, app]);
 const startedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
-const launch = run('xcrun', ['simctl', 'launch', '--terminate-running-process', simulator.udid, bundleId]);
+let launch;
+try {
+  launch = run('xcrun', ['simctl', 'launch', '--terminate-running-process', simulator.udid, bundleId]);
+} catch (error) {
+  const diagnostics = launchDiagnostics(simulator.udid, startedAt);
+  writeFileSync(join(artifactRoot, 'simulator-launch-failure.log'), diagnostics);
+  throw new Error(`${error instanceof Error ? error.message : String(error)}\n\niOS launch diagnostics:\n${diagnostics}`);
+}
 if (!/:\s*\d+\b/u.test(launch)) throw new Error(`simctl launch did not report a pid: ${launch}`);
 
 const requiredMarkers = [
