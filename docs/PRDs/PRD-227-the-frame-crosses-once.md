@@ -276,14 +276,55 @@ with no further optimisation.**
    adb shell setprop debug.threenative.present_uncapped 0   # control, same binary
    ```
 
-   **Read it as a one-variable comparison in one binary.** If the uncapped arm rises toward the
-   ~40 fps that 25.27 ms of work implies, the cadence is the limiter and the fix is present pacing.
-   If it stays at ~20, the limiter is downstream of our present call and candidate 2 takes over.
-2. **The composited web UI layer.** Bayview's `config.json` sets `"ui": { "renderer": "web" }`
-   (landed `3152feb`). SurfaceFlinger shows **several layers** in this app at independent rates
-   (19.974, 8.024, 15.909, 62.500), and the budget's `overlay` phase reads a flat 0 because it does
-   not measure an Android-composited WebView. A second composited layer is a standard cause of this
-   exact cadence lock. If arm 1 still reads ~20 fps, this becomes the prime suspect.
+   **Executed the same session — REFUTED.** The host logged `Present mode: mailbox (vsync=false)`,
+   so the mode genuinely changed, and the frame rate did not:
+
+   | Arm | host reports | fps | frame.p50 | hostGap.p50 | presented.p50 |
+   | --- | --- | ---: | ---: | ---: | ---: |
+   | `0` | `fifo (vsync=true)` | **19.92** | 26.61 ms | 21.30 ms | 48.64 ms |
+   | `1` | `mailbox (vsync=false)` | **19.77** | 25.94 ms | 25.13 ms | 50.16 ms |
+
+   Mailbox never blocks on vblank, so a frame still arriving every ~50 ms is not being *held* — the
+   50 ms is real elapsed time. **The FIFO cadence is not the limiter**, and the hope that a pacing
+   fix would land the 33 ms cell for free dies with it. The channel stays: it is the negative
+   control that made this answerable at all, and it cost one property read.
+2. **The composited web UI layer — also REFUTED.** `ui.renderer` flipped `"web"` → `"native"` (the
+   documented opt-out, no overlay and no extra process), rebuilt, measured, reverted:
+   **20.67 fps against 19.92.** 0.75 fps on a bar that needs 40 more.
+
+### What five arms have in common — this is the actual finding
+
+| Arm | what it changed | fps |
+| --- | --- | ---: |
+| pre-Change-1 baseline | — | 20.39 |
+| Change 1 landed | ~40% less per-frame work | 20.02 |
+| 720×1600 | 2.25× fewer pixels | 19.89 |
+| `present_uncapped=1` | FIFO → mailbox, no vblank wait | 19.77 |
+| `ui.renderer: "native"` | no composited WebView layer | 20.67 |
+
+**Nothing moves it, and `hostGap` sits at 21–25 ms in every arm** — invariant to CPU work, pixel
+count, present mode and the overlay. An invariant like that is not a workload. It is a **fixed
+wait**, and it is half the frame.
+
+### The next change is an instrument, not a lever
+
+`hostGap` is one undifferentiated number: *"present wait plus whatever the host did between
+callbacks."* No profile can attribute it, because `simpleperf` sorts by DSO and symbol while this
+cost is defined by **frame phase** — 25 ms spread across event pumping, message-loop and microtask
+draining, swapchain acquire, fence waits, audio and IO scatters into exactly the buckets already
+reported and never surfaces as one owner.
+
+**Split `hostGap` into named sub-phases in the host loop and re-measure.** Time these two first,
+because both would be invariant in exactly this way:
+
+1. **Swapchain acquire / GPU fence.** A blocking `getCurrentTexture` or an implicit wait on
+   submitted work serialises CPU and GPU into one 50 ms interval and ignores present mode.
+   Counter-evidence to weigh: at 720×1600 the GPU had 2.25× less to do and the total did not fall.
+2. **The host's own loop pacing.** `substeps.p50` is **3** in every arm — the fixed-step update
+   catches up three times per rendered frame. Whether that is symptom or cause has never been
+   separated.
+
+**Do not write a tenth lever before this instrument exists.** The graveyard holds nine.
 
 Also worth one line regardless: **ask for the 120 Hz mode** (`Surface.setFrameRate` /
 `preferredDisplayModeId`). The host currently never does.

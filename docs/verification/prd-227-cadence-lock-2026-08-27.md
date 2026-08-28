@@ -145,3 +145,125 @@ TN_V8_FLAGS="--trace-gc" SDL_VIDEODRIVER=x11 \
 - No GPU-side timing on device. Every profile to date is CPU-side `simpleperf` on `SDLThread`.
 - No Chrome-on-device attribution. Chrome's 59.99 fps remains a top-line number with no breakdown,
   and its CSS viewport is still unrecorded (a limitation prd-222-2026-08-25 names about itself).
+
+---
+
+# Addendum — the uncapped present arm ran, and the cap is not the limiter
+
+Same session, same device, **same binary**, one variable. `platform::presentUncapped()` landed at
+`b3dc53d2` and the APK was rebuilt from it (`fps-framework.apk`, installed `18:38:38`; the packaged
+`libmystral-runtime.so` was confirmed to carry the string `debug.threenative.present_uncapped`
+before the run).
+
+| Arm | property | host reports | fps | frame.p50 | render.p50 | hostGap.p50 | presented.p50 |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| control | `0` | `Present mode: fifo (vsync=true)` | **19.92** | 26.61 ms | 15.95 ms | 21.30 ms | 48.64 ms |
+| uncapped | `1` | `Present mode: mailbox (vsync=false)` | **19.77** | 25.94 ms | 17.53 ms | 25.13 ms | 50.16 ms |
+
+**The present mode genuinely changed** — the host logged `mailbox` and `vsync=false`, which is the
+negative control this channel was built to provide — **and the frame rate did not move.**
+
+## What that eliminates
+
+Mailbox never blocks on vblank. A frame that still arrives every ~50 ms with the cap removed is not
+being *held* by the cap; the ~50 ms is real elapsed time. **The FIFO present cadence is refuted as
+the limiter**, and with it the reading of Finding 2 that hoped a pacing fix would land the 33 ms
+cell for free.
+
+## What it promotes — the unmeasured half of the frame
+
+With no vblank wait in the uncapped arm, `hostGap` is still **25.13 ms**, and `hostGap` is defined
+as *"the time before the callback — present wait plus whatever the host did between callbacks."*
+With the present wait removed, what remains is **~25 ms per frame of host work between the JavaScript
+callbacks that no instrument in this repository measures.** `update + render + residual` accounts for
+the other ~26 ms, and the two sum to the 50 ms we present at.
+
+This is the missing half of the frame, and it explains why every CPU lever has measured flat: they
+all optimised inside the callback, which is the half that was already accounted for.
+
+**No profile has ever isolated it.** `simpleperf` attributes by DSO and symbol, not by frame phase,
+so 25 ms spread across SDL event pumping, overlay composition, microtask/message-loop pumping, audio
+and IO would be scattered across exactly the buckets already reported — and would never appear as a
+single owner.
+
+## Next
+
+Candidate 2 is now the prime suspect and is being tested: `ui.renderer: "native"` (the documented
+opt-out that ships no overlay and no extra process) against the `"web"` default, as a **game-config
+experiment** under the owner's ruling, reverted before any result is reported.
+
+If the overlay is not the owner, the next instrument is a frame-phase timer **around the host's
+between-callback work**, not another symbol profile.
+
+## Device state
+
+Battery 74% → discharging throughout; the owner's waiver applies. Both arms ran back to back on a
+cold launch each, window 1 discarded by the meter's own 300-frame window.
+
+---
+
+# Addendum 2 — the composited web UI is not the owner either
+
+`ui.renderer` flipped from `"web"` to `"native"` in Bayview's `threenative.config.ts` — the
+documented opt-out that ships no overlay and no extra process — rebuilt, installed
+(`lastUpdateTime 18:43:40`), measured, and **reverted**. A game-config experiment under the owner's
+ruling, never reported as a shipped change.
+
+| Arm | fps | frame.p50 | render.p50 | hostGap.p50 | presented.p50 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `ui.renderer: "web"` | 19.92 | 26.61 ms | 15.95 ms | 21.30 ms | 48.64 ms |
+| `ui.renderer: "native"` | **20.67** | 24.34 ms | 16.73 ms | 24.66 ms | 47.99 ms |
+
+**Refuted.** 0.75 fps on a bar that needs 40 more. `runtime-native/AGENTS.md`'s standing claim that
+the overlay was "measured free on a Pixel 8" (PRD-217) survives, and now has a second, independent
+confirmation on a different question.
+
+# What five arms have in common
+
+| Arm | what it changed | fps |
+| --- | --- | ---: |
+| pre-Change-1 baseline | — | 20.39 |
+| Change 1 landed | ~40% less per-frame work | 20.02 |
+| 720×1600 | 2.25× fewer pixels | 19.89 |
+| `present_uncapped=1` | FIFO → mailbox, no vblank wait | 19.77 |
+| `ui.renderer: "native"` | no composited WebView layer | 20.67 |
+
+**Nothing moves it, and `hostGap` sits at 21–25 ms in every single arm.** It is invariant to CPU
+work, to pixel count, to present mode, and to the overlay. An invariant like that is not a workload
+— it is a **fixed wait**.
+
+## The instrument that is now required
+
+`hostGap` is a single undifferentiated number defined as *"present wait plus whatever the host did
+between callbacks."* Four arms have now failed to move it, and no profile can attribute it, because
+`simpleperf` sorts by DSO and symbol while this cost is defined by **frame phase**: 25 ms spread
+across event pumping, message-loop and microtask draining, swapchain acquire, fence or queue waits,
+audio and IO scatters into exactly the buckets already reported and never appears as one owner.
+
+**Split `hostGap` into named sub-phases in the host loop and re-measure.** That is the next change,
+and it is instrumentation, not optimisation. Until it exists, any further lever is a guess — and the
+graveyard now holds **nine**.
+
+Two specific things to time first, because both would be invariant in exactly this way:
+
+1. **Swapchain acquire / GPU fence.** A blocking `getCurrentTexture` or an implicit wait on
+   submitted work would serialise CPU and GPU into one 50 ms interval and would not care about
+   present mode. Note the counter-evidence: at 720×1600 the GPU had 2.25× less to do and the total
+   did not fall, so a pure GPU-bound wait does not fit cleanly.
+2. **The host's own loop pacing.** `substeps.p50` is **3** in every arm — the fixed-step update
+   catches up three times per rendered frame. Whether that is a symptom of the 50 ms or a cause of
+   it has never been separated.
+
+## Standing claims this session leaves changed
+
+- **Refuted, with evidence, this session:** wrapper shapes (P2), resolution/fill rate, GC/V8 heap,
+  FIFO present cadence, the composited web UI layer.
+- **Landed and kept:** Change 1 (real, ~40% of the work, no fps), and
+  `platform::presentUncapped()` (`b3dc53d2`) — the Android channel that made two of those
+  refutations possible.
+- **Still true and still unexplained:** Chrome runs this same scene at 59.99 fps on this phone.
+
+## Restoration
+
+Bayview's `threenative.config.ts` restored to `ui: { renderer: "web" }`, rebuilt and reinstalled.
+`wm size` and `wm density` reset. `debug.threenative.present_uncapped` set back to `0`.
