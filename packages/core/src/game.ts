@@ -580,6 +580,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...this.#config.renderer,
       canvas: this.#config.canvas ?? this.#config.renderer?.canvas,
       preferWebGPU: this.#config.render?.preferWebGPU ?? this.#config.renderer?.preferWebGPU,
+      // Native measures its canvas in logical pixels and reports a real ratio; web reports a real
+      // ratio too but deliberately draws at DPR 1, so only the native seam applies it. Unifying
+      // web onto device density is a separate decision with its own visuals gate.
+      pixelRatio: getPlatform().runtime === "native" ? (globalThis.devicePixelRatio ?? 1) : 1,
       antialias: resolveRendererAntialias(
         this.#config.render,
         this.#config.renderer?.antialias,

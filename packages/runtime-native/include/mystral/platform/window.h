@@ -34,6 +34,18 @@ bool shouldQuit();
 SDL_Window* getSDLWindow();
 
 /**
+ * Physical pixels per logical (CSS) pixel for the live window.
+ *
+ * The number `window.devicePixelRatio` is supposed to carry, and the reason it may not be
+ * invented: the runtime reported a hardcoded `1.0` while handing three.js the *physical* surface
+ * as though those were CSS pixels, so on a Pixel 8 a layout written against a 2400-pixel-wide
+ * "CSS pixel" canvas rendered at a third of its intended size.
+ *
+ * Returns 1.0 when there is no window — a headless run has no display to have a density of.
+ */
+float displayPixelDensity();
+
+/**
  * Get Metal view (macOS/iOS only)
  */
 void* getMetalView();

@@ -110,6 +110,11 @@ export const executionContracts = {
       },
     ],
   },
+  // PRD-228 Phase 1. Needs no display: it asserts the CSS-box / backing-store / ratio invariant,
+  // which holds at every density including a headless display's 1.0.
+  "threenative-device-pixel-ratio-test": {
+    invocations: [{ args: [], passLine: "native device pixel ratio contract passed" }],
+  },
   // PRD-228 Change B. Needs no display: it drives the real bindings through a headless Runtime,
   // times a compute dispatch at both ends and resolves the query set into a mappable buffer.
   "threenative-timestamp-query-test": {

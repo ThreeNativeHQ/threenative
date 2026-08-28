@@ -247,6 +247,16 @@ SDL_Window* getSDLWindow() {
     return g_window.sdlWindow;
 }
 
+float displayPixelDensity() {
+    // SDL answers this on every target this runtime ships to, Android included, so there is one
+    // implementation rather than one per platform. A headless run has no display to have a
+    // density of, and SDL returns 0 rather than failing, so both cases fall back to 1.0 — the
+    // ratio a caller gets when nothing is known, never a guess at what it might be.
+    if (g_window.sdlWindow == nullptr) return 1.0f;
+    const float density = SDL_GetWindowPixelDensity(g_window.sdlWindow);
+    return density > 0.0f ? density : 1.0f;
+}
+
 /**
  * Get Metal view (macOS/iOS only)
  */

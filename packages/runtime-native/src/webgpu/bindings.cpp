@@ -20,6 +20,7 @@
 
 #include "mystral/js/engine.h"
 #include "mystral/webgpu/bindings.h"
+#include "mystral/platform/window.h"
 #include "mystral/webgpu/registration_table.h"
 #include "mystral/webgpu/wrapper_factories.h"
 #include "mystral/cold_start.h"
@@ -6616,6 +6617,27 @@ static js::JSValueHandle tnWebgpuHandler89(BindingsState* state, BindingDestinat
     return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
 }
 
+
+/**
+ * Writes the canvas dimensions the web platform defines: `width`/`height` are the backing store in
+ * physical pixels, `clientWidth`/`clientHeight` are the CSS layout box in logical ones.
+ *
+ * These four were all set to the physical surface here, which silently undid the logical CSS box
+ * `setupDOMEvents` had just written — the DOM said one thing and the WebGPU bindings overwrote it
+ * a moment later, so a layout still saw a 2400-pixel-wide "CSS pixel" viewport on a Pixel 8.
+ */
+static void setCanvasDimensions(js::Engine* engine, js::JSValueHandle canvasObject,
+                                uint32_t physicalWidth, uint32_t physicalHeight) {
+    const double ratio = static_cast<double>(platform::displayPixelDensity());
+    const double density = ratio > 0.0 ? ratio : 1.0;
+    engine->setProperty(canvasObject, "width", engine->newNumber(physicalWidth));
+    engine->setProperty(canvasObject, "height", engine->newNumber(physicalHeight));
+    engine->setProperty(canvasObject, "clientWidth",
+                        engine->newNumber(std::round(physicalWidth / density)));
+    engine->setProperty(canvasObject, "clientHeight",
+                        engine->newNumber(std::round(physicalHeight / density)));
+}
+
 static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {
     const auto globalBindingHost = engine->newObject();
     engine->freezeHandle(globalBindingHost);
@@ -6675,17 +6697,11 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     if (engine->isNull(canvasObject) || engine->isUndefined(canvasObject)) {
         std::cerr << "[WebGPU] Warning: No existing canvas found, creating new one" << std::endl;
         canvasObject = engine->newObject();
-        engine->setProperty(canvasObject, "width", engine->newNumber(state->canvasWidth));
-        engine->setProperty(canvasObject, "height", engine->newNumber(state->canvasHeight));
-        engine->setProperty(canvasObject, "clientWidth", engine->newNumber(state->canvasWidth));
-        engine->setProperty(canvasObject, "clientHeight", engine->newNumber(state->canvasHeight));
+        setCanvasDimensions(engine, canvasObject, state->canvasWidth, state->canvasHeight);
     }
 
     // Update canvas dimensions (in case they differ)
-    engine->setProperty(canvasObject, "width", engine->newNumber(state->canvasWidth));
-    engine->setProperty(canvasObject, "height", engine->newNumber(state->canvasHeight));
-    engine->setProperty(canvasObject, "clientWidth", engine->newNumber(state->canvasWidth));
-    engine->setProperty(canvasObject, "clientHeight", engine->newNumber(state->canvasHeight));
+    setCanvasDimensions(engine, canvasObject, state->canvasWidth, state->canvasHeight);
 
     // canvas.parentElement - mock parent element (for Debugger compatibility)
     engine->setProperty(canvasObject, "parentElement", parentElement);

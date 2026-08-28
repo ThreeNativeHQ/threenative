@@ -137,6 +137,16 @@ export interface IRendererOptions {
   resolutionScale?: number;
   /** Whether the game pinned that scale or the engine chose it. Reported, never inferred. */
   scaleSource?: "pinned" | "auto" | "auto-pinned";
+  /**
+   * Physical pixels per logical (CSS) pixel of the canvas this draws into. Default 1.
+   *
+   * Native reports a real `devicePixelRatio` and a canvas measured in logical pixels, so the
+   * buffer is `logical × pixelRatio × resolutionScale` — arithmetic that reproduces the physical
+   * surface exactly and moves no tuned game's frame. Web keeps the default of 1 and its
+   * intentional DPR-1 buffer; unifying web onto real device density is a separate decision with
+   * its own visuals gate, and this option is where it would be made.
+   */
+  pixelRatio?: number;
   source?: IRendererPlatformSource;
   webgpuFactory?: (
     canvas: HTMLCanvasElement,
@@ -272,6 +282,7 @@ function addResizeHandling(
   source: IRendererPlatformSource | undefined,
   state: ISurfaceState,
   applied: { width: number; height: number },
+  pixelRatio: number,
 ): { resize: () => void; stop: () => void } {
   const resize = () => {
     const [width, height] =
@@ -279,8 +290,8 @@ function addResizeHandling(
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
-    applied.width = Math.max(1, Math.round(width * state.resolutionScale));
-    applied.height = Math.max(1, Math.round(height * state.resolutionScale));
+    applied.width = Math.max(1, Math.round(width * pixelRatio * state.resolutionScale));
+    applied.height = Math.max(1, Math.round(height * pixelRatio * state.resolutionScale));
     renderer.setSize(applied.width, applied.height, false);
   };
   resize();
@@ -299,6 +310,11 @@ interface ISurfaceState {
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const resolutionScale = options.resolutionScale ?? 1;
+  const pixelRatio = options.pixelRatio ?? 1;
+  if (!Number.isFinite(pixelRatio) || pixelRatio <= 0)
+    throw new Error(
+      `renderer.pixelRatio must be a finite number greater than zero, received ${String(pixelRatio)}.`,
+    );
   const state: ISurfaceState = { resolutionScale, scaleSource: options.scaleSource ?? "pinned" };
   const reapply: { resize: (() => void) | undefined } = { resize: undefined };
   if (!Number.isFinite(resolutionScale) || resolutionScale <= 0)
@@ -329,7 +345,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     renderer = wrapRenderer(raw as RendererInstance, "webgl2", applied, state, reapply);
   }
 
-  const resizing = addResizeHandling(renderer, source, state, applied);
+  const resizing = addResizeHandling(renderer, source, state, applied, pixelRatio);
   reapply.resize = resizing.resize;
   const stopResize = resizing.stop;
   const dispose = renderer.dispose;

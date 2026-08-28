@@ -6,6 +6,7 @@
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/bindings.h"
 #include "webgpu/bindings_state.h"  // full BindingsState for the host-gap phase fields
+#include <cmath>
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
 #include "runtime_scripts.h"
@@ -2609,10 +2610,17 @@ private:
         // Canvas properties
         jsEngine_->setProperty(canvas, "id", jsEngine_->newString("canvas"));
         jsEngine_->setProperty(canvas, "tagName", jsEngine_->newString("CANVAS"));
+        // `width`/`height` are the backing store — physical pixels, what the renderer draws into.
+        // `clientWidth`/`clientHeight` are the CSS layout box — logical pixels. The web platform
+        // draws exactly this distinction and this runtime used to collapse it, reporting the
+        // physical surface for all four.
+        const double canvasPixelRatio = static_cast<double>(platform::displayPixelDensity());
         jsEngine_->setProperty(canvas, "width", jsEngine_->newNumber(width_));
         jsEngine_->setProperty(canvas, "height", jsEngine_->newNumber(height_));
-        jsEngine_->setProperty(canvas, "clientWidth", jsEngine_->newNumber(width_));
-        jsEngine_->setProperty(canvas, "clientHeight", jsEngine_->newNumber(height_));
+        jsEngine_->setProperty(canvas, "clientWidth",
+                               jsEngine_->newNumber(std::round(width_ / canvasPixelRatio)));
+        jsEngine_->setProperty(canvas, "clientHeight",
+                               jsEngine_->newNumber(std::round(height_ / canvasPixelRatio)));
 
         // canvas.addEventListener - SAME PATTERN AS document and window
         jsEngine_->setProperty(canvas, "addEventListener",
@@ -2972,12 +2980,18 @@ private:
         );
         if (!evalRuntimeScript(*jsEngine_, "event-constructors-setup", "event-constructors-setup.js")) return false;
 
-        // window.innerWidth / window.innerHeight
-        jsEngine_->setProperty(window, "innerWidth", jsEngine_->newNumber(width_));
-        jsEngine_->setProperty(window, "innerHeight", jsEngine_->newNumber(height_));
-
-        // window.devicePixelRatio
-        jsEngine_->setProperty(window, "devicePixelRatio", jsEngine_->newNumber(1.0));
+        // window.innerWidth / innerHeight / devicePixelRatio — in **logical (CSS) pixels** and a
+        // real ratio, which is what the web platform means by these three and what every layout
+        // written against them assumes. This reported the physical surface with a hardcoded ratio
+        // of 1.0, so on a Pixel 8 a UI laid out against a "2400 CSS pixel" viewport came out at a
+        // third of its intended size. The drawing buffer is unchanged: `logical x ratio` is the
+        // same physical surface it always was, and `canvas.width/height` below still carry it.
+        const double pixelRatio = static_cast<double>(platform::displayPixelDensity());
+        jsEngine_->setProperty(window, "innerWidth",
+                               jsEngine_->newNumber(std::round(width_ / pixelRatio)));
+        jsEngine_->setProperty(window, "innerHeight",
+                               jsEngine_->newNumber(std::round(height_ / pixelRatio)));
+        jsEngine_->setProperty(window, "devicePixelRatio", jsEngine_->newNumber(pixelRatio));
 
         // Set up input event callbacks
         platform::setKeyboardCallback([this](const platform::KeyboardEventData& e) {
