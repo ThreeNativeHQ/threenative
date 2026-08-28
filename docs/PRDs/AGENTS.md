@@ -29,6 +29,12 @@ not. A gate result that lives only in a commit message does not exist. The self-
 resumes from `docs/verification/round-*.md` — `pnpm round:next` computes the single next action and
 `pnpm round:deletions` reports exports unreached across consecutive rounds.
 
+**Exception — runtime/core performance records consolidate into
+`docs/verification/runtime-perf-state.md`** (owner decision, 2026-08-27): a new performance
+finding updates that file in place instead of opening another `perf`-report file, which keeps the
+frame ledger, the lever graveyard and the method rules in one place. Everything else stays one
+file per run.
+
 A red-green acceptance criterion states its mutation: which line, reverted, makes the test fail —
 and pastes that failure. Five repair rounds in one batch were spent on reds produced by the wrong
 thing failing; a test whose "red" survives the feature's removal proves nothing.

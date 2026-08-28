@@ -5,7 +5,7 @@
 `docs/verification/prd-*-perf-*.md` file. (The one-file-per-run rule in `docs/PRDs/AGENTS.md`
 keeps applying to everything that is not a runtime/core performance record.)
 
-The 36 superseded performance reports were deleted 2026-08-27; their full text is recoverable from
+The 35 superseded performance reports were deleted 2026-08-27; their full text is recoverable from
 git history (`git log --diff-filter=D --name-only -- docs/verification/` names the commit, then
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
