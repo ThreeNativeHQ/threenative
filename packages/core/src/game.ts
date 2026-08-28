@@ -21,7 +21,7 @@ import { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
 import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
-import { resolveRendererAntialias, resolveRendererResolutionScale } from "./renderer-config.js";
+import { resolveRendererAntialias, resolveRendererScaleSetting } from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
@@ -575,7 +575,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#config.renderer?.antialias,
         getPlatform().os,
       ),
-      resolutionScale: resolveRendererResolutionScale(
+      ...resolveRendererScaleSetting(
         this.#config.render,
         this.#config.renderer?.resolutionScale,
         getPlatform().os,

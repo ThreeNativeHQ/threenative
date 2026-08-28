@@ -113,8 +113,15 @@ export interface IThreeNativeConfig {
   readonly nativeEntry?: string;
   readonly renderer?: {
     readonly preferWebGPU?: boolean;
-    /** Portable drawing-buffer scale. CSS and UI layout dimensions are unchanged. */
-    readonly resolutionScale?: number;
+    /**
+     * Portable drawing-buffer scale. CSS and UI layout dimensions are unchanged.
+     *
+     * `"auto"` — the default a template ships — lets the engine hold the `display.maxFps` budget
+     * without the game hand-authoring a resolution constant. A number in `(0, 1]` pins it and
+     * turns the loop off. Either way the active scale is reported in every `TN_FRAME_BUDGET`
+     * window: turning the convention off does not turn its measurement off.
+     */
+    readonly resolutionScale?: number | "auto";
     /** Portable multisampling. Sampling and resolution are one pixel budget, not two. */
     readonly antialias?: boolean;
     /**
@@ -126,7 +133,7 @@ export interface IThreeNativeConfig {
      * on that same platform rather than accepting whatever the portable value happened to be.
      */
     readonly android?: {
-      readonly resolutionScale?: number;
+      readonly resolutionScale?: number | "auto";
       readonly antialias?: boolean;
     };
   };

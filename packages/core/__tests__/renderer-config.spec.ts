@@ -1,32 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  resolveRendererAntialias,
-  resolveRendererResolutionScale,
-} from "../src/renderer-config.js";
-
-describe("resolveRendererResolutionScale", () => {
-  it("selects the Android config override inside the engine", () => {
-    expect(
-      resolveRendererResolutionScale(
-        { resolutionScale: 0.75, android: { resolutionScale: 0.32 } },
-        0.5,
-        "android",
-      ),
-    ).toBe(0.32);
-  });
-
-  it("uses the portable config value off Android, then the direct renderer fallback", () => {
-    expect(
-      resolveRendererResolutionScale(
-        { resolutionScale: 0.75, android: { resolutionScale: 0.32 } },
-        0.5,
-        "ios",
-      ),
-    ).toBe(0.75);
-    expect(resolveRendererResolutionScale(undefined, 0.5, "android")).toBe(0.5);
-    expect(resolveRendererResolutionScale(undefined, undefined, "android")).toBeUndefined();
-  });
-});
+import { resolveRendererAntialias, resolveRendererScaleSetting } from "../src/renderer-config.js";
 
 describe("resolveRendererAntialias", () => {
   it("selects the Android sampling override inside the engine", () => {
@@ -48,7 +21,63 @@ describe("resolveRendererAntialias", () => {
     // game trading resolution for frame budget could not portably restore quality on the same
     // platform. Both keys resolve on one seam or neither is usable.
     const config = { android: { antialias: true, resolutionScale: 0.44 } };
-    expect(resolveRendererResolutionScale(config, undefined, "android")).toBe(0.44);
+    expect(resolveRendererScaleSetting(config, undefined, "android").resolutionScale).toBe(0.44);
     expect(resolveRendererAntialias(config, undefined, "android")).toBe(true);
+  });
+});
+
+describe("resolveRendererScaleSetting", () => {
+  it("resolves a pinned number and names it pinned", () => {
+    expect(
+      resolveRendererScaleSetting({ android: { resolutionScale: 0.32 } }, undefined, "android"),
+    ).toEqual({
+      resolutionScale: 0.32,
+      scaleSource: "pinned",
+    });
+  });
+
+  it('resolves "auto" to a full-resolution start the scaler walks down from', () => {
+    // Phase 1 ships the contract without the loop: "auto" is accepted, reported as auto, and
+    // begins where a game with no scale begins today. Nothing moves it yet.
+    expect(resolveRendererScaleSetting({ resolutionScale: "auto" }, undefined, "ios")).toEqual({
+      resolutionScale: 1,
+      scaleSource: "auto",
+    });
+    expect(
+      resolveRendererScaleSetting(
+        { resolutionScale: 0.5, android: { resolutionScale: "auto" } },
+        undefined,
+        "android",
+      ),
+    ).toEqual({ resolutionScale: 1, scaleSource: "auto" });
+  });
+
+  it("defaults to a pinned full-resolution surface when nothing asked for one", () => {
+    expect(resolveRendererScaleSetting(undefined, undefined, "linux")).toEqual({
+      resolutionScale: 1,
+      scaleSource: "pinned",
+    });
+  });
+
+  it("refuses a scale that cannot describe a drawing buffer", () => {
+    for (const bad of [0, -0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        () => resolveRendererScaleSetting({ resolutionScale: bad }, undefined, "linux"),
+        `scale ${String(bad)}`,
+      ).toThrow(/resolutionScale/u);
+    }
+    expect(() =>
+      resolveRendererScaleSetting(
+        { resolutionScale: "adaptive" as unknown as number },
+        undefined,
+        "linux",
+      ),
+    ).toThrow(/resolutionScale/u);
+  });
+
+  it("names the Android override in its error, so the caller knows which key to fix", () => {
+    expect(() =>
+      resolveRendererScaleSetting({ android: { resolutionScale: 2 } }, undefined, "android"),
+    ).toThrow(/renderer\.android\.resolutionScale/u);
   });
 });

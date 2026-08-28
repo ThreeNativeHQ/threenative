@@ -130,6 +130,8 @@ export interface IRendererOptions {
   preferWebGPU?: boolean;
   /** CSS-pixel multiplier for the drawing buffer. The default is intentional DPR 1. */
   resolutionScale?: number;
+  /** Whether the game pinned that scale or the engine chose it. Reported, never inferred. */
+  scaleSource?: "pinned" | "auto";
   source?: IRendererPlatformSource;
   webgpuFactory?: (
     canvas: HTMLCanvasElement,
@@ -174,6 +176,7 @@ function wrapRenderer(
   kind: RendererKind,
   applied: { width: number; height: number },
   resolutionScale: number,
+  scaleSource: "pinned" | "auto",
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
 
@@ -185,7 +188,7 @@ function wrapRenderer(
       // `samples` is the answer, `antialias` was only the request. Three reports 0 for a single
       // sample per pixel; a sample count of zero would describe no image at all.
       sampleCount: Number.isInteger(raw.samples) && (raw.samples ?? 0) > 0 ? (raw.samples ?? 1) : 1,
-      scaleSource: "pinned" as const,
+      scaleSource,
     }),
     domElement: raw.domElement,
     kind,
@@ -277,6 +280,7 @@ function addResizeHandling(
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const resolutionScale = options.resolutionScale ?? 1;
+  const scaleSource = options.scaleSource ?? "pinned";
   if (!Number.isFinite(resolutionScale) || resolutionScale <= 0)
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
@@ -292,7 +296,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         : new (await import("three/webgpu")).WebGPURenderer({ canvas, ...rendererParameters });
       const instance = raw as RendererInstance;
       await instance.init?.();
-      renderer = wrapRenderer(instance, "webgpu", applied, resolutionScale);
+      renderer = wrapRenderer(instance, "webgpu", applied, resolutionScale, scaleSource);
     } catch {
       renderer = undefined;
     }
@@ -302,7 +306,13 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     const raw = options.webgl2Factory
       ? options.webgl2Factory(canvas, rendererParameters)
       : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters });
-    renderer = wrapRenderer(raw as RendererInstance, "webgl2", applied, resolutionScale);
+    renderer = wrapRenderer(
+      raw as RendererInstance,
+      "webgl2",
+      applied,
+      resolutionScale,
+      scaleSource,
+    );
   }
 
   const stopResize = addResizeHandling(renderer, source, resolutionScale, applied);
