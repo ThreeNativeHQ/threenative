@@ -779,7 +779,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         const waitingForFirstUse =
           firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
-        if (!mustPresentLoader && !waitingForFirstUse) this.#projection?.reconcile();
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
@@ -788,7 +787,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no
           // second optional render path to leave untested.
+          // The reconcile is bracketed with the render it feeds: its walk, grouping and matrix
+          // sync are render-path work, and a frame budget that hid it in `residual` made the
+          // optimizer's own cost unmeasurable exactly where the optimizer is engaged.
           const renderStart = frameBudget === undefined ? 0 : budgetNow();
+          this.#projection?.reconcile();
           renderer.render(this.#projection?.root ?? threeScene, camera);
           frameBudget?.addRender(budgetNow() - renderStart);
           // Same entering-window rule as onUpdate: nothing of the incoming scene draws before enter().
