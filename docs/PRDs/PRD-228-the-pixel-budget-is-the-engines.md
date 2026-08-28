@@ -18,13 +18,35 @@ it hits it because a human picked `0.36` and typed it into game source. The next
 **Complexity:** +1 for a public config value crossing web and three native packagers, +1 for a new
 WebGPU binding surface, +1 for the device acceptance lane = **HIGH mode**.
 
-**Session handoff (2026-08-28).** Landed here already: `de750dee` brackets the projection reconcile
-inside the render phase, and `696e86e3` lands `renderer.resolutionScale` plus its Android override
-(2/2 and 57/57 green). Root `pnpm typecheck` exits nonzero on 3 **pre-existing** `tracers.spec.ts`
-nullability errors, unrelated to any of this and already named in §1.3.4. Uncommitted and
-deliberately untouched: `sandbox/fps-framework` holds another lane's live arm — `maxFps: 60`,
-`renderer.android.resolutionScale: 0.32`, plus `package.json`/`pnpm-lock.yaml` mid-reinstall. That
-lane owns those files; do not sweep them.
+**Session handoff (2026-08-28) — the tree is ready; start at Phase 0.**
+
+Landed here already, all path-limited and each with its gate run:
+
+| Commit | What |
+| --- | --- |
+| `de750dee` | projection reconcile bracketed into the render phase |
+| `696e86e3` | `renderer.resolutionScale` + Android override (2/2, 57/57) |
+| `a2a7ac7c` | the baseline decision, above |
+| `3a68715b` | `tracers.spec.ts` fails closed on absent slots — **`pnpm typecheck` now exits 0**, first green of the session |
+| `5b3ec150` | preflight reads the panel's active mode and can gate on it (11/11, red-green, device-verified) |
+
+Gate state, measured not assumed:
+
+- `pnpm typecheck` — **exit 0**.
+- `pnpm lint` — red on **20 pre-existing** `noExcessiveCognitiveComplexity` findings across
+  `examples/` and `packages/assets`, none in any file this work touched.
+- `pnpm test` — red on **one pre-existing assertion**, `suppressPlayProtectOnAdbInstalls` "wired
+  before the install in every lane that installs an APK". It has been failing for all six listed
+  lanes since the guard landed. One was fixed here; five remain, each needing its own adb adapter
+  and a real install to verify, so they were not attempted blind — they are named in that commit
+  message. Everything else passes.
+
+None of these three is PRD-228's to clear, and none blocks Phase 0.
+
+Uncommitted and deliberately untouched: `sandbox/fps-framework` holds another lane's live arm —
+`maxFps: 60`, `renderer.android.resolutionScale: 0.32`, plus `package.json`/`pnpm-lock.yaml`
+mid-reinstall. That lane owns those files; do not sweep them. Phase 0's first item is to commit or
+revert them, because an arm whose config is not in git is not an arm.
 
 ## Layer verdict
 
@@ -275,10 +297,15 @@ the acceptance.
 ### The gap that let this happen
 
 `packages/runtime-native/scripts/device-preflight.mjs` gates battery percent, charging state,
-thermal status and screen-on. It does **not** read the display mode, `peak_refresh_rate`,
-`min_refresh_rate` or `low_power`, and it has **no tests at all**. So an arm can run on a
-silently-downclocked panel and report a number that looks like a fill regression. Phase 1 closes
-this; it is the cheapest item in the PRD and it removes the whole class.
+thermal status and screen-on. It did **not** read the display mode, `peak_refresh_rate`,
+`min_refresh_rate` or `low_power` — so an arm could run on a silently-downclocked panel and report a
+number that looks like a fill regression. (An earlier line here said the script had "no tests at
+all". That was wrong: `packages/runtime-native/tests/device-preflight.test.mjs` exists and
+`vitest.config.ts` picks it up via `tests/**/*.test.{ts,mjs}`. It had no *display* coverage.)
+
+**Closed 2026-08-28 (`5b3ec150`), ahead of the rest of the PRD.** Capture is unconditional and the
+gate is opt-in via `requireRefreshHz`; 11/11 tests, red-green mutation named, verified against the
+physical Pixel 8. Phase 0's protocol below runs it before every arm.
 
 ## Execution Phases
 
@@ -286,23 +313,52 @@ this; it is the cheapest item in the PRD and it removes the whole class.
 
 **Falsification gate. Run this first. It is a measurement phase and lands no product code.**
 
-- [ ] Baseline is **decided** (60 Hz panel, `maxFps: 60`, accept at presented p95 ≤ 14 ms). Pin the
-      panel before the first arm: `settings put system peak_refresh_rate 60.0`, confirm
-      `mActiveSfDisplayMode` reports 60.0 and `low_power` is `0`, and record both in the run.
+Pin the machine before the first arm — the gate that makes this repeatable now exists:
 
-- [ ] Five-point scale ladder on the physical Pixel 8 — 1.0, 0.72, 0.55, 0.44, 0.36 — at
-      **120 Hz mailbox, uncapped**, so no point is clipped by a 60 Hz cap the way 0.36 was.
+```sh
+# panel to the decided baseline, then prove it rather than assume it
+adb shell settings put system peak_refresh_rate 60.0
+node -e 'import("./packages/runtime-native/scripts/device-preflight.mjs").then(async (m) => {
+  const c = await m.assertDeviceReady(process.env.TN_SERIAL, {
+    minBatteryPercent: 50, requireDischarging: true, maxThermalStatus: "NONE",
+    allowOverride: false, requireRefreshHz: 60,           // <- refuses the wrong panel
+  });
+  console.log(JSON.stringify(c));
+})'
+```
+
+Its output — `activeRefreshHz`, `supportedRefreshHz`, `peakRefreshRateSetting`,
+`minRefreshRateSetting`, `lowPower` — is pasted into the run record for **every** arm. An arm
+without it is not an arm.
+
+Then, per rung, cold launch and read both meters:
+
+```sh
+adb shell am force-stop com.threenative.bayview && adb shell pidof com.threenative.bayview   # must be empty
+adb logcat -c && adb shell dumpsys SurfaceFlinger --timestats -clear -enable
+adb shell am start -W -n com.threenative.bayview/com.threenative.runtime.MystralActivity
+threenative-playtest perf --logcat "$TN_SERIAL" --require-windows 4 --min-fps 60 --text
+adb shell dumpsys SurfaceFlinger --timestats -dump    # cross-check, per method rule 3
+```
+
+- [ ] Baseline is **decided** (60 Hz panel, `maxFps: 60`, accept at presented p95 ≤ 14 ms). Pin and
+      prove it with the preflight above before the first arm.
+- [ ] Five-point scale ladder — 1.0, 0.72, 0.55, 0.44, 0.32 — **on the 60 Hz baseline panel**.
 - [ ] Same build, same session, same commit, cold launch per method rule 4, first **two** runs
       discarded per rule 1, live windows only per rule 9, thermal status and battery at both ends.
-- [ ] SurfaceFlinger `--timestats` cross-check on at least the endpoints, per rule 3.
-- [ ] **Publish presented p50 against pixel count and fit the slope.** Under 2 ms/Mpx, or
+- [ ] SurfaceFlinger `--timestats` cross-check on at least the endpoints, per rule 3. **Report the
+      present-interval histogram, not only the mean** — the 16/33-with-no-8 signature is what a
+      clamped panel looks like and the mean hides it.
+- [ ] **Publish presented p95 against pixel count and fit the slope.** Under 2 ms/Mpx, or
       non-monotonic → Change A is falsified as a performance contract. Stop and re-file.
 - [ ] **Second ladder, `(scale × samples)`:** at minimum 0.32/1×, 0.32/4×, 0.44/1×, 0.44/4×,
       0.55/4×. Mali-G715 resolves MSAA in tile memory, so the cost is not the naive 4× and the
-      pairing must be measured, never assumed. This table chooses Change C's defaults.
-- [ ] **Reconcile the record with the tree first.** The working tree holds uncommitted
-      `resolutionScale: 0.32` and `maxFps: 60` against a record that says 0.36 and 120. Commit or
-      revert before measuring; an arm whose config is not in git is not an arm.
+      pairing must be measured, never assumed. This table chooses Change C's defaults. **Restore
+      Bayview's `antialias` first** — it has been `false` since `8e23418` and a 1× arm is otherwise
+      indistinguishable from the control.
+- [ ] **Reconcile the record with the tree first.** The sandbox holds uncommitted
+      `resolutionScale: 0.32` and `maxFps: 60`. Commit or revert before measuring; an arm whose
+      config is not in git is not an arm.
 - [ ] Record in `runtime-perf-state.md` §1 in place, per the owner's consolidation exception.
 
 ### Phase 1 — the contract, without the loop
@@ -318,27 +374,48 @@ this; it is the cheapest item in the PRD and it removes the whole class.
       modes. **This item is what makes every later fps number self-describing** — without it the
       record can drift from the tree again, exactly as it just did.
 - [ ] Web path via `setPixelRatio`, same field names in the same marker.
-- [ ] **`device-preflight.mjs` captures and reports display state on every run** — active mode Hz,
-      `peak_refresh_rate`, `min_refresh_rate`, `low_power` — and fails closed when a caller declares
-      an expected refresh rate that the panel is not in. Capture is unconditional; the gate is
-      opt-in, so a cold-start arm is unaffected and an fps arm cannot run on the wrong panel.
-- [ ] **First tests for `device-preflight.mjs`**, which currently has none. (Mutation: feed the
-      parser a `peak_refresh_rate 60.0` / mode-0 dump against a declared 120 → the gate must fail.)
+- [x] **`device-preflight.mjs` captures and reports display state on every run** — active mode Hz,
+      supported rates, `peak_refresh_rate`, `min_refresh_rate`, `low_power` — and fails closed when
+      a caller declares a rate the panel is not in (`requireRefreshHz`). Capture is unconditional,
+      the gate is opt-in. **Landed `5b3ec150`.**
+- [x] **Display coverage added to the existing `tests/device-preflight.test.mjs`** — 24/25, the one
+      failure pre-existing and unrelated (below). Red-green mutation: delete the `refreshRate`
+      failure branch, keeping capture → "refuses a panel that is not in the declared mode" fails;
+      restored, green. The pre-existing full-shape contract test was extended, not worked around, so
+      the unconditional capture is pinned by the assertion that already guarded this function.
+      Verified on the physical Pixel 8: active 60 Hz, supported 120/60/40/30/24/20, declared-120
+      rejected with `refreshRate: expected 120 Hz active, observed 60 Hz`, declared-60 passes.
 - [ ] **Red-green, mutation named:** revert `runtime.cpp:2980` to `1.0` → DPR conformance case red;
       delete the config validation branch → range test red. Paste both.
 
 ### Phase 2 — the adaptive loop
 
-- [ ] Scaler consumes presented p50 from the frame budget, targets `maxFps`, steps within a stated
-      bounded set of scales, with an up-step hysteresis margin and a settle window long enough that
-      a single hitch cannot move it. Bounds, margin and window are numbers written into this PRD
-      before the code, not tuned into it afterwards.
+**The controller's numbers, pre-registered here before the code exists.** They are arguable, and
+Phase 0's slope may move them — but they move by an edit to this section, never by tuning in the
+implementation until it looks right.
+
+| Parameter | Value | Why |
+| --- | --- | --- |
+| Rungs | `1.00, 0.85, 0.72, 0.61, 0.52, 0.44, 0.38, 0.32, 0.27, 0.23` | ratio 0.85 linear ⇒ **0.72× pixels per step**. Coarse on purpose: every step reallocates render targets on WebGPU, so fine granularity buys smoothness with hitches. |
+| Decision unit | one **300-frame** frame-budget window | the meter already emits exactly this; no new sampling path. |
+| Down-step trigger | presented **p95 > 14.0 ms** for **1** window | the accepted bar. React to a deficit immediately. |
+| Up-step trigger | presented **p95 < 11.5 ms** for **4 consecutive** windows | 11.5 ms × the ~1.2× blended cost of one step up lands ≈ 13.8 ms, inside the bar. Asymmetric by design: fall fast, climb slowly. |
+| Cooldown | discard the **1** window after any step | the resize frame is itself a hitch and must never feed the controller. |
+| Ceiling / floor | `1.00` / `0.23` | at the floor with p95 still over budget the scaler **stops and reports**; it must not pretend the budget was met. |
+| Oscillation guard | two down→up→down cycles across the same rung boundary within 3 windows each ⇒ pin the lower rung for the session, report `scaleSource: "auto-pinned"` | thermal edges produce exactly this, and a visibly pumping resolution is worse than a slightly soft one. |
+
+`p95`, never `p50` — the tail is what a player sees, and §1.3.3's own accepted run had a 74.72 ms
+worst frame behind a 16.66 ms p50.
+
+- [ ] Controller implemented to the table above, values read from one named constant block.
 - [ ] A pinned `resolutionScale` disables every step, asserted by an executable.
 - [ ] The scaler's order of spend between scale and samples is stated here, from Phase 0's
       `(scale × samples)` table, before the code is written.
 - [ ] The scaler never touches the overlay, never changes camera framing, and never alters aspect.
 - [ ] **Red-green, mutation named:** a playtest scenario on a deliberately over-budget scene with
       `assert.performance.minFps`; disabling the downward step makes it fail. Paste the red.
+- [ ] Floor-reached reporting is asserted: at `0.23` with p95 over budget the window still reports
+      the true scale and a named `atFloor` state.
 - [ ] Allocation-free per frame in the steady state, per the standing PRD-189 contract.
 
 ### Phase 3 — the instrument (independent of 0–2; may run in parallel)
