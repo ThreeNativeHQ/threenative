@@ -1066,8 +1066,8 @@ test("owned WebGPU binding state is wired to the executable reentrancy proof", (
   // timestamp-query. The literal is spelled out here on purpose — a stale one makes this
   // negative control a no-op that passes while proving nothing.
   const sharedFeatureMutation = context.replace(
-    "WGPUFeatureName requiredFeaturesAndroid[4];",
-    "static WGPUFeatureName requiredFeaturesAndroid[4];",
+    "WGPUFeatureName requiredFeaturesAndroid[6];",
+    "static WGPUFeatureName requiredFeaturesAndroid[6];",
   );
   assert.throws(
     () =>
