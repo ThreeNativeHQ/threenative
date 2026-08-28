@@ -126,7 +126,7 @@ NSString* const kOrigin = @"threenative://localhost/";
 @end
 
 @interface TnUiOverlayBridge : NSObject <WKScriptMessageHandler>
-@property(nonatomic, weak) TnUiOverlayView* overlay;
+@property(nonatomic, assign) TnUiOverlayView* overlay;
 @end
 
 @implementation TnUiOverlayBridge
@@ -220,6 +220,7 @@ bool attachIosUiOverlay(const std::string& uiRoot) {
 }
 
 void detachIosUiOverlay() {
+    [g_overlay.configuration.userContentController removeScriptMessageHandlerForName:kHostObject];
     [g_overlay removeFromSuperview];
     g_overlay = nil;
     setUiOverlayAttached(false);

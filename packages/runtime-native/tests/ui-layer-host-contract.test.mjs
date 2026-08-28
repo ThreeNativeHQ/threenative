@@ -83,3 +83,14 @@ test('the iOS host states that it is unproven', () => {
   // platform it did not execute. If someone runs it, this assertion is what they update.
   assert.match(ios, /UNPROVEN/u);
 });
+
+test('the MRC iOS bridge keeps a non-owning overlay link only while its handler is registered', () => {
+  assert.match(ios, /@property\(nonatomic, assign\) TnUiOverlayView\* overlay;/u);
+  assert.doesNotMatch(ios, /@property\(nonatomic, weak\) TnUiOverlayView\* overlay;/u);
+
+  const detach = ios.slice(ios.indexOf('void detachIosUiOverlay()'), ios.indexOf('/** Deliver one bridge frame'));
+  assert.match(
+    detach,
+    /removeScriptMessageHandlerForName:kHostObject[\s\S]*g_overlay = nil;/u,
+  );
+});
