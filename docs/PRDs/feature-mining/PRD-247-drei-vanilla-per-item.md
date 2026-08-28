@@ -129,3 +129,15 @@ even grid is the case that needs none of the code.
 `count-loc.ts` per item, not for the set. Each of the three stands or falls alone: if a template's
 hand-written billboard is not longer than the imported one across three call sites, that one is
 deleted and the other two are unaffected.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`pmndrs/drei-vanilla` @ `28978f68`**.
+
+| To implement | Read |
+| --- | --- |
+| billboarding, including the orthographic and rotated-parent cases | `src/core/Billboard.ts:1-68` |
+| sprite-sheet indexing and frame timing | `src/core/SpriteAnimator.ts:1-396` |
+| the shake offset (mechanism only — its defaults do not ship) | `src/core/CameraShake.ts:1-104` |
+| **do NOT borrow** — the other sixteen files; 13 of 19 are GLSL/`onBeforeCompile`-coupled | `src/core/{Stars,Sparkles,Cloud,Grid,Outlines,Caustics,Fisheye,MeshPortalMaterial,pcss,AccumulativeShadows,Trail,Splat,useFBO,shaderMaterial,CubeCamera}.ts` |

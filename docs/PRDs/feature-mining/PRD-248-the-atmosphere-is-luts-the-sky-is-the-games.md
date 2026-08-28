@@ -148,3 +148,18 @@ the template's `src/render/postprocessing.ts` (EDIT — the composite line), its
 The LUT bake and the depth seam survive on being unwritable by a game. If the template's own sky
 ends up not using `radiance()` — because a gradient looked as good for that game — the node stays
 and the subsystem is re-scored under §11.2 at the next round.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`DennisSmolek/SebH-TSL-Sky` @ `f7659396`**.
+
+| To implement | Read |
+| --- | --- |
+| the transmittance / multi-scattering / sky-view LUT bake — the core borrow | `src/sky/SkyAtmosphereBaker.js:1-526` |
+| the physical parameter set and its uniforms | `src/sky/AtmosphereParams.js:1-85`, `src/sky/AtmosphereUniforms.js:1-85` |
+| aerial perspective against scene depth | `src/sky/HazePostProcess.js:1-434`, `src/sky/hazeScenePassDepth.js:1-33` |
+| sun elevation and azimuth from time, latitude and longitude | `src/solarPosition.js:1-71` |
+| **do NOT borrow** — a preset menu is on the closed list | `src/presets.js`, `src/Sky.js:52-108` (`preset = 'earth'`, `quality = 'medium'`) |
+| **do NOT borrow** — it creates and owns a `THREE.DirectionalLight` | `src/sky/SkySun.js:1-213`, and `src/Sky.js:409-410` |
+| **do NOT borrow into a package** — sky mesh, ground, night and moon are all look | `src/sky/SkyAtmosphereMesh.js`, `SkyGround.js`, `SkyNight.js`, `SkyMoon.js`, `GroundedSkybox.js` |

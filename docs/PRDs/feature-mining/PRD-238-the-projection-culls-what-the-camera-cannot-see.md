@@ -168,3 +168,16 @@ measurements), `docs/verification/runtime-perf-state.md` (EDIT).
 This PRD adds no public surface, so `count-loc.ts` does not apply. Its kill switch is the
 measurement itself: a change to the projection that does not move a meter is reverted, not kept
 because it is theoretically better.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`agargaro/instanced-mesh` @ `78f5a94e`**.
+
+| To implement | Read |
+| --- | --- |
+| the whole idea, 25 lines — BVH traversal writing survivor indices | `src/core/feature/FrustumCulling.ts:172-196` |
+| the linear fallback it is measured against | `src/core/feature/FrustumCulling.ts:198-234` |
+| how it chooses between the two | `src/core/feature/FrustumCulling.ts:58-77` |
+| the dynamic instance BVH (Phase 4 only) | `src/core/InstancedMeshBVH.ts:1-322` |
+| **do NOT borrow** — WebGL-bound, and this engine is WebGPU | `src/core/utils/SquareDataTexture.ts:171`, `src/core/utils/PropertiesOverride.ts:34`, `src/core/utils/GLInstancedBufferAttribute.ts`, `src/shaders/ShaderChunk.ts` |

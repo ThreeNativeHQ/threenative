@@ -162,3 +162,16 @@ verification record (EDIT).
 
 If the only consumer this ever finds is one example, it is deleted. A GPU BVH with no game using it
 is a research artifact, and the manifest would be advertising a capability nobody reached for.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`jure/webgiya` @ `0cd7f968`**.
+
+| To implement | Read |
+| --- | --- |
+| the entire technique: scene → storage buffers a TSL kernel can trace | `src/sceneBvh.ts:1-212` |
+| vertex packing into the buffer layout | `src/vertexPacked.ts:1-85` |
+| per-material data as an array texture (only if materials are traced) | `src/diffuseArray.ts:1-132` |
+| the tracing functions themselves — **use the installed package, not webgiya's vendored copy** | `three-mesh-bvh@0.9.14/src/webgpu/`: `BVHComputeData.js`, `bvh_ray_functions.wgsl.js`, `tsl/fns.js` |
+| **do NOT borrow** — it vendors an older BVH because it pins `^0.9.2` | `src/external/three-mesh-bvh/`, and `src/sceneBvh.ts:3-4` |

@@ -225,3 +225,19 @@ web feature wearing a portable name.
 **every** site: a game with 12 interactive objects, hover and drag, on both mouse and touch. If the
 framework version is not smaller than what a competent author writes by hand across those sites, it
 is deleted, however much work it took.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`agargaro/three.ez` @ `91e73f3c`**.
+
+| To implement | Read |
+| --- | --- |
+| the per-object listener map, add/remove, and dispatch | `src/events/EventsDispatcher.ts:1-113` |
+| the event vocabulary and its type map | `src/events/Events.ts` (399 lines) |
+| per-pointer intersection bookkeeping | `src/events/RaycasterManager.ts:1-85` |
+| event coalescing between frames | `src/events/InteractionEventsQueue.ts:1-38` |
+| the drag / capture state machine | `src/events/DragAndDropManager.ts:1-154` |
+| proxy hit volumes | `src/events/Hitbox.ts:1-12` |
+| **do NOT borrow** — `InputMap` already owns this half | `src/events/InteractionManager.ts:39-57` (12 DOM listeners) |
+| **do NOT borrow** — upstream-class patching is refused here | `src/patch/*.ts` |

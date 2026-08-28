@@ -165,3 +165,19 @@ verification record (NEW).
 delete this whole subsystem, and Phase 2's coverage number has the standing to stop it before Phase
 3 is written. Neither is a formality: a GI system that ships and is then always turned off for
 performance is worse than no GI system, because the manifest advertises it.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`jure/webgiya` @ `0cd7f968`**.
+
+| To implement | Read |
+| --- | --- |
+| surfel pool and allocation | `src/surfelPool.ts:1-319`, `src/surfelAllocatePass.ts:1-298` |
+| the spatial hash grid | `src/surfelHashGrid.ts:1-934` |
+| ray integration | `src/surfelIntegratePass.ts:1-1266` |
+| coverage detection and ageing | `src/surfelFindMissingPass.ts:1-595`, `src/surfelAgePass.ts:1-186` |
+| the resolve that produces the node we hand back | `src/surfelGIResolvePass.ts:1-373` |
+| GPU-computed indirect dispatch args | `src/surfelDispatchArgs.ts`, `src/integratorDispatchArgs.ts` |
+| **the line that stays in the game**, and the proof the split already exists upstream | `src/main.ts:709-722` — `postProcessing.outputNode = fxaa(directLight.add(indirectLight))` |
+| **do NOT borrow** — look and demo scaffolding | `src/lighting.ts`, `src/content.ts`, `src/ui.ts` |

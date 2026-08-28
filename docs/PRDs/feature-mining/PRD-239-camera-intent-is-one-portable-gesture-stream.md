@@ -182,3 +182,14 @@ source), its playtest (NEW/EDIT).
 gamepad stick, on web and native. If the framework version is not smaller than that — and it must
 be compared against the portable requirement, not against the three-line web-only version that does
 not ship — it is deleted.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`yomotsu/camera-controls` @ `c5160110`**.
+
+| To implement | Read |
+| --- | --- |
+| the gesture table — which device gesture maps to which intent, per finger count | `src/CameraControls.ts:314-342` |
+| the dolly-vs-zoom distinction most hand-rolled code conflates | the `ACTION` enum, same file |
+| **do NOT borrow** — framing is the template's, already decided | the rig, damping, collision and transition machinery (the bulk of `src/CameraControls.ts`) |

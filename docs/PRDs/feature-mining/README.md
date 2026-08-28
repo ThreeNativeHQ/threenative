@@ -1,6 +1,6 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** PROPOSED — ten PRDs filed across two rounds, none started.
+**Status:** PROPOSED — thirteen PRDs filed across two rounds, none started.
 
 Every upstream repository named here was **cloned at depth 1 on 2026-08-28 and read**. Claims about
 what a source contains are cited by file and line against that clone. Claims about this repository
@@ -54,10 +54,13 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [245](./PRD-245-indirect-light-is-a-node-the-game-composites.md) | `SurfelGI` hands back **one TSL node**; the game composites it in its own `src/render/postprocessing.ts`, or never mentions it. **Reverses a bad refusal.** | [`webgiya`](https://github.com/jure/webgiya) (7 509 lines); composition is already app code there at `src/main.ts:709-722` | 9 → HIGH |
 | [246](./PRD-246-two-oceans-two-contracts.md) | `SpectralOcean` beside PRD-236's `WaveField` — **both ship**, different names because different contracts: analytic height is exact and free, spectral height is an async throttled readback that is N frames stale. | [`poseidon`](https://github.com/owenyuwono/poseidon), [`SeedOcean`](https://github.com/reed-soul/SeedOcean) `src/core/buoyancy.js` — MIT | 7 → HIGH |
 | [247](./PRD-247-drei-vanilla-per-item.md) | The drei-vanilla helpers that are mechanism, one at a time. **Reverses a bad refusal** — `billboarding` is named in CHARTER §5b as something the framework may own. | [`drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT | 5 → MEDIUM |
+| [248](./PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) | `Atmosphere` bakes three LUTs and hands back `radiance()`, `sunTransmittance()` and `aerialPerspective()`. **No preset list, and it creates no light** — the sky mesh, the material and the `DirectionalLight` stay in the template. | [`SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky) `src/sky/SkyAtmosphereBaker.js` (526), MIT | 7 → HIGH |
+| [249](./PRD-249-a-fluid-field-is-data-the-game-draws.md) | `FluidField2D` — the seven-pass incompressible solver, unfused from the material upstream welds it to. The game samples `field.dye` and decides whether it is smoke or fire. **Last in the batch: zero in-repo callers today.** | [`threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation) `src/FluidMaterialGPU.ts:53-325`, MIT | 6 → MEDIUM |
 
-**Order to attack:** 237 → 239 → 247 → 242 → 244 → 238 → 241 → 243 → 246 → 240 → 245.
+**Order to attack:** 237 → 239 → 247 → 242 → 244 → 238 → 241 → 248 → 243 → 246 → 240 → 245 → 249.
 237, 239 and 247 change what a game author writes on day one and are small. 242 gates 243–246.
-245 is the largest and the most likely to be refused on device cost, by design.
+245 is the largest and the most likely to be refused on device cost, by design. 249 is last
+because §11.1's more-than-twice clause is not yet satisfied for it, and the PRD says so.
 
 ## Not filed — already shipped here
 
@@ -74,8 +77,6 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | Survey item | Verdict |
 | --- | --- |
 | `camera-controls` as a camera **rig** | Fails the test: a rig ships offsets, damping and look-ahead, and a game cannot change framing without editing them. Already decided in writing before this survey — `templates/starter/src/render/camera.ts:8-9`, and seven templates own a rig each (186 lines total). PRD-239 takes only the gesture table, which is a platform seam. |
-| `SebH-TSL-Sky` as shipped | **Admissible in kind, refused as shipped.** The LUT machinery is mechanism and would pass; `preset: 'earth'` is a preset menu, which is on §2's closed list and is the `postprocessing: ['bloom']` mistake by another name. File it and it ships parameterised with no preset list — say the word and it gets a PRD. |
-| `bandinopla` fluids | **Admissible in kind, not yet needed.** After PRD-242 a game writes these TSL passes itself, and §11.1 admits framework code once one game writes it more than twice — which has happened zero times. Its pass decomposition (`FluidMaterialGPU.ts:70-84`) is the reference when that changes. |
 | `lo-th/phy` — 8-backend physics | Not a look question at all. No second backend is wanted, Rapier's vocabulary is already borrowed (`RigidBody3D`, `Joint3D`, `PhysicsDirectSpaceState3D`), and an abstraction over eight engines is the archetype `count-loc.ts` deletes. Worth **reading** before any physics API change — its `Body`/`Character`/`Vehicle`/`Terrain` split is good. |
 | `owenyuwono/tiamat` | Raw WGSL against the WebGPU API rather than `WebGPURenderer`. Algorithm reference, not a port candidate. |
 | `koota` | A code-first ECS is on §2's closed list. Not reopened by a library being good. |
@@ -103,17 +104,34 @@ reference implementations of primitives, not dependencies that should dictate th
 either round adds a runtime dependency, and the one library already depended on (`three-mesh-bvh`)
 is used further rather than replaced.
 
-## The clone the evidence was read from
+## The clones the evidence was read from, pinned
+
+Line numbers in these PRDs only mean something against a fixed commit. Every reference in this batch
+is against the depth-1 clone taken on **2026-08-28** at these exact commits:
+
+| Repository | Commit | Used by |
+| --- | --- | --- |
+| `agargaro/three.ez` | `91e73f3cececd1a7e8ec5e9ff44fd6e4f4f81064` | 237, 241 |
+| `agargaro/instanced-mesh` | `78f5a94e63ad45aa32fadce82490c275cb617fff` | 238 |
+| `yomotsu/camera-controls` | `c51601107e266097edf6a9caa57bfa9eaa77427c` | 239 |
+| `pmndrs/glyph` | `f08a90cf66dd43c95fdec4458a469e149fe994dc` | 240 |
+| `pmndrs/timeline` | `d97c31265bf1f0aef82f83931dc924f1de253cde` | 241 |
+| `bandinopla/three-simplecloth` | `f829b8d8f633d2d180aeb564c0c2aa1540deb190` | 243 |
+| `holtsetio/softbodies` | `5d304d36006fcf2201061df0d1a27ce79bba2183` | 243 |
+| `jure/webgiya` | `0cd7f96859adc34e181f34a5d804e53fa94799cb` | 244, 245 |
+| `owenyuwono/poseidon` | `671053b812fcbffe8ecc4668eaa6ab7ffeb63287` | 246 |
+| `reed-soul/SeedOcean` | `115e0ba0d79c46fcb1a0fe27df2046651aa2c103` | 246 |
+| `pmndrs/drei-vanilla` | `28978f680f9071e4f4794611781c19f46de48e35` | 247 |
+| `DennisSmolek/SebH-TSL-Sky` | `f7659396815e8d193b84ba97020319ca8bb903d9` | 248 |
+| `bandinopla/threejs-fluid-simulation` | `14ff3b0e55954685dc14648d5625715fa8e8c14a` | 249 |
+| `lo-th/phy` | `7fe6ca802f581bfdeb3835147bb1923f372cc622` | read, refused |
+| `owenyuwono/tiamat` | `e389a99192c5158fb3b95d9df5427feaf9d97fea` | read, refused |
 
 ```sh
-# reproduce, 2026-08-28
-for r in agargaro/three.ez agargaro/instanced-mesh yomotsu/camera-controls pmndrs/glyph \
-         pmndrs/timeline jure/webgiya holtsetio/softbodies bandinopla/three-simplecloth \
-         bandinopla/threejs-fluid-simulation owenyuwono/poseidon reed-soul/SeedOcean \
-         lo-th/phy DennisSmolek/SebH-TSL-Sky owenyuwono/tiamat pmndrs/drei-vanilla; do
-  git clone --depth 1 https://github.com/$r.git
-done
+# reproduce any of them
+git clone --depth 1 https://github.com/<repo>.git && git -C <name> checkout <commit>
 ```
 
-All MIT. No copied source is proposed in any PRD in this batch — every one mines a technique and
-cites where it was read.
+**Every PRD that mines a source carries a "Borrow map — where to read what" table** naming the exact
+files to read and, as importantly, the files **not** to borrow. All MIT. No copied source is proposed
+anywhere in this batch.

@@ -167,3 +167,18 @@ playtest (NEW), `softbody.spec.ts` (EDIT).
 `count-loc.ts` against a game that writes the same cloth in TSL on top of PRD-242. If a competent
 author's hand-written version is not meaningfully larger across a flag, a cape and a curtain, this
 is deleted and the templates keep the hand-written one as generated source.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`bandinopla/three-simplecloth @ `f829b8d8`, holtsetio/softbodies` @ `5d304d36`**.
+
+| To implement | Read |
+| --- | --- |
+| spring-graph construction from a mesh | simplecloth `src/SimpleCloth.ts:179-199` |
+| the TSL solver kernels | simplecloth `src/SimpleCloth.ts:612-699` |
+| dispatch and reset | simplecloth `src/SimpleCloth.ts:925` |
+| tetrahedral FEM kernels (Phase 4 only) | softbodies `src/FEMPhysics/FEMPhysics.js:339-500` |
+| the collision spatial grid | softbodies `src/FEMPhysics/grid.js:1-53` |
+| **do NOT borrow** — an invented authoring convention | simplecloth `src/SimpleCloth.ts:1060-1073` (red vertex paint marks the simulated region) |
+| **do NOT borrow** — no stability guarantee across the pinned catalog version | simplecloth's `three/src/nodes/TSL.js` deep import |

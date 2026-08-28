@@ -208,3 +208,16 @@ a subset (or the full Jōyō set, at real atlas cost). **Is that acceptable, or 
 where the WebView UI overlay is the intended answer and world-space CJK is out of scope for now?**
 The answer changes Phase 1's default charset and the docs, and nothing should be baked before it is
 answered.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`pmndrs/glyph` @ `f08a90cf`**.
+
+| To implement | Read |
+| --- | --- |
+| the offline bake entry point and artifact shape | `packages/glyph/bin/glyph.js`, `packages/glyph/src/bake.ts` |
+| layout and placement from a metrics table | `packages/glyph/src/layout.ts`, `src/glyph-placement.ts` |
+| the three.js text object shape | `packages/glyph/src/three/text.ts` |
+| MSDF TSL node graphs | `packages/glyph/src/tsl/` |
+| **do NOT borrow** — WASM at runtime, and iOS JSC has no WASM engine | `packages/glyph/src/shaper.ts:89-92`, `:207`; `src/core/host.ts` |

@@ -160,3 +160,18 @@ kit), a playtest (NEW), verification record (EDIT).
 `SpectralOcean` is measured against the kit writing it by hand on top of `IComputeDriven` and
 `GPUReadback`. If the framework's version is not smaller, the simulation core moves to the kit and
 only the readback stays.
+
+## Borrow map — where to read what
+
+Read these before writing anything; they are the reference, not the dependency. Pinned to the
+commit this PRD was written against, so the line numbers still mean something: **`owenyuwono/poseidon @ `671053b8`, reed-soul/SeedOcean` @ `115e0ba0`**.
+
+| To implement | Read |
+| --- | --- |
+| the wave spectrum and shared Gaussian noise | poseidon `src/ocean/spectrum.js`, `src/ocean/gaussianNoise.js` |
+| cascade structure and the inverse FFT | poseidon `src/ocean/OceanCascade.js`, `src/ocean/fft.js` |
+| displacement / derivative / foam map assembly | poseidon `src/ocean/maps.js` |
+| per-frame dispatch order | poseidon `src/ocean/Ocean.js:113-135` |
+| **the throttled readback that makes FFT buoyancy possible** — the core borrow | SeedOcean `src/core/buoyancy.js:1-60` (`getHeight` → `sampleHeightFromBuffer`, "readback every N frames") |
+| applying it to a floating body | SeedOcean `src/core/buoyancy-body.js` |
+| **do NOT borrow into a package** — this is the kit's, all of it | poseidon `src/ocean/oceanSurfaceMaterial.js` (1 700+ lines), `src/ocean/sky.js`, `src/ocean/atmosphere.js` |
