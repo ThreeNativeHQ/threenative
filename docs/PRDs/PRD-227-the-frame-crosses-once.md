@@ -4,12 +4,16 @@ prd_contract: v1
 
 # PRD-227 — the frame crosses once
 
-**Status:** IN PROGRESS — P1 accepted; P2 executed and falsified; Phase 4 is implemented in
-Bayview. Phase 3 device acceptance, the hosted JSC execution lane, and the web gate remain open.
-Filed 2026-08-27 from the measured budget in
+**Status:** IN PROGRESS — **P1 accepted and landed. P2 executed and falsified. Phase 4 executed,
+rejected by the owner, and reverted.** Phase 3 device acceptance, the hosted JSC execution lane,
+and the web gate remain open. Filed 2026-08-27 from the measured budget in
 [PATH-TO-60FPS](../verification/PATH-TO-60FPS-2026-08-27.md). This is the implementation PRD that
 PRD-226's ablation ladder was built to justify. PRD-226 stays live and owns the instrument; this one
 owns the fix.
+
+**The decisive measurement does not exist yet.** Change 1 landed in the engine; Bayview's
+appearance was restored; the device was never re-measured with that combination. Start at
+[Resume here](#resume-here-2026-08-27).
 
 **Goal: Bayview at 60 fps or better in the native host on a physical Pixel 8.** 30 fps is not a
 pass. The panel is 120 Hz, so the whole frame must fit in **16.67 ms**; it costs **43–48 ms** today.
@@ -74,6 +78,24 @@ scene:
 
 **Margin is 1.3 ms. Sixty fps is achievable, not comfortable.**
 
+#### Correction, 2026-08-27 — the pre-registered arithmetic is void as written
+
+P2's falsification removes Change 2 from the model, and with it the assumption that the **3.9 ms**
+megamorphic + name-dictionary tax is ours to remove. It is owned by Three.js's node-material shader
+graph, which the framework does not fork, and **Chrome pays the same tax on the same scene while
+reaching 59.99 fps on this phone**. That term was therefore never removable and the 22.3 ms budget
+double-counted it.
+
+| Term | Original model | After P2 |
+| --- | ---: | ---: |
+| predicted saving | 22.3 ms | **Change 1 only — unmeasured on device** |
+| predicted frame | 15.4 ms ⇒ 65 fps | **not derivable until Phase 3 measures Change 1 alone** |
+| margin | 1.3 ms | **gone** |
+
+No replacement number is written here. The next number in this PRD must be **measured on the
+device**, not modelled — the model has now mispredicted twice (F12, P2). Do not re-derive a target
+from desktop figures: the desktop lane renders 0.92 Mpix against the device's 2.59 Mpix.
+
 Rejected alternatives, on the record: a sixth micro-lever of any kind (PRD-226's graveyard has five,
 all measured flat); a backend change (A1 and A2 closed it by two independent routes — the backend is
 8.5% of the frame); more `simpleperf` symbol work (three readings of one profile gave three
@@ -108,6 +130,19 @@ different owners).
       disabling the stream at its request-device entry point returns `bridgeNs` to the direct-call
       control; paste both.
 
+**P1 result — accepted** (`cb64c892`, [prd-227-p1-2026-08-27](../verification/prd-227-p1-2026-08-27.md)).
+Desktop Xvfb pair, same session:
+
+| Arm | work | bridge | overhead | command |
+| --- | ---: | ---: | ---: | ---: |
+| direct-call control | 23.19 ms | 9.31 ms | 3.87 ms | 1.84 ms |
+| packed-stream candidate | **14.32 ms** | **0.81 ms** | 0.19 ms | 2.32 ms |
+| change | −8.87 ms | −8.50 ms | −3.67 ms | +0.48 ms |
+
+Retained en route: reusable 1 MiB JS arena (drain 0.069 → 0.003 ms), upload view `.slice()` removed.
+**Reverted, both measured negative and both on the record so they are not retried:** frame-local
+render-pass slots in place of the hash map (19.02 → 19.80 ms), and a typed-u32 recorder probe.
+
 ### Phase 2 — Change 2, fixed-shape wrappers
 
 - [x] `ObjectTemplate` + internal fields per WebGPU class; native handles resolved from internal
@@ -122,6 +157,27 @@ different owners).
       logging names Three.js's node-material shader graph, not native wrapper shapes, as the
       dominant steady-state population.
 
+**P2 disposition — falsified, closed to further attempts**
+([prd-227-p2-2026-08-27](../verification/prd-227-p2-2026-08-27.md), `f0639772`, `54b7354c`):
+
+| Arm | stub cache | dictionary | combined |
+| --- | ---: | ---: | ---: |
+| historical baseline, identically re-reported | 7.2459% | 3.1777% | **10.4236%** |
+| fixed wrappers + borrowed callback values | 10.4918% | 5.0922% | **15.5840%** |
+| + class-specific frame resource ids | 8.6238% | 4.4019% | 13.0257% |
+| + typed uploads bounded to ≤3 maps per site | 8.2299% | 3.6058% | **11.8356%** |
+
+The gate was ≤3%. The final arm is **1.41 points worse than doing nothing** and 8.84 above the gate.
+139,373 `LoadIC`/`KeyedLoadIC` records source-resolve the owner to `three/src/nodes/core/Node.js`
+(`getNodeType`, `build`, `getUpdateType`, `getHash`) and `NodeBuilder.getDataFromNode`. **No native
+WebGPU wrapper site appears among the dominant steady-state records.**
+
+**The code stays; the claim does not.** The `ObjectTemplate` change is correct, contract-proven and
+independently revertible, and its two recorder specializations each reduced the pre-registered owner
+monotonically. It has **not earned a device-performance claim**. Optimising Three.js renderer
+internals inside the host would violate the ownership rule — Three.js remains the renderer,
+`runtime-native` owns the platform seam — so **no third speculative shape edit is authorised.**
+
 ### Phase 3 — device acceptance
 
 - [ ] Pixel 8 with `doctor --device` recorded at both ends, fresh install, cold launch, live windows
@@ -135,12 +191,108 @@ different owners).
       Skia view pipeline and reads ~5× flattering.
 - [ ] Web does not regress: `pnpm visuals` clean, desktop Chrome `render.p50` unchanged.
 
-### Phase 4 — the named fallback, if the margin does not hold
+**Phase 3 is the decisive open step, and its exact arm is now defined.** Change 1 is landed in the
+engine and Change 2 is falsified, so the only arm that answers this PRD is **engine commits only,
+against Bayview at its restored appearance** (`7e4f912` in
+`/home/joao/projects/threenative/sandbox/fps-framework`). That build has never been measured on the
+device. Every device number recorded so far is either pre-Change-1 or contaminated by the Phase 4
+visual downgrade.
 
-Stated now so it is not invented under pressure. The model leaves **1.3 ms** of headroom. If the
-residual terms land worse than modelled, the next lever is **the game's own draw-call and material
-count** — Bayview issues 418 indexed draws and 661 bind-group sets per frame — **not more seam work.**
-That is a Bayview change, not a framework change, and it belongs in the game.
+**Appearance is part of the acceptance, not separate from it.** An fps number produced by a build
+that does not look like Bayview is not a Phase 3 capture, whatever it reads.
+
+### Phase 4 — the named fallback — EXECUTED, REJECTED, REVERTED
+
+Stated in advance so it would not be invented under pressure. It was then executed under time
+pressure anyway, and the owner rejected it.
+
+**What ran:** Bayview's procedural TSL town materials replaced with flat `MeshBasicMaterial`,
+shadows removed, a presentation cap and a render-budget experiment added.
+
+**What it measured: 61.31 fps active movement, 63.77 fps SurfaceFlinger** — the only time this
+project has read 60 on the device. It is **not a pass** on two independent counts: the build was
+visibly white and flat, losing the texture and material detail that make Bayview look like Bayview;
+and it produced **one capture, not the required three**.
+
+**Reverted in full** at `7e4f912` (`revert(bayview): remove performance visual downgrade`) —
+materials, shadows, presentation cap, budget plumbing and its scenario. `pnpm typecheck` green after.
+
+**Owner ruling, 2026-08-28, binding on this PRD and its successors:**
+
+> *"Unless the performance bug is on the game code, do not touch it, unless to experiment."*
+
+Game code is **experiment-only**. A change to Bayview may be built to test a hypothesis and must be
+reverted before the result is reported; it may become a shipped change only when profiling shows the
+**game** owns the cost. The evidence points the other way — the seam and V8 machinery own the frame,
+and Chrome runs this same game at 59.99 fps — so Phase 4 is **closed as a route to acceptance** and
+survives only as a diagnostic. What its 61.31 fps actually establishes is an upper-bound sanity
+check: the device *can* present this scene at 60, so the remaining cost is not the panel or the
+driver.
+
+## Resume here (2026-08-27)
+
+Written for the agent picking this up. The previous session (codex `01a044cc`, 12:57–18:08 local)
+**ended mid-flight**: its last stated action was *"rebuilding Bayview from restored game source with
+only the engine commits; this is the decisive engine-only Pixel test."* **That test never ran.**
+
+### State of the two trees
+
+| Tree | Path | HEAD | Note |
+| --- | --- | --- | --- |
+| engine | `threenative-engine` | `19e96811` on `main` | Change 1 landed; Change 2 landed but claimless |
+| game | `sandbox/fps-framework` (Bayview) | `7e4f912` | appearance restored; Phase 4 hack fully reverted |
+
+**Do not sweep the engine tree's uncommitted files.** `packages/core/src/picking.ts` (modified) and
+the untracked `packages/core/__tests__/projection-hot-path.spec.ts`,
+`packages/core/__tests__/scratch-zz-decompose.spec.ts` and `packages/core/scratch-raycast-ab.mjs`
+are **not PRD-227 work** and were not produced by that session's PRD lane. Leave them for their
+owner.
+
+### The one thing to do first
+
+Rebuild Bayview from `7e4f912` against the engine at `19e96811` — **engine commits only, no game
+edits** — install fresh on the physical Pixel 8, and capture Phase 3 properly:
+
+1. `doctor --device <serial>` at both ends; record serial, temperature, battery, charger state.
+2. Three captures, cold launch, window 1 discarded, live windows only (`update.mean ≥ 3 ms`).
+3. Cross-check **every** fps claim against SurfaceFlinger on the game's own `(BLAST)` layer.
+   `dumpsys gfxinfo` is invalid here and reads ~5× flattering.
+4. Write `docs/verification/prd-227-phase3-<date>.md` whatever the number is. A miss is a result.
+
+The owner waived the charging/thermal prerequisite for this lane; state the values beside each
+result anyway. **The 60 fps bar is unchanged — 30 fps is a milestone, never a pass.**
+
+### What is closed — do not reopen without new evidence
+
+- **Change 2 / wrapper shapes.** Falsified; owner is Three.js's node graph. No third shape edit.
+- **The backend.** A1 (Dawn↔wgpu) and A2 (null backend) closed it twice; it is 8.5% of the frame.
+- **Binding tables per class** (PRD-224). Bounded at ≈0.3 ms before it is written.
+- **Micro-levers generally.** PRD-226's graveyard holds five, all measured flat, plus P2 and the two
+  reverted P1 experiments. **Seven failed levers. Measure before you build the eighth.**
+- **Phase 4 / Bayview's own draw counts** as a route to acceptance — see the owner ruling above.
+
+### The gap worth attacking if Phase 3 misses
+
+**Nobody has ever profiled the Chrome arm on the device.** Chrome's 59.99 fps on this Pixel is
+quoted in four documents and has never been attributed; every one of the ~15 ablation arms is
+native-only. Before writing an eighth lever, capture Chrome's own frame breakdown on the same phone
+and same scene, and diff it term by term against the native profile. That converts *"the seam costs
+22.3 ms"* — a number that has now mispredicted twice — into *"the seam costs X ms more than Chrome's
+equivalent path"*, which is the quantity that actually has to reach zero. It is the control this
+ladder never ran.
+
+### Smaller open items, all real
+
+- **Hosted JSC lane.** Compile blockers are closed (`4816d09d` supported prototype API,
+  `110270e5` C++17 compatibility, `19e96811` launch diagnostics preserved). Runtime launch still
+  fails with a **generic simulator code 4**; the session was improving the verifier to capture the
+  real crash reason rather than guess. Resume there. Until it executes, cross-engine coverage is
+  **compile-checked only, which this PRD explicitly does not accept as verification.**
+- **Web gate.** `pnpm visuals` clean and desktop Chrome `render.p50` unchanged — not yet run against
+  the landed Change 1.
+- **Device stability.** One physical SIGSEGV after ~1,100 frames in V8's optimizing compiler
+  (`IdentityMapBase::Clear` / `OptimizingCompileDispatcher`), unattributed to any single commit.
+  Open, tracked here, not blocking Phase 3.
 
 ## Verification
 
@@ -158,8 +310,12 @@ Record `docs/verification/prd-227-<phase>-<date>.md`, one file per run session.
 ## Acceptance Criteria
 
 - [ ] **Bayview ≥ 60 fps median on a physical Pixel 8**, three captures,
-      SurfaceFlinger-confirmed. Charger and thermal state are recorded under the explicit session
-      waiver above. This is the bar; 30 fps is a milestone to report, never a pass.
+      SurfaceFlinger-confirmed, **at its restored appearance** — the run must render the procedural
+      TSL town materials and shadows, not a stand-in. Charger and thermal state are recorded under
+      the explicit session waiver above. This is the bar; 30 fps is a milestone to report, never a
+      pass. *(2026-08-27: 61.31 fps active / 63.77 SurfaceFlinger was observed once, on the reverted
+      flat-material build, from one capture. It is recorded as a diagnostic upper bound and is
+      **not** a pass on this criterion.)*
 - [x] The frame issues **one crossing per frame** for command submission, asserted by an executable.
       (Mutation: disable the stream drain → the executable rejects the direct-call control.)
 - [x] Two wrappers of the same WebGPU class share one hidden class, asserted by an executable.
@@ -167,5 +323,9 @@ Record `docs/verification/prd-227-<phase>-<date>.md`, one file per run session.
 - [x] Both changes are independently revertible, each with a negative control that fails on revert.
 - [x] No ablation or measurement flag ships: `scripts/__tests__/ablation-flags-never-ship.spec.ts`
       green.
-- [ ] Cross-engine coverage is **named**, not implied.
+- [ ] Cross-engine coverage is **named**, not implied. *(V8 and QuickJS executed —
+      `threenative-command-encoder-class-table-test` passed on both, and
+      `threenative-handle-lifetime-test` ran 100,000 crossings on each with `outstanding=0`. **JSC
+      is unexecuted**: it compiles, but hosted simulator launch fails with a generic code 4. Compiled
+      is not executed.)*
 - [ ] Web unchanged: `pnpm visuals` clean.
