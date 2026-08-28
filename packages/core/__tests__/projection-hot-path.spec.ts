@@ -77,7 +77,7 @@ describe("projection hot path", () => {
     Object.defineProperty(Object3D.prototype, "isLOD", {
       configurable: true,
       get(this: Object3D) {
-        if (this.isMesh !== true) groupIsLodReads += 1;
+        if ((this as Mesh).isMesh !== true) groupIsLodReads += 1;
         return false;
       },
     });

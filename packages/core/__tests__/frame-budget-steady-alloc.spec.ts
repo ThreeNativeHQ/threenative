@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
-import { FixedStepLoop } from "../src/loop.js";
 import { FrameBudget } from "../src/frame-budget.js";
+import { FixedStepLoop } from "../src/loop.js";
 
 /**
  * A steady frame with metrics collection off must not allocate.
@@ -46,8 +46,9 @@ describe("frame budget steady-state allocation", () => {
 
     // The window runs no simulation steps and renders nothing, so the only allocation pressure is
     // the budget itself; any GC inside it is the defect announcing itself.
-    expect(events, `${events.length} GC events across ${frames} frames in ${Math.round(elapsedMs)}ms`).toEqual(
-      [],
-    );
+    expect(
+      events,
+      `${events.length} GC events across ${frames} frames in ${Math.round(elapsedMs)}ms`,
+    ).toEqual([]);
   });
 });
