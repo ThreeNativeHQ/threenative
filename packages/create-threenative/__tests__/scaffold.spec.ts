@@ -42,13 +42,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
   // holds the frame budget instead of the game hand-authoring a resolution constant.
-  "action-rpg": "ee48e5ae0528f9d447a5d48ca00a0db6e8c8efc5aa03c3ad7c9bf475258d2044",
-  defense: "3f317d58461e0616eeb07566abda3cf2140e8fc33d26c6742525a66bab53216b",
+  // Recomputed after Biome reformatted nine template files: the previous values were measured
+  // before that formatting ran and were therefore stale the moment they were committed.
+  "action-rpg": "4229783b897791764b708990f686a87a3e86cfb27e5c4e035f1d4fe9cf9880ac",
+  defense: "2069eafd127b35b89adf856f2087b7cdd5bb09c2b50337521271da2625419636",
   minimal: "81783acebe32339ccc51623a186af197bb48196f133e77c3f5be3b0567a8c366",
-  platformer: "10a5cdc26ef658375e43b60ca64297c8278cd4c02b0f11c4454cca657d1083c2",
-  racing: "ab098dd2340ad8b4c2acf07cc3a34a3a1732a5d9aece7fe6696f9f79f4f8f598",
-  shooter: "03f8828a38aba69e0e8eb01faf20b479fe0bd1a1fcc9eefc0f907b2e3f3ecd18",
-  starter: "c8237d8be9e489451f7757e56da92ab3b77596225f3efc54bcd4a8e513268bbb",
+  platformer: "bf0619518da5b602cace0b691f5df77bacba0463ee81e81ee0af44ba6b0e7e9d",
+  racing: "2f5846f31af48e459ec18425f8034edacbfb312dce004268c7c48e089f12fcd9",
+  shooter: "23e8fa8029a7fd9e496214ed97dee8003d54c94e6fb527e588c348911a4b0196",
+  starter: "85b4fd037e2e8d1af45a70bfa23f97d6ac4eb87d31edd64b38869a3721fdf935",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
