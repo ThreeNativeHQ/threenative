@@ -67,3 +67,21 @@ describe("renderer.surface()", () => {
     created.dispose();
   });
 });
+
+describe("renderer.setResolutionScale()", () => {
+  it("re-applies the drawing buffer and reports the new scale and its source", async () => {
+    const created = await renderer({ resolutionScale: 1 });
+    created.setResolutionScale(0.44, "auto");
+    expect(created.surface()).toEqual({
+      drawingBufferHeight: 475,
+      drawingBufferWidth: 1056,
+      resolutionScale: 0.44,
+      sampleCount: 1,
+      scaleSource: "auto",
+    });
+    created.setResolutionScale(0.32, "auto-pinned");
+    expect(created.surface().scaleSource).toBe("auto-pinned");
+    expect(created.surface().drawingBufferWidth).toBe(768);
+    created.dispose();
+  });
+});

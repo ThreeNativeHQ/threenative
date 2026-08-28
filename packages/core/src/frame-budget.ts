@@ -55,15 +55,23 @@ export interface IFramePhaseSample {
 export interface IFrameSurfaceState {
   /** The applied drawing-buffer scale, in `(0, 1]`. */
   readonly resolutionScale: number;
-  /** `"pinned"` when the game fixed the number, `"auto"` when the engine chose it. */
-  readonly scaleSource: "pinned" | "auto";
+  /**
+   * `"pinned"` when the game fixed the number, `"auto"` when the engine chose it, and
+   * `"auto-pinned"` when the engine chose it and then stopped moving it — the oscillation guard
+   * holding a rung is a different state from a game that pinned one, and reads as one.
+   */
+  readonly scaleSource: "pinned" | "auto" | "auto-pinned";
   /** Multisample count of the 3D drawing buffer; 1 when sampling is off. */
   readonly sampleCount: number;
   readonly drawingBufferWidth: number;
   readonly drawingBufferHeight: number;
 }
 
-const SCALE_SOURCES: readonly IFrameSurfaceState["scaleSource"][] = ["pinned", "auto"];
+const SCALE_SOURCES: readonly IFrameSurfaceState["scaleSource"][] = [
+  "pinned",
+  "auto",
+  "auto-pinned",
+];
 
 /** Fail closed: a surface that cannot describe an image is never reported as one. */
 function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {

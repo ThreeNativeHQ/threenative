@@ -33,6 +33,7 @@ function renderer(dispatched: unknown[]): IRendererLike {
     renderOverlay: () => undefined,
     setOutputNode: () => undefined,
     setSize: () => undefined,
+    setResolutionScale: () => undefined,
     surface: () => ({
       drawingBufferHeight: 1,
       drawingBufferWidth: 1,

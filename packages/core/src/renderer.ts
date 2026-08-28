@@ -108,6 +108,11 @@ export interface IRendererLike {
   setOutputNode(node: unknown): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   /**
+   * Moves the drawing-buffer scale, re-applying it immediately. The adaptive scaler is the only
+   * caller; a pinned game never reaches this, which is what makes "pinned" mean pinned.
+   */
+  setResolutionScale(scale: number, scaleSource: "auto" | "auto-pinned"): void;
+  /**
    * What this renderer is actually drawing at. Read once per frame-budget window so every fps
    * number is self-describing; a record and a tree once disagreed about the scale for a whole
    * session because nothing in the measurement could say which one produced it.
@@ -131,7 +136,7 @@ export interface IRendererOptions {
   /** CSS-pixel multiplier for the drawing buffer. The default is intentional DPR 1. */
   resolutionScale?: number;
   /** Whether the game pinned that scale or the engine chose it. Reported, never inferred. */
-  scaleSource?: "pinned" | "auto";
+  scaleSource?: "pinned" | "auto" | "auto-pinned";
   source?: IRendererPlatformSource;
   webgpuFactory?: (
     canvas: HTMLCanvasElement,
@@ -175,20 +180,25 @@ function wrapRenderer(
   raw: RendererInstance,
   kind: RendererKind,
   applied: { width: number; height: number },
-  resolutionScale: number,
-  scaleSource: "pinned" | "auto",
+  state: ISurfaceState,
+  reapply: { resize: (() => void) | undefined },
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
 
   return {
+    setResolutionScale: (scale, scaleSource) => {
+      state.resolutionScale = scale;
+      state.scaleSource = scaleSource;
+      reapply.resize?.();
+    },
     surface: () => ({
       drawingBufferHeight: applied.height,
       drawingBufferWidth: applied.width,
-      resolutionScale,
+      resolutionScale: state.resolutionScale,
       // `samples` is the answer, `antialias` was only the request. Three reports 0 for a single
       // sample per pixel; a sample count of zero would describe no image at all.
       sampleCount: Number.isInteger(raw.samples) && (raw.samples ?? 0) > 0 ? (raw.samples ?? 1) : 1,
-      scaleSource,
+      scaleSource: state.scaleSource,
     }),
     domElement: raw.domElement,
     kind,
@@ -257,30 +267,37 @@ function wrapRenderer(
 function addResizeHandling(
   renderer: IRendererLike,
   source: IRendererPlatformSource | undefined,
-  resolutionScale: number,
+  state: ISurfaceState,
   applied: { width: number; height: number },
-): () => void {
+): { resize: () => void; stop: () => void } {
   const resize = () => {
     const [width, height] =
       source?.readSize(renderer.domElement) ?? readCanvasSize(renderer.domElement);
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
-    applied.width = Math.max(1, Math.round(width * resolutionScale));
-    applied.height = Math.max(1, Math.round(height * resolutionScale));
+    applied.width = Math.max(1, Math.round(width * state.resolutionScale));
+    applied.height = Math.max(1, Math.round(height * state.resolutionScale));
     renderer.setSize(applied.width, applied.height, false);
   };
   resize();
-  return (
+  const stop =
     source?.observeResize(renderer.domElement, resize) ??
-    observeCanvasResize(renderer.domElement, resize)
-  );
+    observeCanvasResize(renderer.domElement, resize);
+  return { resize, stop };
+}
+
+/** The live scale, mutated only by `setResolutionScale`, read by every window report. */
+interface ISurfaceState {
+  resolutionScale: number;
+  scaleSource: "pinned" | "auto" | "auto-pinned";
 }
 
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const resolutionScale = options.resolutionScale ?? 1;
-  const scaleSource = options.scaleSource ?? "pinned";
+  const state: ISurfaceState = { resolutionScale, scaleSource: options.scaleSource ?? "pinned" };
+  const reapply: { resize: (() => void) | undefined } = { resize: undefined };
   if (!Number.isFinite(resolutionScale) || resolutionScale <= 0)
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
@@ -296,7 +313,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         : new (await import("three/webgpu")).WebGPURenderer({ canvas, ...rendererParameters });
       const instance = raw as RendererInstance;
       await instance.init?.();
-      renderer = wrapRenderer(instance, "webgpu", applied, resolutionScale, scaleSource);
+      renderer = wrapRenderer(instance, "webgpu", applied, state, reapply);
     } catch {
       renderer = undefined;
     }
@@ -306,16 +323,12 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     const raw = options.webgl2Factory
       ? options.webgl2Factory(canvas, rendererParameters)
       : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters });
-    renderer = wrapRenderer(
-      raw as RendererInstance,
-      "webgl2",
-      applied,
-      resolutionScale,
-      scaleSource,
-    );
+    renderer = wrapRenderer(raw as RendererInstance, "webgl2", applied, state, reapply);
   }
 
-  const stopResize = addResizeHandling(renderer, source, resolutionScale, applied);
+  const resizing = addResizeHandling(renderer, source, state, applied);
+  reapply.resize = resizing.resize;
+  const stopResize = resizing.stop;
   const dispose = renderer.dispose;
   renderer.dispose = () => {
     stopResize();

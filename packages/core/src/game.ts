@@ -23,6 +23,7 @@ import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import { resolveRendererAntialias, resolveRendererScaleSetting } from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
+import { ResolutionScaler } from "./resolution-scaler.js";
 import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import {
@@ -143,6 +144,9 @@ export type GamePlugin<
   TPhysics = undefined,
 > = GamePluginFunction<TState, TPhysics> | IGamePluginHooks<TState, TPhysics>;
 
+/** The `display.maxFps` a game gets when its config does not name one. */
+const DEFAULT_TARGET_FPS = 60;
+
 export interface IGameConfig<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -201,6 +205,12 @@ export interface IGameConfig<
   readonly maxSteps?: number;
   readonly platform?: IGamePlatformSource;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
+  /**
+   * The project's `display` block, passed straight through from `threenative.config.ts`. The
+   * adaptive scale holds `maxFps` as its budget, so a game that does not pass this gets the
+   * 60 fps default rather than a scaler with no target.
+   */
+  readonly display?: NonNullable<IThreeNativeConfig["display"]>;
   readonly render?: NonNullable<IThreeNativeConfig["renderer"]>;
   readonly renderer?: IRendererOptions;
   readonly seed?: number;
@@ -747,6 +757,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         : platform.devToolsHost;
     this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
     this.#scene = new SceneType();
+    // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
+    // which is what makes "pinned" a guarantee rather than a preference the loop may overrule.
+    const scaler =
+      renderer.surface().scaleSource === "auto"
+        ? new ResolutionScaler({ targetFps: this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS })
+        : undefined;
     // Built here rather than inside the loop so `frameBudget: false` is a single decision with a
     // single owner, and so the render phases below feed the same instrument the loop feeds.
     const frameBudget =
@@ -754,6 +770,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         ? undefined
         : new FrameBudget({
             ...this.#config.frameBudget,
+            // The scaler reads the same windows the marker reports, so what it acted on and what
+            // the record shows are the same measurement rather than two sampling paths.
+            onWindow: (reported) => {
+              if (this.#config.frameBudget !== false)
+                this.#config.frameBudget?.onWindow?.(reported);
+              if (scaler === undefined) return;
+              const stepped = scaler.observe(reported);
+              if (stepped !== undefined) renderer.setResolutionScale(stepped, scaler.scaleSource);
+            },
             // Last, so the engine's own renderer answers this and a game cannot report a
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
