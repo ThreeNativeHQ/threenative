@@ -39,6 +39,7 @@
   "scripts": {
     "deps:download": "node scripts/download-deps.mjs",
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
+    "native:coverage": "node scripts/measure-native-coverage.mjs",
     "native:physics:cross": "node scripts/build-native-physics.mjs",
     "native:physics:measure": "node scripts/measure-physics-divergence.mjs",
     "native:physics:parity": "pnpm --dir ../.. exec vitest run packages/physics/__tests__/parity.spec.ts && cargo test --manifest-path native/physics/Cargo.toml --lib --test parity -- --nocapture",

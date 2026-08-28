@@ -86,6 +86,7 @@ set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameL
 option(TN_WEBGPU_GPU_DRAIN_PROFILE "Block after present to measure remaining GPU work (diagnostic builds only)" OFF)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
+option(TN_ENABLE_COVERAGE "Instrument native targets for source-based coverage" OFF)
 # PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
 # picture by construction and must never ship. Asserted absent from every shipped preset.
 option(TN_ABLATE_BACKEND "PRD-226 arm A2: no-op the hot backend command entry points, keeping JS, trampoline and argument parsing intact" OFF)
@@ -102,6 +103,15 @@ endif()
 
 if(TN_ANDROID_JS_PROFILE_BUSY_LOOP AND NOT TN_ANDROID_JS_PROFILE)
     message(FATAL_ERROR "Android JS profiling controls require TN_ANDROID_JS_PROFILE=ON")
+endif()
+
+if(TN_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR
+            "TN_ENABLE_COVERAGE requires clang source-based coverage; configure with clang/clang++")
+    endif()
+    add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+    add_link_options(-fprofile-instr-generate)
 endif()
 
 # Native GLTF is deliberately not mapped to any implementation. AGENTS.md marks
