@@ -531,6 +531,55 @@ target plus SurfaceFlinger confirming no dropped frames. **The general lesson, w
 on a vsync-capped target, `presented` measures the panel and `frame` measures the game. Any bar or
 trigger written against `presented` is measuring the display.
 
+### 1.3.8 Acceptance, three captures — and `renderer.antialias` proven inert (2026-08-28)
+
+**PRD-228 Phase 4's headline criterion, met.** Same scaffolded platformer as §1.3.7, this time
+**unplugged, discharging, thermal NONE before each capture**, 60 Hz panel, cold launch each time.
+
+| capture | settled scale | windows held | fps | `frame` p95 | SurfaceFlinger |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | **1.00 — 2400×1080** | 33 of 39 | 59.59–60.02 | 6.53–8.49 ms | 61.817 fps |
+| 2 | **1.00 — 2400×1080** | 33 of 39 | 59.59–60.02 | 6.39–8.39 ms | 61.088 fps |
+| 3 | **1.00 — 2400×1080** | 33 of 39 | 59.52–60.06 | 6.98–8.37 ms | 61.504 fps |
+
+`atFloor` false throughout. Capture 3's `present2present`: 11,681 frames at 16 ms, 124 at 33 ms,
+one 650 ms startup frame. Against the amended bar — `frame p95 ≤ 14 ms`, fps at target,
+SurfaceFlinger confirming no dropped frames — all three pass, and the worst `frame` p95 across
+every capture is 8.49 ms, a little over half the bar.
+
+The scaler dips one rung on the cold-start window and climbs back to 1.00 by window 7 in all three.
+**A game nobody tuned reaches its target at full native resolution and stays there.**
+
+#### `renderer.antialias` does not reach the GPU — proven, and it invalidates the sampling table
+
+The `(scale × samples)` ladder was withdrawn on suspicion the same day; this settles it. One more
+arm, same template, same device, `renderer.antialias: true` in `threenative.config.ts`:
+
+```
+surface: {"resolutionScale":1,"scaleSource":"auto","sampleCount":1,
+          "drawingBufferWidth":2400,"drawingBufferHeight":1080,"atFloor":false}
+TN_GPU_TEXTURES: 2400x1080 rgba16float x2, 2400x1080 depth24plus x3, ... — no multisampled attachment
+```
+
+**`sampleCount: 1` with sampling requested**, and a texture census identical in shape to the
+`antialias: false` runs. Traced as far as the evidence goes: the value is in the built bundle
+(`renderer: { preferWebGPU: true, resolutionScale: "auto", antialias: true }`),
+`resolveRendererAntialias` is in the bundle and returns the config value, `createRenderer` passes
+`{ antialias: options.antialias ?? true }` into `WebGPURenderer`, and three's bundled constructor
+reads `this._samples = samples || antialias === true ? 4 : 0` with `get samples()` returning
+`_samples` directly. Every link reads correct and the delivered frame is single-sampled. **The
+break is below the config seam and is not yet located.**
+
+Consequences, both binding:
+
+1. **Every `(scale × samples)` number is withdrawn.** "MSAA is free below 0.5 Mpx" compared an
+   inert flag against itself. The `+7.47 ms at 0.55` that looked like a tile-memory cliff is
+   better explained by the late-session drift the fixed-cost analysis found in that same arm
+   (`frameReplay` 4.98 → 7.38 ms, which MSAA cannot touch). **Change C has no measured default.**
+2. **`renderer.antialias` is a documented, shipped, accepted option that does nothing on native.**
+   It is in every template's `AGENTS.md` as part of the pixel budget. That is worse than an absent
+   feature: a game turns it on, sees no cost, and concludes sampling is free.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1
