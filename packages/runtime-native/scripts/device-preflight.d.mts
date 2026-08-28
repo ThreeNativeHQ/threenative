@@ -9,7 +9,20 @@ export type ThermalStatus =
 
 export type ChargingSource = "AC" | "USB" | "WIRELESS" | "STATUS" | "NONE";
 
-export interface IDeviceCondition {
+export interface IDisplayState {
+  /** The panel's *active* mode in whole hertz — not the app's vote and not the settings value. */
+  activeRefreshHz: number;
+  /** Whole-hertz rates the panel advertises, highest first. A rate here may still be unreachable. */
+  supportedRefreshHz: number[];
+  /** `settings get system peak_refresh_rate`; `undefined` when the key was never written. */
+  peakRefreshRateSetting?: number;
+  /** `settings get system min_refresh_rate`; `undefined` when the key was never written. */
+  minRefreshRateSetting?: number;
+  /** Battery Saver, which clamps the panel's mode range independently of the Smooth Display setting. */
+  lowPower: boolean;
+}
+
+export interface IDeviceCondition extends IDisplayState {
   batteryPercent: number;
   charging: boolean;
   chargingSource: ChargingSource;
@@ -32,6 +45,12 @@ export interface IDeviceReadyOptions {
   maxThermalStatus: ThermalStatus;
   minBatteryPercent: number;
   requireDischarging: boolean;
+  /**
+   * Refuse to run unless the panel's *active* mode is this rate. Capture of the display state is
+   * unconditional; only this gate is opt-in, so a cold-start or physics arm is unaffected while an
+   * fps arm cannot silently measure a downclocked panel. Battery Saver is refused alongside it.
+   */
+  requireRefreshHz?: number;
 }
 
 export interface IDevicePreflightDependencies {
@@ -55,6 +74,14 @@ export declare function parseThermalState(
   output: string,
 ): Pick<IDeviceCondition, "thermalStatus" | "thermalStatusCode">;
 export declare function parseScreenState(output: string): Pick<IDeviceCondition, "screenOn">;
+export declare function parseActiveDisplayMode(
+  output: string,
+): Pick<IDisplayState, "activeRefreshHz" | "supportedRefreshHz">;
+export declare function parseRefreshRateSettings(values: {
+  peak?: string;
+  min?: string;
+  lowPower?: string;
+}): Pick<IDisplayState, "peakRefreshRateSetting" | "minRefreshRateSetting" | "lowPower">;
 export declare function assertDeviceReady(
   serial: string,
   options: IDeviceReadyOptions,

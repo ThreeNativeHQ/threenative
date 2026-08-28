@@ -5,6 +5,8 @@ import {
   assertDeviceReady,
   DevicePreflightError,
   parseBatteryState,
+  parseActiveDisplayMode,
+  parseRefreshRateSettings,
   parseScreenState,
   parseThermalState,
   suppressPlayProtectOnAdbInstalls,
@@ -32,6 +34,24 @@ const chargingBattery = [
   "level: 82",
 ].join("\n");
 
+/**
+ * Verbatim shape from the Pixel 8 on 2026-08-28, in the state that silently invalidated an fps arm:
+ * Smooth Display off, so the panel sat at mode 0 / 60 Hz while `supportedModes` still advertised
+ * 120 and the app's own `Surface.setFrameRate(120)` was clamped away rather than declined.
+ */
+const displayAt60 = [
+  "    mSupportedRefreshRates=[120.00001, 60.0, 40.0, 30.0, 24.000002, 20.0]",
+  "      DisplayMode{id=0, width=1080, height=2400, peakRefreshRate=60.0, vsyncRate=60.0, group=0}",
+  "      DisplayMode{id=1, width=1080, height=2400, peakRefreshRate=120.00001, vsyncRate=120.00001, group=0}",
+  "    mActiveSfDisplayMode=DisplayMode{id=0, width=1080, height=2400, xDpi=428.625, peakRefreshRate=60.0, vsyncRate=60.0, group=0}",
+  "    mActiveRenderFrameRate=60.0",
+].join("\n");
+
+const displayAt120 = displayAt60.replace(
+  "mActiveSfDisplayMode=DisplayMode{id=0, width=1080, height=2400, xDpi=428.625, peakRefreshRate=60.0",
+  "mActiveSfDisplayMode=DisplayMode{id=1, width=1080, height=2400, xDpi=428.625, peakRefreshRate=120.00001",
+);
+
 function fixtureAdb(overrides = {}) {
   const calls = [];
   const values = {
@@ -39,6 +59,10 @@ function fixtureAdb(overrides = {}) {
     power: "mScreenOn=true\nmWakefulness=Awake",
     state: "device\n",
     thermal: "Thermal Status: 0\n",
+    display: displayAt60,
+    peakRefreshRate: "60.0",
+    minRefreshRate: "60.0",
+    lowPower: "0",
     ...overrides,
   };
   return {
@@ -50,6 +74,10 @@ function fixtureAdb(overrides = {}) {
       if (command === "shell dumpsys battery") return values.battery;
       if (command === "shell dumpsys thermalservice") return values.thermal;
       if (command === "shell dumpsys power") return values.power;
+      if (command === "shell dumpsys display") return values.display;
+      if (command === "shell settings get system peak_refresh_rate") return values.peakRefreshRate;
+      if (command === "shell settings get system min_refresh_rate") return values.minRefreshRate;
+      if (command === "shell settings get global low_power") return values.lowPower;
       throw new Error(`unexpected adb fixture command: ${command}`);
     },
   };
@@ -184,20 +212,31 @@ describe("assertDeviceReady", () => {
     const fixture = fixtureAdb();
     const state = await assertDeviceReady("37251FDJH0037Z", baseOptions, fixture);
     assert.deepEqual(state, {
+      activeRefreshHz: 60,
       batteryPercent: 82,
       charging: false,
       chargingSource: "NONE",
+      lowPower: false,
+      minRefreshRateSetting: 60,
+      peakRefreshRateSetting: 60,
       provisional: [],
       screenOn: true,
       serial: "37251FDJH0037Z",
+      supportedRefreshHz: [120, 60, 40, 30, 24, 20],
       thermalStatus: "NONE",
       thermalStatusCode: 0,
     });
-    assert.deepEqual(fixture.calls.map((args) => args.join(" ")), [
+    // The display reads are unconditional: a run that does not gate on the panel still records it,
+    // so no later reader has to guess which machine a number came from.
+    assert.deepEqual(fixture.calls.map((args) => args.join(" ")).sort(), [
       "get-state",
       "shell dumpsys battery",
-      "shell dumpsys thermalservice",
+      "shell dumpsys display",
       "shell dumpsys power",
+      "shell dumpsys thermalservice",
+      "shell settings get global low_power",
+      "shell settings get system min_refresh_rate",
+      "shell settings get system peak_refresh_rate",
     ]);
   });
 
@@ -357,5 +396,69 @@ describe("suppressPlayProtectOnAdbInstalls", () => {
         `${script} installs an APK without calling suppressPlayProtectOnAdbInstalls first`,
       );
     }
+  });
+});
+
+describe("display state", () => {
+  test("reads the active mode, not the advertised modes", () => {
+    assert.equal(parseActiveDisplayMode(displayAt60).activeRefreshHz, 60);
+    assert.equal(parseActiveDisplayMode(displayAt120).activeRefreshHz, 120);
+    // 120 stays advertised while the panel sits at 60 — which is exactly why the active mode, and
+    // not the supported list, is the thing an arm must declare against.
+    assert.deepEqual(parseActiveDisplayMode(displayAt60).supportedRefreshHz, [
+      120, 60, 40, 30, 24, 20,
+    ]);
+  });
+
+  test("fails closed on an unreadable dump or an unrecognised low_power value", () => {
+    assert.throws(
+      () => parseActiveDisplayMode("nothing here"),
+      /TN_DEVICE_PREFLIGHT_DISPLAY_PARSE/u,
+    );
+    assert.throws(
+      () => parseRefreshRateSettings({ peak: "60.0", min: "60.0", lowPower: "maybe" }),
+      /TN_DEVICE_PREFLIGHT_DISPLAY_PARSE/u,
+    );
+  });
+
+  test("treats an unwritten refresh-rate setting as unset rather than zero", () => {
+    const state = parseRefreshRateSettings({ peak: "null", min: "null", lowPower: "null" });
+    assert.equal(state.peakRefreshRateSetting, undefined);
+    assert.equal(state.minRefreshRateSetting, undefined);
+    assert.equal(state.lowPower, false);
+  });
+
+  test("captures the panel even when no refresh rate is declared", async () => {
+    const { adb } = fixtureAdb();
+    const condition = await assertDeviceReady("device-1", baseOptions, { adb });
+    assert.equal(condition.activeRefreshHz, 60);
+    assert.equal(condition.peakRefreshRateSetting, 60);
+    assert.equal(condition.lowPower, false);
+    assert.deepEqual(condition.provisional, []);
+  });
+
+  test("refuses a panel that is not in the declared mode", async () => {
+    const { adb } = fixtureAdb();
+    await assertDeviceReady("device-1", { ...baseOptions, requireRefreshHz: 60 }, { adb });
+    await assert.rejects(
+      assertDeviceReady("device-1", { ...baseOptions, requireRefreshHz: 120 }, { adb }),
+      /refreshRate: expected 120 Hz active, observed 60 Hz/u,
+    );
+  });
+
+  test("refuses Battery Saver, which clamps the mode range independently", async () => {
+    const { adb } = fixtureAdb({ lowPower: "1" });
+    await assert.rejects(
+      assertDeviceReady("device-1", { ...baseOptions, requireRefreshHz: 60 }, { adb }),
+      /lowPower: expected off, observed on/u,
+    );
+  });
+
+  test("rejects a declared rate that is not a whole number of hertz", async () => {
+    const { adb } = fixtureAdb();
+    await assert.rejects(
+      assertDeviceReady("device-1", { ...baseOptions, requireRefreshHz: 59.94 }, { adb }),
+      /requireRefreshHz/u,
+    );
   });
 });
