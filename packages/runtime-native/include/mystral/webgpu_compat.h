@@ -46,6 +46,11 @@ typedef WGPUSurfaceDescriptorFromAndroidNativeWindow WGPUSurfaceDescriptorFromAn
 // Dawn proc initialization - not needed for wgpu-native
 #define WGPU_NEEDS_PROC_INIT 0
 
+// `core-features-and-limits` — the feature a core (non-compatibility) WebGPU device advertises.
+// wgpu-native implements core WebGPU only: it has no compatibility mode, and no enum for the
+// feature that names one.
+#define MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS 0
+
 // Pass timestamp writes (wgpu-native keeps one struct per pass kind; Dawn merged them)
 typedef WGPURenderPassTimestampWrites WGPURenderPassTimestampWrites_Compat;
 typedef WGPUComputePassTimestampWrites WGPUComputePassTimestampWrites_Compat;
@@ -133,6 +138,14 @@ typedef WGPUSurfaceSourceAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNat
 
 // Dawn proc initialization - Dawn requires setting up procs before use
 #define WGPU_NEEDS_PROC_INIT 1
+
+// `core-features-and-limits`. Dawn carries the enum and can be asked; the Android/desktop
+// wgpu-native builds in this same branch cannot, and are core devices by construction.
+#if defined(MYSTRAL_WEBGPU_DAWN)
+#define MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS 1
+#else
+#define MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS 0
+#endif
 
 // Pass timestamp writes. This branch covers two headers that disagree: Dawn merged the render
 // and compute structs into one, wgpu-native (including the Android aarch64 build) keeps them

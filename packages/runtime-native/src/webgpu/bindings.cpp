@@ -2119,6 +2119,27 @@ static js::JSValueHandle tnWebgpuHandler82(BindingsState* state, BindingDestinat
                     if (featureName == "indirect-first-instance") {
                         return state->engine->newBoolean(true);
                     }
+                    // three.js reads this one feature to decide whether the whole renderer is
+                    // talking to a WebGPU *compatibility* device:
+                    //   this.compatibilityMode = !device.features.has("core-features-and-limits");
+                    //   if (this.compatibilityMode) renderer._samples = 0;
+                    // Answering it wrongly is not a missing feature, it is a silently reduced
+                    // renderer — MSAA off outright, plus different depth-texture, MRT-blending and
+                    // shader texture paths. It was absent here, so every native game has been
+                    // drawing single-sampled with `antialias: true` accepted and ignored.
+                    if (featureName == "core-features-and-limits") {
+#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
+                        if (wgpuAdapterHasFeature(state->adapter, WGPUFeatureName_CoreFeaturesAndLimits))
+                            return state->engine->newBoolean(true);
+#endif
+                        // Answer about the device, not about the header. Compatibility mode is a
+                        // feature *level* a caller opts into; this runtime never requests one, so
+                        // every device it creates is a core device. wgpu-native has no such mode
+                        // at all and no enum for it, and this Dawn build carries the enum without
+                        // reporting it. Saying "false" because an enum went unreported told
+                        // three.js the opposite of the truth.
+                        return state->engine->newBoolean(true);
+                    }
                     // Answered from the real adapter so feature-dependent consumers (three's
                     // KTX2Loader.detectSupport among them) request what the hardware has.
                     WGPUFeatureName feature = jsFeatureNameToWGPU(featureName);
@@ -5244,6 +5265,27 @@ static js::JSValueHandle tnWebgpuHandler28(BindingsState* state, BindingDestinat
                             std::string featureName = state->engine->toString(args[0]);
                             // indirect-first-instance enables non-zero firstInstance in indirect draws
                             if (featureName == "indirect-first-instance") {
+                                return state->engine->newBoolean(true);
+                            }
+                            // three.js reads this one feature to decide whether the whole renderer is
+                            // talking to a WebGPU *compatibility* device:
+                            //   this.compatibilityMode = !device.features.has("core-features-and-limits");
+                            //   if (this.compatibilityMode) renderer._samples = 0;
+                            // Answering it wrongly is not a missing feature, it is a silently reduced
+                            // renderer — MSAA off outright, plus different depth-texture, MRT-blending and
+                            // shader texture paths. It was absent here, so every native game has been
+                            // drawing single-sampled with `antialias: true` accepted and ignored.
+                            if (featureName == "core-features-and-limits") {
+#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
+                                if (wgpuDeviceHasFeature(state->device, WGPUFeatureName_CoreFeaturesAndLimits))
+                                    return state->engine->newBoolean(true);
+#endif
+                                // Answer about the device, not about the header. Compatibility mode is a
+                                // feature *level* a caller opts into; this runtime never requests one, so
+                                // every device it creates is a core device. wgpu-native has no such mode
+                                // at all and no enum for it, and this Dawn build carries the enum without
+                                // reporting it. Saying "false" because an enum went unreported told
+                                // three.js the opposite of the truth.
                                 return state->engine->newBoolean(true);
                             }
                             // This Dawn has no Undefined member; 0 is outside the enum's values
