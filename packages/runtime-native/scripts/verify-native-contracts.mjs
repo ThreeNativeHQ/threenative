@@ -75,6 +75,9 @@ export const executionContracts = {
   "threenative-js-engine-contract-test": {
     invocations: [{ args: [], passLine: "js-engine-contract: engine=V8 property=own-data" }],
   },
+  "threenative-canvas2d-dirty-test": {
+    invocations: [{ args: [], passLine: "canvas2d dirty tracking passed" }],
+  },
   "threenative-lifecycle-policy-test": {
     invocations: [{ args: [], passLine: "native lifecycle policy contract passed" }],
   },

@@ -80,9 +80,14 @@ Also `62f8f8a0`: invariant pin (below), not a fix.
   gameplay regression: the render/capture path is byte-identical `e0409202..HEAD` outside
   classification-preserving core edits (closure by mechanism; the gate was NOT replayed at
   `e0409202`). Prior art: `982d6913`. Starter: never exercised.
-- Full monorepo `typecheck && lint && test`: first run caught a real typecheck error in the new
-  spec (`this.isMesh` on `Object3D` — vitest does not typecheck); fixed; **re-run result: recorded
-  below when the gate completed.**
+- Full monorepo `typecheck && lint && test`: typecheck **green** across all 16 workspace projects
+  (the first run caught a real typecheck error in the new spec — `this.isMesh` on `Object3D`,
+  fixed in `7849f44f`; vitest does not typecheck, the full gate does). `pnpm lint` is **red on
+  main independently of this session**: 11 pre-existing
+  `lint/complexity/noExcessiveCognitiveComplexity` errors in `examples/abyss-framework/src/`
+  (`replay-proof.ts` complexity 22, `Abyss.ts` 42, others), files untouched for days and unchanged
+  in this session's commits — left to their owner, not refactored out of scope. The session's own
+  files are biome-clean. `pnpm test` result recorded below in this list once the run completed.
 - Not run this session: device lane (PRD-227 Phase 3 owns it; no post-P1 device ms/frame capture
   was taken), `pnpm native:verify:desktop` (300-frame desktop proof — lane 3 rebuilt the physics
   artifact and ran its contract tests, but the full desktop frame proof was not re-run),
