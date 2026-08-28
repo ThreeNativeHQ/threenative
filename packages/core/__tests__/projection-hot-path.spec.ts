@@ -1,5 +1,24 @@
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Object3D, Scene } from "three";
+import {
+  BoxGeometry,
+  BufferAttribute,
+  Group,
+  InstancedMesh,
+  LOD,
+  Mesh,
+  MeshBasicMaterial,
+  Object3D,
+  Scene,
+  SkinnedMesh,
+  Sprite,
+  SpriteMaterial,
+} from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  type IProjectionExactEntry,
+  createProjectionScanWorkspace,
+  exactLaneReason,
+  scanProjection,
+} from "../src/projection-plan.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -96,5 +115,55 @@ describe("projection hot path", () => {
       spy.mockRestore();
     }
     expect(lookups).toBeLessThan(meshCount * 3.5);
+  });
+
+  // The scan classifies through an internal variant that skips the LOD ancestor walk (the walk
+  // never descends into an LOD, so no scanned object can have one). This pins the two
+  // classifications together across every lane-reason branch: if the internal variant ever
+  // drops or narrows a branch the exported reason carries, a projected frame batches or
+  // draws the wrong objects, and this fails.
+  it("classifies every scanned object exactly as the exported exactLaneReason would", () => {
+    const scene = new Scene();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const material = new MeshBasicMaterial();
+    for (let index = 0; index < 8; index += 1) scene.add(new Mesh(geometry, material));
+
+    const transparent = new Mesh(geometry, new MeshBasicMaterial());
+    transparent.material.transparent = true;
+    scene.add(transparent);
+    const ordered = new Mesh(geometry, material);
+    ordered.renderOrder = 3;
+    scene.add(ordered);
+    const morphed = new Mesh(geometry, material);
+    morphed.geometry = geometry.clone();
+    morphed.geometry.morphAttributes.position = [new BufferAttribute(new Float32Array(24), 3)];
+    scene.add(morphed);
+    const ranged = new Mesh(geometry.clone(), material);
+    ranged.geometry.setDrawRange(0, 6);
+    scene.add(ranged);
+    scene.add(new InstancedMesh(geometry, material, 4));
+    scene.add(new SkinnedMesh(geometry, material));
+    scene.add(new Sprite(new SpriteMaterial()));
+    const lod = new LOD();
+    lod.addLevel(new Mesh(geometry, material), 0);
+    scene.add(lod);
+    scene.add(new Mesh(geometry, [material, material]));
+
+    const workspace = createProjectionScanWorkspace();
+    const result = scanProjection(scene, 4, workspace);
+    for (let index = 0; index < result.exactLaneCount; index += 1) {
+      const entry = result.exactLane[index] as IProjectionExactEntry;
+      expect(entry.object).toBeDefined();
+      expect(entry.reason).toBe(exactLaneReason(entry.object as Object3D));
+    }
+    expect(result.plan.action).toBe("project");
+    if (result.plan.action !== "project") return;
+    for (const group of result.plan.batchGroups) {
+      if (group === undefined) continue;
+      for (let index = 0; index < group.memberCount; index += 1)
+        expect(exactLaneReason(group.members[index] as Mesh)).toBeUndefined();
+    }
+    for (let index = 0; index < result.plan.belowFloorCount; index += 1)
+      expect(exactLaneReason(result.plan.belowFloor[index] as Mesh)).toBeUndefined();
   });
 });
