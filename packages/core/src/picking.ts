@@ -163,7 +163,7 @@ export class ScenePicker {
   }
 
   #collect(object: Object3D, excluded: ReadonlySet<Object3D>, single: boolean): void {
-    if (this.#isExcluded(object, excluded)) return;
+    if (excluded.size !== 0 && this.#isExcluded(object, excluded)) return;
     if (object.layers.test(this.#raycaster.layers)) {
       if (single) {
         // The stock fallback ignores `firstHitOnly`, so one object can still push several
