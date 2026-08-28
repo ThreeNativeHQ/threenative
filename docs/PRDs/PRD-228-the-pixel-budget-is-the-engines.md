@@ -397,11 +397,15 @@ adb shell dumpsys SurfaceFlinger --timestats -dump    # cross-check, per method 
 - [ ] **Second ladder, `(scale × samples)`:** at minimum 0.32/1×, 0.32/4×, 0.44/1×, 0.44/4×,
       0.55/4×. Mali-G715 resolves MSAA in tile memory, so the cost is not the naive 4× and the
       pairing must be measured, never assumed. This table chooses Change C's defaults.
-      **DONE, and the answer is a cliff, not a slope:** 4× MSAA costs **+0.07 ms at 0.32**
-      (0.27 Mpx) and **−0.40 ms at 0.44** (0.50 Mpx) — free, inside noise — then **+7.47 ms at
-      0.55** (0.78 Mpx). **0.44/4× dominates 0.55/1× on speed and on image quality at once.**
-      Change C's rule follows from that: below ~0.5 Mpx spend samples before pixels; crossing
-      ~0.5 Mpx drop to 1× before adding pixels.
+      **RUN, THEN WITHDRAWN THE SAME DAY.** The arms read +0.07 ms at 0.32, −0.40 ms at 0.44 and
+      +7.47 ms at 0.55, which looked like a tile-memory cliff. It is not safe to use:
+      `TN_GPU_TEXTURES` is byte-identical between every `antialias: true` arm and its `false` twin,
+      so **the flag may never have reached a sample count on the native path** — in which case the
+      "free" readings measure nothing and the 0.55 outlier is better explained by the late-session
+      drift found in that same arm (`frameReplay` up 4.98 → 7.38 ms, which MSAA cannot touch). The
+      arms predate `surface.sampleCount`, so their logs cannot answer it. **One arm on the current
+      core settles it**, because every window now reports the sample count it actually drew at.
+      Change C has no measured default until then.
 - [x] **Record reconciled with the tree first**, committed in the sandbox as `7be81eb` before the
       first arm. The live value was 0.28, not the 0.32 the record claimed.
 - [x] Recorded in `runtime-perf-state.md` §1.3.5 in place, per the owner's consolidation
@@ -514,12 +518,9 @@ presented interval when a panel is setting that interval.
       a 3-window reach only ever sees the up-then-down leg and the guard is dead code. The reach is
       derived from the table instead (tightest down-up leg, plus one).
 - [x] A pinned `resolutionScale` constructs no scaler at all, asserted by an executable.
-- [x] **Order of spend, from Phase 0's measured table:** below ~0.5 Mpx **samples are free** on
-      Mali-G715 (+0.07 ms at 0.32, −0.40 ms at 0.44) and above it they are not (+7.47 ms at
-      0.78 Mpx). So: spend samples first while the buffer is under ~0.5 Mpx; when a step up would
-      cross that, drop to 1× before adding pixels. **0.44/4× dominates 0.55/1× on speed and image
-      quality at once.** Stated here; **the scaler does not yet act on it** — it moves resolution
-      only, and the sample half is open.
+- [ ] **OPEN — the table it was to be read from is withdrawn.** See Phase 0's `(scale × samples)`
+      item: the `antialias` arms may have measured an inert flag. The scaler moves resolution only,
+      which is the safe behaviour while the sample cost is unknown.
 - [x] The scaler never touches the overlay, never changes camera framing, and never alters aspect
       — every resize passes `updateStyle: false`, asserted.
 - [x] **Red-green, mutation named:** `return this.#step(1)` → `return undefined` (downward step

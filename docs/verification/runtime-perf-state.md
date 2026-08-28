@@ -399,6 +399,19 @@ SurfaceFlinger cross-check on the endpoints, game `(BLAST)` layer, `present2pres
 `b100` = 33 ms×830 + 42 ms×826 (four and five vsyncs); `b032` = 16 ms×2810 + 8 ms×443. Both agree
 with our own fps to within 0.5–4.2 fps and neither shows the clamped single-bin signature.
 
+> **WITHDRAWN 2026-08-28, same day, pending a probe: the `(scale × samples)` result below.** The
+> fixed-frame-cost analysis (`docs/verification/prd-228-fixed-frame-cost-2026-08-28.md` §5) found
+> that `TN_GPU_TEXTURES` is **byte-identical** between each `antialias: true` arm and its
+> `antialias: false` twin — same 310 MB / 73 textures / 19 buckets at 0.32, same 318 MB / 73 at
+> 0.55 — with no multisampled attachment appearing anywhere. Either the `antialias` request never
+> reached a sample count on the native path, or the census cannot see the attachment. **If the
+> flag was inert, "MSAA is free below 0.5 Mpx" measures nothing**, and the `+7.47 ms at 0.55` that
+> looked like a cliff is better explained by the same analysis's finding of late-session drift in
+> that exact arm (`c055aa` vs `b055`: +35.6 % with `frameReplay` up 4.98 → 7.38 ms, a segment MSAA
+> cannot touch). The arms were built before `surface.sampleCount` shipped, so those logs cannot
+> answer it. **One arm with the current core settles it**, because every window now reports the
+> sample count it actually drew at. Change C's default is not decided until then.
+
 **Two results the PRD did not predict, and they matter more than the confirmation:**
 
 1. **The pre-registered 5.51 ms/Mpx was low by 1.8×.** It came from two cap-clipped points inside
