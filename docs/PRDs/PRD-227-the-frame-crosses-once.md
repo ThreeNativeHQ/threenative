@@ -11,9 +11,12 @@ and the web gate remain open. Filed 2026-08-27 from the measured budget in
 PRD-226's ablation ladder was built to justify. PRD-226 stays live and owns the instrument; this one
 owns the fix.
 
-**The decisive measurement does not exist yet.** Change 1 landed in the engine; Bayview's
-appearance was restored; the device was never re-measured with that combination. Start at
-[Resume here](#resume-here-2026-08-27).
+**The decisive measurement has now been taken, and it changes the PRD's subject.** Change 1 landed,
+Bayview's appearance was restored, and the device reads **20.02 fps — unchanged** — while per-frame
+work fell from 43–48 ms to 25.27 ms. **The frame rate is not work-bound.** It is pinned to a
+constant 50 ms present cadence that does not respond to workload at all.
+See [Resume here](#resume-here-2026-08-27) and
+[prd-227-cadence-lock-2026-08-27](../verification/prd-227-cadence-lock-2026-08-27.md).
 
 **Goal: Bayview at 60 fps or better in the native host on a physical Pixel 8.** 30 fps is not a
 pass. The panel is 120 Hz, so the whole frame must fit in **16.67 ms**; it costs **43–48 ms** today.
@@ -231,9 +234,67 @@ driver.
 
 ## Resume here (2026-08-27)
 
-Written for the agent picking this up. The previous session (codex `01a044cc`, 12:57–18:08 local)
-**ended mid-flight**: its last stated action was *"rebuilding Bayview from restored game source with
-only the engine commits; this is the decisive engine-only Pixel test."* **That test never ran.**
+**The decisive test has now run.** Full record:
+[prd-227-cadence-lock-2026-08-27](../verification/prd-227-cadence-lock-2026-08-27.md).
+
+### What it found — the frame rate is not work-bound
+
+| | before Change 1 | after Change 1 |
+| --- | ---: | ---: |
+| device fps | 20.39 | **20.02** |
+| per-frame work | 43–48 ms | **25.27 ms** |
+
+Work fell ~40%; fps did not move. A resolution A/B settles it: **2.25× fewer pixels
+(1080×2400 → 720×1600) also did not move fps** (20.02 → 19.89). The phases only redistributed —
+`hostGap` 25.25 → 14.18 ms while `render` *rose* 16.81 → 24.76 ms, total pinned at ~48–50 ms.
+**A render phase that gets slower when given less to do is a blocking wait, not work.**
+
+SurfaceFlinger quantises hard on the game's own `(BLAST)` layer:
+`present2present: 33ms=52  50ms=592  66ms=39`, `averageFPS = 19.974`.
+
+### And the display is 60 Hz, not 120
+
+`activeMode={… vsyncRate=60.00 Hz …}`. The panel supports 120 and the host never asks for it. Every
+prior document — including [prd-226-device-meter-audited](../verification/prd-226-device-meter-audited-2026-08-27.md)
+— computed quantisation on an 8.333 ms period the display was not using. **At 60 Hz the cells are
+16.67 / 33.33 / 50.00 ms.** We sit on the 3-period cell doing 25.27 ms of work — work that already
+fits in two periods with 8 ms to spare. **Landing the cell we have already earned is worth 30 fps
+with no further optimisation.**
+
+### The next lever — two candidates, both in the host
+
+1. **Present mode.** `--no-vsync` exists on the desktop CLI and has **no Android channel**:
+   `grep -rniE vsync src/platform/ android/app/src/main/java/` returns nothing. Add it as a
+   `debug.threenative.*` system property, matching `crash_handlers.cpp` and `lifecycle.cpp`, then
+   run one uncapped device arm. If work is 25 ms and the cap is the pacing, this reads ~40 fps.
+   **Do this first — it is a property read and a rebuild.**
+2. **The composited web UI layer.** Bayview's `config.json` sets `"ui": { "renderer": "web" }`
+   (landed `3152feb`). SurfaceFlinger shows **several layers** in this app at independent rates
+   (19.974, 8.024, 15.909, 62.500), and the budget's `overlay` phase reads a flat 0 because it does
+   not measure an Android-composited WebView. A second composited layer is a standard cause of this
+   exact cadence lock. If arm 1 still reads ~20 fps, this becomes the prime suspect.
+
+Also worth one line regardless: **ask for the 120 Hz mode** (`Surface.setFrameRate` /
+`preferredDisplayModeId`). The host currently never does.
+
+### Refuted this session, cheaply — do not re-spend on these
+
+- **Resolution / fill rate.** Measured, not assumed: 2.25× fewer pixels, fps unchanged.
+- **GC / V8 heap tuning.** Desktop `--trace-gc`, steady state: median gap 319 ms, median cost
+  0.54 ms, **0.2% of wall clock**. V8's heap is genuinely never configured (`ResourceConstraints`
+  appears nowhere; `CreateParams` sets only `array_buffer_allocator`) — and on this evidence that
+  costs nothing. The 4–6 ms scavenges in the log are load-time only.
+
+### The previous session's tail
+
+Codex `01a044cc` (12:57–18:08 local) ended mid-flight while *"rebuilding Bayview from restored game
+source with only the engine commits."* It **did** finish that build and install it at 18:08:27; it
+never measured it. That APK is what this record measured.
+
+### The one thing to do first — superseded
+
+The instruction below said to run the engine-only device arm. **It has been run** (see above); read
+"The next lever" instead. The capture protocol in it stays binding for Phase 3 acceptance.
 
 ### State of the two trees
 
