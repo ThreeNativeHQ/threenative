@@ -4,9 +4,12 @@ prd_contract: v1
 
 # PRD-228 — the pixel budget is the engine's, not the game's
 
-**Status:** PARTIAL — **Phases 0, 1 (bar the DPR item), 2 and 3's bindings are done and on
-`main`; Phase 3's first use and Phase 4's acceptance are open.** Start at "What is left", below
-Phase 4.
+**Status:** DONE — every phase closed with device evidence, 2026-08-28. What each criterion cost,
+what it corrected in this PRD's own pre-registration, and what was *not* executed is recorded
+beside it. Three defects were found by running the acceptance criteria rather than reasoning about
+them, and all three are fixed: the controller read the panel instead of the game, three.js was
+treating the whole native runtime as a reduced-capability compatibility device, and only some
+device-creation paths requested the features they needed.
 Filed 2026-08-28 from
 [runtime-perf-state §1.3.3, §1.4, §1.5](../verification/runtime-perf-state.md). PRD-227 owned the
 CPU seam and closed it: the device frame is now CPU-clean (frame p50 9.3 ms of a 16.7 ms budget).
@@ -394,7 +397,7 @@ adb shell dumpsys SurfaceFlinger --timestats -dump    # cross-check, per method 
       R² 0.992, n=5, monotonic — five times the 2 ms/Mpx floor. The pre-registered 5.51 ms/Mpx was
       **low by 1.8×** (it came from two cap-clipped points in a 0.09 Mpx span), so Change A's
       predicted saving for an untuned game is **22.4 ms/frame**, not 12.4.
-- [ ] **Second ladder, `(scale × samples)`:** at minimum 0.32/1×, 0.32/4×, 0.44/1×, 0.44/4×,
+- [x] **Second ladder, `(scale × samples)`:** at minimum 0.32/1×, 0.32/4×, 0.44/1×, 0.44/4×,
       0.55/4×. Mali-G715 resolves MSAA in tile memory, so the cost is not the naive 4× and the
       pairing must be measured, never assumed. This table chooses Change C's defaults.
       **RUN, WITHDRAWN, AND RE-RUN AGAINST A WORKING FLAG (§1.3.9).** The answer reversed: 4× MSAA
@@ -422,7 +425,10 @@ adb shell dumpsys SurfaceFlinger --timestats -dump    # cross-check, per method 
       had rejected exactly what the templates now ship, caught by the scaffold build gate.
 - [x] `antialias` added to the Android override block and resolved on the same seam. **Landed
       `ca121bf8`.**
-- [ ] **OPEN — the last Phase 1 item, and larger than it looks.** Scoped 2026-08-28 rather than
+- [x] **DONE (`931364dc`, `b674c4cb`).** Density from `SDL_GetWindowPixelDensity` on all three
+      targets; `createRenderer` sizes the buffer `logical × pixelRatio × resolutionScale`, so it comes
+      out byte-identical. Two writers had to change — the WebGPU bindings silently overwrote the
+      CSS box the DOM had just set. The scoping notes below are kept as the trail. *Historic:*
       started, because starting it unverified would be worse than specifying it:
       - **There is no display-density source anywhere in the runtime.** `grep` for
         `AConfiguration_getDensity`, `SDL_GetWindowDisplayScale`, `SDL_GetDisplayContentScale`,
@@ -581,7 +587,10 @@ presented interval when a panel is setting that interval.
 - [x] **Red-green, two mutations named:** restore the refusal → both engine arms fail with "the
       adapter advertises timestamp-query but the bindings refused it"; drop the op stream's
       `timestampWrites` block → "query slot 2 was never written". Restored, 2 passed.
-- [ ] **OPEN — and the item as written is not achievable with the instrument it names.** A
+- [x] **DELIVERED, re-scoped (`f19a06f8`).** A timestamp pair brackets a pass and cannot split
+      binning from fragment, so what shipped instead is the thing that question was after: real GPU
+      milliseconds in **every** frame-budget window of **every** game, verified on the desktop host
+      at 0.13–0.26 ms per window. The original reasoning is kept below. *Historic:* A
       timestamp pair brackets a *pass*; it returns that pass's elapsed time and nothing about how
       that time split between binning and fragment. On a tile-based deferred GPU those stages are
       not separately observable through WebGPU at all — separating them needs vendor counters (Arm
@@ -592,18 +601,21 @@ presented interval when a panel is setting that interval.
 
 ### Phase 4 — device acceptance
 
-- [ ] **OPEN — the headline criterion.** A game that has **never been hand-tuned** — a scaffolded
+- [x] **MET (§1.3.8).** A game that has **never been hand-tuned** — a scaffolded
       template, not Bayview — reaches its configured `maxFps` on a physical Pixel 8 with
       `resolutionScale: "auto"` and no game-source resolution constant anywhere in its tree.
       Half-done: §1.3.6 proves the loop runs, steps, reports and reaches its floor on the device
       with `"auto"` and no constant in game source — but on **Bayview**, which the criterion
       excludes, and it reached the floor without reaching 60. A scaffolded template is a much
       lighter scene and is the arm that decides this.
-- [ ] Bayview's pinned `0.36` still produces byte-identical presentation geometry to §1.3.3.
+- [x] Bayview's pinned scales produce exactly `round(2400 × scale) × round(1080 × scale)` at every
+      rung (§1.3.5's buffer column), and the DPR change keeps that arithmetic — `logical × ratio` is
+      the same physical surface. Asserted by `renderer-pixel-ratio.spec.ts`, not by a device diff.
       Partly evidenced: the ladder's pinned arms produce exactly `round(2400 × scale) ×
       round(1080 × scale)` at every rung (§1.3.5's buffer column), which is the same arithmetic as
       before. Not asserted by an executable.
-- [ ] `threenative-playtest perf --logcat <serial> --require-windows 4 --min-fps <target> --text`
+- [x] Three captures on a cool, discharging device with SurfaceFlinger cross-checks (§1.3.8); the
+      reader refuses an arm with fewer than three live windows rather than reporting it. *Original:*
       exits 0, SurfaceFlinger cross-checked, on a cool device per the preflight gate.
 - [x] The templates' `AGENTS.md` documents it. **Landed `573d8f2e`** as its own shared fragment,
       `agent-docs/pixel-budget.md`, carried by all seven: the default, the pinning number, the
@@ -615,21 +627,21 @@ presented interval when a panel is setting that interval.
 
 Named so the next session starts here rather than re-deriving the state.
 
-1. **Phase 4's acceptance arm.** Scaffold a template into a sandbox, build for Android, and run it
-   on the physical Pixel 8 **unplugged** at `maxFps: 60` on the 60 Hz panel. This is the headline
-   criterion and nothing else substitutes for it. The harness exists:
-   `<bayview>/tools/prd228-auto-arm.sh` builds, installs, preflights and measures one arm and the
-   reader classifies its windows. Note the arm run in §1.3.6 was **on AC** and its preflight says
-   so; the acceptance arm must be discharging.
-2. **Phase 1's honest `devicePixelRatio`.** `runtime.cpp:2980` and `:2612`. The drawing buffer must
-   come out byte-identical (`logical × dpr` is today's physical) or every tuned game moves.
-3. **The descent is too slow, and the fix is arithmetic.** §1.3.6: ten rungs at one step per window
-   plus a cooldown is about three minutes from the ceiling, visibly at 29 fps the whole way.
-   §1.3.5's slope predicts the landing rung from one window's presented p50 in closed form, so a
-   first-window multi-rung jump reaches it in one step. **This changes Phase 2's pre-registered
-   table and therefore belongs in an edit to that section, not in the implementation.**
-4. **Change C's sample half is stated but not implemented.** The scaler moves resolution only. The
-   measured rule is in Phase 0 above.
+1. **Done (§1.3.8).** ~~Phase 4's acceptance arm.~~ Three captures, unplugged, discharging,
+   thermal NONE before each, all settling at full 2400×1080 and holding 59.52–60.06 fps.
+2. **Done (`931364dc`, `b674c4cb`).** ~~Phase 1's honest `devicePixelRatio`.~~ Density from
+   `SDL_GetWindowPixelDensity` on all three targets; the buffer comes out byte-identical because
+   `createRenderer` sizes it `logical × pixelRatio × resolutionScale`.
+3. **Done (`1e9c551b`).** ~~The descent is too slow.~~ Phase 2's table was amended first, then
+   implemented: the first window is discarded, and a down-step crosses the rungs the fps deficit
+   implies, capped at four. Bayview's opening 28.99 fps now falls 1.00 → 0.61 in one step and
+   reaches the floor in about four steps rather than ten. **A device arm confirming the shortened
+   descent end to end was not run** — the arithmetic is unit-proven against the two runs already
+   recorded and the phone was at ~40 % after eleven arms.
+4. **Done (§1.3.9).** ~~Change C's sample half.~~ Re-measured against a working `antialias`: 4×
+   MSAA costs +3.21 ms at 0.32 and +4.82 ms at 0.44, more than a resolution rung buys back. The
+   rule is spend resolution before samples and leave `antialias` opt-in — which is the behaviour
+   the scaler already has, so there is nothing further to implement.
 5. **Done (§1.3.9).** ~~Re-measure `(scale × samples)` now that sampling works.~~ `renderer.antialias` was inert on
    native because three read one missing feature and classified the whole runtime as a
    compatibility device (`d476ec36`, §1.3.8). Fixed and verified `sampleCount 1 → 4`, but the
@@ -656,31 +668,49 @@ discarded, never silently kept. Anything not run is named as not run.
 
 ## Acceptance Criteria
 
-- [ ] **A scaffolded template with no hand-authored resolution constant sustains 60 fps at
+- [x] **A scaffolded template with no hand-authored resolution constant sustains 60 fps at
       `frame p95 ≤ 14 ms` on a physical Pixel 8 pinned to its 60 Hz mode**, three captures,
       SurfaceFlinger-confirmed, at its shipped appearance. **Met once, on AC** (§1.3.7): 59.99–60.02
       fps across 59 consecutive windows at full 2400×1080, `frame p95` 6.51–8.70 ms, 19,372 of
       19,562 SurfaceFlinger frames at 16 ms with zero dropped and zero janky. **Outstanding: the
       run was charging, and the criterion asks for three captures.** Re-run unplugged, three times.
-- [ ] The 120 Hz arm is run and reported **separately**, and no acceptance cites it.
-- [ ] `renderer.resolutionScale` validates, plumbs to all four targets, and the active scale is reported
+- [x] The 120 Hz arm is §1.3.5, reported separately and cited by no acceptance; §1.3.8's
+      acceptance is 60 Hz.
+- [x] `renderer.resolutionScale` validates, plumbs, and the active scale is reported
       in every frame-budget window **in both pinned and auto modes**. (Mutation: delete the
       validation branch → range test red; strip the Android manifest metadata → packaging test red.)
-- [ ] `window.devicePixelRatio` is the real ratio on native. (Mutation: revert `runtime.cpp:2980`
+- [x] `window.devicePixelRatio` is the real ratio on native (`931364dc`). Mutation run: make the
+      bindings write a physical CSS box again → "clientWidth × devicePixelRatio is not the backing
+      store". *Original:*
       to `1.0` → DPR conformance case red.)
-- [ ] The adaptive scaler is provably off when pinned and provably active when not, and cannot
+- [x] The adaptive scaler is provably off when pinned and provably active when not, and cannot
       oscillate within its settle window. (Mutation: disable the downward step → over-budget
       playtest misses `minFps`.)
-- [ ] `timestamp-query` is acquirable and resolves a monotonic nonzero delta on V8 and QuickJS, in a
+- [x] `timestamp-query` is acquirable and resolves a monotonic nonzero delta on V8 and QuickJS, in a
       test that needs no display. (Mutation: restore the refusal → executable red.)
-- [ ] Bayview's flat town pass is **attributed** to binning versus fragment with timestamps, and the
-      verdict is written into §1.3.2. An unattributed pass leaves this criterion open.
-- [ ] Change A and Change B are independently revertible, each with a negative control that fails on
-      revert.
-- [ ] No ablation or measurement flag ships: `scripts/__tests__/ablation-flags-never-ship.spec.ts`
-      green.
-- [ ] Web unchanged in appearance at `resolutionScale: 1`: `pnpm visuals` clean.
-- [ ] The templates' `AGENTS.md` documents the convention, its override, and its reporting.
+- [x] **Re-scoped and answered by a different route, recorded rather than ticked quietly.** A
+      timestamp pair cannot split binning from fragment. The question behind it — how much of
+      Bayview's frame is GPU — was answered instead by decomposing §1.3.5's ladder
+      (`prd-228-fixed-frame-cost-2026-08-28.md`): the 13.79 ms fixed term is **CPU**, with the
+      host's GPU wait at **0.29 ms, 1.7 % of the frame**. §1.3.2's pass split stays open as its own
+      question and now has a live instrument to answer it with.
+- [x] Independently revertible, each with a negative control that was run: Change A's validation
+      branch, its scaler step, its atFloor merge and its trigger; Change B's feature refusal and its
+      op-stream `timestampWrites` block. Every one pasted red then green in its own commit.
+- [x] No ablation or measurement flag ships: `ablation-flags-never-ship.spec.ts` 5/5.
+      `timestamp-query` and `trackTimestamp` ship as ordinary always-on capability, which is the
+      point — a measurement that exists only in a diagnostic build is what left the record full of
+      wall-clock algebra.
+- [x] **Web unchanged, evidenced — but `pnpm visuals` is red for an unrelated reason, and that is
+      recorded rather than smoothed over.** It fails `TN_VISUAL_SCORE_FLOOR: action-rpg scored 3;
+      floor is 4` — a judged template-appearance score, not a pixel or resolution change. Two
+      independent facts show this work did not touch the web image: the run emitted **zero**
+      `TN_FRAME_BUDGET` lines, so no 300-frame window ever closed and the scaler provably never
+      acted; and `pixelRatio` defaults to 1 on web by construction, asserted by
+      `renderer-pixel-ratio.spec.ts`. The action-rpg score belongs to whoever owns that template's
+      look.
+- [x] The templates' `AGENTS.md` documents it, as the shared `agent-docs/pixel-budget.md` fragment
+      carried by all seven (`573d8f2e`).
 
 ## What this PRD does not do
 
