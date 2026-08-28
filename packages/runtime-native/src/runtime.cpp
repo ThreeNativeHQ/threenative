@@ -5,6 +5,7 @@
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/bindings.h"
+#include "webgpu/bindings_state.h"  // full BindingsState for the host-gap phase fields
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
 #include "runtime_scripts.h"
@@ -41,6 +42,7 @@
 #include <fstream>
 #include <filesystem>
 #include <sstream>
+#include <iomanip>
 #include <thread>
 #include <chrono>
 #include <memory>
@@ -50,6 +52,9 @@
 #include <queue>
 #include <mutex>
 #include <csignal>
+#include <algorithm>
+#include <array>
+#include <cstdint>
 
 // libuv for precise timers (conditional)
 #if defined(MYSTRAL_HAS_LIBUV) && !defined(__ANDROID__) && !defined(IOS)
@@ -158,6 +163,170 @@ static bool readAndroidAsset(const std::string& path, std::vector<uint8_t>& data
 // `mystral/platform/crash_policy.h`. It used to live here as five bare `signal()` calls reached on
 // every platform, which on Android replaces the dispositions the zygote chained debuggerd into —
 // so every crash after startup exited SIGNALED status=11 with no tombstone.
+
+// ---------------------------------------------------------------------------
+// Host-gap decomposition (PRD-227 task 1) — instrumentation, not optimisation.
+//
+// The JavaScript frame budget reports `hostGap` — "the time before the callback" — as one
+// undifferentiated number. On the measurement device it sits at 21–25 ms in every arm ever
+// run, invariant to CPU work, pixel count, present mode and the overlay, and no symbol
+// profile can attribute it, because the cost is defined by frame phase, not by function.
+// This meter splits that window into named sub-phases so one run can name the owner.
+//
+// Everything here is wall clock, two steady_clock reads per segment (~a dozen per frame).
+// A frame whose rAF-to-rAF period exceeds the budget's hitch threshold is dropped whole,
+// mirroring what FrameBudget excludes. Emission is one marker line every kWindow frames,
+// beside TN_FRAME_BUDGET, so a logcat tail reads the same window twice.
+// ---------------------------------------------------------------------------
+namespace {
+
+struct HostGapMeter {
+    static constexpr size_t kWindow = 300;
+    static constexpr uint64_t kHitchPeriodMicros = 2'000'000;  // FrameBudget DEFAULT_HITCH_MS
+
+    enum Segment : size_t {
+        kEvents = 0,     // platform event pump + lifecycle markers + desktop overlay pump
+        kIo,             // libuv runOnce, HTTP, WebTransport, async file reads, file watcher
+        kAudio,          // audio event delivery off the platform thread
+        kTimers,         // due timer callbacks + deferred file callbacks + UI message drain
+        kMicrotasks,     // V8 message-loop pump + microtask checkpoint
+        kPreFrame,       // beginFrame + beginDawnFrame bookkeeping
+        kFrameDrain,     // endDawnFrame: the packed frame-stream drain call into JS
+        kFrameReplay,    // endDawnFrame: C++ replay of the packed stream
+        kPresent,        // endDawnFrame: presentPendingSurface (screenshot copy rides inside)
+        kDevicePoll,     // endDawnFrame: wgpuDevicePoll(false) / wgpuDeviceTick
+        kEndFrameOther,  // endDawnFrame remainder: profile emission, 2D composite, pacing
+        kHandles,        // clearFrameHandles
+        kScreenshot,     // playtest screenshot mailbox file polling
+        kSegmentCount
+    };
+
+    static constexpr std::array<const char*, kSegmentCount> kNames = {
+        "events", "io", "audio", "timers", "microtasks", "preFrame",
+        "frameDrain", "frameReplay", "present", "devicePoll", "endFrameOther",
+        "handles", "screenshot",
+    };
+
+    struct Sample {
+        uint64_t micros[kSegmentCount] = {};
+    };
+
+    using Clock = std::chrono::steady_clock;
+
+    Clock::time_point segmentStart_{};
+    Clock::time_point lastRafBegin_{};
+    Sample current_{};
+    bool inSegment_ = false;
+    std::vector<Sample> samples_;
+    std::vector<uint64_t> periodMicros_;
+
+    void begin(Segment segment) {
+        (void)segment;
+        segmentStart_ = Clock::now();
+        inSegment_ = true;
+    }
+
+    void end(Segment segment) {
+        const auto now = Clock::now();
+        if (inSegment_) {
+            current_.micros[segment] += std::chrono::duration_cast<std::chrono::microseconds>(
+                                            now - segmentStart_)
+                                            .count();
+            inSegment_ = false;
+        }
+    }
+
+    // Dispatch-entry to dispatch-entry of the rAF window — the whole loop period, which the
+    // JavaScript budget reads as presentedDelta and splits into frame + hostGap.
+    void noteRafBegin() {
+        const auto now = Clock::now();
+        if (lastRafBegin_.time_since_epoch().count() != 0) {
+            const auto period = std::chrono::duration_cast<std::chrono::microseconds>(
+                now - lastRafBegin_);
+            if (period.count() > 0) periodMicros_.push_back(
+                static_cast<uint64_t>(period.count()));
+        }
+        lastRafBegin_ = now;
+    }
+
+    // endDawnFrame timed its own interior in bindings.cpp; absorb that split here. Values are
+    // nanoseconds; the sample stores microseconds. Repeated calls accumulate, like begin/end.
+    void recordEndFramePhases(uint64_t drainNs, uint64_t replayNs, uint64_t presentNs,
+                              uint64_t pollNs, uint64_t otherNs) {
+        current_.micros[kFrameDrain] += drainNs / 1000;
+        current_.micros[kFrameReplay] += replayNs / 1000;
+        current_.micros[kPresent] += presentNs / 1000;
+        current_.micros[kDevicePoll] += pollNs / 1000;
+        current_.micros[kEndFrameOther] += otherNs / 1000;
+    }
+
+    // Closes one frame's sample and drops it when the loop hitched, so a launch stall or a
+    // debug pause cannot poison a percentile. A paused frame never reaches here; drop its
+    // partial accumulation instead of carrying it into the resumed frame.
+    void closeFrame() {
+        const bool hitched =
+            !periodMicros_.empty() &&
+            periodMicros_.back() > kHitchPeriodMicros;
+        if (hitched) {
+            current_ = Sample{};
+            periodMicros_.clear();
+            return;
+        }
+        samples_.push_back(current_);
+        current_ = Sample{};
+        if (samples_.size() >= kWindow) report();
+    }
+
+    void dropPartialFrame() { current_ = Sample{}; }
+
+    void report() {
+        double periodP50 = 0.0;
+        double periodMean = 0.0;
+        if (!periodMicros_.empty()) {
+            std::vector<uint64_t> sorted = periodMicros_;
+            std::sort(sorted.begin(), sorted.end());
+            periodP50 = static_cast<double>(sorted[sorted.size() / 2]) / 1000.0;
+            uint64_t sum = 0;
+            for (const uint64_t v : periodMicros_) sum += v;
+            periodMean = static_cast<double>(sum) / static_cast<double>(periodMicros_.size()) /
+                         1000.0;
+        }
+
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(3);
+        out << "TN_HOST_GAP:{\"frames\":" << samples_.size()
+            << ",\"periodP50Ms\":" << periodP50
+            << ",\"periodMeanMs\":" << periodMean
+            << ",\"segments\":{";
+        double sumP50 = 0.0;
+        for (size_t i = 0; i < kSegmentCount; ++i) {
+            std::vector<uint64_t> column;
+            column.reserve(samples_.size());
+            uint64_t sum = 0;
+            for (const Sample& sample : samples_) {
+                column.push_back(sample.micros[i]);
+                sum += sample.micros[i];
+            }
+            std::sort(column.begin(), column.end());
+            const double p50 = static_cast<double>(column[column.size() / 2]) / 1000.0;
+            const double mean = static_cast<double>(sum) / static_cast<double>(column.size()) /
+                                1000.0;
+            if (i > 0) out << ",";
+            out << "\"" << kNames[i] << "\":{" << "\"p50Ms\":" << p50
+                << ",\"meanMs\":" << mean << "}";
+            sumP50 += p50;
+        }
+        out << "},\"sumP50Ms\":" << sumP50 << "}";
+        const std::string marker = out.str();
+        std::cout << marker << std::endl;
+        LOGI("%s", marker.c_str());
+
+        samples_.clear();
+        periodMicros_.clear();
+    }
+};
+
+}  // namespace
 
 // Forward declaration for WebGPU bindings
 /**
@@ -978,9 +1147,13 @@ public:
     }
 
     bool pollEvents() override {
+        // Each frame's between-callbacks time is metered into named sub-phases (TN_HOST_GAP).
+        // Segments bracket the existing calls; nothing here changes order or behaviour.
+        hostGapMeter_.begin(HostGapMeter::kEvents);
         // Poll SDL events through our platform layer (skip in no-SDL mode)
         if (!config_.noSdl) {
             if (!platform::pollEvents()) {
+                hostGapMeter_.end(HostGapMeter::kEvents);
                 running_ = false;
                 return false;
             }
@@ -992,6 +1165,7 @@ public:
         drainLifecycleMarkers();
 
         if (platform::isTerminating()) {
+            hostGapMeter_.end(HostGapMeter::kEvents);
             std::cout << "[Mystral] Lifecycle terminal event; stopping the loop" << std::endl;
             running_ = false;
             return false;
@@ -1005,12 +1179,15 @@ public:
         // over the desktop with its game gone. Android and iOS pump on their own UI threads and
         // need none of this.
         platform::pumpUiOverlay();
+        hostGapMeter_.end(HostGapMeter::kEvents);
 
         if (!config_.noSdl && platform::isPaused()) {
             // No JavaScript, no beginFrame, no rAF, no endDawnFrame, no present. Timer firings
             // that came due are counted and dropped rather than replayed all at once on resume;
             // `FixedStepLoop` clamps the elapsed time on the TypeScript side either way.
             countAndDropDueTimers();
+            // A paused stretch is not a frame and must not leak into the next one's sample.
+            hostGapMeter_.dropPartialFrame();
             // Desktop does not block its pump the way Android does, so without this the paused
             // loop would spin a core at full speed — a battery fix that costs battery.
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
@@ -1035,6 +1212,7 @@ public:
 
         // Poll libuv event loop - process any ready I/O callbacks (non-blocking)
         // This handles async HTTP requests, file I/O, and libuv-based timers
+        hostGapMeter_.begin(HostGapMeter::kIo);
         async::EventLoop::instance().runOnce();
 
         // Process completed async HTTP requests (invoke their JS callbacks)
@@ -1051,9 +1229,12 @@ public:
 
         // Process file watch events (for hot reload)
         fs::getFileWatcher().processPendingEvents();
+        hostGapMeter_.end(HostGapMeter::kIo);
 
         // Dispatch source completion callbacks outside the SDL audio thread.
+        hostGapMeter_.begin(HostGapMeter::kAudio);
         audio::processAudioEvents();
+        hostGapMeter_.end(HostGapMeter::kAudio);
 
         // Check if hot reload was requested
         if (reloadRequested_) {
@@ -1062,6 +1243,7 @@ public:
         }
 
         // Execute timer callbacks (setTimeout, setInterval)
+        hostGapMeter_.begin(HostGapMeter::kTimers);
         executeTimerCallbacks();
 
         // Process any queued file callbacks that were deferred from previous frames
@@ -1070,9 +1252,12 @@ public:
 
         // Deliver whatever the UI posted since the last frame.
         drainUiMessages();
+        hostGapMeter_.end(HostGapMeter::kTimers);
 
         // Process microtask queue for promises
+        hostGapMeter_.begin(HostGapMeter::kMicrotasks);
         processMicrotasks();
+        hostGapMeter_.end(HostGapMeter::kMicrotasks);
 
         // A deliberate fault, after startup, only when a proof harness asked for one. This is the
         // lane that checks "a crash after startup leaves a tombstone" without waiting for an
@@ -1085,20 +1270,35 @@ public:
         }
 
         // Begin frame — enables per-frame allocation tracking
+        hostGapMeter_.begin(HostGapMeter::kPreFrame);
         jsEngine_->beginFrame();
         webgpu::beginDawnFrame(bindingsState_);
+        hostGapMeter_.end(HostGapMeter::kPreFrame);
 
         // Execute requestAnimationFrame callbacks (renders a frame)
         executeAnimationFrameCallbacks();
 
         // Replay the JS-recorded WebGPU frame while descriptor and upload handles are still live.
         webgpu::endDawnFrame(bindingsState_);
+        // The replay boundary's own split (drain / replay / present / poll / other) was timed
+        // inside endDawnFrame; fold it into this frame's sample.
+        hostGapMeter_.recordEndFramePhases(
+            bindingsState_->framePhaseDrainNs, bindingsState_->framePhaseReplayNs,
+            bindingsState_->framePhasePresentNs, bindingsState_->framePhasePollNs,
+            bindingsState_->framePhaseOtherNs);
+
         // Free non-protected handles only after the replay boundary consumed the frame stream.
+        hostGapMeter_.begin(HostGapMeter::kHandles);
         jsEngine_->clearFrameHandles();
+        hostGapMeter_.end(HostGapMeter::kHandles);
 
         // Desktop screenshot requests are serviced by the host after the frame has presented. This
         // is file polling only; the game does not receive a per-frame JS/C++ callback.
+        hostGapMeter_.begin(HostGapMeter::kScreenshot);
         processPlaytestScreenshotRequest();
+        hostGapMeter_.end(HostGapMeter::kScreenshot);
+
+        hostGapMeter_.closeFrame();
 
         // TODO: Translate to Web events via InputShim
         // TODO: Dispatch to JS
@@ -1261,6 +1461,10 @@ private:
 
     void executeAnimationFrameCallbacks() {
         if (rafCallbacks_.empty()) return;
+
+        // The loop period for the host-gap meter: dispatch-entry to dispatch-entry. The
+        // JavaScript budget reads the same interval as presentedDelta.
+        hostGapMeter_.noteRafBegin();
 
         // Get current time
         auto now = std::chrono::high_resolution_clock::now();
@@ -2295,6 +2499,7 @@ private:
     std::unique_ptr<js::Engine> jsEngine_;
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
     storage::LocalStorage localStorage_;
+    HostGapMeter hostGapMeter_;
 
     // requestAnimationFrame state
     struct RAFCallback {

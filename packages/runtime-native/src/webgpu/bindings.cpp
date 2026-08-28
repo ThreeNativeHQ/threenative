@@ -7410,12 +7410,28 @@ static void reportPresentTick(BindingsState* state, uint64_t frames) {
 void endDawnFrame(BindingsState* state) {
     // The one command-submission crossing for this frame. All requestAnimationFrame callbacks
     // have returned, while descriptor objects and eager-copied upload payloads are still live.
+    //
+    // The wall-clock reads below feed the host-gap decomposition (TN_HOST_GAP). Unlike the
+    // CPU-profile reads they replace nothing and gate nothing; four extra steady_clock reads per
+    // frame is the whole cost.
+    using steady = std::chrono::steady_clock;
+    const steady::time_point phaseBegin = steady::now();
+    state->framePhaseDrainNs = 0;
+    state->framePhaseReplayNs = 0;
+    state->framePhasePresentNs = 0;
+    state->framePhasePollNs = 0;
+    state->framePhaseOtherNs = 0;
     if (state->frameOpStreamDrain.ptr) {
+        const steady::time_point drainBegin = steady::now();
 #if TN_ANDROID_JS_PROFILE
         const uint64_t drainStartCpuNs = readRenderThreadCpuNs();
 #endif
         const auto frame = state->engine->call(
             state->frameOpStreamDrain, state->engine->newUndefined(), {});
+        const uint64_t drainNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - drainBegin)
+                .count());
+        state->framePhaseDrainNs = drainNs;
 #if TN_ANDROID_JS_PROFILE
         const uint64_t drainEndCpuNs = readRenderThreadCpuNs();
         if (drainEndCpuNs > drainStartCpuNs) {
@@ -7424,10 +7440,15 @@ void endDawnFrame(BindingsState* state) {
 #endif
         if (!state->engine->isNull(frame) && !state->engine->isUndefined(frame)) {
             state->frameOpStreamReplayCrossings += 1;
+            const steady::time_point replayBegin = steady::now();
 #if TN_ANDROID_JS_PROFILE
             const uint64_t replayStartCpuNs = readRenderThreadCpuNs();
 #endif
             const bool replayed = replayPackedFrameOpStream(state, frame);
+            const uint64_t replayNs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - replayBegin)
+                    .count());
+            state->framePhaseReplayNs = replayNs;
 #if TN_ANDROID_JS_PROFILE
             const uint64_t replayEndCpuNs = readRenderThreadCpuNs();
             if (replayEndCpuNs > replayStartCpuNs) {
@@ -7450,7 +7471,12 @@ void endDawnFrame(BindingsState* state) {
 
     // Every pass this frame has been submitted; put the one image on screen.
     const uint64_t presentsBefore = state->presentCount;
+    const steady::time_point presentBegin = steady::now();
     presentPendingSurface(state);
+    const uint64_t presentNs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - presentBegin)
+            .count());
+    state->framePhasePresentNs = presentNs;
     // Only a frame that reached the display is paced. See paceToPresentationCap().
     if (state->presentCount != presentsBefore) paceToPresentationCap();
 
@@ -7481,12 +7507,25 @@ void endDawnFrame(BindingsState* state) {
     // resources (staging buffers, command encoder state, etc.). Without this,
     // internal objects accumulate unboundedly since completion callbacks never fire.
     if (state->device) {
+        const steady::time_point pollBegin = steady::now();
 #if defined(MYSTRAL_WEBGPU_DAWN)
         wgpuDeviceTick(state->device);
 #elif defined(MYSTRAL_WEBGPU_WGPU)
         wgpuDevicePoll(state->device, false, nullptr);
 #endif
+        const uint64_t pollNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - pollBegin)
+                .count());
+        state->framePhasePollNs = pollNs;
     }
+    // The remainder after the four named phases: profiling emission, canvas 2D compositing and
+    // the present-pacing bookkeeping. Clamped at zero against clock jitter.
+    const uint64_t phaseTotalNs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - phaseBegin).count());
+    const uint64_t namedNs = state->framePhaseDrainNs + state->framePhaseReplayNs +
+                             state->framePhasePresentNs + state->framePhasePollNs;
+    state->framePhaseOtherNs =
+        phaseTotalNs > namedNs ? phaseTotalNs - namedNs : 0;
 }
 
 }  // namespace webgpu

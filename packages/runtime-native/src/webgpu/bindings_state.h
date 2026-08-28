@@ -230,6 +230,15 @@ struct BindingsState {
     bool framePresentPending = false;
     uint64_t lastPresentNs = 0;
     uint64_t lastPresentThreadCpuNs = 0;
+    // Wall-clock split of one endDawnFrame() call for the host-gap decomposition (TN_HOST_GAP,
+    // PRD-227 task 1). `otherNs` is the call's remainder after drain, replay, present and poll —
+    // profiling emission, canvas 2D compositing and the present-pacing bookkeeping. Zeroed at
+    // every endDawnFrame() entry; the runtime reads them right after the call returns.
+    uint64_t framePhaseDrainNs = 0;
+    uint64_t framePhaseReplayNs = 0;
+    uint64_t framePhasePresentNs = 0;
+    uint64_t framePhasePollNs = 0;
+    uint64_t framePhaseOtherNs = 0;
     // Render-thread CPU clock at the previous profile emission. Wall-clock phase timings on a
     // FIFO-presented surface are mostly vblank wait; the delta of this clock is the work.
     uint64_t lastRenderThreadCpuNs = 0;
