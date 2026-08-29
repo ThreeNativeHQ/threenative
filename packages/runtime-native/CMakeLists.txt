@@ -25,7 +25,7 @@ function(tn_register_contract_test target)
         add_test(NAME ${target}
             COMMAND ${CMAKE_COMMAND} -E env
                 "TN_NATIVE_BEHAVIOR_EXECUTABLE=$<TARGET_FILE:${target}>"
-                "TN_NATIVE_BEHAVIOR_PROOFS=whole-table-verification,wrapper-rollback"
+                "TN_NATIVE_BEHAVIOR_PROOFS=public-binding-surface,whole-table-verification,wrapper-rollback"
                 ${TN_PNPM_EXECUTABLE} exec vitest run --config vitest.config.ts
                     tests/webgpu-bindings-contract.test.mjs)
         set_tests_properties(${target} PROPERTIES

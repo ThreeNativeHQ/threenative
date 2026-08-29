@@ -340,34 +340,6 @@ test("binding destination ownership is unforgeable from JavaScript", () => {
   }
 });
 
-test("supported feature collections stay iterable without binding onto an exotic array", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-
-  assert.match(bindings, /auto deviceFeatures = state->engine->newArray\(0\)/u);
-  assert.match(bindings, /auto features = state->engine->newArray\(0\)/u);
-  assert.match(bindings, /deviceFeaturesBindingHost[\s\S]*getProperty\(deviceFeaturesBindingHost, "has"\)/u);
-  assert.match(bindings, /featuresBindingHost[\s\S]*getProperty\(featuresBindingHost, "has"\)/u);
-  assert.doesNotMatch(
-    bindings,
-    /&tnWebgpuHandler(?:28|82)[\s\S]{0,80}, (?:deviceFeatures|features)\}\}/u,
-  );
-});
-
-test("global helpers are copied from ordinary binding hosts", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
-
-  assert.match(bindings, /globalBindingHost = engine->newObject\(\)/u);
-  assert.match(bindings, /copyGlobalBinding\(globalBindingHost, "__decodeImageData"\)/u);
-  assert.match(bindings, /copyGlobalBinding\(globalBindingHost, "__nativeGetContext2D"\)/u);
-  assert.match(bindings, /copyGlobalBinding\(globalBindingHost, "createOffscreenCanvas2D"\)/u);
-  assert.doesNotMatch(
-    bindings,
-    /\{"WebGPU",\s*"[^"]+"[\s\S]{0,120}?getGlobal\(\)/u,
-  );
-  assert.match(nativeControl, /global exotic destination did not fail/u);
-});
-
 test("binding destinations reject proxies before descriptor traversal", () => {
   const engine = read("include/mystral/js/engine.h");
   const v8 = read("src/js/v8_engine.cpp");
@@ -440,6 +412,7 @@ function behaviorExecutable(body) {
 test("native behavior preserves binding transactions and active wrapper state", () => {
   const productExecutable = process.env.TN_NATIVE_BEHAVIOR_EXECUTABLE;
   const fixture = behaviorExecutable(`
+    console.log("proof: public-binding-surface");
     console.log("proof: whole-table-verification");
     console.log("proof: wrapper-rollback");
   `);
@@ -447,10 +420,14 @@ test("native behavior preserves binding transactions and active wrapper state", 
   const args = productExecutable ? [] : [fixture];
   const result = runNativeBehavior(
     executable,
-    ["whole-table-verification", "wrapper-rollback"],
+    ["public-binding-surface", "whole-table-verification", "wrapper-rollback"],
     args,
   );
-  assert.deepEqual(result.proofs, ["whole-table-verification", "wrapper-rollback"]);
+  assert.deepEqual(result.proofs, [
+    "public-binding-surface",
+    "whole-table-verification",
+    "wrapper-rollback",
+  ]);
 });
 
 test("wrapper rollback behavior proof fails closed", () => {

@@ -1591,6 +1591,78 @@ bool runProbe(mystral::Runtime& runtime, const char* marker) {
         "webgpu-bindings-reentrancy-check.js");
 }
 
+bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
+    return runtime.evalScript(R"JS((() => {
+        const requireMethods = (label, value, names) => {
+            if (!value) throw new Error(label + " binding object missing");
+            for (const name of names) {
+                if (typeof value[name] !== "function") {
+                    throw new Error(label + "." + name + " binding missing");
+                }
+            }
+        };
+        const requireFeatures = (label, value) => {
+            requireMethods(label, value, ["has"]);
+            if (typeof value[Symbol.iterator] !== "function") {
+                throw new Error(label + " iterator binding missing");
+            }
+            for (const feature of value) {
+                if (typeof feature !== "string") {
+                    throw new Error(label + " yielded a non-string feature");
+                }
+            }
+        };
+        const adapter = navigator.gpu.requestAdapter();
+        const device = adapter.requestDevice();
+        const buffer = device.createBuffer({size: 4, usage: GPUBufferUsage.COPY_DST});
+        const encoder = device.createCommandEncoder();
+        const computePass = encoder.beginComputePass();
+        const texture = device.createTexture({
+            size: {width: 1, height: 1, depthOrArrayLayers: 1},
+            format: "rgba8unorm",
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+        const bundle = device.createRenderBundleEncoder({colorFormats: ["rgba8unorm"]});
+        const canvas = document.createElement("canvas");
+        const canvasContext = canvas.getContext("webgpu");
+
+        requireMethods("GPU", navigator.gpu, ["requestAdapter", "getPreferredCanvasFormat"]);
+        requireMethods("GPUAdapter", adapter, ["requestDevice"]);
+        requireFeatures("GPUAdapter.features", adapter.features);
+        requireFeatures("GPUDevice.features", device.features);
+        requireMethods("GPUDevice", device, [
+            "destroy", "createBuffer", "createShaderModule", "createRenderPipeline",
+            "createComputePipeline", "createCommandEncoder", "createTexture", "createSampler",
+            "createBindGroupLayout", "createBindGroup", "createPipelineLayout",
+            "createTextureView", "createRenderBundleEncoder", "pushErrorScope", "popErrorScope",
+        ]);
+        requireMethods("GPUQueue", device.queue, [
+            "submit", "writeBuffer", "writeTexture", "copyExternalImageToTexture",
+            "onSubmittedWorkDone",
+        ]);
+        requireMethods("GPUBuffer", buffer, ["mapAsync", "getMappedRange", "unmap", "destroy"]);
+        requireMethods("GPUCommandEncoder", encoder, [
+            "beginRenderPass", "beginComputePass", "copyBufferToBuffer", "copyBufferToTexture",
+            "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish",
+        ]);
+        requireMethods("GPUComputePassEncoder", computePass, [
+            "setPipeline", "setBindGroup", "dispatchWorkgroups", "end",
+        ]);
+        requireMethods("GPURenderBundleEncoder", bundle, [
+            "setPipeline", "setVertexBuffer", "setIndexBuffer", "setBindGroup", "draw",
+            "drawIndexed", "finish",
+        ]);
+        requireMethods("GPUTexture", texture, ["createView", "destroy"]);
+        requireMethods("GPUCanvasContext", canvasContext, [
+            "configure", "unconfigure", "getCurrentTexture",
+        ]);
+        requireMethods("WebGPU", globalThis, [
+            "__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D",
+        ]);
+        computePass.end();
+    })())JS", "webgpu-public-binding-surface.js");
+}
+
 }  // namespace
 
 int main() {
@@ -1605,6 +1677,9 @@ int main() {
         first->getWebGPUBindingsState() == second->getWebGPUBindingsState()) {
         return 1;
     }
+
+    if (!exercisePublishedWebGPUObjects(*first)) return 1;
+    std::cout << "proof: public-binding-surface" << std::endl;
 
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
     if (!checkCaughtNativeExceptionDoesNotPoisonLaterInstall(*first)) return 1;
