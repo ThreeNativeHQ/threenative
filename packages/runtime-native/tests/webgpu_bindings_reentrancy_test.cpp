@@ -1682,10 +1682,19 @@ bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
             usage: GPUTextureUsage.RENDER_ATTACHMENT,
         });
         const bundle = device.createRenderBundleEncoder({colorFormats: ["rgba8unorm"]});
+        const element = document.createElement("div");
         const canvas = document.createElement("canvas");
         const canvasContext = canvas.getContext("webgpu");
         const mainCanvasContext = globalThis.canvas.getContext("webgpu");
 
+        requireMethods("Document", document, ["querySelector", "createElement"]);
+        requireMethods("HTMLElement", element, [
+            "appendChild", "removeChild", "remove", "addEventListener", "removeEventListener",
+        ]);
+        requireMethods("HTMLCanvasElement", canvas, [
+            "getContext", "addEventListener", "removeEventListener", "dispatchEvent",
+            "requestPointerLock", "toDataURL", "getBoundingClientRect",
+        ]);
         requireMethods("GPU", navigator.gpu, ["requestAdapter", "getPreferredCanvasFormat"]);
         requireMethods("GPUAdapter", adapter, ["requestDevice"]);
         requireFeatures("GPUAdapter.features", adapter.features);

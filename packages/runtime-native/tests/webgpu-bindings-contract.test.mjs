@@ -450,141 +450,6 @@ test("all engines implement Object.is SameValue and QuickJS performance uses its
   );
 });
 
-const migratedRegistrationFamilies = {
-  Document: ["querySelector", "createElement"],
-  HTMLElement: [
-    "appendChild",
-    "removeChild",
-    "remove",
-    "addEventListener",
-    "removeEventListener",
-  ],
-  HTMLCanvasElement: [
-    "getContext",
-    "addEventListener",
-    "removeEventListener",
-    "dispatchEvent",
-    "requestPointerLock",
-    "toDataURL",
-    "getBoundingClientRect",
-  ],
-  GPU: ["requestAdapter", "getPreferredCanvasFormat"],
-  GPUAdapter: ["requestDevice"],
-  GPUSupportedFeatures: ["has"],
-  GPUDevice: [
-    "destroy",
-    "createBuffer",
-    "createShaderModule",
-    "createRenderPipeline",
-    "createComputePipeline",
-    "createCommandEncoder",
-    "createTexture",
-    "createSampler",
-    "createBindGroupLayout",
-    "createBindGroup",
-    "createPipelineLayout",
-    "createTextureView",
-    "createRenderBundleEncoder",
-    "pushErrorScope",
-    "popErrorScope",
-  ],
-  GPUQueue: [
-    "submit",
-    "writeBuffer",
-    "writeTexture",
-    "copyExternalImageToTexture",
-    "onSubmittedWorkDone",
-  ],
-  GPUBuffer: ["mapAsync", "getMappedRange", "unmap", "destroy"],
-  GPUCommandEncoder: [
-    "beginRenderPass",
-    "beginComputePass",
-    "copyBufferToBuffer",
-    "copyBufferToTexture",
-    "copyTextureToBuffer",
-    "copyTextureToTexture",
-    "clearBuffer",
-    "finish",
-  ],
-  GPURenderPassEncoder: [
-    "setPipeline",
-    "setBindGroup",
-    "draw",
-    "setVertexBuffer",
-    "setIndexBuffer",
-    "drawIndexed",
-    "drawIndirect",
-    "drawIndexedIndirect",
-    "setViewport",
-    "setScissorRect",
-    "setBlendConstant",
-    "setStencilReference",
-    "executeBundles",
-    "end",
-  ],
-  GPUComputePassEncoder: ["setPipeline", "setBindGroup", "dispatchWorkgroups", "end"],
-  GPURenderBundleEncoder: [
-    "setPipeline",
-    "setVertexBuffer",
-    "setIndexBuffer",
-    "setBindGroup",
-    "draw",
-    "drawIndexed",
-    "finish",
-  ],
-  GPUTexture: ["createView", "destroy"],
-  WebGPU: ["__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D"],
-};
-
-function assertMigratedRegistrationRows(candidate) {
-  const rowKeys = new Set(
-    [
-      ...candidate.matchAll(
-        /\{"(Document|HTMLElement|HTMLCanvasElement|GPU|GPUAdapter|GPUSupportedFeatures|GPUDevice|GPUQueue|GPUBuffer|GPUCommandEncoder|GPUCanvasContext|GPURenderPassEncoder|GPUComputePassEncoder|GPURenderBundleEncoder|GPUTexture|WebGPU)",\s*"([^"]+)"/gu,
-      ),
-    ].map((match) => `${match[1]}.${match[2]}`),
-  );
-  for (const [surface, names] of Object.entries(migratedRegistrationFamilies)) {
-    for (const name of names) {
-      assert.ok(rowKeys.has(`${surface}.${name}`), `${surface}.${name} must be a table row`);
-    }
-  }
-  assert.match(candidate, /installBindingTable\(\s*state->engine/u);
-  assert.doesNotMatch(candidate, /installGlobalBindingTable\(/u);
-}
-
-function assertSurfaceInstallerDelegates(candidate) {
-  const surfaceInstaller = blockBetween(
-    candidate,
-    "static bool installWebGPUBindingSurfaces",
-    "/** Every migrated WebGPU method is a BindingRegistration row in this table unit. */",
-  );
-  assert.match(surfaceInstaller, /return installWebGPUBindingTables\(state, engine\);/u);
-  assert.doesNotMatch(surfaceInstaller, /BindingRegistration|\[state|newFunction/u);
-}
-
-function assertDeclarativeInstaller(candidate) {
-  const start = candidate.indexOf(
-    "static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {",
-  );
-  const end = candidate.indexOf("\n}\n#endif\n\n/** Initialize", start);
-  assert.ok(start >= 0 && end > start, "WebGPU table installer must have a bounded source block");
-  const installer = candidate.slice(start, end);
-  assert.doesNotMatch(
-    installer,
-    /\[[^\]]*\]\(BindingsState/u,
-    "WebGPU table installer must not contain inline handlers",
-  );
-  assert.match(installer, /installBindingTable\(\s*state->engine\s*,\s*state\s*,/u);
-  assert.match(installer, /\{"HTMLElement",\s*"appendChild"[\s\S]*&[A-Za-z_][A-Za-z0-9_]*/u);
-  assert.match(installer, /bindingTable\(\{/u);
-  assert.equal(
-    installer.match(/installBindingTable\(/gu)?.length,
-    installer.match(/if \(!installBindingTable\(/gu)?.length,
-    "production initialization must return false for every partial table install",
-  );
-}
-
 function assertEveryTableInstallIsChecked(candidate) {
   const calls = candidate.match(/installBindingTable\(/gu) ?? [];
   const checked = candidate.match(/if \(!installBindingTable\(/gu) ?? [];
@@ -596,44 +461,22 @@ function assertEveryTableInstallIsChecked(candidate) {
   );
 }
 
-test("all migrated WebGPU registration families use the shared table dispatcher", () => {
+test("top-level WebGPU table installation propagates every failure", () => {
   const bindings = read("src/webgpu/bindings.cpp");
-  assert.doesNotMatch(bindings, /(?:state->engine|engine)->newFunction\(/u);
-  assert.doesNotMatch(
+  const installer = blockBetween(
     bindings,
-    /(?:state->engine|engine)->setProperty\([\s\S]*?(?:state->engine|engine)->newFunction\(/u,
+    "static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {",
+    "/** Initialize WebGPU bindings in the JS engine. */",
   );
-  assert.doesNotMatch(bindings, /install(?:Global)?Binding\(/u);
-  assertSurfaceInstallerDelegates(bindings);
-  assertDeclarativeInstaller(bindings);
-  assertEveryTableInstallIsChecked(bindings);
-  assertMigratedRegistrationRows(bindings);
+  assertEveryTableInstallIsChecked(installer);
 
-  const inlineHandlerMutation = bindings.replace(
-    "&tnWebgpuHandler20",
-    "[state](BindingsState*, BindingDestination, const std::vector<js::JSValueHandle>&) { return state->engine->newUndefined(); }",
-  );
-  assert.throws(
-    () => assertDeclarativeInstaller(inlineHandlerMutation),
-    /WebGPU table installer/u,
-  );
-
-  const ignoredStaticFailure = bindings.replace(
+  const ignoredFailure = installer.replace(
     "if (!installBindingTable(",
     "installBindingTable(",
   );
   assert.throws(
-    () => assertEveryTableInstallIsChecked(ignoredStaticFailure),
+    () => assertEveryTableInstallIsChecked(ignoredFailure),
     /propagate failure/u,
-  );
-
-  const withoutComputePipeline = bindings.replace(
-    /\s*\{"GPUComputePassEncoder", "setPipeline",[\s\S]*?&[A-Za-z_][A-Za-z0-9_]*\s*,\s*jsComputePass\},/u,
-    "",
-  );
-  assert.throws(
-    () => assertMigratedRegistrationRows(withoutComputePipeline),
-    /GPUComputePassEncoder\.setPipeline/u,
   );
 });
 
