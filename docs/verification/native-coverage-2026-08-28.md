@@ -25,7 +25,7 @@ targets could not be built and are named below.
 | `src/webtransport/` | 770 | 40 | 5.19% |
 | **TOTAL** | **18495** | **6379** | **34.49%** |
 
-Source digest: `sha256:a798d2683a2d281a19203bccf08ae5b7670375816bba3e25ffd0eab6b7a8f704`
+Source digest: `sha256:c8df64587104711e6b13262cf988124b18ad11c10a40634527d80d25f1f0d40d`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
