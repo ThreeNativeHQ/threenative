@@ -8,6 +8,7 @@ export type GameState = {
   aimedShots: number;
   aiming: number;
   armor: number;
+  cameraShakes: number;
   deaths: number;
   demoDamage: number;
   demoTargetAlive: number;
@@ -20,6 +21,8 @@ export type GameState = {
   hitNormalYPercent: number;
   hitNormalZPercent: number;
   lives: number;
+  pickupFrame: number;
+  pickupFrameChanges: number;
   pickups: number;
   radiusInsideDeaths: number;
   radiusMidAlive: number;

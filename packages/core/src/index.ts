@@ -31,6 +31,27 @@ export type {
   IStrideReport,
 } from "./animation.js";
 /**
+ * Face a game-owned object toward a perspective or orthographic camera.
+ * @situation keep a world-space marker or nameplate facing the camera
+ * @situation billboard a tree, label, or effect under a rotated parent
+ * @constraint call update from the owning scene; no global scene scan is installed
+ * @constraint orthographic cameras use their forward direction, and lockAxis restricts world rotation
+ * @example const billboard = new Billboard3D(label, { camera, lockAxis: "y" });
+ * billboard.update();
+ */
+export { Billboard3D } from "./billboard.js";
+export type { BillboardLockAxis, IBillboard3DOptions } from "./billboard.js";
+/**
+ * Produce a game-authored camera shake offset for a template-owned camera rig.
+ * @situation add a hit, explosion, or landing shake to a camera
+ * @situation compose a transient camera offset after camera damping
+ * @constraint amplitude, rotationAmplitude, frequency, decay, and curve are required game choices
+ * @constraint update returns an offset and never writes to a camera
+ * @example const shake = new CameraShake({ amplitude, rotationAmplitude, frequency, decay, curve });
+ */
+export { CameraShake } from "./camera-shake.js";
+export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "./camera-shake.js";
+/**
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation load assets from a nonstandard base path or a compiled asset manifest
@@ -250,6 +271,20 @@ export type { ScheduleHandle } from "./schedule.js";
  */
 export { Scene } from "./scene.js";
 export type { ICtx, SceneFrame } from "./scene.js";
+/**
+ * Advance a game-owned non-uniform sprite atlas on the fixed step.
+ * @situation play an animated pickup or sprite-sheet effect
+ * @situation sequence atlas frames with different authored durations
+ * @constraint the game supplies the atlas texture, surface, filtering, layout, and every frame duration
+ * @constraint update is driven by the scene fixed step; no wall clock or default frame rate is used
+ * @example const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: "pingPong" });
+ */
+export { SpriteAnimator3D } from "./sprite-animator.js";
+export type {
+  ISpriteAnimator3DOptions,
+  ISpriteFrame3D,
+  SpritePlaybackMode,
+} from "./sprite-animator.js";
 /**
  * Keep transient render surfaces in the renderer's pipeline cache before first use.
  * @situation prewarm a projectile, tracer, particle, or other transient effect

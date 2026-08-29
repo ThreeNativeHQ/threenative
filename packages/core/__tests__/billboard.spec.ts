@@ -1,0 +1,84 @@
+import { Group, OrthographicCamera, PerspectiveCamera, Quaternion, Vector3 } from "three";
+import { describe, expect, it } from "vitest";
+import { Billboard3D } from "../src/billboard.js";
+
+const FRONT = new Vector3(0, 0, 1);
+
+function worldFront(object: Group): Vector3 {
+  const quaternion = object.getWorldQuaternion(new Quaternion());
+  return FRONT.clone().applyQuaternion(quaternion);
+}
+
+describe("Billboard3D", () => {
+  it("faces a perspective camera through a rotated parent", () => {
+    const camera = new PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(5, 3, 7);
+    camera.lookAt(0, 1, 0);
+
+    const parent = new Group();
+    parent.position.set(-2, 0.5, 1);
+    parent.rotation.set(0.35, -0.8, 0.2);
+    const label = new Group();
+    label.position.set(1, 1.5, -0.5);
+    parent.add(label);
+
+    const billboard = new Billboard3D(label, { camera });
+    billboard.update();
+
+    const labelPosition = label.getWorldPosition(new Vector3());
+    const cameraPosition = camera.getWorldPosition(new Vector3());
+    const expectedDirection = cameraPosition.sub(labelPosition).normalize();
+    expect(worldFront(label).angleTo(expectedDirection)).toBeCloseTo(0, 6);
+  });
+
+  it("uses an orthographic camera's forward direction instead of its position", () => {
+    const camera = new OrthographicCamera(-4, 4, 4, -4, 0.1, 100);
+    camera.position.set(100, 40, 80);
+    camera.lookAt(100, 40, 79);
+    camera.updateWorldMatrix(true, false);
+
+    const label = new Group();
+    label.position.set(-30, 12, 20);
+    const billboard = new Billboard3D(label, { camera });
+    billboard.update();
+    const firstFront = worldFront(label);
+
+    camera.position.set(-500, -300, 900);
+    camera.updateWorldMatrix(true, false);
+    billboard.update();
+
+    const cameraQuaternion = camera.getWorldQuaternion(new Quaternion());
+    const expectedDirection = new Vector3(0, 0, -1).applyQuaternion(cameraQuaternion).negate();
+    expect(firstFront.angleTo(expectedDirection)).toBeCloseTo(0, 6);
+    expect(worldFront(label).angleTo(firstFront)).toBeCloseTo(0, 6);
+  });
+
+  it("locks a nameplate to the world's y axis", () => {
+    const camera = new PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(4, 8, 6);
+    camera.lookAt(0, 0, 0);
+    const parent = new Group();
+    parent.rotation.y = 1.2;
+    const label = new Group();
+    parent.add(label);
+
+    new Billboard3D(label, { camera, lockAxis: "y" }).update();
+
+    const front = worldFront(label);
+    const expected = camera
+      .getWorldPosition(new Vector3())
+      .sub(label.getWorldPosition(new Vector3()))
+      .setY(0)
+      .normalize();
+    expect(front.y).toBeCloseTo(0, 6);
+    expect(front.angleTo(expected)).toBeCloseTo(0, 6);
+  });
+
+  it("fails closed for a missing camera and invalid lock axis", () => {
+    const label = new Group();
+    expect(() => new Billboard3D(label, {} as never)).toThrow("Billboard3D.camera");
+    expect(
+      () => new Billboard3D(label, { camera: new PerspectiveCamera(), lockAxis: "q" as never }),
+    ).toThrow("Billboard3D.lockAxis");
+  });
+});

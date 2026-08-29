@@ -1,6 +1,13 @@
-import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import {
+  Billboard3D,
+  CameraShake,
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  SpriteAnimator3D,
+} from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { type Mesh, type PerspectiveCamera, Vector3 } from "three";
+import { Mesh, MeshBasicMaterial, type PerspectiveCamera, Vector3 } from "three";
 import { applyDirectDamage, applyRadiusDamage } from "../combat/damage.js";
 import { Pickup } from "../entities/Pickup.js";
 import {
@@ -15,12 +22,17 @@ import { Target } from "../entities/Target.js";
 import { SpawnPoints } from "../level/SpawnPoints.js";
 import type { IRayHit } from "../physics.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import { createArenaCamera } from "../render/camera.js";
+import { createArenaCamera, createArenaShakeOptions } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
-import { createArena, createFriendlyVisual, createWallVisual } from "../render/shapes.js";
+import {
+  PICKUP_SPRITE_FRAMES,
+  createArena,
+  createFriendlyVisual,
+  createWallVisual,
+} from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 import { WaveDirector } from "../waves.js";
@@ -58,6 +70,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     aimedShots: 0,
     aiming: 0,
     armor: 0,
+    cameraShakes: 0,
     deaths: 0,
     demoDamage: 0,
     demoTargetAlive: 1,
@@ -70,6 +83,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     hitNormalYPercent: -101,
     hitNormalZPercent: -101,
     lives: 3,
+    pickupFrame: 0,
+    pickupFrameChanges: 0,
     pickups: 0,
     radiusInsideDeaths: 0,
     radiusMidAlive: 1,
@@ -95,7 +110,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, camera);
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
-    const rig = createArenaCamera(camera);
+    const shake = new CameraShake(createArenaShakeOptions());
+    const rig = createArenaCamera(camera, shake);
+    const billboards: Billboard3D[] = [];
+    const spriteAnimators: SpriteAnimator3D[] = [];
     ctx.viewport.resize();
 
     const arena = createArena(materials);
@@ -177,6 +195,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ...options,
         onFire: options.onFire ?? createEnemyProjectile,
       });
+      const nameplate = target.mesh.getObjectByName("target-nameplate");
+      if (nameplate === undefined)
+        throw new Error("Shooter target visual is missing its target-nameplate.");
+      billboards.push(new Billboard3D(nameplate, { camera, lockAxis: "y" }));
       targets.set(target.body.body.id, target);
       ctx.entities.add(id, target);
       if (scan) target.startScanning(ctx, getPlayer().body.body.id);
@@ -297,6 +319,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       },
     );
     ctx.entities.add("health-pickup", pickup);
+    const pickupAnimation = pickup.mesh.getObjectByName("pickup-animation");
+    if (
+      !(pickupAnimation instanceof Mesh) ||
+      !(pickupAnimation.material instanceof MeshBasicMaterial)
+    )
+      throw new Error("Shooter pickup visual is missing its animated sprite material.");
+    if (pickupAnimation.material.map === null)
+      throw new Error("Shooter pickup animated sprite is missing its atlas texture.");
+    spriteAnimators.push(
+      new SpriteAnimator3D({ frames: PICKUP_SPRITE_FRAMES, texture: pickupAnimation.material.map }),
+    );
 
     const spawnWave = (wave: number): void => {
       const target = registerTarget(`wave.target.${wave}`, WAVE_POSITION.clone(), {
@@ -317,7 +350,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const target = targets.get(hit.body.id);
       if (target !== undefined) applyDirectDamage(targets, hit.body.id, 40);
       const demoHit = hit.body.id === demo.body.body.id;
+      shake.trigger();
       ctx.state.set({
+        cameraShakes: state.cameraShakes + 1,
         demoTargetAlive: demo.alive ? 1 : 0,
         friendlyPassed: demoHit && friendlyBody.body.id !== hit.body.id ? 1 : state.friendlyPassed,
         ...(demoHit
@@ -450,6 +485,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let lastTargetsRemaining = -1;
     let lastWave = -1;
     let lastWavesCleared = -1;
+    let lastPickupFrame = -1;
+    const pickupPatch: Partial<GameState> = {};
     const syncStateAndHud = (frameCtx: GameCtx): void => {
       let liveTargets = 0;
       for (const entry of waveTargets) if (entry.target.alive) liveTargets += 1;
@@ -500,11 +537,21 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       hitscan.update(dt);
       updateProjectiles(frameCtx, dt);
       for (const target of targets.values()) target.update(dt);
+      for (const animator of spriteAnimators) animator.update(dt);
+      const pickupFrame = spriteAnimators[0]?.frameIndex ?? 0;
+      if (pickupFrame !== lastPickupFrame) {
+        lastPickupFrame = pickupFrame;
+        const previous = frameCtx.state.getState();
+        pickupPatch.pickupFrame = pickupFrame;
+        pickupPatch.pickupFrameChanges = previous.pickupFrameChanges + 1;
+        frameCtx.state.set(pickupPatch);
+      }
       pickup.update(dt);
       removeDeadTargets();
       updateWaves(frameCtx);
       syncStateAndHud(frameCtx);
       rig.follow(player.mesh.position, dt, lookState.yaw);
+      for (const billboard of billboards) billboard.update();
     };
   }
 }
