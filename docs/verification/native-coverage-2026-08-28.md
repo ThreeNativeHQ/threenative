@@ -17,15 +17,16 @@ targets could not be built and are named below.
 | `src/js/` | 2595 | 992 | 38.23% |
 | `src/platform/` | 965 | 211 | 21.87% |
 | `src/raytracing/` | 458 | 60 | 13.10% |
-| `src/runtime.cpp` | 1952 | 771 | 39.50% |
+| `src/runtime.cpp` | 2019 | 785 | 38.88% |
 | `src/storage/` | 260 | 225 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 6928 | 2505 | 36.16% |
+| `src/webgpu/` | 6930 | 2507 | 36.18% |
 | `src/webtransport/` | 770 | 40 | 5.19% |
-| **TOTAL** | **18495** | **6379** | **34.49%** |
+| `src/workers/` | 409 | 37 | 9.05% |
+| **TOTAL** | **18973** | **6432** | **33.90%** |
 
-Source digest: `sha256:4961e7a6e1cdada3b91efb6ca1142cb6a0eb15964584fe275270e0d41f747e7c`
+Source digest: `sha256:54c733d9c3e148208753a0b4f90a5826aefe3e1c300b42d6f7a7cb9b5e733d3b`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -43,12 +44,26 @@ change requires this opt-in command to refresh the record.
 | `src/js/` | 38.23% |
 | `src/platform/` | 21.87% |
 | `src/raytracing/` | 13.10% |
-| `src/runtime.cpp` | 39.50% |
+| `src/runtime.cpp` | 38.88% |
 | `src/storage/` | 86.54% |
 | `src/utils/` | 0.00% |
 | `src/vfs/` | 73.22% |
 | `src/webgpu/` | 33.82% |
 | `src/webtransport/` | 5.19% |
+| `src/workers/` | 9.05% |
+
+## Floor changes
+
+`src/runtime.cpp` 39.50% -> 38.88%, released once on 2026-08-28 when PRD-250's off-thread
+Worker landed. This is not a coverage regression: covered lines in that file went **up**,
+771 -> 785. The file grew 1952 -> 2019 lines, so the ratio fell while absolute coverage
+rose. The same change brought `src/workers/` into this configuration for the first time -
+it was previously listed under "not compiled" - which is why a new 9.05% floor appears
+above and why the total moved on a larger denominator.
+
+Releasing a floor is a ratchet release and should stay rare. The debt this records is
+`src/workers/` at 9.05%: `worker_registry.cpp` and `worker_thread.cpp` compile but are
+barely exercised by this configuration's tests.
 
 ## Not compiled in this configuration
 
@@ -71,8 +86,6 @@ change requires this opt-in command to refresh the record.
 - `src/video/video_recorder.cpp`
 - `src/video/windows_graphics_capture.cpp`
 - `src/video/windows_graphics_capture_impl.cpp`
-- `src/workers/worker_registry.cpp`
-- `src/workers/worker_thread.cpp`
 
 ## Blocked targets
 
