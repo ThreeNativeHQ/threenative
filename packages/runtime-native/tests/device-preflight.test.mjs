@@ -201,8 +201,8 @@ describe("assertDeviceReady", () => {
       "utf8",
     );
     const physicsApk = physicsSource.indexOf("const apk =");
-    const physicsExecution = physicsSource.indexOf("const deviceStdout = run(");
-    const physicsPreflight = physicsSource.lastIndexOf("await prepareAndroidParityDevice(");
+    const physicsExecution = physicsSource.indexOf("if (!options.skipInstall) run");
+    const physicsPreflight = physicsSource.lastIndexOf("await assertDeviceReady(");
     assert(physicsPreflight > physicsApk);
     assert(physicsPreflight < physicsExecution);
     assert(physicsSource.indexOf("deviceCondition,", physicsPreflight) > physicsPreflight);
