@@ -1,7 +1,4 @@
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { runAdb } from "./lib/adb.mjs";
 
 export const MINIMUM_BATTERY_PERCENT = 50;
 
@@ -222,36 +219,6 @@ async function readDisplayState(execute) {
   return { ...parseActiveDisplayMode(display), ...parseRefreshRateSettings({ peak, min, lowPower }) };
 }
 
-function adbPath(environment = process.env) {
-  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
-  const sdk =
-    environment.THREENATIVE_ANDROID_SDK ??
-    environment.ANDROID_SDK_ROOT ??
-    environment.ANDROID_HOME ??
-    join(homedir(), "Android", "Sdk");
-  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-  if (existsSync(candidate)) return candidate;
-  return "adb";
-}
-
-function runAdb(serial, args, environment = process.env) {
-  const result = spawnSync(adbPath(environment), ["-s", serial, ...args], {
-    encoding: "utf8",
-    env: environment,
-    maxBuffer: 8 * 1024 * 1024,
-    timeout: 120_000,
-  });
-  if (result.error || result.status !== 0) {
-    const detail = result.stderr || result.stdout || result.error?.message || "unknown adb error";
-    throw new DevicePreflightError(
-      "TN_DEVICE_PREFLIGHT_ADB",
-      `${args.join(" ")} failed: ${String(detail).trim()}`,
-      { serial, args, exitCode: result.status ?? 2 },
-    );
-  }
-  return String(result.stdout ?? "");
-}
-
 function normaliseOptions(options) {
   if (!options || typeof options !== "object") {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_OPTIONS", "options are required");
@@ -319,7 +286,16 @@ export function suppressPlayProtectOnAdbInstalls(serial, dependencies = {}) {
   if (typeof serial !== "string" || serial.length === 0) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
   }
-  const execute = dependencies.adb ?? ((args) => runAdb(serial, args, dependencies.environment));
+  const execute = dependencies.adb ?? ((args) =>
+    runAdb(serial, args, {
+      environment: dependencies.environment,
+      spawnSyncImpl: dependencies.spawnSyncImpl,
+      mapError: (error) => new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_ADB",
+        `${args.join(" ")} failed: ${error.detail}`,
+        { serial, args, exitCode: error.exitCode },
+      ),
+    }));
   for (const setting of PLAY_PROTECT_INSTALL_SETTINGS) {
     let observed;
     try {
@@ -365,7 +341,16 @@ export async function assertDeviceReady(serial, options, dependencies = {}) {
     );
   }
 
-  const execute = dependencies.adb ?? ((args) => runAdb(serial, args, dependencies.environment));
+  const execute = dependencies.adb ?? ((args) =>
+    runAdb(serial, args, {
+      environment: dependencies.environment,
+      spawnSyncImpl: dependencies.spawnSyncImpl,
+      mapError: (error) => new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_ADB",
+        `${args.join(" ")} failed: ${error.detail}`,
+        { serial, args, exitCode: error.exitCode },
+      ),
+    }));
   const state = String(await execute(["get-state"])).trim();
   if (state !== "device") {
     throw new DevicePreflightError(
