@@ -20,12 +20,12 @@
  *   - anomaly frames are written to disk, because a count nobody can look at is not evidence
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
-import { createAdbClient, resolveAdbExecutable } from "./lib/adb.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -301,58 +301,52 @@ export function assertLaunchFrameSequence(frames) {
   };
 }
 
-export function createInspectDevice(serial, environment = process.env, dependencies = {}) {
-  const executable = resolveAdbExecutable(environment, {
-    allowPathFallback: false,
-    defaultSdkRoot: dependencies.defaultSdkRoot,
-    existsSyncImpl: dependencies.existsSyncImpl,
-    sdkEnvironmentKeys: ["THREENATIVE_ANDROID_SDK"],
-  });
-  if (!executable) throw new InspectError("TN_INSPECT_ADB_MISSING", 2);
-  const client = createAdbClient(serial, {
-    environment: { ...environment, THREENATIVE_ADB: executable },
-    maxBuffer: 256 * 1024 * 1024,
-    spawnSyncImpl: dependencies.spawnSyncImpl,
-    timeoutMs: 180_000,
-  });
-  return {
-    command(args, timeoutMs = 180_000) {
-      const result = client.result(args, { timeoutMs });
-      if (result.error) throw new InspectError(`TN_INSPECT_ADB_FAILED:${result.error.message}`);
-      return String(result.stdout ?? "");
-    },
-    result(args, timeoutMs = 180_000) {
-      return client.result(args, { timeoutMs });
-    },
-  };
+function adbPath(environment = process.env) {
+  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
+  const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
+  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
+  if (!existsSync(candidate)) throw new InspectError("TN_INSPECT_ADB_MISSING", 2);
+  return candidate;
 }
 
-export function record(serial, target, outDir, seconds, dependencies = {}) {
-  const device = dependencies.device ?? createInspectDevice(serial);
+function adb(serial, args, timeoutMs = 180_000) {
+  const result = spawnSync(adbPath(), ["-s", serial, ...args], {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+    timeout: timeoutMs,
+  });
+  if (result.error) throw new InspectError(`TN_INSPECT_ADB_FAILED:${result.error.message}`);
+  return String(result.stdout ?? "");
+}
+
+function record(serial, target, outDir, seconds) {
   const pkg = target.split("/")[0];
   mkdirSync(outDir, { recursive: true });
   for (const stale of readdirSync(outDir).filter((name) => name.startsWith("frame-"))) {
     rmSync(join(outDir, stale), { force: true });
   }
-  device.command(["shell", "am", "force-stop", pkg]);
-  device.command(["shell", "rm", "-f", "/sdcard/tn-launch.mp4"]);
+  adb(serial, ["shell", "am", "force-stop", pkg]);
+  adb(serial, ["shell", "rm", "-f", "/sdcard/tn-launch.mp4"]);
 
-  const recorder = device.result(
+  const recorder = spawnSync(
+    adbPath(),
     [
+      "-s",
+      serial,
       "shell",
       `screenrecord --time-limit ${seconds} --bit-rate 20000000 /sdcard/tn-launch.mp4 & sleep 1; am start -n ${target} >/dev/null; wait`,
     ],
-    (seconds + 30) * 1000,
+    { encoding: "utf8", timeout: (seconds + 30) * 1000 },
   );
   if (recorder.error) throw new InspectError(`TN_INSPECT_RECORD_FAILED:${recorder.error.message}`);
 
   const video = join(outDir, "launch.mp4");
-  device.command(["pull", "/sdcard/tn-launch.mp4", video]);
-  device.command(["shell", "am", "force-stop", pkg]);
+  adb(serial, ["pull", "/sdcard/tn-launch.mp4", video]);
+  adb(serial, ["shell", "am", "force-stop", pkg]);
   if (!existsSync(video)) throw new InspectError("TN_INSPECT_RECORDING_MISSING", 1);
 
   try {
-    (dependencies.execFileSync ?? execFileSync)("ffmpeg", ["-loglevel", "error", "-i", video, "-vsync", "0", join(outDir, "frame-%04d.png")]);
+    execFileSync("ffmpeg", ["-loglevel", "error", "-i", video, "-vsync", "0", join(outDir, "frame-%04d.png")]);
   } catch (error) {
     throw new InspectError(`TN_INSPECT_FFMPEG_FAILED:${error instanceof Error ? error.message : String(error)}`, 2);
   }
