@@ -71,10 +71,8 @@ export function buildAdbInvocation(serial, args, environment = process.env, opti
   };
 }
 
-export function runAdbResult(serial, args, options = {}) {
-  const environment = options.environment ?? process.env;
-  const invocation = buildAdbInvocation(serial, args, environment, options);
-  const commandOptions = {
+function commandOptions(options, environment) {
+  return {
     allowFailure: options.allowFailure,
     binary: options.binary,
     cwd: options.cwd,
@@ -83,32 +81,46 @@ export function runAdbResult(serial, args, options = {}) {
     maxBuffer: options.maxBuffer ?? DEFAULT_ADB_MAX_BUFFER,
     timeout: options.timeoutMs ?? DEFAULT_ADB_TIMEOUT_MS,
   };
-  const result = options.commandImpl
-    ? options.commandImpl(invocation.executable, invocation.args, commandOptions)
-    : (options.spawnSyncImpl ?? spawnSync)(invocation.executable, invocation.args, commandOptions);
+}
+
+function commandResult(result, invocation, options, fallbackStatus) {
+  const rawStatus = fallbackStatus === undefined ? result.status : (result.status ?? fallbackStatus);
   return {
     error: result.error,
     invocation,
-    rawStatus: result.status,
-    status: result.status == null ? 1 : result.status,
+    rawStatus,
+    status: rawStatus ?? 1,
     stderr: options.binary ? result.stderr : String(result.stderr ?? ""),
     stdout: options.binary ? result.stdout : String(result.stdout ?? ""),
   };
 }
 
+function commandError(args, result) {
+  const rawDetail = String(result.stderr || result.stdout || result.error?.message || "");
+  return new AdbCommandError({
+    args,
+    detail: rawDetail.trim() || "unknown adb error",
+    exitCode: result.rawStatus ?? 2,
+    rawDetail,
+    serial: result.invocation.serial,
+    spawnFailed: Boolean(result.error && result.rawStatus == null),
+  });
+}
+
+export function runAdbResult(serial, args, options = {}) {
+  const environment = options.environment ?? process.env;
+  const invocation = buildAdbInvocation(serial, args, environment, options);
+  const executionOptions = commandOptions(options, environment);
+  const result = options.commandImpl
+    ? options.commandImpl(invocation.executable, invocation.args, executionOptions)
+    : (options.spawnSyncImpl ?? spawnSync)(invocation.executable, invocation.args, executionOptions);
+  return commandResult(result, invocation, options);
+}
+
 export function runAdb(serial, args, options = {}) {
   const result = runAdbResult(serial, args, options);
   if (result.error || result.status !== 0) {
-    const rawDetail = String(result.stderr || result.stdout || result.error?.message || "");
-    const detail = rawDetail.trim() || "unknown adb error";
-    const error = new AdbCommandError({
-      args,
-      detail,
-      exitCode: result.rawStatus ?? 2,
-      rawDetail,
-      serial: result.invocation.serial,
-      spawnFailed: Boolean(result.error && result.rawStatus == null),
-    });
+    const error = commandError(args, result);
     throw options.mapError ? options.mapError(error) : error;
   }
   return String(result.stdout ?? "");
@@ -117,37 +129,15 @@ export function runAdb(serial, args, options = {}) {
 export async function runAdbResultAsync(serial, args, options = {}) {
   const environment = options.environment ?? process.env;
   const invocation = buildAdbInvocation(serial, args, environment, options);
-  const commandOptions = {
-    allowFailure: options.allowFailure,
-    binary: options.binary,
-    cwd: options.cwd,
-    encoding: options.binary ? null : "utf8",
-    env: environment,
-    maxBuffer: options.maxBuffer ?? DEFAULT_ADB_MAX_BUFFER,
-    timeout: options.timeoutMs ?? DEFAULT_ADB_TIMEOUT_MS,
-  };
+  const executionOptions = commandOptions(options, environment);
   try {
     const result = options.commandImpl
-      ? await options.commandImpl(invocation.executable, invocation.args, commandOptions)
-      : await execFileAsync(invocation.executable, invocation.args, commandOptions);
-    return {
-      error: result.error,
-      invocation,
-      rawStatus: result.status ?? 0,
-      status: result.status ?? 0,
-      stderr: options.binary ? result.stderr : String(result.stderr ?? ""),
-      stdout: options.binary ? result.stdout : String(result.stdout ?? ""),
-    };
+      ? await options.commandImpl(invocation.executable, invocation.args, executionOptions)
+      : await execFileAsync(invocation.executable, invocation.args, executionOptions);
+    return commandResult(result, invocation, options, 0);
   } catch (error) {
     const status = typeof error?.code === "number" ? error.code : 2;
-    return {
-      error,
-      invocation,
-      rawStatus: status,
-      status,
-      stderr: options.binary ? error?.stderr : String(error?.stderr ?? ""),
-      stdout: options.binary ? error?.stdout : String(error?.stdout ?? ""),
-    };
+    return commandResult({ ...error, error, status }, invocation, options, status);
   }
 }
 
@@ -158,17 +148,7 @@ export function createAdbClient(serial, options = {}) {
     },
     async asyncRun(args, overrides = {}) {
       const result = await runAdbResultAsync(serial, args, { ...options, ...overrides });
-      if (result.error || result.status !== 0) {
-        const rawDetail = String(result.stderr || result.stdout || result.error?.message || "");
-        throw new AdbCommandError({
-          args,
-          detail: rawDetail.trim() || "unknown adb error",
-          exitCode: result.rawStatus ?? 2,
-          rawDetail,
-          serial: result.invocation.serial,
-          spawnFailed: Boolean(result.error && result.rawStatus == null),
-        });
-      }
+      if (result.error || result.status !== 0) throw commandError(args, result);
       return result.stdout;
     },
     executable: resolveAdbExecutable(options.environment ?? process.env),
