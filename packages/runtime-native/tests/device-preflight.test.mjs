@@ -372,12 +372,15 @@ describe("suppressPlayProtectOnAdbInstalls", () => {
   });
 
   test("requires a serial", () => {
-    assert.throws(() => suppressPlayProtectOnAdbInstalls(""), /TN_DEVICE_PREFLIGHT_NO_DEVICE/u);
+    assert.throws(
+      () => suppressPlayProtectOnAdbInstalls("", verifierFixture()),
+      /TN_DEVICE_PREFLIGHT_NO_DEVICE/u,
+    );
   });
 
   test("wired before the install in every lane that installs an APK", () => {
     const installers = [
-      ["device-physics-stability.mjs", /device\.command\(\['install'/u],
+      ["device-physics-stability.mjs", /adb\(\['install'/u],
       ["measure-android-js-engine.mjs", /"install", "-r", "-t"/u],
       ["profile-production.mjs", /'install', '-r'/u],
       ["qualify-physical-mobile.mjs", /installAndroid\(adbDevice/u],

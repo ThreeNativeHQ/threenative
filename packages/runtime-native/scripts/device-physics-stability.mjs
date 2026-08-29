@@ -20,12 +20,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { createAdbClient } from './lib/adb.mjs';
-import {
-  suppressPlayProtectOnAdbInstalls,
-  verifyInstalledPackage,
-} from './lib/device.mjs';
+import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
 
 function parseArgs(argv) {
   const args = { launches: 10, windowSeconds: 62, quiet: false };
@@ -58,67 +53,46 @@ const say = (quiet, message) => {
   if (!quiet) console.log(message);
 };
 
-export function createPhysicsStabilityDevice(serial, dependencies = {}) {
-  const { THREENATIVE_ADB_SERIAL: _ignoredSerial, ...environment } =
-    dependencies.environment ?? process.env;
-  const execute = dependencies.execFileSyncImpl ?? execFileSync;
-  const client = createAdbClient(serial, {
-    allowDefaultTransport: serial == null,
-    commandImpl: (executable, args, options) => ({
-      status: 0,
-      stderr: '',
-      stdout: execute(executable, args, {
-        encoding: 'utf8',
-        maxBuffer: options.maxBuffer,
-        timeout: options.timeout,
-      }),
-    }),
-    environment: { ...environment, THREENATIVE_ADB: 'adb' },
-    maxBuffer: 1024 * 1024,
-    timeoutMs: 120_000,
-  });
-  return { command: (args) => client.result(args).stdout };
-}
-
-export function preparePhysicsStabilityInstall(args, device) {
-  suppressPlayProtectOnAdbInstalls(args.serial, {
-    adb: (adbArgs) => device.command(adbArgs),
-  });
-  try {
-    device.command(['uninstall', args.package]);
-  } catch {
-    // Not installed yet is fine; a fresh install is the point.
-  }
-  device.command(['install', args.apk]);
-  try {
-    verifyInstalledPackage((adbArgs) => device.command(adbArgs), args.package);
-  } catch (error) {
-    if (error?.code !== 'TN_DEVICE_INSTALL_MISSING') throw error;
-    const observed = error?.details?.observed ?? '';
-    throw new Error(`install did not land: pm path ${args.package} returned '${observed}'`);
-  }
+function adb(args, options = {}) {
+  const argv = [];
+  if (options.serial) argv.push('-s', options.serial);
+  return execFileSync('adb', [...argv, ...args], { encoding: 'utf8', timeout: 120_000 });
 }
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const scratch = mkdtempSync(join(tmpdir(), 'threenative-physics-stability-'));
-  const device = createPhysicsStabilityDevice(args.serial);
   const launches = [];
   let failed = 0;
 
   // The Play Protect verifier dialog is a modal that eats injected touches, so ten unattended
   // launches behind it prove nothing. Suppress before the install, as every other install lane does.
+  suppressPlayProtectOnAdbInstalls(args.serial, {
+    adb: (adbArgs) => adb(adbArgs, { serial: args.serial }),
+  });
+
   say(args.quiet, `fresh install of ${args.apk}`);
-  preparePhysicsStabilityInstall(args, device);
+  try {
+    adb(['uninstall', args.package], { serial: args.serial });
+  } catch {
+    // Not installed yet is fine; a fresh install is the point.
+  }
+  adb(['install', args.apk], { serial: args.serial });
+  // adb install can exit 0 while failing (a missing APK file only prints); verify the package
+  // actually landed before trusting ten launches to it.
+  const installedPath = adb(['shell', 'pm', 'path', args.package], { serial: args.serial }).trim();
+  if (!installedPath.startsWith('package:')) {
+    throw new Error(`install did not land: pm path ${args.package} returned '${installedPath}'`);
+  }
 
   const activity = args.activity ?? `${args.package}/com.threenative.runtime.MystralActivity`;
   for (let index = 1; index <= args.launches; index += 1) {
-    device.command(['logcat', '-c']);
-    device.command(['shell', 'am', 'start', '-W', '-n', activity]);
+    adb(['logcat', '-c'], { serial: args.serial });
+    adb(['shell', 'am', 'start', '-W', '-n', activity], { serial: args.serial });
     execFileSync('sleep', [String(args.windowSeconds)]);
-    const log = device.command(['logcat', '-d']);
+    const log = adb(['logcat', '-d'], { serial: args.serial });
     writeFileSync(join(scratch, `launch-${index}.log`), log);
-    const pid = device.command(['shell', 'pidof', args.package]).trim();
+    const pid = adb(['shell', 'pidof', args.package], { serial: args.serial }).trim();
     const alive = pid.length > 0;
     const crashLines = log
       .split('\n')
@@ -134,7 +108,7 @@ function main() {
         + ` | budgetWindows=${budgetWindows} | ${ok ? 'ok' : 'FAILED'}`,
     );
     for (const line of crashLines) say(args.quiet, `  ${line}`);
-    device.command(['shell', 'am', 'force-stop', args.package]);
+    adb(['shell', 'am', 'force-stop', args.package], { serial: args.serial });
     execFileSync('sleep', ['3']);
   }
 
@@ -150,11 +124,9 @@ function main() {
   console.log(`physics stability: ${args.launches}/${args.launches} launches clean`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try {
-    main();
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  }
+try {
+  main();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
 }

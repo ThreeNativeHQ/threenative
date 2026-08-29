@@ -312,10 +312,7 @@ const PLAY_PROTECT_INSTALL_SETTINGS = [
 ];
 
 export function suppressPlayProtectOnAdbInstalls(serial, dependencies = {}) {
-  if (
-    (typeof serial !== "string" || serial.length === 0) &&
-    typeof dependencies.adb !== "function"
-  ) {
+  if (typeof serial !== "string" || serial.length === 0) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
   }
   const execute = dependencies.adb ?? ((args) =>
