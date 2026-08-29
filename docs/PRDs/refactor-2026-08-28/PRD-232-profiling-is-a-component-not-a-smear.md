@@ -8,7 +8,7 @@ prd_contract: v1
 [PRD-230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md) Phase 2, which puts the
 profiling fields inside a `FrameProfiling` sub-struct. **Coordinate with
 [PRD-227](../PRD-227-the-frame-crosses-once.md) and
-[PRD-228](../PRD-228-the-pixel-budget-is-the-engines.md) before starting** — they own these meters
+[PRD-228](../done/PRD-228-the-pixel-budget-is-the-engines.md) before starting** — they own these meters
 and are live.
 
 Fourth PRD of [the runtime-native refactor batch](./README.md).

@@ -11,7 +11,7 @@ them, and all three are fixed: the controller read the panel instead of the game
 treating the whole native runtime as a reduced-capability compatibility device, and only some
 device-creation paths requested the features they needed.
 Filed 2026-08-28 from
-[runtime-perf-state §1.3.3, §1.4, §1.5](../verification/runtime-perf-state.md). PRD-227 owned the
+[runtime-perf-state §1.3.3, §1.4, §1.5](../../verification/runtime-perf-state.md). PRD-227 owned the
 CPU seam and closed it: the device frame is now CPU-clean (frame p50 9.3 ms of a 16.7 ms budget).
 This PRD owns what is left, which is pixels and the missing instrument to price them.
 
