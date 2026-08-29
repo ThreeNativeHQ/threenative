@@ -721,6 +721,10 @@ public:
             workers::WorkerRegistry::instance().terminateWorker(workerId);
         }
         activeWorkerIds_.clear();
+        // The loop above only reaches workers this runtime still tracks. Shutting the registry
+        // down joins anything left and closes it to creation, so a script running during teardown
+        // cannot start a thread whose completions would be delivered into a released engine.
+        workers::WorkerRegistry::instance().shutdown();
 
         // Clean up audio resources FIRST before touching JS objects
         // (Audio callback thread may be accessing JS handles)

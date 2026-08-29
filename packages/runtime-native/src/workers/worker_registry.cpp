@@ -32,6 +32,14 @@ bool WorkerRegistry::isAvailable() const {
 int WorkerRegistry::createWorker(const std::string& code) {
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // After shutdown the host is tearing down its main engine; a worker created here would
+    // outlive the isolate its completions are delivered into. Refuse by returning the documented
+    // failure id rather than starting a thread nothing will ever join.
+    if (!initialized_) {
+        std::cerr << "[WorkerRegistry] createWorker refused: registry is shut down" << std::endl;
+        return -1;
+    }
+
     int id = nextId_++;
 
     auto worker = std::make_unique<WorkerThread>(id, code);
@@ -104,17 +112,21 @@ bool WorkerRegistry::processWorkerMessages(js::Engine* mainEngine) {
         std::lock_guard<std::mutex> lock(mutex_);
 
         for (auto& [id, worker] : workers_) {
-            if (!worker->isRunning()) {
-                deadWorkers.push_back(id);
-                continue;
+            // Drain before reaping, and drain a stopped worker too. A worker that called close()
+            // has already queued its final result and stopped running; the old order pushed it
+            // straight onto deadWorkers and destroyed that result undelivered.
+            auto callbackIt = callbacks_.find(id);
+            if (callbackIt != callbacks_.end()) {
+                while (worker->hasMessages()) {
+                    messages.emplace_back(id, callbackIt->second, worker->popMessage());
+                }
             }
 
-            auto callbackIt = callbacks_.find(id);
-            if (callbackIt == callbacks_.end()) continue;
-
-            // Collect all messages from this worker
-            while (worker->hasMessages()) {
-                messages.emplace_back(id, callbackIt->second, worker->popMessage());
+            // Only reap once nothing is left to deliver. A stopped worker whose callback has not
+            // been registered yet keeps its queue: FIFO delivery survives a late handler, and
+            // explicit terminate() reaps it regardless of what is queued.
+            if (!worker->isRunning() && !worker->hasMessages()) {
+                deadWorkers.push_back(id);
             }
         }
     }
@@ -143,17 +155,24 @@ void WorkerRegistry::shutdown() {
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        // Idempotent: the destructor calls this after an explicit teardown already has, and a
+        // second pass must not re-announce a shutdown or re-walk an empty map.
+        if (!initialized_) return;
+        initialized_ = false;
         for (auto& [id, _] : workers_) {
             ids.push_back(id);
         }
     }
 
+    // Join every worker before the caller tears the main engine down. terminateWorker() pushes a
+    // TERMINATE message, notifies the idle condition and joins, so this returns only once no
+    // worker thread can call back into the isolate again.
     for (int id : ids) {
         terminateWorker(id);
     }
 
-    initialized_ = false;
-    std::cout << "[WorkerRegistry] Shutdown complete" << std::endl;
+    std::cout << "[WorkerRegistry] Shutdown complete, joined " << ids.size() << " worker(s)"
+              << std::endl;
 }
 
 }  // namespace workers

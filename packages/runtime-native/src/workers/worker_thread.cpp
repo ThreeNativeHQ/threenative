@@ -110,8 +110,10 @@ void WorkerThread::setupWorkerGlobals(void* enginePtr) {
     engine->setGlobalProperty("__workerPostMessage",
         engine->newFunction("__workerPostMessage",
             [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                // Never dereference the thread-locals to build the early return: this used to
+                // read through a null engine on the very path that checked it for null.
                 if (!g_workerEngine || !g_workerThread) {
-                    return g_workerEngine->newUndefined();
+                    return js::JSValueHandle{};
                 }
 
                 if (args.empty()) {
@@ -141,10 +143,39 @@ void WorkerThread::setupWorkerGlobals(void* enginePtr) {
         )
     );
 
+    // __workerPostError(message) - Surface a worker-side failure to the main thread as one
+    // `error` event. Without this the worker's own console was the only witness: a top-level
+    // throw was reported, but a throw inside the message handler was printed and swallowed, so
+    // the caller received neither a result nor an error and waited forever.
+    engine->setGlobalProperty("__workerPostError",
+        engine->newFunction("__workerPostError",
+            [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                if (!g_workerEngine) return js::JSValueHandle{};
+                if (!g_workerThread || args.empty()) {
+                    return g_workerEngine->newUndefined();
+                }
+
+                const std::string message = g_workerEngine->toString(args[0]);
+
+                WorkerMessage msg;
+                msg.type = WorkerMessage::Type::ERROR;
+                msg.payload = std::vector<uint8_t>(message.begin(), message.end());
+
+                {
+                    std::lock_guard<std::mutex> lock(g_workerThread->outMutex_);
+                    g_workerThread->outQueue_.push(std::move(msg));
+                }
+
+                return g_workerEngine->newUndefined();
+            }
+        )
+    );
+
     // __workerClose() - Self-terminate the worker
     engine->setGlobalProperty("__workerClose",
         engine->newFunction("__workerClose",
             [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                if (!g_workerEngine) return js::JSValueHandle{};
                 if (g_workerThread) {
                     g_workerThread->terminated_ = true;
                 }
@@ -157,6 +188,7 @@ void WorkerThread::setupWorkerGlobals(void* enginePtr) {
     engine->setGlobalProperty("__workerHasMessage",
         engine->newFunction("__workerHasMessage",
             [](void* ctx, const std::vector<js::JSValueHandle>& args) {
+                if (!g_workerEngine) return js::JSValueHandle{};
                 if (!g_workerThread) {
                     return g_workerEngine->newBoolean(false);
                 }
@@ -170,7 +202,8 @@ void WorkerThread::setupWorkerGlobals(void* enginePtr) {
     engine->setGlobalProperty("__workerGetMessage",
         engine->newFunction("__workerGetMessage",
             [](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                if (!g_workerThread || !g_workerEngine) {
+                if (!g_workerEngine) return js::JSValueHandle{};
+                if (!g_workerThread) {
                     return g_workerEngine->newNull();
                 }
 
@@ -246,10 +279,102 @@ globalThis.self = globalThis;
         configurable: true
     });
 
+    // The declared clone matrix, mirrored from
+    // packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js. The wire is JSON and
+    // JSON is lossy where structured clone is not, so every row JSON would corrupt is refused by
+    // name and by path rather than delivered wrong. tests/native-worker-production.test.mjs keeps
+    // the two copies in step.
+    const CLONE_MAX_DEPTH = 64;
+
+    const namedError = (name, message) => {
+        const error = new Error(message);
+        error.name = name;
+        return error;
+    };
+
+    const describeUncloneable = (value) => {
+        const type = typeof value;
+        if (type === 'number') return String(value);
+        if (type !== 'object' || value === null) return type;
+        const tag = Object.prototype.toString.call(value).slice(8, -1);
+        if (tag !== 'Object') return tag;
+        return value.constructor && value.constructor.name
+            ? value.constructor.name + ' instance'
+            : 'object';
+    };
+
+    const refuseClone = (what, path) =>
+        namedError(
+            'DataCloneError',
+            'TN_NATIVE_WORKER_CLONE_UNSUPPORTED: ' + what + ' at ' + path +
+                ' is not structured-cloneable over the native worker wire',
+        );
+
+    const prototypeDepth = (value) => {
+        let depth = 0;
+        let prototype = Object.getPrototypeOf(value);
+        while (prototype !== null && depth < 8) {
+            depth += 1;
+            prototype = Object.getPrototypeOf(prototype);
+        }
+        return depth;
+    };
+
+    const assertCloneable = (root) => {
+        const onPath = new Set();
+        const visited = new Set();
+        const walk = (value, path, depth) => {
+            if (depth > CLONE_MAX_DEPTH) {
+                throw refuseClone('nesting deeper than ' + CLONE_MAX_DEPTH, path);
+            }
+            if (value === null) return;
+            const type = typeof value;
+            if (type === 'string' || type === 'boolean') return;
+            if (type === 'number') {
+                if (Number.isFinite(value)) return;
+                throw refuseClone(describeUncloneable(value), path);
+            }
+            if (type !== 'object') throw refuseClone(describeUncloneable(value), path);
+
+            if (onPath.has(value)) throw refuseClone('a reference cycle', path);
+            if (visited.has(value)) throw refuseClone('a second reference to one object', path);
+
+            // Prototype depth, not prototype identity: identity is per-realm. A plain object
+            // sits one link from null, Object.create(null) zero, a plain array two.
+            const isPlainArray = Array.isArray(value) && prototypeDepth(value) === 2;
+            const isPlainObject = !Array.isArray(value) && prototypeDepth(value) <= 1;
+            if (!isPlainArray && !isPlainObject) throw refuseClone(describeUncloneable(value), path);
+            if (Object.getOwnPropertySymbols(value).length !== 0) {
+                throw refuseClone('a symbol-keyed property', path);
+            }
+
+            onPath.add(value);
+            visited.add(value);
+            if (isPlainArray) {
+                for (let index = 0; index < value.length; index += 1) {
+                    walk(value[index], path + '[' + index + ']', depth + 1);
+                }
+            } else {
+                for (const key of Object.keys(value)) {
+                    walk(value[key], path + '.' + key, depth + 1);
+                }
+            }
+            onPath.delete(value);
+        };
+        if (root !== undefined) walk(root, 'message', 0);
+    };
+
     // postMessage function
     globalThis.postMessage = function(data, transfer) {
         transfer = transfer || [];
-        const json = JSON.stringify(data);
+        if (transfer.length !== 0) {
+            throw namedError(
+                'DataCloneError',
+                'TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED: transfer lists are not supported; the declared clone matrix copies values and admits no transferable',
+            );
+        }
+        assertCloneable(data);
+        const json = data === undefined ? '' : JSON.stringify(data);
         __workerPostMessage(json, transfer);
     };
 
@@ -274,10 +399,15 @@ globalThis.self = globalThis;
                     const data = msg.data ? JSON.parse(msg.data) : undefined;
                     _onmessage({ data: data, target: globalThis });
                 } catch (e) {
-                    console.error('[Worker] Error processing message:', e);
+                    // One error event, and it must leave this isolate. Printing it here and
+                    // calling the worker's own onerror left the caller on the main thread with
+                    // neither a result nor an error, waiting on a promise nothing would settle.
+                    const message = (e && (e.stack || e.message)) ? String(e.stack || e.message) : String(e);
+                    console.error('[Worker] Error processing message:', message);
                     if (_onerror) {
-                        _onerror({ error: e, message: e.message });
+                        _onerror({ error: e, message: e && e.message });
                     }
+                    __workerPostError(message);
                 }
             }
         }

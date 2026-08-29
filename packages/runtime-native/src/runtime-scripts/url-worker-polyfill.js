@@ -166,6 +166,88 @@ if (typeof Worker === "undefined") {
     return error;
   };
 
+  // The declared clone matrix. The wire is JSON, and JSON is lossy in ways structured clone is
+  // not: a function or `undefined` property disappears, NaN and Infinity become null, a typed
+  // array arrives as a plain record of indices, a Date arrives as a string, and two references to
+  // one object arrive as two objects. Every one of those is silent corruption of a game's data, so
+  // this walk refuses each of them by name and by path instead. Rows are admitted here only when
+  // JSON round-trips them exactly.
+  //
+  // Mirrored in the worker isolate by `workerGlobalCode` in
+  // `packages/runtime-native/src/workers/worker_thread.cpp`; the two copies are kept in step by
+  // `tests/native-worker-production.test.mjs`.
+  const CLONE_MAX_DEPTH = 64;
+
+  const describeUncloneable = (value) => {
+    const type = typeof value;
+    if (type === "number") return String(value); // NaN, Infinity, -Infinity
+    if (type !== "object" || value === null) return type; // undefined, function, symbol, bigint
+    const tag = Object.prototype.toString.call(value).slice(8, -1);
+    if (tag !== "Object") return tag; // Date, RegExp, Map, Set, ArrayBuffer, Uint8Array, …
+    return value.constructor?.name ? `${value.constructor.name} instance` : "object";
+  };
+
+  const refuseClone = (what, path) =>
+    namedError(
+      "DataCloneError",
+      `TN_NATIVE_WORKER_CLONE_UNSUPPORTED: ${what} at ${path} is not structured-cloneable over the native worker wire`,
+    );
+
+  const prototypeDepth = (value) => {
+    let depth = 0;
+    let prototype = Object.getPrototypeOf(value);
+    while (prototype !== null && depth < 8) {
+      depth += 1;
+      prototype = Object.getPrototypeOf(prototype);
+    }
+    return depth;
+  };
+
+  const assertCloneable = (root) => {
+    const onPath = new Set();
+    const visited = new Set();
+    const walk = (value, path, depth) => {
+      if (depth > CLONE_MAX_DEPTH) throw refuseClone(`nesting deeper than ${CLONE_MAX_DEPTH}`, path);
+      if (value === null) return;
+      const type = typeof value;
+      if (type === "string" || type === "boolean") return;
+      if (type === "number") {
+        if (Number.isFinite(value)) return;
+        throw refuseClone(describeUncloneable(value), path);
+      }
+      if (type !== "object") throw refuseClone(describeUncloneable(value), path);
+
+      if (onPath.has(value)) throw refuseClone("a reference cycle", path);
+      // Not a cycle, but JSON would duplicate it and the receiver would lose the shared identity
+      // the game relied on. Refusing is the fail-closed half of "no silent data loss".
+      if (visited.has(value)) throw refuseClone("a second reference to one object", path);
+
+      // Prototype depth, not prototype identity: identity is per-realm, so an object built in
+      // another realm would be refused for being the wrong Object.prototype. A plain object sits
+      // one link from null, `Object.create(null)` sits zero, and a plain array sits two. Anything
+      // deeper is a class instance, a Date, a Map, a typed array or a subclass.
+      const isPlainArray = Array.isArray(value) && prototypeDepth(value) === 2;
+      const isPlainObject = !Array.isArray(value) && prototypeDepth(value) <= 1;
+      if (!isPlainArray && !isPlainObject) throw refuseClone(describeUncloneable(value), path);
+      if (Object.getOwnPropertySymbols(value).length !== 0) {
+        throw refuseClone("a symbol-keyed property", path);
+      }
+
+      onPath.add(value);
+      visited.add(value);
+      if (isPlainArray) {
+        for (let index = 0; index < value.length; index += 1) {
+          walk(value[index], `${path}[${index}]`, depth + 1);
+        }
+      } else {
+        for (const key of Object.keys(value)) walk(value[key], `${path}.${key}`, depth + 1);
+      }
+      onPath.delete(value);
+    };
+    // `postMessage(undefined)` is legal and delivers undefined; it travels as an empty payload.
+    if (root !== undefined) walk(root, "message", 0);
+  };
+
   class Worker {
     constructor(url, options = {}) {
       this.onmessage = null;
@@ -228,16 +310,18 @@ if (typeof Worker === "undefined") {
       if (transfer.length !== 0) {
         throw namedError(
           "DataCloneError",
-          "TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED: Phase 1 does not support transfer lists",
+          "TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED: transfer lists are not supported; the declared clone matrix copies values and admits no transferable",
         );
       }
+      // Refuse before queueing, so an unsupported value can never reach a worker half-cloned.
+      assertCloneable(data);
       let payload;
       try {
-        payload = JSON.stringify(data);
+        payload = data === undefined ? "" : JSON.stringify(data);
       } catch (error) {
         throw namedError("DataCloneError", `TN_NATIVE_WORKER_CLONE_FAILED: ${error}`);
       }
-      if (payload === undefined) {
+      if (typeof payload !== "string") {
         throw namedError(
           "DataCloneError",
           "TN_NATIVE_WORKER_CLONE_FAILED: value is not JSON-cloneable",
