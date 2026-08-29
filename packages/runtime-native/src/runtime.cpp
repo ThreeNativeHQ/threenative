@@ -9,6 +9,7 @@
 #include <cmath>
 #include "mystral/js/engine.h"
 #include "mystral/js/module_system.h"
+#include "mystral/workers/worker_registry.h"
 #include "runtime_scripts.h"
 #include "mystral/http/http_client.h"
 #include "mystral/http/async_http_client.h"
@@ -622,7 +623,7 @@ public:
             return false;
         }
 
-        // Set up URL parsing and the main-thread Worker polyfill.
+        // Set up URL parsing and the native-backed standard Worker facade.
         if (!setupURL()) {
             std::cerr << "[Mystral] Failed to install URL/Worker runtime script" << std::endl;
             return false;
@@ -713,6 +714,13 @@ public:
     void shutdown() {
         std::cout << "[Mystral] Shutting down runtime..." << std::endl;
         running_ = false;
+
+        // Worker callbacks close over the main engine. Stop and join every worker before any
+        // callback handle or the engine itself can be released.
+        for (const int workerId : activeWorkerIds_) {
+            workers::WorkerRegistry::instance().terminateWorker(workerId);
+        }
+        activeWorkerIds_.clear();
 
         // Clean up audio resources FIRST before touching JS objects
         // (Audio callback thread may be accessing JS handles)
@@ -1223,6 +1231,10 @@ public:
         // This handles async HTTP requests, file I/O, and libuv-based timers
         hostGapMeter_.begin(HostGapMeter::kIo);
         async::EventLoop::instance().runOnce();
+
+        // Worker isolates enqueue from their own threads; only the game thread may enter the main
+        // engine, so completions are delivered in this existing host I/O segment.
+        workers::WorkerRegistry::instance().processWorkerMessages(jsEngine_.get());
 
         // Process completed async HTTP requests (invoke their JS callbacks)
         // This must be called after runOnce() to invoke callbacks safely on the main thread
@@ -2184,10 +2196,79 @@ private:
     bool setupURL() {
         if (!jsEngine_) return false;
 
-        // URL, URLSearchParams, and Worker polyfills for native runtime
-        // Worker is a main-thread polyfill that simulates async message passing
+        auto* workerRegistry = &workers::WorkerRegistry::instance();
+        if (!workerRegistry->isAvailable()) {
+            std::cerr << "TN_NATIVE_WORKER_UNAVAILABLE: worker sources were not linked" << std::endl;
+            return false;
+        }
+
+        jsEngine_->setGlobalProperty("__tnNativeWorkerCreate",
+            jsEngine_->newFunction("__tnNativeWorkerCreate",
+                [this, workerRegistry](void*, const std::vector<js::JSValueHandle>& args) {
+                    if (args.empty() || !jsEngine_->isString(args[0])) {
+                        jsEngine_->throwException(
+                            "TN_NATIVE_WORKER_SOURCE_INVALID: classic Blob source must be text");
+                        return jsEngine_->newNumber(-1);
+                    }
+                    const int workerId = workerRegistry->createWorker(jsEngine_->toString(args[0]));
+                    if (workerId < 1) {
+                        jsEngine_->throwException(
+                            "TN_NATIVE_WORKER_UNAVAILABLE: worker thread creation failed");
+                        return jsEngine_->newNumber(-1);
+                    }
+                    activeWorkerIds_.insert(workerId);
+                    workerRegistry->registerCallback(workerId,
+                        [this](int id, const workers::WorkerMessage& message) {
+                            // processWorkerMessages may already have collected more than one
+                            // completion. terminate() removes the id before joining, so a later
+                            // collected completion cannot callback after termination.
+                            if (activeWorkerIds_.count(id) == 0 || !jsEngine_) return;
+                            auto dispatch = jsEngine_->getGlobalProperty("__tnNativeWorkerDispatch");
+                            if (!jsEngine_->isFunction(dispatch)) return;
+                            const std::string payload(message.payload.begin(), message.payload.end());
+                            jsEngine_->call(dispatch, jsEngine_->newUndefined(), {
+                                jsEngine_->newNumber(id),
+                                jsEngine_->newNumber(static_cast<int>(message.type)),
+                                jsEngine_->newString(payload.c_str()),
+                            });
+                        });
+                    std::cout << "TN_NATIVE_WORKER_CREATED:{\"id\":" << workerId
+                              << ",\"engine\":\"" << jsEngine_->getName() << "\"}" << std::endl;
+                    return jsEngine_->newNumber(workerId);
+                }));
+
+        jsEngine_->setGlobalProperty("__tnNativeWorkerPost",
+            jsEngine_->newFunction("__tnNativeWorkerPost",
+                [this, workerRegistry](void*, const std::vector<js::JSValueHandle>& args) {
+                    if (args.size() < 2) return jsEngine_->newBoolean(false);
+                    const int workerId = static_cast<int>(jsEngine_->toNumber(args[0]));
+                    if (activeWorkerIds_.count(workerId) == 0 || !jsEngine_->isString(args[1])) {
+                        return jsEngine_->newBoolean(false);
+                    }
+                    const std::string payload = jsEngine_->toString(args[1]);
+                    workers::WorkerMessage message;
+                    message.type = workers::WorkerMessage::Type::MESSAGE;
+                    message.payload.assign(payload.begin(), payload.end());
+                    workerRegistry->postToWorker(workerId, std::move(message));
+                    return jsEngine_->newBoolean(true);
+                }));
+
+        jsEngine_->setGlobalProperty("__tnNativeWorkerTerminate",
+            jsEngine_->newFunction("__tnNativeWorkerTerminate",
+                [this, workerRegistry](void*, const std::vector<js::JSValueHandle>& args) {
+                    if (args.empty()) return jsEngine_->newUndefined();
+                    const int workerId = static_cast<int>(jsEngine_->toNumber(args[0]));
+                    activeWorkerIds_.erase(workerId);
+                    workerRegistry->terminateWorker(workerId);
+                    std::cout << "TN_NATIVE_WORKER_TERMINATED:{\"id\":" << workerId << "}"
+                              << std::endl;
+                    return jsEngine_->newUndefined();
+                }));
+
+        // URL and URLSearchParams remain compatibility polyfills. Worker is now only a standard
+        // JavaScript facade over the native registry; absence of these callbacks throws by name.
         if (!evalRuntimeScript(*jsEngine_, "url-worker-polyfill", "url-worker-polyfill.js")) return false;
-        std::cout << "[Mystral] URL and Worker polyfills initialized" << std::endl;
+        std::cout << "[Mystral] URL and native Worker facade initialized" << std::endl;
         return true;
     }
 
@@ -2507,6 +2588,7 @@ private:
     webgpu::BindingsState* bindingsState_ = nullptr;
     std::unique_ptr<js::Engine> jsEngine_;
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
+    std::unordered_set<int> activeWorkerIds_;
     storage::LocalStorage localStorage_;
     HostGapMeter hostGapMeter_;
 

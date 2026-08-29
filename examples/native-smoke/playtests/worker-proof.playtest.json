@@ -1,0 +1,61 @@
+{
+  "artifacts": { "console": true, "screenshots": false },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "Headless Linux Chromium emits the known WebGPU popErrorScope unhandled rejection; worker state assertions remain authoritative.",
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "Headless Linux Chromium emits the known WebGPU popErrorScope diagnostic; worker state assertions remain authoritative.",
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "changed": true,
+        "id": "state",
+        "path": "frames"
+      },
+      {
+        "allowTrivial": "The real-frame warmup lets the browser Worker event loop deliver before the first bridge snapshot; workerComplete starts false in authored state and can become true only after the proof validates its result.",
+        "equals": true,
+        "id": "state",
+        "path": "workerComplete"
+      },
+      {
+        "allowTrivial": "The proof publishes dedicated-worker only after rejecting game-thread scope.",
+        "equals": "dedicated-worker",
+        "id": "state",
+        "path": "workerIdentity"
+      },
+      {
+        "allowTrivial": "The proof publishes the input checksum only after the Worker response matches it.",
+        "equals": 353589368,
+        "id": "state",
+        "path": "workerInputChecksum"
+      },
+      {
+        "allowTrivial": "The proof publishes the output checksum only after deterministic computation matches.",
+        "equals": 2624713848,
+        "id": "state",
+        "path": "workerOutputChecksum"
+      },
+      {
+        "allowTrivial": "The proof itself rejects fewer than two normal frame updates while work is pending.",
+        "gte": 2,
+        "id": "state",
+        "path": "workerFramesAdvanced"
+      },
+      {
+        "allowTrivial": "No callback after explicit termination is the required held invariant.",
+        "equals": 0,
+        "id": "state",
+        "path": "workerCallbacksAfterTerminate"
+      }
+    ]
+  },
+  "name": "native-smoke-worker-proof",
+  "schemaVersion": 1,
+  "steps": [{ "waitTicks": 2 }],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 180
+}
