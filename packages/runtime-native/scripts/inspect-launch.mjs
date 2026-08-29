@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
-import { createAdbClient, resolveAdbExecutable } from "./lib/adb.mjs";
+import { createResolvedAdbClient } from "./lib/adb.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -302,29 +302,17 @@ export function assertLaunchFrameSequence(frames) {
 }
 
 export function createInspectDevice(serial, environment = process.env, dependencies = {}) {
-  const executable = resolveAdbExecutable(environment, {
+  return createResolvedAdbClient(serial, environment, {
     allowPathFallback: false,
     defaultSdkRoot: dependencies.defaultSdkRoot,
     existsSyncImpl: dependencies.existsSyncImpl,
-    sdkEnvironmentKeys: ["THREENATIVE_ANDROID_SDK"],
-  });
-  if (!executable) throw new InspectError("TN_INSPECT_ADB_MISSING", 2);
-  const client = createAdbClient(serial, {
-    environment: { ...environment, THREENATIVE_ADB: executable },
+    mapSpawnError: (error) => new InspectError(`TN_INSPECT_ADB_FAILED:${error.message}`),
     maxBuffer: 256 * 1024 * 1024,
+    missingError: () => new InspectError("TN_INSPECT_ADB_MISSING", 2),
+    sdkEnvironmentKeys: ["THREENATIVE_ANDROID_SDK"],
     spawnSyncImpl: dependencies.spawnSyncImpl,
     timeoutMs: 180_000,
   });
-  return {
-    command(args, timeoutMs = 180_000) {
-      const result = client.result(args, { timeoutMs });
-      if (result.error) throw new InspectError(`TN_INSPECT_ADB_FAILED:${result.error.message}`);
-      return String(result.stdout ?? "");
-    },
-    result(args, timeoutMs = 180_000) {
-      return client.result(args, { timeoutMs });
-    },
-  };
 }
 
 export function record(serial, target, outDir, seconds, dependencies = {}) {

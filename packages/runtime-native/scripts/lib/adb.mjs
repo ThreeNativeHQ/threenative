@@ -24,6 +24,7 @@ export class AdbCommandError extends Error {
 }
 
 export function resolveAdbExecutable(environment = process.env, options = {}) {
+  if (options.executable) return options.executable;
   if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
   const sdkEnvironmentKeys = options.sdkEnvironmentKeys ?? [
     "THREENATIVE_ANDROID_SDK",
@@ -47,7 +48,7 @@ export function buildAdbInvocation(serial, args, environment = process.env, opti
   const selectedSerial = serial || environment.THREENATIVE_ADB_SERIAL;
   if (typeof selectedSerial !== "string" || selectedSerial.length === 0) {
     if (options.allowDefaultTransport === true) {
-      return { executable: resolveAdbExecutable(environment), args: [...args], serial: undefined };
+      return { executable: resolveAdbExecutable(environment, options), args: [...args], serial: undefined };
     }
     throw new AdbCommandError({
       args,
@@ -65,7 +66,7 @@ export function buildAdbInvocation(serial, args, environment = process.env, opti
     });
   }
   return {
-    executable: resolveAdbExecutable(environment),
+    executable: resolveAdbExecutable(environment, options),
     args: ["-s", selectedSerial, ...args],
     serial: selectedSerial,
   };
@@ -105,6 +106,10 @@ function commandError(args, result) {
     serial: result.invocation.serial,
     spawnFailed: Boolean(result.error && result.rawStatus == null),
   });
+}
+
+function commandOverrides(overrides) {
+  return typeof overrides === "number" ? { timeoutMs: overrides } : overrides;
 }
 
 export function runAdbResult(serial, args, options = {}) {
@@ -151,13 +156,24 @@ export function createAdbClient(serial, options = {}) {
       if (result.error || result.status !== 0) throw commandError(args, result);
       return result.stdout;
     },
-    executable: resolveAdbExecutable(options.environment ?? process.env),
+    command(args, overrides = {}) {
+      const result = runAdbResult(serial, args, { ...options, ...commandOverrides(overrides) });
+      if (result.error) throw options.mapSpawnError?.(result.error) ?? result.error;
+      return String(result.stdout ?? "");
+    },
+    executable: resolveAdbExecutable(options.environment ?? process.env, options),
     result(args, overrides = {}) {
-      return runAdbResult(serial, args, { ...options, ...overrides });
+      return runAdbResult(serial, args, { ...options, ...commandOverrides(overrides) });
     },
     run(args, overrides = {}) {
       return runAdb(serial, args, { ...options, ...overrides });
     },
     serial,
   };
+}
+
+export function createResolvedAdbClient(serial, environment, options = {}) {
+  const executable = resolveAdbExecutable(environment, options);
+  if (!executable) throw options.missingError();
+  return createAdbClient(serial, { ...options, environment, executable });
 }

@@ -28,7 +28,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
-import { createAdbClient, resolveAdbExecutable } from "./lib/adb.mjs";
+import { createResolvedAdbClient } from "./lib/adb.mjs";
 import { readAndroidConfig } from "./package-android.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -99,28 +99,17 @@ export class ColdStartError extends Error {
 }
 
 export function createColdStartDevice(serial, environment = process.env, dependencies = {}) {
-  const executable = resolveAdbExecutable(environment, {
+  return createResolvedAdbClient(serial, environment, {
     allowPathFallback: false,
     defaultSdkRoot: dependencies.defaultSdkRoot,
     existsSyncImpl: dependencies.existsSyncImpl,
-    sdkEnvironmentKeys: ["THREENATIVE_ANDROID_SDK"],
-  });
-  if (!executable) throw new ColdStartError("TN_COLD_START_ADB_MISSING", 2);
-  const client = createAdbClient(serial, {
-    environment: { ...environment, THREENATIVE_ADB: executable },
+    mapSpawnError: (error) => new ColdStartError(`TN_COLD_START_ADB_FAILED:${error.message}`),
     maxBuffer: 64 * 1024 * 1024,
+    missingError: () => new ColdStartError("TN_COLD_START_ADB_MISSING", 2),
+    sdkEnvironmentKeys: ["THREENATIVE_ANDROID_SDK"],
     spawnSyncImpl: dependencies.spawnSyncImpl,
     timeoutMs: 120_000,
   });
-  return {
-    command(args, timeoutMs = 120_000) {
-      const result = client.result(args, { timeoutMs });
-      if (result.error) {
-        throw new ColdStartError(`TN_COLD_START_ADB_FAILED:${result.error.message}`);
-      }
-      return String(result.stdout ?? "");
-    },
-  };
 }
 
 /**

@@ -73,11 +73,12 @@ export function createPhysicsStabilityDevice(serial, dependencies = {}) {
         timeout: options.timeout,
       }),
     }),
-    environment: { ...environment, THREENATIVE_ADB: 'adb' },
+    environment,
+    executable: 'adb',
     maxBuffer: 1024 * 1024,
     timeoutMs: 120_000,
   });
-  return { command: (args) => client.result(args).stdout };
+  return client;
 }
 
 export function preparePhysicsStabilityInstall(args, device) {
