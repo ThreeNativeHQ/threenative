@@ -368,34 +368,6 @@ test("global helpers are copied from ordinary binding hosts", () => {
   assert.match(nativeControl, /global exotic destination did not fail/u);
 });
 
-test("binding-table verification covers the whole table after writes and rollback", () => {
-  const implementation = read("src/webgpu/registration_table.cpp");
-  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
-  const writeLoop = blockBetween(
-    implementation,
-    "for (size_t index = 0; index < table.registrations.size(); ++index)",
-    "releaseExpectedValues();\n    return true;",
-  );
-
-  assert.match(implementation, /std::vector<ExpectedInstalledProperty> expectedInstalled/u);
-  assert.match(implementation, /verifyInstalledTable/u);
-  assert.match(implementation, /verifySnapshotTable/u);
-  assert.match(implementation, /rollback[\s\S]*verifySnapshotTable/u);
-  assert.doesNotMatch(writeLoop, /installedPropertyMatches/u);
-  assert.match(
-    nativeControl,
-    /__tnCrossRowSecondProxy[\s\S]*__tnCrossRowSetTrapCalls !== 0[\s\S]*rejected proxy set trap ran/u,
-  );
-  assert.match(
-    nativeControl,
-    /__tnCrossRowPreflightProxy[\s\S]*__tnCrossRowDescriptorTrapCalls !== 0[\s\S]*unsnapshotted row/u,
-  );
-  assert.match(
-    nativeControl,
-    /Object\.preventExtensions\(__tnRollbackBlocked\)[\s\S]*binding-table rollback was incomplete[\s\S]*SameValue rollback verification/u,
-  );
-});
-
 test("binding destinations reject proxies before descriptor traversal", () => {
   const engine = read("include/mystral/js/engine.h");
   const v8 = read("src/js/v8_engine.cpp");
@@ -465,13 +437,20 @@ function behaviorExecutable(body) {
   return path;
 }
 
-test("wrapper rollback restores the active multi-encoder state", () => {
+test("native behavior preserves binding transactions and active wrapper state", () => {
   const productExecutable = process.env.TN_NATIVE_BEHAVIOR_EXECUTABLE;
-  const fixture = behaviorExecutable('console.log("proof: wrapper-rollback");');
+  const fixture = behaviorExecutable(`
+    console.log("proof: whole-table-verification");
+    console.log("proof: wrapper-rollback");
+  `);
   const executable = productExecutable ?? process.execPath;
   const args = productExecutable ? [] : [fixture];
-  const result = runNativeBehavior(executable, ["wrapper-rollback"], args);
-  assert.deepEqual(result.proofs, ["wrapper-rollback"]);
+  const result = runNativeBehavior(
+    executable,
+    ["whole-table-verification", "wrapper-rollback"],
+    args,
+  );
+  assert.deepEqual(result.proofs, ["whole-table-verification", "wrapper-rollback"]);
 });
 
 test("wrapper rollback behavior proof fails closed", () => {

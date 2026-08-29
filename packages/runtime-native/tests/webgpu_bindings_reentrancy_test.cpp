@@ -250,7 +250,7 @@ bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
            !engine->hasProperty(engine->getGlobal(), "globalExotic");
 }
 
-bool checkWholeTableVerification(mystral::Runtime& runtime) {
+bool verifyWholeTableTransactionBehavior(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(
         runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -1609,7 +1609,8 @@ int main() {
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
     if (!checkCaughtNativeExceptionDoesNotPoisonLaterInstall(*first)) return 1;
     if (!checkAtomicRollbackAndDestinationValidation(*first)) return 1;
-    if (!checkWholeTableVerification(*first)) return 1;
+    if (!verifyWholeTableTransactionBehavior(*first)) return 1;
+    std::cout << "proof: whole-table-verification" << std::endl;
     if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;
     if (!checkDynamicCanvasOwnership(*first)) return 1;
     if (!checkBindingProtectionOwnership(*first)) return 1;
