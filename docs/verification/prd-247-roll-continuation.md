@@ -102,7 +102,7 @@ camera test covers the full basis.
 | --- | --- |
 | `pnpm typecheck` | PASS — all workspace projects typechecked after the required `pnpm build` bootstrap |
 | `pnpm budgets` | PASS — all hard invariants passed; the existing LOC review triggers were reported but non-fatal |
-| changed-file Biome | PASS — all four changed TypeScript files checked with no fixes |
+| changed-file Biome | PASS — all four changed TypeScript files checked with no fixes; the manager fixture update was checked separately |
 | `git diff --check` | PASS before commit |
 | `pnpm lint` | BLOCKED — 4 repository-wide complexity errors in unrelated examples/assets files; the changed files pass Biome |
 | `pnpm test` | BLOCKED — the existing documentation-link check fails on three unrelated PRD links before package tests run |
@@ -115,7 +115,10 @@ Checked 4 files in 16ms. No fixes applied.
 exit: 0
 ```
 
-The repository-wide failures were recorded without editing out-of-scope files:
+The repository-wide failures were recorded without editing out-of-scope files. The generated
+shooter change also required refreshing its existing scaffold byte-stability fixture; that
+directly affected test update is included in the manager follow-up commit:
+`packages/create-threenative/__tests__/scaffold.spec.ts`.
 
 ```text
 pnpm lint
@@ -130,8 +133,8 @@ docs/PRDs/refactor-2026-08-28/README.md -> ../PRD-228-the-pixel-budget-is-the-en
 exit: 1
 ```
 
-These failures are outside the five-file lane scope and do not identify the billboard
-or shooter changes.
+These failures are outside the six-file lane scope and do not identify the billboard,
+shooter, or scaffold-fixture changes.
 
 ## Generated shooter WebGPU playtest
 

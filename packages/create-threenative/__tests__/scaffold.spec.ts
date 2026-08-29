@@ -46,12 +46,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // before that formatting ran and were therefore stale the moment they were committed.
   // Recomputed after PRD-247 added per-item capabilities, the shooter's proof scenario, and the
   // unrestricted billboard example in the generated capability reference.
+  // Recomputed after the roll continuation updated the generated shooter's nameplate observer.
   "action-rpg": "6f56f12656e7a5741c011d46d59b60bd51fb73bd9f3cb0ba6f72211b1ac26044",
   defense: "472d6165f5d06adcb17b7aa28060db3f68434543d9bb1693a7687f66c8fd9b2b",
   minimal: "619f67063a28fb53bf3240eadb2ff6f9b45cc8c71409aaac01522dcc4a875001",
   platformer: "1df03341ce9995ba9d163011ed50453e1019697ee5e807de40c833ad00f2afd0",
   racing: "53ae6dcf1ee97499a60db0fbb37a93abd3f2f0591f204c6e2818ec8a08330d89",
-  shooter: "2a88b6f6edb96bc57ea33ef303bbb2a169ddb7faaa827a689f1a6cfbc21e8dba",
+  shooter: "73e07112a1b654693e1c9176e1bebb48e60db3692fead27387cc4fe61a26c596",
   starter: "cfc20e2a3bb66e41ab1fae96f638680c354ebb9421d92c4385de4e63b71b98ef",
 };
 
