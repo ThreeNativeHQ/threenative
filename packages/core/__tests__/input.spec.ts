@@ -28,7 +28,7 @@ function wheelEvent(deltaY: number, deltaMode = 0): Event {
 }
 
 describe("InputMap", () => {
-  it("should report positive zoom intent for negative DOM deltaY toward the user", () => {
+  it("browser negative DOM deltaY toward the user produces positive zoom intent", () => {
     const target = new EventTarget();
     const input = new InputMap({ zoom: { scroll: true } }, target);
 
@@ -40,7 +40,7 @@ describe("InputMap", () => {
     input.dispose();
   });
 
-  it("should report negative zoom intent for positive DOM deltaY away from the user", () => {
+  it("browser positive DOM deltaY away from the user produces negative zoom intent", () => {
     const target = new EventTarget();
     const input = new InputMap({ zoom: { scroll: true } }, target);
 

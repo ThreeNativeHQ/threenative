@@ -258,8 +258,12 @@ test('native scroll preserves the SDL to DOM wheel sign and pixel scale', () => 
 
   assert.match(input, /data\.deltaMode = 0/u);
   assert.match(input, /data\.deltaX = event\.x \* 120\.0/u);
-  assert.match(input, /data\.deltaY = event\.y \* 120\.0/u);
-  assert.doesNotMatch(input, /data\.deltaY = event\.y \* -120\.0/u);
+  const assignment = input.match(/data\.deltaY = (?<expression>[^;]+);/u);
+  assert.ok(assignment?.groups?.expression, 'native input must assign a wheel deltaY expression');
+
+  const convert = new Function('event', `return ${assignment.groups.expression};`);
+  assert.equal(convert({ y: 1 }), -120);
+  assert.equal(convert({ y: -1 }), 120);
 });
 
 test('native conformance keeps scroll delivery source-contract-only until a host run exists', () => {
