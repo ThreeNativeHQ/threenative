@@ -1,4 +1,4 @@
-import { type ICtx, Scene, type SceneFrame, defineGame } from "@threenative/core";
+import { type GPUSceneBVH, type ICtx, Scene, type SceneFrame, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
   Bone,
@@ -20,6 +20,7 @@ import {
   Uint16BufferAttribute,
   Vector3,
 } from "three";
+import { createGpuSceneBvhDemo, loadGpuSceneBvhModel } from "./render/gpu-scene-bvh.js";
 
 /**
  * PRD-152's semantic stress subject.
@@ -39,6 +40,7 @@ const PROP_COUNT = 250;
 /** Long past any startup window, so nothing here can pass by being measured during one. */
 const MUTATE_AT = 600;
 const ASSERT_AT = 1_200;
+const BVH_REBUILD_AT = 140;
 
 interface IStressState extends Record<string, unknown> {
   meshCount: number;
@@ -56,6 +58,11 @@ interface IStressState extends Record<string, unknown> {
   /** A camera-parented overlay still rides the camera. */
   overlayRides: number;
   framesRun: number;
+  bvhObjects: number;
+  bvhTriangles: number;
+  bvhRebuilds: number;
+  bvhBuildMs: number;
+  bvhEffectLive: number;
 }
 
 /** Identity, parentage, name and sibling order for every object the game authored. */
@@ -86,11 +93,22 @@ class SemanticStressScene extends Scene<IStressState> {
     lateMutationApplied: 0,
     overlayRides: 0,
     framesRun: 0,
+    bvhObjects: 0,
+    bvhTriangles: 0,
+    bvhRebuilds: 0,
+    bvhBuildMs: 0,
+    bvhEffectLive: 0,
   };
 
+  #loadedTraceScene: Group | undefined;
+
+  override async load(): Promise<void> {
+    this.#loadedTraceScene = await loadGpuSceneBvhModel();
+  }
+
   override enter(ctx: ICtx<IStressState>): SceneFrame<IStressState> {
-    ctx.camera.position.set(0, 0, 10);
-    ctx.camera.lookAt(0, 0, 0);
+    ctx.camera.position.set(0, 5, 10);
+    ctx.camera.lookAt(0, 0, -0.3);
 
     // ── Ordinary props. The bulk of the scene, and what the optimizer is for.
     //
@@ -191,6 +209,12 @@ class SemanticStressScene extends Scene<IStressState> {
     points.position.set(12, 8, 0);
     ctx.add(points);
 
+    // ── A small loaded-scene-shaped trace set. It has transformed meshes, an instanced mesh,
+    // indexed geometry, and two material groups—the cases the GPU packing path must keep honest.
+    const loadedTraceScene = this.#loadedTraceScene;
+    if (loadedTraceScene === undefined) throw new Error("GPUSceneBVH proof scene was not loaded.");
+    const { blockers, bvh } = createGpuSceneBvhDemo(ctx.scene, ctx.add, loadedTraceScene);
+
     // ── A camera-parented overlay, which is where a HUD lives.
     const reticle = new Mesh(new BoxGeometry(0.2, 0.2, 0.2), new MeshBasicMaterial());
     reticle.position.set(0, 0, -2);
@@ -200,63 +224,139 @@ class SemanticStressScene extends Scene<IStressState> {
     // startup observation window cannot possibly get right.
     const sleeper = props[7] as Mesh;
     const sleeperHome = sleeper.position.clone();
+    const movedBlocker = blockers[1];
+    if (movedBlocker === undefined)
+      throw new Error("GPUSceneBVH proof scene lost its moved blocker.");
 
     let authored: string | undefined;
     let sampled = false;
     let frames = 0;
+    let bvhRebuilds = 0;
 
     return (frameCtx) => {
       frames += 1;
       if (ctx.startup.phase !== "ready") return;
       // Taken once the framework has finished whatever it does at startup. Anything the optimizer
       // changes about the game's graph after this point shows up as a mismatch.
-      authored ??= fingerprint(ctx.scene);
-
-      if (frames === MUTATE_AT) {
-        sleeper.position.set(sleeperHome.x, sleeperHome.y + 5, sleeperHome.z);
-        (morphed.morphTargetInfluences as number[])[0] = 0.5;
-      }
+      if (authored === undefined) authored = fingerprint(ctx.scene);
+      const authoredFingerprint = authored;
+      applyStressMutation(frames, sleeper, sleeperHome, morphed);
+      bvhRebuilds = rebuildBvhAtFrame(frames, frameCtx, bvh, movedBlocker, bvhRebuilds);
       if (frames < ASSERT_AT || sampled) return;
-
-      // World rays, not screen points. A screen point makes the assertion depend on the camera,
-      // the viewport and whatever else happens to be between the two — which turns a picking test
-      // into a framing test. These aim at exactly one object each.
-      const annotated = ctx.raycast({
-        origin: new Vector3(0, 0, 40),
-        direction: new Vector3(0, 0, -1),
-      });
-      const plain = ctx.raycast({
-        origin: new Vector3(-6, 0, 40),
-        direction: new Vector3(0, 0, -1),
-      });
-
-      const semanticsIntact =
-        instanced.count === 3 &&
-        instanced.parent === ctx.scene &&
-        skinned.skeleton.bones.length === 1 &&
-        skinned.parent === ctx.scene &&
-        morphed.morphTargetInfluences?.[0] === 0.5 &&
-        (glass.material as MeshBasicMaterial).transparent &&
-        lod.levels.length === 2 &&
-        group.children.length === 12 &&
-        (group.children[0] as Mesh).parent === group;
 
       frameCtx.state.set({
         meshCount: PROP_COUNT,
-        pickedTarget: annotated?.object.userData.target === 1 ? 1 : 0,
-        // The object the game created, not a proxy, a batch, or an index into one.
-        pickedUnannotated: plain?.object === unannotated ? 1 : 0,
-        graphIntact: fingerprint(ctx.scene) === authored ? 1 : 0,
-        semanticsIntact: semanticsIntact ? 1 : 0,
-        hiddenIntact: !hidden.visible && hidden.parent === ctx.scene ? 1 : 0,
-        lateMutationApplied: sleeper.position.y === sleeperHome.y + 5 ? 1 : 0,
-        overlayRides: reticle.parent === ctx.camera ? 1 : 0,
+        ...readStressAssertions(
+          frameCtx,
+          authoredFingerprint,
+          hidden,
+          unannotated,
+          sleeper,
+          sleeperHome,
+          reticle,
+          instanced,
+          skinned,
+          morphed,
+          glass,
+          lod,
+          group,
+        ),
         framesRun: frames,
       });
-      frameCtx.state.flush();
+      publishBvhState(frameCtx, bvh, bvhRebuilds);
       sampled = true;
     };
   }
+}
+
+function publishBvhState(ctx: ICtx<IStressState>, bvh: GPUSceneBVH, rebuilds: number): void {
+  ctx.state.set({
+    bvhObjects: bvh.objectCount,
+    bvhTriangles: bvh.triangleCount,
+    bvhRebuilds: rebuilds,
+    bvhBuildMs: bvh.buildMs,
+    bvhEffectLive: bvh.triangleCount > 0 ? 1 : 0,
+  });
+  ctx.state.flush();
+}
+
+function applyStressMutation(
+  frame: number,
+  sleeper: Mesh,
+  sleeperHome: Vector3,
+  morphed: Mesh,
+): void {
+  if (frame !== MUTATE_AT) return;
+  sleeper.position.set(sleeperHome.x, sleeperHome.y + 5, sleeperHome.z);
+  (morphed.morphTargetInfluences as number[])[0] = 0.5;
+}
+
+function rebuildBvhAtFrame(
+  frame: number,
+  ctx: ICtx<IStressState>,
+  bvh: GPUSceneBVH,
+  movedBlocker: Object3D,
+  rebuilds: number,
+): number {
+  if (frame !== BVH_REBUILD_AT) return rebuilds;
+  movedBlocker.position.x = 6;
+  bvh.rebuild();
+  const nextRebuilds = rebuilds + 1;
+  publishBvhState(ctx, bvh, nextRebuilds);
+  return nextRebuilds;
+}
+
+function readStressAssertions(
+  ctx: ICtx<IStressState>,
+  authored: string,
+  hidden: Mesh,
+  unannotated: Mesh,
+  sleeper: Mesh,
+  sleeperHome: Vector3,
+  reticle: Mesh,
+  instanced: InstancedMesh,
+  skinned: SkinnedMesh,
+  morphed: Mesh,
+  glass: Mesh,
+  lod: LOD,
+  group: Group,
+): Pick<
+  IStressState,
+  | "pickedTarget"
+  | "pickedUnannotated"
+  | "graphIntact"
+  | "semanticsIntact"
+  | "hiddenIntact"
+  | "lateMutationApplied"
+  | "overlayRides"
+> {
+  const annotated = ctx.raycast({
+    origin: new Vector3(0, 0, 40),
+    direction: new Vector3(0, 0, -1),
+  });
+  const plain = ctx.raycast({
+    origin: new Vector3(-6, 0, 40),
+    direction: new Vector3(0, 0, -1),
+  });
+  const semanticsIntact =
+    instanced.count === 3 &&
+    instanced.parent === ctx.scene &&
+    skinned.skeleton.bones.length === 1 &&
+    skinned.parent === ctx.scene &&
+    morphed.morphTargetInfluences?.[0] === 0.5 &&
+    (glass.material as MeshBasicMaterial).transparent &&
+    lod.levels.length === 2 &&
+    group.children.length === 12 &&
+    (group.children[0] as Mesh).parent === group;
+  return {
+    pickedTarget: annotated?.object.userData.target === 1 ? 1 : 0,
+    pickedUnannotated: plain?.object === unannotated ? 1 : 0,
+    graphIntact: fingerprint(ctx.scene) === authored ? 1 : 0,
+    semanticsIntact: semanticsIntact ? 1 : 0,
+    hiddenIntact: !hidden.visible && hidden.parent === ctx.scene ? 1 : 0,
+    lateMutationApplied: sleeper.position.y === sleeperHome.y + 5 ? 1 : 0,
+    overlayRides: reticle.parent === ctx.camera ? 1 : 0,
+  };
 }
 
 const game = defineGame<IStressState>({

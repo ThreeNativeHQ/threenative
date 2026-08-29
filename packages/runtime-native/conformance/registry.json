@@ -690,6 +690,19 @@
       "required": true
     },
     {
+      "id": "76-gpu-scene-bvh",
+      "title": "GPU scene BVH trace",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "../../examples/prd140-picking/src/conformance.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 0.2
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",

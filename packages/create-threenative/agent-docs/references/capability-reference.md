@@ -179,6 +179,21 @@ export class GPUParticles3D extends Sprite { … }
 const particles = new GPUParticles3D(particleOptions);
 ```
 
+### `GPUSceneBVH`
+
+`class` — Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
+
+```ts
+export class GPUSceneBVH extends Group implements IComputeDriven { … }
+```
+
+- **Use when:** trace thousands of scene rays inside a TSL kernel · build a contact-occlusion or visibility query over loaded meshes
+- **Constraints:** call rebuild() after a scene transform or geometry change; the snapshot is static by default · rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
+
+```ts
+const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
+```
+
 ### `GroundSnap`
 
 `class` — Keep a rendered model's feet on a surface while preserving an auditable override.

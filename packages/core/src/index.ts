@@ -87,6 +87,20 @@ export type { IRandom } from "./random.js";
  */
 export { defineGame } from "./game.js";
 /**
+ * Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
+ * @situation trace thousands of scene rays inside a TSL kernel
+ * @situation build a contact-occlusion or visibility query over loaded meshes
+ * @constraint call rebuild() after a scene transform or geometry change; the snapshot is static by default
+ * @constraint rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
+ * @example const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
+ */
+export { GPUSceneBVH, bvhIntersectFirstHit, rayStruct } from "./gpu-scene-bvh.js";
+export type {
+  GPUSceneBVHTraceFunction,
+  IGPUSceneBVHMaterialGroup,
+  IGPUSceneBVHOptions,
+} from "./gpu-scene-bvh.js";
+/**
  * Read where the frame's milliseconds went, per presented frame, on any platform.
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay

@@ -204,6 +204,25 @@
     },
     {
       "constraints": [
+        "call rebuild() after a scene transform or geometry change; the snapshot is static by default",
+        "rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray"
+      ],
+      "example": "const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
+      "situations": [
+        "trace thousands of scene rays inside a TSL kernel",
+        "build a contact-occlusion or visibility query over loaded meshes"
+      ],
+      "summary": "Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.",
+      "supersedes": [],
+      "symbol": "GPUSceneBVH"
+    },
+    {
+      "constraints": [
         "import from `@threenative/core`; this moves the rendered model, not its physics collider"
       ],
       "example": "import { GroundSnap } from \"@threenative/core\";\nconst snap = new GroundSnap(character, { enabled: true });",
