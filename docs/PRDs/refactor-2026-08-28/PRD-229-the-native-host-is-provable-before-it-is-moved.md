@@ -4,10 +4,10 @@ prd_contract: v1
 
 # PRD-229 — the native host is provable before it is moved
 
-**Status:** PROPOSED — filed 2026-08-28 from
-[the runtime-native refactor analysis](../../reports/runtime-native-refactor-analysis-2026-08-28.md).
-No phase has executed; one pre-phase scouting measurement has, and is recorded in
-[native-coverage-scouting-2026-08-28](../../verification/native-coverage-scouting-2026-08-28.md).
+**Status:** PARTIAL — filed 2026-08-28. **Phases 1–4 and 6 landed on 2026-08-28 under commits
+that do not cite this PRD**, which is why this document read "no phase has executed" until the
+reconciliation of 2026-08-29 below. **Phase 5 is the one open phase, and it is the one that
+actually protects [PRD-230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md).**
 Every number below is measured at `7b729e2d` unless it says otherwise.
 
 **Goal, in the owner's words: harden it first, so we catch the regression if we do some shit.**
@@ -425,9 +425,56 @@ Filled during implementation. Nothing here is claimed until it has executed and 
 - Findings carried into Phase 1: the render-pass class-table configuration failure, the exit-77
   skip, and the unlinkable physics target.
 
-### Phase 1 — coverage baseline
-- Result: NOT RUN
-- Negative controls observed: —
+### Reconciliation against the tree — 2026-08-29
 
-### Phases 2–6
-- NOT RUN
+The five instrument phases were implemented on 2026-08-28 by lanes that did not reference this
+PRD, so its evidence section went on reading NOT RUN while `pnpm budgets` was already enforcing
+the gates it asks for. Every artifact each phase names is present, and every test each phase's
+table requires exists by name.
+
+| Phase | Landed in | Artifacts | Required tests present |
+| --- | --- | --- | --- |
+| 1 — coverage is a number | `d81ed380` | `TN_ENABLE_COVERAGE`, `scripts/measure-native-coverage.mjs`, `native:coverage`, `tests/native-coverage.test.mjs`, [the record](../../verification/native-coverage-2026-08-28.md) | 9, against 4 required |
+| 2 — one command runs every test | `84640c6a` (PRD-223, predates this PRD) | `enable_testing()`, `native:test:cpp`, `tests/native-contract-lane.test.mjs` | set-equality assertion present |
+| 3 — ASan + UBSan | `1e530c4a` | `TN_ENABLE_SANITIZERS`, `native:test:asan`, `tests/native-sanitizer-lane.test.mjs`, [the record](../../verification/native-sanitizer-lane-2026-08-28.md) | 2, both required |
+| 4 — close the C++ lint hole | `dabfc35d`, record `70e5ce3f` | `.clang-tidy`, `.clang-format`, `tests/native-lint-config.test.mjs`, [the baseline](../../verification/native-lint-baseline-2026-08-28.md) | 1, the required automated one |
+| 5 — text assertions become behaviour tests | — | — | **NOT DONE** |
+| 6 — the floors become gates | `c90c390b` | `scripts/check-native-coverage.ts` called from `scripts/check-budgets.ts`, 15 per-subsystem floors including `src/webgpu/` at 33.82% | 5, against 2 required |
+
+Negative controls that were observed and pasted at the time, in their own records: Phase 1's
+compiler control and legacy-shape control (`RED observed: legacy wrapper shape rejected`), and
+Phase 3's `heap-use-after-free` from `prd229-asan-negative.cpp`. Phase 4's manual control — a new
+`bugprone` violation failing the build — is **not** recorded and is still owed.
+
+**This reconciliation is a documentation repair for phases 2–5; phases 1 and 6 were re-executed.**
+On 2026-08-29 `packages/runtime-native/third_party/` was absent from this checkout, so no C++
+target compiled and `pnpm budgets` was red on a stale coverage digest. After `pnpm native:build`
+restored the deps (706 MB):
+
+```text
+pnpm --filter @threenative/runtime-native native:coverage   → exit 0
+pnpm budgets                                                 → exit 0
+```
+
+The regenerated record reproduces the committed numbers exactly — TOTAL 33.90%, every per-subsystem
+floor unchanged — so Phase 1's instrument and Phase 6's gate are confirmed working, not just
+present. Phases 2–5 remain claimed from disk and from their own records.
+
+**Bug found and fixed while re-running it.** The record's hand-authored `## Floor changes` section —
+the ratchet-release history for `src/runtime.cpp` 39.50% → 38.88% — sat *inside* the
+`native-coverage-generated` markers, so every regeneration deleted it silently. It now lives below
+the end marker, and a full re-run was observed leaving it intact.
+
+### Phase 5 — the one open phase
+
+Measured 2026-08-29, unchanged from the filing:
+
+| Source-text references from vitest files | At filing | 2026-08-29 |
+| --- | ---: | ---: |
+| `src/webgpu/bindings.cpp` | 35 | **37**, across 17 test files |
+| `src/runtime.cpp` | 33 | **56**, across 19 test files |
+
+`tests/frame-op-stream.test.mjs` is the representative shape: it `readFileSync`s `bindings.cpp` and
+asserts against the text, so it reds on a safe rename and stays green through a behaviour change.
+These are the assertions PRD-230 would trip over, and converting them is its remaining
+prerequisite.

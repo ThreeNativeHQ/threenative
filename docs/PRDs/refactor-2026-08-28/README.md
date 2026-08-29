@@ -1,6 +1,11 @@
 # Batch — make `packages/runtime-native` maintainable without breaking it, 2026-08-28
 
-**Status:** PROPOSED — seven PRDs filed, none started. Filed from
+**Status:** PARTIAL, reconciled 2026-08-29 — seven PRDs filed; two have moved. **PRD-234 was
+executed and rejected**; its shared device layer fired the kill switch and was reverted. **PRD-229
+is PARTIAL**: phases 1–4 and 6 landed on 2026-08-28 under commits that never cited it, leaving its
+own evidence section reading NOT RUN while `pnpm budgets` already enforced its gates. **Phase 5 —
+converting the source-text assertions — is the one open phase, and the only thing still blocking
+PRD-230.** Filed from
 [the runtime-native refactor analysis](../../reports/runtime-native-refactor-analysis-2026-08-28.md)
 (measured at `7b729e2d`) and from the first C++ coverage measurement this repository has ever
 taken, [native-coverage-scouting-2026-08-28](../../verification/native-coverage-scouting-2026-08-28.md).
@@ -24,7 +29,7 @@ So PRD-229 builds the instruments, PRD-230 does the move behind them, and everyt
 
 | PRD | Outcome | Complexity | Depends on |
 | --- | --- | --- | --- |
-| [229](./PRD-229-the-native-host-is-provable-before-it-is-moved.md) | Coverage is measured and gated, one command runs every native test, ASan/UBSan lane exists, the C++ lint hole closes, source-text assertions become behaviour tests, coverage and perf floors become gates. **Moves no product code.** | 7 → HIGH | none |
+| [229](./PRD-229-the-native-host-is-provable-before-it-is-moved.md) | **PARTIAL** — coverage measured and gated, `ctest` runs every native test, ASan/UBSan lane, C++ lint hole closed, floors gated: all landed. **Phase 5 (source-text assertions become behaviour tests) is open.** **Moves no product code.** | 7 → HIGH | none |
 | [230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md) | The 87 `tnWebgpuHandlerNN` get real names; `BindingsState` splits into cohesive sub-structs; `bindings.cpp` splits one surface per commit; re-measure | 7 → HIGH | 229, all six phases |
 | [231](./PRD-231-the-backend-dialect-stops-leaking-into-the-binding-code.md) | 339 dialect `#if`s leave the binding logic for `webgpu_compat.h`; all three dialects build and are named | 6 → MEDIUM | 230 |
 | [232](./PRD-232-profiling-is-a-component-not-a-smear.md) | `TN_ANDROID_JS_PROFILE`'s 64 sites and the frame-phase counters become one `FrameProfiler`, with byte-identical output | 5 → MEDIUM | 230 phase 2; **coordinate with [227](../PRD-227-the-frame-crosses-once.md) and [228](../done/PRD-228-the-pixel-budget-is-the-engines.md)** |
@@ -60,6 +65,14 @@ write-after-free, and exit codes cannot. **PRD-229 Phase 3 is that instrument.**
 They stay in `BLOCKED/` until it exists — filing convention, and honesty: the blocker is real
 today. When 229 Phase 3 lands, attempt them, record what actually happened, and `git mv` them into
 this batch if they become workable. Do not move them on the strength of a plan.
+
+**Half-satisfied as of 2026-08-29, and still blocked.** Phase 3's lane landed in `1e530c4a` and
+runs `threenative-shutdown-lifetime-test` and `threenative-handle-lifetime-test` under ASan+UBSan.
+But this directory is named for the *other* half: `CMakeLists.txt` links a **prebuilt** `libuv.a`
+(see the "Prebuilt layout" note at its libuv block), and ASan cannot instrument inside a prebuilt
+static library, so a write-after-free on libuv's closing list is still invisible. Building libuv
+from source under the sanitizer configuration is the remaining prerequisite; neither PRD moves
+until it exists.
 
 ## Deliberately not in this batch
 

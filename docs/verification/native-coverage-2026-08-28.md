@@ -26,7 +26,7 @@ targets could not be built and are named below.
 | `src/workers/` | 409 | 37 | 9.05% |
 | **TOTAL** | **18973** | **6432** | **33.90%** |
 
-Source digest: `sha256:54c733d9c3e148208753a0b4f90a5826aefe3e1c300b42d6f7a7cb9b5e733d3b`
+Source digest: `sha256:4454f1f70327102e7434e2db89ddd8187f353540c4bf09d36f5c7f4cdb1a9502`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -51,19 +51,6 @@ change requires this opt-in command to refresh the record.
 | `src/webgpu/` | 33.82% |
 | `src/webtransport/` | 5.19% |
 | `src/workers/` | 9.05% |
-
-## Floor changes
-
-`src/runtime.cpp` 39.50% -> 38.88%, released once on 2026-08-28 when PRD-250's off-thread
-Worker landed. This is not a coverage regression: covered lines in that file went **up**,
-771 -> 785. The file grew 1952 -> 2019 lines, so the ratio fell while absolute coverage
-rose. The same change brought `src/workers/` into this configuration for the first time -
-it was previously listed under "not compiled" - which is why a new 9.05% floor appears
-above and why the total moved on a larger denominator.
-
-Releasing a floor is a ratchet release and should stay rare. The debt this records is
-`src/workers/` at 9.05%: `worker_registry.cpp` and `worker_thread.cpp` compile but are
-barely exercised by this configuration's tests.
 
 ## Not compiled in this configuration
 
@@ -92,6 +79,24 @@ barely exercised by this configuration's tests.
 - `threenative-physics-actuation-bindings-test`: TN_ENABLE_NATIVE_PHYSICS=OFF: native physics bindings are not linked
 - `threenative-video-recorder-state-test`: TN_ENABLE_VIDEO=OFF: the video recorder target is not configured
 <!-- native-coverage-generated:end -->
+
+## Floor changes
+
+**This section lives below the generated marker on purpose.** It sat inside the generated block
+until 2026-08-29, where every `native:coverage` run silently deleted it — the ratchet-release
+history this file calls rare and important was one regeneration away from being lost each time.
+Keep hand-authored provenance below the marker.
+
+`src/runtime.cpp` 39.50% -> 38.88%, released once on 2026-08-28 when PRD-250's off-thread
+Worker landed. This is not a coverage regression: covered lines in that file went **up**,
+771 -> 785. The file grew 1952 -> 2019 lines, so the ratio fell while absolute coverage
+rose. The same change brought `src/workers/` into this configuration for the first time -
+it was previously listed under "not compiled" - which is why a new 9.05% floor appears
+above and why the total moved on a larger denominator.
+
+Releasing a floor is a ratchet release and should stay rare. The debt this records is
+`src/workers/` at 9.05%: `worker_registry.cpp` and `worker_thread.cpp` compile but are
+barely exercised by this configuration's tests.
 
 ## Phase 1 red-green and fail-closed evidence
 
