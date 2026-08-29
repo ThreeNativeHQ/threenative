@@ -1,7 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 export const DEFAULT_ADB_TIMEOUT_MS = 120_000;
 export const DEFAULT_ADB_MAX_BUFFER = 8 * 1024 * 1024;
@@ -40,9 +43,12 @@ export function resolveAdbExecutable(environment = process.env, options = {}) {
   return options.allowPathFallback === false ? undefined : "adb";
 }
 
-export function buildAdbInvocation(serial, args, environment = process.env) {
+export function buildAdbInvocation(serial, args, environment = process.env, options = {}) {
   const selectedSerial = serial || environment.THREENATIVE_ADB_SERIAL;
   if (typeof selectedSerial !== "string" || selectedSerial.length === 0) {
+    if (options.allowDefaultTransport === true) {
+      return { executable: resolveAdbExecutable(environment), args: [...args], serial: undefined };
+    }
     throw new AdbCommandError({
       args,
       detail: "a device serial or THREENATIVE_ADB_SERIAL is required",
@@ -67,7 +73,7 @@ export function buildAdbInvocation(serial, args, environment = process.env) {
 
 export function runAdbResult(serial, args, options = {}) {
   const environment = options.environment ?? process.env;
-  const invocation = buildAdbInvocation(serial, args, environment);
+  const invocation = buildAdbInvocation(serial, args, environment, options);
   const commandOptions = {
     cwd: options.cwd,
     encoding: "utf8",
@@ -106,8 +112,61 @@ export function runAdb(serial, args, options = {}) {
   return String(result.stdout ?? "");
 }
 
+export async function runAdbResultAsync(serial, args, options = {}) {
+  const environment = options.environment ?? process.env;
+  const invocation = buildAdbInvocation(serial, args, environment, options);
+  const commandOptions = {
+    cwd: options.cwd,
+    encoding: "utf8",
+    env: environment,
+    maxBuffer: options.maxBuffer ?? DEFAULT_ADB_MAX_BUFFER,
+    timeout: options.timeoutMs ?? DEFAULT_ADB_TIMEOUT_MS,
+  };
+  try {
+    const result = options.commandImpl
+      ? await options.commandImpl(invocation.executable, invocation.args, commandOptions)
+      : await execFileAsync(invocation.executable, invocation.args, commandOptions);
+    return {
+      error: result.error,
+      invocation,
+      rawStatus: result.status ?? 0,
+      status: result.status ?? 0,
+      stderr: String(result.stderr ?? ""),
+      stdout: String(result.stdout ?? ""),
+    };
+  } catch (error) {
+    const status = typeof error?.code === "number" ? error.code : 2;
+    return {
+      error,
+      invocation,
+      rawStatus: status,
+      status,
+      stderr: String(error?.stderr ?? ""),
+      stdout: String(error?.stdout ?? ""),
+    };
+  }
+}
+
 export function createAdbClient(serial, options = {}) {
   return {
+    async asyncResult(args, overrides = {}) {
+      return await runAdbResultAsync(serial, args, { ...options, ...overrides });
+    },
+    async asyncRun(args, overrides = {}) {
+      const result = await runAdbResultAsync(serial, args, { ...options, ...overrides });
+      if (result.error || result.status !== 0) {
+        const rawDetail = String(result.stderr || result.stdout || result.error?.message || "");
+        throw new AdbCommandError({
+          args,
+          detail: rawDetail.trim() || "unknown adb error",
+          exitCode: result.rawStatus ?? 2,
+          rawDetail,
+          serial: result.invocation.serial,
+          spawnFailed: Boolean(result.error && result.rawStatus == null),
+        });
+      }
+      return result.stdout;
+    },
     executable: resolveAdbExecutable(options.environment ?? process.env),
     result(args, overrides = {}) {
       return runAdbResult(serial, args, { ...options, ...overrides });

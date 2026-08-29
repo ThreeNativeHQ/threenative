@@ -383,13 +383,13 @@ describe("suppressPlayProtectOnAdbInstalls", () => {
       ["device-physics-stability.mjs", /adb\(\['install'/u],
       ["measure-android-js-engine.mjs", /"install", "-r", "-t"/u],
       ["profile-production.mjs", /'install', '-r'/u],
-      ["qualify-physical-mobile.mjs", /"install", "--no-streaming"/u],
+      ["qualify-physical-mobile.mjs", /installAndroid\(adbDevice/u],
       ["verify-android-first-proof.mjs", /common\('install'/u],
       ["verify-android-physics-parity.mjs", /"install", "-r"/u],
     ];
     for (const [script, installPattern] of installers) {
       const source = readFileSync(new URL(`../scripts/${script}`, import.meta.url), "utf8");
-      const suppression = /suppressPlayProtectOnAdbInstalls\(/u.exec(source);
+      const suppression = /suppressPlayProtectOnAdbInstalls(?:Async)?\(/u.exec(source);
       const install = installPattern.exec(source);
       assert(
         suppression !== null && install !== null && suppression.index < install.index,

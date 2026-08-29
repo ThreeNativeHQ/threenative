@@ -19,6 +19,18 @@ export function verifyInstalledPackage(execute, appId) {
   return installedPath;
 }
 
+export async function verifyInstalledPackageAsync(execute, appId) {
+  const installedPath = String(await execute(["shell", "pm", "path", appId])).trim();
+  if (!installedPath.startsWith("package:")) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_INSTALL_MISSING",
+      `pm path ${appId} returned '${installedPath}'`,
+      { appId, observed: installedPath },
+    );
+  }
+  return installedPath;
+}
+
 const THERMAL_STATUS_CODES = {
   NONE: 0,
   LIGHT: 1,
@@ -330,6 +342,37 @@ export function suppressPlayProtectOnAdbInstalls(serial, dependencies = {}) {
         "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
         `settings put global ${setting} 0 did not take (observed '${observed}'); the Play Protect install dialog will appear`,
         { serial, setting, observed },
+      );
+    }
+  }
+  return [...PLAY_PROTECT_INSTALL_SETTINGS];
+}
+
+export async function suppressPlayProtectOnAdbInstallsAsync(serial, dependencies = {}) {
+  if (
+    (typeof serial !== "string" || serial.length === 0) &&
+    typeof dependencies.adb !== "function"
+  ) {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
+  }
+  const execute = dependencies.adb;
+  if (typeof execute !== "function") {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_ADB", "an async adb executor is required");
+  }
+  for (const setting of PLAY_PROTECT_INSTALL_SETTINGS) {
+    try {
+      await execute(["shell", "settings", "put", "global", setting, "0"]);
+      const observed = String(
+        await execute(["shell", "settings", "get", "global", setting]),
+      ).trim();
+      if (observed !== "0") {
+        throw new Error(`readback was '${observed}'`);
+      }
+    } catch (error) {
+      throw new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
+        `could not disable adb-install verification for ${setting}: ${error?.message ?? error}`,
+        { serial, setting },
       );
     }
   }

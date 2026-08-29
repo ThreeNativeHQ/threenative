@@ -11,6 +11,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { PNG } from 'pngjs';
 import { readAndroidConfig } from './package-android.mjs';
+import { createAdbClient } from './lib/adb.mjs';
+import {
+  suppressPlayProtectOnAdbInstallsAsync,
+  verifyInstalledPackageAsync,
+} from './lib/device.mjs';
 
 import {
   PRODUCTION_EVIDENCE_VERSION,
@@ -478,10 +483,10 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
   if (modulePath === undefined) {
     return { elapsedMs: undefined, report: undefined, screenshot: undefined, series: undefined, status: 2 };
   }
-  if (target === 'android') await installAndroidArtifact(artifactPath, options.device);
   // The game declares its identity in `threenative.config.ts` and packaging resolves it; profiling
   // launches whatever packaging shipped, so it reads the id from there instead of restating one.
   const appId = readAndroidConfig(profileConfigPath(project, options.config)).app.id;
+  if (target === 'android') await installAndroidArtifact(artifactPath, options.device, appId);
   const config = {
     android: { activity: 'com.threenative.runtime.MystralActivity', packageName: appId },
     artifactDirectory,
@@ -1385,10 +1390,24 @@ async function playtestRunnerPath(project, tools) {
   return undefined;
 }
 
-async function installAndroidArtifact(apk, device) {
-  const args = [...(device === undefined ? [] : ['-s', device]), 'install', '-r', apk];
-  const result = await runCommand('adb', args, commandRoot);
+export async function installAndroidArtifact(apk, device, appId, dependencies = {}) {
+  const execute = dependencies.command ?? runCommand;
+  const { THREENATIVE_ADB_SERIAL: _ignoredSerial, ...environment } =
+    dependencies.environment ?? process.env;
+  const client = createAdbClient(device, {
+    allowDefaultTransport: true,
+    commandImpl: (executable, args, options) =>
+      execute(executable, args, commandRoot, options.env, options.timeout),
+    environment: { ...environment, THREENATIVE_ADB: 'adb' },
+    maxBuffer: 32 * 1024 * 1024,
+    timeoutMs: 120_000,
+  });
+  await suppressPlayProtectOnAdbInstallsAsync(device, {
+    adb: (args) => client.asyncRun(args),
+  });
+  const result = await client.asyncResult(['install', '-r', apk]);
   if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_ANDROID_INSTALL_FAILED', 'Installing the scaffolded Android platformer failed.');
+  await verifyInstalledPackageAsync((args) => client.asyncRun(args), appId);
 }
 
 async function hashPath(path) {

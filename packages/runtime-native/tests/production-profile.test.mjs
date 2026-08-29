@@ -19,6 +19,7 @@ import {
 import {
   aggregateMetrics,
   assembleEvidence,
+  installAndroidArtifact,
   isSuccessfulStartupSample,
   nativeFrameInstrumentation,
   parseProductionArgs,
@@ -33,6 +34,39 @@ import {
 const temporary = [];
 const sourceSha = 'a'.repeat(64);
 const artifactSha = sha256(Buffer.from('fixture-artifact'));
+
+test('Android profile install uses shared safeguards in order', async () => {
+  const calls = [];
+  await installAndroidArtifact('/tmp/candidate.apk', 'device-1', 'dev.example.game', {
+    command: async (_executable, args) => {
+      const operation = (args[0] === '-s' ? args.slice(2) : args).join(' ');
+      calls.push(operation);
+      if (operation.startsWith('shell settings get')) return { status: 0, stdout: '0\n', stderr: '' };
+      if (operation === 'shell pm path dev.example.game') return { status: 0, stdout: 'package:/data/app/dev.example.game/base.apk\n', stderr: '' };
+      return { status: 0, stdout: operation.startsWith('install ') ? 'Success\n' : '', stderr: '' };
+    },
+  });
+  const ordered = [
+    'shell settings put global package_verifier_enable 0',
+    'install -r /tmp/candidate.apk',
+    'shell pm path dev.example.game',
+  ].map((operation) => calls.indexOf(operation));
+  assert.ok(ordered.every((index) => index >= 0));
+  assert.deepEqual(ordered, [...ordered].sort((left, right) => left - right));
+
+  const defaultTransportCalls = [];
+  await installAndroidArtifact('/tmp/candidate.apk', undefined, 'dev.example.game', {
+    command: async (_executable, args) => {
+      defaultTransportCalls.push(args);
+      const operation = args.join(' ');
+      if (operation.startsWith('shell settings get')) return { status: 0, stdout: '0\n', stderr: '' };
+      if (operation === 'shell pm path dev.example.game') return { status: 0, stdout: 'package:/data/app/dev.example.game/base.apk\n', stderr: '' };
+      return { status: 0, stdout: operation.startsWith('install ') ? 'Success\n' : '', stderr: '' };
+    },
+    environment: { THREENATIVE_ADB_SERIAL: 'ambient-device' },
+  });
+  assert.ok(defaultTransportCalls.every((args) => !args.includes('-s')));
+});
 
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { force: true, recursive: true });
