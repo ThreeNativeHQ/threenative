@@ -105,6 +105,7 @@ option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
 option(TN_ENABLE_COVERAGE "Instrument native targets for source-based coverage" OFF)
 option(TN_ENABLE_SANITIZERS "Instrument native targets with AddressSanitizer and UBSan" OFF)
+option(TN_ENABLE_CLANG_TIDY "Run clang-tidy over ThreeNative native sources" OFF)
 # PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
 # picture by construction and must never ship. Asserted absent from every shipped preset.
 option(TN_ABLATE_BACKEND "PRD-226 arm A2: no-op the hot backend command entry points, keeping JS, trampoline and argument parsing intact" OFF)
@@ -137,6 +138,12 @@ if(TN_ENABLE_SANITIZERS)
         message(FATAL_ERROR
             "TN_ENABLE_SANITIZERS requires a Clang or GCC desktop toolchain")
     endif()
+endif()
+
+if(TN_ENABLE_CLANG_TIDY)
+    find_program(TN_CLANG_TIDY_EXECUTABLE NAMES clang-tidy REQUIRED)
+    set(CMAKE_CXX_CLANG_TIDY
+        "${TN_CLANG_TIDY_EXECUTABLE};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy")
 endif()
 
 # Native GLTF is deliberately not mapped to any implementation. AGENTS.md marks
