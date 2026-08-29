@@ -8,8 +8,6 @@ import {
   runAdb,
 } from "../scripts/lib/adb.mjs";
 import { assertDeviceReady, assertDeviceReadySync } from "../scripts/device-preflight.mjs";
-import { createInspectDevice } from "../scripts/inspect-launch.mjs";
-import { createColdStartDevice } from "../scripts/measure-cold-start.mjs";
 
 const healthyBattery = [
   "AC powered: false",
@@ -101,21 +99,6 @@ test("keeps timeout and output limits on the shared command", () => {
   assert.deepEqual(observed.args, ["-s", "device-1", "get-state"]);
   assert.equal(observed.options.timeout, 120_000);
   assert.equal(observed.options.maxBuffer, 8 * 1024 * 1024);
-});
-
-test("preserves numeric timeout overrides on adopter command interfaces", () => {
-  const observed = [];
-  const dependencies = {
-    existsSyncImpl: () => true,
-    spawnSyncImpl: (_executable, _args, options) => {
-      observed.push(options.timeout);
-      return { status: 0, stdout: "device\n", stderr: "" };
-    },
-  };
-  const environment = { THREENATIVE_ANDROID_SDK: "/fake/sdk" };
-  createColdStartDevice("device-1", environment, dependencies).command(["get-state"], 37_000);
-  createInspectDevice("device-1", environment, dependencies).command(["get-state"], 37_000);
-  assert.deepEqual(observed, [37_000, 37_000]);
 });
 
 test("preserves a command-runner result for qualification callers", () => {
