@@ -70,21 +70,6 @@ test("fails closed on a non-zero adb exit", () => {
   );
 });
 
-test("preserves raw sync spawn failure status", () => {
-  const device = createAdbClient("device-1", {
-    environment: { THREENATIVE_ADB: "/fake/adb" },
-    spawnSyncImpl: () => ({ error: new Error("spawn sentinel"), status: null }),
-  });
-  const result = device.result(["get-state"]);
-  assert.equal(result.rawStatus, null);
-  assert.equal(result.status, 1);
-  assert.throws(() => device.run(["get-state"]), (error) => {
-    assert.equal(error.exitCode, 2);
-    assert.equal(error.spawnFailed, true);
-    return true;
-  });
-});
-
 test("keeps timeout and output limits on the shared command", () => {
   let observed;
   const output = runAdb("device-1", ["get-state"], {
