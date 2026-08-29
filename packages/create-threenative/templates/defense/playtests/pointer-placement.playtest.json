@@ -1,0 +1,89 @@
+{
+  "name": "defense-pointer-placement",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 40,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "hover",
+      "pointerPosition": { "x": 0.31678, "y": 0.41783 },
+      "waitTicks": 5,
+      "release": true,
+      "screenshot": "hovered"
+    },
+    {
+      "kind": "input",
+      "label": "clear-hover",
+      "pointerPosition": { "x": 0.01, "y": 0.01 },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "touch-held",
+      "pointers": [{ "buttons": 1, "id": 1, "x": 0.31678, "y": 0.41783 }],
+      "waitTicks": 2,
+      "release": false,
+      "screenshot": "touch-held"
+    },
+    {
+      "kind": "input",
+      "label": "release",
+      "pointers": [],
+      "waitTicks": 1,
+      "release": false
+    },
+    { "kind": "wait", "label": "placed", "waitTicks": 2, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "state",
+        "path": "spent",
+        "atSteps": [
+          { "label": "hover", "equals": 0 },
+          { "label": "touch-held", "equals": 0 },
+          { "label": "placed", "equals": 40 }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "towers",
+        "atSteps": [
+          { "label": "hover", "equals": 0 },
+          { "label": "touch-held", "equals": 0 },
+          { "label": "placed", "equals": 1 }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "build-preview",
+        "component": "hovered",
+        "atSteps": [
+          { "label": "hover", "equals": true },
+          { "label": "clear-hover", "equals": false },
+          { "label": "touch-held", "equals": true }
+        ]
+      },
+      {
+        "entity": "build-preview",
+        "component": "tile",
+        "atSteps": [
+          { "label": "hover", "equals": "build-tile-2-3" },
+          { "label": "touch-held", "equals": "build-tile-2-3" },
+          { "label": "placed", "equals": "build-tile-2-3" }
+        ]
+      },
+      {
+        "entity": "build-preview",
+        "component": "placedTile",
+        "atSteps": [{ "label": "placed", "equals": "build-tile-2-3" }]
+      }
+    ]
+  },
+  "artifacts": { "screenshots": "before-after" }
+}

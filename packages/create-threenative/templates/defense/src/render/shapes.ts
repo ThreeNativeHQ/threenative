@@ -3,11 +3,13 @@ import {
   CylinderGeometry,
   Group,
   Mesh,
+  MeshStandardMaterial,
   type Object3D,
   SphereGeometry,
   TorusGeometry,
 } from "three";
 import { createMaterials } from "./materials.js";
+import { palette } from "./palette.js";
 
 export function board(width = 28, depth = 20): Mesh {
   const mesh = new Mesh(new BoxGeometry(width, 0.2, depth), createMaterials().ground);
@@ -15,6 +17,42 @@ export function board(width = 28, depth = 20): Mesh {
   mesh.receiveShadow = true;
   mesh.name = "build-ground";
   return mesh;
+}
+
+export function buildTiles(width = 28, depth = 20, size = 2): Group {
+  const group = new Group();
+  group.name = "build-tiles";
+  const geometry = new BoxGeometry(size, 0.02, size);
+  const columns = Math.floor(width / size);
+  const rows = Math.floor(depth / size);
+  for (let column = 0; column < columns; column += 1) {
+    for (let row = 0; row < rows; row += 1) {
+      const tile = new Mesh(
+        geometry,
+        new MeshStandardMaterial({
+          color: palette.accent,
+          depthWrite: false,
+          emissive: palette.accent,
+          emissiveIntensity: 0,
+          opacity: 0,
+          roughness: 0.7,
+          transparent: true,
+        }),
+      );
+      tile.name = `build-tile-${column}-${row}`;
+      tile.position.set((column + 0.5) * size - width / 2, 0.01, (row + 0.5) * size - depth / 2);
+      tile.visible = false;
+      group.add(tile);
+    }
+  }
+  return group;
+}
+
+export function setTileHighlighted(tile: Object3D, highlighted: boolean): void {
+  if (!(tile instanceof Mesh) || !(tile.material instanceof MeshStandardMaterial)) return;
+  tile.visible = highlighted;
+  tile.material.emissiveIntensity = highlighted ? 0.8 : 0;
+  tile.material.opacity = highlighted ? 0.42 : 0;
 }
 
 export function routeSegment(length: number, width: number): Object3D {

@@ -187,6 +187,26 @@ export type {
   IPathFollow3DSample,
 } from "./path-follow.js";
 /**
+ * Dispatch portable pointer events from the game surface to registered Three.js objects.
+ * @situation let the player click on a thing in the world
+ * @situation show a 3D object while a pointer hovers over it
+ * @situation handle touch and mouse taps on a loaded model without naming its child meshes
+ * @constraint listeners are side-table registrations; Three.js prototypes are never patched
+ * @constraint one raycast serves each active pointer and no raycast runs when nothing is registered
+ * @example ctx.pointer.on(tile, "tapped", (event) => place(event.point));
+ */
+export { PointerEvents3D } from "./pointer-events.js";
+export type {
+  IPointerDragHandle,
+  IPointerEvent3D,
+  IPointerEvents3D,
+  IPointerEvents3DOptions,
+  IPointerEvents3DPicker,
+  IPointerState,
+  PointerEvent3DListener,
+  PointerEvent3DType,
+} from "./pointer-events.js";
+/**
  * Read the host platform without reaching for browser globals.
  * @situation branch a portable game on web or native
  * @situation choose touch controls for a mobile device
@@ -281,4 +301,9 @@ export type { INormaliseToMetresOptions, NormaliseAxis } from "./scale.js";
  * attachToBone(character, "RightHand", rifle);
  */
 export { attachToBone, skeletonBones } from "./skeleton.js";
-export type { ContextMenuPolicy, IInputAction, IRawInputPointer } from "./input.js";
+export type {
+  ContextMenuPolicy,
+  IInputAction,
+  IRawInputPointer,
+  IRawInputPointerEdge,
+} from "./input.js";

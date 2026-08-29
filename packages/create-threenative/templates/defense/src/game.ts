@@ -10,7 +10,6 @@ import type { GameState } from "./state.js";
 
 const game = defineGame<GameState, DefensePhysics>({
   input: {
-    build: { pointer: true },
     move: {
       down: ["ArrowDown", "KeyS"],
       left: ["ArrowLeft", "KeyA"],

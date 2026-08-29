@@ -1,5 +1,5 @@
 import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
-import { type PerspectiveCamera, Vector3 } from "three";
+import { type Object3D, type PerspectiveCamera, Vector3 } from "three";
 import { Attacker } from "../attackers/Attacker.js";
 import { ROUTE_TEST_SLOT, RouteBoard, SAFE_BUILD_SLOTS } from "../board/Route.js";
 import { Economy, TOWER_COST } from "../economy.js";
@@ -10,6 +10,7 @@ import { setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
+import { buildTiles, setTileHighlighted } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { type GameState, INITIAL_STATE, MAX_LEAKS, registerLeak } from "../state.js";
 import { Tower } from "../towers/Tower.js";
@@ -31,6 +32,8 @@ export class Defense extends Scene<GameState, DefensePhysics> {
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
     const board = new RouteBoard(ctx);
+    const buildSurface = buildTiles();
+    ctx.add(buildSurface);
     const player = new Player(ctx);
     ctx.entities.add("player", player);
     const query = directSpaceState(ctx.physics);
@@ -50,6 +53,18 @@ export class Defense extends Scene<GameState, DefensePhysics> {
     let scanWindowFrames = 0;
     let scanWindowScans = 0;
     let scanWindowValid = false;
+    let hoveredTile: Object3D | undefined;
+    let placedTile: string | undefined;
+    const setHoveredTile = (tile: Object3D | undefined): void => {
+      if (hoveredTile === tile) return;
+      if (hoveredTile !== undefined) setTileHighlighted(hoveredTile, false);
+      hoveredTile = tile;
+      if (hoveredTile !== undefined) setTileHighlighted(hoveredTile, true);
+    };
+    ctx.pointer?.on(buildSurface, "pointerEntered", (event) => setHoveredTile(event.object));
+    ctx.pointer?.on(buildSurface, "pointerExited", (event) => {
+      if (event.object === hoveredTile) setHoveredTile(undefined);
+    });
     const place = (position: Vector3): void => {
       const result = buildable.validate(position);
       if (!result.accepted) {
@@ -71,6 +86,19 @@ export class Defense extends Scene<GameState, DefensePhysics> {
       ctx.entities.add(`tower.${id}`, tower);
       lastPlaced = position.clone();
     };
+    ctx.pointer?.on(buildSurface, "tapped", (event) => {
+      const towerCount = towers.size;
+      place(event.point.clone().setY(SAFE_BUILD_HEIGHT));
+      if (towers.size > towerCount) placedTile = event.object.name;
+    });
+    ctx.entities.add("build-preview", {
+      debug: () => ({
+        hovered: hoveredTile !== undefined,
+        placedTile: placedTile ?? "",
+        position: hoveredTile?.position.toArray() ?? [],
+        tile: hoveredTile?.name ?? "",
+      }),
+    });
     const spawn = (wave: number, member: number): void => {
       const id = `attacker.${wave}.${member}`;
       let attacker: Attacker | undefined;
@@ -109,10 +137,6 @@ export class Defense extends Scene<GameState, DefensePhysics> {
         if (leaks < MAX_LEAKS) status = "WON";
       },
     });
-    const attemptPointerPlacement = (): void => {
-      const hit = ctx.raycast({ targets: board.surface });
-      if (hit !== undefined) place(hit.point.clone().setY(SAFE_BUILD_HEIGHT));
-    };
     const recordRejected = (reason: PlacementReason): void => {
       if (reason === "route") routeRejects += 1;
       if (reason === "overlap") overlapRejects += 1;
@@ -129,7 +153,6 @@ export class Defense extends Scene<GameState, DefensePhysics> {
       if (status === "PLAYING") {
         player.update(frameCtx, dt);
         economy.update(dt);
-        if (frameCtx.input.justPressed("build")) attemptPointerPlacement();
         if (frameCtx.input.justPressed("safeBuild")) {
           const slot = SAFE_BUILD_SLOTS[safeSlot % SAFE_BUILD_SLOTS.length];
           safeSlot += 1;

@@ -231,7 +231,7 @@ this?* If no, you are not finished.
 <!-- shared: ctx-surface -->
 ## The `ctx` surface — you already have these, do not rebuild them
 
-`ctx` carries six things that get reimplemented by hand in almost every project, because
+`ctx` carries seven things that get reimplemented by hand in almost every project, because
 they are **properties on `ctx`, never imports** — grepping an existing file's imports will
 never surface them. This table covers only the `ctx` properties; call
 `engine_search_capabilities` for imports. The recipes behind this table live in
@@ -244,7 +244,13 @@ never surface them. This table covers only the `ctx` properties; call
 | `ctx.after(0.8, fn)` | `elapsed += dt; if (elapsed > 0.8)` | `(seconds, cb) => ScheduleHandle` |
 | `ctx.every(fn)` | a per-frame branch in `update` | `(cb: (dt: number) => void) => ScheduleHandle` |
 | `ctx.random.range(-1, 1)` | `Math.random()` | deterministic when `seed` is configured; otherwise `Math.random()` |
+| `ctx.pointer.on(...)` / `ctx.pointer.drag(...)` | hand-written hover, press, tap, and drag state | `(object, type, listener) => disposer` / `(object) => IPointerDragHandle` |
 | `ctx.raycast()` / `ctx.raycastAll()` | `new Raycaster()` + `intersectObject(s)` | `(options?: { screen?, origin?, direction?, far?, targets?, exclude? }) => Intersection \| undefined` / `readonly Intersection[]` |
+
+`ctx.pointer` dispatches `pointerEntered`, `pointerExited`, `pointerPressed`, `pointerReleased`,
+`tapped`, `dragStarted`, `dragged`, and `dragEnded` for the same pointer-id-specific mouse and
+touch stream on web and native. Register a mesh or loaded model root; the engine raycasts only
+registered objects and bubbles events through their parent chain.
 
 Three rules are load-bearing enough to stay here:
 

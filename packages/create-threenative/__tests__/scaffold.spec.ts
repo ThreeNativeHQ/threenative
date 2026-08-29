@@ -44,13 +44,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // holds the frame budget instead of the game hand-authoring a resolution constant.
   // Recomputed after Biome reformatted nine template files: the previous values were measured
   // before that formatting ran and were therefore stale the moment they were committed.
-  "action-rpg": "4229783b897791764b708990f686a87a3e86cfb27e5c4e035f1d4fe9cf9880ac",
-  defense: "2069eafd127b35b89adf856f2087b7cdd5bb09c2b50337521271da2625419636",
-  minimal: "81783acebe32339ccc51623a186af197bb48196f133e77c3f5be3b0567a8c366",
-  platformer: "bf0619518da5b602cace0b691f5df77bacba0463ee81e81ee0af44ba6b0e7e9d",
-  racing: "2f5846f31af48e459ec18425f8034edacbfb312dce004268c7c48e089f12fcd9",
-  shooter: "23e8fa8029a7fd9e496214ed97dee8003d54c94e6fb527e588c348911a4b0196",
-  starter: "85b4fd037e2e8d1af45a70bfa23f97d6ac4eb87d31edd64b38869a3721fdf935",
+  // Recomputed again for PRD-237: the shared capability reference now documents PointerEvents3D,
+  // which changes the generated reference bytes embedded in every scaffold.
+  // Recomputed again for the PRD-237 repair: the shared ctx surface now documents ctx.pointer,
+  // which changes the generated instructions embedded in every scaffold.
+  // Recomputed again for the PRD-237 continuation repair: the defense pointer-placement scenario
+  // clears mouse hover and captures the held touch highlight before its release.
+  "action-rpg": "eef2320a3865967901a5601481f286e307a2ac55abe6a4badadcb37af6a3dbc1",
+  defense: "e32ad31f2f9eda5782dbe465479bacd5cfed3a3039fb84e1ea6aa872f413ba33",
+  minimal: "06f98c27ce91866cc0df9fedd443b5bcc745045abf41da8c9107d0d08a79f4df",
+  platformer: "b9260208607f70cf269636edcb1777d123fa555f09f7f16736c02dff33561200",
+  racing: "1ef57e1d3d4aecb7ef7bab97e889db8e3c49322558a7ff4e83354494564adc6d",
+  shooter: "10564ea72d1479f193e2c3e9d47513818d3e36f79a0c65acddceb558c1bc90ac",
+  starter: "b8a4d2a2d71f071b003f699be0ff97410836cc6501fe5f146f38411a5b7ca105",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

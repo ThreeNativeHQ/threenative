@@ -79,4 +79,24 @@ describe("documented runtime contracts", () => {
       vi.useRealTimers();
     }
   });
+
+  it("keeps the documented pointer surface on a running context", async () => {
+    class PointerContractScene extends Scene {
+      static override readonly initialState = {};
+    }
+
+    const game = defineGame({
+      renderer: stubRenderer(testCanvas()),
+      scenes: { test: PointerContractScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      expect(typeof game.ctx?.pointer.on).toBe("function");
+      expect(typeof game.ctx?.pointer.drag).toBe("function");
+    } finally {
+      game.stop();
+    }
+  });
 });

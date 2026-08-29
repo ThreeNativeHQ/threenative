@@ -363,6 +363,26 @@
       "symbol": "PathFollow3D"
     },
     {
+      "constraints": [
+        "listeners are side-table registrations; Three.js prototypes are never patched",
+        "one raycast serves each active pointer and no raycast runs when nothing is registered"
+      ],
+      "example": "ctx.pointer.on(tile, \"tapped\", (event) => place(event.point));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class PointerEvents3D implements IPointerEvents3D { … }",
+      "situations": [
+        "let the player click on a thing in the world",
+        "show a 3D object while a pointer hovers over it",
+        "handle touch and mouse taps on a loaded model without naming its child meshes"
+      ],
+      "summary": "Dispatch portable pointer events from the game surface to registered Three.js objects.",
+      "supersedes": [],
+      "symbol": "PointerEvents3D"
+    },
+    {
       "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
       "example": "const measurement = measureThreePose(model);",
       "importPath": "@threenative/core",
