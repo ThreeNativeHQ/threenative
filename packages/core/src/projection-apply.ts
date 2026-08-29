@@ -1,7 +1,9 @@
 import {
   BatchedMesh,
   type BufferGeometry,
+  type Camera,
   type Color,
+  Frustum,
   InstancedMesh,
   LOD,
   type Light,
@@ -14,6 +16,7 @@ import {
   Points,
   Scene,
   SkinnedMesh,
+  Sphere,
   type SpotLight,
   Sprite,
   type SpriteMaterial,
@@ -51,15 +54,28 @@ const BATCH_GROWTH = 1.5;
 const BATCH_MIN_SLOTS = 16;
 
 /**
- * Per-instance frustum culling and depth sorting are both off.
- *
- * They are CPU work proportional to object count, and object-count-proportional CPU work is the
- * entire cost this class exists to remove — on the profile that motivated it, interpreted
- * JavaScript was the frame and the GPU was idle. A batch draws whole and lets the GPU discard what
- * is off screen.
+ * PRD-238 measurement (2026-08-28, tn-web on NVIDIA/Turing, 3 paired runs, frames 226–899): the
+ * 4,096-member rung with 75% outside the frustum reported 4,097 → 1,025 scene draw submissions
+ * (culling off → on; the harness excludes one presentation draw) and render.p50 1.60 → 1.10 ms
+ * (median of the three p50s, −0.50 ms). Keep culling enabled; the verification record is
+ * `docs/verification/runtime-perf-state.md` under PRD-238.
  */
-const PER_OBJECT_FRUSTUM_CULLED = false;
+const PER_OBJECT_FRUSTUM_CULLED = true;
 const SORT_BATCH_OBJECTS = false;
+
+/**
+ * PRD-238 Phase 3 measurement (2026-08-28, tn-web on NVIDIA/Turing, moving source, 3 paired runs,
+ * frames 226–899, 75% outside): compaction lost at both tested sizes — 1,024 members went from
+ * 0.70 to 0.80 ms and 4,096 from 0.30 to 0.60 ms (OFF → ON). Keep the measured optimization
+ * disabled until a workload records an enabled-path win; the exact comparison is in
+ * `docs/verification/runtime-perf-state.md` under PRD-238.
+ */
+const COMPACT_INSTANCED_BATCHES = false;
+
+// Shared callback scratch: render hooks run serially, so these never cross a renderer call.
+const INSTANCE_CULL_MATRIX = /* @__PURE__ */ new Matrix4();
+const INSTANCE_CULL_FRUSTUM = /* @__PURE__ */ new Frustum();
+const INSTANCE_CULL_SPHERE = /* @__PURE__ */ new Sphere();
 
 interface IBatch {
   readonly mesh: InstancedMesh;
@@ -72,6 +88,12 @@ interface IBatch {
   /** Slots handed out so far, which is also where the next unused one begins. */
   used: number;
   capacity: number;
+  readonly compact: boolean;
+  compactCount: number;
+  compactDirty: boolean;
+  lastCamera: Camera | undefined;
+  readonly lastCameraProjection: Matrix4;
+  readonly lastCameraWorld: Matrix4;
 }
 
 /**
@@ -396,10 +418,13 @@ export class ProjectionMirror {
         // Collapsed and returned to the free list rather than removed: an `InstancedMesh` has a
         // fixed slot count, and recycling is what lets a level stream objects in and out without
         // rebuilding its draws each time.
-        batch.mesh.setMatrixAt(slot, ZERO_MATRIX);
-        batch.mesh.instanceMatrix.needsUpdate = true;
+        if (slot >= 0) {
+          batch.mesh.setMatrixAt(slot, ZERO_MATRIX);
+          batch.mesh.instanceMatrix.needsUpdate = true;
+        }
         batch.instances.delete(object);
-        batch.free.push(slot);
+        if (slot >= 0) batch.free.push(slot);
+        batch.compactDirty = true;
         this.#state.delete(object);
       }
       if (batch.instances.size === 0) this.#disposeBatch(batch);
@@ -557,18 +582,112 @@ export class ProjectionMirror {
     if (visible !== state.visible || !matrixEquals(state.matrixWorld, mesh.matrixWorld)) {
       state.matrixWorld.copy(mesh.matrixWorld);
       state.visible = visible;
+      if (target.compact) target.compactDirty = true;
       // An `InstancedMesh` has no per-instance visibility flag, so a hidden object is given a
       // collapsed transform. Every one of its triangles then has zero area and is discarded before
       // rasterisation — the same trick the pass this replaces used, and the only one available
       // that does not disturb the other instances.
-      if (visible) target.mesh.setMatrixAt(slot, mesh.matrixWorld);
-      else target.mesh.setMatrixAt(slot, ZERO_MATRIX);
-      target.mesh.instanceMatrix.needsUpdate = true;
+      this.#writeInstancedMatrix(target, slot, visible ? mesh.matrixWorld : ZERO_MATRIX);
     }
     state.geometry = geometry;
     state.material = material;
     state.batch = target;
+    if (!target.compact) target.mesh.count = target.used;
     return true;
+  }
+
+  /**
+   * Reorders a large instanced batch into visible-first slots immediately before the draw.
+   *
+   * Reconciliation has no camera, and therefore cannot decide which instances are visible. The
+   * render hook is the narrow seam that has both the current camera and the already-reconciled
+   * source matrices. Hidden entries use `-1` in the mirror map and are excluded by `count`; the
+   * visible prefix stays dense so the backend submits no work for the tail.
+   */
+  #compactBatch(batch: IBatch, camera: Camera): void {
+    const boundingSphere = batch.geometry.boundingSphere;
+    const isArrayCamera = (camera as Camera & { isArrayCamera?: boolean }).isArrayCamera === true;
+    if (isArrayCamera || boundingSphere === null) {
+      this.#restoreFullBatch(batch);
+      return;
+    }
+
+    if (this.#canReuseCompaction(batch, camera)) return;
+
+    INSTANCE_CULL_MATRIX.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    INSTANCE_CULL_FRUSTUM.setFromProjectionMatrix(
+      INSTANCE_CULL_MATRIX,
+      camera.coordinateSystem,
+      camera.reversedDepth,
+    );
+
+    const visibleCount = this.#compactBatchInstances(batch, boundingSphere);
+    batch.compactCount = visibleCount;
+    batch.used = visibleCount;
+    // The unused tail is implicit. New entries take it from `used`, while a released visible
+    // entry still supplies an explicit free slot until the next camera pass compacts again.
+    batch.free.length = 0;
+    batch.mesh.count = visibleCount;
+    batch.lastCamera = camera;
+    batch.lastCameraProjection.copy(camera.projectionMatrix);
+    batch.lastCameraWorld.copy(camera.matrixWorldInverse);
+    batch.compactDirty = false;
+  }
+
+  #canReuseCompaction(batch: IBatch, camera: Camera): boolean {
+    return (
+      !batch.compactDirty &&
+      batch.lastCamera === camera &&
+      matrixEquals(batch.lastCameraProjection, camera.projectionMatrix) &&
+      matrixEquals(batch.lastCameraWorld, camera.matrixWorldInverse)
+    );
+  }
+
+  #compactBatchInstances(batch: IBatch, boundingSphere: Sphere): number {
+    let visibleCount = 0;
+    for (const [object, oldSlot] of batch.instances) {
+      const state = this.#state.get(object);
+      if (state === undefined) continue;
+      INSTANCE_CULL_SPHERE.copy(boundingSphere).applyMatrix4(state.matrixWorld);
+      const visible = state.visible && INSTANCE_CULL_FRUSTUM.intersectsSphere(INSTANCE_CULL_SPHERE);
+      const nextSlot = visible ? visibleCount : -1;
+      if (visible) {
+        if (oldSlot !== nextSlot) {
+          batch.mesh.setMatrixAt(nextSlot, state.matrixWorld);
+          batch.mesh.instanceMatrix.needsUpdate = true;
+        }
+        visibleCount += 1;
+      }
+      if (oldSlot !== nextSlot) batch.instances.set(object, nextSlot);
+    }
+    return visibleCount;
+  }
+
+  /** Restores the full-buffer contract for array cameras and geometries without a bounding sphere. */
+  #restoreFullBatch(batch: IBatch): void {
+    let slot = 0;
+    for (const object of batch.instances.keys()) {
+      const state = this.#state.get(object);
+      if (state === undefined) continue;
+      batch.instances.set(object, slot);
+      batch.mesh.setMatrixAt(slot, state.visible ? state.matrixWorld : ZERO_MATRIX);
+      slot += 1;
+    }
+    for (; slot < batch.capacity; slot += 1) batch.mesh.setMatrixAt(slot, ZERO_MATRIX);
+    batch.mesh.instanceMatrix.needsUpdate = true;
+    batch.compactCount = batch.instances.size;
+    batch.used = batch.instances.size;
+    batch.free.length = 0;
+    batch.mesh.count = batch.capacity;
+    batch.lastCamera = undefined;
+    batch.compactDirty = false;
+  }
+
+  /** Writes a reconciled matrix unless the compacted camera pass currently owns this hidden slot. */
+  #writeInstancedMatrix(target: IBatch, slot: number, matrix: Matrix4): void {
+    if (target.compact && slot < 0) return;
+    target.mesh.setMatrixAt(slot, matrix);
+    target.mesh.instanceMatrix.needsUpdate = true;
   }
 
   /** Whether the game currently wants this object drawn, ancestors included. */
@@ -595,7 +714,13 @@ export class ProjectionMirror {
    */
   #ensureBatch(group: IProjectionBatchGroup): IBatch | undefined {
     const existing = this.#batches.get(group);
-    if (existing !== undefined && existing.capacity >= group.memberCount) return existing;
+    const shouldCompact = COMPACT_INSTANCED_BATCHES;
+    if (
+      existing !== undefined &&
+      existing.capacity >= group.memberCount &&
+      existing.compact === shouldCompact
+    )
+      return existing;
     const capacity = Math.max(BATCH_MIN_SLOTS, Math.ceil(group.memberCount * BATCH_GROWTH));
     const first = group.members[0] as Mesh;
     if (existing !== undefined) this.#disposeBatch(existing);
@@ -633,7 +758,18 @@ export class ProjectionMirror {
       free: [],
       used: 0,
       capacity,
+      compact: COMPACT_INSTANCED_BATCHES,
+      compactCount: 0,
+      compactDirty: true,
+      lastCamera: undefined,
+      lastCameraProjection: new Matrix4(),
+      lastCameraWorld: new Matrix4(),
     };
+    if (batch.compact) {
+      mesh.onBeforeRender = (_renderer, _scene, camera) => this.#compactBatch(batch, camera);
+      mesh.onBeforeShadow = (_renderer, _object, _camera, shadowCamera) =>
+        this.#compactBatch(batch, shadowCamera);
+    }
     this.#batches.set(group, batch);
     this.scene.add(mesh);
     this.#compileMs += (globalThis.performance?.now() ?? 0) - startedAt;
@@ -692,8 +828,8 @@ export class ProjectionMirror {
     } catch {
       return undefined;
     }
-    mesh.perObjectFrustumCulled = false;
-    mesh.sortObjects = false;
+    mesh.perObjectFrustumCulled = PER_OBJECT_FRUSTUM_CULLED;
+    mesh.sortObjects = SORT_BATCH_OBJECTS;
     mesh.frustumCulled = false;
     // Carried from the sources, exactly as the instanced lane carries them: every member agreed,
     // because the flags are part of what keyed the group.
@@ -868,13 +1004,16 @@ export class ProjectionMirror {
       // something else claims it. Reusing slots rather than rebuilding the batch is what keeps a
       // level that streams objects in and out from rebuilding its draws every time it does.
       if ((batch as IBatch).mesh.isInstancedMesh === true) {
-        (batch as IBatch).mesh.setMatrixAt(slot, ZERO_MATRIX);
-        (batch as IBatch).mesh.instanceMatrix.needsUpdate = true;
+        if (slot >= 0) {
+          (batch as IBatch).mesh.setMatrixAt(slot, ZERO_MATRIX);
+          (batch as IBatch).mesh.instanceMatrix.needsUpdate = true;
+        }
+        (batch as IBatch).compactDirty = true;
       } else {
         (batch as IBatched).mesh.setVisibleAt(slot, false);
       }
       batch.instances.delete(object);
-      batch.free.push(slot);
+      if (slot >= 0) batch.free.push(slot);
     }
     this.#state.delete(object);
   }
@@ -969,7 +1108,11 @@ export class ProjectionMirror {
     if (batch === undefined || slot === undefined) return undefined;
     const matrixWorld = new Matrix4();
     // Both lanes answer the same way; which primitive backs the batch is not the caller's business.
-    batch.mesh.getMatrixAt(slot, matrixWorld);
+    if ((batch as IBatch).mesh.isInstancedMesh === true && slot < 0) {
+      matrixWorld.copy(state.matrixWorld);
+    } else {
+      batch.mesh.getMatrixAt(slot, matrixWorld);
+    }
     return { lane: "batched", matrixWorld, visible: state.visible };
   }
 

@@ -1,3 +1,12 @@
+import {
+  type BatchedMesh,
+  BoxGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  Scene,
+} from "three/webgpu";
+import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
 import { installRendererStageHooks } from "../../../scripts/render-profile/renderer-stage-hooks.js";
 // Web entry for the PRD-117 ThreeNative arm: drives the ladder and parks a §5.1 run report on
 // `window` for `scripts/engine-load-test/run-web.ts` to collect. Kept out of `game.ts` so the
@@ -29,6 +38,35 @@ interface IRungReport {
   triangles: number;
   visibleObjects: number;
 }
+
+interface ICullingArmReport {
+  drawCalls: number;
+  renderP50Ms: number;
+  renderP95Ms: number;
+  repeat: number;
+}
+
+interface ICullingReport {
+  cullingOff: ICullingArmReport[];
+  cullingOn: ICullingArmReport[];
+  measuredFrameEnd: number;
+  measuredFrameStart: number;
+  objectCount: number;
+  offscreenFraction: number;
+  sampleCount: number;
+}
+
+interface ICullingProbe {
+  batch: BatchedMesh;
+  camera: PerspectiveCamera;
+  dispose(): void;
+  projection: SceneRenderProjection;
+  root: Scene;
+}
+
+const CULLING_OBJECT_COUNT = 4_096;
+const CULLING_VISIBLE_COUNT = CULLING_OBJECT_COUNT / 4;
+const CULLING_ANCHOR_COUNT = 2_048;
 
 const parameters = new URLSearchParams(globalThis.location.search);
 const frames = readInteger("frames", FRAMES_PER_RUNG);
@@ -162,6 +200,126 @@ async function measureRung(
   };
 }
 
+function createCullingProbe(): ICullingProbe {
+  const source = new Scene();
+  const material = new MeshBasicMaterial({ color: 0xffffff });
+  const anchorGeometry = new BoxGeometry(1, 1, 1);
+  for (let index = 0; index < CULLING_ANCHOR_COUNT; index += 1) {
+    const anchor = new Mesh(anchorGeometry, material);
+    anchor.position.set((index % 64) - 32, Math.floor(index / 64) - 16, 0);
+    source.add(anchor);
+  }
+  const meshes: Mesh[] = [];
+  for (let index = 0; index < CULLING_OBJECT_COUNT; index += 1) {
+    const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
+    mesh.position.z = index < CULLING_VISIBLE_COUNT ? 0 : 1_000;
+    source.add(mesh);
+    meshes.push(mesh);
+  }
+  const projection = new SceneRenderProjection(source);
+  projection.reconcile();
+  if (
+    projection.deoptimized ||
+    projection.report.instancedBatches !== 1 ||
+    projection.report.materialBatches !== 1 ||
+    projection.report.projectedObjects !== CULLING_ANCHOR_COUNT + CULLING_OBJECT_COUNT
+  ) {
+    projection.dispose();
+    material.dispose();
+    anchorGeometry.dispose();
+    for (const mesh of meshes) mesh.geometry.dispose();
+    throw new Error("TN_CULLING_PROBE_SETUP_FAILED");
+  }
+
+  let batch: BatchedMesh | undefined;
+  projection.root.traverse((object) => {
+    if ((object as BatchedMesh).isBatchedMesh === true) batch = object as BatchedMesh;
+  });
+  if (batch === undefined) {
+    projection.dispose();
+    material.dispose();
+    anchorGeometry.dispose();
+    for (const mesh of meshes) mesh.geometry.dispose();
+    throw new Error("TN_CULLING_PROBE_BATCH_MISSING");
+  }
+
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.set(0, 0, 10);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  projection.root.updateMatrixWorld(true);
+  return {
+    batch,
+    camera,
+    dispose: () => {
+      projection.dispose();
+      material.dispose();
+      anchorGeometry.dispose();
+      for (const mesh of meshes) mesh.geometry.dispose();
+    },
+    projection,
+    root: projection.root,
+  };
+}
+
+async function measureCullingArm(
+  renderer: Awaited<ReturnType<typeof createLoadTestHarness>>["renderer"],
+  cullingOn: boolean,
+  repeat: number,
+): Promise<ICullingArmReport> {
+  const probe = createCullingProbe();
+  // The ON arm uses the projection's production setting. The OFF arm is the paired ablation on
+  // the same prepared batch, and is never a game-facing option.
+  if (!cullingOn) probe.batch.perObjectFrustumCulled = false;
+  const renderMs: number[] = [];
+  let drawCalls = 0;
+  const statsFrame = Math.floor((frames + warmup) / 2);
+  try {
+    for (let frameIndex = 0; frameIndex < frames; frameIndex += 1) {
+      renderer.info.reset();
+      const startedAt = performance.now();
+      await renderer.render(probe.root, probe.camera);
+      const elapsed = performance.now() - startedAt;
+      if (frameIndex > warmup) renderMs.push(elapsed);
+      if (frameIndex === statsFrame) {
+        // WebGPU's default framebuffer path adds one full-screen presentation draw after the
+        // scene pass. The culling result is the scene's sub-draw count, so keep that presentation
+        // draw out of the A/B number while retaining it in the renderer's own meter.
+        drawCalls = Math.max(0, renderer.info.render.drawCalls - 1);
+      }
+      await nextFrame();
+    }
+  } finally {
+    probe.dispose();
+  }
+  return {
+    drawCalls,
+    renderP50Ms: percentile(renderMs, 0.5),
+    renderP95Ms: percentile(renderMs, 0.95),
+    repeat,
+  };
+}
+
+async function measureCullingRung(
+  renderer: Await<ReturnType<typeof createLoadTestHarness>>["renderer"],
+): Promise<ICullingReport> {
+  const cullingOn: ICullingArmReport[] = [];
+  const cullingOff: ICullingArmReport[] = [];
+  for (let repeat = 0; repeat < repeats; repeat += 1) {
+    cullingOn.push(await measureCullingArm(renderer, true, repeat));
+    cullingOff.push(await measureCullingArm(renderer, false, repeat));
+  }
+  return {
+    cullingOff,
+    cullingOn,
+    measuredFrameEnd: frames - 1,
+    measuredFrameStart: warmup + 1,
+    objectCount: CULLING_OBJECT_COUNT,
+    offscreenFraction: 1 - CULLING_VISIBLE_COUNT / CULLING_OBJECT_COUNT,
+    sampleCount: frames - warmup - 1,
+  };
+}
+
 // Read from the adapter the browser actually handed out, never assumed: a run that silently fell
 // back to a software rasteriser must be visible in the published report (PRD-117 §4.5).
 async function describeAdapter(): Promise<string> {
@@ -189,11 +347,13 @@ async function main(): Promise<void> {
       }
     }
   }
+  const culling = await measureCullingRung(harness.renderer);
+  console.info(`TN_CULLING_RUNG:${JSON.stringify(culling)}`);
   const report = {
     arm: "tn-web",
     build: {
       notes:
-        "vite dev build, three/webgpu render path as ThreeNative ships it; defineGame loop not in the measured path",
+        "vite dev build, SceneRenderProjection consumer on three/webgpu; culling A/B uses the production planner and excludes the presentation draw",
       type: "release",
     },
     device: {
@@ -208,6 +368,7 @@ async function main(): Promise<void> {
     },
     driver: { adapter: harness.adapterLabel, renderer: "three/webgpu WebGPURenderer" },
     engine: { name: "threenative", version: readVersion() },
+    culling,
     rungs,
   };
   (globalThis as unknown as Record<string, unknown>).__ENGINE_LOAD_TEST__ = report;

@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
+  type BatchedMesh,
   BoxGeometry,
   BufferAttribute,
   Group,
@@ -7,6 +10,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   Object3D,
+  PerspectiveCamera,
   Scene,
   SkinnedMesh,
   Sprite,
@@ -53,9 +57,118 @@ function projectionOver(scene: Scene): SceneRenderProjection {
   return projection;
 }
 
+function materialBatchProbe(): {
+  batch: BatchedMesh;
+  camera: PerspectiveCamera;
+  group: Group;
+  projection: SceneRenderProjection;
+  root: Scene;
+} {
+  const source = new Scene();
+  const material = new MeshBasicMaterial();
+  const anchorGeometry = new BoxGeometry(1, 1, 1);
+  for (let index = 0; index < 64; index += 1) {
+    source.add(new Mesh(anchorGeometry, material));
+  }
+  for (let index = 0; index < 64; index += 1) {
+    const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
+    mesh.position.z = index < 16 ? 0 : 1_000;
+    source.add(mesh);
+  }
+
+  const projection = projectionOver(source);
+
+  let batch: BatchedMesh | undefined;
+  projection.root.traverse((object) => {
+    if ((object as BatchedMesh).isBatchedMesh === true) batch = object as BatchedMesh;
+  });
+  if (batch === undefined) throw new Error("Projection mirror did not build a material batch");
+
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.set(0, 0, 10);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  projection.root.updateMatrixWorld(true);
+  return { batch, camera, group: new Group(), projection, root: projection.root };
+}
+
+function instancedBatchProbe(): {
+  batch: InstancedMesh;
+  camera: PerspectiveCamera;
+  group: Group;
+  projection: SceneRenderProjection;
+  root: Scene;
+} {
+  const source = new Scene();
+  const geometry = new BoxGeometry(1, 1, 1);
+  geometry.computeBoundingSphere();
+  const material = new MeshBasicMaterial();
+  for (let index = 0; index < 1_024; index += 1) {
+    const mesh = new Mesh(geometry, material);
+    mesh.position.z = index < 256 ? 0 : 1_000;
+    source.add(mesh);
+  }
+  const projection = projectionOver(source);
+  let batch: InstancedMesh | undefined;
+  projection.root.traverse((object) => {
+    if ((object as InstancedMesh).isInstancedMesh === true) batch = object as InstancedMesh;
+  });
+  if (batch === undefined) throw new Error("Projection mirror did not build an instanced batch");
+
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.set(0, 0, 10);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  projection.root.updateMatrixWorld(true);
+  return { batch, camera, group: new Group(), projection, root: projection.root };
+}
+
+function countCollectionConstructors(run: () => void): { maps: number; sets: number } {
+  const originalMap = globalThis.Map;
+  const originalSet = globalThis.Set;
+  let maps = 0;
+  let sets = 0;
+
+  class CountingMap<K, V> extends originalMap<K, V> {
+    constructor(entries?: Iterable<readonly [K, V]> | null) {
+      super(entries);
+      maps += 1;
+    }
+  }
+  class CountingSet<T> extends originalSet<T> {
+    constructor(values?: Iterable<T> | null) {
+      super(values);
+      sets += 1;
+    }
+  }
+
+  globalThis.Map = CountingMap;
+  globalThis.Set = CountingSet;
+  try {
+    run();
+  } finally {
+    globalThis.Map = originalMap;
+    globalThis.Set = originalSet;
+  }
+  return { maps, sets };
+}
+
 describe("projection hot path", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("keeps the culling benchmark on the production projection consumer", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../../examples/engine-load-test/src/main.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("SceneRenderProjection");
+    expect(source).toContain("projection.reconcile()");
+    expect(source).not.toContain("ProjectionMirror");
+    expect(source).not.toContain("IProjectionProjectPlan");
+    expect(source).not.toMatch(/(?:mirror|projectionMirror)\.apply\(/u);
   });
 
   // RED: walkProjection never descends into an LOD (projection-plan.ts skips the subtree), so
@@ -115,6 +228,52 @@ describe("projection hot path", () => {
       spy.mockRestore();
     }
     expect(lookups).toBeLessThan(meshCount * 3.5);
+  });
+
+  // RED mutation: change PER_OBJECT_FRUSTUM_CULLED to false in projection-apply.ts; the setting
+  // assertion fails and the companion sub-draw test returns the uncompacted count.
+  it("should still allocate nothing per frame with culling enabled", () => {
+    const { batch, camera, group, projection, root } = materialBatchProbe();
+    try {
+      expect(batch.perObjectFrustumCulled).toBe(true);
+      const allocations = countCollectionConstructors(() => {
+        for (let frame = 0; frame < 10; frame += 1) {
+          batch.onBeforeRender(
+            undefined as never,
+            root,
+            camera,
+            batch.geometry,
+            batch.material as MeshBasicMaterial,
+            group,
+          );
+        }
+      });
+      expect(allocations).toEqual({ maps: 0, sets: 0 });
+    } finally {
+      projection.dispose();
+    }
+  });
+
+  it("should still allocate nothing per frame while syncing instanced batches", () => {
+    const { batch, camera, group, projection, root } = instancedBatchProbe();
+    try {
+      const allocations = countCollectionConstructors(() => {
+        for (let frame = 0; frame < 10; frame += 1) {
+          batch.onBeforeRender(
+            undefined as never,
+            root,
+            camera,
+            batch.geometry,
+            batch.material as MeshBasicMaterial,
+            group,
+          );
+        }
+      });
+      expect(batch.count).toBe(1_024);
+      expect(allocations).toEqual({ maps: 0, sets: 0 });
+    } finally {
+      projection.dispose();
+    }
   });
 
   // The scan classifies through an internal variant that skips the LOD ancestor walk (the walk

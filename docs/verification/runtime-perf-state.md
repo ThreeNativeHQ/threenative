@@ -630,6 +630,86 @@ were re-run at 220 seconds (29 and 25 live windows) and why the reader refused t
 rather than reporting them. `0.55/1×` was refused outright and there is **no valid 0.55 pair** —
 the +7.47 ms once recorded at that rung stays withdrawn and is not replaced.
 
+### 1.3.10 PRD-238 projection culling (2026-08-28)
+
+This is an engine-owned projection measurement. The probe builds a source `Scene` with 2,048
+same-geometry anchors and 4,096 unique-geometry members sharing one material, then calls
+`new SceneRenderProjection(source).reconcile()`. It does not construct an
+`IProjectionProjectPlan` or call `ProjectionMirror.apply`; the material batch is admitted by the
+normal planner. The 4,096 unique members are 75% beyond the camera's far plane. It is separate
+from the load game's hand-authored L2 `InstancedMesh`, which is deliberately not a projection batch.
+The browser was desktop Chrome with the NVIDIA/Turing adapter, 1280×720, vsync off. The exact run
+was:
+
+```sh
+TMPDIR=/dev/shm pnpm bench:engines --arm tn-web --frames 900 --warmup 225 --repeats 3 --ladder 256 --modes L2 --skip-baseline
+```
+
+The measured window was frames 226–899 (674 samples per arm); no whole-run average was used.
+
+| culling arm | scene sub-draws | render.p50 per repeat (ms) | median render.p50 | render.p95 per repeat (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| OFF | 4,097 | 1.60 / 1.60 / 1.60 | **1.60** | 2.40 / 2.40 / 2.50 |
+| ON | 1,025 | 1.30 / 1.10 / 1.00 | **1.10** | 2.10 / 1.70 / 3.40 |
+
+The raw `renderer.info.render.drawCalls` values were 4,098 → 1,026 because Three's default
+framebuffer path adds one full-screen presentation draw. The harness removes that one presentation
+draw from this table, so ON removed **3,072 scene sub-draws (75%)** and moved median desktop
+`render.p50` **−0.50 ms** (1.60 → 1.10 ms). The live setting is
+`PER_OBJECT_FRUSTUM_CULLED = true`; it is not a game-facing option.
+
+Phase 3 was entered because the batched result won. The instanced probe used the same 900-frame,
+three-pair window, moved its source scene each frame, and reported `mesh.count` plus renderer
+triangles at the midpoint:
+
+| members | submitted instances OFF → ON | triangles OFF → ON | median render.p50 OFF → ON (ms) |
+| ---: | ---: | ---: | ---: |
+| 128 | 192 → 192 | 2,305 → 2,305 | 0.90 → 0.90 |
+| 256 | 384 → 384 | 4,609 → 4,609 | 0.90 → 0.90 |
+| 512 | 768 → 768 | 9,217 → 9,217 | 1.00 → 0.90 |
+| 1,024 | 1,536 → **256** | 18,433 → **3,073** | 0.70 → 0.80 |
+| 4,096 | 6,144 → **1,024** | 73,729 → **12,289** | 0.30 → 0.60 |
+
+Those numbers are a historical exploratory compaction arm, not an enabled default. The repair keeps
+`COMPACT_INSTANCED_BATCHES = false`: the 1,024-member case regressed from 0.70 to 0.80 ms and the
+4,096-member case regressed from 0.30 to 0.60 ms (OFF → ON), so no floor is claimed and no new
+winning measurement is being implied. The uncompacted path keeps `mesh.count` at the active member
+count and retains the no-allocation reconcile guard. No Phase 4 spatial index was added.
+
+Core tests cover the dense-prefix/reconcile path, the disabled-compaction count control, and the
+steady-state constructor guard. A static regression check rejects a direct fabricated-plan or
+`ProjectionMirror.apply` shortcut in the load harness.
+
+### 1.3.11 PRD-238 consumer conformance (2026-08-28)
+
+The real browser fixture uses `SceneRenderProjection` as the consumer, renders its `root`, and
+checks source/projected raycasts plus `projection.inspect()` reconciliation. An initial unheaded
+run reached SwiftShader and exited 1 with Three's `OperationError: Instance dropped in
+popErrorScope`; the final headed recipe reached NVIDIA/Turing and passed on the actual WebGPU
+renderer. This is a browser/WebGPU result, not a native claim.
+
+Projected WebGPU run (exit 0):
+
+```sh
+node packages/playtest/dist/runner/cli.js examples/engine-load-test/playtests/projection-conformance.playtest.json --url http://127.0.0.1:5203/projection-conformance.html --server-command "pnpm --filter threenative-engine-load-test exec vite --host 127.0.0.1 --port 5203" --browser-recipe webgpu --headed --artifacts artifacts/prd-238-repair-playtest-webgpu-headed-final
+```
+
+Source WebGPU control (exit 0):
+
+```sh
+node packages/playtest/dist/runner/cli.js examples/engine-load-test/playtests/projection-conformance.playtest.json --url "http://127.0.0.1:5204/projection-conformance.html?mode=source" --server-command "pnpm --filter threenative-engine-load-test exec vite --host 127.0.0.1 --port 5204" --browser-recipe webgpu --headed --artifacts artifacts/prd-238-repair-playtest-webgpu-source-final
+```
+
+Both reports observed `sourceRaycastHit=true`, `projectedRaycastHit=true`,
+`sourceRaycastDistance=7.5`, `projectedRaycastDistance=7.5`, `reconciled=true`, and state
+`raycast-match-reconciled`; both screenshots were nonblank at ratio `1`, with zero console,
+network, and runtime errors. The captured files are
+`artifacts/prd-238-repair-playtest-webgpu-headed-final/after.png` and
+`artifacts/prd-238-repair-playtest-webgpu-source-final/after.png`. A byte comparison found
+`921,600` pixels, `0` differing pixels, and maximum channel delta `0`; the projected screenshot
+was inspected and showed the cyan world geometry plus the conformance readout. Native execution is
+**UNVERIFIED**: no native device or desktop lane was available in this repair round.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1

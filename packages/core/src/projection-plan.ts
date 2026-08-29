@@ -750,22 +750,34 @@ function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: nu
 
 function predictDraws(workspace: IProjectionScanWorkspace): number {
   let predictedDraws = workspace.exactLaneCount;
+  // A BatchedMesh still executes one multidraw sub-draw per visible member on WebGPU, so charge
+  // every material-group member rather than pretending the packed object is one draw. The group
+  // still earns admission when the aggregate plan beats the authored candidate count: it removes
+  // renderer objects and gives the backend per-member frustum culling. Claiming the members here
+  // keeps them out of the below-floor exact lane, so the same source cannot be drawn twice.
+  for (let index = 0; index < workspace.activeMaterialGroupCount; index += 1) {
+    const group = workspace.activeMaterialGroups[index] as IProjectionMaterialGroup;
+    if (group.memberCount < MIN_BATCH_MEMBERS) continue;
+    workspace.materialGroups[workspace.materialGroupCount] = group;
+    workspace.materialGroupCount += 1;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      workspace.materialClaims.set(group.members[member] as Mesh, workspace.scanNumber);
+    }
+    predictedDraws += group.memberCount;
+  }
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
-    if (group.memberCount < MIN_BATCH_MEMBERS) predictedDraws += group.memberCount;
-    else {
+    if (group.memberCount < MIN_BATCH_MEMBERS) {
+      for (let member = 0; member < group.memberCount; member += 1) {
+        const mesh = group.members[member] as Mesh;
+        if (workspace.materialClaims.get(mesh) !== workspace.scanNumber) predictedDraws += 1;
+      }
+    } else {
       workspace.batchGroups[workspace.batchGroupCount] = group;
       workspace.batchGroupCount += 1;
       predictedDraws += 1;
     }
   }
-  // Material-keyed groups are not counted as a fold. On the WebGPU backend a BatchedMesh still
-  // executes one multidraw sub-draw per visible member, so packing copies saves render objects,
-  // not draw commands — and the packed-copy path drew a real town (displaced geometry, flat
-  // walls) with every scene-graph invariant pristine. The members stay counted once by their own
-  // below-floor geometry groups, nothing is claimed, and the worthwhile ratio below declines the
-  // scene onto the exact lane, which renders it correctly. Registering material groups again is
-  // a backend-aware-prediction question, and it needs a visual conformance proof first.
   return predictedDraws;
 }
 
