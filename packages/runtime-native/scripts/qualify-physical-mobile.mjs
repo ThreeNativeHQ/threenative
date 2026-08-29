@@ -6,14 +6,6 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { createAdbClient } from "./lib/adb.mjs";
-import {
-  assertDeviceReadySync,
-  MINIMUM_BATTERY_PERCENT,
-  suppressPlayProtectOnAdbInstalls,
-  verifyInstalledPackage,
-} from "./lib/device.mjs";
-
 import {
   REQUIRED_PREREQUISITES,
   assertValidPhysicalDeviceEvidence,
@@ -249,15 +241,6 @@ function command(executable, args, { cwd = workspaceRoot, env = process.env, tim
     stderr: result.stderr ?? "",
     error: result.error,
   };
-}
-
-function qualificationDevice(adb, serial, commandImpl = command) {
-  return createAdbClient(serial, {
-    commandImpl,
-    environment: { ...process.env, THREENATIVE_ADB: adb },
-    maxBuffer: 16 * 1024 * 1024,
-    timeoutMs: 30_000,
-  });
 }
 
 /**
@@ -661,9 +644,10 @@ export function verifyAndroidArtifact(path, candidateSha, options = {}) {
   };
 }
 
-function inspectAndroidDevice(device, serial) {
+function inspectAndroidDevice(adb, serial, options = {}) {
+  const run = options.command ?? command;
   const getprop = (name) => {
-    const value = device.result(["shell", "getprop", name]);
+    const value = run(adb, ["-s", serial, "shell", "getprop", name]);
     if (value.status !== 0) throw new QualificationError(`adb could not read ${name}: ${value.stderr || value.stdout}`, { code: "TN_QUALIFY_ANDROID_DEVICE_BLOCKED" });
     return value.stdout.trim();
   };
@@ -672,10 +656,10 @@ function inspectAndroidDevice(device, serial) {
   if (qemu === "1" || /^(goldfish|ranchu)$/iu.test(hardware)) throw new QualificationError(`TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED: ${serial} identifies as an emulator.`, { code: "TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED" });
   const abi = getprop("ro.product.cpu.abi");
   if (!/^(arm64-v8a|aarch64)$/iu.test(abi)) throw new QualificationError(`Android device ABI ${abi} is not arm64.`, { code: "TN_QUALIFY_ANDROID_ARM64_REQUIRED" });
-  const gpuInfo = device.result(["shell", "dumpsys", "SurfaceFlinger"]);
+  const gpuInfo = run(adb, ["-s", serial, "shell", "dumpsys", "SurfaceFlinger"]);
   const gpu = gpuInfo.stdout.match(/(?:GLES|Vulkan|GPU)[^\n]*/iu)?.[0]?.trim() ?? "unknown GPU";
   if (/swiftshader|software rasterizer|llvmpipe/iu.test(gpu)) throw new QualificationError(`Android device reports a software GPU: ${gpu}.`, { code: "TN_QUALIFY_NATIVE_GPU_REQUIRED" });
-  const size = device.result(["shell", "wm", "size"]);
+  const size = run(adb, ["-s", serial, "shell", "wm", "size"]);
   const dimensions = /(?:Physical size|Override size):\s*(\d+)x(\d+)/iu.exec(size.stdout);
   if (dimensions === null) throw new QualificationError("Android device did not report a usable physical screen size.", { code: "TN_QUALIFY_ANDROID_DEVICE_BLOCKED" });
   return {
@@ -695,8 +679,9 @@ function inspectAndroidDevice(device, serial) {
   };
 }
 
-function installAndroid(device, app) {
-  const result = device.result(["install", "--no-streaming", app], { timeoutMs: 120_000 });
+function installAndroid(adb, serial, app, options = {}) {
+  const run = options.command ?? command;
+  const result = run(adb, ["-s", serial, "install", "--no-streaming", app], { timeout: 120_000 });
   if (result.status !== 0) throw new QualificationError(`adb install failed before lifecycle qualification: ${result.stderr || result.stdout}`, { code: "TN_QUALIFY_ANDROID_INSTALL_BLOCKED" });
 }
 
@@ -712,10 +697,11 @@ function installAndroid(device, app) {
 const ANDROID_APPLICATION_ID = "com.threenative.game";
 const ANDROID_LAUNCH_ACTIVITY = `${ANDROID_APPLICATION_ID}/com.threenative.runtime.MystralActivity`;
 
-function launchAndroid(device) {
-  const result = device.result(["shell", "am", "start", "-W", "-n", ANDROID_LAUNCH_ACTIVITY]);
+function launchAndroid(adb, serial, options = {}) {
+  const run = options.command ?? command;
+  const result = run(adb, ["-s", serial, "shell", "am", "start", "-W", "-n", ANDROID_LAUNCH_ACTIVITY], { timeout: 30_000 });
   if (result.status !== 0) throw new QualificationError(`Android launch failed: ${result.stderr || result.stdout}`, { code: "TN_QUALIFY_ANDROID_LAUNCH_FAILED", status: "fail" });
-  const pid = device.result(["shell", "pidof", ANDROID_APPLICATION_ID]);
+  const pid = run(adb, ["-s", serial, "shell", "pidof", ANDROID_APPLICATION_ID]);
   const value = Number(pid.stdout.trim().split(/\s+/u)[0]);
   if (!Number.isInteger(value) || value <= 0) throw new QualificationError("Android launch did not report a live process id.", { code: "TN_QUALIFY_ANDROID_LAUNCH_FAILED", status: "fail" });
   return value;
@@ -825,9 +811,11 @@ function parseGfxinfoFrameIntervals(stdout) {
 }
 
 function collectSampledAndroidValue({
-  device,
+  adb,
+  serial,
   durationMs,
   cadenceMs,
+  commandRunner,
   now,
   sleep,
 }) {
@@ -842,22 +830,22 @@ function collectSampledAndroidValue({
     const delay = target - now();
     if (delay > 0) sleep(delay);
     const at = new Date(now()).toISOString();
-    const frame = device.result(["shell", "dumpsys", "gfxinfo", ANDROID_APPLICATION_ID, "framestats"]);
+    const frame = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "gfxinfo", ANDROID_APPLICATION_ID, "framestats"]);
     const frameIntervals = frame.status === 0 ? parseGfxinfoFrameIntervals(frame.stdout) : [];
     if (frameIntervals.length === 0) errors.frame.push(frame.stderr || `no frame intervals at ${at}`);
     else for (const value of frameIntervals) frameSamples.push({ at, value });
 
-    const memory = device.result(["shell", "dumpsys", "meminfo", ANDROID_APPLICATION_ID]);
+    const memory = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "meminfo", ANDROID_APPLICATION_ID]);
     const memoryKb = /TOTAL\s+(\d+)/iu.exec(memory.stdout)?.[1];
     if (memory.status !== 0 || memoryKb === undefined) errors.memory.push(memory.stderr || `TOTAL row unavailable at ${at}`);
     else memorySamples.push({ at, value: Number(memoryKb) * 1024 });
 
-    const thermal = device.result(["shell", "dumpsys", "thermalservice"]);
+    const thermal = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "thermalservice"]);
     const thermalState = /(?:Status|Current thermal status):\s*([^\n]+)/iu.exec(thermal.stdout)?.[1]?.trim();
     if (thermal.status !== 0 || thermalState === undefined) errors.thermal.push(thermal.stderr || `thermal state unavailable at ${at}`);
     else thermalSamples.push({ at, value: thermalState });
 
-    const battery = device.result(["shell", "dumpsys", "battery"]);
+    const battery = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "battery"]);
     const batteryPercent = /level:\s*(\d+)/iu.exec(battery.stdout)?.[1];
     if (battery.status !== 0 || batteryPercent === undefined) errors.battery.push(battery.stderr || `battery level unavailable at ${at}`);
     else batterySamples.push({ at, value: Number(batteryPercent) });
@@ -871,11 +859,12 @@ function collectSampledAndroidValue({
 }
 
 export function collectAndroidTelemetry(adb, serial, durationMs, cadenceMs, dependencies = {}) {
-  const device = dependencies.device ?? qualificationDevice(adb, serial, dependencies.command);
   const telemetry = collectSampledAndroidValue({
-    device,
+    adb,
+    serial,
     durationMs,
     cadenceMs,
+    commandRunner: dependencies.command ?? command,
     now: dependencies.now ?? Date.now,
     sleep: dependencies.sleep ?? sleepBlocking,
   });
@@ -1127,43 +1116,13 @@ function runAndroidQualification(options, preflightResult, artifact, dependencie
   if (adb === null) throw new QualificationError("adb is unavailable; physical Android qualification is blocked.", { code: "TN_QUALIFY_TOOL_REQUIRED" });
   const run = dependencies.command ?? command;
   const now = dependencies.now ?? Date.now;
-  const adbDevice = qualificationDevice(adb, options.device, run);
-  try {
-    assertDeviceReadySync(
-      options.device,
-      {
-        allowOverride: false,
-        maxThermalStatus: "NONE",
-        minBatteryPercent: MINIMUM_BATTERY_PERCENT,
-        requireDischarging: true,
-      },
-      { adb: (args) => adbDevice.run(args) },
-    );
-    suppressPlayProtectOnAdbInstalls(options.device, { adb: (args) => adbDevice.run(args) });
-  } catch (error) {
-    throw new QualificationError(error instanceof Error ? error.message : String(error), {
-      code: "TN_QUALIFY_ANDROID_DEVICE_BLOCKED",
-    });
-  }
-  const device = inspectAndroidDevice(adbDevice, options.device);
+  const device = inspectAndroidDevice(adb, options.device, { command: run });
   const installStartedAt = new Date(now()).toISOString();
-  installAndroid(adbDevice, options.app);
-  try {
-    verifyInstalledPackage((args) => adbDevice.run(args), artifact.applicationId);
-  } catch (error) {
-    throw new QualificationError(error instanceof Error ? error.message : String(error), {
-      code: "TN_QUALIFY_ANDROID_INSTALL_BLOCKED",
-    });
-  }
+  installAndroid(adb, options.device, options.app, { command: run });
   const launchStartedAt = new Date(now()).toISOString();
-  const pid = launchAndroid(adbDevice);
+  const pid = launchAndroid(adb, options.device, { command: run });
   const lifecycleRun = runLifecycleScenario(options, { target: "android", device: options.device, adb, app: options.app }, { command: run, now });
-  const telemetry = collectAndroidTelemetry(adb, options.device, options.durationMs, options.cadenceMs, {
-    command: run,
-    device: adbDevice,
-    now,
-    sleep: dependencies.sleep,
-  });
+  const telemetry = collectAndroidTelemetry(adb, options.device, options.durationMs, options.cadenceMs, { command: run, now, sleep: dependencies.sleep });
   const telemetryErrors = telemetryFailure(telemetry);
   if (telemetryErrors.length > 0) throw new QualificationError(`Android telemetry is incomplete: ${telemetryErrors.join("; ")}`, { code: "TN_QUALIFY_TELEMETRY_INCOMPLETE", details: telemetryErrors });
   const artifactObservationPath = writeArtifactObservation(options, artifact);

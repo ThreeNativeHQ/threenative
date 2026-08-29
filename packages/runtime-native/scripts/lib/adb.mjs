@@ -65,41 +65,25 @@ export function buildAdbInvocation(serial, args, environment = process.env) {
   };
 }
 
-export function runAdbResult(serial, args, options = {}) {
+export function runAdb(serial, args, options = {}) {
   const environment = options.environment ?? process.env;
   const invocation = buildAdbInvocation(serial, args, environment);
-  const commandOptions = {
-    cwd: options.cwd,
+  const result = (options.spawnSyncImpl ?? spawnSync)(invocation.executable, invocation.args, {
     encoding: "utf8",
     env: environment,
     maxBuffer: options.maxBuffer ?? DEFAULT_ADB_MAX_BUFFER,
     timeout: options.timeoutMs ?? DEFAULT_ADB_TIMEOUT_MS,
-  };
-  const result = options.commandImpl
-    ? options.commandImpl(invocation.executable, invocation.args, commandOptions)
-    : (options.spawnSyncImpl ?? spawnSync)(invocation.executable, invocation.args, commandOptions);
-  return {
-    error: result.error,
-    invocation,
-    rawStatus: result.status,
-    status: result.status == null ? 1 : result.status,
-    stderr: String(result.stderr ?? ""),
-    stdout: String(result.stdout ?? ""),
-  };
-}
-
-export function runAdb(serial, args, options = {}) {
-  const result = runAdbResult(serial, args, options);
+  });
   if (result.error || result.status !== 0) {
     const rawDetail = String(result.stderr || result.stdout || result.error?.message || "");
     const detail = rawDetail.trim() || "unknown adb error";
     const error = new AdbCommandError({
       args,
       detail,
-      exitCode: result.rawStatus ?? 2,
+      exitCode: result.status ?? 2,
       rawDetail,
-      serial: result.invocation.serial,
-      spawnFailed: Boolean(result.error && result.rawStatus == null),
+      serial: invocation.serial,
+      spawnFailed: Boolean(result.error && result.status == null),
     });
     throw options.mapError ? options.mapError(error) : error;
   }
@@ -108,10 +92,6 @@ export function runAdb(serial, args, options = {}) {
 
 export function createAdbClient(serial, options = {}) {
   return {
-    executable: resolveAdbExecutable(options.environment ?? process.env),
-    result(args, overrides = {}) {
-      return runAdbResult(serial, args, { ...options, ...overrides });
-    },
     run(args, overrides = {}) {
       return runAdb(serial, args, { ...options, ...overrides });
     },
