@@ -50,7 +50,7 @@ export function nativeCoverageInputFiles(runtimeRoot) {
   visitNativeInputs(join(runtimeRoot, "include"), files);
   visitAllInputs(join(runtimeRoot, "src", "runtime-scripts"), files);
   visitNativeInputs(join(runtimeRoot, "src"), files);
-  visitNativeInputs(join(runtimeRoot, "tests"), files);
+  visitAllInputs(join(runtimeRoot, "tests"), files);
   for (const file of files) {
     if (!existsSync(file)) throw new Error(`native coverage input is missing: ${file}`);
   }

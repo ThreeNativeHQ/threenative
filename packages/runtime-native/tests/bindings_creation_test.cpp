@@ -35,6 +35,7 @@ constexpr const char* kScript = R"JS((() => {
   expectCreationFailure("createBindGroup", "Failed to create bind group", () =>
     device.createBindGroup({ layout: {}, entries: [] }),
   );
+
 })())JS";
 
 }  // namespace
@@ -58,6 +59,6 @@ int main() {
         return 1;
     }
 
-    std::cout << "native WebGPU creation bindings passed\n";
+    std::cout << "proof: creation-refusal\n";
     return 0;
 }

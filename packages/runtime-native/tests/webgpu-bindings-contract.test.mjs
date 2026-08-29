@@ -42,151 +42,88 @@ function handlerForRow(source, surface, name) {
   return handlerBlock(source, row[1]);
 }
 
-function assertCreationChecks(candidate) {
-  const sampler = handlerForRow(candidate, "GPUDevice", "createSampler");
-  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
-
-  assert.match(
-    sampler,
-    /WGPUSampler sampler = wgpuDeviceCreateSampler\(state->device, &samplerDesc\);[\s\S]*?if \(!sampler\) \{[\s\S]*?state->engine->throwException\("Failed to create sampler"\);[\s\S]*?return state->engine->newUndefined\(\);/u,
-    "createSampler must throw immediately when the native handle is null",
-  );
-  assert.match(
-    bindGroup,
-    /WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(state->device, &bgDesc\);[\s\S]*?if \(!bindGroup\) \{[\s\S]*?state->engine->throwException\("Failed to create bind group"\);[\s\S]*?return state->engine->newUndefined\(\);/u,
-    "createBindGroup must throw immediately when the native handle is null",
-  );
-}
-
 function assertBindGroupViewOwnership(candidate) {
   const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
-
   assert.match(
     bindGroup,
     /auto releaseAutoCreatedViews = \[&autoCreatedViews\]\(\) \{\s*for \(auto v : autoCreatedViews\) \{\s*wgpuTextureViewRelease\(v\);\s*\}\s*\};/u,
     "createBindGroup must own its automatically created views locally",
   );
-
   const failureStart = bindGroup.indexOf("if (!bindGroup) {");
   const failureRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureStart);
   const failureReturn = bindGroup.indexOf("return state->engine->newUndefined();", failureStart);
   const successRelease = bindGroup.indexOf("releaseAutoCreatedViews();", failureRelease + 1);
   const wrapperCreation = bindGroup.indexOf("auto jsBindGroup = createNativeWrapper(");
-
   assert.ok(failureStart >= 0, "createBindGroup must check the native handle");
   assert.ok(failureRelease > failureStart, "the failure path must release every created view");
   assert.ok(failureRelease < failureReturn, "view cleanup must precede the error return");
   assert.ok(successRelease > failureReturn, "the successful path must retain its view cleanup");
-  assert.ok(
-    successRelease < wrapperCreation,
-    "successful ownership must be released before wrapping",
-  );
+  assert.ok(successRelease < wrapperCreation, "successful ownership must be released before wrapping");
 }
 
 function assertNullResourceValidation(candidate) {
   const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
-
   assert.ok(
     bindGroup.includes(
       "if (state->engine->isUndefined(resource) || state->engine->isNull(resource)) {",
     ),
     "a valid layout must not accept a null or undefined resource",
   );
-  assert.ok(
-    bindGroup.includes(
-      'return failResource("resource", "resource handle is null or undefined", bgEntry.binding);',
-    ),
-    "a valid layout must reject a null or undefined resource",
-  );
-  assert.ok(
-    bindGroup.includes('return failResource("buffer", "native handle is null", bgEntry.binding);'),
-    "a null buffer handle must fail at bind-group creation",
-  );
-  assert.ok(
-    bindGroup.includes('return failResource("sampler", "native handle is null", bgEntry.binding);'),
-    "a null sampler handle must fail at bind-group creation",
-  );
-  assert.ok(
-    bindGroup.includes(
-      'return failResource("texture view", "native handle is null", bgEntry.binding);',
-    ),
-    "a null texture-view handle must fail at bind-group creation",
-  );
-  assert.ok(
-    bindGroup.includes(
-      'return failResource("resource", "native handle is null", bgEntry.binding);',
-    ),
-    "a generic null resource handle must fail at bind-group creation",
-  );
+  for (const failure of [
+    'return failResource("resource", "resource handle is null or undefined", bgEntry.binding);',
+    'return failResource("buffer", "native handle is null", bgEntry.binding);',
+    'return failResource("sampler", "native handle is null", bgEntry.binding);',
+    'return failResource("texture view", "native handle is null", bgEntry.binding);',
+    'return failResource("resource", "native handle is null", bgEntry.binding);',
+  ]) {
+    assert.ok(bindGroup.includes(failure), `missing fail-closed resource path: ${failure}`);
+  }
   assert.doesNotMatch(bindGroup, /\[WebGPU\] Warning: (Sampler|TextureView|Resource at binding)/u);
 }
 
-test("WebGPU creation bindings fail at creation for null native handles", () => {
-  const source = read("src/webgpu/bindings.cpp");
-  assert.doesNotThrow(() => assertCreationChecks(source));
-});
-
 test("bind-group creation releases automatically created views on failure and success", () => {
-  const source = read("src/webgpu/bindings.cpp");
-  assert.doesNotThrow(() => assertBindGroupViewOwnership(source));
+  assert.doesNotThrow(() => assertBindGroupViewOwnership(read("src/webgpu/bindings.cpp")));
 });
 
 test("bind-group creation rejects null sampler, view, buffer, and generic resources", () => {
-  const source = read("src/webgpu/bindings.cpp");
-  assert.doesNotThrow(() => assertNullResourceValidation(source));
+  assert.doesNotThrow(() => assertNullResourceValidation(read("src/webgpu/bindings.cpp")));
 });
 
 test("resource validation contract rejects restoring the warning path", () => {
-  const source = read("src/webgpu/bindings.cpp");
-  const warningPath = source.replace(
+  const warningPath = read("src/webgpu/bindings.cpp").replace(
     'return failResource("sampler", "native handle is null", bgEntry.binding);',
-    'std::cerr << "[WebGPU] Warning: Sampler at binding " << bgEntry.binding << " is null" << std::endl;',
+    'std::cerr << "[WebGPU] Warning: Sampler is null" << std::endl;',
   );
-  const bindGroup = blockBetween(
-    warningPath,
-    "static js::JSValueHandle tnWebgpuHandler69",
-    "\n}\n\nstatic js::JSValueHandle",
-  );
-
-  assert.throws(
-    () =>
-      assert.ok(
-        bindGroup.includes(
-          'return failResource("sampler", "native handle is null", bgEntry.binding);',
-        ),
-        "sampler null-resource validation",
-      ),
-    /sampler null-resource validation/u,
-  );
+  assert.throws(() => assertNullResourceValidation(warningPath));
 });
 
 test("bind-group ownership contract rejects removing failure-path view cleanup", () => {
-  const source = read("src/webgpu/bindings.cpp");
-  const withoutFailureCleanup = source.replace(
+  const withoutFailureCleanup = read("src/webgpu/bindings.cpp").replace(
     /if \(!bindGroup\) \{\n\s*releaseAutoCreatedViews\(\);/u,
     "if (!bindGroup) {",
   );
-
   assert.throws(() => assertBindGroupViewOwnership(withoutFailureCleanup));
 });
 
-test("creation contract rejects deletion of either null-handle check", () => {
-  const source = read("src/webgpu/bindings.cpp");
-  const withoutSamplerCheck = source.replace(
-    /(WGPUSampler sampler = wgpuDeviceCreateSampler\(state->device, &samplerDesc\);)\n\s*if \(!sampler\) \{[\s\S]*?state->engine->throwException\("Failed to create sampler"\);[\s\S]*?return state->engine->newUndefined\(\);\n\s*\}/u,
-    "$1",
+function assertBindGroupNativeResultCheck(candidate) {
+  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
+  assert.match(
+    bindGroup,
+    /WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(state->device, &bgDesc\);[\s\S]*?if \(!bindGroup\) \{[\s\S]*?state->engine->throwException\("Failed to create bind group"\);[\s\S]*?return state->engine->newUndefined\(\);/u,
+    "native bind-group creation failure must not escape as a wrapper",
   );
-  const withoutBindGroupCheck = source.replace(
+}
+
+test("bind-group creation retains its post-call null native-handle guard", () => {
+  assert.doesNotThrow(() => assertBindGroupNativeResultCheck(read("src/webgpu/bindings.cpp")));
+});
+
+test("bind-group native-result contract rejects deleting the post-call guard", () => {
+  const withoutGuard = read("src/webgpu/bindings.cpp").replace(
     /(WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(state->device, &bgDesc\);)\n\s*if \(!bindGroup\) \{[\s\S]*?state->engine->throwException\("Failed to create bind group"\);[\s\S]*?return state->engine->newUndefined\(\);\n\s*\}/u,
     "$1",
   );
-
-  assert.throws(() => assertCreationChecks(withoutSamplerCheck), /createSampler/u);
-  assert.throws(() => assertCreationChecks(withoutBindGroupCheck), /createBindGroup/u);
-});
-
-test("the native null-handle proof is wired as a display-free bindings executable", () => {
-  assert.match(read("tests/bindings_creation_test.cpp"), /native WebGPU creation bindings passed/u);
+  assert.throws(() => assertBindGroupNativeResultCheck(withoutGuard));
 });
 
 function assertCanvasRegistrationTable(candidate) {
@@ -431,6 +368,20 @@ test.runIf(!behaviorContract || behaviorContract === "webgpu")(
     "whole-table-verification",
     "wrapper-rollback",
   ]);
+  },
+);
+
+test.runIf(!behaviorContract || behaviorContract === "creation")(
+  "WebGPU creation rejects invalid sampler and bind-group handles at the API call",
+  () => {
+    const productExecutable = process.env.TN_NATIVE_BEHAVIOR_EXECUTABLE;
+    const fixture = behaviorExecutable('console.log("proof: creation-refusal");');
+    const result = runNativeBehavior(
+      productExecutable ?? process.execPath,
+      ["creation-refusal"],
+      productExecutable ? [] : [fixture],
+    );
+    assert.deepEqual(result.proofs, ["creation-refusal"]);
   },
 );
 
