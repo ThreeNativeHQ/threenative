@@ -279,6 +279,11 @@ public:
             delete ref;
         }
         nativeFunctionRefs_.clear();
+        for (auto* ref : weakRefs_) {
+            ref->persistent.Reset();
+            delete ref;
+        }
+        weakRefs_.clear();
         for (auto& entry : moduleCache_) {
             entry.second.Reset();
         }
@@ -1263,6 +1268,8 @@ public:
         weakData->persistent.Reset(isolate_, local);
         weakData->callback = std::move(callback);
         weakData->isolate = isolate_;
+        weakData->owner = this;
+        weakRefs_.insert(weakData);
 
         // Tell V8 about external (Dawn) memory so it triggers major GC
         // when native resources accumulate. 16KB is an overestimate per
@@ -1277,6 +1284,7 @@ public:
             ref->callback();  // Release the Dawn resource
             ref->isolate->AdjustAmountOfExternalAllocatedMemory(-kExternalResourceSize);
             ref->persistent.Reset();
+            ref->owner->weakRefs_.erase(ref);
             delete ref;
         }, v8::WeakCallbackType::kParameter);
     }
@@ -1810,6 +1818,7 @@ private:
         v8::Persistent<v8::Value> persistent;
         std::function<void()> callback;
         v8::Isolate* isolate = nullptr;
+        V8Engine* owner = nullptr;
     };
 
     v8::Isolate* isolate_ = nullptr;
@@ -1831,6 +1840,7 @@ private:
     std::unordered_set<v8::Persistent<v8::Value>*> frameHandles_;  // Handles to free at end of frame
     std::unordered_set<void*> protectedHandles_;
     std::unordered_set<NativeFunctionRef*> nativeFunctionRefs_;
+    std::unordered_set<WeakRef*> weakRefs_;
     // Handlers read the same few property names ("length", "offset", "data", …) thousands of
     // times per frame; interning them replaces a NewFromUtf8 allocation per read with one map
     // lookup. The set of names is tiny and bounded by the host's own call sites.
