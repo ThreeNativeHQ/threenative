@@ -53,6 +53,25 @@ describe("Billboard3D", () => {
     expect(worldFront(label).angleTo(firstFront)).toBeCloseTo(0, 6);
   });
 
+  it("faces an overhead nameplate when no axis is locked", () => {
+    const camera = new PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(0, 20, 0.1);
+    camera.lookAt(0, 0, 0);
+
+    const parent = new Group();
+    parent.rotation.y = 0.22;
+    const label = new Group();
+    parent.add(label);
+
+    new Billboard3D(label, { camera }).update();
+
+    const expected = camera
+      .getWorldPosition(new Vector3())
+      .sub(label.getWorldPosition(new Vector3()))
+      .normalize();
+    expect(worldFront(label).angleTo(expected)).toBeCloseTo(0, 6);
+  });
+
   it("locks a nameplate to the world's y axis", () => {
     const camera = new PerspectiveCamera(45, 1, 0.1, 100);
     camera.position.set(4, 8, 6);

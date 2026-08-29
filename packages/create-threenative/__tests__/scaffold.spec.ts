@@ -44,14 +44,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // holds the frame budget instead of the game hand-authoring a resolution constant.
   // Recomputed after Biome reformatted nine template files: the previous values were measured
   // before that formatting ran and were therefore stale the moment they were committed.
-  // Recomputed after PRD-247 added per-item capabilities and the shooter's proof scenario.
-  "action-rpg": "5df77ecdcae74f6007b5d5b65a3bcf5617e96c05a5355f6e09fef18dd324855d",
-  defense: "cefb8b41d0951c1e796a541b6089806912f0493ceea3e5c72649f73aa55be4e7",
-  minimal: "f78368adc5cbda2e1b0bdaeef21f42713f8df652b3fbdf0609f0eab2457768ff",
-  platformer: "75db465ae98cef6dcf109f85042c6e0ecc4077accd99397f006565cdb0f9d9ce",
-  racing: "d6b0ae2ac769084297b6ae34cc6b6551460f527817497c508d0e5db72044ec86",
-  shooter: "ed6532dd9fd7346d8e5f2fcb1da510f0be96c7dfc37820c018906161e02f9137",
-  starter: "f12a0b8ff75c9d8c51b5554bc92222840609e791586301cfbcb284389534b65d",
+  // Recomputed after PRD-247 added per-item capabilities, the shooter's proof scenario, and the
+  // unrestricted billboard example in the generated capability reference.
+  "action-rpg": "6f56f12656e7a5741c011d46d59b60bd51fb73bd9f3cb0ba6f72211b1ac26044",
+  defense: "472d6165f5d06adcb17b7aa28060db3f68434543d9bb1693a7687f66c8fd9b2b",
+  minimal: "619f67063a28fb53bf3240eadb2ff6f9b45cc8c71409aaac01522dcc4a875001",
+  platformer: "1df03341ce9995ba9d163011ed50453e1019697ee5e807de40c833ad00f2afd0",
+  racing: "53ae6dcf1ee97499a60db0fbb37a93abd3f2f0591f204c6e2818ec8a08330d89",
+  shooter: "2a88b6f6edb96bc57ea33ef303bbb2a169ddb7faaa827a689f1a6cfbc21e8dba",
+  starter: "cfc20e2a3bb66e41ab1fae96f638680c354ebb9421d92c4385de4e63b71b98ef",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

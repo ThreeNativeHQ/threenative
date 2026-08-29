@@ -36,7 +36,7 @@ export type {
  * @situation billboard a tree, label, or effect under a rotated parent
  * @constraint call update from the owning scene; no global scene scan is installed
  * @constraint orthographic cameras use their forward direction, and lockAxis restricts world rotation
- * @example const billboard = new Billboard3D(label, { camera, lockAxis: "y" });
+ * @example const billboard = new Billboard3D(label, { camera });
  * billboard.update();
  */
 export { Billboard3D } from "./billboard.js";

@@ -5,12 +5,10 @@ export type BillboardLockAxis = "x" | "y" | "z";
 export interface IBillboard3DOptions {
   /** Camera whose view direction or position the object follows. */
   readonly camera: Camera;
-  /** Restrict the facing rotation to one world axis, for example `"y"` for a nameplate. */
+  /** Restrict the facing rotation to one world axis, for example `"y"` for a tree. */
   readonly lockAxis?: BillboardLockAxis;
 }
 
-const FRONT = new Vec3(0, 0, 1);
-const CAMERA_FORWARD = new Vec3(0, 0, -1);
 const EPSILON = 1e-12;
 
 /**
@@ -58,17 +56,18 @@ export class Billboard3D {
     camera.getWorldQuaternion(this.#cameraQuaternion);
 
     if (camera.type === "OrthographicCamera") {
-      this.#direction.copy(CAMERA_FORWARD).applyQuaternion(this.#cameraQuaternion).negate();
+      this.#direction.set(0, 0, -1).applyQuaternion(this.#cameraQuaternion).negate();
     } else {
       camera.getWorldPosition(this.#cameraPosition);
       this.#direction.subVectors(this.#cameraPosition, this.#objectPosition);
       if (this.#direction.lengthSq() <= EPSILON)
-        this.#direction.copy(CAMERA_FORWARD).applyQuaternion(this.#cameraQuaternion).negate();
+        this.#direction.set(0, 0, -1).applyQuaternion(this.#cameraQuaternion).negate();
     }
-    if (this.#direction.lengthSq() <= EPSILON) this.#direction.copy(FRONT);
+    if (this.#direction.lengthSq() <= EPSILON) this.#direction.set(0, 0, 1);
     this.#lockDirection();
     this.#direction.normalize();
-    this.#objectQuaternion.setFromUnitVectors(FRONT, this.#direction);
+    this.#objectPosition.set(0, 0, 1);
+    this.#objectQuaternion.setFromUnitVectors(this.#objectPosition, this.#direction);
 
     const parent = this.object.parent;
     if (parent === null) {

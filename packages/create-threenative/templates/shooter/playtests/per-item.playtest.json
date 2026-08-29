@@ -35,6 +35,11 @@
         "atSteps": [{ "label": "hit", "equals": 1 }],
         "changed": true
       },
+      {
+        "id": "state",
+        "path": "nameplateFacingCamera",
+        "atSteps": [{ "label": "sprite-baseline", "equals": 1 }]
+      },
       { "id": "state", "path": "pickupFrameChanges", "changed": true }
     ],
     "signals": [{ "name": "hit", "entity": "player", "minCount": 1, "atStep": "hit" }],

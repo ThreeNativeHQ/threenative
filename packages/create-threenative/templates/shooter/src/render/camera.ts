@@ -26,6 +26,15 @@ export interface ICameraRig {
 
 const UP = new Vec3(0, 1, 0);
 
+function composeCameraShake(camera: PerspectiveCamera, offset: ICameraShakeOffset): void {
+  camera.position.add(offset.position);
+  camera.rotation.set(
+    camera.rotation.x + offset.rotation.x,
+    camera.rotation.y + offset.rotation.y,
+    camera.rotation.z + offset.rotation.z,
+  );
+}
+
 // These are game-owned feel decisions. CameraShake only applies the values and never chooses them.
 export function createArenaShakeOptions(): ICameraShakeOptions {
   return {
@@ -60,10 +69,7 @@ export function createArenaCamera(camera: PerspectiveCamera, shake?: ICameraShak
     camera.lookAt(aim.copy(target).add(rotatedLookAhead));
     const shakeOffset = shake?.update(dt);
     if (shakeOffset === undefined) return;
-    camera.position.add(shakeOffset.position);
-    camera.rotation.x += shakeOffset.rotation.x;
-    camera.rotation.y += shakeOffset.rotation.y;
-    camera.rotation.z += shakeOffset.rotation.z;
+    composeCameraShake(camera, shakeOffset);
   };
 
   return {

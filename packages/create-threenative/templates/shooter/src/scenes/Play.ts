@@ -7,7 +7,7 @@ import {
   SpriteAnimator3D,
 } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { Mesh, MeshBasicMaterial, type PerspectiveCamera, Vector3 } from "three";
+import { Mesh, MeshBasicMaterial, type PerspectiveCamera, Quaternion, Vector3 } from "three";
 import { applyDirectDamage, applyRadiusDamage } from "../combat/damage.js";
 import { Pickup } from "../entities/Pickup.js";
 import {
@@ -83,6 +83,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     hitNormalYPercent: -101,
     hitNormalZPercent: -101,
     lives: 3,
+    nameplateFacingCamera: 0,
     pickupFrame: 0,
     pickupFrameChanges: 0,
     pickups: 0,
@@ -113,6 +114,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const shake = new CameraShake(createArenaShakeOptions());
     const rig = createArenaCamera(camera, shake);
     const billboards: Billboard3D[] = [];
+    const billboardFront = new Vector3(0, 0, 1);
+    const billboardExpected = new Vector3();
+    const billboardCameraPosition = new Vector3();
+    const billboardObjectPosition = new Vector3();
+    const billboardWorldQuaternion = new Quaternion();
     const spriteAnimators: SpriteAnimator3D[] = [];
     ctx.viewport.resize();
 
@@ -198,7 +204,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const nameplate = target.mesh.getObjectByName("target-nameplate");
       if (nameplate === undefined)
         throw new Error("Shooter target visual is missing its target-nameplate.");
-      billboards.push(new Billboard3D(nameplate, { camera, lockAxis: "y" }));
+      billboards.push(new Billboard3D(nameplate, { camera }));
       targets.set(target.body.body.id, target);
       ctx.entities.add(id, target);
       if (scan) target.startScanning(ctx, getPlayer().body.body.id);
@@ -487,6 +493,22 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let lastWavesCleared = -1;
     let lastPickupFrame = -1;
     const pickupPatch: Partial<GameState> = {};
+    const nameplatePatch: Partial<GameState> = {};
+    const syncNameplateFacingCamera = (frameCtx: GameCtx): void => {
+      const nameplate = billboards[0]?.object;
+      if (nameplate === undefined) return;
+      nameplate.updateWorldMatrix(true, false);
+      camera.getWorldPosition(billboardCameraPosition);
+      nameplate.getWorldPosition(billboardObjectPosition);
+      billboardExpected.subVectors(billboardCameraPosition, billboardObjectPosition).normalize();
+      billboardFront
+        .set(0, 0, 1)
+        .applyQuaternion(nameplate.getWorldQuaternion(billboardWorldQuaternion));
+      const nameplateFacingCamera = billboardFront.dot(billboardExpected) >= 0.999 ? 1 : 0;
+      if (frameCtx.state.getState().nameplateFacingCamera === nameplateFacingCamera) return;
+      nameplatePatch.nameplateFacingCamera = nameplateFacingCamera;
+      frameCtx.state.set(nameplatePatch);
+    };
     const syncStateAndHud = (frameCtx: GameCtx): void => {
       let liveTargets = 0;
       for (const entry of waveTargets) if (entry.target.alive) liveTargets += 1;
@@ -552,6 +574,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       syncStateAndHud(frameCtx);
       rig.follow(player.mesh.position, dt, lookState.yaw);
       for (const billboard of billboards) billboard.update();
+      syncNameplateFacingCamera(frameCtx);
     };
   }
 }

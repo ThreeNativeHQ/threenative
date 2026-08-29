@@ -69,7 +69,7 @@
         "call update from the owning scene; no global scene scan is installed",
         "orthographic cameras use their forward direction, and lockAxis restricts world rotation"
       ],
-      "example": "const billboard = new Billboard3D(label, { camera, lockAxis: \"y\" });\nbillboard.update();",
+      "example": "const billboard = new Billboard3D(label, { camera });\nbillboard.update();",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],

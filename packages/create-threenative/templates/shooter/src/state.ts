@@ -21,6 +21,7 @@ export type GameState = {
   hitNormalYPercent: number;
   hitNormalZPercent: number;
   lives: number;
+  nameplateFacingCamera: number;
   pickupFrame: number;
   pickupFrameChanges: number;
   pickups: number;

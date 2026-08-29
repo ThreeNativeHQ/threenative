@@ -70,7 +70,7 @@ export class Billboard3D { … }
 - **Constraints:** call update from the owning scene; no global scene scan is installed · orthographic cameras use their forward direction, and lockAxis restricts world rotation
 
 ```ts
-const billboard = new Billboard3D(label, { camera, lockAxis: "y" });
+const billboard = new Billboard3D(label, { camera });
 billboard.update();
 ```
 
