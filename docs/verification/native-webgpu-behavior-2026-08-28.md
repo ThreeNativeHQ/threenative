@@ -13,6 +13,7 @@
 | `createSampler` and invalid-layout `createBindGroup` refuse at the API call | Drives inverted sampler LOD and a missing native bind-group-layout handle through the headless runtime; the unreachable post-call bind-group null-result guard remains source-protected | `proof: creation-refusal` |
 | registration-table rows are preflighted as one atomic transaction | Installs a mixed-destination table, rejects its invalid row before any property write, and requires rollback to restore every earlier descriptor exactly | `proof: whole-table-verification` |
 | destination validation and dynamic canvas identity survive implementation moves | Rejects proxies without running their traps and proves two canvases keep distinct contexts after their public IDs are made equal; descriptor retention during installation remains narrowly source-protected | executable exit status after `proof: whole-table-verification` |
+| binding-state destruction and surface acquisition fail closed | Destroys the owned state twice through its public nulling API, and forces both new- and existing-texture surface transactions to roll back the registry and frame counter | executable exit status after `proof: whole-table-verification` |
 
 The remaining source assertions stay in `webgpu-bindings-contract.test.mjs` until their behavior
 probes exist. The default Vitest lane uses a fixture executable to prove the output contract; CTest
@@ -64,6 +65,8 @@ sets `TN_NATIVE_BEHAVIOR_EXECUTABLE` so that same test drives the built product 
 - Destination source retirement: deleted registration-loop and dynamic canvas source checks. The
   executable still exercises those properties after the marker and exits non-zero if any later
   check fails; the two descriptor-retention assertions remain until GC is forced during install.
+- State-lifetime source retirement: deleted the nulling-owner and surface-transaction source-shape
+  checks; the real executable performs both public teardown calls and both rollback branches.
 - Sanitizer: the creation executable passed ASan + UBSan. The full six-target lane remains red in
   the unchanged reentrancy executable on a `RenderBundleEncoder` leak, so no full-lane green is
   claimed for this checkpoint.

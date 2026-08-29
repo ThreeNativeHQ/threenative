@@ -338,32 +338,6 @@ test("wrapper rollback behavior proof fails closed", () => {
   );
 });
 
-test("public bindings-state destruction uses a nulling owner contract", () => {
-  const header = read("include/mystral/webgpu/bindings.h");
-  const bindings = read("src/webgpu/bindings.cpp");
-  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
-
-  assert.match(header, /destroyBindingsState\(BindingsState\*& state\)/u);
-  assert.match(bindings, /BindingsState\*& state[\s\S]*state = nullptr/u);
-  assert.match(
-    nativeControl,
-    /destroyBindingsState\(state\);[\s\S]*if \(state != nullptr\)[\s\S]*destroyBindingsState\(state\);/u,
-  );
-});
-
-test("surface texture rollback covers both wrapper branches and restores frame count", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
-
-  assert.match(bindings, /acquireSurfaceTexture\(/u);
-  assert.match(bindings, /previousFrameCount/u);
-  assert.match(bindings, /state->frameCount = previousFrameCount/u);
-  assert.match(bindings, /textureRegistry\.find\(textureId\)/u);
-  assert.match(nativeControl, /surface texture transaction/u);
-  assert.match(nativeControl, /createdSurfaceTexture/u);
-  assert.match(nativeControl, /frameCount/u);
-});
-
 test("QuickJS callback result tests cover transfer and protected duplication on both engines", () => {
   const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
 
