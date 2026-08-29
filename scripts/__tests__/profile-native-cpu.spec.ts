@@ -1,8 +1,10 @@
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
+import { parseBrowserScenario } from "../../examples/native-cpu-load-test/src/browser-config.js";
 import {
   assertGpuEvidenceAllowed,
   assertPresentationPreconditions,
+  buildProfileProvenance,
   buildScenarioMatrix,
   classifyAdapter,
   classifyEvidence,
@@ -30,6 +32,75 @@ function rgbaImage(
   return PNG.sync.write(png);
 }
 
+describe("native CPU browser workload configuration", () => {
+  it("rejects unknown query keys instead of silently using the default workload", () => {
+    expect(() => parseBrowserScenario("?object=4000")).toThrow(
+      /Unknown browser configuration key: object/,
+    );
+  });
+
+  it.each([
+    ["rendererStages", "rendererStages=true"],
+    ["renderAdvisor", "renderAdvisor=false"],
+  ])("rejects malformed %s boolean values", (name, query) => {
+    expect(() => parseBrowserScenario(`?${query}`)).toThrow(new RegExp(`${name} is invalid`));
+  });
+
+  it.each([
+    ["objects", ""],
+    ["objects", "%20"],
+    ["seed", ""],
+    ["seed", "%20"],
+    ["dirty", ""],
+    ["dirty", "%20"],
+    ["passes", ""],
+    ["passes", "%20"],
+    ["samples", ""],
+    ["samples", "%20"],
+    ["warmup", ""],
+    ["warmup", "%20"],
+  ])("rejects an explicitly supplied empty or whitespace %s value", (name, value) => {
+    expect(() => parseBrowserScenario(`?${name}=${value}`)).toThrow(
+      new RegExp(`${name} is invalid`),
+    );
+  });
+
+  it("preserves browser defaults and documented configuration values", () => {
+    expect(parseBrowserScenario("")).toMatchObject({
+      dirtyRatio: 0.1,
+      hierarchy: "flat",
+      objectCount: 500,
+      passes: 1,
+      renderAdvisor: false,
+      renderMode: "independent",
+      rendererStages: false,
+      rendering: "complete",
+      samples: 180,
+      seed: 90210,
+      visibility: "all-visible",
+      warmupFrames: 120,
+    });
+    expect(
+      parseBrowserScenario(
+        "?dirty=100&hierarchy=deep&objects=4000&passes=2&renderAdvisor=1&renderMode=merged&rendererStages=0&rendering=cpu-only&samples=3&seed=42&visibility=alternating&warmup=4",
+      ),
+    ).toMatchObject({
+      dirtyRatio: 1,
+      hierarchy: "deep",
+      objectCount: 4000,
+      passes: 2,
+      renderAdvisor: true,
+      renderMode: "merged",
+      rendererStages: false,
+      rendering: "cpu-only",
+      samples: 3,
+      seed: 42,
+      visibility: "alternating",
+      warmupFrames: 4,
+    });
+  });
+});
+
 describe("native CPU profile collector logic", () => {
   it("builds the requested Cartesian matrix deterministically", () => {
     const scenarios = buildScenarioMatrix({
@@ -50,6 +121,7 @@ describe("native CPU profile collector logic", () => {
       objectCount: 500,
       passes: 1,
       renderMode: "independent",
+      rendering: "complete",
       seed: 7,
       visibility: "all-visible",
     });
@@ -59,6 +131,7 @@ describe("native CPU profile collector logic", () => {
       objectCount: 1_000,
       passes: 1,
       renderMode: "independent",
+      rendering: "complete",
       seed: 7,
       visibility: "all-visible",
     });
@@ -116,6 +189,80 @@ describe("native CPU profile collector logic", () => {
     expect(parseProfileArgs(["--diagnostic", "--renderer-stages"]).rendererStages).toBe(true);
   });
 
+  it("serializes complete effective arguments separately from raw argv", () => {
+    const args = parseProfileArgs([
+      "--allow-software",
+      "--browser",
+      "/tmp/chromium",
+      "--browser-arg",
+      "custom-flag",
+      "--dirty",
+      "0,100",
+      "--diagnostic",
+      "--hierarchy",
+      "deep",
+      "--objects",
+      "500",
+      "--output-dir",
+      "/tmp/profile",
+      "--passes",
+      "2",
+      "--port",
+      "5333",
+      "--render-advisor",
+      "--render-mode",
+      "merged",
+      "--rendering",
+      "cpu-only",
+      "--renderer-stages",
+      "--repeats",
+      "2",
+      "--samples",
+      "3",
+      "--scenario",
+      "fox-scale",
+      "--seed",
+      "42",
+      "--visibility",
+      "alternating",
+      "--warmup-frames",
+      "4",
+      "--warmup-ms",
+      "7",
+    ]);
+
+    expect(buildProfileProvenance(args, ["--warmup-ms", "7"])).toEqual({
+      arguments: {
+        allowSoftware: true,
+        browser: "/tmp/chromium",
+        browserArgs: ["custom-flag"],
+        diagnostic: true,
+        dirtyRatios: [0, 1],
+        evidenceClass: "timing-only",
+        headed: false,
+        hierarchies: ["deep"],
+        objectCounts: [500],
+        outputDir: "/tmp/profile",
+        passes: [2],
+        port: 5333,
+        renderAdvisor: true,
+        rendererStages: true,
+        renderModes: ["merged"],
+        rendering: ["cpu-only"],
+        repeats: 2,
+        samples: 3,
+        scenarioPresets: ["fox-scale"],
+        seed: 42,
+        verifyPresentation: false,
+        visualEvidenceScenario: null,
+        visibilities: ["alternating"],
+        warmupFrames: 4,
+        warmupMs: 7,
+      },
+      argv: ["--warmup-ms", "7"],
+    });
+  });
+
   it("parses render advisor opt-in and emits the workload query switch", () => {
     const disabled = parseProfileArgs(["--diagnostic"]);
     const enabled = parseProfileArgs(["--diagnostic", "--render-advisor"]);
@@ -165,6 +312,44 @@ describe("native CPU profile collector logic", () => {
         }),
       ]),
     );
+  });
+
+  it("includes alternating visibility in the ordinary matrix", () => {
+    const args = parseProfileArgs(["--objects", "500"]);
+
+    expect(args.visibilities).toEqual(["all-visible", "mostly-culled", "alternating"]);
+    expect(buildScenarioMatrix(args)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ objectCount: 500, visibility: "alternating" }),
+      ]),
+    );
+  });
+
+  it("selects CPU preparation or complete rendering and carries it into the browser query", () => {
+    const args = parseProfileArgs([
+      "--objects",
+      "500",
+      "--rendering",
+      "cpu-only,complete",
+      "--hierarchy",
+      "flat",
+      "--dirty",
+      "0",
+      "--visibility",
+      "all-visible",
+    ]);
+
+    expect(args.rendering).toEqual(["cpu-only", "complete"]);
+    const scenarios = buildScenarioMatrix(args);
+    expect(scenarios).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ objectCount: 500, rendering: "cpu-only" }),
+        expect.objectContaining({ objectCount: 500, rendering: "complete" }),
+      ]),
+    );
+    const cpuOnly = scenarios.find((scenario) => scenario.rendering === "cpu-only");
+    if (!cpuOnly) throw new Error("CPU-only scenario missing");
+    expect(new URLSearchParams(queryOf(cpuOnly, args)).get("rendering")).toBe("cpu-only");
   });
 
   it("keeps manual presentation verification from changing ordinary scenario expansion", () => {
@@ -275,6 +460,8 @@ describe("native CPU profile collector logic", () => {
 
     expect(software).toBe("software");
     expect(classifyAdapter({ architecture: "Ada", vendor: "NVIDIA" })).toBe("hardware");
+    expect(classifyAdapter({})).toBe("unknown");
+    expect(classifyAdapter({ description: "mystery adapter", vendor: "unknown" })).toBe("unknown");
     expect(classifyAdapter(null)).toBe("unknown");
     expect(() => assertGpuEvidenceAllowed(software, false)).toThrow(/--allow-software/);
     expect(() => assertGpuEvidenceAllowed("unknown", false)).toThrow(/--allow-software/);

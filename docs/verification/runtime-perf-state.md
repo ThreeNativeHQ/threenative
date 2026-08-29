@@ -12,6 +12,188 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
+## 0. Native CPU attribution experiment — 2026-08-29
+
+**Decision: STOP the bounded native transform experiment for now.** The clean browser data does
+not make transform propagation large enough to justify a native kernel, and no native/bridge
+synchronization cost was measured. Re-open only with a bounded hardware/native comparison that
+measures packing, crossing, result application and synchronization end to end.
+
+This is a browser software-rendering diagnostic. Chromium classified the adapter as
+`architecture=swiftshader`, `vendor=google`, so these complete-render timings establish harness
+behavior and relative scaling only. They are not a shipping GPU, Android, native, or frame-rate
+claim. The collector records this as
+`timing-only-browser-software-diagnostic`, rejects software rendering unless `--allow-software` is
+explicit, and CPU-only rows zero the renderer counters rather than pretending that no render was
+measured.
+
+### Contract and clean inputs
+
+The implementation preserves the Three.js public API and renderer behavior. It adds only a shared
+deterministic workload contract, a collector option for CPU preparation versus complete rendering,
+and the standalone example that exercises the contract. No native scene mirror, native kernel,
+`SceneCollapse`, instancing, or per-property bridge was introduced.
+
+The complete-render runs started from clean source SHA
+`4e03ed73f4f14cdf379624294f220a6ee8ea4d52`; the CPU-only runs started from clean source SHA
+`4ca8d2107254e0050fb56060de24f211698194ba`. Every raw report records `source.dirty=false`, the
+branch, host CPU, Node version, OS, adapter metadata, evidence class, workload, and the complete
+effective collector configuration in `arguments` (including both warm-up controls, matrix
+selections, repeat/sample counts, rendering, adapter policy, browser, output and evidence settings)
+alongside raw samples; the original invocation is retained separately as `argv`. The seeded unit
+test also compares repeated IDs, parents, transforms and dirty sets byte for byte; alternating
+visibility is deterministic and shares the same workload generator as the browser example.
+
+### Repair round 1 — deep hierarchy population — 2026-08-29
+
+The historical reports named below retain their raw data, but every run with
+`scenario.hierarchy=deep` is **invalidated**. The example applied each generated transform as a
+local transform and then parented the mesh, so transforms accumulated through the generated
+parent chain. Flat rows are unaffected. Repair commit
+`e214300dc474ad71bf66a5e5160ca9f201996d2a` uses `parent.attach(mesh)`, which preserves the
+generated world-space placement while retaining the declared parent topology.
+
+`assertWorkloadVisibilityPopulation()` is a fail-closed harness guard: before a profile run it
+compares the frustum population with the workload's declared visibility population. Against the
+unrepaired code the guard failed with `deep/all-visible expected 500, observed 177`; after the
+repair, flat and deep 500-object rows both observed 500. The same guard also verifies the explicit
+far-away populations for `mostly-culled` and `alternating`.
+
+The clean repair rerun used headless Chromium on `DISPLAY=:0`. Chromium reported
+`architecture=swiftshader`, so its evidence class remains
+`timing-only-browser-software-diagnostic`; unrelated host CPU activity was present during the
+collection. These are population and CPU-preparation diagnostics only, not hardware, native,
+shipping-GPU, or frame-rate results. No native kernel, bridge crossing, or synchronization cost
+was measured.
+
+The full complete-render rerun was not accepted: the 180-frame 500-object attempt and the 180-frame
+4,000-object attempt both stopped with Chromium's `Instance dropped in popErrorScope`. The clean
+12-sample smoke probes at 500 and 4,000 objects are retained below as smoke artifacts only; they
+do not establish steady-state complete-render performance. The CPU-only replacement completed all
+requested deep rows with raw samples and per-run summaries:
+
+`artifacts/native-cpu-profile/exp001-20260829-repair/cpu-only-deep/profile-1787989405731.json`
+
+It records `source.dirty=false`, the repair SHA above, 36 runs, 6,480 raw samples, and the
+`timing-only-browser-software-diagnostic` evidence class. The table pools the three repeats to 540
+samples per row; values are milliseconds, shown as p50/p95. `frame` is the measured callback, not
+a presented-frame time.
+
+| objects | deep visibility | visible population | matrix propagation | bounds/cull | mutation | preparation frame |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 500 | all-visible | 500/500 | 0.000/0.100 | 0.018/0.025 | 0.000/0.000 | 0.020/0.122 |
+| 500 | mostly-culled | 50/50 | 0.000/0.100 | 0.010/0.020 | 0.000/0.000 | 0.015/0.118 |
+| 500 | alternating | 250/250 | 0.000/0.100 | 0.013/0.022 | 0.000/0.000 | 0.015/0.120 |
+| 1,000 | all-visible | 1,000/1,000 | 0.100/0.200 | 0.045/0.065 | 0.000/0.000 | 0.135/0.240 |
+| 1,000 | mostly-culled | 100/100 | 0.100/0.200 | 0.025/0.045 | 0.000/0.000 | 0.120/0.220 |
+| 1,000 | alternating | 500/500 | 0.100/0.200 | 0.030/0.055 | 0.000/0.000 | 0.125/0.225 |
+| 2,000 | all-visible | 2,000/2,000 | 0.100/0.200 | 0.100/0.150 | 0.000/0.000 | 0.210/0.370 |
+| 2,000 | mostly-culled | 200/200 | 0.100/0.200 | 0.070/0.110 | 0.000/0.000 | 0.170/0.300 |
+| 2,000 | alternating | 1,000/1,000 | 0.100/0.300 | 0.080/0.130 | 0.000/0.000 | 0.190/0.380 |
+| 4,000 | all-visible | 4,000/4,000 | 0.200/0.400 | 0.200/0.280 | 0.000/0.000 | 0.480/0.720 |
+| 4,000 | mostly-culled | 400/400 | 0.300/0.400 | 0.160/0.240 | 0.000/0.000 | 0.400/0.680 |
+| 4,000 | alternating | 2,000/2,000 | 0.300/0.400 | 0.140/0.220 | 0.000/0.000 | 0.420/0.620 |
+
+Complete-render smoke artifacts, both clean at the repair SHA and software-only, are
+`artifacts/native-cpu-profile/exp001-20260829-repair/complete-deep-500-probe/profile-1787989248437.json`
+and
+`artifacts/native-cpu-profile/exp001-20260829-repair/complete-deep-4000-probe/profile-1787989442170.json`.
+The failed 180-frame output directories are
+`artifacts/native-cpu-profile/exp001-20260829-repair/complete-deep-500/` and
+`artifacts/native-cpu-profile/exp001-20260829-repair/complete-deep-4000/`; no complete-render
+report was written, so those rows are unverified and not claimed.
+
+The red-green unit-test observations were:
+
+- Before implementation, alternating visibility, bundled render modes and the ordinary matrix
+  failed the focused suite; 24 existing tests passed.
+- After the contract-preserving implementation, the focused suite passed 27/27.
+- Before the rendering split, `--rendering` failed as an unknown argument; after it, the focused
+  suite passed 28/28.
+
+### Matrix and artifacts
+
+The historical complete-render matrix used flat/deep hierarchy, dirty ratios 0/10/100%,
+all-visible and mostly-culled visibility, independent render mode, one pass, 120 warm-up frames,
+180 measured frames and three repeats. Its deep rows are invalidated by the repair note above;
+only its flat control rows remain usable as historical software diagnostics. Each 500/1k/2k report
+contains 36 runs and 6,480 raw samples, with per-run summaries for every measured field:
+
+| object count | raw report |
+| ---: | --- |
+| 500 | `artifacts/native-cpu-profile/exp001-20260828/objects-500/profile-1787985927586.json` |
+| 1,000 | `artifacts/native-cpu-profile/exp001-20260828/objects-1000/profile-1787985997644.json` |
+| 2,000 | `artifacts/native-cpu-profile/exp001-20260828/objects-2000/profile-1787986103714.json` |
+
+The historical CPU-only matrix used the same dimensions and additionally included 4k objects. Its
+deep rows are invalidated by the repair note above; only its flat control rows remain usable. It
+contains 144 runs and 25,920 raw samples, including complete raw arrays and summaries for all four
+object counts:
+
+`artifacts/native-cpu-profile/exp001-20260828/cpu-only-clean/profile-1787986653357.json`
+
+The representative rows below pool the three repeats (540 samples per row). Values are
+milliseconds; each pair is p50/p95. `frame` is the measured frame callback, not a presented-frame
+time.
+
+#### CPU preparation only
+
+| objects | topology / visibility / dirty | matrix propagation | bounds/cull | mutation | preparation frame |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 500 | flat / all / 0% | 0.000/0.100 | 0.017/0.025 | 0.000/0.000 | 0.020/0.123 |
+| 1,000 | flat / all / 0% | 0.000/0.100 | 0.035/0.055 | 0.000/0.000 | 0.050/0.155 |
+| 2,000 | flat / all / 0% | 0.100/0.300 | 0.100/0.180 | 0.000/0.000 | 0.200/0.510 |
+| 4,000 | flat / all / 0% | 0.200/0.300 | 0.200/0.320 | 0.000/0.000 | 0.380/0.640 |
+| 4,000 | flat / all / 10% | 0.200/0.400 | 0.200/0.300 | 0.100/0.200 | 0.480/0.860 |
+
+The repaired CPU-only table above replaces the invalidated deep-row evidence. The browser still
+initializes WebGPU for the same scene, but no renderer call is included in these measured frames;
+this is not a no-GPU or native-runtime measurement.
+
+#### Complete `WebGPURenderer.render()` — software fallback only
+
+| objects | visibility | render p50/p95 | draw calls | frame p50/p95 |
+| ---: | --- | ---: | ---: | ---: |
+| 500 | all-visible | 0.900/2.900 | 501 | 1.025/3.040 |
+| 500 | mostly-culled | 0.200/0.400 | 51 | 0.317/0.528 |
+| 1,000 | all-visible | 1.500/3.200 | 1,001 | 1.660/3.560 |
+| 1,000 | mostly-culled | 0.400/0.700 | 101 | 0.540/0.950 |
+| 2,000 | all-visible | 6.100/12.100 | 2,001 | 6.740/13.270 |
+| 2,000 | mostly-culled | 0.600/1.200 | 201 | 0.900/1.770 |
+
+The historical complete-render table remains a flat-control record only. The repaired deep rows
+have no accepted complete-render performance result: Chromium dropped the 180-frame complete lane,
+including the 4k attempt, with `Instance dropped in popErrorScope`. The repaired CPU-only artifact
+is the authoritative deep 4k preparation evidence for this round.
+
+### Decision, synchronization and unknowns
+
+The statistics contract computes
+`synchronizedCandidateMedian = candidateMedian + synchronizationMs` and only marks a result
+actionable when the synchronized gain is at least 10% and greater than baseline run-to-run noise.
+The unit tests cover both conditions. This run measured no native kernel, packing, bridge crossing,
+result application, or synchronization sample, so it proposes **no native-kernel threshold** and
+does not infer one from browser CPU-only timings.
+
+The next three targets are ranked as follows:
+
+1. **Hardware complete-render attribution — high benefit, medium complexity, low compatibility
+   risk.** Re-run the same 500/1k/2k/4k matrix on a named browser hardware adapter and correlate
+   renderer stages before changing engine code.
+2. **Native/bridge synchronization probe — high decision value, medium complexity, medium
+   compatibility risk.** Measure packing, crossing and result application around a bounded transform
+   candidate; reject it if the added cost erases the synchronized 10% gain.
+3. **Transform or culling kernel — low current benefit, high compatibility risk.** The measured
+   preparation rows do not justify a native scene mirror or public Three.js patch; only revisit
+   after target 2 and a hardware/native crossover are proven.
+
+Still unknown: Android QuickJS transform and culling cost, native bridge overhead, upload/submit/
+present attribution, hardware-GPU behavior, GC/heap effects, material and geometry topology, and
+mutation churn. The experiment therefore recommends **STOP** for a bounded transform experiment,
+while preserving the harness for a later hardware/native run.
+
+---
+
 ## 1. Native Android fps — every green in this section is a **120 Hz arm**
 
 > **Baseline decided 2026-08-28 (PRD-228): acceptance runs on a 60 Hz panel at `maxFps: 60`, and

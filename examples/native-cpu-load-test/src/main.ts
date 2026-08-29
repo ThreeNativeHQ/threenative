@@ -31,44 +31,28 @@ import {
   adviseThreeRenderWorkload,
 } from "../../../packages/playtest/src/three/renderWorkloadAdvisor.js";
 import {
+  type IObjectTransform,
+  type IWorkloadConfig,
+  type RenderMode,
+  boundedWorkloadTransform,
+  createWorkload,
+  isObjectCulled,
+} from "../../../scripts/native-cpu-profile/workload.js";
+import {
   EXPECTED_THREE_VERSION,
   type IRendererStageReport,
   installRendererStageHooks,
 } from "../../../scripts/render-profile/renderer-stage-hooks.js";
+import { type IGPU, createAdapterBackedRenderer } from "./adapter.js";
+import { type IBrowserScenario, parseBrowserScenario } from "./browser-config.js";
+import { fitWorkloadCamera } from "./workload-camera.js";
 
-type Hierarchy = "deep" | "flat";
-type Visibility = "all-visible" | "mostly-culled";
 /**
  * `scene-projection` is PRD-152's shipping implementation, and it runs the same code `defineGame`
  * does rather than a benchmark-local copy of it. The superseded `SceneCollapse` incumbent it was
  * measured against was deleted with the technical-debt audit; its archived differential numbers
  * live in that PRD's verification record, not in a live arm.
  */
-type RenderMode =
-  | "bundled"
-  | "bundled-dynamic"
-  | "distinct-materials"
-  | "independent"
-  | "instanced"
-  | "merged"
-  | "scene-projection";
-type ScenarioPreset = "fox-scale";
-
-interface IScenario {
-  dirtyRatio: 0 | 0.1 | 1;
-  hierarchy: Hierarchy;
-  objectCount: number;
-  passes: 1 | 2;
-  renderMode: RenderMode;
-  rendererStages: boolean;
-  renderAdvisor: boolean;
-  samples: number;
-  scenario?: ScenarioPreset;
-  seed: number;
-  visibility: Visibility;
-  warmupFrames: number;
-}
-
 interface ITimingSamples {
   boundsCullMs: number[];
   drawCalls: number[];
@@ -89,7 +73,7 @@ interface IProfileResult {
     readonly elapsedMs: number;
     readonly report: IRenderAdvisorReport;
   };
-  scenario: IScenario;
+  scenario: IBrowserScenario;
   samples: ITimingSamples;
   sceneProjection?: {
     beforeSamples: ITimingSamples;
@@ -121,62 +105,16 @@ declare global {
   }
 }
 
-function integerParameter(
-  params: URLSearchParams,
-  name: string,
-  fallback: number,
-  minimum = 0,
-): number {
-  const parsed = Number(params.get(name) ?? fallback);
-  if (!Number.isSafeInteger(parsed) || parsed < minimum) throw new Error(`${name} is invalid`);
-  return parsed;
-}
-
-function scenarioFromLocation(): IScenario {
-  const params = new URLSearchParams(location.search);
-  const objectCount = integerParameter(params, "objects", 500, 1);
-  const seed = integerParameter(params, "seed", 90210);
-  const samples = integerParameter(params, "samples", 180, 1);
-  const warmupFrames = integerParameter(params, "warmup", 120);
-  const hierarchy = params.get("hierarchy") ?? "flat";
-  const visibility = params.get("visibility") ?? "all-visible";
-  const dirtyPercent = Number(params.get("dirty") ?? 10);
-  const renderMode = params.get("renderMode") ?? "independent";
-  const rendererStages = params.get("rendererStages") === "1";
-  const renderAdvisor = params.get("renderAdvisor") === "1";
-  const preset = params.get("scenario");
-  const passes = integerParameter(params, "passes", 1, 1);
-  if (hierarchy !== "flat" && hierarchy !== "deep") throw new Error("hierarchy is invalid");
-  if (visibility !== "all-visible" && visibility !== "mostly-culled")
-    throw new Error("visibility is invalid");
-  if (![0, 10, 100].includes(dirtyPercent)) throw new Error("dirty is invalid");
-  if (
-    ![
-      "bundled",
-      "bundled-dynamic",
-      "independent",
-      "distinct-materials",
-      "instanced",
-      "merged",
-      "scene-projection",
-    ].includes(renderMode)
-  )
-    throw new Error("renderMode is invalid");
-  if (preset !== null && preset !== "fox-scale") throw new Error("scenario is invalid");
-  if (passes !== 1 && passes !== 2) throw new Error("passes is invalid");
+function workloadConfigOf(input: IBrowserScenario): IWorkloadConfig {
   return {
-    dirtyRatio: (dirtyPercent / 100) as 0 | 0.1 | 1,
-    hierarchy,
-    objectCount,
-    passes,
-    renderMode: renderMode as RenderMode,
-    rendererStages,
-    renderAdvisor,
-    samples,
-    scenario: preset === "fox-scale" ? preset : undefined,
-    seed,
-    visibility,
-    warmupFrames,
+    dirtyRatio: input.dirtyRatio,
+    hierarchy: input.hierarchy,
+    objectCount: input.objectCount,
+    passes: input.passes,
+    renderMode: input.renderMode,
+    scenario: input.scenario,
+    seed: input.seed,
+    visibility: input.visibility,
   };
 }
 
@@ -233,7 +171,7 @@ function unit(seed: number, id: number, channel: number): number {
   return hash(seed, id, channel) / 0x1_0000_0000;
 }
 
-const scenario = scenarioFromLocation();
+const scenario = parseBrowserScenario(location.search);
 const status = document.querySelector<HTMLDivElement>("#status");
 if (!status) throw new Error("status element missing");
 const statusElement = status;
@@ -245,35 +183,30 @@ camera.position.set(0, 0, 135);
 camera.lookAt(0, 0, 0);
 scene.add(new DirectionalLight(0xffffff, 2.2));
 
-const renderer = new WebGPURenderer({ alpha: false, antialias: false });
+type ThreeRendererParameters = NonNullable<ConstructorParameters<typeof WebGPURenderer>[0]>;
+type ThreeDevice = NonNullable<ThreeRendererParameters["device"]>;
+const gpu = (navigator as Navigator & { gpu?: IGPU<ThreeDevice> }).gpu;
+const { adapterInfo, renderer } = await createAdapterBackedRenderer(
+  gpu,
+  (parameters) => new WebGPURenderer(parameters),
+);
 renderer.setPixelRatio(1);
 renderer.setSize(innerWidth, innerHeight);
 document.body.append(renderer.domElement);
-await renderer.init();
 const rendererStageHooks = scenario.rendererStages
   ? installRendererStageHooks(renderer, { mode: "safe", threeVersion: EXPECTED_THREE_VERSION })
   : undefined;
 
-const gpu = (
-  navigator as Navigator & {
-    gpu?: { requestAdapter: () => Promise<{ info: Record<string, string> } | null> };
-  }
-).gpu;
-const adapter = await gpu?.requestAdapter().catch(() => null);
-const adapterInfo: Record<string, string> | null = adapter?.info ? {} : null;
-if (adapterInfo) {
-  for (const key of ["architecture", "description", "device", "vendor"] as const) {
-    const value = String(adapter?.info[key] ?? "");
-    if (value) adapterInfo[key] = value;
-  }
-}
-
 const geometry = new BoxGeometry(0.8, 0.8, 0.8);
 const material = new MeshStandardMaterial({ color: 0x37b8ff, roughness: 0.55 });
 const meshes: Mesh[] = [];
+let instancedWorkload: InstancedMesh | undefined;
+let mergedWorkloadMesh: Mesh | undefined;
+let mergedWorkloadMatrices: Matrix4[] | undefined;
 const materialIdentities = new Set<object>();
 const animatedMeshIds: number[] = [];
-const columns = Math.ceil(Math.sqrt(scenario.objectCount));
+const workload = createWorkload(workloadConfigOf(scenario));
+if (scenario.scenario === undefined) fitWorkloadCamera(camera, workload.config.objectCount);
 
 function trackMesh(mesh: Mesh): Mesh {
   meshes.push(mesh);
@@ -474,33 +407,23 @@ if (scenario.scenario === "fox-scale") {
   if (scenario.renderMode === "bundled-dynamic" && bundleGroup !== undefined) {
     bundleGroup.static = false;
   }
-  for (let id = 0; id < scenario.objectCount; id += 1) {
+  for (const object of workload.objects) {
+    const id = object.id;
     const meshMaterial = scenario.renderMode === "distinct-materials" ? material.clone() : material;
     const mesh = trackMesh(new Mesh(geometry, meshMaterial));
     mesh.matrixAutoUpdate = true;
-    const column = id % columns;
-    const row = Math.floor(id / columns);
-    const x = (column - (columns - 1) / 2) * 1.45;
-    const y = (row - (Math.ceil(scenario.objectCount / columns) - 1) / 2) * 1.45;
-    mesh.position.set(
-      x + (scenario.visibility === "mostly-culled" && id % 10 !== 0 ? 10_000 : 0),
-      y,
-      (unit(scenario.seed, id, 2) - 0.5) * 8,
-    );
-    mesh.rotation.set(unit(scenario.seed, id, 3) * 0.4, unit(scenario.seed, id, 4) * Math.PI, 0);
+    mesh.position.set(...object.transform.position);
+    mesh.rotation.set(...object.transform.rotation);
+    mesh.scale.set(...object.transform.scale);
     if (
       scenario.renderMode === "independent" ||
       scenario.renderMode === "scene-projection" ||
       scenario.renderMode === "distinct-materials" ||
       isBundleArm
     ) {
-      if (scenario.hierarchy === "deep" && id % 64 !== 0) {
-        meshes[id - 1]?.add(mesh);
-      } else if (bundleGroup !== undefined) {
-        bundleGroup.add(mesh);
-      } else {
-        scene.add(mesh);
-      }
+      const parent =
+        object.parentId === null ? (bundleGroup ?? scene) : (meshes[object.parentId] ?? scene);
+      parent.attach(mesh);
     }
   }
   if (bundleGroup !== undefined) scene.add(bundleGroup);
@@ -512,41 +435,114 @@ if (scenario.scenario === "fox-scale") {
       instanced.setMatrixAt(index, meshes[index]?.matrix ?? new Matrix4());
     }
     instanced.instanceMatrix.needsUpdate = true;
+    instancedWorkload = instanced;
     scene.add(instanced);
   } else if (scenario.renderMode === "merged") {
-    const transformed = meshes.map((mesh) => {
+    mergedWorkloadMatrices = meshes.map((mesh) => {
       mesh.updateMatrix();
-      return geometry.clone().applyMatrix4(mesh.matrix);
+      return mesh.matrix.clone();
     });
+    const transformed = mergedWorkloadMatrices.map((matrix) =>
+      geometry.clone().applyMatrix4(matrix),
+    );
     const merged = mergeGeometries(transformed, false);
     for (const item of transformed) item.dispose();
     if (!merged) throw new Error("failed to merge benchmark geometry");
-    scene.add(new Mesh(merged, material));
+    mergedWorkloadMesh = new Mesh(merged, material);
+    scene.add(mergedWorkloadMesh);
   }
 }
 
-const dirtyCount = Math.round(scenario.objectCount * scenario.dirtyRatio);
-const dirtyIds = [
-  ...new Set([
-    ...meshes
-      .map((_, id) => ({ id, rank: hash(scenario.seed, id, 17) }))
-      .sort((left, right) => left.rank - right.rank || left.id - right.id)
-      .slice(0, dirtyCount)
-      .map(({ id }) => id),
-    ...animatedMeshIds,
-  ]),
-].sort((left, right) => left - right);
+const authoredLocalTransforms: IObjectTransform[] = meshes.map((mesh) => ({
+  position: [mesh.position.x, mesh.position.y, mesh.position.z] as const,
+  rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z] as const,
+  scale: [mesh.scale.x, mesh.scale.y, mesh.scale.z] as const,
+}));
+
+const dirtyIds = [...new Set([...workload.dirtyIds, ...animatedMeshIds])].sort(
+  (left, right) => left - right,
+);
 const projectionView = new Matrix4();
 const frustum = new Frustum();
 const localSphere = new Sphere(new Vector3(), Math.sqrt(3) * 0.4);
 const worldSphere = new Sphere();
 let tick = 0;
+const WORKLOAD_RENDER_MODES = new Set<RenderMode>([
+  "bundled",
+  "bundled-dynamic",
+  "distinct-materials",
+  "independent",
+  "instanced",
+  "merged",
+  "scene-projection",
+]);
+const instanceMatrix = new Matrix4();
+const workloadWorldMatrix = new Matrix4();
+const expectedVisibleWorkloadCount = workload.objects.filter(
+  ({ id }) => !isObjectCulled(id, scenario.visibility),
+).length;
+
+function workloadWorldMatrixFor(id: number): Matrix4 {
+  if (scenario.renderMode === "instanced") {
+    if (instancedWorkload === undefined) throw new Error("TN_WORKLOAD_INSTANCES_MISSING");
+    instancedWorkload.getMatrixAt(id, instanceMatrix);
+    return workloadWorldMatrix.multiplyMatrices(instancedWorkload.matrixWorld, instanceMatrix);
+  }
+  if (scenario.renderMode === "merged") {
+    const matrix = mergedWorkloadMatrices?.[id];
+    if (mergedWorkloadMesh === undefined || matrix === undefined)
+      throw new Error(`TN_WORKLOAD_MERGED_TRANSFORM_MISSING: ${id}`);
+    return workloadWorldMatrix.multiplyMatrices(mergedWorkloadMesh.matrixWorld, matrix);
+  }
+  const mesh = meshes[id];
+  if (!mesh) throw new Error(`TN_WORKLOAD_MESH_MISSING: ${id}`);
+  return mesh.matrixWorld;
+}
+
+function countVisibleWorkloadMeshes(): number {
+  return workload.objects.reduce((count, object) => {
+    worldSphere.copy(localSphere).applyMatrix4(workloadWorldMatrixFor(object.id));
+    return count + (frustum.intersectsSphere(worldSphere) ? 1 : 0);
+  }, 0);
+}
+
+function assertWorkloadVisibilityPopulation(observedVisibleCount?: number): void {
+  if (scenario.scenario !== undefined || !WORKLOAD_RENDER_MODES.has(scenario.renderMode)) return;
+
+  if (observedVisibleCount !== undefined) {
+    if (observedVisibleCount !== expectedVisibleWorkloadCount) {
+      throw new Error(
+        `TN_WORKLOAD_POPULATION_MISMATCH: ${scenario.hierarchy}/${scenario.visibility} expected ${expectedVisibleWorkloadCount}, observed ${observedVisibleCount}`,
+      );
+    }
+    return;
+  }
+
+  scene.updateMatrixWorld(true);
+  camera.updateMatrixWorld();
+  projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  frustum.setFromProjectionMatrix(projectionView);
+
+  const observedVisible = countVisibleWorkloadMeshes();
+  assertWorkloadVisibilityPopulation(observedVisible);
+}
 
 function presentFrame(): void {
   scene.updateMatrixWorld(true);
   camera.updateMatrixWorld();
   scene.matrixWorldAutoUpdate = false;
-  renderer.render(scene, camera);
+  renderIfEnabled(scene);
+}
+
+function renderIfEnabled(renderInput: Scene | Group): void {
+  if (scenario.rendering === "complete") renderer.render(renderInput, camera);
+}
+
+function renderAndCount(renderInput: Scene | Group): number {
+  if (scenario.rendering !== "complete") return 0;
+  renderer.info.reset();
+  renderIfEnabled(renderInput);
+  return renderer.info.render.drawCalls;
 }
 
 function createSamples(): ITimingSamples {
@@ -574,14 +570,16 @@ function oneFrame(
   tick += 1;
   for (const id of dirtyIds) {
     const mesh = meshes[id];
-    if (!mesh) continue;
-    if (scenario.scenario === "fox-scale") {
-      mesh.rotation.y += 0.008 + ((id + tick) % 11) * 0.0002;
-      mesh.position.y += Math.sin((tick + id) * 0.035) * 0.0015;
-    } else {
-      mesh.rotation.y += 0.001 + ((id + tick) % 7) * 0.00001;
-      mesh.position.z += Math.sin((tick + id) * 0.01) * 0.0002;
-    }
+    const authoredTransform = authoredLocalTransforms[id];
+    if (!mesh || authoredTransform === undefined) continue;
+    const boundedTransform = boundedWorkloadTransform(
+      authoredTransform,
+      id,
+      tick,
+      scenario.scenario,
+    );
+    mesh.position.set(...boundedTransform.position);
+    mesh.rotation.set(...boundedTransform.rotation);
     mesh.matrixWorldNeedsUpdate = true;
   }
   const mutationEnd = performance.now();
@@ -603,8 +601,8 @@ function oneFrame(
   for (let repeat = 0; repeat < cullRepeats; repeat += 1) {
     projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projectionView);
-    for (const mesh of meshes) {
-      worldSphere.copy(localSphere).applyMatrix4(mesh.matrixWorld);
+    for (let index = 0; index < meshes.length; index += 1) {
+      worldSphere.copy(localSphere).applyMatrix4(workloadWorldMatrixFor(index));
       if (frustum.intersectsSphere(worldSphere)) visibleCount += 1;
     }
   }
@@ -616,27 +614,30 @@ function oneFrame(
   projection?.reconcile();
 
   const renderStart = cullEnd;
-  renderer.info.reset();
+  const completeRendering = scenario.rendering === "complete";
+  if (completeRendering) renderer.info.reset();
   // Whatever the projection resolves to — its mirror when it is faithful, the authored scene when
   // it is not. The arm draws the shipping path's own render input rather than a fixture-local one.
   const renderInput = projection?.root ?? scene;
   for (let pass = 0; pass < scenario.passes; pass += 1) {
-    renderer.render(renderInput, camera);
+    renderIfEnabled(renderInput);
   }
   const renderEnd = performance.now();
+
+  if (record) assertWorkloadVisibilityPopulation(visibleCount / cullRepeats);
 
   if (record && samples) {
     samples.mutationMs.push(mutationEnd - mutationStart);
     samples.matrixWorldMs.push(matrixEnd - matrixStart);
     samples.boundsCullMs.push((cullEnd - cullStart) / cullRepeats);
-    samples.drawCalls.push(renderer.info.render.drawCalls);
+    samples.drawCalls.push(completeRendering ? renderer.info.render.drawCalls : 0);
     samples.logicalObjects.push(meshes.length);
     samples.materialIdentities.push(materialIdentities.size);
-    samples.renderMs.push(renderEnd - renderStart);
+    samples.renderMs.push(completeRendering ? renderEnd - renderStart : 0);
     samples.frameMs.push(
       renderEnd - frameStart - (cullEnd - cullStart) + (cullEnd - cullStart) / cullRepeats,
     );
-    samples.triangles.push(renderer.info.render.triangles);
+    samples.triangles.push(completeRendering ? renderer.info.render.triangles : 0);
     samples.visibleCount.push(visibleCount / cullRepeats);
   }
 }
@@ -655,7 +656,9 @@ function snapshotCanvas(): string {
 }
 
 async function run(): Promise<IProfileResult> {
+  assertWorkloadVisibilityPopulation();
   for (let frame = 0; frame < scenario.warmupFrames; frame += 1) await oneFrame(false);
+  assertWorkloadVisibilityPopulation();
   rendererStageHooks?.reset();
   if (scenario.renderMode === "scene-projection") {
     // Measured before the projection exists, so this arm carries its own unbatched control on the
@@ -682,18 +685,14 @@ async function run(): Promise<IProfileResult> {
     const stabilityDrawCalls: number[] = [];
     for (let frame = 0; frame < 300; frame += 1) {
       oneFrame(false, undefined, projection);
-      renderer.info.reset();
-      renderer.render(projection.root, camera);
-      stabilityDrawCalls.push(renderer.info.render.drawCalls);
+      stabilityDrawCalls.push(renderAndCount(projection.root));
     }
 
     // ── §4.2's late-mutation pass, run long past any settling.
     for (let frame = 0; frame < 600; frame += 1) {
       oneFrame(false, undefined, projection);
     }
-    renderer.info.reset();
-    renderer.render(projection.root, camera);
-    const drawCallsBefore = renderer.info.render.drawCalls;
+    const drawCallsBefore = renderAndCount(projection.root);
 
     const moved = meshes[0] as Mesh;
     const hiddenMesh = meshes[1] as Mesh;
@@ -725,9 +724,7 @@ async function run(): Promise<IProfileResult> {
     // Exactly one frame later. "Next frame" is the contract; catching up two frames later is a
     // stale frame the player saw.
     oneFrame(false, undefined, projection);
-    renderer.info.reset();
-    renderer.render(projection.root, camera);
-    const drawCallsAfter = renderer.info.render.drawCalls;
+    const drawCallsAfter = renderAndCount(projection.root);
     const after = projection.report;
     const observed = {
       movedFollowed: projection.inspect(moved)?.matrixWorld.elements[13] === 900,
@@ -746,9 +743,7 @@ async function run(): Promise<IProfileResult> {
     const recoveredDrawCalls: number[] = [];
     for (let frame = 0; frame < 60; frame += 1) {
       oneFrame(false, undefined, projection);
-      renderer.info.reset();
-      renderer.render(projection.root, camera);
-      recoveredDrawCalls.push(renderer.info.render.drawCalls);
+      recoveredDrawCalls.push(renderAndCount(projection.root));
     }
 
     statusElement.textContent = `complete\n${scenario.scenario ?? "matrix"}\nobjects ${meshes.length}\nscene-projection\nmaterials ${materialIdentities.size}\nvisible ${samples.visibleCount.at(-1)?.toFixed(0) ?? "n/a"}`;
@@ -774,7 +769,10 @@ async function run(): Promise<IProfileResult> {
   }
   const samples = createSamples();
   for (let frame = 0; frame < scenario.samples; frame += 1) await oneFrame(true, samples);
-  if (scenario.renderMode === "bundled" || scenario.renderMode === "bundled-dynamic") {
+  if (
+    scenario.rendering === "complete" &&
+    (scenario.renderMode === "bundled" || scenario.renderMode === "bundled-dynamic")
+  ) {
     // PRD-069 §3.1's gate: a fast bundle that froze its moving objects would be a wrong picture,
     // and no timing number shows that. The dirty loop's per-frame drift is sub-pixel at this
     // camera distance and cannot be told apart from a frozen scene (observed 2026-08-21: a

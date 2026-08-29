@@ -13,7 +13,8 @@ export type RenderMode =
   | "instanced"
   | "merged"
   | "scene-projection";
-export type Visibility = "all-visible" | "mostly-culled";
+export type RenderingMode = "complete" | "cpu-only";
+export type Visibility = "all-visible" | "alternating" | "mostly-culled";
 export type Vector3Tuple = readonly [number, number, number];
 
 export type ScenarioPreset = "fox-scale";
@@ -70,8 +71,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+const WORKLOAD_CONFIG_KEYS = new Set([
+  "dirtyRatio",
+  "hierarchy",
+  "objectCount",
+  "passes",
+  "renderMode",
+  "scenario",
+  "seed",
+  "visibility",
+]);
+
+function rejectUnknownConfigKeys(config: Record<string, unknown>): void {
+  for (const key of Object.keys(config)) {
+    if (!WORKLOAD_CONFIG_KEYS.has(key)) throw new Error(`Unknown workload config key: ${key}.`);
+  }
+}
+
 export function validateWorkloadConfig(config: unknown): IWorkloadConfig {
   if (!isRecord(config)) throw new Error("Workload config must be an object.");
+  rejectUnknownConfigKeys(config);
   const { dirtyRatio, hierarchy, objectCount, passes, renderMode, scenario, seed, visibility } =
     config;
   if (!Number.isSafeInteger(objectCount) || (objectCount as number) <= 0)
@@ -80,13 +99,23 @@ export function validateWorkloadConfig(config: unknown): IWorkloadConfig {
     throw new Error("hierarchy must be flat or deep.");
   if (dirtyRatio !== 0 && dirtyRatio !== 0.1 && dirtyRatio !== 1)
     throw new Error("dirtyRatio must be 0, 0.1, or 1.");
-  if (visibility !== "all-visible" && visibility !== "mostly-culled")
-    throw new Error("visibility must be all-visible or mostly-culled.");
+  if (
+    visibility !== "all-visible" &&
+    visibility !== "mostly-culled" &&
+    visibility !== "alternating"
+  )
+    throw new Error("visibility must be all-visible, mostly-culled, or alternating.");
   if (
     renderMode !== undefined &&
-    !["independent", "distinct-materials", "instanced", "merged", "scene-projection"].includes(
-      renderMode as string,
-    )
+    ![
+      "bundled",
+      "bundled-dynamic",
+      "independent",
+      "distinct-materials",
+      "instanced",
+      "merged",
+      "scene-projection",
+    ].includes(renderMode as string)
   )
     throw new Error("renderMode is unsupported.");
   if (passes !== undefined && passes !== 1 && passes !== 2)
@@ -137,18 +166,41 @@ function parentId(id: number, hierarchy: Hierarchy, seed: number): number | null
   return id - 1 - Math.floor(unit(seed, id, 0) * Math.min(offsetInChain, 4));
 }
 
+export function isObjectCulled(id: number, visibility: Visibility): boolean {
+  if (visibility === "all-visible") return false;
+  if (visibility === "alternating") return id % 2 === 1;
+  return id % 10 !== 0;
+}
+
 function transformFor(config: IWorkloadConfig, id: number): IObjectTransform {
   const columns = Math.ceil(Math.sqrt(config.objectCount));
   const column = id % columns;
   const row = Math.floor(id / columns);
   const x = (column - (columns - 1) / 2) * 2 + (unit(config.seed, id, 1) - 0.5) * 0.3;
   const y = (row - (Math.ceil(config.objectCount / columns) - 1) / 2) * 2;
-  const culledOffset = config.visibility === "mostly-culled" && id % 10 !== 0 ? 10_000 : 0;
+  const culledOffset = isObjectCulled(id, config.visibility) ? 10_000 : 0;
   const scale = 0.75 + unit(config.seed, id, 5) * 0.5;
   return {
     position: [x + culledOffset, y, (unit(config.seed, id, 2) - 0.5) * 8],
     rotation: [unit(config.seed, id, 3) * 0.4, unit(config.seed, id, 4) * Math.PI * 2, 0],
     scale: [scale, scale, scale],
+  };
+}
+
+export function boundedWorkloadTransform(
+  base: IObjectTransform,
+  id: number,
+  tick: number,
+  scenario?: ScenarioPreset,
+): IObjectTransform {
+  const foxScale = scenario === "fox-scale";
+  const wave = Math.sin((tick + id) * (foxScale ? 0.035 : 0.01));
+  const rotationAmplitude = foxScale ? 0.008 : 0.000001;
+  const translationAmplitude = foxScale ? 0.0015 : 0.0002;
+  return {
+    position: [base.position[0], base.position[1], base.position[2] + wave * translationAmplitude],
+    rotation: [base.rotation[0], base.rotation[1] + wave * rotationAmplitude, base.rotation[2]],
+    scale: base.scale,
   };
 }
 

@@ -10,6 +10,7 @@ import type {
   Hierarchy,
   IWorkloadConfig,
   RenderMode,
+  RenderingMode,
   ScenarioPreset,
   Visibility,
 } from "./native-cpu-profile/workload.js";
@@ -58,6 +59,7 @@ export interface IScenarioMatrix {
   readonly objectCounts: readonly number[];
   readonly passes: readonly (1 | 2)[];
   readonly renderModes: readonly RenderMode[];
+  readonly rendering?: readonly RenderingMode[];
   readonly seed: number;
   readonly scenarioPresets: readonly ScenarioPreset[];
   readonly visibilities: readonly Visibility[];
@@ -74,12 +76,46 @@ export interface IProfileArgs extends IScenarioMatrix {
   readonly port: number;
   readonly rendererStages: boolean;
   readonly renderAdvisor: boolean;
+  readonly rendering: readonly RenderingMode[];
   readonly repeats: number;
   readonly samples: number;
   readonly verifyPresentation: boolean;
   readonly visualEvidenceScenario?: ScenarioPreset;
   readonly warmupFrames: number;
   readonly warmupMs: number;
+}
+
+export interface IProfileArgumentsSnapshot {
+  readonly allowSoftware: boolean;
+  readonly browser: string | null;
+  readonly browserArgs: readonly string[];
+  readonly diagnostic: boolean;
+  readonly dirtyRatios: readonly DirtyRatio[];
+  readonly evidenceClass: IProfileArgs["evidenceClass"];
+  readonly headed: boolean;
+  readonly hierarchies: readonly Hierarchy[];
+  readonly objectCounts: readonly number[];
+  readonly outputDir: string;
+  readonly passes: readonly (1 | 2)[];
+  readonly port: number;
+  readonly renderAdvisor: boolean;
+  readonly rendererStages: boolean;
+  readonly renderModes: readonly RenderMode[];
+  readonly rendering: readonly RenderingMode[];
+  readonly repeats: number;
+  readonly samples: number;
+  readonly scenarioPresets: readonly ScenarioPreset[];
+  readonly seed: number;
+  readonly verifyPresentation: boolean;
+  readonly visualEvidenceScenario: ScenarioPreset | null;
+  readonly visibilities: readonly Visibility[];
+  readonly warmupFrames: number;
+  readonly warmupMs: number;
+}
+
+export interface IProfileProvenance {
+  readonly arguments: IProfileArgumentsSnapshot;
+  readonly argv: readonly string[];
 }
 
 const BOOLEAN_ARGUMENTS = new Set([
@@ -102,6 +138,7 @@ const VALUE_ARGUMENTS = new Set([
   "--port",
   "--repeats",
   "--render-mode",
+  "--rendering",
   "--samples",
   "--seed",
   "--scenario",
@@ -247,6 +284,12 @@ export function parseProfileArgs(args: readonly string[]): IProfileArgs {
       ],
       "--render-mode",
     ),
+    rendering: enumList(
+      value("--rendering"),
+      ["complete"],
+      ["complete", "cpu-only"],
+      "--rendering",
+    ),
     outputDir: value("--output-dir") ?? "artifacts/native-cpu-profile",
     port: positiveInteger(value("--port"), 5320, "--port"),
     rendererStages: values.has("--renderer-stages"),
@@ -273,8 +316,8 @@ export function parseProfileArgs(args: readonly string[]): IProfileArgs {
         ? ["all-visible"]
         : diagnostic
           ? ["mostly-culled"]
-          : ["all-visible", "mostly-culled"],
-      ["all-visible", "mostly-culled"],
+          : ["all-visible", "mostly-culled", "alternating"],
+      ["all-visible", "mostly-culled", "alternating"],
       "--visibility",
     ),
     warmupFrames: nonNegativeInteger(
@@ -290,10 +333,47 @@ export function parseProfileArgs(args: readonly string[]): IProfileArgs {
   };
 }
 
+export function buildProfileProvenance(
+  args: IProfileArgs,
+  rawArguments: readonly string[],
+): IProfileProvenance {
+  return {
+    arguments: {
+      allowSoftware: args.allowSoftware,
+      browser: args.browser ?? null,
+      browserArgs: [...args.browserArgs],
+      diagnostic: args.diagnostic,
+      dirtyRatios: [...args.dirtyRatios],
+      evidenceClass: args.evidenceClass,
+      headed: args.headed,
+      hierarchies: [...args.hierarchies],
+      objectCounts: [...args.objectCounts],
+      outputDir: args.outputDir,
+      passes: [...args.passes],
+      port: args.port,
+      renderAdvisor: args.renderAdvisor,
+      rendererStages: args.rendererStages,
+      renderModes: [...args.renderModes],
+      rendering: [...args.rendering],
+      repeats: args.repeats,
+      samples: args.samples,
+      scenarioPresets: [...args.scenarioPresets],
+      seed: args.seed,
+      verifyPresentation: args.verifyPresentation,
+      visualEvidenceScenario: args.visualEvidenceScenario ?? null,
+      visibilities: [...args.visibilities],
+      warmupFrames: args.warmupFrames,
+      warmupMs: args.warmupMs,
+    },
+    argv: [...rawArguments],
+  };
+}
+
 export function buildScenarioMatrix(
   matrix: IScenarioMatrix & Partial<Pick<IProfileArgs, "visualEvidenceScenario">>,
-): readonly IWorkloadConfig[] {
-  const scenarios: IWorkloadConfig[] = [];
+): readonly (IWorkloadConfig & { readonly rendering: RenderingMode })[] {
+  const scenarios: (IWorkloadConfig & { readonly rendering: RenderingMode })[] = [];
+  const renderings = matrix.rendering ?? ["complete"];
   if (matrix.visualEvidenceScenario !== "fox-scale") {
     for (const hierarchy of matrix.hierarchies) {
       for (const dirtyRatio of matrix.dirtyRatios) {
@@ -301,15 +381,18 @@ export function buildScenarioMatrix(
           for (const objectCount of matrix.objectCounts) {
             for (const renderMode of matrix.renderModes) {
               for (const passes of matrix.passes) {
-                scenarios.push({
-                  dirtyRatio,
-                  hierarchy,
-                  objectCount,
-                  passes,
-                  renderMode,
-                  seed: matrix.seed,
-                  visibility,
-                });
+                for (const rendering of renderings) {
+                  scenarios.push({
+                    dirtyRatio,
+                    hierarchy,
+                    objectCount,
+                    passes,
+                    renderMode,
+                    rendering,
+                    seed: matrix.seed,
+                    visibility,
+                  });
+                }
               }
             }
           }
@@ -320,7 +403,9 @@ export function buildScenarioMatrix(
   for (const preset of matrix.scenarioPresets ?? []) {
     if (preset === "fox-scale") {
       for (const renderMode of matrix.renderModes) {
-        scenarios.push({ ...createFoxScaleWorkloadConfig(matrix.seed), renderMode });
+        for (const rendering of renderings) {
+          scenarios.push({ ...createFoxScaleWorkloadConfig(matrix.seed), renderMode, rendering });
+        }
       }
     }
   }
@@ -329,8 +414,17 @@ export function buildScenarioMatrix(
 
 export function classifyAdapter(adapter: IAdapterInfo | null): AdapterClass {
   if (adapter === null) return "unknown";
-  const description = Object.values(adapter).join(" ").toLowerCase();
-  return /swiftshader|llvmpipe|lavapipe|software/u.test(description) ? "software" : "hardware";
+  const description = Object.values(adapter)
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+  if (description.length === 0) return "unknown";
+  if (/swiftshader|llvmpipe|lavapipe|software|basic render/u.test(description)) return "software";
+  return /\b(?:ada|ampere|hopper|turing|nvidia|geforce|quadro|rtx|gtx|amd|radeon|intel|arc|iris|uhd graphics|apple|qualcomm|adreno|arm|mali|powervr|rdna|m[1-9])\b|\bgfx[0-9]\b/u.test(
+    description,
+  )
+    ? "hardware"
+    : "unknown";
 }
 
 export function assertGpuEvidenceAllowed(adapter: AdapterClass, allowSoftware: boolean): void {
@@ -516,7 +610,10 @@ async function stopServer(server: ChildProcess): Promise<void> {
   ]);
 }
 
-export function queryOf(scenario: IWorkloadConfig, args: IProfileArgs): string {
+export function queryOf(
+  scenario: IWorkloadConfig & { readonly rendering?: RenderingMode },
+  args: IProfileArgs,
+): string {
   return new URLSearchParams({
     dirty: String(scenario.dirtyRatio * 100),
     hierarchy: scenario.hierarchy,
@@ -524,6 +621,7 @@ export function queryOf(scenario: IWorkloadConfig, args: IProfileArgs): string {
     passes: String(scenario.passes ?? 1),
     ...(scenario.scenario ? { scenario: scenario.scenario } : {}),
     renderMode: scenario.renderMode ?? "independent",
+    rendering: scenario.rendering ?? "complete",
     renderAdvisor: args.renderAdvisor ? "1" : "0",
     rendererStages: args.rendererStages ? "1" : "0",
     samples: String(args.samples),
@@ -605,7 +703,7 @@ function collectGitSource(): { branch: string; dirty: boolean; project: string; 
   };
 }
 
-async function runProfile(args: IProfileArgs): Promise<void> {
+async function runProfile(args: IProfileArgs, rawArguments: readonly string[]): Promise<void> {
   assertPresentationPreconditions({
     display: process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY,
     headed: args.headed,
@@ -713,6 +811,7 @@ async function runProfile(args: IProfileArgs): Promise<void> {
     }
     await mkdir(args.outputDir, { recursive: true });
     const report = {
+      ...buildProfileProvenance(args, rawArguments),
       browser: {
         display: process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY ?? null,
         headed: args.headed,
@@ -752,11 +851,11 @@ export async function runNativeCpuProfile(
 ): Promise<void> {
   if (cliArgs.includes("--help")) {
     process.stdout.write(
-      "pnpm profile:native-cpu -- [--diagnostic] [--render-advisor] [--visual-evidence fox-scale] [--verify-presentation --headed] [--scenario fox-scale] [--objects 500,1000] [--render-mode independent,distinct-materials,instanced,merged,scene-projection] [--passes 1,2] [--hierarchy flat,deep] [--dirty 0,10,100] [--visibility all-visible,mostly-culled] [--repeats 3] [--samples 180] [--allow-software]\nVisual evidence must run headed with a display; use pnpm profile:native-cpu:fox or sh scripts/xvfb.sh pnpm profile:native-cpu -- --headed --verify-presentation --scenario fox-scale. Timing-only headless runs are labeled timing-only.\n",
+      "pnpm profile:native-cpu -- [--diagnostic] [--render-advisor] [--visual-evidence fox-scale] [--verify-presentation --headed] [--scenario fox-scale] [--objects 500,1000] [--render-mode independent,distinct-materials,instanced,merged,scene-projection] [--rendering cpu-only,complete] [--passes 1,2] [--hierarchy flat,deep] [--dirty 0,10,100] [--visibility all-visible,mostly-culled,alternating] [--repeats 3] [--samples 180] [--allow-software]\nVisual evidence must run headed with a display; use pnpm profile:native-cpu:fox or sh scripts/xvfb.sh pnpm profile:native-cpu -- --headed --verify-presentation --scenario fox-scale. Timing-only headless runs are labeled timing-only. CPU-only rows contain preparation measurements and zeroed render counters.\n",
     );
     return;
   }
-  await runProfile(parseProfileArgs(cliArgs));
+  await runProfile(parseProfileArgs(cliArgs), cliArgs);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -67,17 +67,46 @@ describe("native CPU workload", () => {
     );
   });
 
+  it("supports deterministic alternating visibility", () => {
+    const alternating = createWorkload(
+      validateWorkloadConfig({ ...baseConfig, visibility: "alternating" }),
+    );
+
+    expect(
+      alternating.objects.filter((object) => Math.abs(object.transform.position[0]) > 1_000),
+    ).toHaveLength(50);
+    expect(
+      alternating.objects
+        .filter((object) => Math.abs(object.transform.position[0]) > 1_000)
+        .map((object) => object.id),
+    ).toEqual(
+      alternating.objects.filter((object) => object.id % 2 === 1).map((object) => object.id),
+    );
+  });
+
   it("rejects malformed workload configuration", () => {
     expect(() => validateWorkloadConfig({ ...baseConfig, objectCount: 0 })).toThrow(/objectCount/);
     expect(() => validateWorkloadConfig({ ...baseConfig, dirtyRatio: 0.01 })).toThrow(/dirtyRatio/);
     expect(() => validateWorkloadConfig({ ...baseConfig, seed: -1 })).toThrow(/seed/);
-    expect(() => validateWorkloadConfig({ ...baseConfig, visibility: "alternating" })).toThrow(
+    expect(() => validateWorkloadConfig({ ...baseConfig, unknownField: true })).toThrow(
+      /unknownField/,
+    );
+    expect(() => validateWorkloadConfig({ ...baseConfig, visibility: "unknown" })).toThrow(
       /visibility/,
     );
     expect(() => validateWorkloadConfig({ ...baseConfig, renderMode: "magic" })).toThrow(
       /renderMode/,
     );
     expect(() => validateWorkloadConfig({ ...baseConfig, passes: 3 })).toThrow(/passes/);
+  });
+
+  it("accepts every render mode declared by the workload contract", () => {
+    expect(validateWorkloadConfig({ ...baseConfig, renderMode: "bundled" }).renderMode).toBe(
+      "bundled",
+    );
+    expect(
+      validateWorkloadConfig({ ...baseConfig, renderMode: "bundled-dynamic" }).renderMode,
+    ).toBe("bundled-dynamic");
   });
 
   it("defines a deterministic named fox-scale preset without replacing generic rows", () => {
