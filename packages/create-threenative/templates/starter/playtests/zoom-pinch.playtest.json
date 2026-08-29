@@ -1,0 +1,49 @@
+{
+  "acceptanceId": "camera-intent",
+  "name": "starter-zoom-pinch",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 30,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "menu-is-up", "waitTicks": 20, "release": true },
+    { "kind": "click", "at": { "x": 640, "y": 365 }, "label": "focus-name-field" },
+    { "kind": "input", "label": "type-a", "press": "a", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "type-x", "press": "x", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "type-o", "press": "o", "holdTicks": 1, "release": true },
+    { "kind": "click", "at": { "x": 640, "y": 428 }, "label": "start-game" },
+    { "kind": "wait", "label": "play-scene-loads", "waitTicks": 90, "release": true },
+    {
+      "kind": "input",
+      "label": "pinch-start",
+      "pointers": [{ "id": 7, "x": 0.35, "y": 0.5 }, { "id": 3, "x": 0.65, "y": 0.5 }],
+      "waitTicks": 1,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "pinch-apart",
+      "pointers": [{ "id": 7, "x": 0.1, "y": 0.5 }, { "id": 3, "x": 0.9, "y": 0.5 }],
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "camera": {
+      "entity": "camera.main",
+      "follows": "player",
+      "targetInViewport": true,
+      "within": 9.2
+    },
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the pinch distance assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
+  }
+}

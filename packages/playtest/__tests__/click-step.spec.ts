@@ -38,6 +38,35 @@ test("click drives a browser pointer down and up at viewport pixels", async () =
   expect(calls).toEqual([["move", 320, 180], ["down"], ["up"]]);
 });
 
+test("wheel input reaches the browser mouse transport", async () => {
+  const calls: Array<[number, number]> = [];
+  const page = {
+    context: () => ({ newCDPSession: async () => ({ send: async () => undefined }) }),
+    evaluate: async () => undefined,
+    keyboard: { down: async () => undefined, up: async () => undefined },
+    mouse: {
+      down: async () => undefined,
+      move: async (x: number, y: number) => calls.push([x, y]),
+      up: async () => undefined,
+      wheel: async (deltaX: number, deltaY: number) => calls.push([deltaX, deltaY]),
+    },
+  } as unknown as Page;
+
+  await runStep(
+    page,
+    undefined,
+    { release: true, waitTicks: 1, wheel: { deltaY: -160 } } as never,
+    { height: 360, width: 640 },
+    undefined,
+    [],
+    { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() },
+    undefined,
+    true,
+  );
+
+  expect(calls).toEqual([[320, 180], [0, -160]]);
+});
+
 test("entity click without a bridge fails with a named pointer diagnostic", async () => {
   const page = {
     context: () => ({ newCDPSession: async () => ({ send: async () => undefined }) }),

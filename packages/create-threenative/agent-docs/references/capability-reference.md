@@ -127,11 +127,12 @@ const driver = createReplayDriver({ recording });
 export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>( config: IGameConfig<TState, TPhysics>, ): IGame<TState, TPhysics> { … }
 ```
 
-- **Use when:** start a ThreeNative game from src/game.ts · register physics and gameplay plugins
-- **Constraints:** keep DOM and React mounting in src/main.ts
+- **Use when:** start a ThreeNative game from src/game.ts · register physics and gameplay plugins · let the player zoom the camera with a wheel, pinch, or gamepad axis
+- **Constraints:** keep DOM and React mounting in src/main.ts · bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
 
 ```ts
 const game = defineGame({ scenes: { Play } });
+const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });
 ```
 
 ### `FrameBudget`

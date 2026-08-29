@@ -297,6 +297,17 @@ export async function runStep(
   if (step.pointers !== undefined) {
     await setBrowserPointers(page, inputState, step.pointers, viewport);
   }
+  if (step.wheel !== undefined) {
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    await page.mouse.wheel(step.wheel.deltaX ?? 0, step.wheel.deltaY);
+    // Chromium's mouse wheel transport can be consumed by a focused browser surface before it
+    // reaches a window listener. Re-emit the same DOM sample on the game canvas so deterministic
+    // fixed-step playtests observe the exact event the game would receive from a desktop wheel.
+    await page.evaluate((wheel) => {
+      const target = document.querySelector("canvas") ?? window;
+      target.dispatchEvent(new WheelEvent("wheel", { bubbles: true, ...wheel }));
+    }, step.wheel);
+  }
   const press = step.press;
   if (typeof press === "string") {
     await page.keyboard.down(press);

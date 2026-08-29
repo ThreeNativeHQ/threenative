@@ -44,13 +44,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // holds the frame budget instead of the game hand-authoring a resolution constant.
   // Recomputed after Biome reformatted nine template files: the previous values were measured
   // before that formatting ran and were therefore stale the moment they were committed.
-  "action-rpg": "4229783b897791764b708990f686a87a3e86cfb27e5c4e035f1d4fe9cf9880ac",
-  defense: "2069eafd127b35b89adf856f2087b7cdd5bb09c2b50337521271da2625419636",
-  minimal: "81783acebe32339ccc51623a186af197bb48196f133e77c3f5be3b0567a8c366",
-  platformer: "bf0619518da5b602cace0b691f5df77bacba0463ee81e81ee0af44ba6b0e7e9d",
-  racing: "2f5846f31af48e459ec18425f8034edacbfb312dce004268c7c48e089f12fcd9",
-  shooter: "23e8fa8029a7fd9e496214ed97dee8003d54c94e6fb527e588c348911a4b0196",
-  starter: "85b4fd037e2e8d1af45a70bfa23f97d6ac4eb87d31edd64b38869a3721fdf935",
+  // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
+  // (PRD-239), which is copied into every scaffold.
+  "action-rpg": "4c345d50a1b23d7e8e4d4bbede3a57215dcb55715c6b35e87a5cde6cf98d0d5c",
+  defense: "d71a13a672c68052e3f9b50dd71a999f0701af532282665748d4fa4eebbd8597",
+  minimal: "caf84f5b4854dff60374080c6df9cbecde10d4b2e697e542767b305ae88224a7",
+  platformer: "403935d81ee9b3295aa349b1773d21d931c010788dd3fec75bd467eaf59294fd",
+  racing: "cc11aec85a3ece8b360bdb328810e3a6a3ccff588a46f9b121ccd53683d14b32",
+  shooter: "441fd2aa3f6723735c9c03cb0bde2cc9f638fbd760d66d921b1d49ce8cd2fecc",
+  starter: "a56a27904bb85fdd89506a73f1fdd83f1863174161f5b7878f4152790dbc652a",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

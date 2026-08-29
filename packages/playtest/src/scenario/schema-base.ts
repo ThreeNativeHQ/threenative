@@ -22,6 +22,11 @@ export interface IPlaytestPointer {
   y: number;
 }
 
+export interface IPlaytestWheel {
+  deltaX?: number;
+  deltaY: number;
+}
+
 export interface IPlaytestStep {
   kind?: "aimAt" | "click" | "input" | "wait";
   /** @deprecated Use holdTicks. Fixed-step bridges treat this as a tick alias. */
@@ -52,6 +57,8 @@ export interface IPlaytestStep {
   /** @deprecated Use waitTicks. Fixed-step bridges treat this as a tick alias. */
   waitFrames?: number;
   waitTicks?: number;
+  /** A browser wheel sample; negative deltaY is the conventional toward-user gesture. */
+  wheel?: IPlaytestWheel;
   window?: {
     height?: number;
     operation: "minimize" | "resize" | "restore";

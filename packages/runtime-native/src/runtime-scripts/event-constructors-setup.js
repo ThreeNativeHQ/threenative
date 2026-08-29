@@ -62,6 +62,23 @@
     }
   }
 
+  class WheelEvent extends Event {
+    constructor(type, init) {
+      const eventInit = init || {};
+      super(type, eventInit);
+      this.deltaX = Number(eventInit.deltaX || 0);
+      this.deltaY = Number(eventInit.deltaY || 0);
+      this.deltaZ = Number(eventInit.deltaZ || 0);
+      this.deltaMode = Number(eventInit.deltaMode || 0);
+      this.clientX = Number(eventInit.clientX || 0);
+      this.clientY = Number(eventInit.clientY || 0);
+      this.ctrlKey = Boolean(eventInit.ctrlKey);
+      this.shiftKey = Boolean(eventInit.shiftKey);
+      this.altKey = Boolean(eventInit.altKey);
+      this.metaKey = Boolean(eventInit.metaKey);
+    }
+  }
+
   class TouchEvent extends Event {
     constructor(type, init) {
       const eventInit = init || {};
@@ -112,6 +129,7 @@
 
   globalThis.Event = Event;
   globalThis.PointerEvent = PointerEvent;
+  globalThis.WheelEvent = WheelEvent;
   globalThis.TouchEvent = TouchEvent;
   globalThis.KeyboardEvent = KeyboardEvent;
   globalThis.ErrorEvent = ErrorEvent;

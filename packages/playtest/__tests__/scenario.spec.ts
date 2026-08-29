@@ -92,6 +92,21 @@ test("scenario parser accepts viewport-pixel click steps", async () => {
   ]);
 });
 
+test("scenario parser accepts a browser wheel step", async () => {
+  const directory = await makeTempDir("playtest-wheel-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    name: "wheel",
+    schemaVersion: 1,
+    steps: [{ wheel: { deltaY: -160 }, waitTicks: 4 }],
+  }));
+
+  const parsed = await loadPlaytestScenario(directory, "scenario.json");
+
+  expect(parsed.steps).toEqual([
+    { release: true, waitTicks: 4, wheel: { deltaY: -160 } },
+  ]);
+});
+
 test.each([
   ["wrong coordinate type", { at: { x: "640", y: 360 }, kind: "click" }],
   ["negative coordinate", { at: { x: -1, y: 360 }, kind: "click" }],

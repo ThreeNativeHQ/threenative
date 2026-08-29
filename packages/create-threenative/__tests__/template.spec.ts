@@ -3,9 +3,11 @@ import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { PerspectiveCamera, Vector3 } from "three";
 import { auditAllTemplates } from "../../../scripts/instruction-budget.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createProject } from "../src/index.js";
+import { createSpringArm } from "../templates/starter/src/render/camera.js";
 
 const templates = ["starter", "minimal"] as const;
 const brandingTemplates = [
@@ -439,6 +441,7 @@ describe("template contracts", () => {
 
   it("should wire the spring arm, sky, and movement API", async () => {
     const play = await readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8");
+    const camera = await readFile(path.join(templateRoot, "starter/src/render/camera.ts"), "utf8");
     const starterPlayer = await readFile(
       path.join(templateRoot, "starter/src/entities/Player.ts"),
       "utf8",
@@ -457,6 +460,9 @@ describe("template contracts", () => {
     expect(play).toContain("player.respawn()");
     expect(play).toContain("if (respawned) frameCtx.state.flush()");
     expect(play).toContain("audio.play(buffer)");
+    expect(play).toContain('frameCtx.input.axis("zoom")');
+    expect(play).toContain("springArm.dolly");
+    expect(camera).toContain("dolly");
     for (const player of [starterPlayer, minimalPlayer]) {
       expect(player).toContain("moveAndSlide");
       expect(player).toContain("body.velocity");
@@ -472,6 +478,19 @@ describe("template contracts", () => {
     const gameEntry = await readFile(path.join(templateRoot, "starter/src/game.ts"), "utf8");
     expect(gameEntry).toContain("game.pause()");
     expect(gameEntry).toContain("game.resume()");
+  });
+
+  it("should dolly the starter spring arm toward its target for positive zoom intent", () => {
+    const camera = new PerspectiveCamera();
+    const arm = createSpringArm(camera);
+    const target = new Vector3();
+
+    arm.snap(target);
+    const startingDistance = camera.position.distanceTo(target);
+    arm.dolly(1, 1 / 60);
+    arm.follow(target, 1 / 60);
+
+    expect(camera.position.distanceTo(target)).toBeLessThan(startingDistance);
   });
 
   it("should demonstrate the complete ctx lifecycle surface", async () => {

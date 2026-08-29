@@ -22,6 +22,7 @@
     { "name": "TransformStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
     { "name": "URL", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
     { "name": "URLSearchParams", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
+    { "name": "WheelEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
     { "name": "Worker", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
     { "name": "WritableStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
     { "name": "cancelAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },

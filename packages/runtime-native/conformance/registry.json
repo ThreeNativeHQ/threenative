@@ -938,6 +938,20 @@
       "required": true
     },
     {
+      "id": "99-scroll-input",
+      "title": "native host scroll reaches scalar input",
+      "category": "input",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/scroll-input.js",
+      "inputProof": "scroll",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "97-input-restart-lifetime",
       "title": "listener removal survives a stop-restart cycle",
       "category": "runtime",

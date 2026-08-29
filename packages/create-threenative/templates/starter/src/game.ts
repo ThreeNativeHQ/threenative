@@ -20,6 +20,9 @@ const game = defineGame<GameState, IPhysicsContext>({
     },
     jump: { buttons: [0], keys: ["Space"] },
     restart: { keys: ["KeyR"] },
+    // Wheel, pinch and the right stick share one portable camera intent. The scene owns how that
+    // intent changes framing; this binding stays identical on browser and native targets.
+    zoom: { gamepadAxes: [3], pinch: true, scroll: true },
   },
   plugins: [rapier(), replay(), playtest()],
   display: config.display,

@@ -348,6 +348,7 @@ export const PLAYTEST_STEP_KEYS = [
   "target",
   "waitFrames",
   "waitTicks",
+  "wheel",
   "window",
 ] as const;
 
@@ -400,11 +401,24 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ? value.pointers.map((pointer, pointerIndex) =>
         validatePointer(pointer, scenarioPath, index, pointerIndex))
     : undefined;
+  const wheel = isRecord(value.wheel)
+    && typeof value.wheel.deltaY === "number"
+    && Number.isFinite(value.wheel.deltaY)
+    && (value.wheel.deltaX === undefined
+      || (typeof value.wheel.deltaX === "number" && Number.isFinite(value.wheel.deltaX)))
+    ? {
+        ...(typeof value.wheel.deltaX === "number" ? { deltaX: value.wheel.deltaX } : {}),
+        deltaY: value.wheel.deltaY,
+      }
+    : undefined;
   if (isRecord(value.overlayMessage)) {
     rejectUnknownKeys(value.overlayMessage, ["overlayId", "payload", "type"], scenarioPath, `steps[${index}].overlayMessage`);
   }
   if (isRecord(value.pointerPosition)) {
     rejectUnknownKeys(value.pointerPosition, ["buttons", "x", "y"], scenarioPath, `steps[${index}].pointerPosition`);
+  }
+  if (isRecord(value.wheel)) {
+    rejectUnknownKeys(value.wheel, ["deltaX", "deltaY"], scenarioPath, `steps[${index}].wheel`);
   }
   if (pointers !== undefined && new Set(pointers.map(({ id }) => id)).size !== pointers.length) {
     throw invalidStep(scenarioPath, `Scenario step ${index} pointers must use unique ids.`);
@@ -452,7 +466,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     if (at === undefined) {
       throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'click' must define at as { x, y } or { entity }.`);
     }
-    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "target", "window"] as const) {
+    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "target", "wheel", "window"] as const) {
       if (value[forbidden] !== undefined) {
         throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'click' cannot define ${forbidden}.`);
       }
@@ -473,7 +487,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     if (target === undefined) {
       throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'aimAt' must define target as { x, z } or { entity }.`);
     }
-    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "window"] as const) {
+    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "wheel", "window"] as const) {
       if (value[forbidden] !== undefined) {
         throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'aimAt' cannot define ${forbidden}; apply aim in its own step.`);
       }
@@ -501,6 +515,9 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.pointers !== undefined && pointers === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} pointers must be an array.`);
   }
+  if (value.wheel !== undefined && wheel === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} wheel must define finite deltaY and optional finite deltaX values.`);
+  }
   if (value.screenshot !== undefined && screenshot === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} screenshot must be a stable file-safe name.`);
   }
@@ -510,8 +527,8 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
-  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, window, aimAt target, or waitFrames/waitTicks.`);
+  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, wheel, window, aimAt target, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} holdFrames must be a positive integer.`);
@@ -553,6 +570,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(screenshot === undefined ? {} : { screenshot }),
     ...(waitFrames === undefined ? {} : { waitFrames }),
     ...(waitTicks === undefined ? {} : { waitTicks }),
+    ...(wheel === undefined ? {} : { wheel }),
     ...(window === undefined ? {} : { window }),
   };
 }

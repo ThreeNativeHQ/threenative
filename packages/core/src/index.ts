@@ -82,8 +82,11 @@ export type { IRandom } from "./random.js";
  * Define the portable game entry shared by web and native.
  * @situation start a ThreeNative game from src/game.ts
  * @situation register physics and gameplay plugins
+ * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @constraint keep DOM and React mounting in src/main.ts
+ * @constraint bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
  * @example const game = defineGame({ scenes: { Play } });
+ * @example const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });
  */
 export { defineGame } from "./game.js";
 /**
@@ -281,4 +284,12 @@ export type { INormaliseToMetresOptions, NormaliseAxis } from "./scale.js";
  * attachToBone(character, "RightHand", rifle);
  */
 export { attachToBone, skeletonBones } from "./skeleton.js";
-export type { ContextMenuPolicy, IInputAction, IRawInputPointer } from "./input.js";
+export type {
+  ContextMenuPolicy,
+  IInputAction,
+  IInputGamepad,
+  InputBindings,
+  InputPlatformSource,
+  IRawInputPointer,
+  IRawInputState,
+} from "./input.js";
