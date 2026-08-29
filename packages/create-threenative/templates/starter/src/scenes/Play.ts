@@ -13,6 +13,7 @@ import { Crate } from "../entities/Crate.js";
 import { Goal } from "../entities/Goal.js";
 import { Player } from "../entities/Player.js";
 import { createSpringArm } from "../render/camera.js";
+import { pickupRiseEase } from "../render/easing.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
@@ -144,7 +145,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     pickupVisual.castShadow = true;
     ctx.add(pickupVisual);
     ctx.entities.add("pickup", pickupVisual);
-    void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4);
+    void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4, { ease: pickupRiseEase });
     springArm.snap(player.mesh.position);
     ctx.entities.add("player", player);
     // The packaged proof asset earns its place here: it is the pennant on the finish flag,

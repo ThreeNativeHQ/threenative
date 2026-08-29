@@ -153,6 +153,79 @@ describe("Scheduler", () => {
     expect(resolutions).toBe(1);
     expect(scheduler.size).toBe(0);
   });
+
+  it("should reach the exact end value when the curve does not return 1 at t=1", async () => {
+    const scheduler = new Scheduler();
+    const target = { x: 0 };
+    const samples: number[] = [];
+    const finished = scheduler.tween(target, { x: 10 }, 1, {
+      ease: (t) => {
+        samples.push(t);
+        return t * 3;
+      },
+    });
+
+    scheduler.tick(0.5);
+    expect(target.x).toBe(15);
+    scheduler.tick(0.5);
+    await finished;
+
+    expect(samples).toEqual([0.5, 1]);
+    expect(target.x).toBe(10);
+  });
+
+  it("should interpolate by the supplied curve at the midpoint", () => {
+    const scheduler = new Scheduler();
+    const target = { x: 0 };
+
+    void scheduler.tween(target, { x: 10 }, 1, { ease: (t) => t * t });
+    scheduler.tick(0.5);
+
+    expect(target.x).toBe(2.5);
+  });
+
+  it("should behave identically to a linear tween when no curve is given", () => {
+    const scheduler = new Scheduler();
+    const target = { x: 0 };
+
+    void scheduler.tween(target, { x: 10 }, 1);
+    scheduler.tick(0.5);
+
+    expect(target.x).toBe(5);
+  });
+
+  it("should forward a supplied curve through ctx.tween", async () => {
+    let advance: ((ticks: number) => number) | undefined;
+    const target = { x: 0 };
+
+    class TestScene extends Scene {
+      override enter(ctx: Parameters<Scene["enter"]>[0]): void {
+        void ctx.tween(target, { x: 10 }, 1, { ease: (t) => t * t });
+      }
+    }
+
+    const game = defineGame({
+      initialState: {},
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: renderer(testCanvas()),
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    if (advance === undefined) throw new Error("Test plugin did not receive fixedStep.");
+    advance(30);
+
+    expect(target.x).toBeCloseTo(2.5);
+    game.stop();
+  });
 });
 
 describe("Scheduler tick ordering", () => {

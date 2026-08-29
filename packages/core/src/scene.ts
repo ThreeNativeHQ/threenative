@@ -7,7 +7,7 @@ import type { IRaycastOptions } from "./picking.js";
 import type { IPointerEvents3D } from "./pointer-events.js";
 import type { IRandom } from "./random.js";
 import type { IRendererLike } from "./renderer.js";
-import type { ScheduleHandle } from "./schedule.js";
+import type { ITweenOptions, ScheduleHandle } from "./schedule.js";
 import type { GameStore } from "./state.js";
 import type { Viewport } from "./viewport.js";
 
@@ -80,6 +80,7 @@ export interface ICtx<
     target: T,
     properties: { [K in keyof T]?: number },
     duration: number,
+    options?: ITweenOptions,
   ) => Promise<void>;
   readonly random: IRandom;
   readonly raycast: (options?: IRaycastOptions) => Intersection | undefined;

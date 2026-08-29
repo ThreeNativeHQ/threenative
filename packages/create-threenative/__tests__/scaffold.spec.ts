@@ -50,19 +50,21 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // which changes the generated instructions embedded in every scaffold.
   // Recomputed again for the PRD-237 continuation repair: the defense pointer-placement scenario
   // clears mouse hover and captures the held touch highlight before its release.
-  "action-rpg": "eef2320a3865967901a5601481f286e307a2ac55abe6a4badadcb37af6a3dbc1",
-  defense: "e32ad31f2f9eda5782dbe465479bacd5cfed3a3039fb84e1ea6aa872f413ba33",
-  minimal: "06f98c27ce91866cc0df9fedd443b5bcc745045abf41da8c9107d0d08a79f4df",
-  platformer: "b9260208607f70cf269636edcb1777d123fa555f09f7f16736c02dff33561200",
-  racing: "1ef57e1d3d4aecb7ef7bab97e889db8e3c49322558a7ff4e83354494564adc6d",
-  shooter: "10564ea72d1479f193e2c3e9d47513818d3e36f79a0c65acddceb558c1bc90ac",
-  starter: "b8a4d2a2d71f071b003f699be0ff97410836cc6501fe5f146f38411a5b7ca105",
+  "action-rpg": "c6282e2cda195e1514d657eb02427e9a40dda04356d0b02ab34254a16cf7cd17",
+  defense: "c5215dea388d45c2bc0647786e26e47a197fecb1b7709243beff6b83ac521a59",
+  minimal: "de215f06de4cf305d52bbecfb853e244ea775577757d543affb9da12adfe6833",
+  platformer: "744416425e05da8ab39d90d9f46c1f5333c35788770980befc8ddcb88945a7e6",
+  racing: "92ed61a70be707a590273bc3da99222a510bbb97119cadef4bc38c74fbd39be2",
+  shooter: "1cf79309743807158b7f12440f5e2670543a3b47c920e130180a079dfc280530",
+  starter: "f4bd6c69b7941792bee8eb855a040b0596036202c1c9af95e8bc337ab61cfd2c",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
   // Recomputed after PRD-247 added per-item capabilities, the shooter's proof scenario, and the
   // unrestricted billboard example in the generated capability reference.
   // Recomputed after the roll continuation updated the generated shooter's nameplate observer.
+  // Recomputed after the capability reference's Scheduler example switched to the game-owned
+  // `ctx.tween` path, so generated scaffolds no longer embed an un-ticked standalone Scheduler.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -142,6 +144,7 @@ const STARTER_PATHS = [
   "src/render/materials.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
+  "src/render/easing.ts",
   "src/render/sky.ts",
   "src/render/scenery.ts",
   "src/render/loading.ts",
