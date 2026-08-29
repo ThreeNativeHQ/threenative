@@ -4,6 +4,8 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { checkCapabilityManifest } from "./build-capability-manifest.js";
+import { buildMatrixErrors } from "./check-build-matrix.js";
+import { checkNativeCoverage } from "./check-native-coverage.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -453,9 +455,16 @@ export async function capabilityManifestErrors(root: string): Promise<string[]> 
 }
 
 export async function enforceBudgets(root: string): Promise<BudgetReport> {
+  const nativeManifest = path.join(root, "packages", "runtime-native", "package.json");
+  const ownsNativeRuntime = existsSync(nativeManifest)
+    ? (JSON.parse(await readFile(nativeManifest, "utf8")) as { name?: string }).name ===
+      "@threenative/runtime-native"
+    : false;
+  if (ownsNativeRuntime) await checkNativeCoverage(root);
   const report = await collectBudgets(root);
   const errors = [
     ...budgetErrors(report),
+    ...(await buildMatrixErrors(root)),
     ...(await capabilityManifestErrors(root)),
     ...(await nativeCensusErrors(root)),
     ...(await nativeCensusDrift(root)),

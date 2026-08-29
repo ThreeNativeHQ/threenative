@@ -10,6 +10,10 @@ test-results/
 *.log
 .DS_Store
 artifacts
+# Scratch CMake configure/build trees and negative-control sources the native lanes drop at the
+# repository root while proving a gate reds. Anchored so a package's own `build/` still answers to
+# the ignore rules in its own tree.
+/build/
 # Android NDK simpleperf downloads device binaries here while symbolizing a profile.
 binary_cache/
 .playwright-mcp

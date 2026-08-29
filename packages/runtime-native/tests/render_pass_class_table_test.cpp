@@ -29,7 +29,7 @@ bool eval(mystral::js::Engine* engine, const std::string& source, const char* la
     return ok;
 }
 
-void runRuntimeContract() {
+void exerciseRenderPassClassContract() {
     mystral::RuntimeConfig config;
     config.width = 1;
     config.height = 1;
@@ -43,9 +43,9 @@ void runRuntimeContract() {
     auto* engine = state->engine;
 
     const bool booted = engine->evalScript(
-        R"JS((async () => {
-            const adapter = await navigator.gpu.requestAdapter();
-            globalThis.__device = await adapter.requestDevice();
+        R"JS((() => {
+            const adapter = navigator.gpu.requestAdapter();
+            globalThis.__device = adapter.requestDevice();
             globalThis.__encA = __device.createCommandEncoder();
             globalThis.__encB = __device.createCommandEncoder();
             globalThis.__passA = __encA.beginRenderPass({colorAttachments: []});
@@ -53,21 +53,21 @@ void runRuntimeContract() {
         })())JS",
         "tn-runtime-passes.js");
     expect(booted, "pass-creating script evaluated");
-    for (int pump = 0; pump < 200; ++pump) {
-        if (!engine->isUndefined(engine->getGlobalProperty("__passA"))) break;
-        engine->processMicrotasks();
-    }
-    expect(!engine->isUndefined(engine->getGlobalProperty("__passA")),
+    const auto firstPass = engine->getGlobalProperty("__passA");
+    expect(firstPass.ptr && !engine->isUndefined(firstPass),
            "two render passes exist through the real device surface");
 
     expect(eval(engine,
-                "typeof __passA.setPipeline === 'function' && typeof __passA.draw === 'function'"
-                " && typeof __passA.end === 'function'",
+                "['setPipeline','setBindGroup','draw','setVertexBuffer','setIndexBuffer',"
+                "'drawIndexed','drawIndirect','drawIndexedIndirect','setViewport','setScissorRect',"
+                "'setBlendConstant','setStencilReference','executeBundles','end']"
+                ".every((name) => typeof __passA[name] === 'function')",
                 "tn-pass-methods.js"),
            "render pass methods exist on the wrapper");
 
     expect(eval(engine,
-                "Object.getPrototypeOf(__passA) === Object.getPrototypeOf(__passB)",
+                "Object.getPrototypeOf(__passA) === Object.getPrototypeOf(__passB)"
+                " && Object.getPrototypeOf(__passA) !== Object.prototype",
                 "tn-pass-proto-identity.js"),
            "both render passes share one class prototype");
 
@@ -145,13 +145,14 @@ void runRuntimeContract() {
 }  // namespace
 
 int main() {
-    runRuntimeContract();
+    exerciseRenderPassClassContract();
 
     if (failures != 0) {
         std::cerr << "render-pass-class-table contract: " << failures << " failure(s)"
                   << std::endl;
         return 1;
     }
+    std::cout << "proof: render-pass-class-table" << std::endl;
     std::cout << "render-pass-class-table: prototype=shared receivers=resolved "
                  "pairing=map-resolved runtime=wired" << std::endl;
     return 0;

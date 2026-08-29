@@ -17,6 +17,50 @@ if(NOT MYSTRAL_PACKAGE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+")
 endif()
 
 project(MystralNativeRuntime VERSION ${MYSTRAL_PACKAGE_VERSION} LANGUAGES C CXX)
+enable_testing()
+
+function(tn_register_contract_test target)
+    if(target STREQUAL "threenative-webgpu-bindings-reentrancy-test")
+        set(TN_BEHAVIOR_CONTRACT "webgpu")
+        set(TN_BEHAVIOR_PROOFS "public-binding-surface,whole-table-verification,wrapper-rollback")
+    elseif(target STREQUAL "threenative-bindings-creation-test")
+        set(TN_BEHAVIOR_CONTRACT "creation")
+        set(TN_BEHAVIOR_PROOFS "creation-refusal")
+    elseif(target STREQUAL "threenative-command-encoder-class-table-test")
+        set(TN_BEHAVIOR_CONTRACT "command-encoder")
+        set(TN_BEHAVIOR_PROOFS "command-encoder-class-table")
+    elseif(target STREQUAL "threenative-render-pass-class-table-test")
+        set(TN_BEHAVIOR_CONTRACT "render-pass")
+        set(TN_BEHAVIOR_PROOFS "render-pass-class-table")
+    endif()
+    if(DEFINED TN_BEHAVIOR_CONTRACT)
+        find_program(TN_PNPM_EXECUTABLE pnpm REQUIRED)
+        add_test(NAME ${target}
+            COMMAND ${CMAKE_COMMAND} -E env
+                "TN_NATIVE_BEHAVIOR_EXECUTABLE=$<TARGET_FILE:${target}>"
+                "TN_NATIVE_BEHAVIOR_CONTRACT=${TN_BEHAVIOR_CONTRACT}"
+                "TN_NATIVE_BEHAVIOR_PROOFS=${TN_BEHAVIOR_PROOFS}"
+                ${TN_PNPM_EXECUTABLE} exec vitest run --config vitest.config.ts
+                    tests/webgpu-bindings-contract.test.mjs)
+        set_tests_properties(${target} PROPERTIES
+            LABELS "native-contract;native-behavior"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    else()
+        add_test(NAME ${target} COMMAND $<TARGET_FILE:${target}> ${ARGN})
+        set_tests_properties(${target} PROPERTIES LABELS "native-contract")
+    endif()
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_CONTRACT_TARGETS ${target})
+endfunction()
+
+function(tn_register_blocked_test name reason)
+    add_test(NAME ${name} COMMAND ${CMAKE_COMMAND} -E echo "BLOCKED: ${reason}")
+    set_tests_properties(${name} PROPERTIES DISABLED TRUE LABELS "native-contract;blocked")
+endfunction()
+
+function(tn_mark_sanitizer_contract_test target)
+    set_property(TEST ${target} APPEND PROPERTY LABELS "native-sanitizer")
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_SANITIZER_TARGETS ${target})
+endfunction()
 
 if(APPLE)
     enable_language(OBJCXX)
@@ -86,6 +130,9 @@ set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameL
 option(TN_WEBGPU_GPU_DRAIN_PROFILE "Block after present to measure remaining GPU work (diagnostic builds only)" OFF)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
+option(TN_ENABLE_COVERAGE "Instrument native targets for source-based coverage" OFF)
+option(TN_ENABLE_SANITIZERS "Instrument native targets with AddressSanitizer and UBSan" OFF)
+option(TN_ENABLE_CLANG_TIDY "Run clang-tidy over ThreeNative native sources" OFF)
 # PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
 # picture by construction and must never ship. Asserted absent from every shipped preset.
 option(TN_ABLATE_BACKEND "PRD-226 arm A2: no-op the hot backend command entry points, keeping JS, trampoline and argument parsing intact" OFF)
@@ -102,6 +149,28 @@ endif()
 
 if(TN_ANDROID_JS_PROFILE_BUSY_LOOP AND NOT TN_ANDROID_JS_PROFILE)
     message(FATAL_ERROR "Android JS profiling controls require TN_ANDROID_JS_PROFILE=ON")
+endif()
+
+if(TN_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR
+            "TN_ENABLE_COVERAGE requires clang source-based coverage; configure with clang/clang++")
+    endif()
+    add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+    add_link_options(-fprofile-instr-generate)
+endif()
+
+if(TN_ENABLE_SANITIZERS)
+    if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR
+            "TN_ENABLE_SANITIZERS requires a Clang or GCC desktop toolchain")
+    endif()
+endif()
+
+if(TN_ENABLE_CLANG_TIDY)
+    find_program(TN_CLANG_TIDY_EXECUTABLE NAMES clang-tidy REQUIRED)
+    set(CMAKE_CXX_CLANG_TIDY
+        "${TN_CLANG_TIDY_EXECUTABLE};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy")
 endif()
 
 # Native GLTF is deliberately not mapped to any implementation. AGENTS.md marks
@@ -1874,6 +1943,71 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
         tests/lifecycle_policy_test.cpp)
     target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
+
+    tn_register_contract_test(threenative-audio-decode-ogg-test)
+    tn_register_contract_test(threenative-audio-decode-promise-test)
+    tn_register_contract_test(threenative-audio-graph-test)
+    tn_register_contract_test(threenative-bindings-creation-test)
+    tn_register_contract_test(threenative-canvas2d-dirty-test)
+    tn_register_contract_test(threenative-command-encoder-class-table-test)
+    tn_register_contract_test(threenative-crash-handler-policy-test)
+    tn_register_contract_test(threenative-device-pixel-ratio-test)
+    tn_register_contract_test(threenative-dom-dispatch-lifetime-test)
+    tn_register_contract_test(threenative-embedded-bundle-test)
+    tn_register_contract_test(threenative-frame-op-stream-replay-test)
+    tn_register_contract_test(threenative-handle-lifetime-test v8)
+    tn_register_contract_test(threenative-input-restart-test)
+    tn_register_contract_test(threenative-js-engine-contract-test)
+    tn_register_contract_test(threenative-lifecycle-policy-test)
+    tn_register_contract_test(threenative-local-storage-test)
+    if(TN_ENABLE_NATIVE_PHYSICS)
+        tn_register_contract_test(threenative-physics-actuation-bindings-test)
+    else()
+        tn_register_blocked_test(threenative-physics-actuation-bindings-test
+            "TN_ENABLE_NATIVE_PHYSICS=OFF")
+    endif()
+    tn_register_contract_test(threenative-render-pass-class-table-test)
+    tn_register_contract_test(threenative-rt-handle-allocation-test)
+    tn_register_contract_test(threenative-shader-module-metadata-test)
+    tn_register_contract_test(threenative-shutdown-lifetime-test http)
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ctest-shutdown-lifetime")
+    add_test(NAME threenative-shutdown-lifetime-test-timer-watch
+        COMMAND $<TARGET_FILE:threenative-shutdown-lifetime-test>
+            timer-watch "${CMAKE_CURRENT_BINARY_DIR}/ctest-shutdown-lifetime")
+    set_tests_properties(threenative-shutdown-lifetime-test-timer-watch
+        PROPERTIES LABELS "native-contract")
+    tn_register_contract_test(threenative-timer-delivery-test)
+    tn_register_contract_test(threenative-timer-engine-first-test)
+    tn_register_contract_test(threenative-timestamp-query-test)
+    if(TN_ENABLE_VIDEO)
+        tn_register_contract_test(threenative-video-recorder-state-test)
+    else()
+        tn_register_blocked_test(threenative-video-recorder-state-test "TN_ENABLE_VIDEO=OFF")
+    endif()
+    tn_register_contract_test(threenative-webgpu-bindings-reentrancy-test)
+    tn_register_contract_test(threenative-wgpu-null-handle-test)
+    tn_mark_sanitizer_contract_test(threenative-bindings-creation-test)
+    tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)
+    tn_mark_sanitizer_contract_test(threenative-frame-op-stream-replay-test)
+    tn_mark_sanitizer_contract_test(threenative-handle-lifetime-test)
+    tn_mark_sanitizer_contract_test(threenative-shutdown-lifetime-test)
+    tn_mark_sanitizer_contract_test(threenative-webgpu-bindings-reentrancy-test)
+    get_property(TN_NATIVE_SANITIZER_TARGETS GLOBAL PROPERTY TN_NATIVE_SANITIZER_TARGETS)
+    if(TN_ENABLE_SANITIZERS)
+        # V8 and Skia are prebuilt without exported RTTI. UBSan's vptr check alone requires those
+        # unavailable typeinfo symbols; all other address and undefined-behaviour checks stay on.
+        set(TN_SANITIZER_COMPILE_OPTIONS
+            -fsanitize=address,undefined -fno-sanitize=vptr -fno-omit-frame-pointer)
+        set(TN_SANITIZER_LINK_OPTIONS -fsanitize=address,undefined -fno-sanitize=vptr)
+        target_compile_options(mystral-runtime PRIVATE ${TN_SANITIZER_COMPILE_OPTIONS})
+        foreach(target IN LISTS TN_NATIVE_SANITIZER_TARGETS)
+            target_compile_options(${target} PRIVATE ${TN_SANITIZER_COMPILE_OPTIONS})
+            target_link_options(${target} PRIVATE ${TN_SANITIZER_LINK_OPTIONS})
+        endforeach()
+    endif()
+    get_property(TN_NATIVE_CONTRACT_TARGETS GLOBAL PROPERTY TN_NATIVE_CONTRACT_TARGETS)
+    add_custom_target(threenative-native-tests DEPENDS ${TN_NATIVE_CONTRACT_TARGETS})
+    add_custom_target(threenative-native-sanitizer-tests DEPENDS ${TN_NATIVE_SANITIZER_TARGETS})
 
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)

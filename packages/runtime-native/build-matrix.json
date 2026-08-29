@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "configurations": [
+    {
+      "directory": "tn-linux",
+      "preset": "tn-linux",
+      "cacheVariables": {},
+      "owner": "default native contract lane — ctest registration (PRD-229 Phase 2) and the G1 desktop host gate",
+      "runs": [
+        "threenative-audio-decode-ogg-test",
+        "threenative-audio-decode-promise-test",
+        "threenative-audio-graph-test",
+        "threenative-bindings-creation-test",
+        "threenative-canvas2d-dirty-test",
+        "threenative-command-encoder-class-table-test",
+        "threenative-crash-handler-policy-test",
+        "threenative-device-pixel-ratio-test",
+        "threenative-dom-dispatch-lifetime-test",
+        "threenative-embedded-bundle-test",
+        "threenative-frame-op-stream-replay-test",
+        "threenative-handle-lifetime-test",
+        "threenative-input-restart-test",
+        "threenative-js-engine-contract-test",
+        "threenative-lifecycle-policy-test",
+        "threenative-local-storage-test",
+        "threenative-render-pass-class-table-test",
+        "threenative-rt-handle-allocation-test",
+        "threenative-shader-module-metadata-test",
+        "threenative-shutdown-lifetime-test",
+        "threenative-timer-delivery-test",
+        "threenative-timer-engine-first-test",
+        "threenative-timestamp-query-test",
+        "threenative-webgpu-bindings-reentrancy-test",
+        "threenative-wgpu-null-handle-test"
+      ]
+    },
+    {
+      "directory": "tn-linux-coverage",
+      "preset": "tn-linux",
+      "cacheVariables": { "TN_ENABLE_COVERAGE": "ON" },
+      "owner": "PRD-229 Phase 1 coverage gate — scripts/measure-native-coverage.mjs, evidence in docs/verification/native-coverage-2026-08-28.md",
+      "runs": [
+        "threenative-audio-decode-ogg-test",
+        "threenative-audio-decode-promise-test",
+        "threenative-audio-graph-test",
+        "threenative-bindings-creation-test",
+        "threenative-canvas2d-dirty-test",
+        "threenative-command-encoder-class-table-test",
+        "threenative-crash-handler-policy-test",
+        "threenative-device-pixel-ratio-test",
+        "threenative-dom-dispatch-lifetime-test",
+        "threenative-embedded-bundle-test",
+        "threenative-frame-op-stream-replay-test",
+        "threenative-handle-lifetime-test",
+        "threenative-input-restart-test",
+        "threenative-js-engine-contract-test",
+        "threenative-lifecycle-policy-test",
+        "threenative-local-storage-test",
+        "threenative-render-pass-class-table-test",
+        "threenative-rt-handle-allocation-test",
+        "threenative-shader-module-metadata-test",
+        "threenative-shutdown-lifetime-test",
+        "threenative-timer-delivery-test",
+        "threenative-timer-engine-first-test",
+        "threenative-timestamp-query-test",
+        "threenative-webgpu-bindings-reentrancy-test",
+        "threenative-wgpu-null-handle-test"
+      ]
+    },
+    {
+      "directory": "tn-linux-asan",
+      "preset": "tn-linux",
+      "cacheVariables": { "TN_ENABLE_SANITIZERS": "ON" },
+      "owner": "PRD-229 Phase 3 sanitizer lifetime lane — evidence in docs/verification/native-sanitizer-lane-2026-08-28.md; runs the sanitizer-marked contract targets",
+      "runs": [
+        "threenative-bindings-creation-test",
+        "threenative-dom-dispatch-lifetime-test",
+        "threenative-frame-op-stream-replay-test",
+        "threenative-handle-lifetime-test",
+        "threenative-shutdown-lifetime-test",
+        "threenative-webgpu-bindings-reentrancy-test"
+      ]
+    },
+    {
+      "directory": "tn-linux-tidy",
+      "preset": "tn-linux",
+      "cacheVariables": { "TN_ENABLE_CLANG_TIDY": "ON" },
+      "owner": "PRD-229 Phase 4 C++ lint lane — clang-tidy over native sources; runs no test executables",
+      "runs": []
+    },
+    {
+      "directory": "tn-linux-quickjs",
+      "preset": "tn-linux",
+      "cacheVariables": { "MYSTRAL_USE_QUICKJS": "ON", "MYSTRAL_USE_V8": "OFF" },
+      "owner": "cross-engine contract proof — the QuickJS arm of tests/timestamp-query.test.mjs and the js engine contract; built on demand",
+      "runs": ["threenative-js-engine-contract-test", "threenative-timestamp-query-test"]
+    },
+    {
+      "directory": "tn-linux-contracts-physics",
+      "preset": "tn-linux",
+      "cacheVariables": { "TN_ENABLE_NATIVE_PHYSICS": "ON" },
+      "owner": "native physics actuation contract — the only configuration threenative-physics-actuation-bindings-test links in; built on demand by the physics parity lanes",
+      "runs": ["threenative-physics-actuation-bindings-test"]
+    },
+    {
+      "directory": "tn-linux-contracts-video",
+      "preset": "tn-linux",
+      "cacheVariables": { "TN_ENABLE_VIDEO": "ON" },
+      "owner": "video recorder state contract — the only configuration threenative-video-recorder-state-test links in; built on demand by the video lane",
+      "runs": ["threenative-video-recorder-state-test"]
+    },
+    {
+      "directory": "tn-android",
+      "preset": "tn-android",
+      "cacheVariables": {},
+      "owner": "Android device lanes — cross-compiled APK runtime; contract tests execute on device, not ctest",
+      "runs": []
+    },
+    {
+      "directory": "tn-windows",
+      "preset": "tn-windows",
+      "cacheVariables": {},
+      "owner": "Windows port lane; the desktop contract set is owned by tn-linux",
+      "runs": []
+    },
+    {
+      "directory": "tn-macos",
+      "preset": "tn-macos",
+      "cacheVariables": {},
+      "owner": "macOS port lane; the desktop contract set is owned by tn-linux",
+      "runs": []
+    },
+    {
+      "directory": "tn-ios",
+      "preset": "tn-ios",
+      "cacheVariables": {},
+      "owner": "iOS port lane (JSC + wgpu-native); the desktop contract set is owned by tn-linux",
+      "runs": []
+    }
+  ]
+}

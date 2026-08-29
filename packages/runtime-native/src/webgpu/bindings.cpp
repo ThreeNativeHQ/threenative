@@ -446,6 +446,26 @@ void destroyBindingsState(BindingsState*& state) {
             releaseRenderPipelineRegistryEntry(
                 state, state->renderPipelineRegistry.begin()->first);
         }
+        for (const auto& [id, bindGroup] : state->bindGroupRegistry) {
+            (void)id;
+            if (bindGroup) wgpuBindGroupRelease(bindGroup);
+        }
+        state->bindGroupRegistry.clear();
+        for (const auto& [id, textureView] : state->textureViewRegistry) {
+            (void)id;
+            if (textureView) wgpuTextureViewRelease(textureView);
+        }
+        state->textureViewRegistry.clear();
+        for (const auto& [id, renderBundle] : state->renderBundleRegistry) {
+            (void)id;
+            if (renderBundle) wgpuRenderBundleRelease(renderBundle);
+        }
+        state->renderBundleRegistry.clear();
+        for (const auto& [id, querySet] : state->querySetRegistry) {
+            (void)id;
+            if (querySet) wgpuQuerySetRelease(querySet);
+        }
+        state->querySetRegistry.clear();
         state->shaderModuleMetadata->releaseAll(&wgpuShaderModuleRelease);
         state->shaderModuleMetadata.reset();
         for (const auto& entry : state->encoderRenderPassMap) {

@@ -125,9 +125,7 @@
   const uploadDataView = (data, dataOffset, size) =>
     uploadRange(data.buffer, data.byteOffset, data.byteLength, 1, dataOffset, size);
   const isView1 = (data) =>
-    data instanceof Uint8Array ||
-    data instanceof Uint8ClampedArray ||
-    data instanceof Int8Array;
+    data instanceof Uint8Array || data instanceof Uint8ClampedArray || data instanceof Int8Array;
   const isView2 = (data) =>
     data instanceof Uint16Array ||
     data instanceof Int16Array ||
@@ -135,9 +133,7 @@
   const isView4 = (data) =>
     data instanceof Uint32Array || data instanceof Int32Array || data instanceof Float32Array;
   const isView8 = (data) =>
-    data instanceof BigUint64Array ||
-    data instanceof BigInt64Array ||
-    data instanceof Float64Array;
+    data instanceof BigUint64Array || data instanceof BigInt64Array || data instanceof Float64Array;
   const upload = (data, dataOffset, size) => {
     if (data instanceof ArrayBuffer)
       return uploadRange(data, 0, data.byteLength, 1, dataOffset, size);
@@ -163,6 +159,170 @@
     u32(id);
     u32(t.beginningOfPassWriteIndex === undefined ? 0xffffffff : t.beginningOfPassWriteIndex);
     u32(t.endOfPassWriteIndex === undefined ? 0xffffffff : t.endOfPassWriteIndex);
+  };
+  const renderPassIdKey = Symbol("frameOpRenderPassId");
+  const computePassIdKey = Symbol("frameOpComputePassId");
+  const receiverId = (receiver, key, label) => {
+    const id = receiver?.[key];
+    if (!Number.isSafeInteger(id) || id <= 0)
+      throw new TypeError(`frame op stream: no ${label} receiver`);
+    return id;
+  };
+  const renderPassPrototype = {
+    setPipeline(p) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(4, () => {
+        u32(passId);
+        u32(pipelineId(p, "render pipeline"));
+      });
+    },
+    setBindGroup(i, g, o) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(5, () => {
+        u32(passId);
+        u32(i);
+        u32(bindGroupId(g));
+        offsets(o);
+      });
+    },
+    setVertexBuffer(s, b, o, z) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(6, () => {
+        u32(passId);
+        u32(s);
+        u32(bufferId(b));
+        f64(opt(o, 0));
+        f64(opt(z, -1));
+      });
+    },
+    setIndexBuffer(b, f, o, z) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(7, () => {
+        u32(passId);
+        u32(bufferId(b));
+        u32(f === "uint32");
+        f64(opt(o, 0));
+        f64(opt(z, -1));
+      });
+    },
+    draw(a, b, c, d) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(8, () => {
+        u32(passId);
+        u32(a);
+        u32(opt(b, 1));
+        u32(opt(c, 0));
+        u32(opt(d, 0));
+      });
+    },
+    drawIndexed(a, b, c, d, e) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(9, () => {
+        u32(passId);
+        u32(a);
+        u32(opt(b, 1));
+        u32(opt(c, 0));
+        u32(opt(d, 0));
+        u32(opt(e, 0));
+      });
+    },
+    drawIndirect(b, o) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(10, () => {
+        u32(passId);
+        u32(bufferId(b));
+        f64(o);
+      });
+    },
+    drawIndexedIndirect(b, o) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(11, () => {
+        u32(passId);
+        u32(bufferId(b));
+        f64(o);
+      });
+    },
+    setViewport(...a) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(12, () => {
+        u32(passId);
+        for (const v of a) f64(v);
+      });
+    },
+    setScissorRect(...a) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(13, () => {
+        u32(passId);
+        for (const v of a) u32(v);
+      });
+    },
+    setBlendConstant(c) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(14, () => {
+        u32(passId);
+        if (Array.isArray(c) || ArrayBuffer.isView(c)) {
+          f64(c[0]);
+          f64(c[1]);
+          f64(c[2]);
+          f64(c[3]);
+        } else {
+          f64(c.r);
+          f64(c.g);
+          f64(c.b);
+          f64(c.a);
+        }
+      });
+    },
+    setStencilReference(r) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(15, () => {
+        u32(passId);
+        u32(r);
+      });
+    },
+    executeBundles(a) {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(16, () => {
+        u32(passId);
+        u32(a.length);
+        for (const b of a) u32(renderBundleId(b));
+      });
+    },
+    end() {
+      const passId = receiverId(this, renderPassIdKey, "render pass");
+      emit(17, () => u32(passId));
+    },
+  };
+  const computePassPrototype = {
+    setPipeline(p) {
+      const passId = receiverId(this, computePassIdKey, "compute pass");
+      emit(19, () => {
+        u32(passId);
+        u32(pipelineId(p, "compute pipeline"));
+      });
+    },
+    setBindGroup(i, g, o) {
+      const passId = receiverId(this, computePassIdKey, "compute pass");
+      emit(20, () => {
+        u32(passId);
+        u32(i);
+        u32(bindGroupId(g));
+        offsets(o);
+      });
+    },
+    dispatchWorkgroups(x, y, z) {
+      const passId = receiverId(this, computePassIdKey, "compute pass");
+      emit(21, () => {
+        u32(passId);
+        u32(x);
+        u32(opt(y, 1));
+        u32(opt(z, 1));
+      });
+    },
+    end() {
+      const passId = receiverId(this, computePassIdKey, "compute pass");
+      emit(22, () => u32(passId));
+    },
   };
   const renderPass = (encoderId, descriptor) => {
     const passId = nextId++;
@@ -205,102 +365,9 @@
       }
       timestampWrites(descriptor.timestampWrites);
     });
-    return {
-      setPipeline: (p) =>
-        emit(4, () => {
-          u32(passId);
-          u32(pipelineId(p, "render pipeline"));
-        }),
-      setBindGroup: (i, g, o) =>
-        emit(5, () => {
-          u32(passId);
-          u32(i);
-          u32(bindGroupId(g));
-          offsets(o);
-        }),
-      setVertexBuffer: (s, b, o, z) =>
-        emit(6, () => {
-          u32(passId);
-          u32(s);
-          u32(bufferId(b));
-          f64(opt(o, 0));
-          f64(opt(z, -1));
-        }),
-      setIndexBuffer: (b, f, o, z) =>
-        emit(7, () => {
-          u32(passId);
-          u32(bufferId(b));
-          u32(f === "uint32");
-          f64(opt(o, 0));
-          f64(opt(z, -1));
-        }),
-      draw: (a, b, c, d) =>
-        emit(8, () => {
-          u32(passId);
-          u32(a);
-          u32(opt(b, 1));
-          u32(opt(c, 0));
-          u32(opt(d, 0));
-        }),
-      drawIndexed: (a, b, c, d, e) =>
-        emit(9, () => {
-          u32(passId);
-          u32(a);
-          u32(opt(b, 1));
-          u32(opt(c, 0));
-          u32(opt(d, 0));
-          u32(opt(e, 0));
-        }),
-      drawIndirect: (b, o) =>
-        emit(10, () => {
-          u32(passId);
-          u32(bufferId(b));
-          f64(o);
-        }),
-      drawIndexedIndirect: (b, o) =>
-        emit(11, () => {
-          u32(passId);
-          u32(bufferId(b));
-          f64(o);
-        }),
-      setViewport: (...a) =>
-        emit(12, () => {
-          u32(passId);
-          for (const v of a) f64(v);
-        }),
-      setScissorRect: (...a) =>
-        emit(13, () => {
-          u32(passId);
-          for (const v of a) u32(v);
-        }),
-      setBlendConstant: (c) =>
-        emit(14, () => {
-          u32(passId);
-          if (Array.isArray(c) || ArrayBuffer.isView(c)) {
-            f64(c[0]);
-            f64(c[1]);
-            f64(c[2]);
-            f64(c[3]);
-          } else {
-            f64(c.r);
-            f64(c.g);
-            f64(c.b);
-            f64(c.a);
-          }
-        }),
-      setStencilReference: (r) =>
-        emit(15, () => {
-          u32(passId);
-          u32(r);
-        }),
-      executeBundles: (a) =>
-        emit(16, () => {
-          u32(passId);
-          u32(a.length);
-          for (const b of a) u32(renderBundleId(b));
-        }),
-      end: () => emit(17, () => u32(passId)),
-    };
+    const pass = Object.create(renderPassPrototype);
+    pass[renderPassIdKey] = passId;
+    return pass;
   };
   const computePass = (encoderId, descriptor) => {
     const passId = nextId++;
@@ -309,106 +376,87 @@
       u32(passId);
       timestampWrites(descriptor?.timestampWrites);
     });
-    return {
-      setPipeline: (p) =>
-        emit(19, () => {
-          u32(passId);
-          u32(pipelineId(p, "compute pipeline"));
-        }),
-      setBindGroup: (i, g, o) =>
-        emit(20, () => {
-          u32(passId);
-          u32(i);
-          u32(bindGroupId(g));
-          offsets(o);
-        }),
-      dispatchWorkgroups: (x, y, z) =>
-        emit(21, () => {
-          u32(passId);
-          u32(x);
-          u32(opt(y, 1));
-          u32(opt(z, 1));
-        }),
-      end: () => emit(22, () => u32(passId)),
-    };
+    const pass = Object.create(computePassPrototype);
+    pass[computePassIdKey] = passId;
+    return pass;
   };
   const encoderIdKey = Symbol("frameOpEncoderId");
   const commandEncoderPrototype = {
-      beginRenderPass(d) {
-        return renderPass(this[encoderIdKey], d);
-      },
-      beginComputePass(d) {
-        return computePass(this[encoderIdKey], d);
-      },
-      copyBufferToBuffer(s, so, d, do_, z) {
-        emit(23, () => {
-          u32(this[encoderIdKey]);
-          u32(bufferId(s));
-          f64(so);
-          u32(bufferId(d));
-          f64(do_);
-          f64(z);
-        });
-      },
-      copyBufferToTexture(s, d, z) {
-        emit(24, () => {
-          u32(this[encoderIdKey]);
-          u32(bufferId(s.buffer));
-          f64(opt(s.offset, 0));
-          u32(opt(s.bytesPerRow, 0));
-          u32(opt(s.rowsPerImage, 0));
-          textureCopy(d);
-          extent(z);
-        });
-      },
-      copyTextureToBuffer(s, d, z) {
-        emit(25, () => {
-          u32(this[encoderIdKey]);
-          textureCopy(s);
-          u32(bufferId(d.buffer));
-          f64(opt(d.offset, 0));
-          u32(opt(d.bytesPerRow, 0));
-          u32(opt(d.rowsPerImage, 0));
-          extent(z);
-        });
-      },
-      copyTextureToTexture(s, d, z) {
-        emit(26, () => {
-          u32(this[encoderIdKey]);
-          textureCopy(s);
-          textureCopy(d);
-          extent(z);
-        });
-      },
-      clearBuffer(b, o, z) {
-        emit(27, () => {
-          u32(this[encoderIdKey]);
-          u32(bufferId(b));
-          f64(opt(o, 0));
-          f64(opt(z, -1));
-        });
-      },
-      resolveQuerySet(querySet, firstQuery, queryCount, destination, destinationOffset) {
-        const id = querySet?._querySetId;
-        if (typeof id !== "number")
-          throw new TypeError("frame op stream: resolveQuerySet needs a GPUQuerySet");
-        emit(34, () => {
-          u32(this[encoderIdKey]);
-          u32(id);
-          u32(firstQuery);
-          u32(queryCount);
-          u32(bufferId(destination));
-          f64(opt(destinationOffset, 0));
-        });
-      },
-      finish() {
-        const commandId = nextId++;
-        emit(28, () => {
-          u32(this[encoderIdKey]);
-          u32(commandId);
-        });
-        return { __tnCommandBufferId: commandId };
-      },
+    beginRenderPass(d) {
+      return renderPass(this[encoderIdKey], d);
+    },
+    beginComputePass(d) {
+      return computePass(this[encoderIdKey], d);
+    },
+    copyBufferToBuffer(s, so, d, do_, z) {
+      emit(23, () => {
+        u32(this[encoderIdKey]);
+        u32(bufferId(s));
+        f64(so);
+        u32(bufferId(d));
+        f64(do_);
+        f64(z);
+      });
+    },
+    copyBufferToTexture(s, d, z) {
+      emit(24, () => {
+        u32(this[encoderIdKey]);
+        u32(bufferId(s.buffer));
+        f64(opt(s.offset, 0));
+        u32(opt(s.bytesPerRow, 0));
+        u32(opt(s.rowsPerImage, 0));
+        textureCopy(d);
+        extent(z);
+      });
+    },
+    copyTextureToBuffer(s, d, z) {
+      emit(25, () => {
+        u32(this[encoderIdKey]);
+        textureCopy(s);
+        u32(bufferId(d.buffer));
+        f64(opt(d.offset, 0));
+        u32(opt(d.bytesPerRow, 0));
+        u32(opt(d.rowsPerImage, 0));
+        extent(z);
+      });
+    },
+    copyTextureToTexture(s, d, z) {
+      emit(26, () => {
+        u32(this[encoderIdKey]);
+        textureCopy(s);
+        textureCopy(d);
+        extent(z);
+      });
+    },
+    clearBuffer(b, o, z) {
+      emit(27, () => {
+        u32(this[encoderIdKey]);
+        u32(bufferId(b));
+        f64(opt(o, 0));
+        f64(opt(z, -1));
+      });
+    },
+    resolveQuerySet(querySet, firstQuery, queryCount, destination, destinationOffset) {
+      const id = querySet?._querySetId;
+      if (typeof id !== "number")
+        throw new TypeError("frame op stream: resolveQuerySet needs a GPUQuerySet");
+      emit(34, () => {
+        u32(this[encoderIdKey]);
+        u32(id);
+        u32(firstQuery);
+        u32(queryCount);
+        u32(bufferId(destination));
+        f64(opt(destinationOffset, 0));
+      });
+    },
+    finish() {
+      const commandId = nextId++;
+      emit(28, () => {
+        u32(this[encoderIdKey]);
+        u32(commandId);
+      });
+      return { __tnCommandBufferId: commandId };
+    },
   };
   device.createCommandEncoder = () => {
     const encoderId = nextId++;
@@ -430,10 +478,8 @@
   };
   const createBuffer = device.createBuffer.bind(device);
   const createTexture = device.createTexture.bind(device);
-  device.createBuffer = (descriptor) =>
-    wrapDestroy(createBuffer(descriptor), bufferId, 32);
-  device.createTexture = (descriptor) =>
-    wrapDestroy(createTexture(descriptor), textureId, 33);
+  device.createBuffer = (descriptor) => wrapDestroy(createBuffer(descriptor), bufferId, 32);
+  device.createTexture = (descriptor) => wrapDestroy(createTexture(descriptor), textureId, 33);
   queue.writeBuffer = (b, o, d, do_, z) => {
     if (!Number.isSafeInteger(o) || o < 0 || o & 3)
       throw new RangeError(

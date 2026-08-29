@@ -250,7 +250,7 @@ bool checkAtomicRollbackAndDestinationValidation(mystral::Runtime& runtime) {
            !engine->hasProperty(engine->getGlobal(), "globalExotic");
 }
 
-bool checkWholeTableVerification(mystral::Runtime& runtime) {
+bool verifyWholeTableTransactionBehavior(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(
         runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -1198,7 +1198,7 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
     return true;
 }
 
-bool checkWrapperRollbackRestoresActiveState(mystral::Runtime& runtime) {
+bool verifyActiveWrapperRollbackBehavior(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(
         runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -1591,6 +1591,157 @@ bool runProbe(mystral::Runtime& runtime, const char* marker) {
         "webgpu-bindings-reentrancy-check.js");
 }
 
+bool verifyPerRuntimeBlendDescriptors(mystral::Runtime& first, mystral::Runtime& second) {
+    auto* firstState = static_cast<mystral::webgpu::BindingsState*>(
+        first.getWebGPUBindingsState());
+    auto* secondState = static_cast<mystral::webgpu::BindingsState*>(
+        second.getWebGPUBindingsState());
+    const size_t firstBefore = firstState->blendStates.size();
+    const size_t secondBefore = secondState->blendStates.size();
+    constexpr auto createPipelineWrappers = R"JS((() => {
+        const device = navigator.gpu.requestAdapter().requestDevice();
+        const shader = device.createShaderModule({code:
+            "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { " +
+            "var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0)); " +
+            "return vec4f(p[i], 0.0, 1.0); } " +
+            "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(1.0); } " +
+            "@compute @workgroup_size(1) fn compute_main() {}"});
+        globalThis.__tnOwnedBlendPipeline = device.createRenderPipeline({
+            layout: "auto",
+            vertex: {module: shader, entryPoint: "vs_main"},
+            fragment: {module: shader, entryPoint: "fs_main", targets: [{
+                format: "rgba8unorm",
+                blend: {
+                    color: {srcFactor: "one", dstFactor: "zero", operation: "add"},
+                    alpha: {srcFactor: "one", dstFactor: "zero", operation: "add"},
+                },
+            }]},
+        });
+        globalThis.__tnOwnedComputePipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: {module: shader, entryPoint: "compute_main"},
+        });
+        for (const [label, pipeline] of [
+            ["render", __tnOwnedBlendPipeline],
+            ["compute", __tnOwnedComputePipeline],
+        ]) {
+            if (!pipeline || typeof pipeline.getBindGroupLayout !== "function") {
+                throw new Error(label + " pipeline wrapper binding missing");
+            }
+            if (!pipeline.getBindGroupLayout(0)) {
+                throw new Error(label + " pipeline bind-group layout missing");
+            }
+        }
+    })())JS";
+
+    if (!first.evalScript(createPipelineWrappers, "webgpu-first-pipeline-owner.js") ||
+        firstState->blendStates.size() <= firstBefore ||
+        secondState->blendStates.size() != secondBefore) {
+        std::cerr << "first runtime blend descriptors were not independently owned" << std::endl;
+        return false;
+    }
+    const size_t firstAfter = firstState->blendStates.size();
+    if (!second.evalScript(createPipelineWrappers, "webgpu-second-pipeline-owner.js") ||
+        secondState->blendStates.size() <= secondBefore ||
+        firstState->blendStates.size() != firstAfter) {
+        std::cerr << "second runtime blend descriptors were not independently owned" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
+    return runtime.evalScript(R"JS((() => {
+        const requireMethods = (label, value, names) => {
+            if (!value) throw new Error(label + " binding object missing");
+            for (const name of names) {
+                if (typeof value[name] !== "function") {
+                    throw new Error(label + "." + name + " binding missing");
+                }
+            }
+        };
+        const requireFeatures = (label, value) => {
+            requireMethods(label, value, ["has"]);
+            if (typeof value[Symbol.iterator] !== "function") {
+                throw new Error(label + " iterator binding missing");
+            }
+            for (const feature of value) {
+                if (typeof feature !== "string") {
+                    throw new Error(label + " yielded a non-string feature");
+                }
+            }
+        };
+        const adapter = navigator.gpu.requestAdapter();
+        const device = adapter.requestDevice();
+        const buffer = device.createBuffer({size: 4, usage: GPUBufferUsage.COPY_DST});
+        const encoder = device.createCommandEncoder();
+        const computePass = encoder.beginComputePass();
+        const texture = device.createTexture({
+            size: {width: 1, height: 1, depthOrArrayLayers: 1},
+            format: "rgba8unorm",
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+        const bundle = device.createRenderBundleEncoder({colorFormats: ["rgba8unorm"]});
+        const element = document.createElement("div");
+        const canvas = document.createElement("canvas");
+        const canvasContext = canvas.getContext("webgpu");
+        const mainCanvasContext = globalThis.canvas.getContext("webgpu");
+
+        requireMethods("Document", document, ["querySelector", "createElement"]);
+        requireMethods("HTMLElement", element, [
+            "appendChild", "removeChild", "remove", "addEventListener", "removeEventListener",
+        ]);
+        requireMethods("HTMLCanvasElement", canvas, [
+            "getContext", "addEventListener", "removeEventListener", "dispatchEvent",
+            "requestPointerLock", "toDataURL", "getBoundingClientRect",
+        ]);
+        requireMethods("GPU", navigator.gpu, ["requestAdapter", "getPreferredCanvasFormat"]);
+        requireMethods("GPUAdapter", adapter, ["requestDevice"]);
+        requireFeatures("GPUAdapter.features", adapter.features);
+        requireFeatures("GPUDevice.features", device.features);
+        requireMethods("GPUDevice", device, [
+            "destroy", "createBuffer", "createShaderModule", "createRenderPipeline",
+            "createComputePipeline", "createCommandEncoder", "createTexture", "createSampler",
+            "createBindGroupLayout", "createBindGroup", "createPipelineLayout",
+            "createTextureView", "createRenderBundleEncoder", "pushErrorScope", "popErrorScope",
+        ]);
+        requireMethods("GPUQueue", device.queue, [
+            "submit", "writeBuffer", "writeTexture", "copyExternalImageToTexture",
+            "onSubmittedWorkDone",
+        ]);
+        requireMethods("GPUBuffer", buffer, ["mapAsync", "getMappedRange", "unmap", "destroy"]);
+        requireMethods("GPUCommandEncoder", encoder, [
+            "beginRenderPass", "beginComputePass", "copyBufferToBuffer", "copyBufferToTexture",
+            "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish",
+        ]);
+        requireMethods("GPUComputePassEncoder", computePass, [
+            "setPipeline", "setBindGroup", "dispatchWorkgroups", "end",
+        ]);
+        requireMethods("GPURenderBundleEncoder", bundle, [
+            "setPipeline", "setVertexBuffer", "setIndexBuffer", "setBindGroup", "draw",
+            "drawIndexed", "finish",
+        ]);
+        requireMethods("GPUCanvasContext", canvasContext, [
+            "configure", "unconfigure", "getCurrentTexture",
+        ]);
+        const requireSurfaceTexture = (label, context) => {
+            context.configure({device, format: navigator.gpu.getPreferredCanvasFormat()});
+            const surfaceTexture = context.getCurrentTexture();
+            requireMethods(label, surfaceTexture, ["createView", "destroy"]);
+            if (!surfaceTexture.createView()) {
+                throw new Error(label + ".createView returned no wrapper");
+            }
+        };
+        requireSurfaceTexture("main surface texture", mainCanvasContext);
+        requireSurfaceTexture("offscreen surface texture", canvasContext);
+        requireMethods("GPUTexture", texture, ["createView", "destroy"]);
+        requireMethods("WebGPU", globalThis, [
+            "__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D",
+        ]);
+        computePass.end();
+    })())JS", "webgpu-public-binding-surface.js");
+}
+
 }  // namespace
 
 int main() {
@@ -1606,14 +1757,19 @@ int main() {
         return 1;
     }
 
+    if (!exercisePublishedWebGPUObjects(*first)) return 1;
+    std::cout << "proof: public-binding-surface" << std::endl;
+
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
     if (!checkCaughtNativeExceptionDoesNotPoisonLaterInstall(*first)) return 1;
     if (!checkAtomicRollbackAndDestinationValidation(*first)) return 1;
-    if (!checkWholeTableVerification(*first)) return 1;
+    if (!verifyWholeTableTransactionBehavior(*first)) return 1;
+    std::cout << "proof: whole-table-verification" << std::endl;
     if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;
     if (!checkDynamicCanvasOwnership(*first)) return 1;
     if (!checkBindingProtectionOwnership(*first)) return 1;
-    if (!checkWrapperRollbackRestoresActiveState(*first)) return 1;
+    if (!verifyActiveWrapperRollbackBehavior(*first)) return 1;
+    std::cout << "proof: wrapper-rollback" << std::endl;
     if (!checkControllableSurfaceTextureTransaction(*first)) return 1;
     if (!checkDynamicInstallUnwind(*first)) return 1;
     if (!checkQuickJSCallbackLifetime(*first)) return 1;
@@ -1639,6 +1795,7 @@ int main() {
             "webgpu-bindings-reentrancy-second-check.js")) {
         return 1;
     }
+    if (!verifyPerRuntimeBlendDescriptors(*first, *second)) return 1;
 
     if (!checkQuickJSExceptionReplacement(*first) ||
         !queueQuickJSTeardownProbe(*first) ||

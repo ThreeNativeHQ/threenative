@@ -150,7 +150,10 @@ async function collectCoverageFindings(root: string): Promise<RawFinding[]> {
     const ignored = patterns.some(
       (pattern) => pattern === `packages/${packageName}/**` || pattern.startsWith(prefix),
     );
-    return ignored
+    const hasNativeLint =
+      packageName === "runtime-native" &&
+      existsSync(path.join(path.dirname(sourceRoot), ".clang-tidy"));
+    return ignored && !hasNativeLint
       ? [finding(relativePath(root, sourceRoot), 1, "lint-coverage-hole", "ignored", "linted")]
       : [];
   });

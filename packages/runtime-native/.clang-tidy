@@ -1,0 +1,18 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-pro-type-member-init,
+  performance-*,
+  readability-identifier-naming
+WarningsAsErrors: 'bugprone-use-after-move,readability-identifier-naming'
+HeaderFilterRegex: '.*/packages/runtime-native/(src|include)/.*'
+FormatStyle: file
+CheckOptions:
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.StructIgnoredRegexp: '^(SDL_TouchFingerEvent|curl_slist)$'
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^(clock|socket_t|steady)$'
+...

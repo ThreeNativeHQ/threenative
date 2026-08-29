@@ -4,10 +4,13 @@ prd_contract: v1
 
 # PRD-234 — the scripts tier has one device library
 
-**Status:** PROPOSED — filed 2026-08-28. **Independent** — it touches no C++ and can run in
-parallel with any other PRD in this batch.
+**Status:** EXECUTED AND REJECTED — the implementation was reverted on 2026-08-28 after its own
+LOC acceptance criterion and the repository kill switch fired. The attempted shared layer added
+402 raw product-script lines (`+1,037/-635`) and `pnpm census` rose from 15,926 to 16,330 script
+lines. The restored baseline is 15,926. Evidence:
+[native-scripts-adb-kill-switch-2026-08-28](../../verification/native-scripts-adb-kill-switch-2026-08-28.md).
 
-Sixth PRD of [the runtime-native refactor batch](./README.md).
+Sixth PRD of [the runtime-native refactor batch](../refactor-2026-08-28/README.md).
 
 **Goal: one implementation of "talk to an Android device", used by every script that does.**
 
@@ -93,4 +96,13 @@ fails to resolve, and the suite reds.
 
 ## Verification evidence
 
-- NOT RUN
+- **Executed, failed, and reverted.** Sixteen implementation/evidence commits were trialled one
+  adopter at a time with focused behavior tests and independent reviews. Three later deletion
+  checkpoints reduced the attempted product delta by 46 lines, but it remained +402 raw lines and
+  `pnpm census` remained 404 lines above the pre-PRD script baseline.
+- The attempted tree was reverted one checkpoint at a time. The resulting product scripts, tests,
+  and interim evidence are byte-identical to commit `93eacaed`; `pnpm census` reports 15,926 script
+  lines and 108,160 total lines.
+- The unchecked acceptance boxes above are intentionally not rewritten as passes: the one-device
+  abstraction did not meet its stated size bar. Rejection is the terminal outcome required by the
+  project rule that a more expensive abstraction is deleted.

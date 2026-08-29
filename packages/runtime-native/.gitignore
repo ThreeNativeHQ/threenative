@@ -23,6 +23,9 @@ third_party/
 # Runtime-local output and downloaded release artifacts
 .runtime/
 artifacts/
+# Raw LLVM profiles. A coverage-instrumented contract binary run by hand from this directory
+# writes `default.profraw` here instead of into the build tree.
+*.profraw
 # Every Rust crate here builds into its own target/. Listing them one by one is how the next
 # crate's build output ends up in a commit; the glob covers whatever gets added next.
 native/*/target/

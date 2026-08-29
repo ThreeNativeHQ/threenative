@@ -78,8 +78,9 @@ Nothing had ever measured it before that run, which was itself the finding.
 | **TOTAL** | **18,541** | **39.19%** |
 
 That scouting run is not Phase 1 — it has no script, no gate and no negative control — but it
-settles three things the plan would otherwise have guessed at: the toolchain works here, the number
-is 39%, and **Phase 1 already has a blocker** (below).
+settles two things the plan would otherwise have guessed at: the toolchain works here and the number
+is 39%. Its apparent configuration blocker was subsequently attributed to a stale executable and
+a real packed-stream wrapper regression, then repaired before Phase 1.
 
 ### The denominator trap this PRD must not fall into
 
@@ -99,15 +100,15 @@ Phase 2 must close: `threenative-handle-lifetime-test` **encodes a skip as exit 
 `threenative-physics-actuation-bindings-test` **does not link at all** in `tn-linux`, which today
 looks the same as "not run".
 
-### Phase 1's blocker, already found
+### Phase 1 prerequisite, attributed and repaired
 
-`threenative-render-pass-class-table-test` **passes in `build/tn-linux` (gcc, Release) and reports
-3 failures in the instrumented clang/Debug build** — the PRD-224 prototype-sharing contract does not
-hold there. Both runs acquired a real adapter, so it is not a headless difference; the cause
-(compiler vs optimization level) is **unattributed**. A coverage or sanitizer gate that runs a
-configuration where a shipping contract fails for configuration reasons is a gate that cries wolf.
-**Phase 1 does not proceed until this is attributed and either fixed or the configuration is
-matched to the shipping one.**
+`threenative-render-pass-class-table-test` appeared to pass only because the original
+`build/tn-linux` executable predated its rebuilt object files. Clean gcc/clang and Debug/Release
+builds all reproduced the three failures. Bisect identified `fa72e6b3`: the packed frame-op stream
+installed render- and compute-pass methods as per-instance closures. The prerequisite repair moves
+those methods to shared receiver-aware prototypes. The JavaScript contract, clean GCC/Release
+native class-table contract, and frame-op replay contract are green; see
+[native-class-table-baseline-repair-2026-08-28](../../verification/native-class-table-baseline-repair-2026-08-28.md).
 
 ## Solution
 
@@ -194,10 +195,9 @@ Every phase: max 5 files, at least one pre-existing file edited, one automated c
 - `docs/verification/native-coverage-2026-08-28.md` — NEW: the record
 
 **Implementation:**
-- [ ] **First: attribute the render-pass class-table failure** (clang vs gcc, or `Debug -O0` vs
-      `Release`) by building the instrumented configuration one variable at a time. Fix it, or pin
-      the coverage build to the shipping compiler and optimization level with instrumentation as
-      the only difference. Nothing else in this phase is trustworthy until this is settled.
+- [x] **First: attribute the render-pass class-table failure.** Clean gcc/clang and Debug/Release
+      builds all failed; the reported gcc/Release pass was stale. Bisect found the packed-stream
+      wrapper regression, which was repaired before this phase.
 - [ ] Option is OFF by default and changes nothing about the shipping build.
 - [ ] The script builds every registered test executable, runs each with a distinct
       `LLVM_PROFILE_FILE`, merges with `llvm-profdata`, reports with `llvm-cov report`.
