@@ -44,13 +44,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // holds the frame budget instead of the game hand-authoring a resolution constant.
   // Recomputed after Biome reformatted nine template files: the previous values were measured
   // before that formatting ran and were therefore stale the moment they were committed.
-  "action-rpg": "4229783b897791764b708990f686a87a3e86cfb27e5c4e035f1d4fe9cf9880ac",
-  defense: "2069eafd127b35b89adf856f2087b7cdd5bb09c2b50337521271da2625419636",
-  minimal: "81783acebe32339ccc51623a186af197bb48196f133e77c3f5be3b0567a8c366",
-  platformer: "bf0619518da5b602cace0b691f5df77bacba0463ee81e81ee0af44ba6b0e7e9d",
-  racing: "2f5846f31af48e459ec18425f8034edacbfb312dce004268c7c48e089f12fcd9",
-  shooter: "23e8fa8029a7fd9e496214ed97dee8003d54c94e6fb527e588c348911a4b0196",
-  starter: "85b4fd037e2e8d1af45a70bfa23f97d6ac4eb87d31edd64b38869a3721fdf935",
+  "action-rpg": "4fb6bc21354437e29fc00f5c7ca8b801680f47dbc7a1f89d7cc09357648d9731",
+  defense: "7746b3acca9f6d06c5713d247868e311e280218773a9db0ab52fb9f7bfd31a4c",
+  minimal: "af5b92cc1e6cd7246c70434ad9b21db69c59f255a4abf17b71d9efb6e6f793c6",
+  platformer: "4bc3941489d26f39d5c5971a703dc90a8e6dceff1d46f6d9dfea8029e6a980b1",
+  racing: "7bc57508bbfd0e3af7763f68ff97d5140be3626f9473721667a3b2edde14fda0",
+  shooter: "314fb81385dd32d255b19443b6d5cb61119b328491112366d1f4663de305a4e0",
+  starter: "b0ec6d3e7f77ffd612246f3f5ecb57c61ffaf2f2e8fdb8fd0e69684f7b5462c6",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
