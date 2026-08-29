@@ -378,6 +378,17 @@ describe("budget gate", () => {
     await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 2 });
   });
 
+  it("should fail a real runtime tree with no native coverage record", async () => {
+    const root = await fixtureRoot();
+    await nativeFixture(root);
+    await writeFile(
+      path.join(root, "packages", "runtime-native", "package.json"),
+      JSON.stringify({ name: "@threenative/runtime-native" }),
+    );
+
+    await expect(enforceBudgets(root)).rejects.toThrow("native coverage record is missing");
+  });
+
   it("should not let the real tree silence the verdict gate by deleting the census record", async () => {
     const root = await fixtureRoot();
     await nativeFixture(root);
