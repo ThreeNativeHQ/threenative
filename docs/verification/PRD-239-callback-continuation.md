@@ -9,7 +9,9 @@ unchanged.
 `packages/runtime-native/tests/input-multitouch.test.mjs` now proves the complete native wheel
 handoff:
 
-- `processMouseWheel` constructs normalized `WheelEventData` and invokes `g_wheelCallback(data)`.
+- `processMouseWheel` assigns every `WheelEventData` field (`type`, `clientX`, `clientY`, `deltaX`,
+  `deltaY`, `deltaZ`, `deltaMode`, `ctrlKey`, `shiftKey`, `altKey`, and `metaKey`) before invoking
+  `g_wheelCallback(data)`.
 - The runtime's registered wheel callback invokes `dispatchWheelEvent(e)`.
 - `dispatchWheelEvent` sends the event to document, window, and canvas listener tables.
 
@@ -39,6 +41,18 @@ Temporary mutation: remove the canvas `dispatchToListeners` call from `dispatchW
 ```text
 $ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/input-multitouch.test.mjs -t 'native scroll conformance records the host source contract'
 AssertionError: native wheel listener dispatch handoff is absent
+Tests 1 failed | 11 skipped (12)
+exit_code=1
+```
+
+## Repair regression
+
+Temporary mutation: move `data.deltaY = event.y * -120.0;` below `g_wheelCallback(data);`.
+The strengthened focused source-contract test went red before the source was restored:
+
+```text
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/input-multitouch.test.mjs -t 'native scroll conformance records the host source contract'
+AssertionError: native wheel callback handoff is absent
 Tests 1 failed | 11 skipped (12)
 exit_code=1
 ```

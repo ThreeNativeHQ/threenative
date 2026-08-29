@@ -241,7 +241,7 @@ test('native scroll conformance records the host source contract without claimin
   const runtime = read('src/runtime.cpp');
   const input = read('src/platform/input.cpp');
   const window = read('src/platform/window.cpp');
-  assert.match(input, /void processMouseWheel\(const SDL_MouseWheelEvent& event\) \{[\s\S]*?WheelEventData data;[\s\S]*?data\.metaKey = g_metaKey;[\s\S]*?g_wheelCallback\(data\);/u, 'native wheel callback handoff is absent');
+  assert.match(input, /void processMouseWheel\(const SDL_MouseWheelEvent& event\) \{[\s\S]*?WheelEventData data;[\s\S]*?data\.type\s*=\s*[^;]+;[\s\S]*?data\.clientX\s*=\s*[^;]+;[\s\S]*?data\.clientY\s*=\s*[^;]+;[\s\S]*?data\.deltaX\s*=\s*[^;]+;[\s\S]*?data\.deltaY\s*=\s*[^;]+;[\s\S]*?data\.deltaZ\s*=\s*[^;]+;[\s\S]*?data\.deltaMode\s*=\s*[^;]+;[\s\S]*?data\.ctrlKey\s*=\s*[^;]+;[\s\S]*?data\.shiftKey\s*=\s*[^;]+;[\s\S]*?data\.altKey\s*=\s*[^;]+;[\s\S]*?data\.metaKey\s*=\s*[^;]+;[\s\S]*?g_wheelCallback\(data\);/u, 'native wheel callback handoff is absent');
   assert.match(runtime, /platform::setWheelCallback\(\[this\]\(const platform::WheelEventData& e\) \{[\s\S]*?dispatchWheelEvent\(e\);\s*\}\);/u, 'native wheel callback must reach dispatchWheelEvent');
   assert.match(runtime, /void dispatchWheelEvent\(const platform::WheelEventData& e\) \{[\s\S]*?dispatchToListeners\("document", e\.type, event\);\s*dispatchToListeners\("window", e\.type, event\);\s*dispatchToListeners\("canvas", e\.type, event\);\s*\}\s*void dispatchGamepadEvent/u, 'native wheel listener dispatch handoff is absent');
   assert.match(window, /SDL_EVENT_MOUSE_WHEEL/u);
