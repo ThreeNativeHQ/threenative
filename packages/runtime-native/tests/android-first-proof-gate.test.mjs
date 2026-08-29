@@ -95,6 +95,10 @@ test('first proof prepares emulator before installation and launch', async () =>
               ? { status: 0, stdout: 'Status: ok\n' }
               : args.includes('install')
                 ? { status: 0, stdout: 'Success\n' }
+                : args.includes('settings') && args.includes('get')
+                  // The install lane suppresses Play Protect before installing and reads the
+                  // setting back; a device that supports the suppression answers '0'.
+                  ? { status: 0, stdout: '0\n' }
                 : args.includes('size')
                   ? { status: 0, stdout: 'Physical size: 1080x2400\n' }
                   : args.includes('density')
