@@ -1,6 +1,7 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** PROPOSED — thirteen PRDs filed across two rounds, none started.
+**Status:** IN FLIGHT — fourteen PRDs filed across three rounds. At this audit, dedicated
+worktrees exist for 237, 238, 239, 241, 242, 244 and 247; that work is not reopened here.
 
 Every upstream repository named here was **cloned at depth 1 on 2026-08-28 and read**. Claims about
 what a source contains are cited by file and line against that clone. Claims about this repository
@@ -56,11 +57,45 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [247](./PRD-247-drei-vanilla-per-item.md) | The drei-vanilla helpers that are mechanism, one at a time. **Reverses a bad refusal** — `billboarding` is named in CHARTER §5b as something the framework may own. | [`drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT | 5 → MEDIUM |
 | [248](./PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) | `Atmosphere` bakes three LUTs and hands back `radiance()`, `sunTransmittance()` and `aerialPerspective()`. **No preset list, and it creates no light** — the sky mesh, the material and the `DirectionalLight` stay in the template. | [`SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky) `src/sky/SkyAtmosphereBaker.js` (526), MIT | 7 → HIGH |
 | [249](./PRD-249-a-fluid-field-is-data-the-game-draws.md) | `FluidField2D` — the seven-pass incompressible solver, unfused from the material upstream welds it to. The game samples `field.dye` and decides whether it is smoke or fire. **Last in the batch: zero in-repo callers today.** | [`threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation) `src/FluidMaterialGPU.ts:53-325`, MIT | 6 → MEDIUM |
+| [250](./PRD-250-native-workers-are-actually-workers.md) | The standard `Worker` surface already exposed by the native host actually runs work off the game/render thread. It links the existing `WorkerRegistry`/`WorkerThread` path and removes the production main-thread polyfill; it does **not** add `TN.jobs`. | Web Worker semantics + the existing unlinked native worker subsystem | 8 → HIGH |
+| [251](./PRD-251-procedural-world-fields-and-terrain-residency.md) | Production procedural-world fields: deterministic height/flow/moisture/biome data, erosion/hydrology, CPU/GPU query parity and crack-free terrain consumption. The game still owns every material, biome look, species, water and sky decision. | [`threejs-world`](https://github.com/imsarah/threejs-world), mined as mechanism rather than public API | 10 → HIGH |
+| [252](./PRD-252-imported-meshes-cook-portable-compound-colliders.md) | Opt-in offline decomposition of a real imported concave mesh into a deterministic bounded convex-part set, consumed as one logical Rapier body on web and native. No runtime cooker and no CoACD vocabulary in game code. | [`CoACD`](https://github.com/SarahWeiii/CoACD) tool-time candidate + Rapier compound semantics | 8 → HIGH |
+| [253](./PRD-253-content-residency-and-screen-space-hlod.md) | Generic authored/generated content residency: measured-error LOD/HLOD, screen-space refinement, cancellation, refcount-safe eviction and hard resident-byte budgets. PRD-251 consumes this scheduler instead of creating a second one. | [`3DTilesRendererJS`](https://github.com/NASA-AMMOS/3DTilesRendererJS) mechanisms + existing `meshoptimizer` tooling | 10 → HIGH |
 
-**Order to attack:** 237 → 239 → 247 → 242 → 244 → 238 → 241 → 248 → 243 → 246 → 240 → 245 → 249.
+**Order to attack:** 250 → 253 → 251 → 252 → 237 → 239 → 247 → 242 → 244 → 238 → 241 → 248 → 243 → 246 → 240 → 245 → 249.
+250 is first because the repository already calls the main-thread `Worker` polyfill an owed correctness
+gate, while the other items are product capabilities.
 237, 239 and 247 change what a game author writes on day one and are small. 242 gates 243–246.
 245 is the largest and the most likely to be refused on device cost, by design. 249 is last
 because §11.1's more-than-twice clause is not yet satisfied for it, and the PRD says so.
+
+## Third survey — the broad engine-stack proposal
+
+The supplied 35-domain map is directionally useful, but most rows are not missing ThreeNative
+integrations. The charter asks a stricter question than whether an upstream library is good: does a
+portable game currently need framework-owned plumbing that it cannot write with ordinary Three.js or
+an ordinary dependency? The corrected audit produced four PRDs: 250–253. The earlier one-PRD verdict
+was wrong because it treated PRD-043's terrain fixture and declined PRD-098 as shipped equivalents.
+
+| Proposed area / repositories | Verdict against current ownership |
+| --- | --- |
+| SDL3, GLFW, host lifecycle and device APIs | **Mine concepts only.** The native host already owns window, lifecycle, input and device normalization. Do not introduce a second platform abstraction or expose SDL types. |
+| Taskflow, custom thread pool, `TN.jobs` | **PRD-250, but preserve the standard API.** Native `Worker` is already promised and currently executes on the main thread. Link the existing real worker subsystem; do not add a proprietary job vocabulary. |
+| `three.ez`, `camera-controls`, `drei-vanilla` | **Already owned/in flight:** 237, 239, 241 and 247. Do not reopen their worktrees. |
+| glTF-Transform, meshoptimizer, Draco, KTX/Basis, asset packing | **Mostly shipped, with one corrected exception:** PRDs 094–097 and 099 own compile, validation, compression and native decode. PRD-098 was **declined and built nothing**; generated LOD/HLOD is therefore owned by new PRD-253. Native mobile decoder gaps remain under PRD-097 rather than a second pipeline. |
+| 3DTilesRendererJS, HLOD, residency, terrain and huge-world streaming | **Selected as two distinct outcomes.** PRD-253 owns generic measured-error HLOD and bounded content residency. PRD-251 owns procedural height/flow/erosion/hydrology fields and terrain-specific crack/query correctness while consuming 253's scheduler. PRD-043 remains useful substrate only: three sinusoidal wireframe chunks, heightfield collision and release. |
+| `three-mesh-bvh`, GPU scene queries | **Already shipped/in flight:** CPU picking and ray queries ship; 244 owns the GPU reach. |
+| Koota, bitecs, Miniplex and mandatory ECS | **Refused by charter.** Games keep real `THREE.Object3D`; a game may install an ECS without a ThreeNative wrapper. |
+| Glyph, UIKit, screen/spatial UI | **Already owned:** 240 owns portable text. The shipped `src/ui/` composition path remains the screen-UI owner; a second UI framework is not admitted by this survey. |
+| Jolt, Rapier, PhysX, `lo-th/phy`, CoACD | **Keep Rapier; select CoACD's separate tool-time outcome.** A second solver is maintenance debt. PRD-252 uses CoACD only to cook an explicit imported concave asset into a backend-neutral convex-part set, replacing the shooter's hand-fed arena colliders and preserving one Rapier body on web/native. |
+| Cloth, soft bodies, fluids, destruction and CSG | **243 and 249 own the admitted simulation primitives.** `three-pinata`, `three-bvh-csg` and Manifold remain ordinary game dependencies/research until a repeated portable engine seam appears; no speculative framework wrapper is filed. |
+| three-vrm, closed-chain IK, Yuka, character/AI frameworks | **The old “covered” claim was false, but no PRD now.** `AnimationPlayer`, bone attachment and `CharacterBody3D` do not provide foot placement, aim/two-hand IK or retargeting. A low-level game-supplied-target IK mechanism is the next credible candidate; wholesale VRM policy, Yuka behaviour and humanoid presets remain optional game dependencies. File when a character consumer supplies the real uneven-ground/weapon-grip proof. |
+| procedural worlds, SeedThree, Poseidon, SebH sky, GI/AO, Quarks/Nebula, splats | **Procedural world data is selected in 251; appearances stay game-owned.** PRDs 242–249 keep the admitted compute/environment mechanisms. SeedThree species/presets, N8AO/post looks, Quarks/Nebula effect vocabularies and Spark's splat format remain optional until a real asset/consumer needs their distinct mechanism. |
+| miniaudio, Steam Audio, GameNetworkingSockets, OpenXR, Tracy, Theatre/editor | **Not quality-equivalent, but already owned or not broadly required.** Continue PRD-057 for Web Audio/native parity; miniaudio may be its private backend. Tracy is optional diagnostics after PRD-232. Multiplayer replication deserves a PRD only when multiplayer is admitted. XR/editor/Steam Audio need genre/platform consumers. Do not pretend the current debug overlay equals Theatre or that transport plumbing equals replication. |
+
+**Selected from this survey:** PRD-250, PRD-251, PRD-252 and PRD-253. IK/retargeting is the first
+deferred candidate, not a solved capability. Everything else is deduplicated, already owned, charter-
+refused, genre-specific, or held behind a real-consumer trigger.
 
 ## Not filed — already shipped here
 
