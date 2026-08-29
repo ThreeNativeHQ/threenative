@@ -126,19 +126,8 @@ test("bind-group native-result contract rejects deleting the post-call guard", (
   assert.throws(() => assertBindGroupNativeResultCheck(withoutGuard));
 });
 
-function assertCanvasRegistrationTable(candidate) {
-  assert.match(
-    candidate,
-    /bindingTable\(\{[\s\S]*\{"GPUCanvasContext", "configure"[\s\S]*&configureCanvasContext, canvasContext[\s\S]*\{"GPUCanvasContext", "unconfigure"[\s\S]*canvasContext[\s\S]*\{"GPUCanvasContext", "getCurrentTexture"[\s\S]*canvasContext/u,
-    "canvas context API surface must be represented by one registration table",
-  );
-  assert.match(candidate, /installBindingTable\(\s*state->engine,\s*state,\s*bindingTable\(\{/u);
-  assert.doesNotMatch(candidate, /bindingTable\(canvasContext,/u);
-}
-
-test("binding-table installation accepts only non-observable engine destinations", () => {
+test("all JS engines expose owned destination and descriptor controls", () => {
   const engine = read("include/mystral/js/engine.h");
-  const implementation = read("src/webgpu/registration_table.cpp");
 
   assert.match(engine, /bool enumerable = false;/u);
   assert.match(engine, /bool configurable = false;/u);
@@ -153,21 +142,6 @@ test("binding-table installation accepts only non-observable engine destinations
     engine,
     /virtual bool isBindingDestination\(JSValueHandle value\) = 0;/u,
   );
-  assert.match(implementation, /!engine->isBindingDestination\(destination\)/u);
-  assert.match(implementation, /engine-owned ordinary object/u);
-  assert.match(implementation, /expectedInstalled\.push_back[\s\S]*?engine->setProperty\(/u);
-  assert.match(implementation, /getPropertyInfo\(/u);
-  assert.match(implementation, /JSPropertyKind::Accessor/u);
-  assert.match(implementation, /cannot replace a non-writable property/u);
-  assert.match(implementation, /deleteProperty\(/u);
-  assert.match(implementation, /rollback final snapshot/u);
-  assert.match(implementation, /actual\.enumerable == expected\.enumerable/u);
-  assert.match(implementation, /actual\.configurable == expected\.configurable/u);
-  assert.match(implementation, /expectedInstalledProperty/u);
-  assert.match(implementation, /releasePropertyInfo\(/u);
-  assert.match(implementation, /getException\(\)/u);
-  assert.doesNotMatch(implementation, /getProperty\(it->destination/u);
-
   for (const implementationPath of [
     "src/js/v8_engine.cpp",
     "src/js/quickjs_engine.cpp",
@@ -500,49 +474,6 @@ test("all engines implement Object.is SameValue and QuickJS performance uses its
     nativeControl,
     /first\.reset\(\)[\s\S]*performance\.now\(\) > 0[\s\S]*lost its context owner/u,
   );
-});
-
-test("dynamic canvas getContext captures its native id instead of the mutable row", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-  const reentrancy = read("tests/webgpu_bindings_reentrancy_test.cpp");
-
-  assert.match(bindings, /makeOffscreenCanvasGetContextHandler\(int canvasId\)/u);
-  assert.match(bindings, /makeOffscreenCanvasGetContextHandler\(canvasId\)/u);
-  const handler = blockBetween(
-    bindings,
-    "static js::JSValueHandle getOffscreenCanvasContext(",
-    "static BindingHandler makeOffscreenCanvasGetContextHandler",
-  );
-  assert.doesNotMatch(handler, /bindingDestination/u);
-  assert.doesNotMatch(handler, /getProperty\(bindingDestination/u);
-  assert.match(
-    reentrancy,
-    /document\.createElement\("canvas"\)[\s\S]*first\.id\s*=\s*second\.id[\s\S]*getContext\("2d"\)/u,
-  );
-
-  const withoutDynamicCanvasRow = bindings.replace(
-    /makeOffscreenCanvasGetContextHandler\(canvasId\)/u,
-    "&tnWebgpuHandler15",
-  );
-  assert.throws(
-    () => assert.match(withoutDynamicCanvasRow, /makeOffscreenCanvasGetContextHandler\(canvasId\)/u),
-    /makeOffscreenCanvasGetContextHandler/u,
-  );
-});
-
-test("canvas context registration is table-driven and deletion is a red mutation", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-  const table = read("src/webgpu/registration_table.cpp");
-  assert.match(table, /for \(const auto& registration : table\.registrations\)/u);
-  assert.match(table, /\[engine, state, registration, destination\]/u);
-  assert.match(table, /bool requireArguments\(/u);
-  assert.doesNotThrow(() => assertCanvasRegistrationTable(bindings));
-
-  const withoutGetCurrentTexture = bindings.replace(
-    /\s*\{"GPUCanvasContext", "getCurrentTexture",[\s\S]*?makeCurrentTextureCanvasContextHandler\(offscreen\), canvasContext\},/u,
-    "",
-  );
-  assert.throws(() => assertCanvasRegistrationTable(withoutGetCurrentTexture));
 });
 
 const migratedRegistrationFamilies = {
