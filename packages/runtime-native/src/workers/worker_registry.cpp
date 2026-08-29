@@ -29,13 +29,18 @@ bool WorkerRegistry::isAvailable() const {
     return initialized_;
 }
 
+void WorkerRegistry::open() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    accepting_ = true;
+}
+
 int WorkerRegistry::createWorker(const std::string& code) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // After shutdown the host is tearing down its main engine; a worker created here would
     // outlive the isolate its completions are delivered into. Refuse by returning the documented
     // failure id rather than starting a thread nothing will ever join.
-    if (!initialized_) {
+    if (!accepting_) {
         std::cerr << "[WorkerRegistry] createWorker refused: registry is shut down" << std::endl;
         return -1;
     }
@@ -157,8 +162,8 @@ void WorkerRegistry::shutdown() {
         std::lock_guard<std::mutex> lock(mutex_);
         // Idempotent: the destructor calls this after an explicit teardown already has, and a
         // second pass must not re-announce a shutdown or re-walk an empty map.
-        if (!initialized_) return;
-        initialized_ = false;
+        if (!accepting_) return;
+        accepting_ = false;
         for (auto& [id, _] : workers_) {
             ids.push_back(id);
         }

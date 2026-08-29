@@ -2205,6 +2205,9 @@ private:
             std::cerr << "TN_NATIVE_WORKER_UNAVAILABLE: worker sources were not linked" << std::endl;
             return false;
         }
+        // The registry is a process-wide singleton and a previous Runtime in this process may have
+        // closed it on teardown. This Runtime's workers are its own, so re-open it here.
+        workerRegistry->open();
 
         jsEngine_->setGlobalProperty("__tnNativeWorkerCreate",
             jsEngine_->newFunction("__tnNativeWorkerCreate",

@@ -188,6 +188,7 @@ test('the production worker contract is registered in the native lane', () => {
     'finalMessageSurvivesSelfClose',
     'terminateStopsCallbacks',
     'shutdownJoinsEveryWorker',
+    'registryReopensForASecondRuntime',
   ]) {
     expect(gate, `the native lane stopped requiring ${contract}`).toContain(contract);
   }

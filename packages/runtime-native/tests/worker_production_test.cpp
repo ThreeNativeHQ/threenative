@@ -250,6 +250,51 @@ int main() {
         return 1;
     }
 
+    // A second Runtime in the same process must be able to create workers. The registry is a
+    // process-wide singleton, so a shutdown that closed it permanently would leave every later
+    // Runtime — which the native contract lane really does create — unable to make one.
+    runtime.reset();
+    auto second = Runtime::create(config);
+    if (!second) {
+        std::cout << "WORKER_CONTRACT registryReopensForASecondRuntime FAIL second runtime create"
+                  << std::endl;
+        return 1;
+    }
+    const char* kSecond = R"JS(
+      globalThis.__secondOk = false;
+      globalThis.__secondError = "";
+      try {
+        const worker = new Worker(URL.createObjectURL(new Blob(["postMessage({ second: true });"])));
+        worker.onmessage = (event) => { __secondOk = event.data.second === true; };
+      } catch (error) {
+        __secondError = String(error.message);
+      }
+    )JS";
+    if (!second->evalScript(kSecond, "worker-contract-second-runtime")) {
+        std::cout << "WORKER_CONTRACT registryReopensForASecondRuntime FAIL setup threw" << std::endl;
+        return 1;
+    }
+    const auto secondDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    bool secondOk = false;
+    while (std::chrono::steady_clock::now() < secondDeadline) {
+        second->pollEvents();
+        if (second->evalScript("if (__secondOk !== true) { throw new Error('pending'); }",
+                               "worker-contract-second-ready")) {
+            secondOk = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    if (!secondOk) {
+        second->evalScript(
+            "console.log('WORKER_CONTRACT registryReopensForASecondRuntime FAIL ' + "
+            "(__secondError || 'no message from a worker in the second runtime'));",
+            "worker-contract-second-fail");
+        std::cerr << "FAILED: a second Runtime could not use workers" << std::endl;
+        return 1;
+    }
+    std::cout << "WORKER_CONTRACT registryReopensForASecondRuntime PASS" << std::endl;
+
     std::cout << "[worker-production] every worker contract held" << std::endl;
     return 0;
 }

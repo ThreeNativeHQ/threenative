@@ -85,7 +85,18 @@ public:
     bool processWorkerMessages(js::Engine* mainEngine);
 
     /**
-     * Shutdown all workers
+     * Re-open the registry to worker creation.
+     *
+     * The registry is a process-wide singleton but its lifetime is per-Runtime: `shutdown()`
+     * closes it so a script running during teardown cannot start a thread whose completions
+     * would land in a released engine. A later Runtime in the same process — which the native
+     * contract tests really do create — must be able to make workers again, so its startup
+     * re-opens the registry rather than inheriting the previous one's closed state.
+     */
+    void open();
+
+    /**
+     * Join every worker and close the registry to further creation. Idempotent.
      */
     void shutdown();
 
@@ -107,6 +118,8 @@ private:
     int nextId_ = 1;
     mutable std::mutex mutex_;
     bool initialized_ = false;
+    /** Whether the registry currently accepts new workers; false between shutdown() and open(). */
+    bool accepting_ = true;
 };
 
 }  // namespace workers

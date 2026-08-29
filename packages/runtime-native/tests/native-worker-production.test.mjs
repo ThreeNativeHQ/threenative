@@ -357,9 +357,13 @@ test("should drain a stopped worker before reaping it, and join every worker on 
   // A worker that called close() has already queued its final result. Reaping it before draining
   // destroyed that result, so the game saw the worker vanish with no answer.
   expect(registryCpp).toMatch(/if \(!worker->isRunning\(\) && !worker->hasMessages\(\)\)/u);
-  // Shutdown is idempotent and closes the registry to creation.
-  expect(registryCpp).toMatch(/if \(!initialized_\) return;\s*\n\s*initialized_ = false;/u);
+  // Shutdown is idempotent and closes the registry to creation for the Runtime that owns it.
+  expect(registryCpp).toMatch(/if \(!accepting_\) return;\s*\n\s*accepting_ = false;/u);
   expect(registryCpp).toMatch(/createWorker refused: registry is shut down/u);
+  // …and a later Runtime in the same process re-opens it. The registry is a process-wide
+  // singleton, so a shutdown that closed it permanently would break every Runtime after the
+  // first. Proven behaviourally by the packed registryReopensForASecondRuntime contract.
+  expect(registryCpp).toContain("void WorkerRegistry::open()");
 });
 
 // ---------------------------------------------------------------------------
@@ -393,6 +397,7 @@ test("should prove the registry contract against real worker threads", () => {
     "finalMessageSurvivesSelfClose",
     "terminateStopsCallbacks",
     "shutdownJoinsEveryWorker",
+    "registryReopensForASecondRuntime",
   ];
   const byName = new Map(results.map((row) => [row.name, row]));
   for (const name of required) {
