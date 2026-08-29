@@ -197,6 +197,35 @@ export type {
   IGamePlatformSource,
 } from "./game.js";
 /**
+ * Simulate a spectral ocean — cascaded wave spectra inverse-transformed on the GPU each frame.
+ * @situation make an ocean whose surface is the view rather than a background
+ * @situation float a boat on waves the GPU is drawing
+ * @situation drive a water material from a wave simulation without writing an FFT
+ * @constraint it draws nothing; the game supplies the mesh, the material and every colour
+ * @constraint CPU height is a throttled copy carrying staleFrames, never this frame and never exact
+ * @constraint an exact free CPU height needs an analytic wave field instead; that is a different contract
+ * @constraint cascades are ordered largest patchSize first and every tuning number is required
+ * @example const sea = ctx.add(new SpectralOcean(oceanOptions));
+ */
+export { SpectralOcean } from "./ocean/spectral.js";
+export type {
+  ISpectralOceanCascade,
+  ISpectralOceanHeight,
+  ISpectralOceanOptions,
+} from "./ocean/spectral.js";
+/**
+ * Copy a GPU buffer back to the CPU on a throttle, and report how old each sample is.
+ * @situation read a GPU simulation on the CPU without stalling the frame
+ * @situation float a body on a wave field whose height only exists on the GPU
+ * @situation count GPU-side survivors for a diagnostic without blocking drawing
+ * @constraint the copy is asynchronous, so every sample carries staleFrames and is never this frame
+ * @constraint WebGPU only; the seam throws on a WebGL2 renderer rather than returning nothing
+ * @constraint one copy is in flight at a time and requests made during one are dropped, not queued
+ * @example const heights = new GPUReadback({ attribute: field.value, everyFrames: 4 });
+ */
+export { GPUReadback } from "./gpu-readback.js";
+export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js";
+/**
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects
  * @situation update many small visual particles

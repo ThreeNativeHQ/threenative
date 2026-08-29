@@ -54,6 +54,7 @@ export type ProjectionExactReason =
   | "morph"
   | "multiMaterial"
   | "drawRange"
+  | "indirect"
   | "customDepthMaterial"
   | "lod"
   | "sprite"

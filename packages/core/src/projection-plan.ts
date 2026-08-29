@@ -112,6 +112,11 @@ function hasMorphAttributes(geometry: BufferGeometry): boolean {
 
 function geometryLaneReason(geometry: BufferGeometry): ProjectionExactReason | undefined {
   if (geometry.getAttribute("position") === undefined) return "unsupportedGeometry";
+  // A GPU-driven field's draw count lives in an indirect buffer a compute pass writes, and a batch
+  // draws with the count the CPU last believed. Nothing else about the mesh says so — it is an
+  // ordinary `Mesh` with an ordinary material — so without this the field is folded in and its
+  // survivor count is discarded while the report claims a clean projection. It keeps its own draw.
+  if ((geometry as { indirect?: unknown }).indirect != null) return "indirect";
   if (hasMorphAttributes(geometry)) return "morph";
   const range = geometry.drawRange;
   if (range !== undefined && (range.start !== 0 || Number.isFinite(range.count))) {

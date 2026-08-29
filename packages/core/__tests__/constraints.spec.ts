@@ -8,10 +8,39 @@ const randomSource = path.join(sourceDirectory, "random.ts");
 const replaySource = path.join(sourceDirectory, "replay.ts");
 const indexSource = path.join(sourceDirectory, "index.ts");
 
+/**
+ * Every `.ts` file under `packages/core/src`, including subdirectories, as paths relative to it.
+ *
+ * Recursive on purpose. A flat `readdirSync` covered `src/*.ts` only, so the moment a subsystem
+ * grew a folder — `src/atmosphere/`, then `src/ocean/` — its source left the charter's reach
+ * entirely and could have declared a material with nothing to stop it.
+ */
+function coreSourceFiles(directory = sourceDirectory, prefix = ""): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory())
+      found.push(...coreSourceFiles(path.join(directory, entry.name), relative));
+    else if (entry.name.endsWith(".ts")) found.push(relative);
+  }
+  return found;
+}
+
+/**
+ * Source with its comments removed.
+ *
+ * The rule is about what the code does, and the words that name a visual concern are the same
+ * words a comment uses to say the code does not touch one. Matching prose made "creates no mesh,
+ * material, or scene light" a violation and "one copy is in flight" a violation twice over, which
+ * teaches the next author to delete the explanation rather than the behaviour.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//gu, " ").replace(/\/\/.*$/gmu, " ");
+}
+
 describe("core constraints", () => {
   it("should keep visual concerns out of core source", () => {
-    const source = readdirSync(sourceDirectory)
-      .filter((file) => file.endsWith(".ts"))
+    const source = coreSourceFiles()
       .filter(
         (file) =>
           file !== "config.ts" &&
@@ -26,7 +55,7 @@ describe("core constraints", () => {
           file !== "gpu-scene-bvh.ts" &&
           file !== "index.ts",
       )
-      .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
+      .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);

@@ -54,13 +54,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // packages/playtest/src/index.ts without regenerating the capability manifest. A scaffold
   // generates its capability reference from source, so all seven trees moved while the
   // committed reference stayed stale; both are fixed in the same commit.
-  "action-rpg": "5f4372d72a1293d306a2819ad1304445beba185ee6f3b74649b80250c4cfe649",
-  defense: "968d9f0bbebe82280bf814e9d10fd194175cd231faff8f5f9045f60030418688",
-  minimal: "0cae58a8d7a7929793d8322c116796348dd660f37b1f84b4493a29de0af8e14a",
-  platformer: "d56f8819014be0e17fc09395c2ff12d25ab8efe59c47047654e7e73e53165cbc",
-  racing: "6d4ed6c3cbe8e75bace3eecaa2946ed80f1a2b1b5c5c937cf9ce601dcd36f25c",
-  shooter: "ca1af6911a7e9b487d2248e8256dbc51e1646d33aecb0124f8d68704fed7f4cd",
-  starter: "84d486bd56f493d40755302fac9fe0a4f9193e485445a838939e593b3207bfbf",
+  // Recomputed 2026-08-29 for PRD-246: `GPUReadback` and `SpectralOcean` entered the public
+  // surface, so the capability manifest and the capability reference generated from it both grew,
+  // and those bytes are copied into every scaffold.
+  "action-rpg": "05887c80c23eb5018032f7f9aac82a7cd254e76fff1345b582a873ada765d93d",
+  defense: "167d0908304a26b58fb59eaabd9459ab32ab76b0950bd844475a7957060b449f",
+  minimal: "15514ca978ce2365484b3c24670a27f207751ecdd440cbf315d3b9741d759cfc",
+  platformer: "245599f2a4afa632e3c86513a990e749ce1ed469eb230b8a67ded0613cc52edc",
+  racing: "ab63de25beea5fcfda73f34bb601629fb859f0e65d448d3b2945874cd1e49680",
+  shooter: "239699b37fe9cedb2cae8b64e874d185706aa52fe8252d99ede79dfacce97677",
+  starter: "215ffe6dc1f74390edac810d143210cac6712b9a190ee602c885b126c6959346",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

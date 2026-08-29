@@ -24,6 +24,7 @@ import {
   SpotLight,
   Sprite,
   SpriteMaterial,
+  Uint32BufferAttribute,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -1083,6 +1084,30 @@ describe("SceneRenderProjection exact lane corpus", () => {
     expect((proxy as InstancedMesh).count).toBe(3);
     // The same instance buffer, so the game moving an instance moves what draws.
     expect((proxy as InstancedMesh).instanceMatrix).toBe(subject.instanceMatrix);
+    expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps a mesh whose draw count the GPU writes, indirect attribute and all", () => {
+    // PRD-255. A GPU-driven candidate field is one ordinary `Mesh` whose geometry carries an
+    // indirect draw buffer a compute pass writes the survivor count into. Nothing about the mesh
+    // says "instanced", so without a guard it looks like an ordinary prop and gets folded into a
+    // material batch — which draws the geometry once, with the count the CPU last believed, and
+    // silently discards the number the GPU computed. The field vanishes or draws wrong, and the
+    // projection report says it projected 301 objects successfully.
+    const geometry = new BoxGeometry(1, 1, 1);
+    const indirect = new Uint32BufferAttribute(new Uint32Array([36, 1024, 0, 0]), 1);
+    geometry.setIndirect(indirect as unknown as Parameters<typeof geometry.setIndirect>[0]);
+    const subject = new Mesh(geometry, new MeshBasicMaterial());
+    subject.position.set(0, 0, 7);
+
+    const { projection } = withSubject(subject);
+
+    expect(projection.report.exact.indirect).toBe(1);
+    const proxy = proxyOf(projection, (o) => (o as Mesh).geometry === geometry);
+    expect(proxy).toBeDefined();
+    // The same indirect attribute, so the count the compute pass writes is the count that draws.
+    expect((proxy as Mesh).geometry.indirect).toBe(indirect);
+    // The ordinary props beside it still fold; declining one object is not declining the frame.
     expect(projection.report.projectedObjects).toBe(300);
   });
 

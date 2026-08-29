@@ -102,6 +102,16 @@ export interface IRendererLike {
    */
   compileAsync(scene: Object3D, camera: Camera): Promise<void>;
   compute(node: unknown): void;
+  /**
+   * Copies one GPU storage attribute back to the CPU, asynchronously.
+   *
+   * It is on the wrapper for the same reason `compute` is: the call is WebGPU-only and a game that
+   * must cast through `.raw` to read its own simulation will either not read it or read it wrong.
+   * The copy is asynchronous by nature — the caller gets the bytes some frames after the frame
+   * that produced them, and `GPUReadback` is what turns that latency into a reported number
+   * instead of a silent one.
+   */
+  readback(attribute: unknown): Promise<ArrayBuffer>;
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
@@ -178,6 +188,7 @@ type RendererInstance = {
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   compute?: (node: unknown) => void;
+  getArrayBufferAsync?: (attribute: unknown) => Promise<ArrayBuffer>;
   render: (scene: Object3D, camera: Camera) => void;
   setSize: (width: number, height: number, updateStyle?: boolean) => void;
   dispose?: () => void;
@@ -269,6 +280,12 @@ function wrapRenderer(
       if (typeof raw.compute !== "function")
         throw new Error("webgpu renderer does not expose compute().");
       raw.compute(node);
+    },
+    readback: async (attribute) => {
+      if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);
+      if (typeof raw.getArrayBufferAsync !== "function")
+        throw new Error("webgpu renderer does not expose getArrayBufferAsync().");
+      return raw.getArrayBufferAsync(attribute);
     },
     dispose: () => {
       outputPipeline?.dispose();

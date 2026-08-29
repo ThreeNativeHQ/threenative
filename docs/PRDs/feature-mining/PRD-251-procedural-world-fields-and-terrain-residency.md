@@ -164,7 +164,7 @@ constructs a material.
 | Terrain material, splat blending, triplanar, colour ramps | Charter "never own the look" | game `src/render/` |
 | What a biome *is* — "snow", "desert", "tundra" | Naming a biome is art direction. We publish `moisture`, `temperature`, `slope`, `biomeIndex: number` | game |
 | Tree/rock/grass models, species, density, orientation rules | PRD-043 row 5, declined under rule 1 and not reopened | game |
-| Water surface, shoreline, foam, refraction | [PRD-246](./PRD-246-two-oceans-two-contracts.md). We publish `seaLevel: number` and nothing else | PRD-246 |
+| Water surface, shoreline, foam, refraction | [PRD-246](../done/PRD-246-two-oceans-two-contracts.md). We publish `seaLevel: number` and nothing else | PRD-246 |
 | Sky, aerial perspective, fog | [PRD-248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) | PRD-248 |
 | A second renderer, a renderer abstraction, a scene format, an IR, an editor, a preset/genre system | Charter closes all of these with evidence, outranking rule 1 | — |
 | **Quality presets** (`quality: "high"`) | A preset system is charter-closed. Tiers in this PRD are **measurement configurations**, never shipped defaults. The public surface takes explicit numbers | — |

@@ -4,13 +4,26 @@ prd_contract: v1
 
 # PRD-246 — `SpectralOcean`: the second ocean, with the contract the first one cannot offer
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: DONE, 2026-08-29 — web only, with named gaps.** `GPUReadback`, the `IRendererLike.readback`
+seam and `SpectralOcean` are on the public surface and reached by a real consumer built outside this
+repository: [`sandbox/spectral-sea`](https://github.com/ThreeNativeHQ/examples/tree/main/spectral-sea),
+a game whose gate can only be cleared by a wave lifting the raft through it. Evidence:
+[docs/verification/PRD-246-255-spectral-ocean-and-gpu-candidate-field.md](../../verification/PRD-246-255-spectral-ocean-and-gpu-candidate-field.md)
+— unit tests with every red control, a headed WebGPU playtest on a named `nvidia / turing` adapter,
+and a capture that was read.
+
+**Still `UNVERIFIED`, and not claimed:** native desktop conformance (Phase 1's case was not added);
+Android and iOS, so Phase 4's decision about whether the FFT fits a mobile frame is unmade and this
+class claims **web only**; `pnpm budgets`, `pnpm quality` and `count-loc`; per-cascade cost at N=256
+and N=512. **The A/B against `WaveField` required by the acceptance criteria cannot be run at all:**
+`WaveField` does not exist, because PRD-236 has not been implemented. The two-contract argument this
+document makes stands on its own; the "visibly better" comparison does not, and is not claimed.
 
 Sources read at depth 1 on 2026-08-28, both MIT:
 [`owenyuwono/poseidon`](https://github.com/owenyuwono/poseidon) and
 [`reed-soul/SeedOcean`](https://github.com/reed-soul/SeedOcean).
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 **Does not replace [PRD-236](../starter-kits/PRD-236-sailing-starter-kit.md).** Both ship, under
 different names, because they make different promises — which is the whole point of this document.
 

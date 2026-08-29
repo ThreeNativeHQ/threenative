@@ -69,7 +69,15 @@ export interface ICtx<
   readonly camera: Camera;
   readonly canvasLayer: CanvasLayer;
   readonly entities: Registry;
-  readonly add: (object: Object3D) => Object3D;
+  /**
+   * Adds a node to the scene and hands it straight back, with its own type intact.
+   *
+   * Generic rather than `Object3D` because a game writes `const sea = ctx.add(new SpectralOcean())`
+   * and then calls a method on it. Erasing the type here makes every typed node in every scene need
+   * a cast back to what it already was, and that cast is where a game stops noticing it is holding
+   * something else.
+   */
+  readonly add: <T extends Object3D>(object: T) => T;
   readonly input: InputMap;
   readonly pointer: IPointerEvents3D;
   readonly assets: IAssetLoader;

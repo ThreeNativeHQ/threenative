@@ -1,5 +1,6 @@
 import {
   type Camera,
+  type Object3D,
   OrthographicCamera,
   PerspectiveCamera,
   Scene as ThreeScene,
@@ -726,15 +727,20 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     };
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
-        threeScene.add(object);
-        if (typeof (object as { aerialPerspective?: unknown }).aerialPerspective === "function") {
+        // Narrowed through a plain `Object3D` rather than the type parameter: a type guard applied
+        // to `T` yields `T & IComputeDriven`, which TypeScript will not carry to the registry's
+        // `Object3D & IComputeDriven` without a cast. The local keeps the guard honest and the
+        // return keeps the caller's own type, so a game never casts back what it just built.
+        const node: Object3D = object;
+        threeScene.add(node);
+        if (typeof (node as { aerialPerspective?: unknown }).aerialPerspective === "function") {
           this.#hasDepthCoupledOutput = true;
         }
-        if (isComputeDriven(object)) {
+        if (isComputeDriven(node)) {
           const activeRenderer = this.#renderer;
           if (activeRenderer === undefined)
             throw new Error("Cannot add a compute-driven object before the game starts.");
-          this.#computeDriven.add(object, activeRenderer);
+          this.#computeDriven.add(node, activeRenderer);
         }
         return object;
       },

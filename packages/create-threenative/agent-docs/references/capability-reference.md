@@ -286,6 +286,21 @@ export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 const particles = new GPUParticles3D(particleOptions);
 ```
 
+### `GPUReadback`
+
+`class` — Copy a GPU buffer back to the CPU on a throttle, and report how old each sample is.
+
+```ts
+export class GPUReadback { … }
+```
+
+- **Use when:** read a GPU simulation on the CPU without stalling the frame · float a body on a wave field whose height only exists on the GPU · count GPU-side survivors for a diagnostic without blocking drawing
+- **Constraints:** the copy is asynchronous, so every sample carries staleFrames and is never this frame · WebGPU only; the seam throws on a WebGL2 renderer rather than returning nothing · one copy is in flight at a time and requests made during one are dropped, not queued
+
+```ts
+const heights = new GPUReadback({ attribute: field.value, everyFrames: 4 });
+```
+
 ### `GPUSceneBVH`
 
 `class` — Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
@@ -634,6 +649,21 @@ export function solarPositionAt( date: Date | string, latitude: number, longitud
 
 ```ts
 const sun = solarPositionAt(new Date(), 49.28, -123.12);
+```
+
+### `SpectralOcean`
+
+`class` — Simulate a spectral ocean — cascaded wave spectra inverse-transformed on the GPU each frame.
+
+```ts
+export class SpectralOcean extends Object3D implements IComputeDriven { … }
+```
+
+- **Use when:** make an ocean whose surface is the view rather than a background · float a boat on waves the GPU is drawing · drive a water material from a wave simulation without writing an FFT
+- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · CPU height is a throttled copy carrying staleFrames, never this frame and never exact · an exact free CPU height needs an analytic wave field instead; that is a different contract · cascades are ordered largest patchSize first and every tuning number is required
+
+```ts
+const sea = ctx.add(new SpectralOcean(oceanOptions));
 ```
 
 ### `SpriteAnimator3D`

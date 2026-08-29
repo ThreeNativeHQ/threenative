@@ -4,8 +4,23 @@ prd_contract: v1
 
 # PRD-255 — A million grass candidates are game source
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.** Baseline is the
-`ba7ea6d3b64d1fbec6fc3c66a17b427cab1b6db2` tree used to create this lane.
+**Status: DONE, 2026-08-29 — web only, with the conditional phase DECLINED.** A game-owned field of
+exactly 1,048,576 candidates, GPU-culled and compacted by an atomic counter into an indirect draw
+whose instance count the CPU never sets, is proven by a real consumer built outside this repository:
+[`sandbox/last-harvest`](https://github.com/ThreeNativeHQ/examples/tree/main/last-harvest), whose win
+condition is a number only the GPU knows. The framework's whole share is the indirect-geometry
+projection guard — `packages/core` gained no grass, blade, species, biome, density or foliage
+vocabulary. Evidence:
+[docs/verification/PRD-246-255-spectral-ocean-and-gpu-candidate-field.md](../../verification/PRD-246-255-spectral-ocean-and-gpu-candidate-field.md).
+
+**Phase 4 is `DECLINED`, which this PRD names as a successful outcome:** `GPUInstanceField` was not
+created, because the extraction gate needs two independent consumers and there is one.
+
+**Still `UNVERIFIED`, and not claimed:** native desktop conformance — the
+`77-gpu-driven-indirect-instances` registry row was not added; Android and iOS; `pnpm budgets`,
+`pnpm quality` and `count-loc`; and every frame meter Phase 5 asks for, so no paired web/native
+measurement of `render.p50`, `render.p95`, hitch maximum or buffer bytes exists. The baseline tree
+named below (`ba7ea6d3`) is the one this lane was filed against; the work landed on `8ff06738`.
 
 Source: [`momentchan/false-earth`](https://github.com/momentchan/false-earth), MIT, pinned to
 `468a0cfd71698400103198a8eb91d5176fe4f59e`, cloned and read on 2026-08-28. The source is a
@@ -13,7 +28,7 @@ reference, not a dependency; no source is copied. The scale claim is independent
 [`Grasslands: 8.8 million blades of grass in a browser tab`](https://threenames.dev/posts/grasslands),
 published 2026-06-16.
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Complexity:** +2 GPU storage, atomic compaction and indirect draw state, +2 compute lifecycle and
 projection interaction across frames, +2 browser/native conformance, +1 public surface if the
