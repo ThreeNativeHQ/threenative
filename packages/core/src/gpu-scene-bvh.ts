@@ -73,6 +73,10 @@ interface IRange {
   readonly start: number;
 }
 
+// three-mesh-bvh/webgpu ships no type declarations for bvhIntersectFirstHit, rayStruct or
+// bvhNodeStruct. Shaping the module object once, here, is what keeps the cast out of every
+// call site.
+// quality-allow: upstream three-mesh-bvh/webgpu exports are untyped; shaped once behind IUpstreamWebGPU
 const upstream = upstreamWebGPU as unknown as IUpstreamWebGPU;
 const EMPTY_NODE_WORDS = 8;
 const NODE_WORDS = 8;

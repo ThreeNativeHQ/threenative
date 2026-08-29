@@ -50,13 +50,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // which changes the generated instructions embedded in every scaffold.
   // Recomputed again for the PRD-237 continuation repair: the defense pointer-placement scenario
   // clears mouse hover and captures the held touch highlight before its release.
-  "action-rpg": "016de086dd4b1542979659a5bfd8b8ea6c4a4ed4b983275466f5165640573320",
-  defense: "adf632ffad7daae16db10207b0dadf8118dcfb79f0fc8d883f5aaf5f6b4d8719",
-  minimal: "9fde6ccf2545b6593ed98c96fb12fdbb407a01095cb201dfa804c540a72fa0ed",
-  platformer: "235fd56ea1e6ecc5dccf9ce9a81e834259572846d615264ef83fb929a323f731",
-  racing: "d4d085c781c9827013e8c49560549445ad80b13cb185a595f75592b32dceaac1",
-  shooter: "46b021ebca80c882debf4c7ffec947e9b56b71d0ad23798fc8d79556a993e555",
-  starter: "f902c7b8029ae3ee65fbeba6ef4c163e1c4671cd4ec1a8cc5ee0ebf5535883e7",
+  "action-rpg": "63a8f368d561042acb6c6c955fabcc3301d2d8f93d8800018071cdd36b2329a6",
+  defense: "831fa9e1681cdd795b7cc6060e0922b54fdf36e759637011ff837b1c98d0d837",
+  minimal: "39d9a623700c54d10c3e1c82c4c6594066b35f80993d99d110b10f70f6239108",
+  platformer: "d1ebe76d4d41161aa0fe3475649d8a76a274acc29a2835510bf41e5760be08b0",
+  racing: "dba193fda16dc6072fa8f634672b7bb69f074e691afe034f0b82c2e3cd2b8c6b",
+  shooter: "f2bed378ff2ff3ece522ed2f5f2132ef95bee3c7b3b15398041550ab966d058d",
+  starter: "91ab6264dd4f6e5baec0978d1f9df4127274aff705ac1984886636e1b21018b5",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
