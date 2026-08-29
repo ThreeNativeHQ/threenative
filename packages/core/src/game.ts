@@ -439,6 +439,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #uiReady = false;
   // Flipped only by a diagnostics consumer announcing itself; see enableRuntimeDiagnostics().
   #renderMetricsEnabled = false;
+  // Depth-coupled output needs the scene hook before its pass; ordinary scenes retain the
+  // historical after-render hook so an atmosphere-free game has the same render path as HEAD.
+  #hasDepthCoupledOutput = false;
 
   constructor(config: IGameConfig<TState, TPhysics>) {
     this.#config = config;
@@ -521,6 +524,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const SceneType = this.#config.scenes[name];
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
+    this.#hasDepthCoupledOutput = false;
     this.#sceneFrame = undefined;
     this.#scene?.exit(ctx);
     this.#sceneEntered = false;
@@ -705,6 +709,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
+        if (typeof (object as { aerialPerspective?: unknown }).aerialPerspective === "function") {
+          this.#hasDepthCoupledOutput = true;
+        }
         if (object instanceof GPUParticles3D) {
           const activeRenderer = this.#renderer;
           if (activeRenderer === undefined)
@@ -847,11 +854,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // sync are render-path work, and a frame budget that hid it in `residual` made the
           // optimizer's own cost unmeasurable exactly where the optimizer is engaged.
           const renderStart = frameBudget === undefined ? 0 : budgetNow();
+          // Let a depth-coupled scene update its output node while the scene pass is still the
+          // next render. Ordinary scenes keep the historical hook order and timing.
+          const depthCoupledOutput = this.#hasDepthCoupledOutput;
+          if (depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           this.#projection?.reconcile();
           renderer.render(this.#projection?.root ?? threeScene, camera);
           frameBudget?.addRender(budgetNow() - renderStart);
-          // Same entering-window rule as onUpdate: nothing of the incoming scene draws before enter().
-          if (this.#sceneEntered) this.#scene?.render(ctx);
+          if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;
           }
@@ -1098,6 +1108,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#input = undefined;
     this.#scene = undefined;
     this.#ctx = undefined;
+    this.#hasDepthCoupledOutput = false;
     this.#loop = undefined;
     this.#random = undefined;
     this.#picker?.dispose();

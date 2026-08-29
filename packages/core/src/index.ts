@@ -86,6 +86,33 @@ export type { IRandom } from "./random.js";
  * @example const game = defineGame({ scenes: { Play } });
  */
 export { defineGame } from "./game.js";
+export {
+  ATMOSPHERE_LUT_RESOLUTIONS,
+  Atmosphere,
+  AtmosphereLuts,
+  LUT_RESOLUTIONS,
+  directionFromSolarPosition,
+  directionalTransmittance,
+  resolveAtmosphereLutResolutions,
+  resolveAtmosphereParameters,
+  solarPosition,
+  solarPositionAt,
+  updateAtmosphereParameters,
+  zenithTransmittance,
+} from "./atmosphere/index.js";
+export type {
+  AtmosphereDirection,
+  AtmosphereRgb,
+  IAtmosphereLutResolution,
+  IAtmosphereLutResolutions,
+  IAtmosphereOptions,
+  IAtmosphereParameterPatch,
+  IAtmosphereParameters,
+  IAtmosphereScenePass,
+  IResolvedAtmosphereParameters,
+  ISolarPosition,
+  ISolarPositionInput,
+} from "./atmosphere/index.js";
 /**
  * Read where the frame's milliseconds went, per presented frame, on any platform.
  * @situation find out why a game runs slowly on a phone

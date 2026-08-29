@@ -26,6 +26,37 @@ export class AnimationPlayer { … }
 const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
 ```
 
+### `Atmosphere`
+
+`class` — Own the compute lifetime and expose only parameter-driven atmosphere nodes. The class deliberately creates no mesh, material, or scene light. A template chooses all of those, and the same object remains useful when a game supplies a completely different look.
+
+```ts
+export class Atmosphere extends Group implements IComputeDriven { … }
+```
+
+- **Use when:** render a sunrise that changes as time and place change · add distance haze from the depth of a scene pass
+- **Constraints:** supply rayleigh, mie, ozone, planetRadius, and atmosphereRadius; there is no Earth fallback · the game creates the sky object, surface, and sun from the returned nodes
+
+```ts
+const atmosphere = new Atmosphere({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
+ctx.add(atmosphere);
+```
+
+### `AtmosphereLuts`
+
+`class` — Own the transmittance, multi-scattering, and sky-view compute lookup textures.
+
+```ts
+export class AtmosphereLuts { … }
+```
+
+- **Use when:** bake the three atmosphere LUTs once before a game shows its world
+- **Constraints:** supply all physical parameters; this class creates no scene appearance
+
+```ts
+const luts = new AtmosphereLuts({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
+```
+
 ### `attachToBone`
 
 `function` — Attach a game-owned object to a named skeleton bone.
@@ -132,6 +163,36 @@ export function defineGame<TState extends Record<string, unknown>, TPhysics = un
 
 ```ts
 const game = defineGame({ scenes: { Play } });
+```
+
+### `directionalTransmittance`
+
+`function` — Approximate direct transmittance for a ray leaving the game surface.
+
+```ts
+export function directionalTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, direction: Vector3, ): Vector3 { … }
+```
+
+- **Use when:** colour a game-owned sun from atmosphere extinction
+- **Constraints:** pass a non-zero direction; coefficients and radii come from the game
+
+```ts
+const transmittance = directionalTransmittance(parameters, sunDirection);
+```
+
+### `directionFromSolarPosition`
+
+`function` — Convert solar elevation and azimuth degrees into a normalized Three.js direction.
+
+```ts
+export function directionFromSolarPosition(elevation: number, azimuth: number): Vector3 { … }
+```
+
+- **Use when:** aim a template's sun from solarPosition output
+- **Constraints:** elevation and azimuth must be finite degrees
+
+```ts
+const direction = directionFromSolarPosition(sun.elevation, sun.azimuth);
 ```
 
 ### `FrameBudget`
@@ -362,6 +423,36 @@ export function replay< TState extends Record<string, unknown> = Record<string, 
 const driver = createReplayDriver({ recording });
 ```
 
+### `resolveAtmosphereLutResolutions`
+
+`function` — Resolve the three LUT dimensions, allowing a game to trade startup cost for resolution.
+
+```ts
+export function resolveAtmosphereLutResolutions( resolutions: Partial<IAtmosphereLutResolutions> | undefined, ): IAtmosphereLutResolutions { … }
+```
+
+- **Use when:** choose atmosphere LUT dimensions for a measured startup budget
+- **Constraints:** every width and height must be a positive integer; the dimensions are not a named fidelity tier
+
+```ts
+const resolutions = resolveAtmosphereLutResolutions({ skyView: { width: 128, height: 72 } });
+```
+
+### `resolveAtmosphereParameters`
+
+`function` — Validate and clone game-owned atmosphere coefficients.
+
+```ts
+export function resolveAtmosphereParameters( options: IAtmosphereParameters, ): IResolvedAtmosphereParameters { … }
+```
+
+- **Use when:** validate atmosphere coefficients before a game creates its sky
+- **Constraints:** provide all three coefficient vectors and both radii; omitted fields are errors
+
+```ts
+const parameters = resolveAtmosphereParameters({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
+```
+
 ### `Scene`
 
 `class` — Implement a portable Godot-shaped game scene lifecycle.
@@ -438,6 +529,36 @@ export function softCircleDataTexture(size = 64, hardness = 0.25): DataTexture {
 const puff = softCircleDataTexture(64, 0.25);
 ```
 
+### `solarPosition`
+
+`function` — Calculate solar elevation and azimuth from time, latitude, and longitude.
+
+```ts
+export function solarPosition(input: ISolarPositionInput): ISolarPosition;
+```
+
+- **Use when:** move a sun across a real day at a game's latitude and longitude
+- **Constraints:** dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed
+
+```ts
+const sun = solarPosition({ date, latitude: 49.28, longitude: -123.12, utcOffset: -8 });
+```
+
+### `solarPositionAt`
+
+`function` — Calculate solar elevation and azimuth for one UTC date.
+
+```ts
+export function solarPositionAt( date: Date | string, latitude: number, longitude: number, ): ISolarPosition { … }
+```
+
+- **Use when:** calculate a sun direction from a timestamp and a game location
+- **Constraints:** dates are interpreted as UTC; use solarPosition for an explicit local offset
+
+```ts
+const sun = solarPositionAt(new Date(), 49.28, -123.12);
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.
@@ -454,6 +575,21 @@ const tracers = new TracerPool3D(ctx.scene, tracerOptions);
 tracers.spawn(muzzle, shotDirection, hit.distance);
 ```
 
+### `updateAtmosphereParameters`
+
+`function` — Apply a partial game-owned atmosphere change while preserving validation.
+
+```ts
+export function updateAtmosphereParameters( current: IResolvedAtmosphereParameters, patch: IAtmosphereParameterPatch, ): IResolvedAtmosphereParameters { … }
+```
+
+- **Use when:** change scattering coefficients and rebake an atmosphere
+- **Constraints:** patches cannot introduce omitted, negative, or non-finite physical values
+
+```ts
+atmosphere.setAtmosphere({ rayleigh: [0.008, 0.016, 0.04] });
+```
+
 ### `warmUpScene`
 
 `function` — Warms up `scene` for `camera`, in slices, presenting a frame between each. Fail closed on a nonsensical slice size rather than quietly choosing one: a zero or negative slice would loop forever, and a caller that passed it has a bug worth seeing now.
@@ -466,6 +602,21 @@ export async function warmUpScene( renderer: IWarmUpRenderer, scene: Object3D, c
 
 ```ts
 await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) });
+```
+
+### `zenithTransmittance`
+
+`function` — Return direct vertical transmittance for the supplied atmosphere.
+
+```ts
+export function zenithTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, ): AtmosphereRgb { … }
+```
+
+- **Use when:** check a supplied atmosphere's direct vertical transmittance
+- **Constraints:** use the returned value as a validation oracle; the rendered path samples the LUT
+
+```ts
+const zenith = zenithTransmittance({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
 ```
 
 ## `@threenative/core/hot`

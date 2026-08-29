@@ -25,6 +25,38 @@
     },
     {
       "constraints": [
+        "supply rayleigh, mie, ozone, planetRadius, and atmosphereRadius; there is no Earth fallback",
+        "the game creates the sky object, surface, and sun from the returned nodes"
+      ],
+      "example": "const atmosphere = new Atmosphere({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });\nctx.add(atmosphere);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class Atmosphere extends Group implements IComputeDriven { … }",
+      "situations": [
+        "render a sunrise that changes as time and place change",
+        "add distance haze from the depth of a scene pass"
+      ],
+      "summary": "Own the compute lifetime and expose only parameter-driven atmosphere nodes. The class deliberately creates no mesh, material, or scene light. A template chooses all of those, and the same object remains useful when a game supplies a completely different look.",
+      "supersedes": [],
+      "symbol": "Atmosphere"
+    },
+    {
+      "constraints": ["supply all physical parameters; this class creates no scene appearance"],
+      "example": "const luts = new AtmosphereLuts({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class AtmosphereLuts { … }",
+      "situations": ["bake the three atmosphere LUTs once before a game shows its world"],
+      "summary": "Own the transmittance, multi-scattering, and sky-view compute lookup textures.",
+      "supersedes": [],
+      "symbol": "AtmosphereLuts"
+    },
+    {
+      "constraints": [
         "when a request is to hold or attach a weapon to a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle",
         "if a stock visual has no skeleton, add a portable Three.js Bone named `RightHand` under the character, then call `attachToBone`; do not replace the helper with manual parenting"
       ],
@@ -147,6 +179,32 @@
       "summary": "Define the portable game entry shared by web and native.",
       "supersedes": [],
       "symbol": "defineGame"
+    },
+    {
+      "constraints": ["pass a non-zero direction; coefficients and radii come from the game"],
+      "example": "const transmittance = directionalTransmittance(parameters, sunDirection);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function directionalTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, direction: Vector3, ): Vector3 { … }",
+      "situations": ["colour a game-owned sun from atmosphere extinction"],
+      "summary": "Approximate direct transmittance for a ray leaving the game surface.",
+      "supersedes": [],
+      "symbol": "directionalTransmittance"
+    },
+    {
+      "constraints": ["elevation and azimuth must be finite degrees"],
+      "example": "const direction = directionFromSolarPosition(sun.elevation, sun.azimuth);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function directionFromSolarPosition(elevation: number, azimuth: number): Vector3 { … }",
+      "situations": ["aim a template's sun from solarPosition output"],
+      "summary": "Convert solar elevation and azimuth degrees into a normalized Three.js direction.",
+      "supersedes": [],
+      "symbol": "directionFromSolarPosition"
     },
     {
       "constraints": [
@@ -412,6 +470,36 @@
       "symbol": "replay"
     },
     {
+      "constraints": [
+        "every width and height must be a positive integer; the dimensions are not a named fidelity tier"
+      ],
+      "example": "const resolutions = resolveAtmosphereLutResolutions({ skyView: { width: 128, height: 72 } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resolveAtmosphereLutResolutions( resolutions: Partial<IAtmosphereLutResolutions> | undefined, ): IAtmosphereLutResolutions { … }",
+      "situations": ["choose atmosphere LUT dimensions for a measured startup budget"],
+      "summary": "Resolve the three LUT dimensions, allowing a game to trade startup cost for resolution.",
+      "supersedes": [],
+      "symbol": "resolveAtmosphereLutResolutions"
+    },
+    {
+      "constraints": [
+        "provide all three coefficient vectors and both radii; omitted fields are errors"
+      ],
+      "example": "const parameters = resolveAtmosphereParameters({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resolveAtmosphereParameters( options: IAtmosphereParameters, ): IResolvedAtmosphereParameters { … }",
+      "situations": ["validate atmosphere coefficients before a game creates its sky"],
+      "summary": "Validate and clone game-owned atmosphere coefficients.",
+      "supersedes": [],
+      "symbol": "resolveAtmosphereParameters"
+    },
+    {
       "constraints": ["scene code must stay portable across web and native"],
       "example": "class Play extends Scene { update(ctx, dt) {} }",
       "importPath": "@threenative/core",
@@ -497,6 +585,36 @@
     },
     {
       "constraints": [
+        "dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed"
+      ],
+      "example": "const sun = solarPosition({ date, latitude: 49.28, longitude: -123.12, utcOffset: -8 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function solarPosition(input: ISolarPositionInput): ISolarPosition;",
+      "situations": ["move a sun across a real day at a game's latitude and longitude"],
+      "summary": "Calculate solar elevation and azimuth from time, latitude, and longitude.",
+      "supersedes": [],
+      "symbol": "solarPosition"
+    },
+    {
+      "constraints": [
+        "dates are interpreted as UTC; use solarPosition for an explicit local offset"
+      ],
+      "example": "const sun = solarPositionAt(new Date(), 49.28, -123.12);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function solarPositionAt( date: Date | string, latitude: number, longitude: number, ): ISolarPosition { … }",
+      "situations": ["calculate a sun direction from a timestamp and a game location"],
+      "summary": "Calculate solar elevation and azimuth for one UTC date.",
+      "supersedes": [],
+      "symbol": "solarPositionAt"
+    },
+    {
+      "constraints": [
         "the surface comes from the game; pooling, travel, and fading belong to the engine",
         "update once per frame and dispose with the owning scene"
       ],
@@ -515,6 +633,19 @@
       "symbol": "TracerPool3D"
     },
     {
+      "constraints": ["patches cannot introduce omitted, negative, or non-finite physical values"],
+      "example": "atmosphere.setAtmosphere({ rayleigh: [0.008, 0.016, 0.04] });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function updateAtmosphereParameters( current: IResolvedAtmosphereParameters, patch: IAtmosphereParameterPatch, ): IResolvedAtmosphereParameters { … }",
+      "situations": ["change scattering coefficients and rebake an atmosphere"],
+      "summary": "Apply a partial game-owned atmosphere change while preserving validation.",
+      "supersedes": [],
+      "symbol": "updateAtmosphereParameters"
+    },
+    {
       "constraints": [],
       "example": "await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) });",
       "importPath": "@threenative/core",
@@ -529,6 +660,21 @@
       "summary": "Warms up `scene` for `camera`, in slices, presenting a frame between each. Fail closed on a nonsensical slice size rather than quietly choosing one: a zero or negative slice would loop forever, and a caller that passed it has a bug worth seeing now.",
       "supersedes": [],
       "symbol": "warmUpScene"
+    },
+    {
+      "constraints": [
+        "use the returned value as a validation oracle; the rendered path samples the LUT"
+      ],
+      "example": "const zenith = zenithTransmittance({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function zenithTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, ): AtmosphereRgb { … }",
+      "situations": ["check a supplied atmosphere's direct vertical transmittance"],
+      "summary": "Return direct vertical transmittance for the supplied atmosphere.",
+      "supersedes": [],
+      "symbol": "zenithTransmittance"
     },
     {
       "constraints": ["use only in the web development entry"],
