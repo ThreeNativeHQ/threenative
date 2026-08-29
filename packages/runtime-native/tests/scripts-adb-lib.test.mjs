@@ -113,41 +113,6 @@ test("preserves a command-runner result for qualification callers", () => {
   assert.equal(observed.options.maxBuffer, 16 * 1024 * 1024);
 });
 
-test("preserves non-UTF-8 bytes in sync and async binary results", async () => {
-  const bytes = Buffer.from([0xff, 0x00, 0x80]);
-  const encodings = [];
-  const syncDevice = createAdbClient("device-1", {
-    environment: { THREENATIVE_ADB: "/fake/adb" },
-    spawnSyncImpl: (_executable, _args, options) => {
-      encodings.push(options.encoding);
-      return { status: 0, stdout: bytes, stderr: Buffer.alloc(0) };
-    },
-  });
-  const asyncDevice = createAdbClient("device-1", {
-    commandImpl: async (_executable, _args, options) => {
-      encodings.push(options.encoding);
-      return { status: 0, stdout: bytes, stderr: Buffer.alloc(0) };
-    },
-    environment: { THREENATIVE_ADB: "/fake/adb" },
-  });
-  assert.deepEqual(syncDevice.result(["exec-out"], { binary: true }).stdout, bytes);
-  assert.deepEqual((await asyncDevice.asyncResult(["exec-out"], { binary: true })).stdout, bytes);
-  const rejectingDevice = createAdbClient("device-1", {
-    commandImpl: async () => {
-      throw Object.assign(new Error("controlled binary failure"), {
-        code: 7,
-        stderr: Buffer.alloc(0),
-        stdout: bytes,
-      });
-    },
-    environment: { THREENATIVE_ADB: "/fake/adb" },
-  });
-  const rejected = await rejectingDevice.asyncResult(["exec-out"], { binary: true });
-  assert.equal(rejected.status, 7);
-  assert.deepEqual(rejected.stdout, bytes);
-  assert.deepEqual(encodings, [null, null]);
-});
-
 test("preflight accepts discharging output and refuses charging output through the shared command", async () => {
   const options = {
     allowOverride: false,

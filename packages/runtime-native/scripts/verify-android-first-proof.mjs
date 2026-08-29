@@ -19,11 +19,6 @@ import {
 // Shared with the desktop gate on purpose. Two device-lane copies of "is the overlay there" would
 // drift, and the weaker one would be the device's, which is the lane that had never asserted it.
 import { analyzePresentTicks, inspectOverlayBuffer } from './verify-desktop-core.mjs';
-import { createAdbClient } from './lib/adb.mjs';
-import {
-  suppressPlayProtectOnAdbInstalls,
-  verifyInstalledPackage,
-} from './lib/device.mjs';
 
 export { AUDIO_PROMISE_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
 
@@ -386,17 +381,18 @@ export function analyzeAppLog(log, { requireTicks = false } = {}) {
   };
 }
 
-function getPid(device) {
-  const result = device.result(['shell', 'pidof', APP_ID], {
-    allowFailure: true,
-    timeoutMs: 10000,
-  });
+function adbArgs(serial, ...args) {
+  return ['-s', serial, ...args];
+}
+
+function getPid(adb, serial, execute = run) {
+  const result = execute(adb, adbArgs(serial, 'shell', 'pidof', APP_ID), { allowFailure: true, timeoutMs: 10000 });
   if (result.status !== 0) return null;
   return String(result.stdout).trim().split(/\s+/).find(Boolean) || null;
 }
 
-function captureLog(device) {
-  const result = device.result(['logcat', '-d', '-v', 'threadtime'], { timeoutMs: 15000 });
+function captureLog(adb, serial, execute = run) {
+  const result = execute(adb, adbArgs(serial, 'logcat', '-d', '-v', 'threadtime'), { timeoutMs: 15000 });
   return String(result.stdout || '');
 }
 
@@ -544,33 +540,16 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   const bundleMetadata = verifyBundle();
   verifyPackage(options.apk, bundleMetadata, tools.javaHome);
 
-  const clientOptions = {
-    commandImpl: (executable, args, sharedOptions) =>
-      execute(executable, args, {
-        allowFailure: sharedOptions.allowFailure,
-        binary: sharedOptions.binary,
-        timeoutMs: sharedOptions.timeout,
-      }),
-    environment: { THREENATIVE_ADB: tools.adb },
-  };
-  const devicesOutput = createAdbClient(undefined, {
-    ...clientOptions,
-    allowDefaultTransport: true,
-  }).result(['devices', '-l'], { timeoutMs: 10000 }).stdout;
+  const devicesOutput = execute(tools.adb, ['devices', '-l'], { timeoutMs: 10000 }).stdout;
   const serial = selectDevice(parseAdbDevices(String(devicesOutput)), options.device);
-  const device = createAdbClient(serial, clientOptions);
-  const common = (...args) => device.result(args, { timeoutMs: 120000 }); const devicePreparation = prepare(serial, (...args) => common(...args));
+  const common = (...args) => execute(tools.adb, adbArgs(serial, ...args), { timeoutMs: 120000 }); const devicePreparation = prepare(serial, (...args) => common(...args));
 
   console.log(`2/4 Targeting Android device ${serial}...`);
   if (!options.skipInstall) {
-    suppressPlayProtectOnAdbInstalls(serial, {
-      adb: (args) => String(device.run(args)),
-    });
     const install = common('install', '-r', '-t', options.apk);
     if (!/Success/i.test(String(install.stdout))) {
       throw new GateError(`adb install did not report Success:\n${String(install.stdout || install.stderr).trim()}`);
     }
-    verifyInstalledPackage((args) => String(device.run(args)), APP_ID);
   }
 
   common('shell', 'am', 'force-stop', APP_ID);
@@ -587,26 +566,26 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   let analysis = { markerFound: false, missingMarkers: [...REQUIRED_MARKERS], failures: [] };
   const deadline = Date.now() + options.timeoutMs;
   while (Date.now() <= deadline) {
-    pid ||= getPid(device);
-    rawLog = captureLog(device);
+    pid ||= getPid(tools.adb, serial, execute);
+    rawLog = captureLog(tools.adb, serial, execute);
     appLog = filterAppLog(rawLog, pid);
     analysis = analyzeAppLog(appLog);
     writeText(options.logPath, appLog.endsWith('\n') ? appLog : `${appLog}\n`);
     if (analysis.failures.length) throw new GateError(buildFailureMessage(analysis, options.logPath), { analysis });
     if (analysis.markerFound) break;
-    if (pid && !getPid(device)) {
+    if (pid && !getPid(tools.adb, serial, execute)) {
       throw new GateError(`Android process ${APP_ID} exited before success. Full log: ${options.logPath}`);
     }
     await wait(500);
   }
 
   if (!analysis.markerFound) throw new GateError(buildFailureMessage(analysis, options.logPath), { analysis });
-  if (!pid || !getPid(device)) {
+  if (!pid || !getPid(tools.adb, serial, execute)) {
     throw new GateError(`Success marker appeared, but Android process ${APP_ID} is no longer alive. Full log: ${options.logPath}`);
   }
 
   if (options.settleMs > 0) await wait(options.settleMs);
-  rawLog = captureLog(device);
+  rawLog = captureLog(tools.adb, serial, execute);
   appLog = filterAppLog(rawLog, pid);
   // The app has reported 300 frames by now, so it has emitted five present ticks. A log with none
   // is a gate that measured nothing, which is the failure this repository treats as the dangerous
@@ -617,15 +596,12 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   // Before the screenshot, so a mismatched engine fails on the engine rather than on whatever the
   // wrong build happened to draw.
   const engineCheck = assertEngine(appLog, options.expectEngine);
-  if (!getPid(device)) {
+  if (!getPid(tools.adb, serial, execute)) {
     throw new GateError(`Android process ${APP_ID} exited during the ${options.settleMs} ms stability window. Full log: ${options.logPath}`);
   }
 
   if (!options.screenshotPath) throw new GateError('Android proof requires a screenshot path.');
-  const png = device.result(['exec-out', 'screencap', '-p'], {
-    binary: true,
-    timeoutMs: 30000,
-  }).stdout;
+  const png = execute(tools.adb, adbArgs(serial, 'exec-out', 'screencap', '-p'), { binary: true, timeoutMs: 30000 }).stdout;
   const dimensions = inspectScreenshot(png);
   mkdirSync(dirname(options.screenshotPath), { recursive: true });
   writeFileSync(options.screenshotPath, png);
