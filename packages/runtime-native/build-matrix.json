@@ -31,7 +31,8 @@
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
         "threenative-webgpu-bindings-reentrancy-test",
-        "threenative-wgpu-null-handle-test"
+        "threenative-wgpu-null-handle-test",
+        "threenative-worker-production-test"
       ]
     },
     {
@@ -64,7 +65,8 @@
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
         "threenative-webgpu-bindings-reentrancy-test",
-        "threenative-wgpu-null-handle-test"
+        "threenative-wgpu-null-handle-test",
+        "threenative-worker-production-test"
       ]
     },
     {

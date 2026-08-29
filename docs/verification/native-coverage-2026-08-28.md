@@ -2,7 +2,7 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-25 native contract targets; 2 configured
+26 native contract targets; 2 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
@@ -14,19 +14,19 @@ targets could not be built and are named below.
 | `src/fs/` | 232 | 87 | 37.50% |
 | `src/http/` | 402 | 175 | 43.53% |
 | `src/input/` | 33 | 0 | 0.00% |
-| `src/js/` | 2595 | 992 | 38.23% |
+| `src/js/` | 2595 | 999 | 38.50% |
 | `src/platform/` | 971 | 217 | 22.35% |
 | `src/raytracing/` | 458 | 60 | 13.10% |
-| `src/runtime.cpp` | 2019 | 785 | 38.88% |
+| `src/runtime.cpp` | 2021 | 827 | 40.92% |
 | `src/storage/` | 260 | 225 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
 | `src/webgpu/` | 6930 | 2507 | 36.18% |
 | `src/webtransport/` | 770 | 40 | 5.19% |
-| `src/workers/` | 409 | 37 | 9.05% |
-| **TOTAL** | **18979** | **6438** | **33.92%** |
+| `src/workers/` | 545 | 463 | 84.95% |
+| **TOTAL** | **19117** | **6913** | **36.16%** |
 
-Source digest: `sha256:c1dba47d1e9f2f3171d45160665b5a498786a388d73aba6642149880d44447f5`
+Source digest: `sha256:a8fed56be73358773fbeeb99b6253ccf3a9a33af897e3414a27194b87fe66f81`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
