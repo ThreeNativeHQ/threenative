@@ -1,10 +1,9 @@
+<!-- native-coverage-generated:start -->
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-25 native contract targets; 2 configured targets could not be built and are named below. Coverage
-is exported once per executable against only that executable's profiles, then unioned by source
-line. Every product object in `compile_commands.json` is exported with an empty profile first, so
-compiled-but-unlinked code remains in the denominator at zero hits.
+25 native contract targets; 2 configured
+targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
@@ -54,8 +53,9 @@ compiled-but-unlinked code remains in the denominator at zero hits.
 
 - `threenative-physics-actuation-bindings-test`: TN_ENABLE_NATIVE_PHYSICS=OFF: native physics bindings are not linked
 - `threenative-video-recorder-state-test`: TN_ENABLE_VIDEO=OFF: the video recorder target is not configured
+<!-- native-coverage-generated:end -->
 
-## Red-green and fail-closed evidence
+## Phase 1 red-green and fail-closed evidence
 
 The test landed before the implementation:
 
@@ -70,30 +70,58 @@ fatal turned that into a hard failure. A unique-object export still collided on 
 symbols (`89 functions`). The accepted implementation exports each executable against only its own
 profiles and unions LCOV source lines; the final command emits no LLVM warnings.
 
-After implementation:
-
 ```text
 Checked 3 files in 17ms. No fixes applied.
 Test Files 1 passed (1)
 Tests 9 passed (9)
 ```
 
-The contracts preserve zero-hit lines, union disjoint hits across binaries, reject missing merged
-or per-invocation profiles, separate compile truth from LLVM measurement, fail if LLVM omits a
-compiled file, retain only the two accepted configuration blockers, and keep instrumentation off
-by default. `src/audio/vorbis_impl.c` and `src/utils/stb_impl.cpp` compile but contain zero lines
-attributed to their wrapper files; their executable regions are attributed to included third-party
-headers, so they appear as compiled with 0 instrumentable lines rather than as uncompiled.
+Every successful invocation produces its own required profile. Compile truth comes from
+`compile_commands.json`; `src/audio/vorbis_impl.c` and `src/utils/stb_impl.cpp` therefore remain
+compiled with 0 instrumentable lines rather than being misreported as uncompiled.
 
-The real command completed with the table above:
-
-```sh
-pnpm --filter @threenative/runtime-native native:coverage
-```
-
-The compiler negative control also failed during configuration as required:
+The compiler negative control failed during configuration as required:
 
 ```text
 TN_ENABLE_COVERAGE requires clang source-based coverage; configure with clang/clang++
 Configuring incomplete, errors occurred!
+```
+
+## Phase 2 CTest evidence
+
+The registration test was red before `enable_testing()` and the 27 primary registrations existed:
+
+```text
+FAIL should register every native executable with CTest
+The input did not match /enable_testing\(\)/
+Test Files 1 failed (1)
+```
+
+After registration, the focused gate and full runner were green:
+
+```text
+Test Files 2 passed (2)
+Tests 15 passed (15)
+
+100% tests passed out of 26
+native-contract = 6.62 sec*proc (28 tests)
+17 - threenative-physics-actuation-bindings-test (Disabled)
+26 - threenative-video-recorder-state-test (Disabled)
+```
+
+CTest owns all 27 primary target names plus the second required shutdown invocation. Phase 1 now
+runs those registrations one at a time so its per-invocation profiles cannot drift from the
+correctness runner.
+
+The existing-build regression check removed `build/tn-linux/CTestTestfile.cmake`, made the source
+newer than the generated build, and invoked only `pnpm native:test:cpp`. Its aggregate build
+regenerated CTest metadata before inventory validation, then passed all 26 runnable registrations
+with exactly the same two disabled feature-off rows.
+
+The real legacy-shape negative control was registered in a disposable CTest file and failed:
+
+```text
+RED observed: legacy wrapper shape rejected
+command-encoder-class-table contract: 2 failure(s)
+0% tests passed, 1 tests failed out of 1
 ```

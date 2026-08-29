@@ -30,7 +30,8 @@ const defaultRecord = resolve(
   "native-coverage-2026-08-28.md",
 );
 const coverageProfileEnvironmentVariable = "LLVM_PROFILE_FILE";
-const temporaryDirectoryArgument = "$THREENATIVE_TEMPORARY_DIRECTORY";
+const generatedRecordStart = "<!-- native-coverage-generated:start -->";
+const generatedRecordEnd = "<!-- native-coverage-generated:end -->";
 const sourceExtensions = new Set([".c", ".cc", ".cpp", ".cxx", ".m", ".mm"]);
 const configurationBlockers = new Map([
   [
@@ -215,7 +216,8 @@ function renderMarkdown(report, executedTargets) {
     report.blockedTargets.length === 0
       ? "- None."
       : report.blockedTargets.map(({ reason, target }) => `- \`${target}\`: ${reason}`).join("\n");
-  return `# Native coverage — 2026-08-28
+  return `${generatedRecordStart}
+# Native coverage — 2026-08-28
 
 Configuration: \`${report.configuration}\` with clang source-based coverage. Executed
 ${executedTargets.length} native contract targets; ${report.blockedTargets.length} configured
@@ -233,7 +235,21 @@ ${notCompiled}
 ## Blocked targets
 
 ${blocked}
+${generatedRecordEnd}
 `;
+}
+
+function writeCoverageRecord(recordPath, generatedRecord) {
+  let contents = generatedRecord;
+  if (existsSync(recordPath)) {
+    const previous = readFileSync(recordPath, "utf8");
+    const start = previous.indexOf(generatedRecordStart);
+    const end = previous.indexOf(generatedRecordEnd);
+    if (start !== -1 && end > start) {
+      contents = `${previous.slice(0, start)}${generatedRecord}${previous.slice(end + generatedRecordEnd.length).replace(/^\n/u, "")}`;
+    }
+  }
+  writeFileSync(recordPath, contents);
 }
 
 function compactFailure(error) {
@@ -311,13 +327,49 @@ function coverageExports({ buildDirectory, compiledProducts, executedTargets, pr
   return { reports, zeroLineSources };
 }
 
-function runCoverageTargets({ buildDirectory, cmake, targets }) {
+function ctestRegistrations(buildDirectory, ctest) {
+  const inventory = JSON.parse(
+    runForStdout(ctest, ["--test-dir", buildDirectory, "--show-only=json-v1"]),
+  );
+  const names = inventory?.tests?.map(({ name }) => name);
+  if (!Array.isArray(names) || names.length === 0) {
+    throw new Error("CTest registered zero native contract tests");
+  }
+  return names;
+}
+
+function resolveCtest(cmake) {
+  if (cmake === "cmake") return "ctest";
+  return join(dirname(cmake), process.platform === "win32" ? "ctest.exe" : "ctest");
+}
+
+export function runNativeCtest() {
+  const cmake = resolveCmake();
+  const ctest = resolveCtest(cmake);
+  const buildDirectory = desktopBuildDirectory();
+  const cmakeSource = readFileSync(join(runtimeRoot, "CMakeLists.txt"), "utf8");
+  const targets = discoverNativeTestTargets(cmakeSource);
+  buildNativeTarget(cmake, buildDirectory, "threenative-native-tests", 1_800_000);
+  const registrations = ctestRegistrations(buildDirectory, ctest);
+  for (const target of targets) {
+    if (!registrations.includes(target)) throw new Error(`CTest omitted native target: ${target}`);
+  }
+  const output = run(ctest, ["--test-dir", buildDirectory, "--output-on-failure"], {
+    timeout: 900_000,
+  });
+  console.info(output);
+  return targets;
+}
+
+function registrationsForTarget(registrations, target) {
+  return registrations.filter((name) => name === target || name.startsWith(`${target}-`)).sort();
+}
+
+function runCoverageTargets({ buildDirectory, cmake, ctest, registrations, targets }) {
   const blockedTargets = [];
   const executedTargets = [];
   const executionFailures = [];
   const expectedProfilePrefixes = [];
-  const temporaryDirectory = join(profileDirectory, "shutdown-lifetime");
-  mkdirSync(temporaryDirectory, { recursive: true });
   for (const target of targets) {
     const configurationBlocker = coverageConfigurationBlocker(target);
     if (configurationBlocker !== undefined) {
@@ -330,12 +382,16 @@ function runCoverageTargets({ buildDirectory, cmake, targets }) {
       executionFailures.push({ reason: `build failed: ${compactFailure(error)}`, target });
       continue;
     }
-    const executable = nativeTestExecutable(buildDirectory, target);
     let targetPassed = true;
-    for (const [index, invocation] of executionContracts[target].invocations.entries()) {
-      const args = invocation.args.map((argument) =>
-        argument === temporaryDirectoryArgument ? temporaryDirectory : argument,
-      );
+    const testNames = registrationsForTarget(registrations, target);
+    if (testNames.length !== executionContracts[target].invocations.length) {
+      executionFailures.push({
+        reason: `CTest registered ${testNames.length} invocation(s), expected ${executionContracts[target].invocations.length}`,
+        target,
+      });
+      continue;
+    }
+    for (const [index, testName] of testNames.entries()) {
       try {
         const env = { ...process.env };
         const profilePrefix = `${target}-${index}-`;
@@ -344,10 +400,10 @@ function runCoverageTargets({ buildDirectory, cmake, targets }) {
           profileDirectory,
           `${profilePrefix}%p.profraw`,
         );
-        const log = run(executable, args, { env, timeout: 120_000 });
-        if (!log.includes(invocation.passLine)) {
-          throw new Error(`did not report '${invocation.passLine}'`);
-        }
+        run(ctest, ["--test-dir", buildDirectory, "--output-on-failure", "-R", `^${testName}$`], {
+          env,
+          timeout: 120_000,
+        });
       } catch (error) {
         targetPassed = false;
         executionFailures.push({ reason: compactFailure(error), target });
@@ -363,6 +419,7 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
     throw new Error("native coverage currently requires a clang desktop host");
   }
   const cmake = resolveCmake();
+  const ctest = resolveCtest(cmake);
   const buildDirectory = desktopBuildDirectory("coverage");
   run(
     cmake,
@@ -385,6 +442,10 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   const cmakeSource = readFileSync(join(runtimeRoot, "CMakeLists.txt"), "utf8");
   const targets = discoverNativeTestTargets(cmakeSource);
   validateExecutionContracts(targets, executionContracts);
+  const registrations = ctestRegistrations(buildDirectory, ctest);
+  for (const target of targets) {
+    if (!registrations.includes(target)) throw new Error(`CTest omitted native target: ${target}`);
+  }
   rmSync(profileDirectory, { force: true, recursive: true });
   mkdirSync(profileDirectory, { recursive: true });
 
@@ -394,6 +455,8 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
     runCoverageTargets({
       buildDirectory,
       cmake,
+      ctest,
+      registrations,
       targets,
     });
   if (executionFailures.length > 0) {
@@ -422,11 +485,12 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   });
   const markdown = renderMarkdown(report, executedTargets);
   mkdirSync(dirname(recordPath), { recursive: true });
-  writeFileSync(recordPath, markdown);
+  writeCoverageRecord(recordPath, markdown);
   console.info(markdown);
   return report;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  measureNativeCoverage();
+  if (process.argv.includes("--ctest")) runNativeCtest();
+  else measureNativeCoverage();
 }
