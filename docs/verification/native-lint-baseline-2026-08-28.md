@@ -67,3 +67,30 @@ error: invalid case style for struct 'invalid_native_type'
 [readability-identifier-naming,-warnings-as-errors]
 NAMING_NEGATIVE_EXIT=1
 ```
+
+## Phase 4 negative control — observed 2026-08-29
+
+PRD-229 Phase 4 requires a manual control: *a new `bugprone` violation fails the build*. It was
+never recorded when the phase landed. Run now against the committed `.clang-tidy`, whose
+`WarningsAsErrors` lists `bugprone-use-after-move`.
+
+A file using a moved-from `std::string`:
+
+```text
+prd229-tidy-negative.cpp:8:29: error: 'source' used after it was moved
+    [bugprone-use-after-move,-warnings-as-errors]
+1 warning treated as error
+```
+
+The same file with the use-after-move removed, and nothing else changed:
+
+```text
+16 warnings generated.
+Suppressed 16 warnings (16 in non-user code).
+exit 0
+```
+
+One variable, two results: the check is live and it is an error, not a warning. The build wiring
+that carries it — `CMAKE_CXX_CLANG_TIDY` behind `TN_ENABLE_CLANG_TIDY` — is separately asserted by
+`tests/native-lint-config.test.mjs`, whose own control is deleting `.clang-tidy` and watching the
+`lint-coverage-hole` finding return to `pnpm quality`.

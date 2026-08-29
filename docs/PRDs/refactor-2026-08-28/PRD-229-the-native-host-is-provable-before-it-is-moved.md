@@ -443,8 +443,18 @@ table requires exists by name.
 
 Negative controls that were observed and pasted at the time, in their own records: Phase 1's
 compiler control and legacy-shape control (`RED observed: legacy wrapper shape rejected`), and
-Phase 3's `heap-use-after-free` from `prd229-asan-negative.cpp`. Phase 4's manual control — a new
-`bugprone` violation failing the build — is **not** recorded and is still owed.
+Phase 3's `heap-use-after-free` from `prd229-asan-negative.cpp`.
+
+**Phase 4's control was owed and was run on 2026-08-29.** A `bugprone-use-after-move` is reported
+as `error: 'source' used after it was moved [bugprone-use-after-move,-warnings-as-errors]` with
+`1 warning treated as error`; the same file with the violation removed exits 0. Recorded in
+[native-lint-baseline-2026-08-28](../../verification/native-lint-baseline-2026-08-28.md).
+
+**Phase 3's lane had a defect of its own, found 2026-08-29 and fixed:** it could not report what it
+caught, because the desktop crash handler `_exit(1)`s on SIGSEGV before AddressSanitizer's handler
+runs. `CrashHandlerPolicy::LeaveToSanitizer` stands it down under sanitizers. The lane then
+immediately named a real shutdown-ownership defect —
+[asan-shutdown-segv-2026-08-29](../../verification/asan-shutdown-segv-2026-08-29.md).
 
 **This reconciliation is a documentation repair for phases 2–5; phases 1 and 6 were re-executed.**
 On 2026-08-29 `packages/runtime-native/third_party/` was absent from this checkout, so no C++

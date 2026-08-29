@@ -8,8 +8,11 @@ prd_contract: v1
 retired most of that scope before it was written — see "What the survey asked for, and what
 survived")*
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed. The smallest PRD in the batch, and
-the one most likely to end in a refusal.**
+**Status: DONE, 2026-08-29.** Implemented in `affb48e8` (`feat(core): allow game-owned tween
+easing`) and closed here after an audit that ran every negative control the document names. Three of
+the four reproduced red exactly as written. The fourth did not, and the reason is a defect in the
+guard rather than in this feature — see "Closure audit" at the end. Evidence:
+`docs/verification/prd-241-easing-closure-2026-08-29.md`.
 
 Sources read at depth 1 on 2026-08-28:
 [`agargaro/three.ez`](https://github.com/agargaro/three.ez) `src/tweening/` (1 069 lines, MIT) and
@@ -101,14 +104,14 @@ no template needs it today and a surface added for a hypothetical caller is dead
 the option), `packages/core/__tests__/schedule.spec.ts` (EDIT),
 one `templates/*/src/render/*.ts` + its caller (EDIT).
 
-- [ ] `ease?: (t: number) => number`, called with `t` in `[0, 1]`, result used as the interpolation
+- [x] `ease?: (t: number) => number`, called with `t` in `[0, 1]`, result used as the interpolation
       factor. No clamping of the output — an overshooting curve (`back`, `elastic`) is a legitimate
       thing for a game to write, and clamping it silently would make those curves impossible.
-- [ ] Default is the identity, so existing behaviour is unchanged bit for bit.
-- [ ] `t === 1` is delivered exactly once and the end value is assigned exactly, not
+- [x] Default is the identity, so existing behaviour is unchanged bit for bit.
+- [x] `t === 1` is delivered exactly once and the end value is assigned exactly, not
       `ease(1) * (end - start)` — a curve that does not return exactly 1 at 1 must not leave the
       target short of its destination.
-- [ ] No allocation per frame: the callback is stored once, not wrapped per tick.
+- [x] No allocation per frame: the callback is stored once, not wrapped per tick.
 
 | Test file | Test name | Assertion | Negative control (must be observed red) |
 | --- | --- | --- | --- |
@@ -122,14 +125,16 @@ and the midpoint test both fail.
 
 ## Acceptance criteria (consumer-scoped)
 
-- [ ] Something in a shipped template moves with a non-linear feel a player can see, and the curve
+- [x] Something in a shipped template moves with a non-linear feel a player can see, and the curve
       that produces it lives in that template's `src/render/`, not in `packages/`.
-- [ ] Every existing `ctx.tween` call in the repository compiles and behaves identically, shown by
+- [x] Every existing `ctx.tween` call in the repository compiles and behaves identically, shown by
       the unchanged pre-existing tests.
-- [ ] An overshooting curve overshoots and still lands exactly on the end value.
-- [ ] `packages/` contains no named easing function, no curve table, and no easing menu — grep
+- [x] An overshooting curve overshoots and still lands exactly on the end value.
+- [x] `packages/` contains no named easing function, no curve table, and no easing menu — grep
       pasted.
-- [ ] The frame still allocates nothing while a curved tween runs.
+- [x] The frame still allocates nothing *that this feature added* while a curved tween runs — pinned
+      deterministically. The stronger reading of this line is **not** established and never was; the
+      guard that claimed it could not fail. See "Closure audit".
 
 ## Kill switch, and the honest recommendation
 
@@ -140,3 +145,42 @@ This is roughly ten lines of framework code. `count-loc.ts` will not distinguish
 in the batch by a wide margin, and its main worth is that this document now records *why* the
 composable-timeline idea was not built — so nobody re-proposes it in three months and re-derives
 that `await` already did the job.
+
+---
+
+## Closure audit — 2026-08-29
+
+Run against `affb48e8`'s implementation, on `main`. Every negative control this document names was
+executed; nothing below is inferred.
+
+| Gate | Mutation applied | Result |
+| --- | --- | --- |
+| `should reach the exact end value when the curve does not return 1 at t=1` | assign `start + (end - start) * ease(1)` on the landing frame instead of `end` | **RED**, that test only |
+| `should interpolate by the supplied curve at the midpoint` | `easedProgress = progress` (ignore the option) | **RED**, plus 3 siblings |
+| `should behave identically to a linear tween when no curve is given` | default `progress * progress` instead of identity | **RED**, plus 1 sibling |
+| `should allocate nothing per frame while a curved tween runs` | wrap the callback per tick | **GREEN — the control does not reproduce** |
+
+**The fourth control's failure is the guard's, not the feature's.**
+`frame-budget-steady-alloc.spec.ts` counted GC events from a `PerformanceObserver` across 1.2M
+frames and required the list to be empty, but V8 delivers GC entries through the event loop and the
+test disconnected the observer without ever yielding. `events` was `[]` whatever the frame did.
+Pushing 1.2M *escaping* closures through the tween left it green; a capability probe in the same
+environment reported 0 events synchronously and 42 after one `setTimeout(…, 0)`.
+
+Repairing the yield turned the window red at 22–130 events — so the fixed-step frame is **not**
+allocation-free, which is a pre-existing engine defect this PRD neither caused nor owns. One source
+was found and fixed on the way through (`FrameBudget.endFrame` built a phase sample every frame that
+`stepFrame` discarded whenever `collectMetrics` was false; observed red = 240 built samples across
+240 frames). The remainder is unowned and recorded in `docs/verification/runtime-perf-state.md`
+§1.4.1, along with the finding that the GC-event count is dominated by warm-up order (~135 first
+window, ~70 second, same configurations) and therefore cannot carry a pass/fail bar at all.
+
+The spec file now pins this PRD's actual claims deterministically: the curve is evaluated exactly
+once per tick, `t === 1` is delivered exactly once and is not used for the landing assignment, and
+no phase sample is built per frame while a curved tween runs with metrics off. All three reproduce
+red under their named mutations.
+
+**Scope note:** `packages/core/src/schedule.ts` is unchanged by this audit. One candidate edit — skip
+evaluating the curve on the landing frame, since its result is discarded — was written, tested, and
+**reverted**: this document requires that `t === 1` be delivered exactly once, and the existing test
+pins it. The contract wins over the micro-optimisation.
