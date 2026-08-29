@@ -136,25 +136,25 @@ Data changes: none on disk. The in-process message envelope becomes an explicit 
 
 **Implementation:**
 
-- [ ] Add `worker_registry.cpp` and `worker_thread.cpp` to the shipping CMake source list and prove the
+- [x] Add `worker_registry.cpp` and `worker_thread.cpp` to the shipping CMake source list and prove the
   packed executable contains and invokes them.
-- [ ] Install host callbacks for create, ordered post, completion drain, error delivery and terminate;
+- [x] Install host callbacks for create, ordered post, completion drain, error delivery and terminate;
   call them only through the standard JavaScript `Worker` facade.
-- [ ] Keep the main loop presenting while the bounded worker job is unfinished; publish worker thread
+- [x] Keep the main loop presenting while the bounded worker job is unfinished; publish worker thread
   identity, input checksum, output checksum, completion order and frames advanced as measured markers.
-- [ ] Use the same `worker-proof.ts` source and assertions in a browser run. No platform branch may
+- [x] Use the same `worker-proof.ts` source and assertions in a browser run. No platform branch may
   exist in the worker algorithm or game call site.
-- [ ] Make classic Blob scope explicit; reject module workers and unresolved external worker URLs with
+- [x] Make classic Blob scope explicit; reject module workers and unresolved external worker URLs with
   stable named errors instead of evaluating them on the main thread.
 
 **Wiring (the phase is not done without this):**
 
-- [ ] Caller edited: `runtime.cpp:2187` installs the native-backed Worker path and the host frame loop
+- [x] Caller edited: `runtime.cpp:2187` installs the native-backed Worker path and the host frame loop
   drains `WorkerRegistry` completions.
-- [ ] Registration: CMake links both worker sources and runtime startup initializes the registry after
+- [x] Registration: CMake links both worker sources and runtime startup initializes the registry after
   the main JS engine, preserving V8 process-global initialization order.
-- [ ] Old path: `url-worker-polyfill.js` no longer calls `eval` on worker source in the main isolate.
-- [ ] Ledger rows filled: 1-3.
+- [x] Old path: `url-worker-polyfill.js` no longer calls `eval` on worker source in the main isolate.
+- [x] Ledger rows filled: 1-3.
 
 **Tests Required:**
 

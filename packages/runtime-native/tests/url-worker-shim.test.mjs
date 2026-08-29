@@ -10,10 +10,9 @@ import {
   readRuntimeCpp,
 } from "./embedded-js.mjs";
 
-// URL/URLSearchParams and the main-thread Worker polyfill. The Worker contract
-// matters to real loaders: KTX2Loader posts 'init' immediately after
-// constructing its transcoder worker and registers handlers inside the worker
-// script, so messages sent before registration must queue, not drop.
+// URL/URLSearchParams and the standard Worker facade over the native worker
+// registry. This test deliberately mocks only the native boundary: worker
+// source must never be evaluated in the game isolate.
 
 function setupUrlWorkerContext(natives = {}) {
   const timers = createTimers();
@@ -124,149 +123,108 @@ test("URLSearchParams round-trips encoding and mutates in place", () => {
   });
 });
 
-function makeWorker(context, timers, script) {
+function createNativeWorkerHarness() {
+  let nextId = 1;
+  const created = [];
+  const posted = [];
+  const terminated = [];
+  return {
+    natives: {
+      __tnNativeWorkerCreate(source) {
+        created.push(source);
+        return nextId++;
+      },
+      __tnNativeWorkerPost(id, payload) {
+        posted.push({ id, payload });
+        return true;
+      },
+      __tnNativeWorkerTerminate(id) {
+        terminated.push(id);
+      },
+    },
+    created,
+    posted,
+    terminated,
+  };
+}
+
+function makeWorker(context, script, options = undefined) {
   const blobUrl = vm.runInContext(
     `URL.createObjectURL(new Blob([${JSON.stringify(script)}]))`,
     context,
   );
-  return vm.runInContext(`new Worker("${blobUrl}")`, context);
+  return vm.runInContext(
+    `new Worker("${blobUrl}"${options ? `, ${JSON.stringify(options)}` : ""})`,
+    context,
+  );
 }
 
-test("worker code runs and answers postMessage in both directions", () => {
-  const { context, timers } = setupUrlWorkerContext();
-  const worker = makeWorker(
-    context,
-    timers,
-    `
-      let counter = 0;
-      self.onmessage = (event) => {
-        counter += event.data;
-        postMessage({ echo: event.data, total: counter });
-      };
-    `,
-  );
+test("classic Blob worker source and messages cross only the native boundary", () => {
+  const harness = createNativeWorkerHarness();
+  const { context } = setupUrlWorkerContext(harness.natives);
+  const source = `throw new Error("must not execute in the game isolate");`;
+  const worker = makeWorker(context, source);
   const received = [];
   worker.onmessage = (event) => received.push(event.data);
 
-  worker.postMessage(2);
-  worker.postMessage(5);
-  timers.drain();
+  worker.postMessage({ value: 2 });
+  vm.runInContext(`__tnNativeWorkerDispatch(1, 0, '{"echo":2}')`, context);
 
-  assert.deepEqual(guest(received), [
-    { echo: 2, total: 2 },
-    { echo: 5, total: 7 },
-  ]);
+  assert.deepEqual(harness.created, [source]);
+  assert.deepEqual(harness.posted, [{ id: 1, payload: '{"value":2}' }]);
+  assert.deepEqual(guest(received), [{ echo: 2 }]);
 });
 
-test("messages posted before the handler registers are queued, not dropped", () => {
-  const { context, timers } = setupUrlWorkerContext();
-  const worker = makeWorker(
-    context,
-    timers,
-    `
-      // KTX2Loader pattern: register the handler a tick later.
-      setTimeout(() => {
-        self.onmessage = (event) => postMessage({ got: event.data });
-      }, 0);
-    `,
-  );
+test("terminate crosses the native boundary and suppresses late callbacks", () => {
+  const harness = createNativeWorkerHarness();
+  const { context } = setupUrlWorkerContext(harness.natives);
+  const worker = makeWorker(context, `postMessage("late");`);
   const received = [];
   worker.onmessage = (event) => received.push(event.data);
 
-  worker.postMessage("early-init"); // before the worker registered anything
-  timers.drain();
-
-  assert.deepEqual(guest(received), [{ got: "early-init" }]);
-});
-
-test("self.addEventListener('message') fires alongside onmessage for each delivery", () => {
-  const { context, timers } = setupUrlWorkerContext();
-  const worker = makeWorker(
-    context,
-    timers,
-    `
-      let listenerHits = 0;
-      self.addEventListener("message", () => { listenerHits += 1; });
-      self.onmessage = (event) => {
-        if (event.data === "report") { postMessage({ listenerHits }); return; }
-        postMessage({ ack: event.data });
-      };
-    `,
-  );
-  const received = [];
-  worker.onmessage = (event) => received.push(event.data);
-  worker.postMessage("ping");
-  worker.postMessage("pong");
-  worker.postMessage("report");
-  timers.drain();
-
-  // Both handler styles see every delivery: onmessage acknowledged all three
-  // posts and the listener counted the two non-report deliveries too.
-  // (Worker->worker posts are not echoed here; only onmessage responds.)
-  assert.deepEqual(guest(received), [
-    { ack: "ping" },
-    { ack: "pong" },
-    { listenerHits: 2 },
-  ]);
-});
-
-test("terminate discards pending work: no further deliveries either way", () => {
-  const { context, timers } = setupUrlWorkerContext();
-  const worker = makeWorker(
-    context,
-    timers,
-    `self.onmessage = (event) => postMessage({ got: event.data });`,
-  );
-  const received = [];
-  worker.onmessage = (event) => received.push(event.data);
-
-  worker.postMessage("in-flight");
   worker.terminate();
-  timers.drain();
+  vm.runInContext(`__tnNativeWorkerDispatch(1, 0, '"late"')`, context);
 
-  // The message stays queued but is never delivered — terminate() stops both
-  // directions without draining.
+  assert.deepEqual(harness.terminated, [1]);
   assert.deepEqual(guest(received), []);
-  assert.equal(worker._pendingMessages.length, 1);
 });
 
-test("importScripts loads scripts synchronously through the bundle reader", () => {
-  const { context, timers } = setupUrlWorkerContext({
-    __readFileSync: (path) => {
-      if (path === "libs/helper.js") {
-        const bytes = new TextEncoder().encode("globalThis.__helperLoaded = true;");
-        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+test("missing native worker callbacks fail closed without inline evaluation", () => {
+  const { context } = setupUrlWorkerContext();
+  const result = vm.runInContext(
+    `(() => {
+      const url = URL.createObjectURL(new Blob(['globalThis.inlineFallbackRan = true']));
+      try { new Worker(url); } catch (error) {
+        return { name: error.name, message: error.message, inlineFallbackRan: globalThis.inlineFallbackRan === true };
       }
-      return null;
-    },
-  });
-  const worker = makeWorker(
+    })()`,
     context,
-    timers,
-    `
-      importScripts("libs/helper.js");
-      self.onmessage = () => postMessage({ loaded: typeof __helperLoaded !== "undefined" && __helperLoaded });
-    `,
   );
-  const received = [];
-  worker.onmessage = (event) => received.push(event.data);
 
-  worker.postMessage("check");
-  timers.drain();
-  assert.deepEqual(guest(received), [{ loaded: true }]);
+  assert.deepEqual(guest(result), {
+    name: "NotSupportedError",
+    message: "TN_NATIVE_WORKER_UNAVAILABLE: native worker sources were not linked",
+    inlineFallbackRan: false,
+  });
 });
 
-// RED while runtime.cpp ships no ErrorEvent definition: the failed-load path
-// constructs one inside its deferred callback, so today the game sees a
-// ReferenceError instead of its onerror handler.
-test("a worker whose script cannot load reports through onerror", () => {
-  const { context, timers } = setupUrlWorkerContext();
-  const errors = [];
-  const worker = vm.runInContext(`new Worker("blob:mystral-native/never-created")`, context);
-  worker.onerror = (event) => errors.push(event.message ?? String(event));
+test("Phase 1 rejects module and non-Blob worker sources by stable names", () => {
+  const harness = createNativeWorkerHarness();
+  const { context } = setupUrlWorkerContext(harness.natives);
+  const result = vm.runInContext(
+    `(() => {
+      const blob = URL.createObjectURL(new Blob(['postMessage(1)']));
+      const capture = (factory) => { try { factory(); } catch (error) { return error.message; } };
+      return {
+        module: capture(() => new Worker(blob, { type: 'module' })),
+        external: capture(() => new Worker('worker.js')),
+      };
+    })()`,
+    context,
+  );
 
-  timers.drain();
-
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /Failed to load worker script/u);
+  assert.deepEqual(guest(result), {
+    module: "TN_NATIVE_WORKER_MODULE_UNSUPPORTED: module workers are not supported",
+    external: "TN_NATIVE_WORKER_URL_UNSUPPORTED: Phase 1 supports classic Blob workers only",
+  });
 });

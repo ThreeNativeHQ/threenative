@@ -1169,6 +1169,8 @@ add_custom_target(threenative-runtime-scripts DEPENDS "${TN_RUNTIME_SCRIPT_HEADE
 # Android requires shared library for JNI/SDL loading
 set(MYSTRAL_SOURCES
     src/runtime.cpp
+    src/workers/worker_registry.cpp
+    src/workers/worker_thread.cpp
     src/js/engine_factory.cpp
     src/js/module_resolver.cpp
     src/js/module_system.cpp

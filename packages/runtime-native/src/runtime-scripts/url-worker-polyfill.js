@@ -155,162 +155,149 @@ if (typeof URL === "undefined") {
   globalThis.URL = Url;
 }
 
-// Worker polyfill — runs worker code on the main thread with async message passing.
-// This enables WebWorker-based libraries (like Draco decoder) to function in native runtime.
+// Standard Worker facade over the native registry. Worker source is never evaluated in this
+// isolate: missing native callbacks and every unproved URL/scope branch fail by a stable name.
 if (typeof Worker === "undefined") {
+  const workers = new Map();
+
+  const namedError = (name, message) => {
+    const error = new Error(message);
+    error.name = name;
+    return error;
+  };
+
   class Worker {
-    constructor(url) {
+    constructor(url, options = {}) {
       this.onmessage = null;
       this.onerror = null;
+      this._messageListeners = [];
+      this._errorListeners = [];
       this._terminated = false;
-      this._workerSelf = null;
-      // Browser semantics: messages posted before the worker script has registered
-      // its handler are queued, not dropped. KTX2Loader posts 'init' immediately
-      // after constructing the worker and registers handlers inside that script.
-      this._pendingMessages = [];
+      this._id = -1;
 
-      // Extract code from blob URL
-      let code = "";
-      if (typeof url === "string" && url.startsWith("blob:")) {
-        const blob = URL._getBlobData(url);
-        if (blob?._data) {
-          const decoder = new TextDecoder();
-          code = decoder.decode(new Uint8Array(blob._data));
-        }
+      if (options?.type === "module") {
+        throw namedError(
+          "NotSupportedError",
+          "TN_NATIVE_WORKER_MODULE_UNSUPPORTED: module workers are not supported",
+        );
+      }
+      if (typeof url !== "string" || !url.startsWith("blob:")) {
+        throw namedError(
+          "NotSupportedError",
+          "TN_NATIVE_WORKER_URL_UNSUPPORTED: Phase 1 supports classic Blob workers only",
+        );
+      }
+      if (
+        typeof __tnNativeWorkerCreate !== "function" ||
+        typeof __tnNativeWorkerPost !== "function" ||
+        typeof __tnNativeWorkerTerminate !== "function"
+      ) {
+        throw namedError(
+          "NotSupportedError",
+          "TN_NATIVE_WORKER_UNAVAILABLE: native worker sources were not linked",
+        );
       }
 
-      if (!code) {
-        setTimeout(() => {
-          if (this.onerror)
-            this.onerror(new ErrorEvent("error", { message: "Failed to load worker script" }));
-        }, 0);
-        return;
+      const blob = typeof URL._getBlobData === "function" ? URL._getBlobData(url) : undefined;
+      if (!blob?._data) {
+        throw namedError(
+          "NetworkError",
+          "TN_NATIVE_WORKER_SOURCE_MISSING: Blob worker source is unavailable",
+        );
       }
-      const messageListeners = [];
-      const workerSelf = {
-        onmessage: null,
-        // Emscripten worker builds read self.location.href for scriptDirectory
-        // during init; without it BASIS()/Draco setup rejects silently.
-        location: { href: "blob:threenative-worker.js" },
-        addEventListener: (type, handler) => {
-          // DedicatedWorkerGlobalScope API; KTX2Loader's transcoder workers
-          // register their message handler through this instead of onmessage.
-          if (type === "message" && typeof handler === "function") {
-            messageListeners.push(handler);
-          }
-          setTimeout(() => this._flushPending(), 0);
-        },
-        removeEventListener: (type, handler) => {
-          if (type === "message") {
-            const index = messageListeners.indexOf(handler);
-            if (index >= 0) messageListeners.splice(index, 1);
-          }
-        },
-        hasMessageHandler: () => workerSelf.onmessage !== null || messageListeners.length > 0,
-        _deliverFromMain: (event) => {
-          if (workerSelf.onmessage !== null) {
-            try {
-              workerSelf.onmessage(event);
-            } catch (e) {
-              console.error("[Worker] message handler error:", e);
-            }
-          }
-          for (const listener of messageListeners) {
-            try {
-              listener(event);
-            } catch (e) {
-              console.error("[Worker] message listener error:", e);
-            }
-          }
-        },
-        postMessage: (data) => {
-          if (this._terminated) return;
-          // Async delivery to main thread's onmessage handler and listeners
-          setTimeout(() => {
-            if (this._terminated) return;
-            const event = { data };
-            if (this.onmessage) {
-              try {
-                this.onmessage(event);
-              } catch (e) {
-                console.error("[Worker] onmessage error:", e);
-              }
-            }
-            for (const listener of messageListeners) {
-              try {
-                listener(event);
-              } catch (e) {
-                console.error("[Worker] listener error:", e);
-              }
-            }
-          }, 0);
-        },
-      };
-      workerSelf.self = workerSelf;
+      const source = new TextDecoder().decode(new Uint8Array(blob._data));
+      if (source.length === 0) {
+        throw namedError(
+          "NetworkError",
+          "TN_NATIVE_WORKER_SOURCE_MISSING: Blob worker source is empty",
+        );
+      }
 
-      // importScripts polyfill — uses __readFileSync (synchronous bundle/FS read)
-      // combined with TextDecoder to load and execute scripts synchronously,
-      // matching the browser WebWorker importScripts() behavior.
-      workerSelf.importScripts = (...urls) => {
-        for (const url of urls) {
-          const data = __readFileSync(url);
-          if (!data) {
-            throw new Error(`importScripts: Failed to load script: ${url}`);
-          }
-          const code = new TextDecoder().decode(new Uint8Array(data));
-          Reflect.get(globalThis, "eval")(code);
-        }
-      };
+      this._id = __tnNativeWorkerCreate(source);
+      if (!Number.isInteger(this._id) || this._id < 1) {
+        throw namedError(
+          "NotSupportedError",
+          "TN_NATIVE_WORKER_UNAVAILABLE: native worker creation failed",
+        );
+      }
+      workers.set(this._id, this);
+    }
 
-      // Execute the worker code as a function with self and postMessage in scope.
-      // The worker code can set self.onmessage and call postMessage() / self.postMessage().
-      // We also provide a patched eval that handles Emscripten's `(var X = ...)` pattern,
-      // which is invalid as an expression but common in WASM module loaders.
+    postMessage(data, transfer = []) {
+      if (this._terminated) return;
+      if (transfer.length !== 0) {
+        throw namedError(
+          "DataCloneError",
+          "TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED: Phase 1 does not support transfer lists",
+        );
+      }
+      let payload;
       try {
-        const wrapped = `(function(self, postMessage, __nativeEval, importScripts) {\nvar eval = function(code) {\n  try { return __nativeEval(code); }\n  catch(e) {\n    if (e instanceof SyntaxError) {\n      var t = code.trim();\n      if (t[0]==="(" && t[t.length-1]===")") {\n        var inner = t.slice(1, -1).trim();\n        if (/^(?:var|let|const)\\s/.test(inner)) {\n          __nativeEval(inner);\n          var m = inner.match(/^(?:var|let|const)\\s+(\\w+)/);\n          if (m) return __nativeEval(m[1]);\n        }\n      }\n    }\n    throw e;\n  }\n};\n${code}\n})`;
-        const evaluate = Reflect.get(globalThis, "eval");
-        const fn = evaluate(wrapped);
-        fn(workerSelf, workerSelf.postMessage, evaluate, workerSelf.importScripts);
-      } catch (e) {
-        console.error("[Worker] Initialization error:", e);
-        setTimeout(() => {
-          if (this.onerror) this.onerror(e);
-        }, 0);
-        return;
+        payload = JSON.stringify(data);
+      } catch (error) {
+        throw namedError("DataCloneError", `TN_NATIVE_WORKER_CLONE_FAILED: ${error}`);
       }
-
-      this._workerSelf = workerSelf;
-      // The worker script may register handlers in a task after this one.
-      setTimeout(() => this._flushPending(), 0);
-    }
-
-    postMessage(data) {
-      if (this._terminated || !this._workerSelf) return;
-      this._pendingMessages.push({ data });
-      setTimeout(() => this._flushPending(), 0);
-    }
-
-    _flushPending() {
-      if (this._terminated || !this._workerSelf) return;
-      const ws = this._workerSelf;
-      while (this._pendingMessages.length > 0 && ws.hasMessageHandler()) {
-        const message = this._pendingMessages.shift();
-        ws._deliverFromMain({ data: message.data });
+      if (payload === undefined) {
+        throw namedError(
+          "DataCloneError",
+          "TN_NATIVE_WORKER_CLONE_FAILED: value is not JSON-cloneable",
+        );
+      }
+      if (!__tnNativeWorkerPost(this._id, payload)) {
+        throw namedError("InvalidStateError", "TN_NATIVE_WORKER_POST_FAILED: worker is unavailable");
       }
     }
 
     terminate() {
+      if (this._terminated) return;
       this._terminated = true;
-      this._workerSelf = null;
+      workers.delete(this._id);
+      __tnNativeWorkerTerminate(this._id);
+      this._messageListeners.length = 0;
+      this._errorListeners.length = 0;
+      this.onmessage = null;
+      this.onerror = null;
     }
 
     addEventListener(type, handler) {
-      if (type === "message") this.onmessage = handler;
-      else if (type === "error") this.onerror = handler;
+      if (typeof handler !== "function") return;
+      if (type === "message") this._messageListeners.push(handler);
+      else if (type === "error") this._errorListeners.push(handler);
     }
 
-    removeEventListener() {}
+    removeEventListener(type, handler) {
+      const listeners = type === "message" ? this._messageListeners : this._errorListeners;
+      const index = listeners.indexOf(handler);
+      if (index >= 0) listeners.splice(index, 1);
+    }
+
+    _dispatch(type, payload) {
+      if (this._terminated) return;
+      if (type === 1) {
+        const event = new ErrorEvent("error", { message: payload });
+        this.onerror?.(event);
+        for (const listener of [...this._errorListeners]) listener(event);
+        return;
+      }
+      let data;
+      try {
+        data = payload.length === 0 ? undefined : JSON.parse(payload);
+      } catch (error) {
+        const event = new ErrorEvent("error", {
+          message: `TN_NATIVE_WORKER_CLONE_FAILED: ${error}`,
+        });
+        this.onerror?.(event);
+        for (const listener of [...this._errorListeners]) listener(event);
+        return;
+      }
+      const event = { data, target: this };
+      this.onmessage?.(event);
+      for (const listener of [...this._messageListeners]) listener(event);
+    }
   }
 
+  globalThis.__tnNativeWorkerDispatch = (id, type, payload) => {
+    workers.get(id)?._dispatch(type, payload);
+  };
   globalThis.Worker = Worker;
 }
