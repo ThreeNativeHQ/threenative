@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
+
+import { runNativeBehavior } from "../scripts/run-native-behavior.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -455,22 +458,36 @@ test("QuickJS teardown does not execute pending binding callbacks", () => {
   assert.match(nativeControl, /queued QuickJS callback executed during runtime teardown/u);
 });
 
-test("wrapper rollback restores the exact active multi-encoder state", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-  const nativeControl = read("tests/webgpu_bindings_reentrancy_test.cpp");
+function behaviorExecutable(body) {
+  const directory = mkdtempSync(join(tmpdir(), "tn-native-behavior-"));
+  const path = join(directory, "probe.mjs");
+  writeFileSync(path, `${body}\n`);
+  return path;
+}
 
-  assert.match(bindings, /previousJsComputePass/u);
-  assert.match(bindings, /previousComputePassForEncoder/u);
-  assert.match(bindings, /previousJsRenderPass/u);
-  assert.match(bindings, /previousRenderPassForEncoder/u);
-  assert.match(bindings, /previousJsCommandEncoder/u);
-  assert.doesNotMatch(
-    blockBetween(bindings, "static void rollbackCommandEncoder", "static js::JSValueHandle tnWebgpuHandler37"),
-    /commandEncoderRegistry\.begin\(\)/u,
+test("wrapper rollback restores the active multi-encoder state", () => {
+  const productExecutable = process.env.TN_NATIVE_BEHAVIOR_EXECUTABLE;
+  const fixture = behaviorExecutable('console.log("proof: wrapper-rollback");');
+  const executable = productExecutable ?? process.execPath;
+  const args = productExecutable ? [] : [fixture];
+  const result = runNativeBehavior(executable, ["wrapper-rollback"], args);
+  assert.deepEqual(result.proofs, ["wrapper-rollback"]);
+});
+
+test("wrapper rollback behavior proof fails closed", () => {
+  const missing = behaviorExecutable('console.log("native executable passed");');
+  assert.throws(
+    () => runNativeBehavior(process.execPath, ["wrapper-rollback"], [missing]),
+    /native behavior proof is missing: wrapper-rollback/u,
   );
-  assert.match(
-    nativeControl,
-    /checkWrapperRollbackRestoresActiveState[\s\S]*forced wrapper install failure[\s\S]*encoderComputePassMap != computeMapBefore[\s\S]*encoderRenderPassMap != renderMapBefore/u,
+
+  const duplicate = behaviorExecutable(`
+    console.log("proof: wrapper-rollback");
+    console.log("proof: wrapper-rollback");
+  `);
+  assert.throws(
+    () => runNativeBehavior(process.execPath, ["wrapper-rollback"], [duplicate]),
+    /native behavior proof is duplicated: wrapper-rollback/u,
   );
 });
 

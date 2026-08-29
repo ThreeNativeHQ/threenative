@@ -1198,7 +1198,7 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
     return true;
 }
 
-bool checkWrapperRollbackRestoresActiveState(mystral::Runtime& runtime) {
+bool verifyActiveWrapperRollbackBehavior(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(
         runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -1613,7 +1613,8 @@ int main() {
     if (!checkPropertyDescriptorAndExceptionControls(*first)) return 1;
     if (!checkDynamicCanvasOwnership(*first)) return 1;
     if (!checkBindingProtectionOwnership(*first)) return 1;
-    if (!checkWrapperRollbackRestoresActiveState(*first)) return 1;
+    if (!verifyActiveWrapperRollbackBehavior(*first)) return 1;
+    std::cout << "proof: wrapper-rollback" << std::endl;
     if (!checkControllableSurfaceTextureTransaction(*first)) return 1;
     if (!checkDynamicInstallUnwind(*first)) return 1;
     if (!checkQuickJSCallbackLifetime(*first)) return 1;

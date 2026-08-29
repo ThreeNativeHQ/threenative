@@ -20,8 +20,21 @@ project(MystralNativeRuntime VERSION ${MYSTRAL_PACKAGE_VERSION} LANGUAGES C CXX)
 enable_testing()
 
 function(tn_register_contract_test target)
-    add_test(NAME ${target} COMMAND $<TARGET_FILE:${target}> ${ARGN})
-    set_tests_properties(${target} PROPERTIES LABELS "native-contract")
+    if(target STREQUAL "threenative-webgpu-bindings-reentrancy-test")
+        find_program(TN_PNPM_EXECUTABLE pnpm REQUIRED)
+        add_test(NAME ${target}
+            COMMAND ${CMAKE_COMMAND} -E env
+                "TN_NATIVE_BEHAVIOR_EXECUTABLE=$<TARGET_FILE:${target}>"
+                "TN_NATIVE_BEHAVIOR_PROOFS=wrapper-rollback"
+                ${TN_PNPM_EXECUTABLE} exec vitest run --config vitest.config.ts
+                    tests/webgpu-bindings-contract.test.mjs)
+        set_tests_properties(${target} PROPERTIES
+            LABELS "native-contract;native-behavior"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    else()
+        add_test(NAME ${target} COMMAND $<TARGET_FILE:${target}> ${ARGN})
+        set_tests_properties(${target} PROPERTIES LABELS "native-contract")
+    endif()
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_CONTRACT_TARGETS ${target})
 endfunction()
 
