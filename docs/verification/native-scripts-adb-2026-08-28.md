@@ -68,15 +68,3 @@ Native coverage remains **34.49%** overall and **36.16%** for `src/webgpu/`; the
 **108,760** lines while the new behavior proof coexists with the remaining private wrappers.
 
 No physical-device result is claimed for this checkpoint.
-
-## Phase 4a: production profiler
-
-`profile-production.mjs` uses the shared asynchronous client for Play Protect suppression, APK
-installation, and `pm path` verification. Its behavior test covers both an explicit device and an
-omitted device with an ambient `THREENATIVE_ADB_SERIAL`; the latter retains ADB's default transport
-and never adds `-s`. The focused suite passed **25/25** tests, and the installer census advanced to
-`verify-android-first-proof.mjs`.
-
-Coverage remains **34.49%** overall and **36.16%** for `src/webgpu/`; source digest
-`66a6535915bc8e0c0a20dcfaa57811c9493f09ebd92847503ac18c752db80c57`. Interim census:
-**108,915** lines. No device result is claimed.
