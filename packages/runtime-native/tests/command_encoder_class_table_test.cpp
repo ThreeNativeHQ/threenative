@@ -154,19 +154,16 @@ void exerciseCommandEncoderClassContract() {
     auto* engine = state->engine;
 
     const bool booted = engine->evalScript(
-        R"JS((async () => {
-            const adapter = await navigator.gpu.requestAdapter();
-            const device = await adapter.requestDevice();
+        R"JS((() => {
+            const adapter = navigator.gpu.requestAdapter();
+            const device = adapter.requestDevice();
             globalThis.__encA = device.createCommandEncoder();
             globalThis.__encB = device.createCommandEncoder();
         })())JS",
         "tn-runtime-encoders.js");
     expect(booted, "encoder-creating script evaluated");
-    for (int pump = 0; pump < 200; ++pump) {
-        if (!engine->isUndefined(engine->getGlobalProperty("__encA"))) break;
-        engine->processMicrotasks();
-    }
-    expect(!engine->isUndefined(engine->getGlobalProperty("__encA")),
+    const auto firstEncoder = engine->getGlobalProperty("__encA");
+    expect(firstEncoder.ptr && !engine->isUndefined(firstEncoder),
            "two command encoders exist through the real device surface");
 
     // Guards that go red if anyone reverts to per-instance installs: with captured per-call
@@ -177,7 +174,8 @@ void exerciseCommandEncoderClassContract() {
     expect(methodsExist, "encoder methods exist on the wrapper");
 
     const bool sharedPrototype = engine->toBoolean(engine->evalScriptWithResult(
-        "Object.getPrototypeOf(__encA) === Object.getPrototypeOf(__encB)",
+        "Object.getPrototypeOf(__encA) === Object.getPrototypeOf(__encB) && "
+        "Object.getPrototypeOf(__encA) !== Object.prototype",
         "tn-proto-identity.js"));
     expect(sharedPrototype, "both encoders share one class prototype");
 

@@ -9,6 +9,7 @@
 | `supported feature collections stay iterable without binding onto an exotic array` | Creates real adapter and device feature collections, requires `has` and `Symbol.iterator`, and consumes both iterators | `proof: public-binding-surface` |
 | `global helpers are copied from ordinary binding hosts` | Requires all three global helper functions through the initialized runtime global | `proof: public-binding-surface` |
 | `GPUCommandEncoder installs its table once per class, not per call` | Creates two real command encoders, requires shared prototypes and method identities, rejects own per-instance methods, and interleaves receiver dispatch; the public-surface probe covers all eight method names | `proof: command-encoder-class-table` + `proof: public-binding-surface` |
+| `GPURenderPassEncoder installs its table once per class, and end() resolves its encoder from the map` | Creates two real render passes through the effective frame-op-stream path, requires all fourteen methods, a shared non-default prototype and method identity, no own methods, detached-call refusal, interleaved receiver dispatch, and current-encoder resolution | `proof: render-pass-class-table` |
 
 The remaining source assertions stay in `webgpu-bindings-contract.test.mjs` until their behavior
 probes exist. The default Vitest lane uses a fixture executable to prove the output contract; CTest
@@ -39,6 +40,14 @@ sets `TN_NATIVE_BEHAVIOR_EXECUTABLE` so that same test drives the built product 
   was reverted.
 - Command-encoder rename: renamed the real-runtime probe to
   `exerciseCommandEncoderClassContract`; the product-backed test stayed green.
+- Class-table setup repair: removed unnecessary async wrappers and fixed missing-global checks in
+  both executables. The earlier tests could pass before creating an encoder or pass. The effective
+  runtime path is `frame-op-stream.js`, which intentionally replaces the raw native methods.
+- Render-pass behavior break: temporarily created a fresh copied prototype per pass while retaining
+  all methods. The product-backed assertion named `both render passes share one class prototype`;
+  CTest failed. The mutation was reverted.
+- Render-pass rename: renamed the executable probe to `exerciseRenderPassClassContract`; the
+  product-backed test stayed green.
 
 ## Green result
 
