@@ -1,4 +1,4 @@
-import { type Camera, type Object3D, Quaternion, Vector3 as Vec3 } from "three";
+import { type Camera, Matrix4, type Object3D, Quaternion, Vector3 as Vec3 } from "three";
 
 export type BillboardLockAxis = "x" | "y" | "z";
 
@@ -29,6 +29,9 @@ export class Billboard3D {
   readonly #objectPosition = new Vec3();
   readonly #objectQuaternion = new Quaternion();
   readonly #parentQuaternion = new Quaternion();
+  readonly #screenUp = new Vec3();
+  readonly #screenRight = new Vec3();
+  readonly #basis = new Matrix4();
 
   constructor(object: Object3D, options: IBillboard3DOptions) {
     if (object === undefined || object === null)
@@ -66,8 +69,12 @@ export class Billboard3D {
     if (this.#direction.lengthSq() <= EPSILON) this.#direction.set(0, 0, 1);
     this.#lockDirection();
     this.#direction.normalize();
-    this.#objectPosition.set(0, 0, 1);
-    this.#objectQuaternion.setFromUnitVectors(this.#objectPosition, this.#direction);
+    if (this.lockAxis === undefined) {
+      this.#setUnrestrictedOrientation();
+    } else {
+      this.#objectPosition.set(0, 0, 1);
+      this.#objectQuaternion.setFromUnitVectors(this.#objectPosition, this.#direction);
+    }
 
     const parent = this.object.parent;
     if (parent === null) {
@@ -78,6 +85,28 @@ export class Billboard3D {
     parent.getWorldQuaternion(this.#parentQuaternion);
     this.object.quaternion.copy(this.#parentQuaternion).invert().multiply(this.#objectQuaternion);
     return this;
+  }
+
+  #setUnrestrictedOrientation(): void {
+    this.#screenUp
+      .set(0, 1, 0)
+      .applyQuaternion(this.#cameraQuaternion)
+      .projectOnPlane(this.#direction);
+    if (this.#screenUp.lengthSq() <= EPSILON) {
+      this.#screenUp
+        .set(1, 0, 0)
+        .applyQuaternion(this.#cameraQuaternion)
+        .projectOnPlane(this.#direction);
+    }
+    if (this.#screenUp.lengthSq() <= EPSILON) {
+      this.#screenUp.set(0, 1, 0);
+      if (Math.abs(this.#screenUp.dot(this.#direction)) >= 1 - EPSILON) this.#screenUp.set(1, 0, 0);
+      this.#screenUp.projectOnPlane(this.#direction);
+    }
+    this.#screenUp.normalize();
+    this.#screenRight.crossVectors(this.#screenUp, this.#direction).normalize();
+    this.#basis.makeBasis(this.#screenRight, this.#screenUp, this.#direction);
+    this.#objectQuaternion.setFromRotationMatrix(this.#basis);
   }
 
   #lockDirection(): void {

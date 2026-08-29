@@ -3,10 +3,21 @@ import { describe, expect, it } from "vitest";
 import { Billboard3D } from "../src/billboard.js";
 
 const FRONT = new Vector3(0, 0, 1);
+const UP = new Vector3(0, 1, 0);
 
 function worldFront(object: Group): Vector3 {
   const quaternion = object.getWorldQuaternion(new Quaternion());
   return FRONT.clone().applyQuaternion(quaternion);
+}
+
+function worldUp(object: Group): Vector3 {
+  const quaternion = object.getWorldQuaternion(new Quaternion());
+  return UP.clone().applyQuaternion(quaternion);
+}
+
+function projectedCameraUp(camera: PerspectiveCamera, normal: Vector3): Vector3 {
+  const quaternion = camera.getWorldQuaternion(new Quaternion());
+  return UP.clone().applyQuaternion(quaternion).projectOnPlane(normal).normalize();
 }
 
 describe("Billboard3D", () => {
@@ -51,6 +62,31 @@ describe("Billboard3D", () => {
     const expectedDirection = new Vector3(0, 0, -1).applyQuaternion(cameraQuaternion).negate();
     expect(firstFront.angleTo(expectedDirection)).toBeCloseTo(0, 6);
     expect(worldFront(label).angleTo(firstFront)).toBeCloseTo(0, 6);
+  });
+
+  it("keeps camera-relative up when the camera rolls", () => {
+    const camera = new PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(5, 4, 8);
+    camera.lookAt(0, 0.5, 0);
+    camera.rotateZ(0.8);
+    camera.updateWorldMatrix(true, false);
+
+    const parent = new Group();
+    parent.position.set(-1.5, 0.75, 1.25);
+    parent.rotation.set(0.4, -0.65, 0.3);
+    const label = new Group();
+    label.position.set(0.8, 1.2, -0.4);
+    parent.add(label);
+
+    new Billboard3D(label, { camera }).update();
+
+    const expectedDirection = camera
+      .getWorldPosition(new Vector3())
+      .sub(label.getWorldPosition(new Vector3()))
+      .normalize();
+    const expectedUp = projectedCameraUp(camera, expectedDirection);
+    expect(worldFront(label).angleTo(expectedDirection)).toBeCloseTo(0, 6);
+    expect(worldUp(label).angleTo(expectedUp)).toBeCloseTo(0, 6);
   });
 
   it("faces an overhead nameplate when no axis is locked", () => {

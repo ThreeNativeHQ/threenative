@@ -20,6 +20,14 @@ describe("shooter per-item consumers", () => {
     expect(PLAY_SOURCE).toMatch(/for \(const billboard of billboards\) billboard\.update\(\);/u);
   });
 
+  it("observes camera-relative up", () => {
+    expect(PLAY_SOURCE).toContain("camera.getWorldQuaternion(billboardCameraQuaternion);");
+    expect(PLAY_SOURCE).toContain("projectOnPlane(billboardExpected)");
+    expect(PLAY_SOURCE).toMatch(
+      /const nameplateFacingCamera =\s*billboardFront\.dot\(billboardExpected\) >= 0\.999 &&\s*billboardUp\.dot\(billboardExpectedUp\) >= 0\.999\s*\? 1\s*:\s*0;/u,
+    );
+  });
+
   it("routes the complete shake offset through one composition operation", () => {
     expect(CAMERA_SOURCE).toContain("composeCameraShake(camera, shakeOffset);");
   });

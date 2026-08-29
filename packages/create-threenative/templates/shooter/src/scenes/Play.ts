@@ -118,6 +118,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const billboardExpected = new Vector3();
     const billboardCameraPosition = new Vector3();
     const billboardObjectPosition = new Vector3();
+    const billboardUp = new Vector3(0, 1, 0);
+    const billboardExpectedUp = new Vector3();
+    const billboardCameraQuaternion = new Quaternion();
     const billboardWorldQuaternion = new Quaternion();
     const spriteAnimators: SpriteAnimator3D[] = [];
     ctx.viewport.resize();
@@ -504,7 +507,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       billboardFront
         .set(0, 0, 1)
         .applyQuaternion(nameplate.getWorldQuaternion(billboardWorldQuaternion));
-      const nameplateFacingCamera = billboardFront.dot(billboardExpected) >= 0.999 ? 1 : 0;
+      camera.getWorldQuaternion(billboardCameraQuaternion);
+      billboardExpectedUp
+        .set(0, 1, 0)
+        .applyQuaternion(billboardCameraQuaternion)
+        .projectOnPlane(billboardExpected)
+        .normalize();
+      billboardUp
+        .set(0, 1, 0)
+        .applyQuaternion(nameplate.getWorldQuaternion(billboardWorldQuaternion));
+      const nameplateFacingCamera =
+        billboardFront.dot(billboardExpected) >= 0.999 &&
+        billboardUp.dot(billboardExpectedUp) >= 0.999
+          ? 1
+          : 0;
       if (frameCtx.state.getState().nameplateFacingCamera === nameplateFacingCamera) return;
       nameplatePatch.nameplateFacingCamera = nameplateFacingCamera;
       frameCtx.state.set(nameplatePatch);
