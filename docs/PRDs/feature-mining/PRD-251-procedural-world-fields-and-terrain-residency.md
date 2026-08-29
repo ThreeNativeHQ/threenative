@@ -96,7 +96,7 @@ a game cannot write portably and cannot get right twice:
    web and native, identical across runs.
 2. **Generation the game does not schedule.** Height synthesis, hydraulic erosion and flow
    routing as ordered GPU compute passes riding
-   [PRD-242](./PRD-242-gpu-simulation-has-one-lifetime.md)'s `IComputeDriven` lifetime, with a
+   [PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md)'s `IComputeDriven` lifetime, with a
    per-frame dispatch budget so world generation cannot eat the frame.
 3. **A crack-free residency lifecycle.** `TerrainTiles` decides which tiles are resident at
    which LOD, stitches their edges, evicts under a byte/count budget, and keeps the physics

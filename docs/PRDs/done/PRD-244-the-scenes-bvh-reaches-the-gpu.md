@@ -4,16 +4,18 @@ prd_contract: v1
 
 # PRD-244 — The scene's BVH reaches the GPU
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed. Depends on
-[PRD-242](./PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime; the data itself is
-independent.**
+**Status: DONE, 2026-08-29.** `GPUSceneBVH` ships and is reached through
+[PRD-242](./PRD-242-gpu-simulation-has-one-lifetime.md)'s `IComputeDriven` lifetime. Evidence:
+[docs/verification/PRD-244.md](../../verification/PRD-244.md) — 8 unit tests over the packed
+`bvh.nodes` buffer, the `prd140-picking` playtest, `pnpm native:build`, and desktop conformance
+`76-gpu-scene-bvh` (pixel mismatch 0.000126953125). Android and iOS are UNVERIFIED.
 
 Source of the borrowed technique: [`jure/webgiya`](https://github.com/jure/webgiya), MIT, cloned at
 depth 1 on 2026-08-28 — specifically `src/sceneBvh.ts`, which shows how to pack a scene into storage
 buffers a TSL kernel can trace. **Its global-illumination system is deliberately not absorbed** — see
 "What is refused".
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Complexity:** +2 new subsystem, +2 buffer lifetime tied to a mutable scene, +1 touches ≤5 files,
 +1 new public surface = **6 → MEDIUM mode.**

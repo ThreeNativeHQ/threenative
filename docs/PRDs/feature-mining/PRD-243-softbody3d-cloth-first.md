@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-243 — `SoftBody3D`, cloth first and tetrahedra later
 
 **Status: PROPOSED, 2026-08-28. Nothing below has been executed. Blocked on
-[PRD-242](./PRD-242-gpu-simulation-has-one-lifetime.md) — do not start before it lands.**
+[PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) — do not start before it lands.**
 
 Sources read at depth 1 on 2026-08-28, both MIT:
 [`bandinopla/three-simplecloth`](https://github.com/bandinopla/three-simplecloth) (1 073 lines,

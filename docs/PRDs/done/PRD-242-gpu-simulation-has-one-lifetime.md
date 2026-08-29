@@ -4,7 +4,13 @@ prd_contract: v1
 
 # PRD-242 — GPU simulation has one lifetime, not one per game
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: DONE, 2026-08-29.** Implementation and one permitted repair round complete; the
+framework owns only the compute lifecycle mechanism, and the two-pass simulation, buffers,
+appearance and conformance scene are game-owned example source. Evidence:
+[docs/verification/PRD-242.md](../../verification/PRD-242.md) and
+[docs/verification/prd-242-startup-continuation.md](../../verification/prd-242-startup-continuation.md)
+— unit, `examples/prd242-compute-lifetime` playtest, four abyss-framework scenarios and native
+desktop conformance (300 frames, `exitCode: 0`). Android and iOS are UNVERIFIED.
 
 Sources read at depth 1 on 2026-08-28, all MIT:
 [`jure/webgiya`](https://github.com/jure/webgiya),
@@ -14,8 +20,8 @@ Sources read at depth 1 on 2026-08-28, all MIT:
 [`bandinopla/threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation).
 **Nothing is depended on and nothing is copied.** What is mined is the shape all five converge on.
 
-Parent batch: [feature-mining](./README.md). **This PRD is the enabler for
-[243](./PRD-243-softbody3d-cloth-first.md) and [244](./PRD-244-the-scenes-bvh-reaches-the-gpu.md);
+Parent batch: [feature-mining](../feature-mining/README.md). **This PRD is the enabler for
+[243](../feature-mining/PRD-243-softbody3d-cloth-first.md) and [244](./PRD-244-the-scenes-bvh-reaches-the-gpu.md);
 neither is worth starting before it lands.**
 
 **Complexity:** +2 lifetime state across scene changes and the frame loop, +2 it changes a hot path

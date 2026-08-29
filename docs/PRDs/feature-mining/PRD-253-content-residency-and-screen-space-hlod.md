@@ -269,7 +269,7 @@ declares a budget. Both are named, both are measured against in §8.
 | [PRD-098](../done/PRD-098-lod-and-instancing.md) | Its Phase 0 census is the baseline this PRD's Phase 0 must beat or inherit. Its decline is a fact, not a dependency. | No |
 | [PRD-043](../done/PRD-043-terrain-and-open-world.md) | Supplies `AssetLoader.release` and the terrain probe this PRD replaces. | No |
 | [PRD-238](./PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | Complementary and **independent**. Residency decides what is in memory; 238 decides what is submitted. If 238 lands first, Phase 4's A/B must hold its setting constant across both arms and say so. | No — but the A/B is invalid if 238's setting differs between arms |
-| [PRD-242](./PRD-242-gpu-simulation-has-one-lifetime.md) | Shares the "one lifetime" discipline for GPU resources; its dispose ordering must not fight the refcount. | Check at Phase 1 |
+| [PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) | Shares the "one lifetime" discipline for GPU resources; its dispose ordering must not fight the refcount. | Check at Phase 1 |
 | [PRD-250](./PRD-250-native-workers-are-actually-workers.md) | If native workers become real, decode moves off the main thread and the native hitch numbers change. Phase 5 must record which state of 250 was live. | No — record only |
 | [PRD-251](./PRD-251-procedural-world-fields-and-terrain-residency.md) | **Consumes this.** 251 must not build a second residency system. | This PRD's Phase 6 blocks 251's residency half |
 

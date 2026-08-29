@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-248 — The atmosphere is three LUTs; the sky is the game's
 
 **Status: PROPOSED, 2026-08-28. Nothing below has been executed. Depends on
-[PRD-242](./PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime.**
+[PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime.**
 
 Source: [`DennisSmolek/SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky), MIT, cloned at
 depth 1 on 2026-08-28 — 3 895 lines across `src/`, all read for the split below. **Nothing copied.**
