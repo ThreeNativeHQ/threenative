@@ -25,11 +25,10 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
+import { createAdbClient, resolveAdbExecutable } from "./lib/adb.mjs";
 import { readAndroidConfig } from "./package-android.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -99,22 +98,29 @@ export class ColdStartError extends Error {
   }
 }
 
-function adbPath(environment = process.env) {
-  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
-  const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
-  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-  if (!existsSync(candidate)) throw new ColdStartError("TN_COLD_START_ADB_MISSING", 2);
-  return candidate;
-}
-
-function adb(serial, args, timeoutMs = 120_000) {
-  const result = spawnSync(adbPath(), ["-s", serial, ...args], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: timeoutMs,
+export function createColdStartDevice(serial, environment = process.env, dependencies = {}) {
+  const executable = resolveAdbExecutable(environment, {
+    allowPathFallback: false,
+    defaultSdkRoot: dependencies.defaultSdkRoot,
+    existsSyncImpl: dependencies.existsSyncImpl,
+    sdkEnvironmentKeys: ["THREENATIVE_ANDROID_SDK"],
   });
-  if (result.error) throw new ColdStartError(`TN_COLD_START_ADB_FAILED:${result.error.message}`);
-  return String(result.stdout ?? "");
+  if (!executable) throw new ColdStartError("TN_COLD_START_ADB_MISSING", 2);
+  const client = createAdbClient(serial, {
+    environment: { ...environment, THREENATIVE_ADB: executable },
+    maxBuffer: 64 * 1024 * 1024,
+    spawnSyncImpl: dependencies.spawnSyncImpl,
+    timeoutMs: 120_000,
+  });
+  return {
+    command(args, timeoutMs = 120_000) {
+      const result = client.result(args, { timeoutMs });
+      if (result.error) {
+        throw new ColdStartError(`TN_COLD_START_ADB_FAILED:${result.error.message}`);
+      }
+      return String(result.stdout ?? "");
+    },
+  };
 }
 
 /**
@@ -260,6 +266,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   assertPhysicalDevice(options.device);
   const serial = options.device;
+  const device = createColdStartDevice(serial);
   const { appId, activity } = appIdentity(options.config);
   const deviceCondition = await assertDeviceReady(
     serial,
@@ -269,27 +276,27 @@ async function main() {
       minBatteryPercent: MINIMUM_BATTERY_PERCENT,
       requireDischarging: true,
     },
-    { adb: (args) => adb(serial, args) },
+    { adb: (args) => device.command(args) },
   );
 
-  const listing = adb(serial, ["shell", "getprop", "ro.product.model"]).trim();
-  const qemu = adb(serial, ["shell", "getprop", "ro.kernel.qemu"]).trim();
+  const listing = device.command(["shell", "getprop", "ro.product.model"]).trim();
+  const qemu = device.command(["shell", "getprop", "ro.kernel.qemu"]).trim();
   if (qemu !== "") throw new ColdStartError("TN_COLD_START_EMULATOR_BLOCKED", 2);
 
-  adb(serial, ["logcat", "-G", "64M"]);
+  device.command(["logcat", "-G", "64M"]);
   const samples = [];
   for (let launch = 0; launch < options.launches; launch += 1) {
-    adb(serial, ["shell", "am", "force-stop", appId]);
+    device.command(["shell", "am", "force-stop", appId]);
     // A warm page cache is a different measurement. Killing the process and clearing the log is
     // the most this can do without root; the report says "cold start" meaning process cold.
-    adb(serial, ["logcat", "-c"]);
+    device.command(["logcat", "-c"]);
     await sleep(1_500);
-    adb(serial, ["shell", "am", "start", "-n", activity]);
+    device.command(["shell", "am", "start", "-n", activity]);
     await sleep(options.settleMs);
-    const logcat = adb(serial, ["logcat", "-d"]);
+    const logcat = device.command(["logcat", "-d"]);
     samples.push(breakdown(parseMarkers(logcat)));
   }
-  adb(serial, ["shell", "am", "force-stop", appId]);
+  device.command(["shell", "am", "force-stop", appId]);
 
   const apkPath = join(runtimeRoot, "android/app/build/outputs/apk/debug/app-debug.apk");
   const apkSha256 = existsSync(apkPath)
