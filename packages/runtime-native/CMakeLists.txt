@@ -1843,6 +1843,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-dom-dispatch-lifetime-test EXCLUDE_FROM_ALL
         tests/dom_dispatch_lifetime_test.cpp)
     target_link_libraries(threenative-dom-dispatch-lifetime-test PRIVATE mystral-runtime)
+    add_executable(threenative-worker-production-test EXCLUDE_FROM_ALL
+        tests/worker_production_test.cpp)
+    target_link_libraries(threenative-worker-production-test PRIVATE mystral-runtime)
     add_executable(threenative-canvas2d-dirty-test EXCLUDE_FROM_ALL
         tests/canvas2d_dirty_tracking_test.cpp)
     target_link_libraries(threenative-canvas2d-dirty-test PRIVATE mystral-runtime)
@@ -1976,6 +1979,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-crash-handler-policy-test)
     tn_register_contract_test(threenative-device-pixel-ratio-test)
     tn_register_contract_test(threenative-dom-dispatch-lifetime-test)
+    tn_register_contract_test(threenative-worker-production-test)
     tn_register_contract_test(threenative-embedded-bundle-test)
     tn_register_contract_test(threenative-frame-op-stream-replay-test)
     tn_register_contract_test(threenative-handle-lifetime-test v8)

@@ -416,7 +416,9 @@ globalThis.self = globalThis;
 })();
 )";
 
-    engine->eval(workerGlobalCode, "worker-global.js");
+    // Classic script, not a module: a worker's global scope is script scope, and a module's
+    // Evaluate() hands back a promise instead of failing, which is how a throw goes missing.
+    engine->evalScript(workerGlobalCode, "worker-global.js");
 }
 
 void WorkerThread::threadMain() {
@@ -471,14 +473,19 @@ globalThis.console = {
 };
 )";
 
-    engine->eval(consoleCode, "worker-console.js");
+    engine->evalScript(consoleCode, "worker-console.js");
 
     // Setup worker globals (after console is available)
     setupWorkerGlobals(engine.get());
 
     // Execute the worker code
     std::cout << "[Worker " << id_ << "] Executing user code..." << std::endl;
-    if (!engine->eval(code_.c_str(), "worker.js")) {
+    // A classic Blob worker is the only admitted source form, so it is evaluated as a classic
+    // script. It used to be compiled as an ES module, and a module that throws at top level
+    // resolves to a *rejected promise* rather than failing to evaluate: eval() returned true, the
+    // host logged "User code executed successfully", and the game was never told its worker was
+    // dead on arrival. Script::Run() reports the throw, so the ERROR below is actually queued.
+    if (!engine->evalScript(code_.c_str(), "worker.js")) {
         std::string error = engine->getException();
         std::cerr << "[Worker " << id_ << "] Error executing code: " << error << std::endl;
 
@@ -493,10 +500,19 @@ globalThis.console = {
         std::cout << "[Worker " << id_ << "] User code executed successfully" << std::endl;
     }
 
-    // Check for any pending exception
+    // A pending exception that survived a "successful" evaluation is still a failed worker, and
+    // printing it to this process's stderr is not telling the game.
     if (engine->hasException()) {
         std::string error = engine->getException();
         std::cerr << "[Worker " << id_ << "] Exception after code execution: " << error << std::endl;
+
+        WorkerMessage errMsg;
+        errMsg.type = WorkerMessage::Type::ERROR;
+        errMsg.payload = std::vector<uint8_t>(error.begin(), error.end());
+        {
+            std::lock_guard<std::mutex> lock(outMutex_);
+            outQueue_.push(std::move(errMsg));
+        }
     }
 
     std::cout << "[Worker " << id_ << "] Entering main loop..." << std::endl;
@@ -506,7 +522,7 @@ globalThis.console = {
         loopEvals_.fetch_add(1, std::memory_order_relaxed);
 
         // Process messages via JS
-        auto processResult = engine->evalWithResult("__processMessages()", "worker-loop.js");
+        auto processResult = engine->evalScriptWithResult("__processMessages()", "worker-loop.js");
         if (engine->hasException()) {
             std::string error = engine->getException();
             std::cerr << "[Worker " << id_ << "] Exception in message loop: " << error << std::endl;

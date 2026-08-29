@@ -78,6 +78,9 @@ export const executionContracts = {
   "threenative-canvas2d-dirty-test": {
     invocations: [{ args: [], passLine: "canvas2d dirty tracking passed" }],
   },
+  "threenative-worker-production-test": {
+    invocations: [{ args: [], passLine: "[worker-production] every worker contract held" }],
+  },
   "threenative-lifecycle-policy-test": {
     invocations: [{ args: [], passLine: "native lifecycle policy contract passed" }],
   },

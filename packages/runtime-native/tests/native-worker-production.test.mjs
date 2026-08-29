@@ -379,7 +379,7 @@ test("should prove the registry contract against real worker threads", () => {
   }
 
   const stdout = execFileSync(binary, { encoding: "utf8", timeout: 120_000 });
-  const results = [...stdout.matchAll(/^WORKER_CONTRACT (\w+) (PASS|FAIL)(?: (.*))?$/gmu)].map(
+  const results = [...stdout.matchAll(/WORKER_CONTRACT (\w+) (PASS|FAIL)(?: (.*))?$/gmu)].map(
     (match) => ({ name: match[1], verdict: match[2], detail: match[3] ?? "" }),
   );
 
@@ -387,6 +387,7 @@ test("should prove the registry contract against real worker threads", () => {
     "fifoAcrossHandlerRegistration",
     "cloneMatrixRoundTrip",
     "cloneRefusalNamed",
+    "workerSideCloneRefusalReachesError",
     "topLevelThrowReachesError",
     "handlerThrowReachesError",
     "finalMessageSurvivesSelfClose",
@@ -397,6 +398,6 @@ test("should prove the registry contract against real worker threads", () => {
   for (const name of required) {
     const row = byName.get(name);
     expect(row, `packed contract never reported ${name}`).toBeDefined();
-    expect(`${name}: ${row.verdict} ${row.detail}`).toBe(`${name}: PASS `.trimEnd() + "");
+    expect(`${name} ${row.verdict} ${row.detail}`.trim()).toBe(`${name} PASS`);
   }
 });

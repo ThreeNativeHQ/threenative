@@ -1,0 +1,255 @@
+// PRD-250 Phase 2 — the production worker contract, against real threads and a real Runtime.
+//
+// Every check runs through the shipped path: RuntimeImpl installs the native worker callbacks and
+// the standard `Worker` facade, WorkerRegistry starts a real thread with its own JS engine, and
+// pollEvents() drains completions in the host I/O segment exactly as the game loop does. Nothing
+// reaches into WorkerThread directly — a standalone harness is what this PRD refuses as evidence.
+//
+// The assertions live in JavaScript because that is where a game observes them. This file creates
+// the runtime, pumps the host loop, and turns the isolate's verdict into an exit code. Each
+// contract prints one `WORKER_CONTRACT <name> PASS|FAIL [detail]` line for
+// tests/native-worker-production.test.mjs to require by name.
+
+#include "mystral/runtime.h"
+
+#include <chrono>
+#include <iostream>
+#include <string>
+#include <thread>
+
+using mystral::Runtime;
+using mystral::RuntimeConfig;
+
+namespace {
+
+const char* kSetup = R"JS(
+globalThis.__done = false;
+globalThis.__log = [];
+globalThis.__verdicts = [];
+
+const blobUrl = (source) => URL.createObjectURL(new Blob([source]));
+const record = (name, pass, detail) => __verdicts.push({ name, pass: !!pass, detail: detail || "" });
+
+// --- cloneRefusalNamed: the game isolate refuses before anything is queued -------------------
+{
+  const probe = new Worker(blobUrl("self.onmessage = () => {};"));
+  const refusals = [];
+  for (const make of [
+    () => ({ run: () => 1 }),
+    () => { const a = {}; a.self = a; return a; },
+    () => ({ bytes: new Uint8Array(2) }),
+    () => ({ n: NaN }),
+  ]) {
+    try {
+      probe.postMessage(make());
+      refusals.push("accepted");
+    } catch (error) {
+      refusals.push(error.name + ":" + (String(error.message).includes("TN_NATIVE_WORKER_CLONE_UNSUPPORTED") ? "named" : "unnamed"));
+    }
+  }
+  const allNamed = refusals.every((row) => row === "DataCloneError:named");
+  record("cloneRefusalNamed", allNamed, allNamed ? "" : refusals.join(","));
+  probe.terminate();
+}
+
+// --- fifoAcrossHandlerRegistration ----------------------------------------------------------
+// The worker posts before the main isolate could possibly have drained anything; the handler is
+// attached after construction, as a game attaches it.
+const fifo = new Worker(blobUrl(`
+  for (let i = 1; i <= 5; i += 1) postMessage({ seq: i });
+  self.onmessage = (event) => { postMessage({ echo: event.data.seq }); };
+`));
+globalThis.__fifoSeen = [];
+fifo.onmessage = (event) => {
+  __fifoSeen.push(event.data);
+  if (__fifoSeen.length === 5) fifo.postMessage({ seq: 99 });
+};
+
+// --- cloneMatrixRoundTrip -------------------------------------------------------------------
+const echo = new Worker(blobUrl(`
+  self.onmessage = (event) => { postMessage(event.data); };
+`));
+globalThis.__echoed = null;
+globalThis.__echoSubject = {
+  n: -1.5, s: "text", t: true, z: null,
+  list: [1, "two", false, null, { deep: { deeper: [] } }],
+  record: { a: 0, b: { c: "d" } },
+};
+echo.onmessage = (event) => { __echoed = event.data; };
+echo.postMessage(__echoSubject);
+
+// --- topLevelThrowReachesError --------------------------------------------------------------
+const boom = new Worker(blobUrl("throw new Error('top level exploded');"));
+globalThis.__topLevelError = null;
+boom.onerror = (event) => { __topLevelError = String(event.message); };
+
+// --- handlerThrowReachesError ---------------------------------------------------------------
+// A throw inside onmessage used to be printed in the worker and swallowed; the caller then got
+// neither a result nor an error.
+const thrower = new Worker(blobUrl(`
+  self.onmessage = () => { throw new Error('handler exploded'); };
+`));
+globalThis.__handlerError = null;
+globalThis.__handlerMessage = null;
+thrower.onerror = (event) => { __handlerError = String(event.message); };
+thrower.onmessage = (event) => { __handlerMessage = event.data; };
+thrower.postMessage({ go: true });
+
+// --- workerSideCloneRefusalReachesError -----------------------------------------------------
+// The worker isolate's own copy of the matrix, proven inside a real worker engine.
+const badSender = new Worker(blobUrl(`
+  self.onmessage = () => { const a = {}; a.self = a; postMessage(a); };
+`));
+globalThis.__badSenderError = null;
+badSender.onerror = (event) => { __badSenderError = String(event.message); };
+badSender.postMessage({ go: true });
+
+// --- finalMessageSurvivesSelfClose ----------------------------------------------------------
+// close() stops the worker. Its already-queued result must still be delivered.
+const closer = new Worker(blobUrl(`
+  postMessage({ final: "delivered" });
+  close();
+`));
+globalThis.__finalFromClosed = null;
+closer.onmessage = (event) => { __finalFromClosed = event.data; };
+
+// --- terminateStopsCallbacks ----------------------------------------------------------------
+const doomed = new Worker(blobUrl(`
+  self.onmessage = () => { for (let i = 0; i < 200; i += 1) postMessage({ noisy: i }); };
+`));
+globalThis.__afterTerminate = 0;
+doomed.onmessage = () => { __afterTerminate += 1; };
+doomed.postMessage({ go: true });
+doomed.terminate();
+
+// --- shutdownJoinsEveryWorker ---------------------------------------------------------------
+// Four live workers terminated in a row. A join that deadlocks never reaches the record() below,
+// and the pump budget turns that into a failure rather than a hang.
+globalThis.__joinAll = () => {
+  const many = [];
+  for (let i = 0; i < 4; i += 1) {
+    many.push(new Worker(blobUrl("self.onmessage = () => { postMessage(1); };")));
+  }
+  for (const worker of many) worker.postMessage({ go: true });
+  for (const worker of many) worker.terminate();
+  return many.length;
+};
+
+globalThis.__settle = () => {
+  const fifoOk =
+    __fifoSeen.length === 6 &&
+    __fifoSeen.slice(0, 5).every((row, index) => row && row.seq === index + 1) &&
+    __fifoSeen[5] && __fifoSeen[5].echo === 99;
+  record("fifoAcrossHandlerRegistration", fifoOk, fifoOk ? "" : JSON.stringify(__fifoSeen));
+
+  const echoOk = JSON.stringify(__echoed) === JSON.stringify(__echoSubject);
+  record("cloneMatrixRoundTrip", echoOk, echoOk ? "" : JSON.stringify(__echoed));
+
+  const topOk = typeof __topLevelError === "string" && __topLevelError.includes("top level exploded");
+  record("topLevelThrowReachesError", topOk, topOk ? "" : String(__topLevelError));
+
+  const handlerOk =
+    typeof __handlerError === "string" &&
+    __handlerError.includes("handler exploded") &&
+    __handlerMessage === null;
+  record("handlerThrowReachesError", handlerOk, handlerOk ? "" : String(__handlerError));
+
+  const badOk =
+    typeof __badSenderError === "string" &&
+    __badSenderError.includes("TN_NATIVE_WORKER_CLONE_UNSUPPORTED");
+  record("workerSideCloneRefusalReachesError", badOk, badOk ? "" : String(__badSenderError));
+
+  const finalOk = __finalFromClosed !== null && __finalFromClosed.final === "delivered";
+  record("finalMessageSurvivesSelfClose", finalOk, finalOk ? "" : String(JSON.stringify(__finalFromClosed)));
+
+  record("terminateStopsCallbacks", __afterTerminate === 0, "delivered=" + __afterTerminate);
+
+  const joined = __joinAll();
+  record("shutdownJoinsEveryWorker", joined === 4, "joined=" + joined);
+};
+
+// Everything above is queued. The pump below drains completions; __ready flips once every
+// observation this run needs has either arrived or had its chance.
+globalThis.__ready = () =>
+  __fifoSeen.length === 6 &&
+  __echoed !== null &&
+  __topLevelError !== null &&
+  __handlerError !== null &&
+  __badSenderError !== null &&
+  __finalFromClosed !== null;
+)JS";
+
+const char* kSettleAndReport = R"JS(
+(() => {
+  __settle();
+  let failed = 0;
+  for (const row of __verdicts) {
+    console.log("WORKER_CONTRACT " + row.name + (row.pass ? " PASS" : " FAIL " + row.detail));
+    if (!row.pass) failed += 1;
+  }
+  if (failed > 0) process.exit(1);
+})()
+)JS";
+
+}  // namespace
+
+int main() {
+    RuntimeConfig config;
+    config.noSdl = true;
+    config.width = 64;
+    config.height = 64;
+    auto runtime = Runtime::create(config);
+    if (!runtime) {
+        std::cerr << "FAILED: runtime creation" << std::endl;
+        return 1;
+    }
+
+    if (!runtime->evalScript(kSetup, "worker-contract-setup")) {
+        std::cerr << "FAILED: setup eval threw" << std::endl;
+        return 1;
+    }
+
+    // Let every worker that intends to finish actually finish before the first drain. Without
+    // this the main loop usually drains a self-closing worker while it is still running, and the
+    // reap-before-drain hazard this gate exists to catch stays a race the gate never forces: the
+    // registry must find a *stopped* worker with a queued result and still deliver it.
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+
+    // Drive the real host loop until every observation has landed.
+    if (!runtime->evalScript("globalThis.__done = false;", "worker-contract-reset")) return 1;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    bool ready = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+        runtime->pollEvents();
+        if (runtime->evalScript("if (!__ready()) { throw new Error('pending'); }",
+                                "worker-contract-ready")) {
+            ready = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    if (!ready) {
+        // Report what did land, so a timeout names the missing observation instead of just hanging.
+        runtime->evalScript(
+            "console.log('WORKER_CONTRACT pumpReachedEveryObservation FAIL ' + JSON.stringify({"
+            "fifo: __fifoSeen.length, echoed: __echoed !== null, topLevel: __topLevelError, "
+            "handler: __handlerError, badSender: __badSenderError, closed: __finalFromClosed}));",
+            "worker-contract-timeout");
+        std::cerr << "FAILED: the host loop never delivered every worker observation" << std::endl;
+        return 1;
+    }
+
+    if (!runtime->evalScript(kSettleAndReport, "worker-contract-report")) {
+        std::cerr << "FAILED: verdict eval threw" << std::endl;
+        return 1;
+    }
+    if (runtime->getExitCode() != 0) {
+        std::cerr << "FAILED: one or more worker contracts, exit " << runtime->getExitCode()
+                  << std::endl;
+        return 1;
+    }
+
+    std::cout << "[worker-production] every worker contract held" << std::endl;
+    return 0;
+}

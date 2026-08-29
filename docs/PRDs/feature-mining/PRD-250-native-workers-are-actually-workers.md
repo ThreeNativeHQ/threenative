@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-250 — Native workers are actually workers
 
-**Status:** PROPOSED  
+**Status:** PHASE 1 + PHASE 2 DONE, PHASE 3 OPEN — 2026-08-29  
 **Complexity:** 8 → HIGH mode  
 **Selected from:** the Taskflow / thread-pool / Web Worker portion of the broad engine-stack survey
 
@@ -196,26 +196,26 @@ Data changes: none on disk. The in-process message envelope becomes an explicit 
 
 **Implementation:**
 
-- [ ] Publish a compatibility matrix for primitives, plain arrays/records and `ArrayBuffer` transfer;
+- [x] Publish a compatibility matrix for primitives, plain arrays/records and `ArrayBuffer` transfer;
   either implement each row with copy/detach ownership or reject it with a named clone error.
-- [ ] Reject functions, symbols, cycles, scene/GPU/native handles and unsupported transferables before
+- [x] Reject functions, symbols, cycles, scene/GPU/native handles and unsupported transferables before
   queueing. No `JSON.stringify` data loss or same-reference delivery.
-- [ ] Prove FIFO ordering for messages posted before and after handler registration, multiple workers
+- [x] Prove FIFO ordering for messages posted before and after handler registration, multiple workers
   and message/error interleaving.
-- [ ] Convert top-level evaluation failure and message-handler exceptions into one `error` event with a
+- [x] Convert top-level evaluation failure and message-handler exceptions into one `error` event with a
   stable message; never print-only, report success, or strand the registry entry.
-- [ ] Terminating or stopping the game prevents later callbacks, releases retained handles and joins
+- [x] Terminating or stopping the game prevents later callbacks, releases retained handles and joins
   every worker without deadlock. V8 initialization becomes synchronized or the registry remains
   unavailable until main-engine initialization has completed.
 
 **Wiring (the phase is not done without this):**
 
-- [ ] Caller edited: `worker_registry.cpp:47-57` queues the declared envelope and `:92-138` drains its
+- [x] Caller edited: `worker_registry.cpp:47-57` queues the declared envelope and `:92-138` drains its
   typed outcome to the main engine.
-- [ ] Registration: `native-platform-workflow.test.mjs` requires the production test in native lanes.
-- [ ] Old path: implicit JSON-only coercion, TODO transfers and print-only top-level errors are removed
+- [x] Registration: `native-platform-workflow.test.mjs` requires the production test in native lanes.
+- [x] Old path: implicit JSON-only coercion, TODO transfers and print-only top-level errors are removed
   or replaced by explicit rejection.
-- [ ] Ledger rows filled: 2 and 4.
+- [x] Ledger rows filled: 2 and 4.
 
 **Tests Required:**
 
@@ -239,6 +239,25 @@ controls, then run the full runtime-native suite. Record raw event order and tea
   termination while work is pending.
 - Expected: normal result arrives once; the throw is observable; termination returns with no late event
   and the game exits cleanly.
+
+**Phase 2 result, 2026-08-29.** Landed with a packed contract executable
+(`tests/worker_production_test.cpp`, target `threenative-worker-production-test`) that drives a real
+`Runtime` and real `WorkerRegistry` threads — not a standalone harness and not a source grep. Nine
+contracts pass; three observed reds are recorded in
+`docs/verification/prd-250-phase2-2026-08-29.md`.
+
+The phase found one defect larger than the ones it set out to fix: **a worker whose source threw at
+top level reported success.** `WorkerThread` evaluated classic worker source with `Engine::eval`,
+which compiles as an ES module, and a module that throws resolves to a *rejected promise* rather
+than failing to evaluate — so `eval` returned true, the host logged "User code executed
+successfully", and the game was never told its worker was dead on arrival. Classic Blob source is
+now evaluated as a classic script, which is both the correct scope semantics and the reason the
+error is observable at all.
+
+`ArrayBuffer` transfer remains refused by name rather than implemented, which this PRD's own
+"either implement each row or reject it with a named clone error" permits. Every non-JSON-safe
+value — typed arrays, `Date`, `Map`, `Set`, cycles, shared references, `NaN`, functions, symbols —
+is refused by name and path instead of being silently corrupted.
 
 ### Phase 3: URL and platform claims are explicit, with rollback below the API
 

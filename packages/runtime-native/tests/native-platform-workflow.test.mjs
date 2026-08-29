@@ -160,6 +160,39 @@ test('worker idle wake gate ships in the native package suite without requiring 
   expect(workflow).toContain('pnpm --filter @threenative/runtime-native native:build');
 });
 
+test('the production worker contract is registered in the native lane', () => {
+  // PRD-250 Phase 2: the clone, error and teardown semantics are proven against real worker
+  // threads, not against the source. CMake must build and register that executable, and the
+  // harness must require every contract by name so a silently dropped one cannot read as a pass.
+  const cmake = readFileSync(
+    fileURLToPath(new URL('../CMakeLists.txt', import.meta.url)),
+    'utf8',
+  );
+  expect(cmake).toContain('tests/worker_production_test.cpp');
+  expect(cmake).toContain('tn_register_contract_test(threenative-worker-production-test)');
+
+  const gate = readFileSync(
+    fileURLToPath(new URL('./native-worker-production.test.mjs', import.meta.url)),
+    'utf8',
+  );
+  expect(gate).toContain('TN_NATIVE_WORKER_BIN');
+  // Absent binary reports UNVERIFIED; it must never be spelled as a pass.
+  expect(gate).toContain('TN_NATIVE_WORKER_CONTRACT:UNVERIFIED');
+  for (const contract of [
+    'fifoAcrossHandlerRegistration',
+    'cloneMatrixRoundTrip',
+    'cloneRefusalNamed',
+    'workerSideCloneRefusalReachesError',
+    'topLevelThrowReachesError',
+    'handlerThrowReachesError',
+    'finalMessageSurvivesSelfClose',
+    'terminateStopsCallbacks',
+    'shutdownJoinsEveryWorker',
+  ]) {
+    expect(gate, `the native lane stopped requiring ${contract}`).toContain(contract);
+  }
+});
+
 test('native physics controls assert the parity scene surface', () => {
   const normal = smokeScenario('physics.playtest.json');
   const desktop = smokeScenario('physics-desktop.playtest.json');
