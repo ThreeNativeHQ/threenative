@@ -211,6 +211,19 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("preserves cancellation as a distinct pointer edge", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+
+    target.dispatchEvent(pointerEvent("pointercancel", 7, 12, 22));
+    input.tick();
+
+    expect(input.raw.pointerEdges.get(7)).toMatchObject([
+      { buttons: 0, id: 7, position: { x: 12, y: 22 }, type: "cancel" },
+    ]);
+    input.dispose();
+  });
+
   it("updates legacy hover position only when no pointer is held", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);

@@ -48,8 +48,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // which changes the generated reference bytes embedded in every scaffold.
   // Recomputed again for the PRD-237 repair: the shared ctx surface now documents ctx.pointer,
   // which changes the generated instructions embedded in every scaffold.
+  // Recomputed again for the PRD-237 continuation: the defense pointer-placement scenario now
+  // asserts the held touch highlight before its release.
   "action-rpg": "eef2320a3865967901a5601481f286e307a2ac55abe6a4badadcb37af6a3dbc1",
-  defense: "2f656a5010a8cf42e7dcfd9bc1605cc8b12607c33785b1c8d57ed4b339d38bfe",
+  defense: "d95a8cfe2ab02c235c846fbb556eac65fdad0d330efa1f9dd153977216cd7d74",
   minimal: "06f98c27ce91866cc0df9fedd443b5bcc745045abf41da8c9107d0d08a79f4df",
   platformer: "b9260208607f70cf269636edcb1777d123fa555f09f7f16736c02dff33561200",
   racing: "1ef57e1d3d4aecb7ef7bab97e889db8e3c49322558a7ff4e83354494564adc6d",

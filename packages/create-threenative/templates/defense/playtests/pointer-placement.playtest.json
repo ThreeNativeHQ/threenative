@@ -15,7 +15,7 @@
     },
     {
       "kind": "input",
-      "label": "press",
+      "label": "touch-held",
       "pointers": [{ "buttons": 1, "id": 1, "x": 0.31678, "y": 0.41783 }],
       "holdTicks": 2,
       "release": false
@@ -35,25 +35,34 @@
       {
         "id": "state",
         "path": "spent",
-        "atSteps": [{ "label": "hover", "equals": 0 }, { "label": "placed", "equals": 40 }]
+        "atSteps": [
+          { "label": "hover", "equals": 0 },
+          { "label": "touch-held", "equals": 0 },
+          { "label": "placed", "equals": 40 }
+        ]
       },
       {
         "id": "state",
         "path": "towers",
-        "atSteps": [{ "label": "hover", "equals": 0 }, { "label": "placed", "equals": 1 }]
+        "atSteps": [
+          { "label": "hover", "equals": 0 },
+          { "label": "touch-held", "equals": 0 },
+          { "label": "placed", "equals": 1 }
+        ]
       }
     ],
     "components": [
       {
         "entity": "build-preview",
         "component": "hovered",
-        "atSteps": [{ "label": "hover", "equals": true }]
+        "atSteps": [{ "label": "hover", "equals": true }, { "label": "touch-held", "equals": true }]
       },
       {
         "entity": "build-preview",
         "component": "tile",
         "atSteps": [
           { "label": "hover", "equals": "build-tile-2-3" },
+          { "label": "touch-held", "equals": "build-tile-2-3" },
           { "label": "placed", "equals": "build-tile-2-3" }
         ]
       },

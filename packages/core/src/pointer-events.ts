@@ -1,4 +1,5 @@
 import { type Intersection, type Object3D, Vector2, Vector3 } from "three";
+import type { IRawInputPointerEdge } from "./input.js";
 import type { IRaycastOptions, ScenePicker } from "./picking.js";
 
 export const POINTER_EVENT_TYPES = [
@@ -62,7 +63,7 @@ interface IPointerRecord {
 }
 
 type PrimaryPointer = Pick<IPointerState, "buttons" | "position">;
-type PointerEdge = IPointerState & { readonly type: "down" | "up" };
+type PointerEdge = IRawInputPointerEdge;
 type PointerEdges = ReadonlyMap<number, readonly PointerEdge[]>;
 type PointerPicker = Pick<ScenePicker, "raycastAll"> | IPointerEvents3DPicker;
 
@@ -182,7 +183,7 @@ export class PointerEvents3D implements IPointerEvents3D {
       this.#finishPointer(id, record);
     }
 
-    this.#processEdges(pointers, picker, edges);
+    this.#processEdges(picker, edges);
     if (active.size === 0 && primary !== undefined) {
       const onlyPointer =
         this.#pointers.size === 1 ? this.#pointers.keys().next().value : undefined;
@@ -230,22 +231,15 @@ export class PointerEvents3D implements IPointerEvents3D {
     return hits[0];
   }
 
-  #processEdges(
-    pointers: ReadonlyMap<number, IPointerState>,
-    picker: PointerPicker,
-    edges: PointerEdges | undefined,
-  ): void {
+  #processEdges(picker: PointerPicker, edges: PointerEdges | undefined): void {
     if (edges === undefined) return;
     for (const [id, pointerEdges] of edges) {
       this.#edgeIds.add(id);
-      const current = pointers.get(id);
-      if (current !== undefined) {
-        const hit = this.#hit(current, picker);
+      for (const edge of pointerEdges) {
+        const hit = this.#hit(edge, picker);
         this.#edgeHits.set(id, hit);
-        for (const edge of pointerEdges) this.#processEdge(edge, hit);
-        continue;
+        this.#processEdge(edge, hit);
       }
-      for (const edge of pointerEdges) this.#processEdge(edge, this.#hit(edge, picker));
     }
   }
 
@@ -256,10 +250,12 @@ export class PointerEvents3D implements IPointerEvents3D {
     this.#updateHover(record, hit, edge.buttons);
     if (edge.type === "down") {
       if (record.buttons === 0 && edge.buttons !== 0) this.#press(record, hit, edge.buttons);
-    } else if (record.buttons !== 0 && edge.buttons === 0) {
+    } else if (edge.type === "up" && record.buttons !== 0 && edge.buttons === 0) {
       this.#release(record, hit, edge.buttons);
+    } else if (edge.type === "cancel") {
+      this.#cancel(record);
     }
-    record.buttons = edge.buttons;
+    record.buttons = edge.type === "cancel" ? 0 : edge.buttons;
   }
 
   #processActive(pointer: IPointerState, picker: PointerPicker, hasEdge: boolean): void {
@@ -287,6 +283,14 @@ export class PointerEvents3D implements IPointerEvents3D {
     record.dragTarget = this.#draggableAncestor(record.pressed);
     if (record.dragTarget !== undefined)
       this.#dispatch("dragStarted", record.dragTarget, record, buttons, hit);
+  }
+
+  #cancel(record: IPointerRecord): void {
+    record.pressed = undefined;
+    record.dragTarget = undefined;
+    if (record.hovered === undefined) return;
+    this.#dispatch("pointerExited", record.hovered, record, 0, undefined);
+    record.hovered = undefined;
   }
 
   #updateHover(record: IPointerRecord, hit: Intersection | undefined, buttons: number): void {

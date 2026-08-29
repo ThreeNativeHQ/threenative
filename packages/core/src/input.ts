@@ -83,7 +83,7 @@ export interface IRawInputPointerEdge {
   readonly buttons: number;
   readonly id: number;
   readonly position: Vector2;
-  readonly type: "down" | "up";
+  readonly type: "cancel" | "down" | "up";
 }
 
 export interface IRawInputState {
@@ -214,10 +214,12 @@ export class InputMap {
       if (code !== undefined) this.#heldKeys.delete(code);
     });
     this.#listen(this.#target, "mousemove", (event) => this.#mouseEvent(event));
-    this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, true));
+    this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, "down"));
     this.#listen(this.#pointerTarget, "pointermove", (event) => this.#pointerEvent(event));
-    this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, false));
-    this.#listen(this.#pointerTarget, "pointercancel", (event) => this.#pointerEvent(event, false));
+    this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, "up"));
+    this.#listen(this.#pointerTarget, "pointercancel", (event) =>
+      this.#pointerEvent(event, "cancel"),
+    );
     this.#listen(this.#target, "blur", () => this.clear());
     // The browser context menu is suppressed on the game surface by default. A right-click
     // binding is simply unusable while the menu eats the press, and no game yet built here has
@@ -479,24 +481,24 @@ export class InputMap {
     }
   }
 
-  #pointerEvent(event: Event, down?: boolean): void {
+  #pointerEvent(event: Event, edgeType?: IRawInputPointerEdge["type"]): void {
     const pointer = event as PointerEvent;
     const id = pointer.pointerId ?? 0;
     const buttons = pointer.buttons ?? 0;
     const x = pointer.clientX ?? 0;
     const y = pointer.clientY ?? 0;
-    this.#recordPointerEdge(id, buttons, x, y, down);
+    this.#recordPointerEdge(id, buttons, x, y, edgeType);
     if (buttons !== 0) this.#latchedPointerButtons |= buttons;
-    if (down === true) this.#latchedPointer = true;
+    if (edgeType === "down") this.#latchedPointer = true;
     const tracked = this.#pointers.get(id);
-    if (down === true) {
+    if (edgeType === "down") {
       if (tracked === undefined) {
         this.#pointers.set(id, { buttons, id, position: new Vector2(x, y) });
       } else {
         tracked.buttons = buttons;
         tracked.position.set(x, y);
       }
-    } else if (down === false) {
+    } else if (edgeType === "up" || edgeType === "cancel") {
       this.#pointers.delete(id);
     } else if (tracked !== undefined) {
       tracked.buttons = buttons;
@@ -506,7 +508,7 @@ export class InputMap {
     if (primary !== undefined) {
       this.#pointerButtons = primary.buttons;
       this.#pointerPosition.copy(primary.position);
-    } else if (down !== false || tracked !== undefined) {
+    } else if (edgeType === undefined || tracked !== undefined) {
       this.#pointerButtons = buttons;
       this.#pointerPosition.set(x, y);
     }
@@ -521,8 +523,8 @@ export class InputMap {
     // Real browser input remains captured; native hosts may omit isTrusted and keep their stub.
     if (pointer.isTrusted !== false) {
       try {
-        if (down === true) capture.setPointerCapture?.(id);
-        if (down === false) capture.releasePointerCapture?.(id);
+        if (edgeType === "down") capture.setPointerCapture?.(id);
+        if (edgeType === "up" || edgeType === "cancel") capture.releasePointerCapture?.(id);
       } catch (error) {
         // A pointer-lock transition can make a trusted event temporarily uncapturable.
         if (!(error instanceof Error && error.name === "InvalidStateError")) throw error;
@@ -535,14 +537,14 @@ export class InputMap {
     buttons: number,
     x: number,
     y: number,
-    down: boolean | undefined,
+    edgeType: IRawInputPointerEdge["type"] | undefined,
   ): void {
-    if (down === undefined) return;
+    if (edgeType === undefined) return;
     let edges = this.#pendingPointerEdges.get(id);
     if (edges === undefined) {
       edges = [];
       this.#pendingPointerEdges.set(id, edges);
     }
-    edges.push({ buttons, id, position: new Vector2(x, y), type: down ? "down" : "up" });
+    edges.push({ buttons, id, position: new Vector2(x, y), type: edgeType });
   }
 }

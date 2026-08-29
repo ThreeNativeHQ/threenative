@@ -11,6 +11,15 @@ function pointer(id: number, buttons: number, x: number, y = 0): IPointerState {
   return { buttons, id, position: new Vector2(x, y) };
 }
 
+function pointerEvent(type: string, id: number, x: number, y: number): Event {
+  return Object.assign(new Event(type), {
+    buttons: type === "pointerup" || type === "pointercancel" ? 0 : 1,
+    clientX: x,
+    clientY: y,
+    pointerId: id,
+  });
+}
+
 function intersection(object: Object3D, x = 0): Intersection {
   return { distance: 1, object, point: new Vector3(x, 0, 0) } as Intersection;
 }
@@ -254,6 +263,63 @@ describe("PointerEvents3D", () => {
     expect(pressed).toHaveBeenCalledWith(expect.objectContaining({ pointerId: 7 }));
     expect(released).toHaveBeenCalledWith(expect.objectContaining({ pointerId: 7 }));
     expect(tapped).toHaveBeenCalledWith(expect.objectContaining({ pointerId: 7 }));
+    input.dispose();
+  });
+
+  it("should use the captured down coordinates when the live pointer moved before the tick", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    const objectA = new Mesh();
+    const objectB = new Mesh();
+    const events = new PointerEvents3D();
+    const pressedA = vi.fn();
+    const pressedB = vi.fn();
+    events.on(objectA, "pointerPressed", pressedA);
+    events.on(objectB, "pointerPressed", pressedB);
+    const picker = pickerFor(
+      new Map([
+        [10, objectA],
+        [20, objectB],
+      ]),
+    );
+
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 10, 0));
+    target.dispatchEvent(pointerEvent("pointermove", 7, 20, 0));
+    input.tick();
+    events.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
+
+    expect(pressedA).toHaveBeenCalledTimes(1);
+    expect(pressedA).toHaveBeenCalledWith(
+      expect.objectContaining({ pointerId: 7, point: expect.objectContaining({ x: 10 }) }),
+    );
+    expect(pressedB).not.toHaveBeenCalled();
+    input.dispose();
+  });
+
+  it("should clear a cancelled press without releasing, tapping, or ending a drag", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    const object = new Mesh();
+    const events = new PointerEvents3D();
+    const released = vi.fn();
+    const tapped = vi.fn();
+    const dragEnded = vi.fn();
+    events.on(object, "pointerReleased", released);
+    events.on(object, "tapped", tapped);
+    events.on(object, "dragEnded", dragEnded);
+    events.drag(object);
+    const picker = pickerFor(new Map([[10, object]]));
+
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 10, 0));
+    input.tick();
+    events.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
+    target.dispatchEvent(pointerEvent("pointercancel", 7, 10, 0));
+    input.tick();
+    events.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
+
+    expect(released).not.toHaveBeenCalled();
+    expect(tapped).not.toHaveBeenCalled();
+    expect(dragEnded).not.toHaveBeenCalled();
     input.dispose();
   });
 });
