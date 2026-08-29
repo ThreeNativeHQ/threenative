@@ -2,6 +2,8 @@
   "artifacts": { "console": true, "screenshots": false },
   "assert": {
     "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "Headless Linux Chromium emits the known WebGPU popErrorScope unhandled rejection; worker state assertions remain authoritative.",
       "noRuntimeDiagnostics": false,
       "runtimeDiagnosticsOptOutReason": "Headless Linux Chromium emits the known WebGPU popErrorScope diagnostic; worker state assertions remain authoritative.",
       "runtimeReady": true

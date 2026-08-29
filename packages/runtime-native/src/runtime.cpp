@@ -2222,7 +2222,7 @@ private:
                             // processWorkerMessages may already have collected more than one
                             // completion. terminate() removes the id before joining, so a later
                             // collected completion cannot callback after termination.
-                            if (!activeWorkerIds_.contains(id) || !jsEngine_) return;
+                            if (activeWorkerIds_.count(id) == 0 || !jsEngine_) return;
                             auto dispatch = jsEngine_->getGlobalProperty("__tnNativeWorkerDispatch");
                             if (!jsEngine_->isFunction(dispatch)) return;
                             const std::string payload(message.payload.begin(), message.payload.end());
@@ -2242,7 +2242,7 @@ private:
                 [this, workerRegistry](void*, const std::vector<js::JSValueHandle>& args) {
                     if (args.size() < 2) return jsEngine_->newBoolean(false);
                     const int workerId = static_cast<int>(jsEngine_->toNumber(args[0]));
-                    if (!activeWorkerIds_.contains(workerId) || !jsEngine_->isString(args[1])) {
+                    if (activeWorkerIds_.count(workerId) == 0 || !jsEngine_->isString(args[1])) {
                         return jsEngine_->newBoolean(false);
                     }
                     const std::string payload = jsEngine_->toString(args[1]);
