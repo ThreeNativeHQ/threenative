@@ -1,41 +1,40 @@
-// Generated for you. The fog colour comes from the same palette as the sky.
-import {
-  BackSide,
-  BufferAttribute,
-  Color,
-  Fog,
-  MathUtils,
-  Mesh,
-  MeshBasicMaterial,
-  type Scene,
-  SphereGeometry,
-} from "three";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// The atmosphere object is mechanism; this file owns the mesh, material, and exposure.
+import { BackSide, Color, Mesh, type Scene, SphereGeometry } from "three";
+import { cameraPosition, normalize, positionWorld } from "three/tsl";
+import { MeshBasicNodeMaterial } from "three/webgpu";
+import type { Node } from "three/webgpu";
 import { palette } from "./palette.js";
 
-export function setupSky(scene: Scene): void {
+type AtmosphereLike = {
+  radiance(direction: unknown): unknown;
+};
+
+export function setupSky(scene: Scene, atmosphere?: AtmosphereLike): void {
   const top = new Color(palette.skyHigh);
-  const bottom = new Color(palette.skyLow);
-  const radius = 90;
-  const geometry = new SphereGeometry(radius, 24, 12);
-  const positions = geometry.getAttribute("position");
-  const colors = new Float32Array(positions.count * 3);
-  const color = new Color();
-  for (let index = 0; index < positions.count; index += 1) {
-    const height = MathUtils.clamp((positions.getY(index) / radius + 0.2) / 0.65, 0, 1);
-    color.copy(bottom).lerp(top, height);
-    colors.set([color.r, color.g, color.b], index * 3);
+  if (atmosphere === undefined) {
+    scene.background = top;
+    scene.fog = null;
+    return;
   }
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
-  const dome = new Mesh(
-    geometry,
-    new MeshBasicMaterial({ fog: false, side: BackSide, toneMapped: false, vertexColors: true }),
-  );
-  // The dome is authored at the origin and never moves; freeze only this
-  // known-static render object, leaving gameplay transforms under user control.
+
+  // Keep the dome outside the deliberately kilometre-scale atmosphere probe in Play.ts. The
+  // view-space depth remains metres, so the package can apply its supplied 1/km coefficients.
+  const geometry = new SphereGeometry(20_000, 24, 12);
+  const material = new MeshBasicNodeMaterial({
+    fog: false,
+    side: BackSide,
+    toneMapped: false,
+  });
+  const viewDirection = normalize(positionWorld.sub(cameraPosition));
+  material.colorNode = (atmosphere.radiance(viewDirection) as Node<"vec3">).mul(24);
+  const dome = new Mesh(geometry, material);
+  // The dome is authored at the origin and never moves; freeze only this known-static render
+  // object, leaving gameplay transforms under user control.
   dome.updateMatrix();
   dome.matrixAutoUpdate = false;
   dome.frustumCulled = false;
-  scene.background = top;
-  scene.fog = new Fog(bottom, 18, 80);
+  scene.background = null;
+  scene.fog = null;
   scene.add(dome);
 }

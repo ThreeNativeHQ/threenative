@@ -97,7 +97,13 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
     shooter: 2995,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
-    minimal: 3683,
+    // PRD-248 adds +84 measured rendered words, `minimal` only, because only this template ships
+    // the atmosphere: its sky dome, sun colour and depth haze now come from one `Atmosphere` node
+    // and `sky.ts` therefore sets no fog, which contradicts the fog instruction the section used
+    // to carry. A convention missing from the templates' AGENTS.md does not exist, and this one
+    // has to name its WebGL fallback and the `output = aerial;` override or a game can neither
+    // tell why the sky went flat nor turn the haze off. Measured 3767 against 3683.
+    minimal: 3767,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).

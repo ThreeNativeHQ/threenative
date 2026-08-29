@@ -357,10 +357,17 @@ Edit the six files in `src/render/` directly: `palette.ts`, `camera.ts`, `sky.ts
 `lighting.ts`, `materials.ts`, and `postprocessing.ts`. They are ordinary Three.js source in
 this project, not a framework look or a config option. Keep the palette to six named colours
 with one `accent`; import it from materials and sky. Set tonemapping and exposure deliberately,
-use a rim light with soft shadows and `normalBias`, derive fog from the sky, and route bloom
+use a rim light with soft shadows and `normalBias`, and route bloom
 through `renderer.setOutputNode()` so midtones remain readable. The per-file baseline and the
 silent-failure traps (`CanvasTexture` sampling black under `WebGPURenderer`; importing a render
 module without calling it) are in `agent-docs/visual-baseline.md`.
+
+The sky dome's colour, the sun light's colour and the depth haze all come from one `Atmosphere`
+node built in `src/scenes/Play.ts`, so `sky.ts` sets no fog. You supply every coefficient — there
+is no Earth default — and you own the dome mesh, its material and its exposure. It is WebGPU-only:
+on WebGL `Play.ts` passes none and `sky.ts` falls back to a flat background. Delete
+`output = aerial;` in `postprocessing.ts` to drop the haze and keep the sky.
+`playtests/atmosphere.playtest.json` proves the sun moves and the frame changes with it.
 
 Nothing in the toolchain can see your game. `pnpm test` proves behaviour, never the look.
 

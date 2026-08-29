@@ -118,6 +118,57 @@ describe("IGame", () => {
     }
   });
 
+  it("runs the scene hook before the world pass when aerial perspective is present", async () => {
+    const canvas = testCanvas();
+    const events: string[] = [];
+    let frame: ((time: number) => void) | undefined;
+    class AtmosphereScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        const atmosphere = new Group() as Group & { aerialPerspective: () => void };
+        atmosphere.aerialPerspective = () => undefined;
+        ctx.add(atmosphere);
+      }
+
+      override render(): void {
+        events.push("scene");
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => events.push("world"),
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: AtmosphereScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(16);
+      expect(events).toEqual(["scene", "world"]);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
   it("does not resolve startup readiness before compile and sustained frames behind an opaque layer", async () => {
     const canvas = testCanvas();
     const events: string[] = [];

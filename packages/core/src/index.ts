@@ -110,6 +110,33 @@ export type { IRandom } from "./random.js";
  * @example const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });
  */
 export { defineGame } from "./game.js";
+export {
+  ATMOSPHERE_LUT_RESOLUTIONS,
+  Atmosphere,
+  AtmosphereLuts,
+  LUT_RESOLUTIONS,
+  directionFromSolarPosition,
+  directionalTransmittance,
+  resolveAtmosphereLutResolutions,
+  resolveAtmosphereParameters,
+  solarPosition,
+  solarPositionAt,
+  updateAtmosphereParameters,
+  zenithTransmittance,
+} from "./atmosphere/index.js";
+export type {
+  AtmosphereDirection,
+  AtmosphereRgb,
+  IAtmosphereLutResolution,
+  IAtmosphereLutResolutions,
+  IAtmosphereOptions,
+  IAtmosphereParameterPatch,
+  IAtmosphereParameters,
+  IAtmosphereScenePass,
+  IResolvedAtmosphereParameters,
+  ISolarPosition,
+  ISolarPositionInput,
+} from "./atmosphere/index.js";
 /**
  * Register game-owned IComputeDriven objects with the shared compute lifetime.
  * @situation use IComputeDriven for a cloth, fluid, boid, or other GPU simulation

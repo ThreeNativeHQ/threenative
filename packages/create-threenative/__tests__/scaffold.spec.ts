@@ -50,13 +50,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // which changes the generated instructions embedded in every scaffold.
   // Recomputed again for the PRD-237 continuation repair: the defense pointer-placement scenario
   // clears mouse hover and captures the held touch highlight before its release.
-  "action-rpg": "c6282e2cda195e1514d657eb02427e9a40dda04356d0b02ab34254a16cf7cd17",
-  defense: "c5215dea388d45c2bc0647786e26e47a197fecb1b7709243beff6b83ac521a59",
-  minimal: "de215f06de4cf305d52bbecfb853e244ea775577757d543affb9da12adfe6833",
-  platformer: "744416425e05da8ab39d90d9f46c1f5333c35788770980befc8ddcb88945a7e6",
-  racing: "92ed61a70be707a590273bc3da99222a510bbb97119cadef4bc38c74fbd39be2",
-  shooter: "1cf79309743807158b7f12440f5e2670543a3b47c920e130180a079dfc280530",
-  starter: "f4bd6c69b7941792bee8eb855a040b0596036202c1c9af95e8bc337ab61cfd2c",
+  "action-rpg": "016de086dd4b1542979659a5bfd8b8ea6c4a4ed4b983275466f5165640573320",
+  defense: "adf632ffad7daae16db10207b0dadf8118dcfb79f0fc8d883f5aaf5f6b4d8719",
+  minimal: "9fde6ccf2545b6593ed98c96fb12fdbb407a01095cb201dfa804c540a72fa0ed",
+  platformer: "235fd56ea1e6ecc5dccf9ce9a81e834259572846d615264ef83fb929a323f731",
+  racing: "d4d085c781c9827013e8c49560549445ad80b13cb185a595f75592b32dceaac1",
+  shooter: "46b021ebca80c882debf4c7ffec947e9b56b71d0ad23798fc8d79556a993e555",
+  starter: "f902c7b8029ae3ee65fbeba6ef4c163e1c4671cd4ec1a8cc5ee0ebf5535883e7",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -65,6 +65,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed after the roll continuation updated the generated shooter's nameplate observer.
   // Recomputed after the capability reference's Scheduler example switched to the game-owned
   // `ctx.tween` path, so generated scaffolds no longer embed an un-ticked standalone Scheduler.
+  // Recomputed 2026-08-28 for PRD-248. Every template moved because every scaffold embeds the
+  // capability manifest, which gained the atmosphere entries; `minimal` moved twice over, for its
+  // atmosphere-driven `src/render/` files, its new `playtests/atmosphere.playtest.json`, and the
+  // AGENTS.md paragraph that states the convention.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
