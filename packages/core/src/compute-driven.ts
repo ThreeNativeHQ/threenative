@@ -5,14 +5,19 @@ import type { IRendererLike } from "./renderer.js";
  * The lifecycle contract for a game-owned GPU simulation.
  *
  * A compute-driven object owns its kernels, buffers, and appearance. The framework only attaches
- * the active renderer, warms the kernels before the world is shown, dispatches one fixed-step
- * process call, and releases the object when its scene ends.
+ * the active renderer, warms the kernels before the world is shown, dispatches process calls at
+ * the object's declared cadence, and releases the object when its scene ends.
  */
 export interface IComputeDriven {
   /** Kernels to compile before the world is shown. Read once, at attach. */
   readonly warmupNodes: readonly unknown[];
   attachRenderer(renderer: IRendererLike): void;
-  /** Dispatched once per fixed step, in scene-add order. */
+  /**
+   * The loop phase that dispatches `process`. Defaults to fixed-step; render cadence preserves the
+   * existing behavior of consumers whose simulation is intentionally tied to presentation.
+   */
+  readonly processCadence?: "fixed" | "render";
+  /** Dispatched once per fixed step, in scene-add order unless render cadence is declared. */
   process(renderer: IRendererLike): void;
   detach(): void;
   readonly released: boolean;
@@ -54,13 +59,23 @@ export class ComputeDrivenRegistry {
     return [...this.#entries.values()].flatMap((entry) => entry.warmupNodes);
   }
 
-  /** Dispatch every live object once; detached scene children are released before dispatch. */
+  /** Dispatch fixed-step objects once; detached scene children are released before dispatch. */
   process(renderer: IRendererLike): void {
+    this.#process(renderer, "fixed");
+  }
+
+  /** Dispatch render-cadence objects once; detached scene children are released before dispatch. */
+  processRender(renderer: IRendererLike): void {
+    this.#process(renderer, "render");
+  }
+
+  #process(renderer: IRendererLike, cadence: "fixed" | "render"): void {
     for (const entry of [...this.#entries.values()]) {
       if (entry.driven.released || entry.object.parent === null) {
         this.remove(entry.driven);
         continue;
       }
+      if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
       entry.driven.process(renderer);
     }
   }

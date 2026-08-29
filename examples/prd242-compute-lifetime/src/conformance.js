@@ -1,3 +1,8 @@
+// The root package bundles its Three.js dependency; this source-module import keeps this
+// conformance bundle on the same Three.js runtime as the scene while exercising the exported
+// registry implementation.
+import { ComputeDrivenRegistry } from "../../../packages/core/src/compute-driven.ts";
+import { warmUpScene } from "../../../packages/core/src/warmup.ts";
 import {
   assertCondition,
   startVisualScene,
@@ -8,42 +13,56 @@ async function waitForSubmittedWork(renderer) {
   await renderer.backend?.device?.queue?.onSubmittedWorkDone?.();
 }
 
-async function warm(field, renderer) {
-  assertCondition(field.warmupNodes.length === 2, "compute field must declare two warmup kernels");
-  for (const node of field.warmupNodes) await renderer.computeAsync(node);
-}
-
 export async function startScene(canvas, dimensions) {
   return startVisualScene(
     canvas,
     dimensions,
     "compute-driven-lifetime",
-    async ({ renderer, scene }) => {
-      const compute = { compute: (node) => renderer.compute(node) };
+    async ({ camera, renderer, scene }) => {
+      const registry = new ComputeDrivenRegistry();
+      const add = (object) => {
+        scene.add(object);
+        registry.add(object, renderer);
+        return object;
+      };
+      const warm = async () => {
+        assertCondition(
+          registry.warmupNodes.length === 2,
+          "compute registry must expose two warmup kernels",
+        );
+        const report = await warmUpScene(renderer, scene, camera, {
+          computeNodes: registry.warmupNodes,
+        });
+        assertCondition(
+          report.computeCompiled === 2,
+          "compute registry kernels must warm before conformance dispatch",
+        );
+      };
       let releases = 0;
-      const first = new PingPongField({
-        onRelease: () => {
-          releases += 1;
-        },
-      });
-      scene.add(first);
-      first.attachRenderer(compute);
-      await warm(first, renderer);
-      for (let index = 0; index < 4; index += 1) first.process(compute);
+      const first = add(
+        new PingPongField({
+          onRelease: () => {
+            releases += 1;
+          },
+        }),
+      );
+      await warm();
+      for (let index = 0; index < 4; index += 1) registry.process(renderer);
       await waitForSubmittedWork(renderer);
-      first.removeFromParent();
+      registry.clear();
       assertCondition(first.released, "the outgoing compute field must release on scene removal");
+      first.removeFromParent();
 
-      const second = new PingPongField({
-        onRelease: () => {
-          releases += 1;
-        },
-      });
+      const second = add(
+        new PingPongField({
+          onRelease: () => {
+            releases += 1;
+          },
+        }),
+      );
       second.position.x = 0.02;
-      scene.add(second);
-      second.attachRenderer(compute);
-      await warm(second, renderer);
-      for (let index = 0; index < 4; index += 1) second.process(compute);
+      await warm();
+      for (let index = 0; index < 4; index += 1) registry.process(renderer);
       await waitForSubmittedWork(renderer);
 
       assertCondition(second.steps === 4, "the replacement compute field must advance");

@@ -34,6 +34,7 @@ export interface IPingPongFieldOptions {
  */
 export class PingPongField extends InstancedMesh implements IComputeDriven {
   readonly warmupNodes: readonly ComputeNode[];
+  readonly fieldColors: StorageBufferNode<"vec3">;
   #positionsA: StorageBufferNode<"vec3">;
   #positionsB: StorageBufferNode<"vec3">;
   #passOne: ComputeNode;
@@ -71,6 +72,7 @@ export class PingPongField extends InstancedMesh implements IComputeDriven {
     super(new SphereGeometry(0.16, 12, 8), material, FIELD_COUNT);
     this.#positionsA = positionsA;
     this.#positionsB = positionsB;
+    this.fieldColors = fieldColors;
     this.#passOne = passOne;
     this.#passTwo = passTwo;
     this.warmupNodes = [passOne, passTwo];
@@ -128,6 +130,7 @@ export class PingPongField extends InstancedMesh implements IComputeDriven {
     this.#passTwo.dispose();
     this.#positionsA.value.dispose();
     this.#positionsB.value.dispose();
+    this.fieldColors.value.dispose();
     this.geometry.dispose();
     const material = this.material;
     if (Array.isArray(material)) {

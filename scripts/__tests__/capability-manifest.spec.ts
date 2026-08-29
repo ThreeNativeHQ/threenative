@@ -136,6 +136,31 @@ describe("capability manifest generator", () => {
     );
   });
 
+  it("keeps the IComputeDriven cloth and fluid capability searchable in both manifests", async () => {
+    for (const file of [
+      "packages/core/capabilities.json",
+      "packages/create-threenative/capabilities.json",
+    ]) {
+      const manifest = JSON.parse(await readFile(file, "utf8")) as {
+        entries: Array<{ symbol: string; situations: string[] }>;
+      };
+      const search = (query: string) =>
+        manifest.entries.filter((entry) => JSON.stringify(entry).toLowerCase().includes(query));
+      expect(
+        search("icomputedriven").some((entry) => entry.symbol === "ComputeDrivenRegistry"),
+        file,
+      ).toBe(true);
+      expect(
+        search("cloth").some((entry) => entry.symbol === "ComputeDrivenRegistry"),
+        file,
+      ).toBe(true);
+      expect(
+        search("fluid").some((entry) => entry.symbol === "ComputeDrivenRegistry"),
+        file,
+      ).toBe(true);
+    }
+  });
+
   it("carries @supersedes into the manifest entry as a source construct", async () => {
     const root = await makeTempDir("threenative-capability-supersedes-");
     temporaryRoots.push(root);

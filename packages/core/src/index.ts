@@ -87,12 +87,14 @@ export type { IRandom } from "./random.js";
  */
 export { defineGame } from "./game.js";
 /**
- * Let a game-owned object run GPU compute work through the fixed-step lifecycle.
- * @situation run a cloth, fluid, boid, or other GPU simulation beside GPUParticles3D
- * @situation keep compute kernels warm before the first visible frame
- * @constraint implement attachRenderer, process, detach, released, and warmupNodes on the game object
+ * Register game-owned IComputeDriven objects with the shared compute lifetime.
+ * @situation use IComputeDriven for a cloth, fluid, boid, or other GPU simulation
+ * @situation run a cloth or fluid simulation with ordered GPU passes
+ * @situation keep IComputeDriven kernels warm before the first visible frame
+ * @constraint add the object through ctx.add so it attaches, dispatches, and releases with its scene
  * @example class Cloth extends Mesh implements IComputeDriven { ... }
  */
+export { ComputeDrivenRegistry } from "./compute-driven.js";
 export type { IComputeDriven } from "./compute-driven.js";
 /**
  * Read where the frame's milliseconds went, per presented frame, on any platform.

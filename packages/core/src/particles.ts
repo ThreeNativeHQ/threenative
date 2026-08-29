@@ -30,6 +30,7 @@ function computeNode(name: string, value: unknown): ComputeNode {
 export class GPUParticles3D extends Sprite implements IComputeDriven {
   readonly amount: number;
   readonly buffers: IGPUParticles3DBuffers;
+  readonly processCadence = "render" as const;
   readonly warmupNodes: readonly ComputeNode[];
   emitting = true;
   #start: ComputeNode;

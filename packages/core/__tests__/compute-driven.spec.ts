@@ -1,7 +1,10 @@
 import { Group } from "three";
+import { Fn } from "three/tsl";
+import { SpriteNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import { ComputeDrivenRegistry, type IComputeDriven } from "../src/compute-driven.js";
 import { defineGame } from "../src/game.js";
+import { GPUParticles3D } from "../src/particles.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { type ICtx, Scene } from "../src/scene.js";
 
@@ -54,6 +57,71 @@ class ComputeProbe extends Group implements IComputeDriven {
 }
 
 describe("ComputeDrivenRegistry", () => {
+  it("keeps GPUParticles3D on render cadence when a frame has zero or multiple fixed updates", async () => {
+    const canvas = testCanvas();
+    const dispatched: unknown[] = [];
+    let frame: ((time: number) => void) | undefined;
+    const raw = {
+      compute: (node: unknown) => dispatched.push(node),
+      dispose: () => undefined,
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: () => undefined,
+    };
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const requestFrameDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "requestAnimationFrame",
+    );
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    const particle = new GPUParticles3D({
+      amount: 1,
+      material: new SpriteNodeMaterial(),
+      process: () => Fn(() => {})().compute(1),
+      start: () => Fn(() => {})().compute(1),
+    });
+    class ParticleScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.add(particle);
+      }
+    }
+    const game = defineGame({
+      renderer: { canvas, webgpuFactory: () => raw },
+      scenes: { particles: ParticleScene },
+      start: "particles",
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not schedule a render frame.");
+      dispatched.length = 0;
+      const startTime = globalThis.performance?.now() ?? 0;
+      frame(startTime);
+      frame(startTime + 100);
+      expect(dispatched).toHaveLength(2);
+    } finally {
+      game.stop();
+      if (navigatorDescriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+      if (requestFrameDescriptor === undefined)
+        Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", requestFrameDescriptor);
+    }
+  });
+
   it("should dispatch a non-particle implementer once per fixed step", async () => {
     let advance: ((ticks: number) => number) | undefined;
     const order: string[] = [];

@@ -8,6 +8,18 @@
   "warmupFrames": 0,
   "steps": [
     {
+      "label": "compute-before-startup",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "at": { "x": 0, "y": 0 },
+      "kind": "click",
+      "label": "startup-transition",
+      "release": true,
+      "waitFrames": 8
+    },
+    {
       "label": "compute-lifetime",
       "waitTicks": 24,
       "release": true
@@ -25,7 +37,9 @@
       { "id": "GameState", "path": "releases", "gte": 2, "changed": true },
       { "id": "GameState", "path": "gpuSteps", "gte": 10, "changed": true },
       { "id": "GameState", "path": "passOneDispatches", "gte": 10, "changed": true },
-      { "id": "GameState", "path": "passTwoDispatches", "gte": 10, "changed": true }
+      { "id": "GameState", "path": "passTwoDispatches", "gte": 10, "changed": true },
+      { "id": "GameState", "path": "startupReady", "equals": true, "changed": true },
+      { "id": "GameState", "path": "worldRendersAfterStartup", "gte": 1, "changed": true }
     ]
   }
 }

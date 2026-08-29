@@ -82,6 +82,25 @@
     },
     {
       "constraints": [
+        "add the object through ctx.add so it attaches, dispatches, and releases with its scene"
+      ],
+      "example": "class Cloth extends Mesh implements IComputeDriven { ... }",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class ComputeDrivenRegistry { … }",
+      "situations": [
+        "use IComputeDriven for a cloth, fluid, boid, or other GPU simulation",
+        "run a cloth or fluid simulation with ordered GPU passes",
+        "keep IComputeDriven kernels warm before the first visible frame"
+      ],
+      "summary": "Register game-owned IComputeDriven objects with the shared compute lifetime.",
+      "supersedes": [],
+      "symbol": "ComputeDrivenRegistry"
+    },
+    {
+      "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches"
       ],
       "example": "const assets = createAssetLoader({ basePath: \"/assets\" });\nconst rock = await assets.texture(\"rock.png\");",
