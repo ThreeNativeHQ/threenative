@@ -15,10 +15,18 @@
     },
     {
       "kind": "input",
+      "label": "clear-hover",
+      "pointerPosition": { "x": 0.01, "y": 0.01 },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "touch-held",
       "pointers": [{ "buttons": 1, "id": 1, "x": 0.31678, "y": 0.41783 }],
-      "holdTicks": 2,
-      "release": false
+      "waitTicks": 2,
+      "release": false,
+      "screenshot": "touch-held"
     },
     {
       "kind": "input",
@@ -55,7 +63,11 @@
       {
         "entity": "build-preview",
         "component": "hovered",
-        "atSteps": [{ "label": "hover", "equals": true }, { "label": "touch-held", "equals": true }]
+        "atSteps": [
+          { "label": "hover", "equals": true },
+          { "label": "clear-hover", "equals": false },
+          { "label": "touch-held", "equals": true }
+        ]
       },
       {
         "entity": "build-preview",
