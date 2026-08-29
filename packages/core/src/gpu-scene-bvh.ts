@@ -21,7 +21,12 @@ export interface IGPUSceneBVHOptions {
   readonly include?: (object: Mesh) => boolean;
 }
 
-/** The material ranges retained while a scene is flattened. */
+/**
+ * A material range expressed in packed index elements, after the BVH leaf reorder.
+ *
+ * `start` and `count` address the uploaded index buffer, not the source geometry, so a single
+ * source material can appear as more than one range once the SAH sort interleaves its triangles.
+ */
 export interface IGPUSceneBVHMaterialGroup {
   readonly count: number;
   readonly materialIndex: number;
@@ -55,11 +60,11 @@ interface IPackedScene {
 
 interface IBuildState {
   indices: number[];
-  materialGroups: IGPUSceneBVHMaterialGroup[];
   normals: number[];
   objectCount: number;
   positions: number[];
   triangleCount: number;
+  triangleMaterials: number[];
 }
 
 interface IRange {
@@ -205,17 +210,15 @@ function appendTriangles(
   state: IBuildState,
 ): void {
   for (const range of ranges) {
-    const start = state.indices.length;
     for (let element = range.start; element < range.start + range.count; element += 1) {
       const sourceIndex = index === null ? element : index.getX(element);
       state.indices.push(vertexOffset + sourceIndex);
     }
-    state.materialGroups.push({
-      count: state.indices.length - start,
-      materialIndex: range.materialIndex,
-      start,
-    });
-    state.triangleCount += range.count / 3;
+    const triangles = range.count / 3;
+    for (let triangle = 0; triangle < triangles; triangle += 1) {
+      state.triangleMaterials.push(range.materialIndex);
+    }
+    state.triangleCount += triangles;
   }
 }
 
@@ -239,15 +242,53 @@ function appendMesh(mesh: Mesh, state: IBuildState): void {
   }
 }
 
+/** Run-length encode a per-triangle material assignment into packed index element ranges. */
+function materialGroupsFor(materials: Uint32Array): IGPUSceneBVHMaterialGroup[] {
+  const groups: IGPUSceneBVHMaterialGroup[] = [];
+  let runStart = 0;
+  for (let triangle = 1; triangle <= materials.length; triangle += 1) {
+    if (triangle < materials.length && materials[triangle] === materials[runStart]) continue;
+    groups.push({
+      count: (triangle - runStart) * 3,
+      materialIndex: materials[runStart] ?? 0,
+      start: runStart * 3,
+    });
+    runStart = triangle;
+  }
+  return groups;
+}
+
+/**
+ * Materialise the packed index buffer in BVH leaf order and permute the material assignment with
+ * it, so a leaf's triangle offset and the material ranges address the same layout.
+ */
+function permuteToLeafOrder(
+  bvh: MeshBVH,
+  sourceIndices: Uint32Array,
+  sourceMaterials: readonly number[],
+): { indices: Uint32Array; materialGroups: IGPUSceneBVHMaterialGroup[] } {
+  const triangleCount = sourceIndices.length / 3;
+  const indices = new Uint32Array(sourceIndices.length);
+  const materials = new Uint32Array(triangleCount);
+  for (let slot = 0; slot < triangleCount; slot += 1) {
+    const triangle = bvh.resolveTriangleIndex(slot);
+    indices[slot * 3] = sourceIndices[triangle * 3] ?? 0;
+    indices[slot * 3 + 1] = sourceIndices[triangle * 3 + 1] ?? 0;
+    indices[slot * 3 + 2] = sourceIndices[triangle * 3 + 2] ?? 0;
+    materials[slot] = sourceMaterials[triangle] ?? 0;
+  }
+  return { indices, materialGroups: materialGroupsFor(materials) };
+}
+
 function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPackedScene {
   scene.updateMatrixWorld(true);
   const state: IBuildState = {
     indices: [],
-    materialGroups: [],
     normals: [],
     objectCount: 0,
     positions: [],
     triangleCount: 0,
+    triangleMaterials: [],
   };
   scene.traverse((candidate) => {
     if (!(candidate instanceof Mesh) || candidate.visible === false || !include(candidate)) return;
@@ -266,21 +307,29 @@ function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPacked
   geometry.setIndex(new BufferAttribute(sourceIndices, 1));
 
   let nodes = emptyNodes();
-  let indices = sourceIndices;
+  let indices: Uint32Array = sourceIndices;
+  let materialGroups: readonly IGPUSceneBVHMaterialGroup[] = [];
   if (state.indices.length > 0) {
-    const bvh = new MeshBVH(geometry, { strategy: SAH, targetLeafSize: 10, verbose: false });
+    // Indirect keeps `geometry.index` in source order, so the material assignment collected above
+    // still lines up with it; the leaf order is then applied to both at once below.
+    const bvh = new MeshBVH(geometry, {
+      indirect: true,
+      strategy: SAH,
+      targetLeafSize: 10,
+      verbose: false,
+    });
     const serialized = MeshBVH.serialize(bvh, { cloneBuffers: false });
     const root = serialized.roots[0];
     if (root === undefined) throw new Error("GPUSceneBVH could not serialize its root node.");
     nodes = new Uint32Array(root);
-    if (serialized.index === null)
-      throw new Error("GPUSceneBVH could not serialize its index buffer.");
-    indices = new Uint32Array(serialized.index);
+    const permuted = permuteToLeafOrder(bvh, sourceIndices, state.triangleMaterials);
+    indices = permuted.indices;
+    materialGroups = permuted.materialGroups;
   }
   return {
     geometry,
     indices,
-    materialGroups: state.materialGroups,
+    materialGroups,
     nodes,
     normals,
     objectCount: state.objectCount,
