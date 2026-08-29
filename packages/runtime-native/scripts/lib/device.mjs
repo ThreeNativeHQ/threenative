@@ -7,8 +7,8 @@ export function resolveAndroidPackageId(configPath) {
   return readAndroidConfig(configPath).app.id;
 }
 
-function validateInstalledPackage(output, appId) {
-  const installedPath = String(output).trim();
+export function verifyInstalledPackage(execute, appId) {
+  const installedPath = String(execute(["shell", "pm", "path", appId])).trim();
   if (!installedPath.startsWith("package:")) {
     throw new DevicePreflightError(
       "TN_DEVICE_INSTALL_MISSING",
@@ -19,12 +19,16 @@ function validateInstalledPackage(output, appId) {
   return installedPath;
 }
 
-export function verifyInstalledPackage(execute, appId) {
-  return validateInstalledPackage(execute(["shell", "pm", "path", appId]), appId);
-}
-
 export async function verifyInstalledPackageAsync(execute, appId) {
-  return validateInstalledPackage(await execute(["shell", "pm", "path", appId]), appId);
+  const installedPath = String(await execute(["shell", "pm", "path", appId])).trim();
+  if (!installedPath.startsWith("package:")) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_INSTALL_MISSING",
+      `pm path ${appId} returned '${installedPath}'`,
+      { appId, observed: installedPath },
+    );
+  }
+  return installedPath;
 }
 
 const THERMAL_STATUS_CODES = {
@@ -47,32 +51,32 @@ export class DevicePreflightError extends Error {
   }
 }
 
-function parseError(kind, detail, condition, observed) {
-  return new DevicePreflightError(`TN_DEVICE_PREFLIGHT_${kind}_PARSE`, detail, {
-    condition,
-    observed,
-  });
-}
-
 function parseBoolean(value, label) {
   if (value === "true") return true;
   if (value === "false") return false;
-  throw parseError(label.toUpperCase(), `expected true or false, received ${value}`, label, value);
+  throw new DevicePreflightError(
+    `TN_DEVICE_PREFLIGHT_${label.toUpperCase()}_PARSE`,
+    `expected true or false, received ${value}`,
+    { condition: label, observed: value },
+  );
 }
 
 export function parseBatteryState(output) {
   const source = String(output);
   const levelMatch = /^\s*level:\s*(\d+)\s*$/imu.exec(source);
   if (!levelMatch) {
-    throw parseError("BATTERY", "dumpsys battery has no numeric level", "battery", source);
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_BATTERY_PARSE",
+      "dumpsys battery has no numeric level",
+      { condition: "battery", observed: source },
+    );
   }
   const batteryPercent = Number(levelMatch[1]);
   if (!Number.isInteger(batteryPercent) || batteryPercent < 0 || batteryPercent > 100) {
-    throw parseError(
-      "BATTERY",
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_BATTERY_PARSE",
       `battery level is outside 0..100: ${levelMatch[1]}`,
-      "battery",
-      levelMatch[1],
+      { condition: "battery", observed: levelMatch[1] },
     );
   }
 
@@ -94,27 +98,24 @@ export function parseBatteryState(output) {
     statusText !== null &&
     (!statusIsCanonical || !Number.isInteger(status) || status < 1 || status > 5)
   ) {
-    throw parseError(
-      "CHARGING",
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
       `dumpsys battery has unrecognised status: ${statusText}`,
-      "charging",
-      statusText,
+      { condition: "charging", observed: statusText },
     );
   }
   if (status === 1) {
-    throw parseError(
-      "CHARGING",
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
       "dumpsys battery status UNKNOWN cannot prove discharging",
-      "charging",
-      statusText,
+      { condition: "charging", observed: statusText },
     );
   }
   if (presentSources.length !== sources.length && status === null) {
-    throw parseError(
-      "CHARGING",
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_CHARGING_PARSE",
       "dumpsys battery has incomplete charging sources and no status",
-      "charging",
-      source,
+      { condition: "charging", observed: source },
     );
   }
 
@@ -137,7 +138,11 @@ function thermalStatusFromValue(value) {
   }
   const code = THERMAL_STATUS_CODES[normalized];
   if (code !== undefined) return { code, status: normalized };
-  throw parseError("THERMAL", `unrecognised thermal status: ${value}`, "thermal", value);
+  throw new DevicePreflightError(
+    "TN_DEVICE_PREFLIGHT_THERMAL_PARSE",
+    `unrecognised thermal status: ${value}`,
+    { condition: "thermal", observed: value },
+  );
 }
 
 export function parseThermalState(output) {
@@ -146,11 +151,10 @@ export function parseThermalState(output) {
     /(?:current\s+)?thermal\s+status\s*[:=]\s*([A-Za-z_]+|\d+)/iu.exec(source) ??
     /mThermalStatus\s*[:=]\s*([A-Za-z_]+|\d+)/iu.exec(source);
   if (!match) {
-    throw parseError(
-      "THERMAL",
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_THERMAL_PARSE",
       "dumpsys thermalservice has no thermal status",
-      "thermal",
-      source,
+      { condition: "thermal", observed: source },
     );
   }
   const parsed = thermalStatusFromValue(match[1]);
@@ -168,7 +172,11 @@ export function parseScreenState(output) {
   const wakefulnessMatch = /mWakefulness(?:Raw)?\s*=\s*(Awake|Asleep|Dozing)\b/iu.exec(source);
   if (wakefulnessMatch) return { screenOn: wakefulnessMatch[1].toLowerCase() === "awake" };
 
-  throw parseError("SCREEN", "dumpsys power has no recognised screen state", "screen", source);
+  throw new DevicePreflightError(
+    "TN_DEVICE_PREFLIGHT_SCREEN_PARSE",
+    "dumpsys power has no recognised screen state",
+    { condition: "screen", observed: source },
+  );
 }
 
 /**
@@ -186,11 +194,10 @@ export function parseActiveDisplayMode(output) {
     source,
   );
   if (!active) {
-    throw parseError(
-      "DISPLAY",
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_DISPLAY_PARSE",
       "dumpsys display has no mActiveSfDisplayMode",
-      "display",
-      source.slice(0, 200),
+      { condition: "display", observed: source.slice(0, 200) },
     );
   }
   const supported = /mSupportedRefreshRates\s*=\s*\[([^\]]*)\]/u.exec(source);
@@ -218,7 +225,11 @@ function settingNumber(value) {
 export function parseRefreshRateSettings({ peak, min, lowPower }) {
   const power = String(lowPower ?? "").trim();
   if (power !== "" && power !== "null" && power !== "0" && power !== "1") {
-    throw parseError("DISPLAY", `unrecognised low_power value: ${power}`, "lowPower", power);
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_DISPLAY_PARSE",
+      `unrecognised low_power value: ${power}`,
+      { condition: "lowPower", observed: power },
+    );
   }
   return {
     peakRefreshRateSetting: settingNumber(peak),
@@ -234,7 +245,7 @@ async function readDisplayState(execute) {
     execute(["shell", "settings", "get", "system", "min_refresh_rate"]),
     execute(["shell", "settings", "get", "global", "low_power"]),
   ]);
-  return parseDisplayState(display, peak, min, lowPower);
+  return { ...parseActiveDisplayMode(display), ...parseRefreshRateSettings({ peak, min, lowPower }) };
 }
 
 function normaliseOptions(options) {
@@ -300,17 +311,14 @@ const PLAY_PROTECT_INSTALL_SETTINGS = [
   "verifier_verify_adb_installs",
 ];
 
-function requirePlayProtectExecutor(serial, dependencies, asyncOnly = false) {
+export function suppressPlayProtectOnAdbInstalls(serial, dependencies = {}) {
   if (
     (typeof serial !== "string" || serial.length === 0) &&
     typeof dependencies.adb !== "function"
   ) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
   }
-  if (asyncOnly && typeof dependencies.adb !== "function") {
-    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_ADB", "an async adb executor is required");
-  }
-  return dependencies.adb ?? ((args) =>
+  const execute = dependencies.adb ?? ((args) =>
     runAdb(serial, args, {
       environment: dependencies.environment,
       spawnSyncImpl: dependencies.spawnSyncImpl,
@@ -320,51 +328,55 @@ function requirePlayProtectExecutor(serial, dependencies, asyncOnly = false) {
         { serial, args, exitCode: error.exitCode },
       ),
     }));
-}
-
-function playProtectFailure(serial, setting, error) {
-  return new DevicePreflightError(
-    "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
-    `could not disable adb-install verification for ${setting}: ${error?.message ?? error}`,
-    { serial, setting },
-  );
-}
-
-function assertPlayProtectReadback(serial, setting, observed) {
-  if (observed === "0") return;
-  throw new DevicePreflightError(
-    "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
-    `settings put global ${setting} 0 did not take (observed '${observed}'); the Play Protect install dialog will appear`,
-    { serial, setting, observed },
-  );
-}
-
-export function suppressPlayProtectOnAdbInstalls(serial, dependencies = {}) {
-  const execute = requirePlayProtectExecutor(serial, dependencies);
   for (const setting of PLAY_PROTECT_INSTALL_SETTINGS) {
     let observed;
     try {
       execute(["shell", "settings", "put", "global", setting, "0"]);
       observed = String(execute(["shell", "settings", "get", "global", setting])).trim();
     } catch (error) {
-      throw playProtectFailure(serial, setting, error);
+      throw new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
+        `could not disable adb-install verification for ${setting}: ${error?.message ?? error}`,
+        { serial, setting },
+      );
     }
-    assertPlayProtectReadback(serial, setting, observed);
+    if (observed !== "0") {
+      throw new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
+        `settings put global ${setting} 0 did not take (observed '${observed}'); the Play Protect install dialog will appear`,
+        { serial, setting, observed },
+      );
+    }
   }
   return [...PLAY_PROTECT_INSTALL_SETTINGS];
 }
 
 export async function suppressPlayProtectOnAdbInstallsAsync(serial, dependencies = {}) {
-  const execute = requirePlayProtectExecutor(serial, dependencies, true);
+  if (
+    (typeof serial !== "string" || serial.length === 0) &&
+    typeof dependencies.adb !== "function"
+  ) {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
+  }
+  const execute = dependencies.adb;
+  if (typeof execute !== "function") {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_ADB", "an async adb executor is required");
+  }
   for (const setting of PLAY_PROTECT_INSTALL_SETTINGS) {
     try {
       await execute(["shell", "settings", "put", "global", setting, "0"]);
       const observed = String(
         await execute(["shell", "settings", "get", "global", setting]),
       ).trim();
-      if (observed !== "0") throw new Error(`readback was '${observed}'`);
+      if (observed !== "0") {
+        throw new Error(`readback was '${observed}'`);
+      }
     } catch (error) {
-      throw playProtectFailure(serial, setting, error);
+      throw new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_PLAY_PROTECT",
+        `could not disable adb-install verification for ${setting}: ${error?.message ?? error}`,
+        { serial, setting },
+      );
     }
   }
   return [...PLAY_PROTECT_INSTALL_SETTINGS];
@@ -435,7 +447,55 @@ function evaluateDeviceCondition(serial, configuration, battery, thermal, screen
   };
 }
 
-function prepareDeviceReadiness(serial, options) {
+export async function assertDeviceReady(serial, options, dependencies = {}) {
+  if (typeof serial !== "string" || serial.length === 0) {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
+  }
+  const configuration = normaliseOptions(options);
+  // An emulator cannot prove arm64, a real GPU driver, touch hardware, thermal behaviour or battery,
+  // so every *qualification* lane must refuse one — that is PRD-070's rule and it is the default here.
+  //
+  // A *performance regression canary* is a different question, and the answer was measured on
+  // 2026-08-17 rather than assumed: on the x86_64 emulator the V8-against-QuickJS ratio at the top
+  // rung falls from 12.1x to 2.4x, because swiftshader is a CPU rasteriser and software rendering
+  // swamps script time. Still far past any sane tolerance, so an engine revert is catchable there —
+  // but the absolute numbers are not performance evidence and must never be quoted as device figures.
+  // `allowEmulator` is how a caller says it wants the canary and accepts that.
+  if (/^emulator-/u.test(serial) && !configuration.allowEmulator) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_EMULATOR_BLOCKED",
+      `${serial} is an emulator; a physical Android device is required`,
+      { serial },
+    );
+  }
+
+  const execute = dependencies.adb ?? ((args) =>
+    runAdb(serial, args, {
+      environment: dependencies.environment,
+      spawnSyncImpl: dependencies.spawnSyncImpl,
+      mapError: (error) => new DevicePreflightError(
+        "TN_DEVICE_PREFLIGHT_ADB",
+        `${args.join(" ")} failed: ${error.detail}`,
+        { serial, args, exitCode: error.exitCode },
+      ),
+    }));
+  const state = String(await execute(["get-state"])).trim();
+  if (state !== "device") {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_NO_DEVICE",
+      `${serial} is not online (adb state: ${state || "missing"})`,
+      { serial, observed: state || "missing" },
+    );
+  }
+
+  const battery = parseBatteryState(await execute(["shell", "dumpsys", "battery"]));
+  const thermal = parseThermalState(await execute(["shell", "dumpsys", "thermalservice"]));
+  const screen = parseScreenState(await execute(["shell", "dumpsys", "power"]));
+  const display = await readDisplayState(execute);
+  return evaluateDeviceCondition(serial, configuration, battery, thermal, screen, display);
+}
+
+export function assertDeviceReadySync(serial, options, dependencies = {}) {
   if (typeof serial !== "string" || serial.length === 0) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
   }
@@ -447,65 +507,25 @@ function prepareDeviceReadiness(serial, options) {
       { serial },
     );
   }
-  return configuration;
-}
-
-function assertDeviceOnline(serial, output) {
-  const state = String(output).trim();
-  if (state === "device") return;
-  throw new DevicePreflightError(
-    "TN_DEVICE_PREFLIGHT_NO_DEVICE",
-    `${serial} is not online (adb state: ${state || "missing"})`,
-    { serial, observed: state || "missing" },
-  );
-}
-
-function parseDisplayState(display, peak, min, lowPower) {
-  return { ...parseActiveDisplayMode(display), ...parseRefreshRateSettings({ peak, min, lowPower }) };
-}
-
-export async function assertDeviceReady(serial, options, dependencies = {}) {
-  const configuration = prepareDeviceReadiness(serial, options);
-  // An emulator cannot prove arm64, a real GPU driver, touch hardware, thermal behaviour or battery,
-  // so every *qualification* lane must refuse one — that is PRD-070's rule and it is the default here.
-  //
-  // A *performance regression canary* is a different question, and the answer was measured on
-  // 2026-08-17 rather than assumed: on the x86_64 emulator the V8-against-QuickJS ratio at the top
-  // rung falls from 12.1x to 2.4x, because swiftshader is a CPU rasteriser and software rendering
-  // swamps script time. Still far past any sane tolerance, so an engine revert is catchable there —
-  // but the absolute numbers are not performance evidence and must never be quoted as device figures.
-  // `allowEmulator` is how a caller says it wants the canary and accepts that.
-  const execute = dependencies.adb ?? ((args) =>
-    runAdb(serial, args, {
-      environment: dependencies.environment,
-      spawnSyncImpl: dependencies.spawnSyncImpl,
-      mapError: (error) => new DevicePreflightError(
-        "TN_DEVICE_PREFLIGHT_ADB",
-        `${args.join(" ")} failed: ${error.detail}`,
-        { serial, args, exitCode: error.exitCode },
-      ),
-    }));
-  assertDeviceOnline(serial, await execute(["get-state"]));
-
-  const battery = parseBatteryState(await execute(["shell", "dumpsys", "battery"]));
-  const thermal = parseThermalState(await execute(["shell", "dumpsys", "thermalservice"]));
-  const screen = parseScreenState(await execute(["shell", "dumpsys", "power"]));
-  const display = await readDisplayState(execute);
-  return evaluateDeviceCondition(serial, configuration, battery, thermal, screen, display);
-}
-
-export function assertDeviceReadySync(serial, options, dependencies = {}) {
-  const configuration = prepareDeviceReadiness(serial, options);
   const execute = dependencies.adb ?? ((args) => runAdb(serial, args, dependencies));
-  assertDeviceOnline(serial, execute(["get-state"]));
+  const state = String(execute(["get-state"])).trim();
+  if (state !== "device") {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_NO_DEVICE",
+      `${serial} is not online (adb state: ${state || "missing"})`,
+      { serial, observed: state || "missing" },
+    );
+  }
   const battery = parseBatteryState(execute(["shell", "dumpsys", "battery"]));
   const thermal = parseThermalState(execute(["shell", "dumpsys", "thermalservice"]));
   const screen = parseScreenState(execute(["shell", "dumpsys", "power"]));
-  const display = parseDisplayState(
-    execute(["shell", "dumpsys", "display"]),
-    execute(["shell", "settings", "get", "system", "peak_refresh_rate"]),
-    execute(["shell", "settings", "get", "system", "min_refresh_rate"]),
-    execute(["shell", "settings", "get", "global", "low_power"]),
-  );
+  const display = {
+    ...parseActiveDisplayMode(execute(["shell", "dumpsys", "display"])),
+    ...parseRefreshRateSettings({
+      peak: execute(["shell", "settings", "get", "system", "peak_refresh_rate"]),
+      min: execute(["shell", "settings", "get", "system", "min_refresh_rate"]),
+      lowPower: execute(["shell", "settings", "get", "global", "low_power"]),
+    }),
+  };
   return evaluateDeviceCondition(serial, configuration, battery, thermal, screen, display);
 }
