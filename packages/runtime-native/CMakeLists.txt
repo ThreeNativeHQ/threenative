@@ -1018,7 +1018,30 @@ endif()
 # Prebuilt layout: libuv/include/uv.h, libuv/include/uv/*.h, libuv/libuv.a (or libuv.lib)
 # Note: libuv is only used on desktop platforms; iOS/Android use platform-native async APIs
 set(LIBUV_DIR ${THIRD_PARTY_DIR}/libuv)
-if(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID)
+set(LIBUV_SOURCE_DIR ${THIRD_PARTY_DIR}/libuv-src/libuv-1.51.0)
+# AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a write-after-free on libuv's
+# own closing list - the exact defect PRD-177 and PRD-184 exist to prove - is invisible to the
+# sanitizer lane. Under TN_ENABLE_SANITIZERS, build libuv from the matching 1.51.0 source instead,
+# so the lane's instrumentation reaches into it. Every other configuration keeps the prebuilt.
+if(TN_ENABLE_SANITIZERS AND EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID)
+    set(LIBUV_BUILD_SHARED OFF CACHE BOOL "libuv static under sanitizers" FORCE)
+    set(LIBUV_BUILD_TESTS OFF CACHE BOOL "libuv tests are not ours to run" FORCE)
+    set(LIBUV_BUILD_BENCH OFF CACHE BOOL "libuv benchmarks are not ours to run" FORCE)
+    # libuv's own CMakeLists defines the libuv::libuv alias over its selected library; with
+    # LIBUV_BUILD_SHARED OFF that is the static uv_a. Do not re-alias it here.
+    add_subdirectory(${LIBUV_SOURCE_DIR} ${CMAKE_BINARY_DIR}/libuv-src EXCLUDE_FROM_ALL)
+    if(TARGET libuv::libuv)
+        add_compile_definitions(MYSTRAL_HAS_LIBUV)
+        if(UNIX AND NOT APPLE)
+            set(LIBUV_SYSTEM_LIBS pthread dl)
+        endif()
+        message(STATUS "libuv: source build under sanitizers (${LIBUV_SOURCE_DIR})")
+    else()
+        message(FATAL_ERROR
+            "libuv source at ${LIBUV_SOURCE_DIR} defined no libuv::libuv target; the sanitizer "
+            "lane must not fall back to the prebuilt and silently lose instrumentation inside libuv")
+    endif()
+elseif(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID)
     # Headers are directly in include/
     if(EXISTS ${LIBUV_DIR}/include)
         set(LIBUV_INCLUDE_DIR ${LIBUV_DIR}/include)

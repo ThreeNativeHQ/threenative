@@ -71,8 +71,20 @@ runs `threenative-shutdown-lifetime-test` and `threenative-handle-lifetime-test`
 But this directory is named for the *other* half: `CMakeLists.txt` links a **prebuilt** `libuv.a`
 (see the "Prebuilt layout" note at its libuv block), and ASan cannot instrument inside a prebuilt
 static library, so a write-after-free on libuv's closing list is still invisible. Building libuv
-from source under the sanitizer configuration is the remaining prerequisite; neither PRD moves
-until it exists.
+from source under the sanitizer configuration was the remaining prerequisite.
+
+**Removed 2026-08-29.** `download-deps.mjs` now fetches libuv 1.51.0 source alongside the prebuilt,
+and `CMakeLists.txt` builds it via `add_subdirectory` whenever `TN_ENABLE_SANITIZERS` is ON, so the
+sanitizer lane's instrumentation reaches inside libuv. Proof: `build/tn-linux-asan/libuv-src/libuv.a`
+is produced by the lane. Every non-sanitizer configuration still links the prebuilt.
+
+**PRD-177 and PRD-184 are now attemptable, and are still unproven.** The instrument exists; nobody
+has run their negative controls. Attempt them, record what actually happened, and `git mv` them into
+this batch only on the strength of a result. One caveat for whoever picks them up: the lane
+currently reds on `threenative-webgpu-bindings-reentrancy-test` (1 of 6). That failure is **not**
+from the libuv change - an attribution control on 2026-08-29 with the source hidden and the
+prebuilt linked failed identically, `83% tests passed, 1 tests failed out of 6`. It is a
+pre-existing ASan finding and wants its own red-green.
 
 ## Deliberately not in this batch
 

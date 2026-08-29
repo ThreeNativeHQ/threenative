@@ -474,7 +474,25 @@ Measured 2026-08-29, unchanged from the filing:
 | `src/webgpu/bindings.cpp` | 35 | **37**, across 17 test files |
 | `src/runtime.cpp` | 33 | **56**, across 19 test files |
 
-`tests/frame-op-stream.test.mjs` is the representative shape: it `readFileSync`s `bindings.cpp` and
-asserts against the text, so it reds on a safe rename and stays green through a behaviour change.
-These are the assertions PRD-230 would trip over, and converting them is its remaining
-prerequisite.
+`tests/frame-op-stream.test.mjs` was the representative shape, and it was worse than "reds on a
+safe rename". Its assertion sliced `bindings.cpp` with `indexOf`; once the definition moves out of
+that file `indexOf` returns -1, the slice is empty, and `not.toMatch` passes on nothing. Observed
+2026-08-29 by physically moving the definition:
+
+```text
+moved 21971 chars into src/webgpu/frame_op_replay_split.cpp
+  old assertion sliced 0 chars and passed = true
+```
+
+**The pattern is now landed and both controls are observed.** `test-support/native-definition.ts`
+looks a C++ definition up by symbol across the whole native `src/` tree, returns it brace-matched,
+and fails closed on zero or multiple matches. `frame-op-stream.test.mjs` is converted to it:
+
+| Control | Required | Observed |
+| --- | --- | --- |
+| (a) definition moved to another file | stays green | `Tests 8 passed (8)` |
+| (b) `someMap.contains(42)` injected into the body | reds | `× keeps native replay compatible with the runtime's C++17 toolchains` |
+
+The remaining 26 files are inventoried and ordered in
+[EXECUTE-229-phase-5-and-230](./EXECUTE-229-phase-5-and-230.md), which is the runbook for finishing
+this phase and then running PRD-230.

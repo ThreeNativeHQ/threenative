@@ -361,6 +361,15 @@ const DEPS = {
     },
     extractTo: 'libuv',
   },
+  'libuv-source': {
+    // libuv upstream source, matching the prebuilt's 1.51.0. Only the sanitizer configuration
+    // consumes it: AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a
+    // write-after-free on libuv's own closing list is invisible to the lane that exists to catch
+    // exactly that. PRD-177 and PRD-184 are parked on this.
+    version: '1.51.0',
+    getUrl: () => `https://github.com/libuv/libuv/archive/refs/tags/v${DEPS['libuv-source'].version}.tar.gz`,
+    extractTo: 'libuv-src',
+  },
   'skia-win-static': {
     // Static Skia + Dawn for Windows from mystralengine/library-builder
     // This build uses /MT (static CRT) and includes dawn_combined.lib with
@@ -1000,7 +1009,7 @@ async function main() {
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
   // Desktop deps (downloaded by default)
-  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'quiche'];
+  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];

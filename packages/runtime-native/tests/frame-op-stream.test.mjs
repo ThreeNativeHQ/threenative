@@ -2,12 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { nativeDefinition } from "../../../test-support/native-definition.js";
+
 const source = readFileSync(
   join(import.meta.dirname, "..", "src", "runtime-scripts", "frame-op-stream.js"),
-  "utf8",
-);
-const nativeSource = readFileSync(
-  join(import.meta.dirname, "..", "src", "webgpu", "bindings.cpp"),
   "utf8",
 );
 const factory = Function(`"use strict"; let factory; factory = ${source}\nreturn factory;`)();
@@ -52,16 +50,13 @@ function records(buffer) {
 }
 
 describe("packed frame op stream", () => {
+  // PRD-229 Phase 5. This used to slice bindings.cpp by indexOf; once PRD-230 moves the definition
+  // out of that file indexOf returns -1, the slice is empty, and the assertion passes on nothing.
+  // Looking the definition up by symbol survives the move and still reds on the regression.
   it("keeps native replay compatible with the runtime's C++17 toolchains", () => {
-    const replay = nativeSource.slice(
-      nativeSource.indexOf("bool replayPackedFrameOpStream("),
-      nativeSource.indexOf(
-        "static js::JSValueHandle",
-        nativeSource.indexOf("bool replayPackedFrameOpStream("),
-      ),
-    );
+    const replay = nativeDefinition("replayPackedFrameOpStream");
 
-    expect(replay).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
+    expect(replay.text).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
   });
 
   it("keeps resource id loads class-specific so V8 inline caches stay polymorphic", () => {

@@ -593,6 +593,23 @@ function runCoverageTargets({ buildDirectory, cmake, ctest, registrations, targe
   return { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes };
 }
 
+const COVERAGE_GENERATOR = "Unix Makefiles";
+
+/**
+ * The coverage lane configures with its own generator while every other lane uses the preset's
+ * Ninja, so a build directory left by another lane makes cmake fail with a raw "does not match the
+ * generator used previously" dump that names no fix. Returns the directory that has to go, or null
+ * when there is nothing in the way. Fail closed: a cache whose generator cannot be read counts as
+ * a conflict, never as agreement.
+ */
+export function staleGeneratorBuildDirectory(buildDirectory, generator, dependencies = {}) {
+  const cachePath = join(buildDirectory, "CMakeCache.txt");
+  if (!(dependencies.existsSyncImpl ?? existsSync)(cachePath)) return null;
+  const cache = (dependencies.readFileSyncImpl ?? readFileSync)(cachePath, "utf8");
+  const previous = /^CMAKE_GENERATOR:INTERNAL=(.*)$/mu.exec(cache)?.[1]?.trim();
+  return previous === generator ? null : buildDirectory;
+}
+
 export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   if (process.platform === "win32") {
     throw new Error("native coverage currently requires a clang desktop host");
@@ -600,6 +617,12 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   const cmake = resolveCmake();
   const ctest = resolveCtest(cmake);
   const buildDirectory = desktopBuildDirectory("coverage");
+  const conflicting = staleGeneratorBuildDirectory(buildDirectory, COVERAGE_GENERATOR);
+  if (conflicting !== null) {
+    throw new Error(
+      `${conflicting} was configured by a different CMake generator than the coverage lane's "${COVERAGE_GENERATOR}". Remove it and re-run:\n  rm -rf ${conflicting}\nIt is derived output, but rebuilding needs third_party/ present - run pnpm native:build first if it is absent.`,
+    );
+  }
   run(
     cmake,
     [
@@ -608,7 +631,7 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
       "-B",
       buildDirectory,
       "-G",
-      "Unix Makefiles",
+      COVERAGE_GENERATOR,
       "-DCMAKE_BUILD_TYPE=Release",
       "-DCMAKE_C_COMPILER=clang",
       "-DCMAKE_CXX_COMPILER=clang++",
