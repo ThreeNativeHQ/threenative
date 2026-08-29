@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Group } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
@@ -57,6 +58,101 @@ class ComputeProbe extends Group implements IComputeDriven {
 }
 
 describe("ComputeDrivenRegistry", () => {
+  it("documents fixed and render cadence", () => {
+    const record = readFileSync(
+      new URL("../../../docs/verification/PRD-242.md", import.meta.url),
+      "utf8",
+    );
+    const normalized = record.replace(/\s+/g, " ");
+
+    expect(normalized).toContain(
+      "Fixed-step compute remains the registry default: it dispatches once per fixed step.",
+    );
+    expect(normalized).toContain(
+      "Render-cadence compute is an opt-in: it dispatches once per rendered frame after startup readiness.",
+    );
+  });
+
+  it("defers render cadence until startup is ready", async () => {
+    const canvas = testCanvas();
+    const dispatched: unknown[] = [];
+    let frame: ((time: number) => void) | undefined;
+    const raw = {
+      compute: (node: unknown) => dispatched.push(node),
+      dispose: () => undefined,
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: () => undefined,
+    };
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const requestFrameDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "requestAnimationFrame",
+    );
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    const particle = new GPUParticles3D({
+      amount: 1,
+      material: new SpriteNodeMaterial(),
+      process: () => Fn(() => {})().compute(1),
+      start: () => Fn(() => {})().compute(1),
+    });
+    class ParticleScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.canvasLayer.opaque = true;
+        ctx.add(particle);
+      }
+    }
+    const game = defineGame({
+      renderer: { canvas, webgpuFactory: () => raw },
+      scenes: { particles: ParticleScene },
+      start: "particles",
+    });
+
+    try {
+      await game.start();
+      const ctx = game.ctx;
+      if (ctx === undefined || frame === undefined) throw new Error("Game did not start its loop.");
+      dispatched.length = 0;
+      const ready = ctx.startup.whenReady();
+
+      frame(16);
+      expect(dispatched).toHaveLength(0);
+
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await Promise.resolve();
+      for (const time of [32, 48, 64, 80, 96]) {
+        frame(time);
+        await Promise.resolve();
+      }
+      await ready;
+
+      frame(112);
+      frame(128);
+      expect(dispatched).toHaveLength(2);
+    } finally {
+      game.stop();
+      if (navigatorDescriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+      if (requestFrameDescriptor === undefined)
+        Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", requestFrameDescriptor);
+    }
+  });
+
   it("keeps GPUParticles3D on render cadence when a frame has zero or multiple fixed updates", async () => {
     const canvas = testCanvas();
     const dispatched: unknown[] = [];
