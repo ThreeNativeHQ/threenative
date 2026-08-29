@@ -26,6 +26,13 @@ enum class CrashHandlerPolicy {
     ShowDialog,
     /** Android: never touch a disposition debuggerd owns, or the tombstone is lost. */
     LeaveToPlatform,
+    /**
+     * A sanitizer build: AddressSanitizer installs its own SIGSEGV handler and prints the faulting
+     * stack. The desktop handler's `_exit(1)` runs first and destroys that report, so the lane
+     * built to catch memory errors reports "exiting gracefully" and nothing else. Same shape as
+     * Android, different owner - named separately so the log says who actually owns the report.
+     */
+    LeaveToSanitizer,
 };
 
 /** True when `MYSTRAL_SHOW_CRASH_DIALOG` asks for the platform's own crash reporting. */
@@ -38,11 +45,14 @@ constexpr bool crashDialogRequested(const char* value) {
  * `androidPlatform` is `kAndroidPlatform` at the live call site.
  */
 constexpr CrashHandlerPolicy crashHandlerPolicy(bool androidPlatform,
-                                                const char* showCrashDialogEnv) {
-    return androidPlatform ? CrashHandlerPolicy::LeaveToPlatform
-                           : (crashDialogRequested(showCrashDialogEnv)
-                                  ? CrashHandlerPolicy::ShowDialog
-                                  : CrashHandlerPolicy::SuppressDialog);
+                                                const char* showCrashDialogEnv,
+                                                bool sanitizerBuild = false) {
+    return androidPlatform
+               ? CrashHandlerPolicy::LeaveToPlatform
+               : (sanitizerBuild ? CrashHandlerPolicy::LeaveToSanitizer
+                                 : (crashDialogRequested(showCrashDialogEnv)
+                                        ? CrashHandlerPolicy::ShowDialog
+                                        : CrashHandlerPolicy::SuppressDialog));
 }
 
 /** What the compiling platform is, kept beside the policy so a test can pass the other value. */
@@ -52,6 +62,21 @@ constexpr bool kAndroidPlatform =
 #else
     false;
 #endif
+
+/** Whether this translation unit was compiled with AddressSanitizer, which owns the crash report. */
+#if defined(__SANITIZE_ADDRESS__)
+#define MYSTRAL_SANITIZER_BUILD 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define MYSTRAL_SANITIZER_BUILD 1
+#else
+#define MYSTRAL_SANITIZER_BUILD 0
+#endif
+#else
+#define MYSTRAL_SANITIZER_BUILD 0
+#endif
+
+constexpr bool kSanitizerBuild = MYSTRAL_SANITIZER_BUILD == 1;
 
 /** Reads the environment and returns the policy this process will follow. */
 CrashHandlerPolicy resolveCrashHandlerPolicy();

@@ -82,6 +82,7 @@ const char* policyName(CrashHandlerPolicy policy) {
         case CrashHandlerPolicy::SuppressDialog: return "SuppressDialog";
         case CrashHandlerPolicy::ShowDialog: return "ShowDialog";
         case CrashHandlerPolicy::LeaveToPlatform: return "LeaveToPlatform";
+        case CrashHandlerPolicy::LeaveToSanitizer: return "LeaveToSanitizer";
     }
     return "UNKNOWN";
 }
@@ -100,6 +101,25 @@ int main() {
     check(mystral::platform::crashHandlerPolicy(false, "1") == CrashHandlerPolicy::ShowDialog,
           "desktop with MYSTRAL_SHOW_CRASH_DIALOG=1 installs nothing");
 
+    // 1b. A sanitizer build must leave the dispositions alone for the same reason Android does:
+    //     something else owns the report. AddressSanitizer installs its own SIGSEGV handler and
+    //     prints the stack; the desktop handler's `_exit(1)` runs first and destroys it. Observed
+    //     2026-08-29: threenative-webgpu-bindings-reentrancy-test passes in tn-linux and SIGSEGVs
+    //     under tn-linux-asan during shutdown, and the lane printed no ASan report at all - only
+    //     "[Mystral] Caught signal SIGSEGV, exiting gracefully".
+    check(mystral::platform::crashHandlerPolicy(false, nullptr, true) ==
+              CrashHandlerPolicy::LeaveToSanitizer,
+          "a sanitizer build leaves the disposition to the sanitizer");
+    check(mystral::platform::crashHandlerPolicy(false, "1", true) ==
+              CrashHandlerPolicy::LeaveToSanitizer,
+          "the sanitizer outranks MYSTRAL_SHOW_CRASH_DIALOG");
+    check(mystral::platform::crashHandlerPolicy(true, nullptr, true) ==
+              CrashHandlerPolicy::LeaveToPlatform,
+          "Android still names debuggerd, not the sanitizer");
+    check(mystral::platform::crashHandlerPolicy(false, nullptr, false) ==
+              CrashHandlerPolicy::SuppressDialog,
+          "a non-sanitizer desktop build is unchanged");
+
     // 2. The observable consequence, one signal at a time.
     for (int sig : kChainedSignals) {
         const std::string named = signalName(sig);
@@ -109,6 +129,12 @@ int main() {
             mystral::platform::applyCrashHandlerPolicy(CrashHandlerPolicy::LeaveToPlatform);
         check(!installedAndroid && standInStillOwns(sig),
               "the Android policy leaves " + named + " chained to debuggerd's stand-in");
+
+        installStandIn();
+        const bool installedSanitizer =
+            mystral::platform::applyCrashHandlerPolicy(CrashHandlerPolicy::LeaveToSanitizer);
+        check(!installedSanitizer && standInStillOwns(sig),
+              "the sanitizer policy leaves " + named + " to AddressSanitizer's own handler");
 
         installStandIn();
         const bool installedShowDialog =
@@ -134,7 +160,8 @@ int main() {
               << policyName(mystral::platform::resolveCrashHandlerPolicy()) << '\n';
     check(mystral::platform::resolveCrashHandlerPolicy() ==
               mystral::platform::crashHandlerPolicy(mystral::platform::kAndroidPlatform,
-                                                    std::getenv("MYSTRAL_SHOW_CRASH_DIALOG")),
+                                                    std::getenv("MYSTRAL_SHOW_CRASH_DIALOG"),
+                                                    mystral::platform::kSanitizerBuild),
           "the live resolver is the same pure decision, read from the real environment");
     check(g_standInInvocations == 0, "no signal was raised while proving this");
 

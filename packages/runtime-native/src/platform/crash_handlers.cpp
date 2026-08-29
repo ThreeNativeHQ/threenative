@@ -93,7 +93,8 @@ void installPreFixHandlers() {
 }  // namespace
 
 CrashHandlerPolicy resolveCrashHandlerPolicy() {
-    return crashHandlerPolicy(kAndroidPlatform, std::getenv("MYSTRAL_SHOW_CRASH_DIALOG"));
+    return crashHandlerPolicy(kAndroidPlatform, std::getenv("MYSTRAL_SHOW_CRASH_DIALOG"),
+                              kSanitizerBuild);
 }
 
 bool applyCrashHandlerPolicy(CrashHandlerPolicy policy) {
@@ -114,6 +115,14 @@ bool applyCrashHandlerPolicy(CrashHandlerPolicy policy) {
         // Android: debuggerd is already chained into these dispositions. Touching them is what
         // produced six unnamed SIGSEGV exits with no tombstone on 2026-08-23.
         std::cout << "[Mystral] Crash handlers left to the platform; debuggerd owns the tombstone"
+                  << std::endl;
+        return false;
+    }
+    if (policy == CrashHandlerPolicy::LeaveToSanitizer) {
+        // AddressSanitizer already owns SIGSEGV and prints the faulting stack. Installing over it
+        // means the sanitizer lane reports "exiting gracefully" and loses the only thing it exists
+        // to produce.
+        std::cout << "[Mystral] Crash handlers left to the sanitizer; ASan owns the report"
                   << std::endl;
         return false;
     }

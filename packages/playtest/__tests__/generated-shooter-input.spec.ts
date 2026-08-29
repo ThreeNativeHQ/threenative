@@ -183,6 +183,9 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
         ),
       );
     }
+    for (const a of (report as unknown as { assertionResults?: Array<Record<string, unknown>> }).assertionResults ?? []) {
+      if ((a as { pass: boolean }).pass === false) console.info("PROBE-FAILED-ASSERTION:", JSON.stringify(a).slice(0, 600));
+    }
     expect(report.pass).toBe(true);
     expect(exitCodeForReport(report)).toBe(0);
     // The adapter must be named hardware: the runner fails TN_PLAYTEST_SOFTWARE_ADAPTER otherwise.
