@@ -89,10 +89,17 @@ Only rows that move the bar. Each names the command that decides it.
 | D | [PRD-263](./PRD-263-version-0-3-0-is-installable-by-a-stranger.md) | **A1**, re-proves **A2** | none | `pnpm publish:check` exit 0, then `pnpm release --yes` |
 | E | [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md) | **A5** | Pixel 8 / emulator | `pnpm parity:ledger` exit 0 on a ledger dated today |
 | F | [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) | **A6** | none | an `alpha-bar` block for A6, sourced from a session |
+| G | [PRD-264](./PRD-264-doctor-answers-all-three-questions-a-game-author-has.md) | no row — the diagnostic a stranger runs | none | `threenative doctor` fails on an unresolvable `threenative-engine-mcp` |
 
 Lane F is an owner action, not an agent lane — it needs a person who is not us, and it cannot start
 before D publishes something for them to install. It is listed so the bar's last row has a name
 against it, not so it gets scheduled.
+
+**Lane G moves no row and is in the batch on purpose.** `threenative doctor` is the only diagnostic
+a user with just the library installed can run, and it currently answers *ship* well, *test* with a
+file-existence check, and *craft* with a `files.has(".mcp.json")` that would print a green tick over
+the E404 that Lane D exists to fix. A release whose own doctor cannot see its worst failure ships
+that failure to everyone who installs it.
 
 ## Order, and why
 
@@ -104,6 +111,8 @@ graph LR
   B --> D
   D --> F["F — PRD-080<br/>a stranger installs it"]
   A --> E["E — PRD-054<br/>parity ledger, A5"]
+  A --> G["G — PRD-264<br/>doctor tells the truth"]
+  G -.->|"proves D landed"| F
 ```
 
 **A is first and is not negotiable.** `pnpm release` refuses on a red `publish:check`, CI is red on
@@ -118,6 +127,11 @@ prebuilt release, and D publishes one consistent tree in one run by design.
 
 **E is independent of the publish chain** and can run in parallel with C on a different lane —
 it needs the phone, nothing else does.
+
+**G is independent of everything after A** and is best run *before* D publishes, so the repaired
+doctor is what a stranger gets. Its headline acceptance criterion — doctor fails on an unresolvable
+`threenative-engine-mcp` — is checkable today precisely because that package is still E404; once D
+lands, the only way to test it is to break something on purpose.
 
 ## Try these blocked reasons before believing them
 
@@ -158,5 +172,17 @@ Named so they are not silently absorbed:
   [night batch](../night-batch-2026-08-27/README.md) lanes. Performance is not on the alpha bar.
 - **PRD-259 and PRD-260** (filed 2026-08-29 in `feature-mining/`). New capability, not release
   readiness.
+- **The starter-kits batch** ([PRD-087](../starter-kits/PRD-087-genre-borrow-ledger.md),
+  [PRD-122](../starter-kits/PRD-122-specialized-agent-roles.md),
+  [PRD-236](../starter-kits/PRD-236-sailing-starter-kit.md)). PRD-087 is executed, PRD-236 is a new
+  kit, and PRD-122 (two agent roles in every scaffold) is the only one touching the authoring
+  pipeline. None moves an alpha-bar row.
+- **[PRD-185](../package-naming/PRD-185-package-naming-law.md), except one decision.** The naming
+  law is cosmetic while the package it renames is E404 — a rename produces a differently-named
+  E404. But **its decision 3 is a required input to Lane D**: npm versions are immutable, so
+  publishing `threenative-engine-mcp` under the unscoped name and renaming afterwards means
+  deprecating a name we created the same week. [PRD-263](./PRD-263-version-0-3-0-is-installable-by-a-stranger.md)
+  Phase 1 therefore settles the published name; the doc gate, the waivers and the example
+  directories stay in PRD-185.
 - **Round 13.** `round:next` is repaired by Lane B; running another paired round is not a release
   blocker, and A4 already passes on Round 9.

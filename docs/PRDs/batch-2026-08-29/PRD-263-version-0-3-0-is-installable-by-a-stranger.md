@@ -100,6 +100,13 @@ the four mistakes were mechanical; `release.ts` exists because of it.
 
 **Files:** whatever the 56 findings name, the record.
 
+- [ ] **Settle the published name of the capability server before anything goes out.**
+      [PRD-185](../package-naming/PRD-185-package-naming-law.md) decision 3 renames
+      `threenative-engine-mcp` to `@threenative/engine-mcp`, bin unchanged. npm versions are
+      immutable: publishing the unscoped name and renaming afterwards means deprecating a name we
+      created the same week. Take the decision here, apply it to
+      `packages/engine-mcp/package.json` and `packages/core/mcp/servers.mjs:35`, and record it —
+      or record an explicit decision to keep the unscoped name and close PRD-185's row.
 - [ ] Re-run `pnpm publish:check` after PRD-262 lands and record the reduced count.
 - [ ] Resolve every remaining finding. A pin the registry cannot resolve is fixed by publishing the
       package, never by loosening the pin.
