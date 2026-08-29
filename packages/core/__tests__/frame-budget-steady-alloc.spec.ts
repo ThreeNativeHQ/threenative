@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import { FrameBudget } from "../src/frame-budget.js";
 import { FixedStepLoop } from "../src/loop.js";
+import { Scheduler } from "../src/schedule.js";
 
 /**
  * A steady frame with metrics collection off must not allocate.
@@ -14,12 +15,22 @@ import { FixedStepLoop } from "../src/loop.js";
  * one dead object per frame for every game, forever.
  */
 describe("frame budget steady-state allocation", () => {
-  it("runs a steady window with metrics off and collects zero garbage", () => {
+  it("should allocate nothing per frame while a curved tween runs", () => {
+    const scheduler = new Scheduler();
+    const probeTarget = { x: 0 };
+    void scheduler.tween(probeTarget, { x: 1 }, 1, { ease: (t) => t * t });
+    scheduler.tick(0.5);
+    expect(probeTarget.x).toBe(0.25);
+    scheduler.clear();
+
+    const frames = 1_200_000;
+    const target = { x: 0 };
+    void scheduler.tween(target, { x: 1 }, frames / 60, { ease: (t) => t * t });
     const budget = new FrameBudget({ reportEvery: Number.MAX_SAFE_INTEGER, hitchMs: 1e12 });
     const loop = new FixedStepLoop({
       budget,
       collectMetrics: false,
-      onUpdate: () => undefined,
+      onUpdate: (dt) => scheduler.tick(dt),
       onRender: () => undefined,
       onFrame: () => undefined,
       requestFrame: (callback) => {
@@ -38,14 +49,13 @@ describe("frame budget steady-state allocation", () => {
     });
     observer.observe({ entryTypes: ["gc"] });
 
-    const frames = 1_200_000;
     const startedAt = performance.now();
     for (let index = 0; index < frames; index += 1) loop.stepFrame(16.67 * (index + 1));
     const elapsedMs = performance.now() - startedAt;
     observer.disconnect();
 
-    // The window runs no simulation steps and renders nothing, so the only allocation pressure is
-    // the budget itself; any GC inside it is the defect announcing itself.
+    // The window advances the scheduler once per fixed-step frame and renders nothing, so any GC
+    // inside it is the curved tween or frame budget announcing an allocation defect.
     expect(
       events,
       `${events.length} GC events across ${frames} frames in ${Math.round(elapsedMs)}ms`,

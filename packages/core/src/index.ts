@@ -233,14 +233,18 @@ export type {
   ReplayPointer,
 } from "./replay-protocol.js";
 /**
- * Schedule delayed and repeating callbacks with game-owned cleanup.
+ * Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.
  * @situation delay an enemy patrol transition
  * @situation run a callback every simulation tick
+ * @situation tween a numeric property with a game-owned curve
  * @constraint dispose returned handles when the owning scene exits
+ * @constraint ease receives progress in the range 0 to 1 and its return value is the interpolation factor
  * @example const scheduler = new Scheduler();
+ * const door = { y: 0 };
+ * await scheduler.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
  */
 export { Scheduler } from "./schedule.js";
-export type { ScheduleHandle } from "./schedule.js";
+export type { ITweenOptions, ScheduleHandle } from "./schedule.js";
 /**
  * Implement a portable Godot-shaped game scene lifecycle.
  * @situation add a playable level or menu scene

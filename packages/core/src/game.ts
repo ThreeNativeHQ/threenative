@@ -747,7 +747,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       viewport,
       scene: threeScene,
       state: this.#state,
-      tween: (target, properties, duration) => scheduler.tween(target, properties, duration),
+      tween: (target, properties, duration, options) =>
+        scheduler.tween(target, properties, duration, options),
     };
     this.#ctx = ctx;
     this.#entities = entities;

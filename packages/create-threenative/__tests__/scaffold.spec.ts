@@ -130,6 +130,7 @@ const STARTER_PATHS = [
   "src/render/materials.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
+  "src/render/easing.ts",
   "src/render/sky.ts",
   "src/render/scenery.ts",
   "src/render/loading.ts",

@@ -444,15 +444,22 @@
       "symbol": "ScenePicker"
     },
     {
-      "constraints": ["dispose returned handles when the owning scene exits"],
-      "example": "const scheduler = new Scheduler();",
+      "constraints": [
+        "dispose returned handles when the owning scene exits",
+        "ease receives progress in the range 0 to 1 and its return value is the interpolation factor"
+      ],
+      "example": "const scheduler = new Scheduler();\nconst door = { y: 0 };\nawait scheduler.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export class Scheduler { … }",
-      "situations": ["delay an enemy patrol transition", "run a callback every simulation tick"],
-      "summary": "Schedule delayed and repeating callbacks with game-owned cleanup.",
+      "situations": [
+        "delay an enemy patrol transition",
+        "run a callback every simulation tick",
+        "tween a numeric property with a game-owned curve"
+      ],
+      "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
       "symbol": "Scheduler"
     },

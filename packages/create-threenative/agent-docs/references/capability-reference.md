@@ -394,17 +394,19 @@ const picker = new ScenePicker({ camera, scene });
 
 ### `Scheduler`
 
-`class` — Schedule delayed and repeating callbacks with game-owned cleanup.
+`class` — Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.
 
 ```ts
 export class Scheduler { … }
 ```
 
-- **Use when:** delay an enemy patrol transition · run a callback every simulation tick
-- **Constraints:** dispose returned handles when the owning scene exits
+- **Use when:** delay an enemy patrol transition · run a callback every simulation tick · tween a numeric property with a game-owned curve
+- **Constraints:** dispose returned handles when the owning scene exits · ease receives progress in the range 0 to 1 and its return value is the interpolation factor
 
 ```ts
 const scheduler = new Scheduler();
+const door = { y: 0 };
+await scheduler.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
 ```
 
 ### `skeletonBones`

@@ -5,6 +5,10 @@ export type ScheduleHandle = (() => void) & {
 
 type TweenProperties<T extends object> = { [K in keyof T]?: number };
 
+export interface ITweenOptions {
+  readonly ease?: (t: number) => number;
+}
+
 interface IScheduleEntry {
   active: boolean;
   cancel(): void;
@@ -50,8 +54,10 @@ export class Scheduler {
     target: T,
     properties: TweenProperties<T>,
     duration: number,
+    options?: ITweenOptions,
   ): Promise<void> {
     assertDelay(duration, "duration");
+    const ease = options?.ease;
     const values = Object.entries(properties).map(([key, end]) => {
       if (typeof end !== "number" || !Number.isFinite(end)) {
         throw new TypeError(`Tween property '${key}' must be a finite number.`);
@@ -82,12 +88,15 @@ export class Scheduler {
     const entry = this.#add((dt) => {
       elapsed = Math.min(duration, elapsed + dt);
       const progress = elapsed / duration;
-      for (const { end, key, start } of values) {
-        (target as Record<string, unknown>)[key] = start + (end - start) * progress;
-      }
+      const easedProgress = ease === undefined ? progress : ease(progress);
       if (progress >= 1) {
+        for (const { end, key } of values) (target as Record<string, unknown>)[key] = end;
         entry.cancel();
         settle();
+        return;
+      }
+      for (const { end, key, start } of values) {
+        (target as Record<string, unknown>)[key] = start + (end - start) * easedProgress;
       }
     }, settle);
     return promise;
