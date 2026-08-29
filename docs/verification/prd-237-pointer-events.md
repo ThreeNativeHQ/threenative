@@ -88,3 +88,75 @@ pnpm test stops in its documentation-link phase on these existing links:
 pnpm test:templates passed action-rpg, defense, minimal, platformer, and racing, then
 failed in the existing shooter scenarios because Chromium reported TN_CAPTURE_BLANK for
 input-look-right.png and after.png. Defense passed independently and in that run.
+
+## Repair round 1 — 2026-08-28
+
+This section records the repair for pointer edges between input ticks, the defense touch-batch
+scenario, and the generated `ctx.pointer` instructions.
+
+### Red regression observed before the fix
+
+Command:
+
+    pnpm exec vitest run packages/core/__tests__/pointer-events.spec.ts packages/core/__tests__/input.spec.ts packages/core/__tests__/game.spec.ts packages/core/__tests__/documented-contract.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts
+
+Result before the edge latch was added:
+
+    FAIL packages/core/__tests__/pointer-events.spec.ts (12 tests | 1 failed)
+    AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+    Test Files 1 failed, 4 passed; Tests 120 passed, 121 total
+
+The pointerdown and pointerup had left `raw.pointers` empty by dispatch time, and the legacy
+`raw.pointer` value had no pointer id. The regression test now drives both events through
+`InputMap`, publishes the next tick, and asserts exactly one `pointerPressed`,
+`pointerReleased`, and `tapped` event with pointer id 7.
+
+### Additional red scenario found during repair
+
+The first run of the rewritten `pointers` touch scenario placed the tower but then failed the
+existing `placed` tile assertion. The old hover record (pointer id 0) was retired after the new
+touch record (pointer id 1) entered, so its exit callback cleared the preview. Pointer cleanup
+now runs before latched-edge dispatch, while edge ids remain protected for the current dispatch.
+
+### Green results
+
+| Check | Result |
+| --- | --- |
+| focused Vitest command above | PASS — 5 files, 122 tests |
+| `pnpm typecheck` | PASS — all workspace typechecks |
+| `pnpm budgets` | PASS — all invariant checks; existing LOC review notices only |
+| `pnpm sync:agents` | PASS — 16 mirrors, 14 written |
+| defense verifier command above | PASS — all 7 generated defense playtests |
+| `adb devices` | PASS — probe ran, no devices attached |
+
+The defense pointer scenario now keeps the hover step, presses with the complete held-pointer
+set `{ id: 1, buttons: 1, x: 0.31678, y: 0.41783 }` for `holdTicks: 2`, releases with
+`pointers: []` and `waitTicks: 1`, and passes the existing placement assertions. The scenario
+continues to use the shared browser/Android `pointers` transport; no schema or transport was
+added.
+
+### Browser visual evidence
+
+Command:
+
+    sh scripts/xvfb.sh pnpm exec tsx scripts/verify-one-template.ts defense
+
+The final run scaffolded the defense project and passed with an NVIDIA WebGPU adapter. The
+captured screenshot was:
+
+    /tmp/threenative-defense-H7gb13/defense/artifacts/playtest/04-playtests-pointer-placement.playtest.json/hovered.png
+
+That PNG was opened for visual inspection. It was nonblank and showed the defense board with the
+build tile highlighted before placement. The pointer placement assertions reported `spent = 40`,
+`towers = 1`, and `build-preview.placedTile = build-tile-2-3`, with zero console, network, and
+runtime diagnostic errors.
+
+### Android status
+
+Fresh device probe:
+
+    $ adb devices
+    List of devices attached
+
+Android execution remains **UNVERIFIED**: no physical device or emulator was attached, so the
+defense scenario was not run with `--target android` and no Android pass is claimed.

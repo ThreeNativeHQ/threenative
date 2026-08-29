@@ -301,4 +301,9 @@ export type { INormaliseToMetresOptions, NormaliseAxis } from "./scale.js";
  * attachToBone(character, "RightHand", rifle);
  */
 export { attachToBone, skeletonBones } from "./skeleton.js";
-export type { ContextMenuPolicy, IInputAction, IRawInputPointer } from "./input.js";
+export type {
+  ContextMenuPolicy,
+  IInputAction,
+  IRawInputPointer,
+  IRawInputPointerEdge,
+} from "./input.js";

@@ -79,6 +79,13 @@ export interface IRawInputPointer {
   readonly position: Vector2;
 }
 
+export interface IRawInputPointerEdge {
+  readonly buttons: number;
+  readonly id: number;
+  readonly position: Vector2;
+  readonly type: "down" | "up";
+}
+
 export interface IRawInputState {
   readonly keys: ReadonlySet<string>;
   readonly pointer: {
@@ -89,6 +96,8 @@ export interface IRawInputState {
     /** Accumulated relative mouse motion since the last `tick`, in canvas pixels. */
     readonly relative: Vector2;
   };
+  /** Pointer transitions captured since the previous input tick, grouped by pointer id. */
+  readonly pointerEdges: ReadonlyMap<number, readonly IRawInputPointerEdge[]>;
   readonly pointers: ReadonlyMap<number, IRawInputPointer>;
   readonly gamepad: {
     axes: readonly number[];
@@ -144,6 +153,8 @@ export class InputMap {
   #relativeSample = new Vector2();
   #pointerButtons = 0;
   #pointers = new Map<number, IRawInputPointer>();
+  #pointerEdges = new Map<number, readonly IRawInputPointerEdge[]>();
+  #pendingPointerEdges = new Map<number, IRawInputPointerEdge[]>();
   #gamepadAxes: number[] = [];
   #gamepadButtons: boolean[] = [];
   #previousPressed = new Map<string, boolean>();
@@ -188,6 +199,7 @@ export class InputMap {
         position: this.#pointerPosition,
         relative: this.#pointerRelative,
       },
+      pointerEdges: this.#pointerEdges,
       pointers: this.#pointers,
     };
     this.#listen(this.#target, "keydown", (event) => {
@@ -325,6 +337,7 @@ export class InputMap {
   }
 
   tick(): void {
+    this.#publishPointerEdges();
     this.#relativeSample.copy(this.#pointerRelative);
     this.#pointerRelative.set(0, 0);
     const sources = this.#source();
@@ -373,6 +386,8 @@ export class InputMap {
     this.#latchedKeys.clear();
     this.#latchedPointerButtons = 0;
     this.#latchedPointer = false;
+    this.#pointerEdges.clear();
+    this.#pendingPointerEdges.clear();
     this.#pointers.clear();
     this.#pointerButtons = 0;
     this.#pointerPosition.set(0, 0);
@@ -443,6 +458,12 @@ export class InputMap {
     this.#listeners.push([target, type, listener]);
   }
 
+  #publishPointerEdges(): void {
+    this.#pointerEdges.clear();
+    for (const [id, edges] of this.#pendingPointerEdges) this.#pointerEdges.set(id, edges);
+    this.#pendingPointerEdges.clear();
+  }
+
   #mouseEvent(event: Event): void {
     const mouse = event as MouseEvent;
     if (Number.isFinite(mouse.movementX)) this.#pointerRelative.x += mouse.movementX;
@@ -464,6 +485,7 @@ export class InputMap {
     const buttons = pointer.buttons ?? 0;
     const x = pointer.clientX ?? 0;
     const y = pointer.clientY ?? 0;
+    this.#recordPointerEdge(id, buttons, x, y, down);
     if (buttons !== 0) this.#latchedPointerButtons |= buttons;
     if (down === true) this.#latchedPointer = true;
     const tracked = this.#pointers.get(id);
@@ -506,5 +528,21 @@ export class InputMap {
         if (!(error instanceof Error && error.name === "InvalidStateError")) throw error;
       }
     }
+  }
+
+  #recordPointerEdge(
+    id: number,
+    buttons: number,
+    x: number,
+    y: number,
+    down: boolean | undefined,
+  ): void {
+    if (down === undefined) return;
+    let edges = this.#pendingPointerEdges.get(id);
+    if (edges === undefined) {
+      edges = [];
+      this.#pendingPointerEdges.set(id, edges);
+    }
+    edges.push({ buttons, id, position: new Vector2(x, y), type: down ? "down" : "up" });
   }
 }

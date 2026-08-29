@@ -889,7 +889,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (this.#paused) return;
         this.#input?.tick();
         scheduler.tick(dt);
-        pointerEvents.tick(input.raw.pointers, picker, input.raw.pointer);
+        pointerEvents.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;

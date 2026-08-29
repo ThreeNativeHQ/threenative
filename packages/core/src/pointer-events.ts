@@ -62,6 +62,8 @@ interface IPointerRecord {
 }
 
 type PrimaryPointer = Pick<IPointerState, "buttons" | "position">;
+type PointerEdge = IPointerState & { readonly type: "down" | "up" };
+type PointerEdges = ReadonlyMap<number, readonly PointerEdge[]>;
 type PointerPicker = Pick<ScenePicker, "raycastAll"> | IPointerEvents3DPicker;
 
 const NO_POINT = new Vector3();
@@ -80,7 +82,9 @@ function isPointerEventType(value: string): value is PointerEvent3DType {
 export class PointerEvents3D implements IPointerEvents3D {
   #listeners = new Map<Object3D, Map<PointerEvent3DType, Set<PointerEvent3DListener>>>();
   #draggable = new Set<Object3D>();
+  #edgeHits = new Map<number, Intersection | undefined>();
   #pointers = new Map<number, IPointerRecord>();
+  #edgeIds = new Set<number>();
   #targets: Object3D[] = [];
   #screen = new Vector2();
   #screenTransform: (position: Vector2, target: Vector2) => Vector2;
@@ -155,44 +159,43 @@ export class PointerEvents3D implements IPointerEvents3D {
     pointers: ReadonlyMap<number, IPointerState>,
     picker: PointerPicker,
     primary?: PrimaryPointer,
+    edges?: PointerEdges,
   ): void {
+    this.#edgeIds.clear();
+    this.#edgeHits.clear();
     if (this.#targets.length === 0) return;
     const active = new Map<number, IPointerState>();
     for (const [id, pointer] of pointers) active.set(id, pointer);
-    if (active.size === 0 && primary !== undefined) {
+    const hasEdges = edges !== undefined && edges.size !== 0;
+    if (!hasEdges && active.size === 0 && primary !== undefined) {
       const onlyPointer =
         this.#pointers.size === 1 ? this.#pointers.keys().next().value : undefined;
       const id = onlyPointer ?? 0;
       active.set(id, { id, buttons: primary.buttons, position: primary.position });
     }
 
+    if (edges !== undefined) {
+      for (const id of edges.keys()) this.#edgeIds.add(id);
+    }
     for (const [id, record] of this.#pointers) {
-      if (active.has(id)) continue;
+      if (active.has(id) || this.#edgeIds.has(id)) continue;
+      this.#finishPointer(id, record);
+    }
+
+    this.#processEdges(pointers, picker, edges);
+    if (active.size === 0 && primary !== undefined) {
+      const onlyPointer =
+        this.#pointers.size === 1 ? this.#pointers.keys().next().value : undefined;
+      const id = onlyPointer ?? 0;
+      active.set(id, { id, buttons: primary.buttons, position: primary.position });
+    }
+    for (const [id, record] of this.#pointers) {
+      if (active.has(id) || this.#edgeIds.has(id)) continue;
       this.#finishPointer(id, record);
     }
 
     for (const [id, pointer] of active) {
-      const record = this.#pointers.get(id) ?? this.#newRecord(id);
-      this.#pointers.set(id, record);
-      const previousButtons = record.buttons;
-      const hit = this.#hit(pointer, picker);
-      this.#updateHover(record, hit, pointer.buttons);
-
-      if (previousButtons === 0 && pointer.buttons !== 0) {
-        record.pressed = hit?.object;
-        if (record.pressed !== undefined) {
-          this.#dispatch("pointerPressed", record.pressed, record, pointer.buttons, hit);
-          record.dragTarget = this.#draggableAncestor(record.pressed);
-          if (record.dragTarget !== undefined)
-            this.#dispatch("dragStarted", record.dragTarget, record, pointer.buttons, hit);
-        }
-      } else if (pointer.buttons !== 0 && record.dragTarget !== undefined) {
-        this.#dispatch("dragged", record.dragTarget, record, pointer.buttons, hit);
-      }
-
-      if (previousButtons !== 0 && pointer.buttons === 0)
-        this.#release(record, hit, pointer.buttons);
-      record.buttons = pointer.buttons;
+      this.#processActive(pointer, picker, this.#edgeIds.has(id));
     }
   }
 
@@ -200,6 +203,8 @@ export class PointerEvents3D implements IPointerEvents3D {
   clear(): void {
     this.#listeners.clear();
     this.#draggable.clear();
+    this.#edgeHits.clear();
+    this.#edgeIds.clear();
     this.#pointers.clear();
     this.#targets.length = 0;
   }
@@ -223,6 +228,65 @@ export class PointerEvents3D implements IPointerEvents3D {
     this.#screenTransform(pointer.position, this.#screen);
     const hits = picker.raycastAll({ screen: this.#screen, targets: this.#targets });
     return hits[0];
+  }
+
+  #processEdges(
+    pointers: ReadonlyMap<number, IPointerState>,
+    picker: PointerPicker,
+    edges: PointerEdges | undefined,
+  ): void {
+    if (edges === undefined) return;
+    for (const [id, pointerEdges] of edges) {
+      this.#edgeIds.add(id);
+      const current = pointers.get(id);
+      if (current !== undefined) {
+        const hit = this.#hit(current, picker);
+        this.#edgeHits.set(id, hit);
+        for (const edge of pointerEdges) this.#processEdge(edge, hit);
+        continue;
+      }
+      for (const edge of pointerEdges) this.#processEdge(edge, this.#hit(edge, picker));
+    }
+  }
+
+  #processEdge(edge: PointerEdge, hit: Intersection | undefined): void {
+    const record = this.#pointers.get(edge.id) ?? this.#newRecord(edge.id);
+    this.#pointers.set(edge.id, record);
+    this.#edgeHits.set(edge.id, hit);
+    this.#updateHover(record, hit, edge.buttons);
+    if (edge.type === "down") {
+      if (record.buttons === 0 && edge.buttons !== 0) this.#press(record, hit, edge.buttons);
+    } else if (record.buttons !== 0 && edge.buttons === 0) {
+      this.#release(record, hit, edge.buttons);
+    }
+    record.buttons = edge.buttons;
+  }
+
+  #processActive(pointer: IPointerState, picker: PointerPicker, hasEdge: boolean): void {
+    const record = this.#pointers.get(pointer.id) ?? this.#newRecord(pointer.id);
+    this.#pointers.set(pointer.id, record);
+    const previousButtons = record.buttons;
+    const hit = hasEdge ? this.#edgeHits.get(pointer.id) : this.#hit(pointer, picker);
+    this.#updateHover(record, hit, pointer.buttons);
+    if (!hasEdge) {
+      if (previousButtons === 0 && pointer.buttons !== 0) {
+        this.#press(record, hit, pointer.buttons);
+      } else if (pointer.buttons !== 0 && record.dragTarget !== undefined) {
+        this.#dispatch("dragged", record.dragTarget, record, pointer.buttons, hit);
+      }
+      if (previousButtons !== 0 && pointer.buttons === 0)
+        this.#release(record, hit, pointer.buttons);
+    }
+    record.buttons = pointer.buttons;
+  }
+
+  #press(record: IPointerRecord, hit: Intersection | undefined, buttons: number): void {
+    record.pressed = hit?.object;
+    if (record.pressed === undefined) return;
+    this.#dispatch("pointerPressed", record.pressed, record, buttons, hit);
+    record.dragTarget = this.#draggableAncestor(record.pressed);
+    if (record.dragTarget !== undefined)
+      this.#dispatch("dragStarted", record.dragTarget, record, buttons, hit);
   }
 
   #updateHover(record: IPointerRecord, hit: Intersection | undefined, buttons: number): void {

@@ -16,9 +16,16 @@
     {
       "kind": "input",
       "label": "press",
-      "pointerPosition": { "x": 0.31678, "y": 0.41783, "buttons": 1 },
-      "waitTicks": 2,
-      "release": true
+      "pointers": [{ "buttons": 1, "id": 1, "x": 0.31678, "y": 0.41783 }],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "release",
+      "pointers": [],
+      "waitTicks": 1,
+      "release": false
     },
     { "kind": "wait", "label": "placed", "waitTicks": 2, "release": true }
   ],

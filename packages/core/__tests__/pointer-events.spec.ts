@@ -1,5 +1,6 @@
 import { Group, type Intersection, Mesh, type Object3D, Vector2, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { InputMap } from "../src/input.js";
 import {
   type IPointerEvents3DPicker,
   type IPointerState,
@@ -213,5 +214,46 @@ describe("PointerEvents3D", () => {
     events.tick(new Map(), picker, pointer(7, 0, 10));
 
     expect(tapped).toHaveBeenCalledTimes(1);
+  });
+
+  it("should preserve a pointer tap that starts and ends before the next input tick", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+    const object = new Mesh();
+    const events = new PointerEvents3D();
+    const pressed = vi.fn();
+    const released = vi.fn();
+    const tapped = vi.fn();
+    events.on(object, "pointerPressed", pressed);
+    events.on(object, "pointerReleased", released);
+    events.on(object, "tapped", tapped);
+    const picker = pickerFor(new Map([[10, object]]));
+
+    target.dispatchEvent(
+      Object.assign(new Event("pointerdown"), {
+        buttons: 1,
+        clientX: 10,
+        clientY: 0,
+        pointerId: 7,
+      }),
+    );
+    target.dispatchEvent(
+      Object.assign(new Event("pointerup"), {
+        buttons: 0,
+        clientX: 10,
+        clientY: 0,
+        pointerId: 7,
+      }),
+    );
+    input.tick();
+    events.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
+
+    expect(pressed).toHaveBeenCalledTimes(1);
+    expect(released).toHaveBeenCalledTimes(1);
+    expect(tapped).toHaveBeenCalledTimes(1);
+    expect(pressed).toHaveBeenCalledWith(expect.objectContaining({ pointerId: 7 }));
+    expect(released).toHaveBeenCalledWith(expect.objectContaining({ pointerId: 7 }));
+    expect(tapped).toHaveBeenCalledWith(expect.objectContaining({ pointerId: 7 }));
+    input.dispose();
   });
 });

@@ -46,13 +46,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // before that formatting ran and were therefore stale the moment they were committed.
   // Recomputed again for PRD-237: the shared capability reference now documents PointerEvents3D,
   // which changes the generated reference bytes embedded in every scaffold.
-  "action-rpg": "76bd594241dde65ef24828047e55845fb8a5c23993d47bc46155a1dbaed598b9",
-  defense: "542c6d29d150541031e3275105a93feabaa8e8e67584cbca10121bae6286a20f",
-  minimal: "c25031a1fd05e214693ac56040bd23c4a327dc5d166f8aeb5e769e6bdf842827",
-  platformer: "8113a7dc0a17c7208eb53328aa0ce0ae9006d4860e7ced492e22cc23ddac8b76",
-  racing: "fbfe6a2c8692dcd3fc6d6cbafa15964294ff9ff2fc81d104395d6cfa057551dd",
-  shooter: "67792c6c3a262636f01fd960ba5f1e86cf5dc6c788db0aacbcf5ef35b13f226c",
-  starter: "2daa76932466ad9b5b4f0d840cd5fcc3dea0f1634823bafd0516e9a2ad1d8c60",
+  // Recomputed again for the PRD-237 repair: the shared ctx surface now documents ctx.pointer,
+  // which changes the generated instructions embedded in every scaffold.
+  "action-rpg": "eef2320a3865967901a5601481f286e307a2ac55abe6a4badadcb37af6a3dbc1",
+  defense: "2f656a5010a8cf42e7dcfd9bc1605cc8b12607c33785b1c8d57ed4b339d38bfe",
+  minimal: "06f98c27ce91866cc0df9fedd443b5bcc745045abf41da8c9107d0d08a79f4df",
+  platformer: "b9260208607f70cf269636edcb1777d123fa555f09f7f16736c02dff33561200",
+  racing: "1ef57e1d3d4aecb7ef7bab97e889db8e3c49322558a7ff4e83354494564adc6d",
+  shooter: "10564ea72d1479f193e2c3e9d47513818d3e36f79a0c65acddceb558c1bc90ac",
+  starter: "b8a4d2a2d71f071b003f699be0ff97410836cc6501fe5f146f38411a5b7ca105",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

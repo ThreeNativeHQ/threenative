@@ -194,6 +194,23 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("latches pointer edges by id through the next input tick", () => {
+    const target = new EventTarget();
+    const input = new InputMap(undefined, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 7, 10, 20));
+    target.dispatchEvent(pointerEvent("pointerup", 7, 12, 22));
+    input.tick();
+
+    expect(input.raw.pointerEdges.get(7)).toMatchObject([
+      { buttons: 1, id: 7, position: { x: 10, y: 20 }, type: "down" },
+      { buttons: 0, id: 7, position: { x: 12, y: 22 }, type: "up" },
+    ]);
+    input.tick();
+    expect(input.raw.pointerEdges.size).toBe(0);
+    input.dispose();
+  });
+
   it("updates legacy hover position only when no pointer is held", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);
