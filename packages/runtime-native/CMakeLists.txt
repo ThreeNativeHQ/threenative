@@ -1880,6 +1880,27 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         TN_TIMER_ENGINE_FIRST_TEST)
     target_link_libraries(threenative-timer-engine-first-test PRIVATE mystral-runtime)
 
+    # WebTransport contracts. The wire test includes webtransport.cpp textually
+    # because its helpers live in an anonymous namespace; it links quiche alone
+    # — mystral-runtime already defines the same TU, and linking both would
+    # duplicate every symbol. Both targets require quiche: without it the stub
+    # installs a different script and has nothing to assert.
+    if(TARGET quiche::quiche)
+        add_executable(threenative-webtransport-wire-test EXCLUDE_FROM_ALL
+            tests/webtransport_wire_test.cpp)
+        target_include_directories(threenative-webtransport-wire-test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_BINARY_DIR}/generated)
+        add_dependencies(threenative-webtransport-wire-test threenative-runtime-scripts)
+        target_link_libraries(threenative-webtransport-wire-test PRIVATE quiche::quiche)
+        tn_register_contract_test(threenative-webtransport-wire-test)
+
+        add_executable(threenative-webtransport-surface-test EXCLUDE_FROM_ALL
+            tests/webtransport_surface_test.cpp)
+        target_link_libraries(threenative-webtransport-surface-test PRIVATE mystral-runtime)
+        tn_register_contract_test(threenative-webtransport-surface-test)
+    endif()
+
     add_executable(threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL
         tests/webgpu_bindings_reentrancy_test.cpp)
     target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE mystral-runtime)
