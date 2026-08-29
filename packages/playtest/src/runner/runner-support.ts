@@ -64,7 +64,7 @@ import { componentObservations, buildObservations, collectTrivialityOptOuts } fr
 import { observedMovementSample, entityRotation, resourceObservations, normalizedRuntimeDiagnostics } from "./sampling.js";
 import { cameraReport, evaluateCamera } from "./camera.js";
 import type { IStandalonePlaytestReport } from "./shared.js";
-import type { ILabeledPlaytestSample, IMovementSampleInterval, RunnerConsoleEntry } from "./shared.js";
+import type { ILabeledPlaytestSample, IMovementSampleInterval, IRunnerConsoleEntry } from "./shared.js";
 // Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 
 export function preflightDisplay(
@@ -155,7 +155,7 @@ export function buildReport(
   scenario: IPlaytestScenario,
   beforeSnapshot: IPlaytestObservationSnapshot | undefined,
   afterSnapshot: IPlaytestObservationSnapshot | undefined,
-  consoleEntries: RunnerConsoleEntry[],
+  consoleEntries: IRunnerConsoleEntry[],
   networkEntries: Array<{ method: string; url: string }>,
   pathLength: number | undefined = undefined,
   hud: Record<string, { after?: unknown; before?: unknown }> = {},

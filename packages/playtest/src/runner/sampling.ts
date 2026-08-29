@@ -10,7 +10,7 @@ import { resolveBrowserArguments } from "./browser.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { pixelBoundsToNdc } from "./camera.js";
 import { entityPosition, length, subtract } from "./shared.js";
-import type { IMovementSampleInterval, RunnerConsoleEntry } from "./shared.js";
+import type { IMovementSampleInterval, IRunnerConsoleEntry } from "./shared.js";
 import type { Page } from "playwright";
 
 export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAssertion[]): Promise<Record<string, unknown>> {
@@ -148,7 +148,7 @@ export function isRuntimeReadout(entry: unknown): boolean {
 export function normalizedRuntimeDiagnostics(
   snapshot: IPlaytestObservationSnapshot | undefined,
   scenario: IPlaytestScenario,
-  consoleEntries: RunnerConsoleEntry[],
+  consoleEntries: IRunnerConsoleEntry[],
 ): { recentRuntimeErrors: unknown[]; runtimeReadouts: unknown[]; scene: { renderedEntities: unknown[] } } {
   const published = snapshot?.diagnostics ?? [];
   return {

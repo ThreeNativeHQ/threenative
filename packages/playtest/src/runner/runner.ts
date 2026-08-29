@@ -17,7 +17,7 @@ import type {
   IStandalonePlaytestReport,
   ILabeledPlaytestSample,
   IMovementSampleInterval,
-  RunnerConsoleEntry,
+  IRunnerConsoleEntry,
 } from "./shared.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -79,7 +79,7 @@ export { advanceFixedStep, playtestStepDrivesMovement } from './steps.js';
 export { isRuntimeReadout } from './sampling.js';
 export { ManagedServerError, failedDiagnosticsAssertion } from './shared.js';
 export { resolveManagedServerCommand, substituteManagedPort, boundedTeardownStep, pageLifecycleDiagnostic } from './server.js';
-export type { IStandalonePlaytestReport, ILabeledPlaytestSample, IMovementSampleInterval, IRunStepSamples, RunnerConsoleEntry } from './shared.js';
+export type { IStandalonePlaytestReport, ILabeledPlaytestSample, IMovementSampleInterval, IRunStepSamples, IRunnerConsoleEntry } from './shared.js';
 export { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 
 export async function handlePlaytestSignal(
@@ -273,7 +273,7 @@ async function runStandalonePlaytestInternal(
         console.error(`__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:${reason}`);
       });
     });
-    const consoleEntries: RunnerConsoleEntry[] = [];
+    const consoleEntries: IRunnerConsoleEntry[] = [];
     const networkEntries: Array<{ method: string; url: string }> = [];
     page.on("console", (entry) => {
       const text = entry.text();

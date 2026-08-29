@@ -252,7 +252,7 @@ never surface them. This table covers only the `ctx` properties; call
 | You already have | Rather than | Signature |
 |---|---|---|
 | `ctx.goto("<scene-name>")` | a hand-written `#reset()` | `(name: string) => Promise<void>` |
-| `ctx.tween(obj, { y: 2 }, 0.4, { ease: ... })` | a `Math.sin` / `lerp` accumulator | `(target, props, seconds, options?: { ease?: (progress: number) => number }) => Promise<void>`; optional fourth `options` argument; `ease` receives progress from 0 to 1 and returns the interpolation factor |
+| `ctx.tween(obj, { y: 2 }, 0.4, { ease: ... })` | a `Math.sin` / `lerp` accumulator | `(target, props, seconds, options?: { ease?: (progress: number) => number }) => Promise<void>`; `ease` receives progress 0–1 and returns the interpolation factor |
 | `ctx.after(0.8, fn)` | `elapsed += dt; if (elapsed > 0.8)` | `(seconds, cb) => ScheduleHandle` |
 | `ctx.every(fn)` | a per-frame branch in `update` | `(cb: (dt: number) => void) => ScheduleHandle` |
 | `ctx.random.range(-1, 1)` | `Math.random()` | deterministic when `seed` is configured; otherwise `Math.random()` |
@@ -260,9 +260,9 @@ never surface them. This table covers only the `ctx` properties; call
 | `ctx.raycast()` / `ctx.raycastAll()` | `new Raycaster()` + `intersectObject(s)` | `(options?: { screen?, origin?, direction?, far?, targets?, exclude? }) => Intersection \| undefined` / `readonly Intersection[]` |
 
 `ctx.pointer` dispatches `pointerEntered`, `pointerExited`, `pointerPressed`, `pointerReleased`,
-`tapped`, `dragStarted`, `dragged`, and `dragEnded` for the same pointer-id-specific mouse and
-touch stream on web and native. Register a mesh or loaded model root; the engine raycasts only
-registered objects and bubbles events through their parent chain.
+`tapped`, `dragStarted`, `dragged`, and `dragEnded` from the same pointer-id stream on web and
+native. Register a mesh or model root; only registered objects are raycast, and events bubble
+through the parent chain.
 
 Three rules are load-bearing enough to stay here:
 

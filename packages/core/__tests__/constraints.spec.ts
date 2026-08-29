@@ -22,7 +22,9 @@ describe("core constraints", () => {
           file !== "renderer.ts" &&
           file !== "react-host.ts" &&
           file !== "warmup.ts" &&
-          file !== "tracers.ts",
+          file !== "tracers.ts" &&
+          file !== "gpu-scene-bvh.ts" &&
+          file !== "index.ts",
       )
       .map((file) => readFileSync(path.join(sourceDirectory, file), "utf8"))
       .join("\n");
@@ -102,6 +104,21 @@ describe("core constraints", () => {
     // neutral unit cylinder is the game's too.
     const tracers = readFileSync(path.join(sourceDirectory, "tracers.ts"), "utf8");
     expect(tracers).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+
+    // `gpu-scene-bvh.ts` is exempted on the same terms as `warmup.ts`: it reads a material's
+    // *identity* — an integer index into the game's own surfaces — to pack triangles for the BVH's
+    // leaf order. It never constructs a material and never reads a property that describes how
+    // anything looks. The assertions below keep that true.
+    const sceneBvh = readFileSync(path.join(sourceDirectory, "gpu-scene-bvh.ts"), "utf8");
+    expect(sceneBvh).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
+    expect(sceneBvh).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(sceneBvh.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The public surface may NAME the types it re-exports (`IGPUSceneBVHMaterialGroup` is a data
+    // group, not a look); what it may never do is originate an appearance.
+    expect(indexSource).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
   });

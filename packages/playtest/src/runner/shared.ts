@@ -26,11 +26,11 @@ export interface ILabeledPlaytestSample {
   snapshot: IPlaytestObservationSnapshot;
 }
 
-export type RunnerConsoleEntry = {
+export interface IRunnerConsoleEntry {
   source?: "browser-console" | "page-error" | "unhandled-rejection";
   text: string;
   type: string;
-};
+}
 
 export interface IMovementSampleInterval {
   after: IPlaytestObservationSnapshot;
