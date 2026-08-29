@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { runNativeBehavior } from "../scripts/run-native-behavior.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -249,7 +249,7 @@ test("QuickJS teardown does not execute pending binding callbacks", () => {
 });
 
 function behaviorExecutable(body) {
-  const directory = mkdtempSync(join(tmpdir(), "tn-native-behavior-"));
+  const directory = makeTempDirSync("tn-native-behavior-");
   const path = join(directory, "probe.mjs");
   writeFileSync(path, `${body}\n`);
   return path;
