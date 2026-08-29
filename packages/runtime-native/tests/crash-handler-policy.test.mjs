@@ -23,7 +23,7 @@ const POLICY_TARGET = "threenative-crash-handler-policy-test";
 
 /** Runs the contract executable and returns everything it printed. An unbuilt executable is
  * unexecuted and says so — never a silent skip, which would read as a pass. */
-export function crashPolicyContractOutput() {
+function crashPolicyContractOutput() {
   const executable = join(root, POLICY_BUILD_DIRECTORY, POLICY_TARGET);
   if (!existsSync(executable))
     assert.fail(

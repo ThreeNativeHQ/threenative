@@ -78,6 +78,46 @@ fails (b) is a behaviour test; one that fails (a) is a text assertion wearing a 
 
 `build/tn-linux`, `cmake --build --target threenative-crash-handler-policy-test`, exit 0.
 
+## The root `unit` phase, run for the first time on this HEAD
+
+With `package-test` green, `pnpm test` reached the phase the abort had been hiding. It found two
+failures in 2552 tests, and **both are timeouts, not assertions**:
+
+```text
+ FAIL  scripts/__tests__/temp-dir-guard.spec.ts > requires every test-owned temporary directory to register cleanup
+Error: Test timed out in 5000ms.
+ FAIL  packages/core/__tests__/build.spec.ts > should bundle a usable import-meta declaration for the hot subpath
+Error: Test timed out in 15000ms.
+
+ Test Files  2 failed | 254 passed (256)
+      Tests  2 failed | 2550 passed (2552)
+```
+
+Re-run alone on a quiet machine, both pass with room to spare:
+
+```text
+ ✓ scripts/__tests__/temp-dir-guard.spec.ts (1 test) 1078ms
+ ✓ packages/core/__tests__/build.spec.ts (2 tests) 6596ms
+     ✓ should bundle a usable import-meta declaration for the hot subpath  5123ms
+ Test Files  2 passed (2)
+```
+
+1.08 s against a 5 s budget and 5.12 s against a 15 s one. Under the full suite's parallelism —
+`tests 508.22s` of CPU inside 83.81 s of wall clock — both exceed it. **This is a timeout budget
+that the suite's own concurrency exhausts, not a defect in either subject.** It is left as found:
+naming it belongs to this record, fixing it does not belong to Lane A.
+
+## Two traps this lane hit, recorded so the next one does not
+
+1. **Committing while `pnpm test` runs aborts it.** The lease guard compares HEAD across phases and
+   refused the `unit` phase with `TN_WORKTREE_GUARD_FAILED: phase 'unit' — worktree HEAD changed
+   from c94942d6 to 6c9442e0`. Every package suite had already passed. The repository also tells
+   agents to commit as they go, because siblings overwrite; the two rules collide exactly here, and
+   the resolution is to commit between gates, never during one.
+2. **`bash scripts/run-test-suite.sh --resume --phase unit` fails with `vitest: command not
+   found`.** The script calls bare `vitest`, which is only on `PATH` under pnpm's bin injection.
+   `pnpm exec bash scripts/run-test-suite.sh --resume --phase unit` works.
+
 ## What this does not claim
 
 - **Phase 5 is not finished.** Two files of its scope are converted; the remaining source-text
