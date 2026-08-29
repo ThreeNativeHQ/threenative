@@ -49,3 +49,22 @@ batch-level requirement that scripts shrink is evaluated after the remaining ado
 wrappers.
 
 No physical-device result is claimed for this checkpoint.
+
+## Phase 3: physical mobile qualification
+
+`qualify-physical-mobile.mjs` now routes every Android device command through the shared result
+adapter. Its regular Android path executes the shared readiness rules, Play Protect suppression,
+install, package verification, launch, and telemetry in that order. The adapter preserves the
+qualification runner's 16 MiB buffer, 30-second default timeout, 120-second install timeout, and
+non-throwing result shape.
+
+The injected production-path test passed through real artifact, prerequisite, lifecycle, telemetry,
+and evidence construction and returned the unchanged `TN_QUALIFY_PHYSICAL_PASS` result. Removing
+Play Protect suppression made the test red because the required ordered command was absent; the
+restored focused suite passed **47/47** tests.
+
+Native coverage remains **34.49%** overall and **36.16%** for `src/webgpu/`; the source digest is
+`606dbae743a8dc75f9dbe33b444da3b886ebeaea9cf83ab90d5eedbadd749ced`. The interim census is
+**108,760** lines while the new behavior proof coexists with the remaining private wrappers.
+
+No physical-device result is claimed for this checkpoint.
