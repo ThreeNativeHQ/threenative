@@ -52,3 +52,6 @@ docs/benchmark/sweeps/*/assets/generated/
 
 # written by installing @threenative/core (workspace link writes it at the repo root too)
 .mcp.json
+
+# Sandbox mini-game captures, left at the root for inspection. Not part of the repo.
+screenshot-*.png
