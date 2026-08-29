@@ -4,9 +4,10 @@ import { test } from "vitest";
 import {
   AdbCommandError,
   buildAdbInvocation,
+  createAdbClient,
   runAdb,
 } from "../scripts/lib/adb.mjs";
-import { assertDeviceReady } from "../scripts/device-preflight.mjs";
+import { assertDeviceReady, assertDeviceReadySync } from "../scripts/device-preflight.mjs";
 
 const healthyBattery = [
   "AC powered: false",
@@ -85,6 +86,33 @@ test("keeps timeout and output limits on the shared command", () => {
   assert.equal(observed.options.maxBuffer, 8 * 1024 * 1024);
 });
 
+test("preserves a command-runner result for qualification callers", () => {
+  let observed;
+  const device = createAdbClient("device-1", {
+    commandImpl: (executable, args, options) => {
+      observed = { executable, args, options };
+      return { status: 17, stdout: "", stderr: "controlled failure\n" };
+    },
+    environment: { THREENATIVE_ADB: "/fake/adb" },
+    maxBuffer: 16 * 1024 * 1024,
+    timeoutMs: 30_000,
+  });
+  assert.deepEqual(device.result(["install", "candidate.apk"], { timeoutMs: 120_000 }), {
+    error: undefined,
+    invocation: {
+      args: ["-s", "device-1", "install", "candidate.apk"],
+      executable: "/fake/adb",
+      serial: "device-1",
+    },
+    rawStatus: 17,
+    status: 17,
+    stderr: "controlled failure\n",
+    stdout: "",
+  });
+  assert.equal(observed.options.timeout, 120_000);
+  assert.equal(observed.options.maxBuffer, 16 * 1024 * 1024);
+});
+
 test("preflight accepts discharging output and refuses charging output through the shared command", async () => {
   const options = {
     allowOverride: false,
@@ -105,6 +133,14 @@ test("preflight accepts discharging output and refuses charging output through t
   await assert.rejects(
     () =>
       assertDeviceReady("device-1", options, {
+        ...dependencies,
+        spawnSyncImpl: preflightSpawn(charging),
+      }),
+    /TN_DEVICE_PREFLIGHT_CONDITION_FAILED: charging: expected discharging, observed AC/u,
+  );
+  assert.throws(
+    () =>
+      assertDeviceReadySync("device-1", options, {
         ...dependencies,
         spawnSyncImpl: preflightSpawn(charging),
       }),

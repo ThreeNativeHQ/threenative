@@ -37,6 +37,147 @@ const REPORT_SHA = "c".repeat(64);
 const DEVICE_IDENTIFIER = "physical-056";
 const DEVICE_IDENTIFIER_HASH = hashIdentifier(DEVICE_IDENTIFIER);
 
+test("physical qualification uses the shared adb and device libraries", () => {
+  const source = readFileSync(
+    new URL("../scripts/qualify-physical-mobile.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /from "\.\/lib\/adb\.mjs"/u);
+  assert.match(source, /from "\.\/lib\/device\.mjs"/u);
+  assert.doesNotMatch(source, /\["-s", serial/u);
+});
+
+test("regular Android qualification runs shared device safeguards in order", () => {
+  const directory = makeTempDirSync("tn-qualification-adopter-");
+  try {
+    const app = join(directory, "candidate.apk");
+    const out = join(workspaceRoot, ".runtime/prd056/shared-device-adopter");
+    writeFileSync(app, "signed candidate bytes");
+    const artifactSha256 = sha256File(app);
+    writeFileSync(
+      `${app}.provenance.json`,
+      JSON.stringify({
+        schemaVersion: 1,
+        platform: "android",
+        sourceSha: LANE_CANDIDATE_SHA,
+        artifactSha256,
+        packageVersion: "0.1.13",
+        signing: {
+          applicationId: "com.threenative.game",
+          certificateFingerprint: "d".repeat(64),
+          debuggable: false,
+          expiresAt: "2027-08-09T00:00:00.000Z",
+          signerId: "CN=Observed signer",
+        },
+      }),
+    );
+    mkdirSync(out, { recursive: true });
+    const gateEvidence = join(directory, "gates.json");
+    writeFileSync(gateEvidence, JSON.stringify(productionGateEvidence()));
+    const overrides = Object.fromEntries(
+      ["prd053", "prd054", "prd046", "prd048"].map((name) => [name, { artifactSha256 }]),
+    );
+    withPrerequisiteReports((prerequisiteReports) => {
+      const calls = [];
+      let clock = Date.parse("2026-08-09T01:00:00.000Z");
+      const deviceOutput = (args) => {
+        const adbArgs = args.slice(2);
+        const operation = adbArgs.join(" ");
+        calls.push(operation);
+        if (operation === "get-state") return "device\n";
+        if (operation === "shell dumpsys battery") return "AC powered: false\nUSB powered: false\nWireless powered: false\nstatus: 3\nlevel: 88\n";
+        if (operation === "shell dumpsys thermalservice") return "Thermal Status: 0\n";
+        if (operation === "shell dumpsys power") return "mScreenOn=true\n";
+        if (operation === "shell dumpsys display") return "mSupportedRefreshRates=[120.0, 60.0]\nmActiveSfDisplayMode=DisplayMode{id=0, peakRefreshRate=60.0}\n";
+        if (operation.startsWith("shell settings get")) return "0\n";
+        if (operation.startsWith("shell settings put")) return "";
+        if (operation.endsWith("getprop ro.kernel.qemu")) return "0\n";
+        if (operation.endsWith("getprop ro.hardware")) return "tensor\n";
+        if (operation.endsWith("getprop ro.product.cpu.abi")) return "arm64-v8a\n";
+        if (operation.endsWith("getprop ro.product.name")) return "husky\n";
+        if (operation.endsWith("getprop ro.product.manufacturer")) return "Google\n";
+        if (operation.endsWith("getprop ro.product.model")) return "Pixel 8 Pro\n";
+        if (operation.endsWith("getprop ro.build.version.release")) return "15\n";
+        if (operation.endsWith("getprop ro.build.id")) return "AP4A.250000.000\n";
+        if (operation === "shell dumpsys SurfaceFlinger") return "GLES: Adreno physical Vulkan\n";
+        if (operation === "shell wm size") return "Physical size: 2340x1080\n";
+        if (operation.startsWith("install --no-streaming")) return "Success\n";
+        if (operation === "shell pm path com.threenative.game") return "package:/data/app/com.threenative.game/base.apk\n";
+        if (operation.startsWith("shell am start")) return "Status: ok\n";
+        if (operation === "shell pidof com.threenative.game") return "7123\n";
+        if (operation.includes("dumpsys gfxinfo")) return "Flags,IntendedVsync,FrameCompleted\n0,1000000000,1012500000\n";
+        if (operation.includes("dumpsys meminfo")) return "TOTAL 2048\n";
+        throw new Error(`unexpected adb operation: ${operation}`);
+      };
+      const command = (executable, args) => {
+        if (executable === "apksigner") return { status: 0, stdout: `certificate SHA-256 digest: ${"d".repeat(64)}`, stderr: "" };
+        if (executable === "unzip") return { status: 0, stdout: "lib/arm64-v8a/libnative.so", stderr: "" };
+        if (executable === "adb") return { status: 0, stdout: deviceOutput(args), stderr: "" };
+        mkdirSync(join(out, "playtest"), { recursive: true });
+        writeFileSync(join(out, "playtest/after.png"), "non-blank capture");
+        const state = productionLifecycleState();
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            pass: true,
+            assertionResults: [{ id: "lifecycle", pass: true }],
+            diagnostics: [],
+            observations: {
+              resources: { GameState: { before: { sessionNonce: state.sessionNonce }, after: state } },
+              runtimeDiagnostics: { recentRuntimeErrors: [] },
+            },
+          }),
+          stderr: "",
+        };
+      };
+      const result = qualifyPhysicalMobile(
+        {
+          app,
+          artifactProvenance: `${app}.provenance.json`,
+          cadenceMs: 50,
+          candidateSha: LANE_CANDIDATE_SHA,
+          control: null,
+          device: DEVICE_IDENTIFIER,
+          durationMs: 100,
+          gateEvidence,
+          out,
+          platform: "android",
+          prerequisiteReports,
+        },
+        {
+          command,
+          findExecutable: (name) => name,
+          now: () => clock,
+          sleep: (duration) => {
+            clock += duration;
+          },
+          source: sourceIdentity(),
+        },
+      );
+      assert.deepEqual(result, {
+        code: "TN_QUALIFY_PHYSICAL_PASS",
+        report: join(out, "physical-device-evidence.json"),
+        status: "pass",
+      });
+      const positions = [
+        "get-state",
+        "shell settings put global package_verifier_enable 0",
+        `install --no-streaming ${app}`,
+        "shell pm path com.threenative.game",
+        "shell am start -W -n com.threenative.game/com.threenative.runtime.MystralActivity",
+      ].map((operation) => calls.indexOf(operation));
+      assert.ok(positions.every((position) => position >= 0));
+      assert.deepEqual(positions, [...positions].sort((left, right) => left - right));
+    }, overrides);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+    rmSync(join(workspaceRoot, ".runtime/prd056/shared-device-adopter"), {
+      force: true,
+      recursive: true,
+    });
+  }
+});
+
 function controlEvidence(count) {
   return Array.from({ length: count }, (_, index) => ({
     id: `control-${index + 1}`,

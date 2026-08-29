@@ -336,6 +336,71 @@ export function suppressPlayProtectOnAdbInstalls(serial, dependencies = {}) {
   return [...PLAY_PROTECT_INSTALL_SETTINGS];
 }
 
+function evaluateDeviceCondition(serial, configuration, battery, thermal, screen, display) {
+  const failures = [];
+  if (battery.batteryPercent < configuration.minBatteryPercent) {
+    failures.push(
+      conditionFailure(
+        "battery",
+        `>= ${configuration.minBatteryPercent}%`,
+        `${battery.batteryPercent}%`,
+      ),
+    );
+  }
+  if (configuration.requireDischarging && battery.charging) {
+    failures.push(conditionFailure("charging", "discharging", battery.chargingSource));
+  }
+  if (thermal.thermalStatusCode > configuration.maximumThermal.code) {
+    failures.push(
+      conditionFailure(
+        "thermal",
+        `<= ${configuration.maximumThermal.status}`,
+        thermal.thermalStatus,
+      ),
+    );
+  }
+  if (!screen.screenOn) failures.push(conditionFailure("screen", "on", "off"));
+  if (configuration.requireRefreshHz !== undefined) {
+    if (display.activeRefreshHz !== configuration.requireRefreshHz) {
+      failures.push(
+        conditionFailure(
+          "refreshRate",
+          `${configuration.requireRefreshHz} Hz active`,
+          `${display.activeRefreshHz} Hz`,
+        ),
+      );
+    }
+    if (display.lowPower) failures.push(conditionFailure("lowPower", "off", "on"));
+  }
+  if (failures.length > 0 && !configuration.allowOverride) {
+    const detail = failures
+      .map(
+        (failure) =>
+          `${failure.condition}: expected ${failure.threshold}, observed ${failure.observed}`,
+      )
+      .join("; ");
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_CONDITION_FAILED", detail, {
+      serial,
+      failures,
+    });
+  }
+  return {
+    serial,
+    batteryPercent: battery.batteryPercent,
+    charging: battery.charging,
+    chargingSource: battery.chargingSource,
+    thermalStatus: thermal.thermalStatus,
+    thermalStatusCode: thermal.thermalStatusCode,
+    screenOn: screen.screenOn,
+    activeRefreshHz: display.activeRefreshHz,
+    supportedRefreshHz: display.supportedRefreshHz,
+    peakRefreshRateSetting: display.peakRefreshRateSetting,
+    minRefreshRateSetting: display.minRefreshRateSetting,
+    lowPower: display.lowPower,
+    provisional: failures.map((failure) => failure.condition),
+  };
+}
+
 export async function assertDeviceReady(serial, options, dependencies = {}) {
   if (typeof serial !== "string" || serial.length === 0) {
     throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
@@ -381,71 +446,40 @@ export async function assertDeviceReady(serial, options, dependencies = {}) {
   const thermal = parseThermalState(await execute(["shell", "dumpsys", "thermalservice"]));
   const screen = parseScreenState(await execute(["shell", "dumpsys", "power"]));
   const display = await readDisplayState(execute);
-  const failures = [];
-  if (battery.batteryPercent < configuration.minBatteryPercent) {
-    failures.push(
-      conditionFailure(
-        "battery",
-        `>= ${configuration.minBatteryPercent}%`,
-        `${battery.batteryPercent}%`,
-      ),
+  return evaluateDeviceCondition(serial, configuration, battery, thermal, screen, display);
+}
+
+export function assertDeviceReadySync(serial, options, dependencies = {}) {
+  if (typeof serial !== "string" || serial.length === 0) {
+    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_NO_DEVICE", "a device serial is required");
+  }
+  const configuration = normaliseOptions(options);
+  if (/^emulator-/u.test(serial) && !configuration.allowEmulator) {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_EMULATOR_BLOCKED",
+      `${serial} is an emulator; a physical Android device is required`,
+      { serial },
     );
   }
-  if (configuration.requireDischarging && battery.charging) {
-    failures.push(conditionFailure("charging", "discharging", battery.chargingSource));
-  }
-  if (thermal.thermalStatusCode > configuration.maximumThermal.code) {
-    failures.push(
-      conditionFailure(
-        "thermal",
-        `<= ${configuration.maximumThermal.status}`,
-        thermal.thermalStatus,
-      ),
+  const execute = dependencies.adb ?? ((args) => runAdb(serial, args, dependencies));
+  const state = String(execute(["get-state"])).trim();
+  if (state !== "device") {
+    throw new DevicePreflightError(
+      "TN_DEVICE_PREFLIGHT_NO_DEVICE",
+      `${serial} is not online (adb state: ${state || "missing"})`,
+      { serial, observed: state || "missing" },
     );
   }
-  if (!screen.screenOn) {
-    failures.push(conditionFailure("screen", "on", "off"));
-  }
-  if (configuration.requireRefreshHz !== undefined) {
-    if (display.activeRefreshHz !== configuration.requireRefreshHz) {
-      failures.push(
-        conditionFailure(
-          "refreshRate",
-          `${configuration.requireRefreshHz} Hz active`,
-          `${display.activeRefreshHz} Hz`,
-        ),
-      );
-    }
-    // Battery Saver clamps the panel's mode range, so a declared rate can be voted for and never
-    // applied. It is a separate cause from the Smooth Display setting and both have been observed.
-    if (display.lowPower) {
-      failures.push(conditionFailure("lowPower", "off", "on"));
-    }
-  }
-
-  if (failures.length > 0 && !configuration.allowOverride) {
-    const detail = failures
-      .map((failure) => `${failure.condition}: expected ${failure.threshold}, observed ${failure.observed}`)
-      .join("; ");
-    throw new DevicePreflightError("TN_DEVICE_PREFLIGHT_CONDITION_FAILED", detail, {
-      serial,
-      failures,
-    });
-  }
-
-  return {
-    serial,
-    batteryPercent: battery.batteryPercent,
-    charging: battery.charging,
-    chargingSource: battery.chargingSource,
-    thermalStatus: thermal.thermalStatus,
-    thermalStatusCode: thermal.thermalStatusCode,
-    screenOn: screen.screenOn,
-    activeRefreshHz: display.activeRefreshHz,
-    supportedRefreshHz: display.supportedRefreshHz,
-    peakRefreshRateSetting: display.peakRefreshRateSetting,
-    minRefreshRateSetting: display.minRefreshRateSetting,
-    lowPower: display.lowPower,
-    provisional: failures.map((failure) => failure.condition),
+  const battery = parseBatteryState(execute(["shell", "dumpsys", "battery"]));
+  const thermal = parseThermalState(execute(["shell", "dumpsys", "thermalservice"]));
+  const screen = parseScreenState(execute(["shell", "dumpsys", "power"]));
+  const display = {
+    ...parseActiveDisplayMode(execute(["shell", "dumpsys", "display"])),
+    ...parseRefreshRateSettings({
+      peak: execute(["shell", "settings", "get", "system", "peak_refresh_rate"]),
+      min: execute(["shell", "settings", "get", "system", "min_refresh_rate"]),
+      lowPower: execute(["shell", "settings", "get", "global", "low_power"]),
+    }),
   };
+  return evaluateDeviceCondition(serial, configuration, battery, thermal, screen, display);
 }
