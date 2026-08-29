@@ -232,44 +232,48 @@ test('Android proof refuses a viewport it has not executed', () => {
   );
 });
 
-test('native host installs and records the WheelEvent source used by InputMap', () => {
+test('native scroll conformance records the host source contract without claiming runtime delivery', () => {
   const manifest = JSON.parse(read('shim-manifest.json'));
   const wheelShim = manifest.shims.find((shim) => shim.name === 'WheelEvent');
   assert.ok(wheelShim, 'shim-manifest.json must record the native WheelEvent shim');
   assert.match(wheelShim.evidence, /event-constructors-setup\.js/u);
 
-  const constructors = read('src/runtime-scripts/event-constructors-setup.js');
-  const scope = {};
-  new Function('globalThis', constructors)(scope);
-  const wheel = new scope.WheelEvent('wheel', { deltaMode: 1, deltaY: -2 });
-  assert.equal(wheel.type, 'wheel');
-  assert.equal(wheel.deltaMode, 1);
-  assert.equal(wheel.deltaY, -2);
-
   const runtime = read('src/runtime.cpp');
   const input = read('src/platform/input.cpp');
   const window = read('src/platform/window.cpp');
-  assert.match(runtime, /dispatchWheelEvent\(e\)/u);
+  assert.match(runtime, /setWheelCallback[\s\S]*dispatchWheelEvent\(e\)/u);
+  assert.match(runtime, /void dispatchWheelEvent\(const platform::WheelEventData& e\)/u);
   assert.match(window, /SDL_EVENT_MOUSE_WHEEL/u);
-  assert.match(input, /processMouseWheel/u);
-  assert.match(input, /data\.deltaMode = 0/u);
+  assert.match(window, /processMouseWheel\(event\.wheel\)/u);
+  assert.match(input, /void processMouseWheel\(const SDL_MouseWheelEvent& event\)/u);
+
+  const scene = read('conformance/scenes/shared/scroll-input.js');
+  assert.match(scene, /addEventListener\(['"]wheel['"]/u);
+  assert.match(scene, /input\.axis\(['"]zoom['"]\)/u);
+  assert.doesNotMatch(scene, /WheelEvent|dispatchEvent/u);
 });
 
-test('native conformance registers a scroll sample that reaches InputMap.axis', () => {
+test('native scroll preserves the SDL to DOM wheel sign and pixel scale', () => {
+  const input = read('src/platform/input.cpp');
+
+  assert.match(input, /data\.deltaMode = 0/u);
+  assert.match(input, /data\.deltaX = event\.x \* 120\.0/u);
+  assert.match(input, /data\.deltaY = event\.y \* 120\.0/u);
+  assert.doesNotMatch(input, /data\.deltaY = event\.y \* -120\.0/u);
+});
+
+test('native conformance keeps scroll delivery source-contract-only until a host run exists', () => {
   const registry = JSON.parse(read('conformance/registry.json'));
   const row = registry.tests.find((entry) => entry.id === '99-scroll-input');
   assert.deepEqual(row, {
+    availability: 'source-contract-only',
     category: 'input',
     desktopGate: false,
     id: '99-scroll-input',
-    inputProof: 'scroll',
     required: true,
     scene: 'conformance/scenes/shared/scroll-input.js',
-    status: 'implemented',
-    title: 'native host scroll reaches scalar input',
+    status: 'planned',
+    title: 'native host scroll source contract',
     tolerance: { perceptualDeltaE: 3, pixelMismatchRatio: 0.01 },
   });
-  const scene = read('conformance/scenes/shared/scroll-input.js');
-  assert.match(scene, /new globalThis\.WheelEvent/u);
-  assert.match(scene, /input\.axis\(["']zoom["']\)/u);
 });

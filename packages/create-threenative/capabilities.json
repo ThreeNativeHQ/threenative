@@ -135,9 +135,10 @@
     {
       "constraints": [
         "keep DOM and React mounting in src/main.ts",
-        "bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener"
+        "bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener",
+        "scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent"
       ],
-      "example": "const game = defineGame({ scenes: { Play } });\nconst game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });",
+      "example": "const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],

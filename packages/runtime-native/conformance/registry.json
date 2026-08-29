@@ -939,11 +939,11 @@
     },
     {
       "id": "99-scroll-input",
-      "title": "native host scroll reaches scalar input",
+      "title": "native host scroll source contract",
       "category": "input",
-      "status": "implemented",
+      "status": "planned",
       "scene": "conformance/scenes/shared/scroll-input.js",
-      "inputProof": "scroll",
+      "availability": "source-contract-only",
       "tolerance": {
         "pixelMismatchRatio": 0.01,
         "perceptualDeltaE": 3.0

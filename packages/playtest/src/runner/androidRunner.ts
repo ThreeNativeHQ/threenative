@@ -633,6 +633,13 @@ function unsupportedAssertion(
   target: "android" | "desktop" | "ios",
   hasPointerTransport: boolean,
 ): IPlaytestProtocolDiagnostic | undefined {
+  if (scenario.steps.some((step) => step.wheel !== undefined)) {
+    return unsupportedDiagnostic(
+      "wheel input steps",
+      "Run wheel input steps on --target browser; Android, desktop, and iOS runners have no wheel injector and will not skip the sample.",
+      target,
+    );
+  }
   if (scenario.steps.some((step) => step.kind === "click")
     && (target !== "android" || !hasPointerTransport)) {
     return unsupportedDiagnostic(

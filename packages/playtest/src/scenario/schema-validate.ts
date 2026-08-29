@@ -401,6 +401,9 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ? value.pointers.map((pointer, pointerIndex) =>
         validatePointer(pointer, scenarioPath, index, pointerIndex))
     : undefined;
+  // Preserve a validated wheel sample for the browser transport. Native runners must reject this
+  // field before startup until they expose a real wheel injector; dropping it would report green
+  // while the game never received the requested input.
   const wheel = isRecord(value.wheel)
     && typeof value.wheel.deltaY === "number"
     && Number.isFinite(value.wheel.deltaY)

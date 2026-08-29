@@ -128,10 +128,9 @@ export function defineGame<TState extends Record<string, unknown>, TPhysics = un
 ```
 
 - **Use when:** start a ThreeNative game from src/game.ts · register physics and gameplay plugins · let the player zoom the camera with a wheel, pinch, or gamepad axis
-- **Constraints:** keep DOM and React mounting in src/main.ts · bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
+- **Constraints:** keep DOM and React mounting in src/main.ts · bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener · scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent
 
 ```ts
-const game = defineGame({ scenes: { Play } });
 const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });
 ```
 

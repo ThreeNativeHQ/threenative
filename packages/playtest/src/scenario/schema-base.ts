@@ -57,7 +57,7 @@ export interface IPlaytestStep {
   /** @deprecated Use waitTicks. Fixed-step bridges treat this as a tick alias. */
   waitFrames?: number;
   waitTicks?: number;
-  /** A browser wheel sample; negative deltaY is the conventional toward-user gesture. */
+  /** A browser/native wheel sample; negative DOM deltaY is the conventional toward-user gesture. */
   wheel?: IPlaytestWheel;
   window?: {
     height?: number;

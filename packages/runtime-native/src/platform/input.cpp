@@ -640,10 +640,10 @@ void processMouseWheel(const SDL_MouseWheelEvent& event) {
     data.type = "wheel";
     data.clientX = mx;
     data.clientY = my;
-    // SDL3 uses float for wheel deltas, scale to typical browser values
-    // Browser wheel events are typically in pixels (or lines)
-    data.deltaX = event.x * -120.0;  // Negative because SDL and DOM have opposite conventions
-    data.deltaY = event.y * -120.0;
+    // SDL3 uses float for wheel deltas, scale to typical browser pixel values. SDL and DOM both
+    // use positive vertical wheel deltas away from the user, so preserve the DOM sign.
+    data.deltaX = event.x * 120.0;
+    data.deltaY = event.y * 120.0;
     data.deltaZ = 0;
     data.deltaMode = 0;  // 0 = pixels
     data.ctrlKey = g_ctrlKey;

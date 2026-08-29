@@ -46,13 +46,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // before that formatting ran and were therefore stale the moment they were committed.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
-  "action-rpg": "4c345d50a1b23d7e8e4d4bbede3a57215dcb55715c6b35e87a5cde6cf98d0d5c",
-  defense: "d71a13a672c68052e3f9b50dd71a999f0701af532282665748d4fa4eebbd8597",
-  minimal: "caf84f5b4854dff60374080c6df9cbecde10d4b2e697e542767b305ae88224a7",
-  platformer: "403935d81ee9b3295aa349b1773d21d931c010788dd3fec75bd467eaf59294fd",
-  racing: "cc11aec85a3ece8b360bdb328810e3a6a3ccff588a46f9b121ccd53683d14b32",
-  shooter: "441fd2aa3f6723735c9c03cb0bde2cc9f638fbd760d66d921b1d49ce8cd2fecc",
-  starter: "a56a27904bb85fdd89506a73f1fdd83f1863174161f5b7878f4152790dbc652a",
+  // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
+  "action-rpg": "99bc76ea193fa61117ae76b939e1a09db6a546f453eb247659a4bccae5619b30",
+  defense: "a604b6abce632b4df65df9402f6e69c95aa2defc66fd8cf0fc9fbda89136bae8",
+  minimal: "378d86b7a41bc114db90e40c29edeb8e59128ba3fb448d61a166e208058ffa64",
+  platformer: "f187e174c695c4350e6561ffdc11db9bbc28b724858777876c8a6700c333a7ba",
+  racing: "1eeac776d35a65df409aa2fce1f6e5fc2ee1ab2bfd166769cdb68af993ad8cf2",
+  shooter: "0d5134ff4fcc5ea518082ff2bbfe804f384df146875e558e1378ebd6fb83a5fb",
+  starter: "e06a4d1fbf0a75a318f5c675c385591585463860768a4e17d2b8903f82a3f945",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

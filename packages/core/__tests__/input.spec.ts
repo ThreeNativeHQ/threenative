@@ -28,7 +28,7 @@ function wheelEvent(deltaY: number, deltaMode = 0): Event {
 }
 
 describe("InputMap", () => {
-  it("should report a positive zoom axis when the wheel scrolls toward the user", () => {
+  it("should report positive zoom intent for negative DOM deltaY toward the user", () => {
     const target = new EventTarget();
     const input = new InputMap({ zoom: { scroll: true } }, target);
 
@@ -37,6 +37,18 @@ describe("InputMap", () => {
 
     expect(input.axis("zoom")).toBeCloseTo(0.3);
     expect(input.axis("zoom")).toBeGreaterThan(0);
+    input.dispose();
+  });
+
+  it("should report negative zoom intent for positive DOM deltaY away from the user", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { scroll: true } }, target);
+
+    target.dispatchEvent(wheelEvent(30));
+    input.tick();
+
+    expect(input.axis("zoom")).toBeCloseTo(-0.3);
+    expect(input.axis("zoom")).toBeLessThan(0);
     input.dispose();
   });
 

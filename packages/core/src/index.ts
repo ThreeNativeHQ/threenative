@@ -85,7 +85,7 @@ export type { IRandom } from "./random.js";
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @constraint keep DOM and React mounting in src/main.ts
  * @constraint bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
- * @example const game = defineGame({ scenes: { Play } });
+ * @constraint scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent
  * @example const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });
  */
 export { defineGame } from "./game.js";
