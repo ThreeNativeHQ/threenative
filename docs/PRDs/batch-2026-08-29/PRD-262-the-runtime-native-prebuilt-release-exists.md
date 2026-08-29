@@ -113,8 +113,13 @@ hand-written — a hand-authored checksum lock is a supply-chain artifact with n
 
 **Files:** possibly `.github/workflows/native-release.yml` (EDIT), the record.
 
-- [ ] Establish a green `ci.yml` push run on `main` — Lane A's output. Paste the run id. The
-      `gates` job is not bypassable and should not be made bypassable.
+- [ ] **Push `main` first, and get the owner's go-ahead to do it.** `git ls-remote origin main` is
+      `7ac47850`, 157 commits behind local `main` and the commit CI last went red on. The `gates`
+      job matches `ci.yml` runs by `--commit $GITHUB_SHA --headBranch main`, so a release commit
+      that only exists locally can never satisfy it. Local green is necessary and not sufficient.
+- [ ] Establish a green `ci.yml` push run on `main` **on the remote** — Lane A made the tree green
+      locally (`pnpm typecheck`, `pnpm lint`, `pnpm test` all exit 0 at `73e158c8`). Paste the run
+      id. The `gates` job is not bypassable and should not be made bypassable.
 - [ ] Exercise the pipeline against a throwaway prerelease tag rather than `v0.3.0`, so a failure
       costs a tag and not a version number.
 - [ ] Confirm the `publish` job emitted `prebuilt-lock.json` and that every key it names resolves

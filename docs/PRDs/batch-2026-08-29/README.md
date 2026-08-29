@@ -1,8 +1,10 @@
 # Batch — what stands between this repository and a public release, 2026-08-29
 
-**Status:** PROPOSED — filed 2026-08-29, planned only, nothing executed. Every number below was
-measured today at `8491c5d5` on a clean `main` (`git status` empty, `.claude/worktrees/` empty, so
-no sibling lane owns these reds).
+**Status:** PARTIAL — filed 2026-08-29, measured at `8491c5d5`. **Lane A is done** (`73e158c8`,
+recorded in
+[prd-229-phase5-crash-policy-conversion-2026-08-29](../../verification/prd-229-phase5-crash-policy-conversion-2026-08-29.md)).
+Lanes B through G are planned and unexecuted. Every number below was measured on a clean `main`
+(`git status` empty, `.claude/worktrees/` empty, so no sibling lane owned these reds).
 
 **The batch's whole shape: we cannot publish, and we cannot currently prove we could.** Four of the
 seven alpha-bar rows are not green, the test suite is red on `main`, CI is red on `main`, and the
@@ -15,11 +17,28 @@ Five commands, run today, in the order a release would run them.
 
 | Command | Result | The finding |
 | --- | --- | --- |
-| `pnpm test` | **red**, aborts in `package-test` | 2 failed / 620 passed in `@threenative/runtime-native`. Both failures are source-text assertions, not behaviour. `scripts/run-test-suite.sh` runs `docs → build → package-test → unit`, so the **root `unit` phase never ran at all** |
-| `gh run list --repo ThreeNativeHQ/threenative` | **red** | CI run `33219211180` on `main`, 2026-08-28, failure. Four consecutive `Native platform evidence` failures before it |
+| `pnpm test` | **was red**, aborted in `package-test` — **fixed by Lane A** | 2 failed / 620 passed in `@threenative/runtime-native`. Both failures were source-text assertions, not behaviour. `scripts/run-test-suite.sh` runs `docs → build → package-test → unit`, so the **root `unit` phase had never run at all**. It has now: 2552 tests, 2550 pass, and the two failures are **timeouts, not assertions** — both pass alone with 4× headroom, so the suite's own parallelism exhausts their budget |
+| `pnpm lint` | **was red**, now exit 0 | one error-severity diagnostic among 450 warnings, invisible at biome's default `--max-diagnostics=20`. `--diagnostic-level=error` is how you find it |
+| `gh run list --repo ThreeNativeHQ/threenative` | **red on a stale tree** | CI run `33219211180` failed on `main` at `7ac47850`, which is **remote `main`'s tip and 157 commits behind local `main`**. Nothing has been pushed in a long time |
 | `pnpm alpha:bar` | **exit 2** | A1 fail, A5 fail, A3/A6/A7 unmeasured. "3 of 7 rows unmeasured, 2 failed. Not alpha." |
 | `pnpm publish:check` | **exit 1** | 56 findings. "This tree must not be published as it stands" |
 | `pnpm round:next` | **exit 1** | `Round ledger is missing '## Notes'` — it is not reading a round ledger |
+
+### The push gap is a release blocker nobody had named
+
+`git ls-remote origin main` is `7ac47850` — the commit CI went red on. `git merge-base
+--is-ancestor` confirms it is behind local `main`, by **157 commits**.
+
+This is load-bearing for Lanes C and D. `.github/workflows/native-release.yml`'s `gates` job runs
+
+```sh
+gh run list --workflow ci.yml --commit "$GITHUB_SHA" ... --headBranch main
+```
+
+and refuses the build unless a **completed successful CI push run on `main`** exists for the release
+commit. So no release can be cut from work that has not been pushed and has not gone green on the
+remote. **Pushing 157 commits is the owner's call, not an agent's**, and it is the first thing Lane
+C's Phase 2 asks for. Local green is necessary and nowhere near sufficient.
 
 ### The two reds are the same red
 
@@ -83,7 +102,7 @@ Only rows that move the bar. Each names the command that decides it.
 
 | Lane | PRD | Moves | Device | Gate that decides it |
 | --- | --- | --- | --- | --- |
-| A | [PRD-229](../refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5, **files 1–2 only** | nothing on the bar; unblocks every other lane | none | `pnpm test` exit 0, including the `unit` phase |
+| A | ~~[PRD-229](../refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5, files 1–2~~ **DONE `73e158c8`** | nothing on the bar; unblocked every other lane | none | `pnpm lint` exit 0; `package-test` 89/89; `unit` 2550/2552, the two remainders being timeouts that pass alone |
 | B | [PRD-261](./PRD-261-the-release-instruments-report-again.md) | **A3**, **A7**, and `round:next` | none | `pnpm round:next` exit 0; `pnpm alpha:bar` shows A3 and A7 measured |
 | C | [PRD-262](./PRD-262-the-runtime-native-prebuilt-release-exists.md) | unblocks A1 | none (CI runners) | `curl -sI .../runtime-native-v0.3.0/prebuilt-lock.json` → 200 |
 | D | [PRD-263](./PRD-263-version-0-3-0-is-installable-by-a-stranger.md) | **A1**, re-proves **A2** | none | `pnpm publish:check` exit 0, then `pnpm release --yes` |
