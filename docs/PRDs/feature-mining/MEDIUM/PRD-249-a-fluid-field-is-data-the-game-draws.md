@@ -5,13 +5,13 @@ prd_contract: v1
 # PRD-249 — A fluid field is data; what it looks like is the game's
 
 **Status: PROPOSED, 2026-08-28. Nothing below has been executed. Depends on
-[PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md).**
+[PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md).**
 
 Source: [`bandinopla/threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation)
 at `14ff3b0e`, MIT (Pavel Dobryakov's original WebGL shaders, ported to TSL). Cloned at depth 1 and
 read on 2026-08-28. **Nothing copied.**
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../README.md).
 
 **Complexity:** +2 new subsystem, +2 ping-pong state across frames inside a hot path, +1 ≤5 files
 per phase, +1 public surface = **6 → MEDIUM mode.**

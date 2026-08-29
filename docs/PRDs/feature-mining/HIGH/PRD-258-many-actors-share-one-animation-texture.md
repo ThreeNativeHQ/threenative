@@ -8,8 +8,8 @@ prd_contract: v1
 Repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `e8754ab24e8e227ab472690a3d8d7b6d2cd53550`. Binding charter:
-[`docs/architecture/CHARTER.md`](../../architecture/CHARTER.md). Parent batch:
-[feature-mining](./README.md).
+[`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
+[feature-mining](../README.md).
 
 **Outcome if Phase 0 survives:** the existing measured many-skinned-soldier subject bakes one or
 more clip's bone matrices into a shared GPU animation texture at build time, then renders many

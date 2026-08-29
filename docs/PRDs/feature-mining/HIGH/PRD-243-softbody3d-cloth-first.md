@@ -5,14 +5,14 @@ prd_contract: v1
 # PRD-243 — `SoftBody3D`, cloth first and tetrahedra later
 
 **Status: PROPOSED, 2026-08-28. Nothing below has been executed. Blocked on
-[PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) — do not start before it lands.**
+[PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md) — do not start before it lands.**
 
 Sources read at depth 1 on 2026-08-28, both MIT:
 [`bandinopla/three-simplecloth`](https://github.com/bandinopla/three-simplecloth) (1 073 lines,
 `src/SimpleCloth.ts`) and [`holtsetio/softbodies`](https://github.com/holtsetio/softbodies)
 (`src/FEMPhysics/`, 2 067 lines). **Neither is depended on; both are read.**
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../README.md).
 
 **Complexity:** +2 new subsystem, +2 complex state (a solver inside the fixed step), +2 spans `core`
 and `physics`, +1 new public node = **7 → HIGH mode. Mandatory checkpoint every phase.**

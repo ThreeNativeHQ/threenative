@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: PROPOSED, 2026-08-29. Nothing below has been executed.**
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../README.md).
 
 **Outcome:** an ordinary `.glb` or static scene placed in `assets/` receives deterministic
 `TEXCOORD_1`/UV2 atlas coordinates and a compressed `.ktx2` static lightmap during the existing

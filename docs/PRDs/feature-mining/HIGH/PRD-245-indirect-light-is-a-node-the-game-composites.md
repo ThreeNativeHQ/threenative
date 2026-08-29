@@ -5,13 +5,13 @@ prd_contract: v1
 # PRD-245 — Indirect light is a node the game composites
 
 **Status: PROPOSED, 2026-08-28. Nothing below has been executed. Depends on
-[PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime and
-[PRD-244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) for the traceable scene.**
+[PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime and
+[PRD-244](../../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) for the traceable scene.**
 
 Source of the borrowed architecture: [`jure/webgiya`](https://github.com/jure/webgiya), MIT, cloned
 at depth 1 on 2026-08-28 and read (7 509 lines across `src/`). **Nothing is copied.**
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../README.md).
 
 **This PRD reverses a refusal.** The round-two survey refused surfel GI on the grounds that
 "lighting is something a screenshot shows". That is the wording **§5b of the charter explicitly

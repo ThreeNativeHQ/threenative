@@ -7,9 +7,9 @@ prd_contract: v1
 **Status: PROPOSED, 2026-08-28. Nothing below has been executed.** Baseline HEAD
 `b37bf30fb51527ac086a484893ad813ee0a2df0b`, branch `main`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`. Binding charter:
-[`docs/architecture/CHARTER.md`](../../architecture/CHARTER.md).
+[`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md).
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../README.md).
 
 **Complexity:** +3 touches 10+ files, +2 new subsystem from scratch, +2 residency/GPU state
 across frames, +2 multi-package (`world`, `core`, `physics`, `playtest`, an example), +1 new
@@ -19,7 +19,7 @@ public surface = **10 → HIGH mode. Mandatory automated checkpoint after every 
 
 ## 0. Product context, and the correction this PRD exists to record
 
-[PRD-043](../done/PRD-043-terrain-and-open-world.md) is **substrate and census, not a
+[PRD-043](../../done/PRD-043-terrain-and-open-world.md) is **substrate and census, not a
 procedural-world system**, and it never claimed otherwise. What it shipped and proved:
 
 | PRD-043 delivered | Where it lives today |
@@ -106,7 +106,7 @@ a game cannot write portably and cannot get right twice:
    web and native, identical across runs.
 2. **Generation the game does not schedule.** Height synthesis, hydraulic erosion and flow
    routing as ordered GPU compute passes riding
-   [PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md)'s `IComputeDriven` lifetime, with a
+   [PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md)'s `IComputeDriven` lifetime, with a
    per-frame dispatch budget so world generation cannot eat the frame.
 3. **A crack-free residency lifecycle.** `TerrainTiles` decides which tiles are resident at
    which LOD, stitches their edges, evicts under a byte/count budget, and keeps the physics
@@ -135,7 +135,7 @@ rather than keep it because it was built.
 | fBm/domain-warped height synthesis | **Yes, ~40 lines**, and every line decides how the ground looks | **Game's.** PRD-043 row 3, unchanged. |
 | Scatter placement | **Yes, ~25 lines** on `ctx.random` | **Game's.** PRD-043 row 5, unchanged. |
 | LOD ladder, instancing | **Yes, 2 lines** of `THREE.LOD` | **Game's.** PRD-043 row 6 + PRD-098, unchanged. |
-| Frustum culling | Zero lines; already default, and [PRD-238](./PRD-238-the-projection-culls-what-the-camera-cannot-see.md) owns the rest | **Nothing to build.** |
+| Frustum culling | Zero lines; already default, and [PRD-238](../MEDIUM/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) owns the rest | **Nothing to build.** |
 | **CPU/GPU field parity** — the same height on the render path and the query path | **No.** The GPU synthesises in a compute pass; the CPU must reproduce it bit-comparably for collision and raycast. Getting these to agree is the framework's job or it is nobody's | **FRAMEWORK** |
 | **Crack-free LOD stitching across a tile boundary** | **No, not in 20 lines.** Neighbour-aware edge decimation plus skirts, recomputed on every residency change | **FRAMEWORK** |
 | **Bounded GPU generation scheduling** | **No.** Requires the frame-budget seam and `IComputeDriven`'s lifetime; a game that dispatches erosion inline stalls the frame | **FRAMEWORK** |
@@ -174,8 +174,8 @@ constructs a material.
 | Terrain material, splat blending, triplanar, colour ramps | Charter "never own the look" | game `src/render/` |
 | What a biome *is* — "snow", "desert", "tundra" | Naming a biome is art direction. We publish `moisture`, `temperature`, `slope`, `biomeIndex: number` | game |
 | Tree/rock/grass models, species, density, orientation rules | PRD-043 row 5, declined under rule 1 and not reopened | game |
-| Water surface, shoreline, foam, refraction | [PRD-246](../done/PRD-246-two-oceans-two-contracts.md). We publish `seaLevel: number` and nothing else | PRD-246 |
-| Sky, aerial perspective, fog | [PRD-248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) | PRD-248 |
+| Water surface, shoreline, foam, refraction | [PRD-246](../../done/PRD-246-two-oceans-two-contracts.md). We publish `seaLevel: number` and nothing else | PRD-246 |
+| Sky, aerial perspective, fog | [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) | PRD-248 |
 | A second renderer, a renderer abstraction, a scene format, an IR, an editor, a preset/genre system | Charter closes all of these with evidence, outranking rule 1 | — |
 | **Quality presets** (`quality: "high"`) | A preset system is charter-closed. Tiers in this PRD are **measurement configurations**, never shipped defaults. The public surface takes explicit numbers | — |
 | Floating origin / large-world coordinates | PRD-043 row 9, declined for vocabulary and evidence. This PRD stays inside the declared precision envelope and **states the envelope** rather than fixing it | PRD-043 §6.2 |

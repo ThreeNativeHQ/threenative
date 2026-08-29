@@ -10,7 +10,7 @@ Source of the borrowed architecture: [`pmndrs/glyph`](https://github.com/pmndrs/
 at depth 1 on 2026-08-28. **The package is refused as a runtime dependency, on evidence read from
 that clone.** What is mined is its build-time/runtime split, which is the whole insight.
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../README.md).
 
 **Complexity:** +2 new subsystem, +2 multi-package (`assets` build pass, `core` runtime), +2 complex
 state (atlas residency, layout, batching), +1 new artifact format, +1 asset pipeline change =

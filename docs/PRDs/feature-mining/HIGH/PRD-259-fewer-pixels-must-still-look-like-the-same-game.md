@@ -8,8 +8,8 @@ prd_contract: v1
 Repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `e8754ab24e8e227ab472690a3d8d7b6d2cd53550`. Binding charter:
-[`docs/architecture/CHARTER.md`](../../architecture/CHARTER.md). Parent batch:
-[feature-mining](./README.md).
+[`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
+[feature-mining](../README.md).
 
 **Outcome if Phase 0 survives:** a real adaptive-resolution consumer renders below display
 resolution and reconstructs a materially clearer output through ordinary upstream Three.js code,
