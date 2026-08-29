@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { suppressPlayProtectOnAdbInstalls } from "./device-preflight.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -681,6 +682,11 @@ function inspectAndroidDevice(adb, serial, options = {}) {
 
 function installAndroid(adb, serial, app, options = {}) {
   const run = options.command ?? command;
+  // The Play Protect verifier dialog is modal and swallows the install, so an unattended
+  // lane behind it proves nothing. Suppress before the install, as every install lane must.
+  suppressPlayProtectOnAdbInstalls(serial, {
+    adb: (args) => String(run(adb, ["-s", serial, ...args], { timeout: 120_000 }).stdout),
+  });
   const result = run(adb, ["-s", serial, "install", "--no-streaming", app], { timeout: 120_000 });
   if (result.status !== 0) throw new QualificationError(`adb install failed before lifecycle qualification: ${result.stderr || result.stdout}`, { code: "TN_QUALIFY_ANDROID_INSTALL_BLOCKED" });
 }

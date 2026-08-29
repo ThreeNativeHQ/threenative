@@ -23,7 +23,11 @@ import {
   parseArgs as parseFirstProofArgs,
   verifyAndroidFirstProof,
 } from "./verify-android-first-proof.mjs";
-import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
+import {
+  assertDeviceReady,
+  MINIMUM_BATTERY_PERCENT,
+  suppressPlayProtectOnAdbInstalls,
+} from "./device-preflight.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXPECTED_DEVICE = "37251FDJH0037Z";
@@ -793,6 +797,11 @@ async function waitForMarker(adbExecutable, serial, marker, timeoutMs = 180_000)
 export const MEASUREMENT_LOGBUFFER_BYTES = 16 * 1024 * 1024;
 
 async function installAndLaunchMeasuredSubject(adbExecutable, serial, apk) {
+  // The Play Protect verifier dialog is modal and swallows the install, so an unattended
+  // lane behind it proves nothing. Suppress before the install, as every install lane must.
+  suppressPlayProtectOnAdbInstalls(serial, {
+    adb: (adbArgs) => adb(adbExecutable, serial, ...adbArgs),
+  });
   const install = adb(adbExecutable, serial, "install", "-r", "-t", apk);
   if (!/Success/iu.test(install)) {
     throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_INSTALL_FAILED:${install.trim()}`);

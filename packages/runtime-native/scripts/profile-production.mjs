@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { PNG } from 'pngjs';
 import { readAndroidConfig } from './package-android.mjs';
+import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
 
 import {
   PRODUCTION_EVIDENCE_VERSION,
@@ -1386,6 +1387,12 @@ async function playtestRunnerPath(project, tools) {
 }
 
 async function installAndroidArtifact(apk, device) {
+  // The Play Protect verifier dialog is modal and swallows the install, so an unattended
+  // lane behind it proves nothing. Suppress before the install, as every install lane must.
+  const serial = device ?? String(execFileSync('adb', ['get-serialno'], { encoding: 'utf8' })).trim();
+  suppressPlayProtectOnAdbInstalls(serial, {
+    adb: (adbArgs) => String(execFileSync('adb', ['-s', serial, ...adbArgs], { encoding: 'utf8' })),
+  });
   const args = [...(device === undefined ? [] : ['-s', device]), 'install', '-r', apk];
   const result = await runCommand('adb', args, commandRoot);
   if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_ANDROID_INSTALL_FAILED', 'Installing the scaffolded Android platformer failed.');

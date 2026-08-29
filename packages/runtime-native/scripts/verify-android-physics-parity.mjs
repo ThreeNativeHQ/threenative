@@ -12,7 +12,11 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
+import {
+  assertDeviceReady,
+  MINIMUM_BATTERY_PERCENT,
+  suppressPlayProtectOnAdbInstalls,
+} from "./device-preflight.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
@@ -547,6 +551,9 @@ export async function main(argv = process.argv.slice(2)) {
     },
     { adb: (args) => run(adb, ["-s", device, ...args]) },
   );
+  // The Play Protect verifier dialog is modal and swallows the install, so an unattended
+  // lane behind it proves nothing. Suppress before the install, as every install lane must.
+  suppressPlayProtectOnAdbInstalls(device, { adb: (args) => run(adb, ["-s", device, ...args]) });
   if (!options.skipInstall) run(adb, ["-s", device, "install", "-r", apk]);
   const deviceStdout = run(
     process.execPath,

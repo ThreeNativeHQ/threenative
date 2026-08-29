@@ -19,6 +19,7 @@ import {
 // Shared with the desktop gate on purpose. Two device-lane copies of "is the overlay there" would
 // drift, and the weaker one would be the device's, which is the lane that had never asserted it.
 import { analyzePresentTicks, inspectOverlayBuffer } from './verify-desktop-core.mjs';
+import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
 
 export { AUDIO_PROMISE_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
 
@@ -545,6 +546,9 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   const common = (...args) => execute(tools.adb, adbArgs(serial, ...args), { timeoutMs: 120000 }); const devicePreparation = prepare(serial, (...args) => common(...args));
 
   console.log(`2/4 Targeting Android device ${serial}...`);
+  // The Play Protect verifier dialog is modal and swallows the install, so an unattended
+  // lane behind it proves nothing. Suppress before the install, as every install lane must.
+  suppressPlayProtectOnAdbInstalls(serial, { adb: (args) => String(common(...args).stdout) });
   if (!options.skipInstall) {
     const install = common('install', '-r', '-t', options.apk);
     if (!/Success/i.test(String(install.stdout))) {
