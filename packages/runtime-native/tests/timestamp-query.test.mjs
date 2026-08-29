@@ -35,14 +35,14 @@ const ENGINE_BUILDS = [
 test.each(ENGINE_BUILDS)(
   "timestamp-query resolves a monotonic nonzero delta on $engine, and the bindings agree with the adapter",
   ({ engine, directory }) => {
-  const EXECUTABLE = join(root, directory, "threenative-timestamp-query-test");
-  if (!existsSync(EXECUTABLE)) {
+  const executable = join(root, directory, "threenative-timestamp-query-test");
+  if (!existsSync(executable)) {
     // Never a silent pass: an unbuilt executable is unexecuted, and says so.
     assert.fail(
-      `${EXECUTABLE} is not built. Run: cmake --build ${directory} --target threenative-timestamp-query-test`,
+      `${executable} is not built. Run: cmake --build ${directory} --target threenative-timestamp-query-test`,
     );
   }
-  const output = execFileSync(EXECUTABLE, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const output = execFileSync(executable, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   assert.match(
     output,
     engine === "V8" ? /Creating V8 engine/u : /Creating QuickJS engine/u,

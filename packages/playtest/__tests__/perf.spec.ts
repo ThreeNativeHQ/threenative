@@ -90,7 +90,7 @@ describe("parsePerformanceMarkers", () => {
     // The package rule: a meter line that cannot be read must fail, never silently vanish —
     // an absent window and an unreadable window are different defects and both are failures.
     expect(() => parsePerformanceMarkers(`ok\nTN_FRAME_BUDGET:{"window":1,`)).toThrow(/TN_PERF_MARKER_MALFORMED/);
-    expect(() => parsePerformanceMarkers(`ok\nTN_HOST_GAP:{not json`)).toThrow(/TN_PERF_MARKER_MALFORMED/);
+    expect(() => parsePerformanceMarkers("ok\nTN_HOST_GAP:{not json")).toThrow(/TN_PERF_MARKER_MALFORMED/);
   });
 
   it("finds nothing in a stream without markers, and that nothing is a failure downstream", () => {

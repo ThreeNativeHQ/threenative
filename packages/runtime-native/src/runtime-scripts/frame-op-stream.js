@@ -307,7 +307,7 @@
     emit(18, () => {
       u32(encoderId);
       u32(passId);
-      timestampWrites(descriptor && descriptor.timestampWrites);
+      timestampWrites(descriptor?.timestampWrites);
     });
     return {
       setPipeline: (p) =>
@@ -389,7 +389,7 @@
         });
       },
       resolveQuerySet(querySet, firstQuery, queryCount, destination, destinationOffset) {
-        const id = querySet && querySet._querySetId;
+        const id = querySet?._querySetId;
         if (typeof id !== "number")
           throw new TypeError("frame op stream: resolveQuerySet needs a GPUQuerySet");
         emit(34, () => {
