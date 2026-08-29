@@ -2,7 +2,10 @@
 prd_contract: v1
 ---
 
-# EXECUTE — PRD-229 Phase 5, then PRD-230
+# EXECUTE — the runtime-native refactor batch, in order
+
+Covers all seven PRDs. §3 and §4 are the critical path (PRD-229 Phase 5, then PRD-230); §7 carries
+the rest of the batch, which is gated behind them or runs beside them.
 
 **A runbook, not a proposal.** Every command here has been run on 2026-08-29 unless the step says
 otherwise. Follow it top to bottom; each step names what makes it fail.
@@ -55,6 +58,24 @@ pnpm budgets                                                # expect exit 0
 If `native:coverage` reports a generator conflict it now names the fix itself; the raw CMake
 "does not match the generator used previously" dump is gone. Removing that directory is safe —
 it is derived output — but it cannot be rebuilt without `third_party/`.
+
+### Known reds you are inheriting, neither caused by this work
+
+Measured 2026-08-29. Do not spend a morning re-attributing them, and do not let either hide a red
+you introduce.
+
+| Red | State |
+| --- | --- |
+| `packages/playtest/__tests__/generated-shooter-input.spec.ts` — `expect(report.pass).toBe(true)` | Pre-existing, unrelated to the refactor. The root suite is otherwise **2,497 passed / 1 failed**. A `console.info("PROBE-FAILED-ASSERTION:")` probe sits above the assertion; it is another lane's debugging aid, not the cause. |
+| `threenative-webgpu-bindings-reentrancy-test` under `tn-linux-asan` | Real shutdown-lifetime defect, found by the sanitizer lane. Passes in `tn-linux`, SIGSEGVs under ASan. See §7.2. |
+
+`pnpm typecheck` and `pnpm lint` are exit 0. `native:coverage` and `pnpm budgets` are exit 0.
+
+**A note on this checkout.** Other agents commit into this working tree while you are in it, and
+they sweep whatever is uncommitted — including your files, under their commit message. `8ff06738`
+is an instance: it carries this session's crash-handler change *and* an unrelated lane's debug
+probe. Commit your own work early and often, and check `git log --oneline -1` before assuming your
+edits are still uncommitted.
 
 ## 2. The pattern — already landed, copy it
 
@@ -231,3 +252,46 @@ read a green root suite as proof while that package is failing.
   there**: 690 library lines to carry 60 lines of duplication, every caller keeping its own helper
   and gaining an adapter. See
   [the kill-switch record](../../verification/native-scripts-adb-kill-switch-2026-08-28.md).
+
+## 7. The rest of the batch
+
+The batch [README](./README.md) fixes the order and the reasons; this is the execution view. Only
+PRD-233 and PRD-235 can start before PRD-230 — everything else waits.
+
+| PRD | Runs when | What it needs from this file |
+| --- | --- | --- |
+| [233](./PRD-233-runtime-cpp-stops-being-the-place-everything-goes.md) — `runtime.cpp`'s thirteen `setup*` shims move to files named after what they shim | **In parallel, now.** Depends on PRD-229 only, and touches different files from 230. | Its Tier 3 conversions (§3.1). It already has an enforced control the WebGPU side lacks: `shim-manifest.json`. |
+| [235](./PRD-235-the-build-directory-matrix-is-one-documented-thing.md) — the nine build directories get one enforced manifest | **In parallel, now.** Depends on PRD-229 phases 1–2, both landed. | Nothing. Lowest complexity in the batch (3 → LOW) and it retires a real trap — see §7.1. |
+| [230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md) — `bindings.cpp` splits, the 87 `tnWebgpuHandlerNN` get real names | After §3.3 exits 0. | Everything in §3 and §4. |
+| [231](./PRD-231-the-backend-dialect-stops-leaking-into-the-binding-code.md) — 339 dialect `#if`s leave the binding logic for `webgpu_compat.h` | After 230. | The split must land first or the `#if`s move twice. |
+| [232](./PRD-232-profiling-is-a-component-not-a-smear.md) — `TN_ANDROID_JS_PROFILE`'s 64 sites become one `FrameProfiler` | After 230 phase 2, **and** after PRD-227/228. | Those two own the meters it touches and are live. Coordinate before starting; do not assume they wait for you. |
+| [234](../done/PRD-234-the-scripts-tier-has-one-device-library.md) — one device library for the scripts tier | **Never.** Executed, measured, rejected, reverted. | Read §6's last bullet before proposing anything shaped like it. |
+
+### 7.1 PRD-235 is worth doing early, and this session proved why
+
+Its thesis is that an unbuildable target should not look like an unrun one. Two directory traps
+cost real time on 2026-08-29 and are exactly what its manifest would have named:
+
+- `build/tn-linux-coverage` was configured by Ninja while the coverage lane wants `Unix Makefiles`,
+  and CMake's error named no fix. §1 now handles it, but the manifest is the general answer.
+- `third_party/` was absent, so nothing native compiled and `pnpm budgets` read as a stale digest
+  rather than as a missing toolchain. `pnpm native:build` restores it (706 MB).
+
+### 7.2 Two PRDs outside the batch that this work unblocks
+
+[PRD-177](../BLOCKED/requires-asan-libuv-source-build/PRD-177-native-restart-shutdown-lifetime.md)
+and
+[PRD-184](../BLOCKED/requires-asan-libuv-source-build/PRD-184-native-shutdown-ownership-transfer.md)
+were parked because ASan could not see inside the prebuilt `libuv.a`. **That blocker was removed on
+2026-08-29**: the sanitizer configuration now builds libuv 1.51.0 from source
+(`build/tn-linux-asan/libuv-src/libuv.a`).
+
+They are **attemptable, not proven**. Nobody has run their negative controls. Attempt, record what
+happened, and `git mv` them into this batch only on the strength of a result — never on a plan.
+
+Whoever picks them up inherits one open finding, and it is a real one rather than a nuisance:
+`threenative-webgpu-bindings-reentrancy-test` passes in `tn-linux` and **SIGSEGVs under
+`tn-linux-asan`** during shutdown, right after `[V8] Destroying engine...`. It is not the libuv
+change — an attribution control with the source hidden and the prebuilt linked failed identically.
+It is a shutdown-lifetime defect of exactly the class PRD-177/184 are about, and the sanitizer lane
+found it. It wants its own red-green before either PRD is called done.
