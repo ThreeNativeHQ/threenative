@@ -404,9 +404,8 @@ export class Scheduler { … }
 - **Constraints:** dispose returned handles when the owning scene exits · ease receives progress in the range 0 to 1 and its return value is the interpolation factor
 
 ```ts
-const scheduler = new Scheduler();
 const door = { y: 0 };
-await scheduler.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
+await ctx.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
 ```
 
 ### `skeletonBones`

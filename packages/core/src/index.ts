@@ -239,9 +239,8 @@ export type {
  * @situation tween a numeric property with a game-owned curve
  * @constraint dispose returned handles when the owning scene exits
  * @constraint ease receives progress in the range 0 to 1 and its return value is the interpolation factor
- * @example const scheduler = new Scheduler();
- * const door = { y: 0 };
- * await scheduler.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
+ * @example const door = { y: 0 };
+ * await ctx.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
  */
 export { Scheduler } from "./schedule.js";
 export type { ITweenOptions, ScheduleHandle } from "./schedule.js";

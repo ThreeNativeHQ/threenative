@@ -44,13 +44,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // holds the frame budget instead of the game hand-authoring a resolution constant.
   // Recomputed after Biome reformatted nine template files: the previous values were measured
   // before that formatting ran and were therefore stale the moment they were committed.
-  "action-rpg": "4fb6bc21354437e29fc00f5c7ca8b801680f47dbc7a1f89d7cc09357648d9731",
-  defense: "7746b3acca9f6d06c5713d247868e311e280218773a9db0ab52fb9f7bfd31a4c",
-  minimal: "af5b92cc1e6cd7246c70434ad9b21db69c59f255a4abf17b71d9efb6e6f793c6",
-  platformer: "4bc3941489d26f39d5c5971a703dc90a8e6dceff1d46f6d9dfea8029e6a980b1",
-  racing: "7bc57508bbfd0e3af7763f68ff97d5140be3626f9473721667a3b2edde14fda0",
-  shooter: "314fb81385dd32d255b19443b6d5cb61119b328491112366d1f4663de305a4e0",
-  starter: "b0ec6d3e7f77ffd612246f3f5ecb57c61ffaf2f2e8fdb8fd0e69684f7b5462c6",
+  // Recomputed after the capability reference's Scheduler example switched to the game-owned
+  // `ctx.tween` path, so generated scaffolds no longer embed an un-ticked standalone Scheduler.
+  "action-rpg": "b7a4bb81a285a0ab7c75a7aad124c97ae67147d1a63649a724dd02b80ef66bee",
+  defense: "e5cf48a9784fdc9a8cbbcf6b334dde46c3d6f1b222f2faa07b107394cadf2918",
+  minimal: "b4eac77ff636684cf0548327ae1e22ac70f3345b69b70a61d2a2903692b0c529",
+  platformer: "d1efebd43f2933ca6cb2d173c7c3fee05c7d92a5908d313f1fdea11979dada70",
+  racing: "476b8d7d36a0fd4d232dbf7e2cce7e381215d904709a6f2f983b7de29bd72bd3",
+  shooter: "05d742aa8272f5e2c4232890c12a19bcd4756d0a358abc286687d2e7f3419e1e",
+  starter: "4b70352a98d3c97096cbb9571a592df2d7c39e7fa676097c13ff427a2f6337bf",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
