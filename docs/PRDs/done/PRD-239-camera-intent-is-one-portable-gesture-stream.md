@@ -4,14 +4,19 @@ prd_contract: v1
 
 # PRD-239 — Camera intent is one portable gesture stream
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: DONE (web + native contract), 2026-08-29.** `scroll` and `pinch` bindings ship on
+`IInputAction`, so one `axis()` reads wheel and pinch alike. Evidence:
+[PRD-239.md](../../verification/PRD-239.md) and
+[the callback continuation](../../verification/PRD-239-callback-continuation.md) — typecheck,
+budgets and the native wheel/multitouch contract test PASS. **Native runtime execution is
+UNVERIFIED**: the contract is proven, a running native host is not.
 
 Source of the borrowed technique:
 [`yomotsu/camera-controls`](https://github.com/yomotsu/camera-controls), MIT, cloned at depth 1 on
 2026-08-28. **Only its gesture table is mined.** Its camera rig — the part everyone means when they
 name it — is refused, for a reason this repository already wrote down.
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Complexity:** +2 new input surface with a platform seam on four targets, +1 touches ≤5 files in
 core, +1 native host work, +1 template edit = **5 → MEDIUM mode.**

@@ -4,14 +4,18 @@ prd_contract: v1
 
 # PRD-237 — Objects answer their own pointer events
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: DONE (web), 2026-08-29.** `PointerEvents3D` ships and `ctx.pointer` is on the public
+surface. Evidence: [prd-237-pointer-events.md](../../verification/prd-237-pointer-events.md) and
+[its continuation](../../verification/prd-237-pointer-events-continuation.md) — web and unit
+gates PASS. **Physical Android is UNVERIFIED**: no device lane ran, and that criterion is not
+closed by this archive.
 
 Source of the borrowed technique: [`agargaro/three.ez`](https://github.com/agargaro/three.ez), MIT,
 cloned at depth 1 on 2026-08-28. Every claim in "What the source actually contains" was read from
 that clone and is cited by file and line. **No source is copied** — the licence would permit it, the
 design below deliberately does not.
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Complexity:** +1 new module, +2 complex state logic (per-pointer, per-object hover/press/drag
 across frames), +1 touches 4 files in core, +1 template edit = **5 → MEDIUM mode.**

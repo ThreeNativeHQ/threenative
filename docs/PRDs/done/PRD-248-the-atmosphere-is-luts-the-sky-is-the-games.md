@@ -4,13 +4,16 @@ prd_contract: v1
 
 # PRD-248 — The atmosphere is three LUTs; the sky is the game's
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed. Depends on
-[PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime.**
+**Status: DONE (web), 2026-08-29.** `Atmosphere` ships and bakes its three LUTs; the sky mesh,
+material and lights stay in the template, and no preset list was added. Evidence:
+[PRD-248.md](../../verification/PRD-248.md) — web implementation and consumer evidence complete.
+That record calls itself PARTIAL because **native and device lanes are UNVERIFIED**; the web
+feature is finished and the unrun targets are named rather than inferred.
 
 Source: [`DennisSmolek/SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky), MIT, cloned at
 depth 1 on 2026-08-28 — 3 895 lines across `src/`, all read for the split below. **Nothing copied.**
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Complexity:** +2 new subsystem, +2 an LUT bake plus a depth-coupled render pass, +2 multi-package,
 +1 public TSL surface = **7 → HIGH mode.**

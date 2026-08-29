@@ -1,11 +1,18 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** IN FLIGHT — nineteen PRDs filed across four rounds. Two are finished and archived:
-[242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
-[244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md), each with web and native desktop
-evidence. 254 is PARTIAL and stays here. 237, 239, 247, 248 and 250 have landed code but their
-verification records name an unverified native or device lane, so none of them is done.
-At this audit, dedicated worktrees exist for 237, 238, 239, 241, 242, 244 and 247.
+**Status:** IN FLIGHT — nineteen PRDs filed across four rounds. **Six are archived in
+[`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
+[244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
+[237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
+[239](../done/PRD-239-camera-intent-is-one-portable-gesture-stream.md),
+[247](../done/PRD-247-drei-vanilla-per-item.md) and
+[248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) with their features shipped
+and reachable on the public surface, each archived Status naming the native or device lane that is
+still `UNVERIFIED` rather than implying it passed.
+
+250 closed Phase 1 only and 254 is PARTIAL, so both stay. Everything else here is unbuilt: **no
+grass, ocean, fluid, soft body, surfel GI, procedural terrain or portable text exists in any
+package**, and a demo cannot be written against them.
 
 Every upstream repository named here was **cloned at depth 1 on 2026-08-28 and read**. Claims about
 what a source contains are cited by file and line against that clone. Claims about this repository
@@ -48,9 +55,9 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 
 | PRD | Outcome | Mined from | Complexity |
 | --- | --- | --- | --- |
-| [237](./PRD-237-objects-answer-their-own-pointer-events.md) | `ctx.pointer.on(door, "tapped", …)` — hover, press, tap, drag on any `Object3D`, from `InputMap` + `ScenePicker`, no DOM. The `defense` template's blind tap-to-place gets hover feedback. | [`three.ez`](https://github.com/agargaro/three.ez) `src/events/` (1 258 lines), MIT | 5 → MEDIUM |
+| [237](../done/PRD-237-objects-answer-their-own-pointer-events.md) **DONE (web)** | `ctx.pointer.on(door, "tapped", …)` — hover, press, tap, drag on any `Object3D`, from `InputMap` + `ScenePicker`, no DOM. The `defense` template's blind tap-to-place gets hover feedback. | [`three.ez`](https://github.com/agargaro/three.ez) `src/events/` (1 258 lines), MIT | 5 → MEDIUM |
 | [238](./PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | The render projection stops submitting instances the camera cannot see. Prices the existing "per-instance culling is O(n)" decision instead of assuming it. | [`instanced-mesh`](https://github.com/agargaro/instanced-mesh) `src/core/feature/FrustumCulling.ts:172-196`, MIT | 6 → MEDIUM |
-| [239](./PRD-239-camera-intent-is-one-portable-gesture-stream.md) | The zoom axis that does not exist: `InputMap` has no wheel and the native host installs no `WheelEvent`. Orbit/dolly/pan intent, same on mouse, pinch and stick. | [`camera-controls`](https://github.com/yomotsu/camera-controls) gesture table `src/CameraControls.ts:314-342`, MIT | 5 → MEDIUM |
+| [239](../done/PRD-239-camera-intent-is-one-portable-gesture-stream.md) **DONE (web)** | The zoom axis that does not exist: `InputMap` has no wheel and the native host installs no `WheelEvent`. Orbit/dolly/pan intent, same on mouse, pinch and stick. | [`camera-controls`](https://github.com/yomotsu/camera-controls) gesture table `src/CameraControls.ts:314-342`, MIT | 5 → MEDIUM |
 | [240](./PRD-240-text-is-not-uppercase-only.md) | Text beyond 5×7 uppercase ASCII, HUD and world, on every target — via an offline bake, because the upstream runtime shaper is WASM and iOS JSC has none. | [`glyph`](https://github.com/pmndrs/glyph) bake CLI + `src/shaper.ts:89-92`, MIT | 8 → HIGH |
 | [241](./PRD-241-a-sequence-is-one-cancellable-object.md) | `ctx.tween` takes a curve from the game. Sequencing, cancellation and vector targets turned out to be solved already; the PRD records why. | [`three.ez`](https://github.com/agargaro/three.ez) `src/tweening/`, [`timeline`](https://github.com/pmndrs/timeline) — MIT | 3 → LOW |
 | [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) **DONE** | Compute lifetime stops being hardcoded to `GPUParticles3D` (`game.ts:708`, `:805`, `:353`, `:424`); kernel warmup joins the startup window, which `warmup.ts` has never covered. **Enabler for 243–246.** | all five GPU-sim repos; `softbodies/src/FEMPhysics/FEMPhysics.js:341` hand-rolls the warmup this repo already owns | 6 → MEDIUM |
@@ -58,8 +65,8 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) **DONE** | `GPUSceneBVH` — the scene traceable from TSL. `three-mesh-bvh@0.9.14` is already installed and already exports `./webgpu`; no game can reach it. | [`webgiya`](https://github.com/jure/webgiya) `src/sceneBvh.ts`, MIT | 6 → MEDIUM |
 | [245](./PRD-245-indirect-light-is-a-node-the-game-composites.md) | `SurfelGI` hands back **one TSL node**; the game composites it in its own `src/render/postprocessing.ts`, or never mentions it. **Reverses a bad refusal.** | [`webgiya`](https://github.com/jure/webgiya) (7 509 lines); composition is already app code there at `src/main.ts:709-722` | 9 → HIGH |
 | [246](./PRD-246-two-oceans-two-contracts.md) | `SpectralOcean` beside PRD-236's `WaveField` — **both ship**, different names because different contracts: analytic height is exact and free, spectral height is an async throttled readback that is N frames stale. | [`poseidon`](https://github.com/owenyuwono/poseidon), [`SeedOcean`](https://github.com/reed-soul/SeedOcean) `src/core/buoyancy.js` — MIT | 7 → HIGH |
-| [247](./PRD-247-drei-vanilla-per-item.md) | The drei-vanilla helpers that are mechanism, one at a time. **Reverses a bad refusal** — `billboarding` is named in CHARTER §5b as something the framework may own. | [`drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT | 5 → MEDIUM |
-| [248](./PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) | `Atmosphere` bakes three LUTs and hands back `radiance()`, `sunTransmittance()` and `aerialPerspective()`. **No preset list, and it creates no light** — the sky mesh, the material and the `DirectionalLight` stay in the template. | [`SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky) `src/sky/SkyAtmosphereBaker.js` (526), MIT | 7 → HIGH |
+| [247](../done/PRD-247-drei-vanilla-per-item.md) **DONE (web)** | The drei-vanilla helpers that are mechanism, one at a time. **Reverses a bad refusal** — `billboarding` is named in CHARTER §5b as something the framework may own. | [`drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT | 5 → MEDIUM |
+| [248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) **DONE (web)** | `Atmosphere` bakes three LUTs and hands back `radiance()`, `sunTransmittance()` and `aerialPerspective()`. **No preset list, and it creates no light** — the sky mesh, the material and the `DirectionalLight` stay in the template. | [`SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky) `src/sky/SkyAtmosphereBaker.js` (526), MIT | 7 → HIGH |
 | [249](./PRD-249-a-fluid-field-is-data-the-game-draws.md) | `FluidField2D` — the seven-pass incompressible solver, unfused from the material upstream welds it to. The game samples `field.dye` and decides whether it is smoke or fire. **Last in the batch: zero in-repo callers today.** | [`threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation) `src/FluidMaterialGPU.ts:53-325`, MIT | 6 → MEDIUM |
 | [250](./PRD-250-native-workers-are-actually-workers.md) | The standard `Worker` surface already exposed by the native host actually runs work off the game/render thread. It links the existing `WorkerRegistry`/`WorkerThread` path and removes the production main-thread polyfill; it does **not** add `TN.jobs`. | Web Worker semantics + the existing unlinked native worker subsystem | 8 → HIGH |
 | [251](./PRD-251-procedural-world-fields-and-terrain-residency.md) | Production procedural-world fields: deterministic height/flow/moisture/biome data, erosion/hydrology, CPU/GPU query parity and crack-free terrain consumption. The game still owns every material, biome look, species, water and sky decision. | [`threejs-world`](https://github.com/imsarah/threejs-world), mined as mechanism rather than public API | 10 → HIGH |

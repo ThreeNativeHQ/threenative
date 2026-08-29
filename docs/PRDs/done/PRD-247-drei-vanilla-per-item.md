@@ -4,12 +4,17 @@ prd_contract: v1
 
 # PRD-247 — The drei-vanilla helpers that are mechanism, one at a time
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: DONE (web), 2026-08-29.** Three of the surveyed helpers shipped and the rest were
+refused with reasons: `Billboard3D`, `SpriteAnimator3D` and `CameraShake` are exported from
+`@threenative/core`. Evidence:
+[PRD-247-repair-2026-08-28.md](../../verification/PRD-247-repair-2026-08-28.md) and
+[the roll continuation](../../verification/prd-247-roll-continuation.md) — web and unit gates
+PASS. **Native execution is UNVERIFIED.**
 
 Source: [`pmndrs/drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT, cloned at depth 1 on
 2026-08-28. `src/core/` is 4 170 lines across 19 files, all read for the verdict table below.
 
-Parent batch: [feature-mining](./README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **This PRD reverses a bad refusal.** The first draft of the batch README refused drei-vanilla
 wholesale — *"`Billboard`, `Stars`, `Sparkles`, `CameraShake`, `Outlines`, `Grid` are all look"*.
