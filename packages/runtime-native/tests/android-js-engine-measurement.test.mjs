@@ -1,6 +1,6 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { join } from "node:path";
 import { test } from "vitest";
@@ -8,6 +8,7 @@ import { test } from "vitest";
 import {
   analyzeMeasurementLog,
   classifyDevice,
+  createMeasurementDevice,
   inspectPackagedBundle,
   inspectPackagedNativeFootprint,
   inspectPackagedRuntime,
@@ -23,6 +24,100 @@ import {
   validateOptimizationProvenance,
   validateReportApkEvidence,
 } from "../scripts/measure-android-js-engine.mjs";
+import {
+  resolveAndroidPackageId,
+  verifyInstalledPackage,
+} from "../scripts/lib/device.mjs";
+
+test("measurement uses the shared adb and device libraries", () => {
+  const source = readFileSync(
+    new URL("../scripts/measure-android-js-engine.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /from "\.\/lib\/adb\.mjs"/u);
+  assert.match(source, /from "\.\/lib\/device\.mjs"/u);
+  assert.doesNotMatch(source, /function adbPath\(/u);
+  assert.doesNotMatch(source, /function adb\(/u);
+});
+
+test("measurement preserves its adb command contract through the shared client", () => {
+  const calls = [];
+  const device = createMeasurementDevice(
+    "192.0.2.1:5555",
+    { THREENATIVE_ADB: "/sdk/adb" },
+    {
+      spawnSyncImpl(command, args, options) {
+        calls.push({ command, args, maxBuffer: options.maxBuffer, timeout: options.timeout });
+        return { status: 0, stdout: "device\n", stderr: "" };
+      },
+    },
+  );
+  assert.equal(device.run(["get-state"]), "device\n");
+  assert.deepEqual(calls, [
+    {
+      args: ["-s", "192.0.2.1:5555", "get-state"],
+      command: "/sdk/adb",
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 120_000,
+    },
+  ]);
+});
+
+test("measurement preserves its former adb environment-key policy", () => {
+  assert.throws(
+    () =>
+      createMeasurementDevice(
+        "device-1",
+        { ANDROID_HOME: "/android-home", ANDROID_SDK_ROOT: "/android-sdk-root" },
+        {
+          defaultSdkRoot: "/home-sdk",
+          existsSyncImpl: (path) => path.startsWith("/android-"),
+        },
+      ),
+    (error) => error?.message === "TN_ANDROID_JS_ADB_MISSING" && error.details.exitCode === 2,
+  );
+});
+
+test("measurement preserves raw adb failure output", () => {
+  const device = createMeasurementDevice(
+    "device-1",
+    { THREENATIVE_ADB: "/sdk/adb" },
+    {
+      spawnSyncImpl: () => ({ status: 7, stdout: "", stderr: "controlled failure\n" }),
+    },
+  );
+  assert.throws(
+    () => device.run(["get-state"]),
+    (error) =>
+      error?.message ===
+      "Command failed (7): /sdk/adb -s device-1 get-state\ncontrolled failure\n",
+  );
+});
+
+test("device library resolves app.id and verifies the installed package", () => {
+  const directory = makeTempDirSync("tn-device-library-");
+  const configPath = join(directory, "threenative.config.json");
+  try {
+    writeFileSync(configPath, JSON.stringify({ app: { id: "dev.example.game" } }));
+    assert.equal(resolveAndroidPackageId(configPath), "dev.example.game");
+    assert.equal(
+      verifyInstalledPackage(
+        (args) => {
+          assert.deepEqual(args, ["shell", "pm", "path", "dev.example.game"]);
+          return "package:/data/app/dev.example.game/base.apk\n";
+        },
+        "dev.example.game",
+      ),
+      "package:/data/app/dev.example.game/base.apk",
+    );
+    assert.throws(
+      () => verifyInstalledPackage(() => "", "dev.example.game"),
+      /TN_DEVICE_INSTALL_MISSING/u,
+    );
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
 
 const subject = {
   extraDrawControl: false,

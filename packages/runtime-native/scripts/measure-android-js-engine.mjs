@@ -11,7 +11,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -23,11 +22,18 @@ import {
   parseArgs as parseFirstProofArgs,
   verifyAndroidFirstProof,
 } from "./verify-android-first-proof.mjs";
-import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
+import { createAdbClient, resolveAdbExecutable } from "./lib/adb.mjs";
+import {
+  assertDeviceReady,
+  MINIMUM_BATTERY_PERCENT,
+  resolveAndroidPackageId,
+  suppressPlayProtectOnAdbInstalls,
+  verifyInstalledPackage,
+} from "./lib/device.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXPECTED_DEVICE = "37251FDJH0037Z";
-const APP_ID = "com.threenative.game";
+const APP_ID = resolveAndroidPackageId();
 const MARKERS = {
   frame: "TN_ANDROID_JS_FRAME:",
   native: "TN_ANDROID_JS_NATIVE:",
@@ -48,12 +54,26 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function adbPath(environment = process.env) {
-  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
-  const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
-  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-  if (existsSync(candidate)) return candidate;
-  throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_ADB_MISSING", { exitCode: 2 });
+export function createMeasurementDevice(serial, environment = process.env, dependencies = {}) {
+  const executable = resolveAdbExecutable(environment, {
+    allowPathFallback: false,
+    defaultSdkRoot: dependencies.defaultSdkRoot,
+    existsSyncImpl: dependencies.existsSyncImpl,
+    sdkEnvironmentKeys: ["THREENATIVE_ANDROID_SDK"],
+  });
+  if (!executable) {
+    throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_ADB_MISSING", { exitCode: 2 });
+  }
+  return createAdbClient(serial, {
+    environment: { ...environment, THREENATIVE_ADB: executable },
+    maxBuffer: 64 * 1024 * 1024,
+    spawnSyncImpl: dependencies.spawnSyncImpl,
+    timeoutMs: 120_000,
+    mapError: (error) =>
+      new AndroidJsEngineMeasurementError(
+        `Command failed (${error.spawnFailed ? "spawn" : error.exitCode}): ${executable} -s ${serial} ${error.args.join(" ")}\n${error.rawDetail}`,
+      ),
+  });
 }
 
 function run(command, args, options = {}) {
@@ -344,10 +364,6 @@ function inspectNativeOptimization(abi, packagedSha256) {
   return validateOptimizationProvenance(packagedSha256, candidates);
 }
 
-function adb(adbExecutable, serial, ...args) {
-  return run(adbExecutable, ["-s", serial, ...args], { timeoutMs: 120_000 });
-}
-
 export function percentile(values, probability) {
   if (!Array.isArray(values) || values.length === 0) {
     throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_PERCENTILE_EMPTY");
@@ -446,22 +462,21 @@ export function validateCandidateComparison(control, candidate, expectedEngine) 
 }
 
 async function measureColdStarts(
-  adbExecutable,
-  serial,
+  device,
   runs,
   firstFrameMarker = FIRST_FRAME_MARKER,
   timeoutMs = 30_000,
 ) {
   const samplesMs = [];
   for (let runIndex = 0; runIndex < runs; runIndex += 1) {
-    adb(adbExecutable, serial, "shell", "am", "force-stop", APP_ID);
-    adb(adbExecutable, serial, "logcat", "-c");
+    device.run(["shell", "am", "force-stop", APP_ID]);
+    device.run(["logcat", "-c"]);
     const startedAt = performance.now();
-    const launch = adb(adbExecutable, serial, "shell", "am", "start", "-W", "-n", ACTIVITY);
+    const launch = device.run(["shell", "am", "start", "-W", "-n", ACTIVITY]);
     if (!/Status:\s*ok/iu.test(launch)) {
       throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_COLD_START_LAUNCH_FAILED:${runIndex + 1}`);
     }
-    await waitForMarker(adbExecutable, serial, firstFrameMarker, timeoutMs);
+    await waitForMarker(device, firstFrameMarker, timeoutMs);
     samplesMs.push(performance.now() - startedAt);
   }
   return { p95Ms: percentile(samplesMs, 0.95), runs, samplesMs };
@@ -775,11 +790,11 @@ export function parseArgs(argv) {
   return options;
 }
 
-async function waitForMarker(adbExecutable, serial, marker, timeoutMs = 180_000) {
+async function waitForMarker(device, marker, timeoutMs = 180_000) {
   const deadline = Date.now() + timeoutMs;
   let log = "";
   while (Date.now() < deadline) {
-    log = adb(adbExecutable, serial, "logcat", "-d", "-v", "threadtime");
+    log = device.run(["logcat", "-d", "-v", "threadtime"]);
     if (log.includes(marker)) return log;
     await new Promise((resolveTimer) => setTimeout(resolveTimer, 500));
   }
@@ -792,42 +807,42 @@ async function waitForMarker(adbExecutable, serial, marker, timeoutMs = 180_000)
 // The measurement buffer is sized so a full window plus cold starts cannot wrap it.
 export const MEASUREMENT_LOGBUFFER_BYTES = 16 * 1024 * 1024;
 
-async function installAndLaunchMeasuredSubject(adbExecutable, serial, apk) {
-  const install = adb(adbExecutable, serial, "install", "-r", "-t", apk);
+async function installAndLaunchMeasuredSubject(device, apk) {
+  suppressPlayProtectOnAdbInstalls(device.serial, { adb: (args) => device.run(args) });
+  const install = device.run(["install", "-r", "-t", apk]);
   if (!/Success/iu.test(install)) {
     throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_INSTALL_FAILED:${install.trim()}`);
   }
-  adb(adbExecutable, serial, "shell", "am", "force-stop", APP_ID);
-  adb(adbExecutable, serial, "logcat", "-G", String(MEASUREMENT_LOGBUFFER_BYTES));
-  adb(adbExecutable, serial, "logcat", "-c");
-  const launch = adb(
-    adbExecutable,
-    serial,
+  verifyInstalledPackage((args) => device.run(args), APP_ID);
+  device.run(["shell", "am", "force-stop", APP_ID]);
+  device.run(["logcat", "-G", String(MEASUREMENT_LOGBUFFER_BYTES)]);
+  device.run(["logcat", "-c"]);
+  const launch = device.run([
     "shell",
     "am",
     "start",
     "-W",
     "-n",
     ACTIVITY,
-  );
+  ]);
   if (!/Status:\s*ok/iu.test(launch)) {
     throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_LAUNCH_FAILED:${launch.trim()}`);
   }
-  return waitForMarker(adbExecutable, serial, MARKERS.frame);
+  return waitForMarker(device, MARKERS.frame);
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const adbExecutable = adbPath();
-  const state = adb(adbExecutable, options.device, "get-state").trim();
+  const adbDevice = createMeasurementDevice(options.device);
+  const state = adbDevice.run(["get-state"]).trim();
   if (state !== "device") throw new AndroidJsEngineMeasurementError(`TN_ANDROID_JS_DEVICE_BLOCKED:${state}`, { exitCode: 2 });
   const properties = {
-    hardware: adb(adbExecutable, options.device, "shell", "getprop", "ro.hardware").trim(),
-    abi: adb(adbExecutable, options.device, "shell", "getprop", "ro.product.cpu.abi").trim(),
-    model: adb(adbExecutable, options.device, "shell", "getprop", "ro.product.model").trim(),
-    qemu: adb(adbExecutable, options.device, "shell", "getprop", "ro.kernel.qemu").trim(),
+    hardware: adbDevice.run(["shell", "getprop", "ro.hardware"]).trim(),
+    abi: adbDevice.run(["shell", "getprop", "ro.product.cpu.abi"]).trim(),
+    model: adbDevice.run(["shell", "getprop", "ro.product.model"]).trim(),
+    qemu: adbDevice.run(["shell", "getprop", "ro.kernel.qemu"]).trim(),
   };
-  const hardwareSerial = adb(adbExecutable, options.device, "shell", "getprop", "ro.serialno").trim();
+  const hardwareSerial = adbDevice.run(["shell", "getprop", "ro.serialno"]).trim();
   const device = requireMeasurementDevice(
     properties,
     resolveMeasurementSerial(hardwareSerial, options.device),
@@ -918,10 +933,10 @@ async function main() {
     if (options.skipInstall) {
       throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_FOX_SUBJECT_REQUIRES_INSTALL");
     }
-    log = await installAndLaunchMeasuredSubject(adbExecutable, options.device, archivedApkPath);
+    log = await installAndLaunchMeasuredSubject(adbDevice, archivedApkPath);
   } else {
     await verifyAndroidFirstProof(proofOptions);
-    log = await waitForMarker(adbExecutable, options.device, MARKERS.frame);
+    log = await waitForMarker(adbDevice, MARKERS.frame);
   }
   writeFileSync(logPath, log);
   const expected = {
@@ -940,14 +955,13 @@ async function main() {
       `TN_ANDROID_JS_ENGINE_IDENTITY_MISMATCH:expected ${options.expectedEngine}, received ${analysis.native.engine}`,
     );
   }
-  const pid = adb(adbExecutable, options.device, "shell", "pidof", APP_ID).trim();
+  const pid = adbDevice.run(["shell", "pidof", APP_ID]).trim();
   if (!pid) throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_PROCESS_MISSING");
-  const processStatus = adb(adbExecutable, options.device, "shell", "cat", `/proc/${pid}/status`);
+  const processStatus = adbDevice.run(["shell", "cat", `/proc/${pid}/status`]);
   const peakRssKb = parsePeakRssKb(processStatus);
   const coldStart = options.coldStartRuns > 0
     ? await measureColdStarts(
-        adbExecutable,
-        options.device,
+        adbDevice,
         options.coldStartRuns,
         options.foxSubject ? MARKERS.native : FIRST_FRAME_MARKER,
       )
