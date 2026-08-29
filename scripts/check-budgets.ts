@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { checkCapabilityManifest } from "./build-capability-manifest.js";
+import { buildMatrixErrors } from "./check-build-matrix.js";
 import { checkNativeCoverage } from "./check-native-coverage.js";
 
 const execFileAsync = promisify(execFile);
@@ -463,6 +464,7 @@ export async function enforceBudgets(root: string): Promise<BudgetReport> {
   const report = await collectBudgets(root);
   const errors = [
     ...budgetErrors(report),
+    ...(await buildMatrixErrors(root)),
     ...(await capabilityManifestErrors(root)),
     ...(await nativeCensusErrors(root)),
     ...(await nativeCensusDrift(root)),

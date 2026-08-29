@@ -32,7 +32,8 @@ considered, and a KEEP/DELETE verdict.
 | `tools/` | 145 | PRD-077 | `conformance/desktop-touch.mjs` → `threenative-uinput-touch`, built by the `CMakeLists.txt` target of the same name | Write the injector in Node, or take an npm addon, or shell out to `python3` | **KEEP, and it cannot be smaller.** Creating a `uinput` device is a sequence of ioctls and Node exposes none, so the alternatives are a new native harness dependency rebuilt per Node version, or a Python toolchain this repository does not otherwise have. This owns only the ioctls and the device's lifetime — every event is encoded in JavaScript where a test can assert two `ABS_MT_SLOT` groups precede one `SYN_REPORT`. Linux-only by construction. |
 | `shim-manifest.json` | 59 | PRD-215 | `scripts/check-native-shims.ts` from `pnpm budgets`; native host installs in `src/runtime.cpp` and `src/webgpu/bindings.cpp` | Keep the native-global contract as prose only in `AGENTS.md` | **KEEP** — machine-readable shim evidence is the enforced web/native boundary. |
 | `js-engine-versions.json` | 38 | PRD-222 | `tests/js-engine-version-skew.test.mjs`; `scripts/download-deps.mjs` consumes the pinned engine versions | Leave engine/version compatibility as prose or duplicate pins across download scripts | **KEEP** — one fail-closed manifest prevents desktop, Android, and iOS engine pins from drifting silently. |
-| **Total** | **108,160** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
+| `build-matrix.json` | 142 | PRD-235 | `scripts/check-build-matrix.ts` from `scripts/check-budgets.ts:467` via `pnpm budgets`; proven by `scripts/__tests__/check-build-matrix.spec.ts` | Leave "which build directory does this test executable live in" as prose in `AGENTS.md` and tribal knowledge | **KEEP** — the prose answer was already wrong once: a contract test that only links in `build/tn-linux` is invisible to anyone reading `CMakeLists.txt`. This is the machine-readable contract, and the gate cross-checks every preset, cache variable, and test executable it names against CMake, so either side drifting is a named failure. |
+| **Total** | **108,302** |  | `pnpm budgets` current measurement |  | **No area rejected.** |
 
 **Updated 2026-08-19 by [PRD-160](../PRDs/done/PRD-160-android-emulator-lane-repair-and-parity-adjudication.md): +58 lines, 78,289 → 78,347.**
 `conformance/` gained 10 lines (6,331 → 6,341) for `androidWindowDump` and the docblock recording
@@ -66,6 +67,15 @@ generated shooter scenario — and the remainder the perf lane's fail-closed reg
 section; `src/` (+70, 38,857 → 38,927), `include/` (+24, 3,836 → 3,860) and `scripts/` (+33,
 12,179 → 12,212) belong to the render-perf lane's landed commits (contained-frustum subjects,
 present-once profile follow-ups). Regenerated after both lanes settled so one walk attributes both.
+
+**Updated 2026-08-28 by PRD-235 Phase 1: +142 lines, 108,160 → 108,302.**
+All 142 are the new counted area `build-matrix.json`, the machine-readable answer to which build
+directory each native test executable lives in and why. It is enforced, not prose:
+`scripts/check-build-matrix.ts` runs from `scripts/check-budgets.ts:467` on every `pnpm budgets`
+and cross-checks each configuration's preset against `CMakePresets.json`, each cache variable
+against a declared `option()`/`set(... CACHE ...)` in `CMakeLists.txt`, and each `runs` entry
+against a real `add_executable` — and fails when a registered test executable is claimed by no
+configuration. No native source changed in this commit.
 
 The current measurement uses the same native extensions and exclusions as `scripts/check-budgets.ts`:
 `third_party/`, `build/`, `.runtime/`, `artifacts/`, `.cxx/`, `.gradle/`, `.test-tmp/`, and

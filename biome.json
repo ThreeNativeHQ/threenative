@@ -6,6 +6,7 @@
       "**/dist-native/**",
       "**/.threenative/**",
       "artifacts/**",
+      "build/**",
       ".worktrees/**",
       ".claude/worktrees/**",
       ".mcp.json",
