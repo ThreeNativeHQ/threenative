@@ -242,6 +242,20 @@ pnpm budgets
 A red in `packages/runtime-native` aborts the root suite before ~2,463 root tests run, so never
 read a green root suite as proof while that package is failing.
 
+`pnpm test` does **not** currently reach zero failures, and waiting for it to will stall you
+forever. The bar for this work is: **2,497 passed, and the only failure is the inherited one named
+in §1.** Anything else is yours. Check it explicitly rather than reading the exit code:
+
+```sh
+pnpm test 2>&1 | tail -5      # expect: Tests  1 failed | 2497 passed (2498)
+```
+
+The one inherited failure is `generated-shooter-input.spec.ts` with
+`TN_CAPTURE_BLANK: bright pixel ratio 0.04470 is below 0.05` — the shooter template's visual
+capture, a render/threshold question owned by the templates lane and untouched by this batch. It
+has drifted (0.01987 on 2026-08-27, 0.04470 on 2026-08-29) and sits just under the floor, so treat
+a *different* ratio as movement in that lane rather than as something you broke.
+
 ## 6. What fails this work
 
 - A converted test that passes control (b) but not (a). It is the old assertion in new syntax.
