@@ -10,6 +10,7 @@
 | `global helpers are copied from ordinary binding hosts` | Requires all three global helper functions through the initialized runtime global | `proof: public-binding-surface` |
 | `GPUCommandEncoder installs its table once per class, not per call` | Creates two real command encoders, requires shared prototypes and method identities, rejects own per-instance methods, and interleaves receiver dispatch; the public-surface probe covers all eight method names | `proof: command-encoder-class-table` + `proof: public-binding-surface` |
 | `GPURenderPassEncoder installs its table once per class, and end() resolves its encoder from the map` | Creates two real render passes through the effective frame-op-stream path, requires all fourteen methods, a shared non-default prototype and method identity, no own methods, detached-call refusal, interleaved receiver dispatch, and current-encoder resolution | `proof: render-pass-class-table` |
+| `createSampler` and invalid-layout `createBindGroup` refuse at the API call | Drives inverted sampler LOD and a missing native bind-group-layout handle through the headless runtime; the unreachable post-call bind-group null-result guard remains source-protected | `proof: creation-refusal` |
 
 The remaining source assertions stay in `webgpu-bindings-contract.test.mjs` until their behavior
 probes exist. The default Vitest lane uses a fixture executable to prove the output contract; CTest
@@ -48,8 +49,54 @@ sets `TN_NATIVE_BEHAVIOR_EXECUTABLE` so that same test drives the built product 
   CTest failed. The mutation was reverted.
 - Render-pass rename: renamed the executable probe to `exerciseRenderPassClassContract`; the
   product-backed test stayed green.
+- Creation sampler break: removed inverted-LOD exception delivery. CTest failed and named
+  `createSampler did not throw at creation`; the mutation was reverted.
+- Creation layout break: removed invalid-layout exception delivery. CTest failed and named
+  `createBindGroup did not throw at creation`; the mutation was reverted.
+- Creation rename: renamed private `tnWebgpuHandler69` and its table reference. The product-backed
+  test stayed green; the mutation was reverted.
+- Sanitizer: the creation executable passed ASan + UBSan. The full six-target lane remains red in
+  the unchanged reentrancy executable on a `RenderBundleEncoder` leak, so no full-lane green is
+  claimed for this checkpoint.
 
 ## Green result
 
 `ctest --test-dir packages/runtime-native/build/tn-linux --output-on-failure -R
 '^threenative-webgpu-bindings-reentrancy-test$'` passed `1/1` through the Vitest bridge.
+
+Creation refusal, product-backed CTest:
+
+```text
+ctest --test-dir packages/runtime-native/build/tn-linux --output-on-failure \
+  -R '^threenative-bindings-creation-test$'
+1/1 Test #4: threenative-bindings-creation-test ... Passed
+100% tests passed, 0 tests failed out of 1
+exit 0
+```
+
+Focused default contract:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+  tests/webgpu-bindings-contract.test.mjs
+Test Files 1 passed (1)
+Tests 32 passed (32)
+exit 0
+```
+
+Creation-only sanitizer proof, using the lane's generated suppression file:
+
+```text
+ASAN_OPTIONS='abort_on_error=1:fast_unwind_on_malloc=0:halt_on_error=1' \
+LSAN_OPTIONS="suppressions=$PWD/packages/runtime-native/build/tn-linux-asan/native-lsan-2026-08-28.supp" \
+UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1' \
+ctest --test-dir packages/runtime-native/build/tn-linux-asan --output-on-failure \
+  -R '^threenative-bindings-creation-test$'
+1/1 Test #4: threenative-bindings-creation-test ... Passed
+100% tests passed, 0 tests failed out of 1
+exit 0
+```
+
+The encompassing `pnpm --filter @threenative/runtime-native native:test:asan` command exited `1`:
+creation passed, while `threenative-webgpu-bindings-reentrancy-test` failed on the unchanged
+`RenderBundleEncoder` leak. The full lane is not claimed green.
