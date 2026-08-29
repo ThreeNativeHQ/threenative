@@ -10,6 +10,7 @@ import {
   parseScreenState,
   parseThermalState,
   suppressPlayProtectOnAdbInstalls,
+  suppressPlayProtectOnAdbInstallsAsync,
 } from "../scripts/device-preflight.mjs";
 
 const baseOptions = {
@@ -368,6 +369,27 @@ describe("suppressPlayProtectOnAdbInstalls", () => {
         assert.match(error.message, /device offline/u);
         return true;
       },
+    );
+  });
+
+  test("wraps typed executor failures in sync and async paths", async () => {
+    const typed = new DevicePreflightError("TN_DEVICE_PREFLIGHT_ADB", "sentinel", { marker: 7 });
+    const expected = (error) => {
+      assert.equal(error.code, "TN_DEVICE_PREFLIGHT_PLAY_PROTECT");
+      assert.deepEqual(error.details, {
+        serial: "37251FDJH0037Z",
+        setting: "package_verifier_enable",
+      });
+      assert.match(error.message, /TN_DEVICE_PREFLIGHT_ADB: sentinel/u);
+      return true;
+    };
+    assert.throws(
+      () => suppressPlayProtectOnAdbInstalls("37251FDJH0037Z", { adb: () => { throw typed; } }),
+      expected,
+    );
+    await assert.rejects(
+      () => suppressPlayProtectOnAdbInstallsAsync("37251FDJH0037Z", { adb: async () => { throw typed; } }),
+      expected,
     );
   });
 
