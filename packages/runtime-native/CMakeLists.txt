@@ -21,11 +21,19 @@ enable_testing()
 
 function(tn_register_contract_test target)
     if(target STREQUAL "threenative-webgpu-bindings-reentrancy-test")
+        set(TN_BEHAVIOR_CONTRACT "webgpu")
+        set(TN_BEHAVIOR_PROOFS "public-binding-surface,whole-table-verification,wrapper-rollback")
+    elseif(target STREQUAL "threenative-command-encoder-class-table-test")
+        set(TN_BEHAVIOR_CONTRACT "command-encoder")
+        set(TN_BEHAVIOR_PROOFS "command-encoder-class-table")
+    endif()
+    if(DEFINED TN_BEHAVIOR_CONTRACT)
         find_program(TN_PNPM_EXECUTABLE pnpm REQUIRED)
         add_test(NAME ${target}
             COMMAND ${CMAKE_COMMAND} -E env
                 "TN_NATIVE_BEHAVIOR_EXECUTABLE=$<TARGET_FILE:${target}>"
-                "TN_NATIVE_BEHAVIOR_PROOFS=public-binding-surface,whole-table-verification,wrapper-rollback"
+                "TN_NATIVE_BEHAVIOR_CONTRACT=${TN_BEHAVIOR_CONTRACT}"
+                "TN_NATIVE_BEHAVIOR_PROOFS=${TN_BEHAVIOR_PROOFS}"
                 ${TN_PNPM_EXECUTABLE} exec vitest run --config vitest.config.ts
                     tests/webgpu-bindings-contract.test.mjs)
         set_tests_properties(${target} PROPERTIES

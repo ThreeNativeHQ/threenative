@@ -140,7 +140,7 @@ void runContract(mystral::js::Engine& engine, bool forceLegacyShape = false) {
  * two command encoders must share one prototype, carry no own method properties, share method
  * identities, and dispatch interleaved passes to the right native handles.
  */
-void runRuntimeContract() {
+void exerciseCommandEncoderClassContract() {
     mystral::RuntimeConfig config;
     config.width = 1;
     config.height = 1;
@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
     const auto engineJsc = mystral::js::createEngine(mystral::js::EngineType::JavaScriptCore);
     if (engineJsc) runContract(*engineJsc);
 
-    runRuntimeContract();
+    exerciseCommandEncoderClassContract();
 
     if (failures != 0) {
         if (forceLegacyShape) {
@@ -241,6 +241,7 @@ int main(int argc, char** argv) {
                   << std::endl;
         return 1;
     }
+    std::cout << "proof: command-encoder-class-table" << std::endl;
     std::cout << "command-encoder-class-table: prototype=shared receivers=resolved "
                  "detached=null-reported runtime=wired" << std::endl;
     return 0;

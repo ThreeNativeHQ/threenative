@@ -8,6 +8,7 @@
 | `binding-table verification covers the whole table after writes and rollback` | Exercises cross-row write traps, preflight descriptor traps, blocked rollback, and SameValue snapshot restoration | `proof: whole-table-verification` |
 | `supported feature collections stay iterable without binding onto an exotic array` | Creates real adapter and device feature collections, requires `has` and `Symbol.iterator`, and consumes both iterators | `proof: public-binding-surface` |
 | `global helpers are copied from ordinary binding hosts` | Requires all three global helper functions through the initialized runtime global | `proof: public-binding-surface` |
+| `GPUCommandEncoder installs its table once per class, not per call` | Creates two real command encoders, requires shared prototypes and method identities, rejects own per-instance methods, and interleaves receiver dispatch; the public-surface probe covers all eight method names | `proof: command-encoder-class-table` + `proof: public-binding-surface` |
 
 The remaining source assertions stay in `webgpu-bindings-contract.test.mjs` until their behavior
 probes exist. The default Vitest lane uses a fixture executable to prove the output contract; CTest
@@ -33,6 +34,11 @@ sets `TN_NATIVE_BEHAVIOR_EXECUTABLE` so that same test drives the built product 
 - Feature-iteration break: temporarily changed `device.features` from an array-backed collection
   to an ordinary object while retaining its `has` function. The product-backed assertion named
   `GPUDevice.features iterator binding missing`; CTest failed. The mutation was reverted.
+- Command-encoder behavior break: forced the executable's legacy per-instance wrapper shape. The
+  product-backed Vitest named the fixed-shape and hidden-class failures; CTest failed. The mutation
+  was reverted.
+- Command-encoder rename: renamed the real-runtime probe to
+  `exerciseCommandEncoderClassContract`; the product-backed test stayed green.
 
 ## Green result
 
