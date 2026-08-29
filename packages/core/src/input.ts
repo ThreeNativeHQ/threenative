@@ -1,9 +1,9 @@
 import { Vector2 } from "three";
 
 /**
- * One action, read either as a button through `pressed`/`justPressed` or as a 2D axis through
- * `vector`. Which one you get depends on the fields you fill in, and mixing the two is what
- * makes bindings confusing to read:
+ * One action, read either as a button through `pressed`/`justPressed`, a 2D axis through
+ * `vector`, or a scalar axis through `axis`. Which one you get depends on the fields you fill in,
+ * and mixing the two is what makes bindings confusing to read:
  *
  * ```ts
  * jump: { keys: ["Space"], buttons: [0] }                 // a button: key or *gamepad* button 0
@@ -21,6 +21,8 @@ import { Vector2 } from "three";
 export interface IInputAction {
   /** **Gamepad** button indices that press this action. For the mouse, see `mouseButtons`. */
   readonly buttons?: readonly number[];
+  /** **Gamepad** axis indices whose values contribute to `axis(name)`. */
+  readonly gamepadAxes?: readonly number[];
   /**
    * **Mouse** button indices that press this action, numbered as `MouseEvent.button`:
    * `0` left, `1` middle, `2` right. Binding `2` also suppresses the browser context menu on
@@ -38,6 +40,10 @@ export interface IInputAction {
   readonly left?: readonly string[];
   /** Any active pointer or touch presses this action. */
   readonly pointer?: boolean;
+  /** Add normalized browser/native wheel motion to `axis(name)`; negative DOM deltaY (toward-user) is positive. */
+  readonly scroll?: boolean;
+  /** Add the signed two-pointer distance change to `axis(name)`; moving apart is positive. */
+  readonly pinch?: boolean;
   /** Add raw mouse movement since the last input tick to `vector(name)`. */
   readonly pointerRelative?: boolean;
   /** The +x direction of `vector(name)`. */
@@ -114,6 +120,11 @@ const DEFAULT_BINDINGS: InputBindings = {
   },
 };
 
+const WHEEL_LINE_PIXELS = 16;
+const WHEEL_PAGE_PIXELS = 800;
+const WHEEL_PIXELS_PER_AXIS = 100;
+const PINCH_DEAD_ZONE = 0.01;
+
 function eventCode(event: Event): string | undefined {
   const candidate = event as Event & { code?: string; key?: string };
   return candidate.code ?? candidate.key;
@@ -151,10 +162,15 @@ export class InputMap {
   #pointerPosition = new Vector2();
   #pointerRelative = new Vector2();
   #relativeSample = new Vector2();
+  #scrollDelta = 0;
+  #scrollSample = 0;
   #pointerButtons = 0;
   #pointers = new Map<number, IRawInputPointer>();
   #pointerEdges = new Map<number, readonly IRawInputPointerEdge[]>();
   #pendingPointerEdges = new Map<number, IRawInputPointerEdge[]>();
+  #pinchPair: readonly [number, number] | undefined;
+  #pinchDistance = 0;
+  #pinchSample = 0;
   #gamepadAxes: number[] = [];
   #gamepadButtons: boolean[] = [];
   #previousPressed = new Map<string, boolean>();
@@ -173,6 +189,7 @@ export class InputMap {
   #latchedPointer = false;
   #pointerTarget: EventTarget;
   #source: InputPlatformSource;
+  #tracksPinch = false;
   #listeners: Array<[EventTarget, string, EventListener]> = [];
 
   constructor(
@@ -189,6 +206,7 @@ export class InputMap {
     this.#target = target;
     this.#pointerTarget = pointerTarget;
     this.#source = source;
+    this.#tracksPinch = this.#bindingNames.some((name) => this.#bindings[name]?.pinch === true);
     this.raw = {
       gamepad: { axes: this.#gamepadAxes, buttons: this.#gamepadButtons },
       keys: this.#heldKeys,
@@ -215,6 +233,8 @@ export class InputMap {
     });
     this.#listen(this.#target, "mousemove", (event) => this.#mouseEvent(event));
     this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, "down"));
+    if (this.#bindingNames.some((name) => this.#bindings[name]?.scroll === true))
+      this.#listen(this.#target, "wheel", (event) => this.#wheelEvent(event));
     this.#listen(this.#pointerTarget, "pointermove", (event) => this.#pointerEvent(event));
     this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, "up"));
     this.#listen(this.#pointerTarget, "pointercancel", (event) =>
@@ -258,6 +278,32 @@ export class InputMap {
     }
     if (binding.pointerRelative === true) vector.add(this.#relativeSample);
     return binding.pointerRelative === true ? vector : vector.clampLength(0, 1);
+  }
+
+  /**
+   * Returns a scalar action for this fixed-step tick, clamped to `[-1, 1]`.
+   *
+   * `scroll: true` normalizes wheel deltas to pixels before scaling them: one line is 16 pixels,
+   * one page is 800 pixels, and 100 pixels is one axis unit. Browser and native wheel events use
+   * the same DOM sign convention, so scrolling the wheel toward the user (negative DOM `deltaY`) is
+   * positive and scrolling away (positive DOM `deltaY`) is negative. `pinch: true` reports the relative distance change of the first two active pointers;
+   * a third pointer is ignored and a changing pair starts a new gesture without a jump.
+   */
+  axis(name: string): number {
+    const binding = this.#bindings[name];
+    if (binding === undefined) return 0;
+    let value = 0;
+    if (binding.scroll === true) value += this.#scrollSample;
+    if (binding.pinch === true) value += this.#pinchSample;
+    const axes = binding.gamepadAxes;
+    if (axes !== undefined) {
+      for (let index = 0; index < axes.length; index += 1) {
+        const axisIndex = axes[index] as number;
+        const axis = this.#gamepadAxes[axisIndex];
+        if (axis !== undefined && Number.isFinite(axis)) value += axis;
+      }
+    }
+    return Math.max(-1, Math.min(1, value));
   }
 
   /** Request pointer capture. Call this from a user gesture on the game surface. */
@@ -342,6 +388,9 @@ export class InputMap {
     this.#publishPointerEdges();
     this.#relativeSample.copy(this.#pointerRelative);
     this.#pointerRelative.set(0, 0);
+    this.#scrollSample = this.#clampAxis(this.#scrollDelta);
+    this.#scrollDelta = 0;
+    this.#samplePinch();
     const sources = this.#source();
     let gamepad: IInputGamepad | undefined;
     for (let index = 0; index < sources.length; index += 1) {
@@ -395,8 +444,13 @@ export class InputMap {
     this.#pointerPosition.set(0, 0);
     this.#pointerRelative.set(0, 0);
     this.#relativeSample.set(0, 0);
+    this.#scrollDelta = 0;
+    this.#scrollSample = 0;
     this.raw.pointer.buttons = 0;
     this.raw.pointer.down = false;
+    this.#pinchPair = undefined;
+    this.#pinchDistance = 0;
+    this.#pinchSample = 0;
     this.#previousPressed.clear();
     this.#justPressed.clear();
     this.#justReleased.clear();
@@ -470,6 +524,56 @@ export class InputMap {
     const mouse = event as MouseEvent;
     if (Number.isFinite(mouse.movementX)) this.#pointerRelative.x += mouse.movementX;
     if (Number.isFinite(mouse.movementY)) this.#pointerRelative.y += mouse.movementY;
+  }
+
+  #wheelEvent(event: Event): void {
+    const wheel = event as Event & { deltaMode?: number; deltaY?: number };
+    const deltaY = wheel.deltaY;
+    if (deltaY === undefined || !Number.isFinite(deltaY)) return;
+    const deltaMode = wheel.deltaMode;
+    const pixelsPerDelta =
+      deltaMode === 1 ? WHEEL_LINE_PIXELS : deltaMode === 2 ? WHEEL_PAGE_PIXELS : 1;
+    this.#scrollDelta += (-deltaY * pixelsPerDelta) / WHEEL_PIXELS_PER_AXIS;
+  }
+
+  #samplePinch(): void {
+    if (!this.#tracksPinch) return;
+    const pointers = this.#pointers.values();
+    const first = pointers.next().value as IRawInputPointer | undefined;
+    const second = pointers.next().value as IRawInputPointer | undefined;
+    if (first === undefined || second === undefined) {
+      this.#pinchPair = undefined;
+      this.#pinchDistance = 0;
+      this.#pinchSample = 0;
+      return;
+    }
+
+    const distance = first.position.distanceTo(second.position);
+    const pair = this.#pinchPair;
+    if (
+      pair === undefined ||
+      pair[0] !== first.id ||
+      pair[1] !== second.id ||
+      !Number.isFinite(distance)
+    ) {
+      this.#pinchPair = [first.id, second.id];
+      this.#pinchDistance = distance;
+      this.#pinchSample = 0;
+      return;
+    }
+
+    const previousDistance = this.#pinchDistance;
+    this.#pinchDistance = distance;
+    if (previousDistance <= 0 || !Number.isFinite(previousDistance)) {
+      this.#pinchSample = 0;
+      return;
+    }
+    const delta = distance / previousDistance - 1;
+    this.#pinchSample = Math.abs(delta) <= PINCH_DEAD_ZONE ? 0 : this.#clampAxis(delta);
+  }
+
+  #clampAxis(value: number): number {
+    return Math.max(-1, Math.min(1, value));
   }
 
   #syncCaptured(fallback?: boolean): void {

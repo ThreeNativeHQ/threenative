@@ -1,0 +1,29 @@
+{
+  "acceptanceId": "camera-intent",
+  "name": "abyss-framework-zoom-input",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": false },
+  "steps": [
+    { "kind": "input", "label": "start-game", "press": "Enter", "holdTicks": 1, "release": true },
+    {
+      "kind": "input",
+      "label": "wheel-toward-user",
+      "wheel": { "deltaY": -500 },
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "camera": {
+      "entity": "camera.main",
+      "follows": "player",
+      "targetInViewport": true,
+      "within": 5975
+    }
+  }
+}

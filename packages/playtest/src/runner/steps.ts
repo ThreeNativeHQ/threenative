@@ -297,6 +297,13 @@ export async function runStep(
   if (step.pointers !== undefined) {
     await setBrowserPointers(page, inputState, step.pointers, viewport);
   }
+  if (step.wheel !== undefined) {
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    await page.mouse.wheel(step.wheel.deltaX ?? 0, step.wheel.deltaY);
+    // Chromium schedules the wheel DOM event for the next frame. Let that one Playwright
+    // transport event reach the game's listener before deterministic ticks sample input.
+    await waitFrames(page, 1);
+  }
   const press = step.press;
   if (typeof press === "string") {
     await page.keyboard.down(press);

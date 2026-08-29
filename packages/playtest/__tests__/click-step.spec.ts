@@ -38,6 +38,46 @@ test("click drives a browser pointer down and up at viewport pixels", async () =
   expect(calls).toEqual([["move", 320, 180], ["down"], ["up"]]);
 });
 
+test("wheel input delivers exactly one browser input sample", async () => {
+  const calls: Array<[number, number]> = [];
+  let deliveredSamples = 0;
+  const syntheticDispatches: unknown[] = [];
+  const page = {
+    context: () => ({ newCDPSession: async () => ({ send: async () => undefined }) }),
+    evaluate: async (callback: unknown, ...args: unknown[]) => {
+      if (typeof callback === "function" && callback.toString().includes("dispatchEvent")) {
+        syntheticDispatches.push(args[0]);
+      }
+    },
+    keyboard: { down: async () => undefined, up: async () => undefined },
+    mouse: {
+      down: async () => undefined,
+      move: async (x: number, y: number) => calls.push([x, y]),
+      up: async () => undefined,
+      wheel: async (deltaX: number, deltaY: number) => {
+        calls.push([deltaX, deltaY]);
+        deliveredSamples += 1;
+      },
+    },
+  } as unknown as Page;
+
+  await runStep(
+    page,
+    undefined,
+    { release: true, waitTicks: 1, wheel: { deltaY: -160 } } as never,
+    { height: 360, width: 640 },
+    undefined,
+    [],
+    { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() },
+    undefined,
+    true,
+  );
+
+  expect(calls).toEqual([[320, 180], [0, -160]]);
+  expect(deliveredSamples).toBe(1);
+  expect(syntheticDispatches).toHaveLength(0);
+});
+
 test("entity click without a bridge fails with a named pointer diagnostic", async () => {
   const page = {
     context: () => ({ newCDPSession: async () => ({ send: async () => undefined }) }),
@@ -109,6 +149,65 @@ test.each(["android", "desktop", "ios"] as const)(
     expect(report.diagnostics).toContainEqual(expect.objectContaining({
       code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
       fix: { instruction: expect.stringContaining("OS pointer injection") },
+    }));
+    expect(prepared).toBe(false);
+    expect(started).toBe(false);
+  },
+);
+
+test.each(["android", "desktop", "ios"] as const)(
+  "native %s wheel input fails closed before startup",
+  async (target) => {
+    const projectPath = await makeTempDir(`playtest-${target}-wheel-`);
+    await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+      artifacts: { screenshots: false },
+      assert: { diagnostics: { runtimeReady: true } },
+      name: "native-wheel",
+      schemaVersion: 1,
+      steps: [{ release: true, waitTicks: 1, wheel: { deltaY: -32 } }],
+      target: "web",
+      viewport: { height: 100, width: 100 },
+    }));
+    let prepared = false;
+    let started = false;
+    const driver: IDevicePlaytestDriver = {
+      captureConsole: async () => [],
+      isAlive: async () => true,
+      prepare: async () => { prepared = true; },
+      screenshot: async () => undefined,
+      stop: async () => undefined,
+    };
+    const transport: IDevicePlaytestTransport = {
+      capabilities: [],
+      call: async <T>() => undefined as T,
+      close: async () => undefined,
+      start: async () => { started = true; },
+      waitForBridge: async () => false,
+    };
+
+    const report = await runDevicePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      endpoint: "http://127.0.0.1:41777/playtest",
+      headless: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      target,
+      timeoutMs: 100,
+      trace: false,
+      url: "http://127.0.0.1:5173",
+    }, {
+      driver,
+      mailboxPaths: { request: "request", response: "response" },
+      name: target,
+      processName: `${target}-wheel-test`,
+      transport,
+    });
+
+    expect(report.pass).toBe(false);
+    expect(report.diagnostics).toContainEqual(expect.objectContaining({
+      code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+      fix: { instruction: expect.stringContaining("browser") },
+      message: expect.stringContaining("wheel input steps"),
     }));
     expect(prepared).toBe(false);
     expect(started).toBe(false);

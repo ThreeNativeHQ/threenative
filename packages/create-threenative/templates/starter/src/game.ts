@@ -20,6 +20,9 @@ const game = defineGame<GameState, IPhysicsContext>({
     },
     jump: { buttons: [0], keys: ["Space"] },
     restart: { keys: ["KeyR"] },
+    // Wheel, pinch and the right stick share one portable camera intent. Negative DOM deltaY
+    // (toward-user) is positive scroll intent on browser and native; the scene owns the framing.
+    zoom: { gamepadAxes: [3], pinch: true, scroll: true },
   },
   plugins: [rapier(), replay(), playtest()],
   display: config.display,

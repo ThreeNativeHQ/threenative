@@ -231,3 +231,54 @@ test('Android proof refuses a viewport it has not executed', () => {
     /requires the display viewport/u,
   );
 });
+
+test('native scroll conformance records the host source contract without claiming runtime delivery', () => {
+  const manifest = JSON.parse(read('shim-manifest.json'));
+  const wheelShim = manifest.shims.find((shim) => shim.name === 'WheelEvent');
+  assert.ok(wheelShim, 'shim-manifest.json must record the native WheelEvent shim');
+  assert.match(wheelShim.evidence, /event-constructors-setup\.js/u);
+
+  const runtime = read('src/runtime.cpp');
+  const input = read('src/platform/input.cpp');
+  const window = read('src/platform/window.cpp');
+  assert.match(input, /void processMouseWheel\(const SDL_MouseWheelEvent& event\) \{[\s\S]*?WheelEventData data;[\s\S]*?data\.type\s*=\s*[^;]+;[\s\S]*?data\.clientX\s*=\s*[^;]+;[\s\S]*?data\.clientY\s*=\s*[^;]+;[\s\S]*?data\.deltaX\s*=\s*[^;]+;[\s\S]*?data\.deltaY\s*=\s*[^;]+;[\s\S]*?data\.deltaZ\s*=\s*[^;]+;[\s\S]*?data\.deltaMode\s*=\s*[^;]+;[\s\S]*?data\.ctrlKey\s*=\s*[^;]+;[\s\S]*?data\.shiftKey\s*=\s*[^;]+;[\s\S]*?data\.altKey\s*=\s*[^;]+;[\s\S]*?data\.metaKey\s*=\s*[^;]+;[\s\S]*?g_wheelCallback\(data\);/u, 'native wheel callback handoff is absent');
+  assert.match(runtime, /platform::setWheelCallback\(\[this\]\(const platform::WheelEventData& e\) \{[\s\S]*?dispatchWheelEvent\(e\);\s*\}\);/u, 'native wheel callback must reach dispatchWheelEvent');
+  assert.match(runtime, /void dispatchWheelEvent\(const platform::WheelEventData& e\) \{[\s\S]*?dispatchToListeners\("document", e\.type, event\);\s*dispatchToListeners\("window", e\.type, event\);\s*dispatchToListeners\("canvas", e\.type, event\);\s*\}\s*void dispatchGamepadEvent/u, 'native wheel listener dispatch handoff is absent');
+  assert.match(window, /SDL_EVENT_MOUSE_WHEEL/u);
+  assert.match(window, /processMouseWheel\(event\.wheel\)/u);
+  assert.match(input, /void processMouseWheel\(const SDL_MouseWheelEvent& event\)/u);
+
+  const scene = read('conformance/scenes/shared/scroll-input.js');
+  assert.match(scene, /addEventListener\(['"]wheel['"]/u);
+  assert.match(scene, /input\.axis\(['"]zoom['"]\)/u);
+  assert.doesNotMatch(scene, /WheelEvent|dispatchEvent/u);
+});
+
+test('native scroll preserves the SDL to DOM wheel sign and pixel scale', () => {
+  const input = read('src/platform/input.cpp');
+
+  assert.match(input, /data\.deltaMode = 0/u);
+  assert.match(input, /data\.deltaX = event\.x \* 120\.0/u);
+  const assignment = input.match(/data\.deltaY = (?<expression>[^;]+);/u);
+  assert.ok(assignment?.groups?.expression, 'native input must assign a wheel deltaY expression');
+
+  const convert = new Function('event', `return ${assignment.groups.expression};`);
+  assert.equal(convert({ y: 1 }), -120);
+  assert.equal(convert({ y: -1 }), 120);
+});
+
+test('native conformance keeps scroll delivery source-contract-only until a host run exists', () => {
+  const registry = JSON.parse(read('conformance/registry.json'));
+  const row = registry.tests.find((entry) => entry.id === '99-scroll-input');
+  assert.deepEqual(row, {
+    availability: 'source-contract-only',
+    category: 'input',
+    desktopGate: false,
+    id: '99-scroll-input',
+    required: true,
+    scene: 'conformance/scenes/shared/scroll-input.js',
+    status: 'planned',
+    title: 'native host scroll source contract',
+    tolerance: { perceptualDeltaE: 3, pixelMismatchRatio: 0.01 },
+  });
+});

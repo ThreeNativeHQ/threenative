@@ -31,6 +31,7 @@ const game = defineGame<AbyssState>({
     },
     pulse: { keys: ["Space"], pointer: true },
     start: { keys: ["Enter"] },
+    zoom: { gamepadAxes: [3], pinch: true, scroll: true },
   },
   plugins: [replayPlugin, replayRuntime, playtest()],
   renderer: { preferWebGPU: !viewportProbe },

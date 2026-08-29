@@ -938,6 +938,20 @@
       "required": true
     },
     {
+      "id": "99-scroll-input",
+      "title": "native host scroll source contract",
+      "category": "input",
+      "status": "planned",
+      "scene": "conformance/scenes/shared/scroll-input.js",
+      "availability": "source-contract-only",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "97-input-restart-lifetime",
       "title": "listener removal survives a stop-restart cycle",
       "category": "runtime",

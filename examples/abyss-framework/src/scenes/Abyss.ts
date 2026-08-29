@@ -54,7 +54,7 @@ export class Abyss extends Scene<AbyssState> {
   #startCleanup: (() => void) | undefined;
 
   override enter(ctx: AbyssCtx): SceneFrame<AbyssState> {
-    const camera = ctx.camera;
+    const camera = ctx.camera as THREE.OrthographicCamera;
     camera.position.set(0, 0, CAMERA_DISTANCE);
     camera.lookAt(0, 0, 0);
     ctx.viewport.resize();
@@ -276,6 +276,14 @@ export class Abyss extends Scene<AbyssState> {
       const now = simulationTime * 1_000;
       const move = frameCtx.input.vector("move");
       const pulse = frameCtx.input.pressed("pulse") && energy > 1;
+
+      camera.position.z = THREE.MathUtils.clamp(
+        camera.position.z - frameCtx.input.axis("zoom") * CAMERA_DISTANCE * 0.5 * dt,
+        CAMERA_DISTANCE * 0.75,
+        CAMERA_DISTANCE * 1.25,
+      );
+      camera.zoom = CAMERA_DISTANCE / camera.position.z;
+      camera.updateProjectionMatrix();
 
       if (status !== "play" && frameCtx.input.pressed("start")) start();
 

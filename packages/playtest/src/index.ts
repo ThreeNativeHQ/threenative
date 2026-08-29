@@ -144,5 +144,6 @@ export type {
   IPlaytestScenario,
   IPlaytestSignalAssertion,
   IPlaytestStep,
+  IPlaytestWheel,
   IPlaytestWorldRuntimeAssertion,
 } from "./scenario.js";

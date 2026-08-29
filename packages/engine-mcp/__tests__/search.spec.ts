@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -67,6 +68,48 @@ describe("threenative-engine-mcp", () => {
     expect(
       results.find((result) => result.symbol === "attachToBone")?.constraints.join(" "),
     ).toMatch(/import and call `attachToBone` from `@threenative\/core`/u);
+  });
+
+  it("returns one compilable example for the plain-language zoom capability", async () => {
+    const results = searchCapabilities(
+      "let the player zoom the camera with a wheel, pinch, or gamepad axis",
+      workspaceManifest,
+    );
+    const zoom = results.find((result) => result.symbol === "defineGame");
+    expect(zoom).toBeDefined();
+    const example = zoom?.example ?? "";
+    expect(example.match(/\bconst game\b/gu) ?? []).toHaveLength(1);
+
+    const root = await makeTempDir("threenative-engine-mcp-zoom-example-");
+    try {
+      const file = path.join(root, "zoom-example.ts");
+      await writeFile(
+        file,
+        [
+          "declare const Play: unknown;",
+          "declare function defineGame(config: unknown): unknown;",
+          example,
+          "",
+        ].join("\n"),
+      );
+      const options: ts.CompilerOptions = {
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        noEmit: true,
+        skipLibCheck: true,
+        strict: true,
+        target: ts.ScriptTarget.ES2022,
+      };
+      const program = ts.createProgram([file], options);
+      const diagnostics = ts.getPreEmitDiagnostics(program);
+      expect(
+        diagnostics.map((diagnostic) =>
+          ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
+        ),
+      ).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it("answers that native ray tracing is unavailable until readable output interop exists", () => {

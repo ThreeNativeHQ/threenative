@@ -214,6 +214,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         springArm.snap(player.mesh.position);
         respawned = true;
       }
+      springArm.dolly(frameCtx.input.axis("zoom"), dt);
       springArm.follow(player.mesh.position, dt);
       // `status` is written only on the frame that ends the run, and never in the bulk
       // write below, which would stamp this frame's stale copy back over it.

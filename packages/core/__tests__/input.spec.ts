@@ -18,7 +18,166 @@ function pointerEvent(
   return Object.assign(new Event(type), { buttons, clientX: x, clientY: y, pointerId: id });
 }
 
+function wheelEvent(deltaY: number, deltaMode = 0): Event {
+  const event = new Event("wheel");
+  Object.defineProperties(event, {
+    deltaMode: { value: deltaMode },
+    deltaY: { value: deltaY },
+  });
+  return event;
+}
+
 describe("InputMap", () => {
+  it("browser negative DOM deltaY toward the user produces positive zoom intent", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { scroll: true } }, target);
+
+    target.dispatchEvent(wheelEvent(-30));
+    input.tick();
+
+    expect(input.axis("zoom")).toBeCloseTo(0.3);
+    expect(input.axis("zoom")).toBeGreaterThan(0);
+    input.dispose();
+  });
+
+  it("browser positive DOM deltaY away from the user produces negative zoom intent", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { scroll: true } }, target);
+
+    target.dispatchEvent(wheelEvent(30));
+    input.tick();
+
+    expect(input.axis("zoom")).toBeCloseTo(-0.3);
+    expect(input.axis("zoom")).toBeLessThan(0);
+    input.dispose();
+  });
+
+  it("should reset the axis to zero on the next tick with no further input", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { scroll: true } }, target);
+
+    target.dispatchEvent(wheelEvent(-30));
+    input.tick();
+    expect(input.axis("zoom")).toBeCloseTo(0.3);
+
+    input.tick();
+
+    expect(input.axis("zoom")).toBe(0);
+    input.dispose();
+  });
+
+  it("should normalise line-mode and pixel-mode wheel deltas to the same axis value", () => {
+    const pixelTarget = new EventTarget();
+    const lineTarget = new EventTarget();
+    const pixelInput = new InputMap({ zoom: { scroll: true } }, pixelTarget);
+    const lineInput = new InputMap({ zoom: { scroll: true } }, lineTarget);
+
+    pixelTarget.dispatchEvent(wheelEvent(-32, 0));
+    lineTarget.dispatchEvent(wheelEvent(-2, 1));
+    pixelInput.tick();
+    lineInput.tick();
+
+    expect(lineInput.axis("zoom")).toBeCloseTo(pixelInput.axis("zoom"));
+    pixelInput.dispose();
+    lineInput.dispose();
+  });
+
+  it("should read a bound gamepad axis through the same scalar input", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { gamepadAxes: [3] } }, target, target, () => [
+      { axes: [0, 0, 0, 0.75], buttons: [] },
+    ]);
+
+    input.tick();
+
+    expect(input.axis("zoom")).toBeCloseTo(0.75);
+    input.dispose();
+  });
+
+  it("should keep the axis at zero when its scroll binding is removed", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { scroll: true } }, target);
+    input.dispose();
+
+    target.dispatchEvent(wheelEvent(-30));
+    input.tick();
+
+    expect(input.axis("zoom")).toBe(0);
+  });
+
+  it("should keep the axis at zero when scroll is not bound", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: {} }, target);
+
+    target.dispatchEvent(wheelEvent(-30));
+    input.tick();
+
+    expect(input.axis("zoom")).toBe(0);
+    input.dispose();
+  });
+
+  it("should report a positive pinch axis when two pointers move apart", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { pinch: true } }, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 40, 100));
+    target.dispatchEvent(pointerEvent("pointerdown", 2, 60, 100));
+    input.tick();
+    target.dispatchEvent(pointerEvent("pointermove", 1, 39, 100));
+    target.dispatchEvent(pointerEvent("pointermove", 2, 61, 100));
+    input.tick();
+
+    expect(input.axis("zoom")).toBeCloseTo(0.1);
+    input.dispose();
+  });
+
+  it("should report zero pinch while only one pointer is down", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { pinch: true } }, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 40, 100));
+    input.tick();
+    target.dispatchEvent(pointerEvent("pointermove", 1, 80, 100));
+    input.tick();
+
+    expect(input.axis("zoom")).toBe(0);
+    input.dispose();
+  });
+
+  it("should ignore a third pointer when deriving pinch", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { pinch: true } }, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 40, 100));
+    target.dispatchEvent(pointerEvent("pointerdown", 2, 60, 100));
+    input.tick();
+    target.dispatchEvent(pointerEvent("pointerdown", 3, 300, 300));
+    target.dispatchEvent(pointerEvent("pointermove", 3, 500, 500));
+    input.tick();
+
+    expect(input.axis("zoom")).toBe(0);
+    input.dispose();
+  });
+
+  it("should not jump when the second finger lifts mid-pinch", () => {
+    const target = new EventTarget();
+    const input = new InputMap({ zoom: { pinch: true } }, target);
+
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 40, 100));
+    target.dispatchEvent(pointerEvent("pointerdown", 2, 60, 100));
+    input.tick();
+    target.dispatchEvent(pointerEvent("pointermove", 1, 39, 100));
+    target.dispatchEvent(pointerEvent("pointermove", 2, 61, 100));
+    input.tick();
+    expect(input.axis("zoom")).toBeCloseTo(0.1);
+
+    target.dispatchEvent(pointerEvent("pointerup", 2, 61, 100));
+    input.tick();
+
+    expect(input.axis("zoom")).toBe(0);
+    input.dispose();
+  });
+
   it("should reuse one vector when the same action is sampled", () => {
     const target = new EventTarget();
     const input = new InputMap(undefined, target);
