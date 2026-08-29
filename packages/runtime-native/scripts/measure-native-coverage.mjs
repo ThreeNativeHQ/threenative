@@ -19,6 +19,7 @@ import {
   executionContracts,
   validateExecutionContracts,
 } from "./verify-native-contracts.mjs";
+import { nativeCoverageEvidenceDigest } from "./native-coverage-evidence.mjs";
 
 const profileDirectory = join(desktopBuildDirectory("coverage"), "coverage-profiles");
 const defaultRecord = resolve(
@@ -211,12 +212,15 @@ function compiledProductObjects(buildDirectory) {
   };
 }
 
-function renderMarkdown(report, executedTargets) {
+function renderMarkdown(report, executedTargets, previousRecord = "") {
   const rows = report.subsystems
     .map(
       ({ covered, lines, name, percent }) =>
         `| \`src/${name}${name.includes(".") ? "" : "/"}\` | ${lines} | ${covered} | ${percent.toFixed(2)}% |`,
     )
+    .join("\n");
+  const floors = retainedCoverageFloors(previousRecord, report.subsystems)
+    .map(({ name, percent }) => `| \`${name}\` | ${percent.toFixed(2)}% |`)
     .join("\n");
   const notCompiled =
     report.notCompiled.length === 0
@@ -238,6 +242,16 @@ targets could not be built and are named below.
 ${rows}
 | **TOTAL** | **${report.total.lines}** | **${report.total.covered}** | **${report.total.percent.toFixed(2)}%** |
 
+Source digest: \`sha256:${nativeCoverageEvidenceDigest(runtimeRoot)}\`
+
+The default \`pnpm budgets\` gate reads this committed measurement without configuring or compiling
+the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
+change requires this opt-in command to refresh the record.
+
+| Coverage floor | Minimum |
+| --- | ---: |
+${floors}
+
 ## Not compiled in this configuration
 
 ${notCompiled}
@@ -247,6 +261,27 @@ ${notCompiled}
 ${blocked}
 ${generatedRecordEnd}
 `;
+}
+
+export function retainedCoverageFloors(previousRecord, subsystems) {
+  const recorded = new Map();
+  const heading = "| Coverage floor | Minimum |";
+  const start = previousRecord.indexOf(heading);
+  if (start >= 0) {
+    for (const line of previousRecord.slice(start).split(/\r?\n/u).slice(2)) {
+      if (!line.startsWith("|")) break;
+      const match = line.match(/^\|\s*`([^`]+)`\s*\|\s*(\d+(?:\.\d+)?)%\s*\|$/u);
+      if (!match) throw new Error(`native coverage record contains a malformed floor: ${line}`);
+      if (recorded.has(match[1])) {
+        throw new Error(`native coverage record contains a duplicate floor: ${match[1]}`);
+      }
+      recorded.set(match[1], Number(match[2]));
+    }
+  }
+  return subsystems.map(({ name, percent }) => {
+    const path = `src/${name}${name.includes(".") ? "" : "/"}`;
+    return { name: path, percent: recorded.get(path) ?? percent };
+  });
 }
 
 function writeGeneratedRecord(
@@ -627,7 +662,8 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
     ],
     sourceFiles: sourceInventory(),
   });
-  const markdown = renderMarkdown(report, executedTargets);
+  const previousRecord = existsSync(recordPath) ? readFileSync(recordPath, "utf8") : "";
+  const markdown = renderMarkdown(report, executedTargets, previousRecord);
   mkdirSync(dirname(recordPath), { recursive: true });
   writeGeneratedRecord(recordPath, markdown);
   console.info(markdown);

@@ -14,16 +14,41 @@ targets could not be built and are named below.
 | `src/fs/` | 232 | 87 | 37.50% |
 | `src/http/` | 402 | 175 | 43.53% |
 | `src/input/` | 33 | 0 | 0.00% |
-| `src/js/` | 2587 | 984 | 38.04% |
+| `src/js/` | 2595 | 992 | 38.23% |
 | `src/platform/` | 965 | 211 | 21.87% |
 | `src/raytracing/` | 458 | 60 | 13.10% |
 | `src/runtime.cpp` | 1952 | 771 | 39.50% |
 | `src/storage/` | 260 | 225 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 6908 | 2249 | 32.56% |
+| `src/webgpu/` | 6928 | 2343 | 33.82% |
 | `src/webtransport/` | 770 | 40 | 5.19% |
-| **TOTAL** | **18467** | **6115** | **33.11%** |
+| **TOTAL** | **18495** | **6217** | **33.61%** |
+
+Source digest: `sha256:80ab96d2a1c530fec40d63703c98cf1740e3d742681995309d60f0592e563af1`
+
+The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
+the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
+change requires this opt-in command to refresh the record.
+
+| Coverage floor | Minimum |
+| --- | ---: |
+| `src/async/` | 72.60% |
+| `src/audio/` | 57.81% |
+| `src/canvas/` | 48.39% |
+| `src/cli/` | 0.00% |
+| `src/fs/` | 37.50% |
+| `src/http/` | 43.53% |
+| `src/input/` | 0.00% |
+| `src/js/` | 38.23% |
+| `src/platform/` | 21.87% |
+| `src/raytracing/` | 13.10% |
+| `src/runtime.cpp` | 39.50% |
+| `src/storage/` | 86.54% |
+| `src/utils/` | 0.00% |
+| `src/vfs/` | 73.22% |
+| `src/webgpu/` | 33.82% |
+| `src/webtransport/` | 5.19% |
 
 ## Not compiled in this configuration
 
