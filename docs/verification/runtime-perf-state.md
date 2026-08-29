@@ -904,6 +904,50 @@ was inspected and showed the cyan world geometry plus the conformance readout. N
   selects physical 120 Hz and Bayview sustains 63.45–72.52 fps. The evidence is in
   `docs/bugs/android-high-refresh-not-selected-2026-08-27.md`.
 
+### 1.4.1 The allocation-free frame contract was never actually measured (2026-08-29)
+
+`packages/core/__tests__/frame-budget-steady-alloc.spec.ts` asserted that 1.2M steady frames
+produce zero GC events. **That assertion could not fail.** V8 delivers GC entries to a
+`PerformanceObserver` through the event loop, never at the moment of collection, and the test ran a
+fully synchronous window then called `observer.disconnect()` before yielding — so `events` was `[]`
+whatever the frame did. Proven three ways, all on 2026-08-29:
+
+| Probe | Result |
+| --- | --- |
+| Push 1.2M **escaping** closures through the tween's per-tick path | test stayed **green** |
+| 3M escaping objects, observer read synchronously (`takeRecords()`) | 0 events, green |
+| Same 3M objects, one `setTimeout(…, 0)` before reading | **42 events** |
+| Original 1.2M-frame window with the yield restored | **22–130 events** — the frame is *not* allocation-free |
+
+**One source found and fixed.** `FrameBudget.endFrame` built a fresh `IFramePhaseSample` every
+frame and `FixedStepLoop.stepFrame` discarded it whenever `collectMetrics` was false — the shipping
+default. The old docstring claimed V8 scalar-replaced it; it cannot, because the object escapes
+across the method boundary and `endFrame` is far too large to inline. `endFrame(nowMs, wantSample)`
+now skips building it, the loop passes `this.#collectMetrics`, and every window meter is pushed
+either way. Observed red: revert the loop's second argument and the loop-level guard reports 240
+built samples across 240 frames. Measured effect on the 1.2M-frame window: 80 → 63 GC events.
+
+**The remainder is open and is not the tween's.** Per-process measurement (1.2M frames each,
+`control` = arithmetic-only spin of the same length):
+
+| Arm | GC events |
+| --- | --- |
+| control spin | 10 |
+| stepFrame, no budget | 67 |
+| stepFrame, budget, no tween | 123 |
+| stepFrame, budget, curved tween | 114 |
+
+**The instrument does not survive repair, so do not rebuild a bar on it.** Two windows in one
+process report ~135 for whichever runs **first** and ~70 for whichever runs **second**, regardless
+of which configuration each holds — the count reads warm-up order, not allocation. A bar tight
+enough to catch a regression flakes on ordering; a bar loose enough to be stable asserts nothing.
+The spec file now pins the per-frame properties deterministically instead (curve evaluated exactly
+once per tick; no phase sample built when the loop discards it) and states this in full.
+
+This invalidates the green in `prd-189-core-frame-allocations-2026-08-22.md` for any claim that
+rested on GC-event counting. The claim that the fixed-step frame allocates nothing per frame is
+**not established**, and finding the remaining ~57 events' worth is unowned.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
@@ -1005,15 +1049,20 @@ kept green; their records were evidence, not open work.
    retroactively refuses half the graveyard.
 7. **An ablation arm removes a complete recording path or none of it** — half-ablations return
    plausible wrong numbers instead of crashing.
-8. **No cross-session absolutes.** The 22.2 ms desktop baseline does not reproduce (machine state
+8. **A GC-observer window that never yields measures nothing.** V8 queues GC entries to the event
+   loop; a synchronous window that disconnects before yielding always reads `[]`, and the green is
+   vacuous. Yield once (`await setTimeout(…, 0)`) before reading, and prove the observer is live in
+   the same file. Even repaired, the count is dominated by warm-up order — first window ~135, second
+   ~70, same configurations — so it cannot carry a pass/fail bar. See §1.4.1.
+9. **No cross-session absolutes.** The 22.2 ms desktop baseline does not reproduce (machine state
    ~2.3×, bundle drift). Device pixel counts vs desktop differ 2.8×; never state a desktop
    millisecond as a device one. Profiled builds inflate absolutes — use ratios.
-9. **Live windows only** on device, or an end-screen idle reads as a 174 fps "win". Classify
-   windows before comparing. **The old test — `update.mean ≥ 3 ms` — is dead:** PRD-227 cut the
-   update phase to 0.46 ms in steady state, so it now rejects every live window (§1.3.5). Use: not
-   one of the two windows after launch, `substeps.mean ≥ 1`, `update.mean > 0.05`, and record the
-   `update.mean` series so the classification can be checked rather than taken on trust.
-10. Red-green with named mutations; never claim a gate you did not run; paste output. Device
+10. **Live windows only** on device, or an end-screen idle reads as a 174 fps "win". Classify
+    windows before comparing. **The old test — `update.mean ≥ 3 ms` — is dead:** PRD-227 cut the
+    update phase to 0.46 ms in steady state, so it now rejects every live window (§1.3.5). Use: not
+    one of the two windows after launch, `substeps.mean ≥ 1`, `update.mean > 0.05`, and record the
+    `update.mean` series so the classification can be checked rather than taken on trust.
+11. Red-green with named mutations; never claim a gate you did not run; paste output. Device
     preflight (thermal/battery) per `packages/runtime-native/AGENTS.md`. Commit path-limited as
     you go — another lane may hold this tree.
 

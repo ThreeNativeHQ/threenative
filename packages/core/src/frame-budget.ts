@@ -371,8 +371,14 @@ export class FrameBudget {
    * Closes the frame and returns its phase split, or `undefined` when the frame was a hitch and
    * therefore excluded — a 27-second startup stall is not a frame time and must not enter a
    * percentile anybody is asked to act on.
+   *
+   * `wantSample` is false when the caller is going to discard the split, which is the default
+   * shipping configuration. The object is small but it escapes this method, so V8 cannot scalar-
+   * replace it, and building one per frame is one dead allocation per frame in every game. The
+   * window meters below are pushed either way: turning the sample off must not turn measurement
+   * off, and `window()` reads the same numbers whichever way this is called.
    */
-  endFrame(nowMs: number): IFramePhaseSample | undefined {
+  endFrame(nowMs: number, wantSample = true): IFramePhaseSample | undefined {
     if (!this.#open) throw new Error("FrameBudget.endFrame called outside a frame.");
     this.#open = false;
     const simulationEnd = this.#simulationEnd ?? this.#frameStart;
@@ -396,13 +402,15 @@ export class FrameBudget {
     const update = Math.max(0, simulationEnd - this.#frameStart);
     const tail = Math.max(0, nowMs - simulationEnd);
     const residual = Math.max(0, tail - this.#renderMs - this.#overlayMs);
-    const sample: IFramePhaseSample = {
-      hostGap: round(this.#hostGap),
-      overlay: round(this.#overlayMs),
-      render: round(this.#renderMs),
-      residual: round(residual),
-      update: round(update),
-    };
+    const sample: IFramePhaseSample | undefined = wantSample
+      ? {
+          hostGap: round(this.#hostGap),
+          overlay: round(this.#overlayMs),
+          render: round(this.#renderMs),
+          residual: round(residual),
+          update: round(update),
+        }
+      : undefined;
     this.#frame.push(frameMs);
     this.#substeps.push(this.#substepCount);
     // The first frame has no predecessor, so it has neither an interval nor a host gap; pushing a

@@ -5,6 +5,7 @@ import {
   FRAME_HITCH_MARKER,
   FrameBudget,
   type IFrameBudgetWindow,
+  type IFramePhaseSample,
 } from "../src/frame-budget.js";
 import { FixedStepLoop } from "../src/loop.js";
 
@@ -48,6 +49,65 @@ function driveFrame(
   clock.now += frame.residual;
   budget.endFrame(clock.now);
 }
+
+function driveFrameWithoutSample(
+  budget: FrameBudget,
+  clock: { now: number; timestamp: number },
+  frame: typeof DEVICE_FRAME,
+): IFramePhaseSample | undefined {
+  clock.now += frame.hostGap;
+  clock.timestamp += frame.presented;
+  budget.beginFrame(clock.timestamp, clock.now);
+  clock.now += frame.update;
+  budget.markSimulationEnd(clock.now, 3);
+  budget.addRender(frame.render);
+  clock.now += frame.render;
+  budget.addOverlay(frame.overlay);
+  clock.now += frame.overlay;
+  clock.now += frame.residual;
+  return budget.endFrame(clock.now, false);
+}
+
+describe("frame budget phase sample", () => {
+  it("should build no phase sample when the caller will discard it", () => {
+    const budget = new FrameBudget({ reportEvery: Number.MAX_SAFE_INTEGER });
+    const clock = { now: 0, timestamp: 0 };
+    driveFrame(budget, clock, DEVICE_FRAME);
+    const unwanted = driveFrameWithoutSample(budget, clock, DEVICE_FRAME);
+    expect(unwanted).toBeUndefined();
+  });
+
+  it("should measure the same window whether or not the sample is built", () => {
+    const withSample = new FrameBudget({ reportEvery: Number.MAX_SAFE_INTEGER });
+    const withoutSample = new FrameBudget({ reportEvery: Number.MAX_SAFE_INTEGER });
+    const clockA = { now: 0, timestamp: 0 };
+    const clockB = { now: 0, timestamp: 0 };
+    for (let index = 0; index < 8; index += 1) {
+      driveFrame(withSample, clockA, DEVICE_FRAME);
+      driveFrameWithoutSample(withoutSample, clockB, DEVICE_FRAME);
+    }
+    // Turning the sample off must not turn the measurement off.
+    expect(withoutSample.window().phases).toEqual(withSample.window().phases);
+    expect(withoutSample.window().frames).toBe(withSample.window().frames);
+  });
+
+  it("should still return a sample when the caller asks for one", () => {
+    const budget = new FrameBudget({ reportEvery: Number.MAX_SAFE_INTEGER });
+    const clock = { now: 0, timestamp: 0 };
+    driveFrame(budget, clock, DEVICE_FRAME);
+    clock.now += DEVICE_FRAME.hostGap;
+    clock.timestamp += DEVICE_FRAME.presented;
+    budget.beginFrame(clock.timestamp, clock.now);
+    clock.now += DEVICE_FRAME.update;
+    budget.markSimulationEnd(clock.now, 3);
+    budget.addRender(DEVICE_FRAME.render);
+    clock.now += DEVICE_FRAME.render;
+    clock.now += DEVICE_FRAME.overlay;
+    expect(budget.endFrame(clock.now, true)).toEqual(
+      expect.objectContaining({ render: expect.any(Number), update: expect.any(Number) }),
+    );
+  });
+});
 
 function collectingBudget(reportEvery: number): { budget: FrameBudget; lines: string[] } {
   const lines: string[] = [];

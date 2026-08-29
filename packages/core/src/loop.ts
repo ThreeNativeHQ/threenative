@@ -199,7 +199,7 @@ export class FixedStepLoop {
       // A renderer can throw before it returns (for example, when SwiftShader rejects a buffer).
       // Close the budget before propagating that error so later frames report the real failure
       // instead of flooding the console with beginFrame calls against a poisoned budget.
-      phases = budget?.endFrame(this.#now());
+      phases = budget?.endFrame(this.#now(), this.#collectMetrics);
       const callbackFinishedAt = this.#now();
       if (Number.isFinite(callbackStartedAt) && Number.isFinite(callbackFinishedAt)) {
         callbackMs = Math.max(0, callbackFinishedAt - callbackStartedAt);

@@ -1,6 +1,6 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** IN FLIGHT — nineteen PRDs filed across four rounds. **Six are archived in
+**Status:** IN FLIGHT — nineteen PRDs filed across four rounds. **Seven are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -8,7 +8,10 @@
 [247](../done/PRD-247-drei-vanilla-per-item.md) and
 [248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) with their features shipped
 and reachable on the public surface, each archived Status naming the native or device lane that is
-still `UNVERIFIED` rather than implying it passed.
+still `UNVERIFIED` rather than implying it passed; and
+[241](../done/PRD-241-a-sequence-is-one-cancellable-object.md), which shipped in `affb48e8` with its
+boxes unaudited and was closed on 2026-08-29 after every negative control it names was executed
+(`docs/verification/prd-241-easing-closure-2026-08-29.md`).
 
 250 closed Phase 1 only and 254 is PARTIAL, so both stay. Everything else here is unbuilt: **no
 grass, ocean, fluid, soft body, surfel GI, procedural terrain or portable text exists in any
@@ -59,7 +62,7 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [238](./PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | The render projection stops submitting instances the camera cannot see. Prices the existing "per-instance culling is O(n)" decision instead of assuming it. | [`instanced-mesh`](https://github.com/agargaro/instanced-mesh) `src/core/feature/FrustumCulling.ts:172-196`, MIT | 6 → MEDIUM |
 | [239](../done/PRD-239-camera-intent-is-one-portable-gesture-stream.md) **DONE (web)** | The zoom axis that does not exist: `InputMap` has no wheel and the native host installs no `WheelEvent`. Orbit/dolly/pan intent, same on mouse, pinch and stick. | [`camera-controls`](https://github.com/yomotsu/camera-controls) gesture table `src/CameraControls.ts:314-342`, MIT | 5 → MEDIUM |
 | [240](./PRD-240-text-is-not-uppercase-only.md) | Text beyond 5×7 uppercase ASCII, HUD and world, on every target — via an offline bake, because the upstream runtime shaper is WASM and iOS JSC has none. | [`glyph`](https://github.com/pmndrs/glyph) bake CLI + `src/shaper.ts:89-92`, MIT | 8 → HIGH |
-| [241](./PRD-241-a-sequence-is-one-cancellable-object.md) | `ctx.tween` takes a curve from the game. Sequencing, cancellation and vector targets turned out to be solved already; the PRD records why. | [`three.ez`](https://github.com/agargaro/three.ez) `src/tweening/`, [`timeline`](https://github.com/pmndrs/timeline) — MIT | 3 → LOW |
+| [241](../done/PRD-241-a-sequence-is-one-cancellable-object.md) **DONE** | `ctx.tween` takes a curve from the game. Sequencing, cancellation and vector targets turned out to be solved already; the PRD records why. | [`three.ez`](https://github.com/agargaro/three.ez) `src/tweening/`, [`timeline`](https://github.com/pmndrs/timeline) — MIT | 3 → LOW |
 | [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) **DONE** | Compute lifetime stops being hardcoded to `GPUParticles3D` (`game.ts:708`, `:805`, `:353`, `:424`); kernel warmup joins the startup window, which `warmup.ts` has never covered. **Enabler for 243–246.** | all five GPU-sim repos; `softbodies/src/FEMPhysics/FEMPhysics.js:341` hand-rolls the warmup this repo already owns | 6 → MEDIUM |
 | [243](./PRD-243-softbody3d-cloth-first.md) | `SoftBody3D` — flag, cape, curtain. Mesh and material from the game. FEM tetrahedra is Phase 4 and may end unbuilt. | [`three-simplecloth`](https://github.com/bandinopla/three-simplecloth) (1 073), [`softbodies`](https://github.com/holtsetio/softbodies) (2 067) — MIT | 7 → HIGH |
 | [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) **DONE** | `GPUSceneBVH` — the scene traceable from TSL. `three-mesh-bvh@0.9.14` is already installed and already exports `./webgpu`; no game can reach it. | [`webgiya`](https://github.com/jure/webgiya) `src/sceneBvh.ts`, MIT | 6 → MEDIUM |
