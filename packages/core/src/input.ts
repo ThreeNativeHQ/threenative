@@ -195,9 +195,7 @@ export class InputMap {
     this.#target = target;
     this.#pointerTarget = pointerTarget;
     this.#source = source;
-    this.#tracksPinch = this.#bindingNames.some(
-      (name) => this.#bindings[name]?.pinch === true,
-    );
+    this.#tracksPinch = this.#bindingNames.some((name) => this.#bindings[name]?.pinch === true);
     this.raw = {
       gamepad: { axes: this.#gamepadAxes, buttons: this.#gamepadButtons },
       keys: this.#heldKeys,
@@ -548,8 +546,7 @@ export class InputMap {
       return;
     }
     const delta = distance / previousDistance - 1;
-    this.#pinchSample =
-      Math.abs(delta) <= PINCH_DEAD_ZONE ? 0 : this.#clampAxis(delta);
+    this.#pinchSample = Math.abs(delta) <= PINCH_DEAD_ZONE ? 0 : this.#clampAxis(delta);
   }
 
   #clampAxis(value: number): number {
