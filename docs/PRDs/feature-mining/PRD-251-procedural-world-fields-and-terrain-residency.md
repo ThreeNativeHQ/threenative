@@ -53,6 +53,16 @@ scene, and closes the gap between a substrate proof and world data a game can sh
 Upstream is pinned as git objects at `/tmp/threejs-world-audit`, commit
 `398320e9bcf74bf4c15532fafff4c565f7729b37`, MIT.
 
+Two newer MIT references were read on 2026-08-29 and narrow the implementation choices without
+changing this PRD's owner or public surface:
+
+- `kenjinp/hello-terrain` @ `51b022cc964a05217701a05edd94deca04b44af7` — vanilla Three/WebGPU
+  quadtree, seam, skirt, CPU query and GPU field mechanisms; its React package, materials, painting,
+  wetness and editor-facing surface are not candidates.
+- `nickyvanurk/cdlod` @ `1b92e75c920c5f28218420645792562139115fef` and
+  `tschie/terrain-cdlod` @ `d2b6d4e746dd9b7175cc114d87d5e60435740fe7` — CDLOD morph and bounds
+  math only. They are secondary algorithm references, not a second terrain system beside this one.
+
 > **HONESTY NOTE — READ THIS BEFORE FILLING IN ANY LINE NUMBER.**
 > The upstream working tree does not exist: the checkout failed when the disk filled, and in
 > the authoring session for this PRD every `git -C /tmp/threejs-world-audit show HEAD:<path>`
@@ -224,6 +234,9 @@ them from pasted output.
 | `src/gpu/passes/Scatter.ts` | **REFUSED — PRD-043 row 5** | Scatter is ~25 lines on `ctx.random` and was declined under rule 1. This PRD does not reopen it. `Heightfield.sample()` is what makes those 25 lines easy; that is the whole contribution. |
 | Anything constructing a `Material`, `Color`, texture, light or camera | **REFUSED — permanently** | Charter veto (b). Enforced by the grep gate in §9. |
 | The upstream renderer/app shell, whatever its shape | **REFUSED** | No second renderer. Plain `WebGPURenderer` only. |
+| `hello-terrain/packages/three/src/quadtree/criteria.ts`, `update.ts`, `seams.ts` @ `51b022cc` | **MINE the invariants, do not copy the API** | Camera-relative split selection, 2:1 balancing and seam tables are concrete references for this PRD's crack-free tile tests. No React hooks, task graph vocabulary or terrain class enters the public surface. |
+| `hello-terrain/packages/three/src/query/terrain-query.ts`, `terrain-sampler.ts`, `cpu-terrain-cache.ts` @ `51b022cc` | **MINE parity and cache tests** | CPU height/normal queries consume the same resident tile data as GPU rendering. This strengthens the existing CPU/GPU parity gate; it does not add a second cache or query API. |
+| `cdlod` @ `1b92e75c` and `terrain-cdlod` @ `d2b6d4e7` | **MINE morph/bounds math only** | Continuous edge morphing and bounds derived from the same height function are Phase-0/late-phase references. Their materials, textures, fog, app shell and competing terrain implementations are refused. |
 
 **Deliberately not a wholesale port.** Upstream is a large single-purpose experiment; this PRD
 lands a narrow vertical slice (§13 Phase 1) and adds erosion/flow only after they clear a

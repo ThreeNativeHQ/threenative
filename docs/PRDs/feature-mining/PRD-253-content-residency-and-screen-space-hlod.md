@@ -849,6 +849,7 @@ measurement is a number chosen to be passed.
 | Simplification with a returned geometric error | `zeux/meshoptimizer` | MIT | the returned error, carried into the manifest | a second copy of the library — it is **already** a dependency at `packages/assets/src/passes/model.ts:12` and is extended, not duplicated | **Dependency verified in-repo; the simplification entry point is NOT — Phase 0** |
 | gltfpack tooling | same | MIT | prior art for pass ordering | shelling out to a binary the repo does not ship | **NO — Phase 0** |
 | Clustered / continuous LOD | same | MIT | Phase 7 only, behind a stop gate | any meshlet renderer, visibility buffer, or draw-path change | **NO — and it stays out unless the gate opens** |
+| Octahedral impostor capture | `agargaro/octahedral-impostor` @ `ca0046a49fef8f8c75745a6e49e52752ef3cf8e3` | MIT | Research for a possible authored/generated terminal HLOD level after this PRD proves a real residency-bound consumer | its WIP API, material ownership, automatic billboard look, or a parallel `AutoLOD` system | **DEFERRED — no separate PRD until Phase 0 names a real consumer whose geometric levels are insufficient** |
 | `LOD`, `levels`, `Object3D` | Three.js | MIT | the node vocabulary and the existing projection support at `projection-apply.ts:883-893` | nothing — used as-is, unmodified | **YES, read at HEAD** |
 | `visibilityRange`, `visibilityParent` | Godot `GeometryInstance3D` | — | the HLOD hierarchy vocabulary, in camelCase | Godot's implementation | **Vocabulary only** |
 
@@ -856,6 +857,11 @@ measurement is a number chosen to be passed.
 The formats and the public APIs are the parts that would leak a foreign vocabulary into a framework
 whose vocabulary rule is "borrowed, never invented" — and Three.js and Godot already supply the
 words this mechanism needs.
+
+`octahedral-impostor` does not reopen this PRD's explicit appearance veto. If a later measured
+consumer needs a terminal impostor level, it must be filed as a build-time asset approximation with
+its own visual-error and standard-consumer gates, then consumed by this scheduler. Until then it is
+research, not hidden scope in Phase 7.
 
 ---
 

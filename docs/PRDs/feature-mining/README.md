@@ -1,6 +1,6 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** IN FLIGHT — nineteen PRDs filed across four rounds. **Seven are archived in
+**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Seven are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -76,13 +76,22 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [252](./PRD-252-imported-meshes-cook-portable-compound-colliders.md) | Opt-in offline decomposition of a real imported concave mesh into a deterministic bounded convex-part set, consumed as one logical Rapier body on web and native. No runtime cooker and no CoACD vocabulary in game code. | [`CoACD`](https://github.com/SarahWeiii/CoACD) tool-time candidate + Rapier compound semantics | 8 → HIGH |
 | [253](./PRD-253-content-residency-and-screen-space-hlod.md) | Generic authored/generated content residency: measured-error LOD/HLOD, screen-space refinement, cancellation, refcount-safe eviction and hard resident-byte budgets. PRD-251 consumes this scheduler instead of creating a second one. | [`3DTilesRendererJS`](https://github.com/NASA-AMMOS/3DTilesRendererJS) mechanisms + existing `meshoptimizer` tooling | 10 → HIGH |
 | [255](../done/PRD-255-a-million-grass-candidates-are-game-source.md) **DONE, web only; the generic extraction was DECLINED** | A 1,048,576-candidate GPU field proven as game source: reset, game-supplied candidate kernel, atomic survivor compaction and an indirect draw over the existing `IComputeDriven`. The generic `GPUInstanceField` extraction is conditional and may end declined. | [`momentchan/false-earth`](https://github.com/momentchan/false-earth), MIT | 8 → HIGH |
+| [256](./PRD-256-static-light-is-a-standard-baked-asset.md) | The existing asset compiler generates deterministic `TEXCOORD_1`/UV2 plus a compressed KTX2 static lightmap, and stock Three.js `material.lightMap` consumes the same compiled artifact on web and native. No runtime baker, scene format or copied unlicensed source. | [`repalash/xatlas-three`](https://github.com/repalash/xatlas-three) + `Ibrahim-3d/three-lightmap-baker`, MIT; unlicensed Lucas source is technique-only | 9 → HIGH |
+| [257](./PRD-257-character-ground-contact-is-observable.md) | Consumer-gated `CharacterBody3D` observations: stable `groundNormal`, logical `groundBody` and derived `slopeAngle`, carried through the existing bulk web/native state seam. Phase 0 declines it unless one real consumer needs at least two fields. | [`pmndrs/ecctrl`](https://github.com/pmndrs/ecctrl), MIT; observation semantics only | 7 → HIGH |
+| [258](./PRD-258-many-actors-share-one-animation-texture.md) | Consumer-gated GPU-instanced skeletal animation: bake shared clip bone matrices once, then let ordinary Three/WebGPU draw independently timed actors from one payload. No motion matching, state graph, ragdoll, VAT, WebGL shader patch or look ownership. | upstream Three WebGPU instanced-skinning examples, MIT; `mbarbier/threejs-gpu-skinning`, ISC, as historical technique only | 8 → HIGH |
+| [259](./PRD-259-fewer-pixels-must-still-look-like-the-same-game.md) | Consumer-gated temporal reconstruction after PRD-228 lowers the drawing buffer: compare current presentation, catalog Three `TAAUNode` and `pmndrs/upscaler` without adding a renderer option or claiming the upscaler fixes Bayview's CPU term. Emulator closes compatibility/visual gates; physical Pixel closes performance. | upstream Three 0.185.1 `TAAUNode`, MIT; `pmndrs/upscaler`, MIT + AMD FSR notice | 8 → HIGH |
+| [260](./PRD-260-standard-navigation-reaches-native-without-webassembly.md) | Consumer-gated native navigation through the existing `NavigationRegion3D`/`NavigationAgent3D` vocabulary, with a pure-JS backend only if a named native consumer beats the prior 31-line steering result. No second nav API, AI policy or WASM on native. | [`isaac-mason/navcat`](https://github.com/isaac-mason/navcat) `bc9d3c3f372a`, MIT | 8 → HIGH |
 
-**Order to attack:** 250 → 253 → 251 → 252 → 237 → 239 → 247 → 242 → 244 → 238 → 241 → 248 → 243 → 246 → 240 → 245 → 249.
-250 is first because the repository already calls the main-thread `Worker` polyfill an owed correctness
-gate, while the other items are product capabilities.
-237, 239 and 247 change what a game author writes on day one and are small. 242 gates 243–246.
+**Order to attack:** 259 Phase 0 → 257 Phase 0 → 256 Phase 0 → 258 Phase 0 → 260 Phase 0 → 250 → 253 → 251 → 252 → 237 → 239 → 247 → 242 → 244 → 238 → 241 → 248 → 243 → 246 → 240 → 245 → 249.
+259, 257, 256, 258 and 260 begin with bounded refusal gates, so run those cheap decisions before feature work. If any
+survives, return it to the queue by measured value; none jumps ahead merely because it is new. 250
+remains the first implementation because the repository already calls the main-thread `Worker` polyfill
+an owed correctness gate, while the other items are product capabilities. 237, 239 and 247 change what
+a game author writes on day one and are small. 242 gates 243–246.
 245 is the largest and the most likely to be refused on device cost, by design. 249 is last
 because §11.1's more-than-twice clause is not yet satisfied for it, and the PRD says so.
+260 additionally stops before comparison if no named native navmesh consumer exists; its place in the
+Phase 0 queue is permission to decide, not evidence that a second backend is wanted.
 
 ## Third survey — the broad engine-stack proposal
 
@@ -111,6 +120,64 @@ was wrong because it treated PRD-043's terrain fixture and declined PRD-098 as s
 **Selected from this survey:** PRD-250, PRD-251, PRD-252 and PRD-253. IK/retargeting is the first
 deferred candidate, not a solved capability. Everything else is deduplicated, already owned, charter-
 refused, genre-specific, or held behind a real-consumer trigger.
+
+## Sixth survey — rendering scale, terrain, animation and engine-shaped references
+
+All fifteen proposed candidates were audited against live code, active/closed PRDs and pinned source
+on 2026-08-29. **One new production outcome survived:** PRD-258. Four strong sources improve existing
+PRDs; the rest are ordinary game/tool dependencies, compatibility-corpus subjects, deferred research
+or charter-closed engine/editor scope. Repository quality is not ownership.
+
+| # | Candidate | Pinned source / licence | Primary verdict |
+| ---: | --- | --- | --- |
+| 1 | `pmndrs/upscaler` | `b5029b18baca50cb48e132bf77299c1349ae5428`, MIT + AMD FSR notice | **Compatibility-corpus row / consumer defer.** PRD-228 already owns resolution scaling; first prove the ordinary addon unchanged on web/native. Do not wrap it or add `renderer.upscaling`. |
+| 2 | `kenjinp/hello-terrain` | `51b022cc964a05217701a05edd94deca04b44af7`, MIT | **Already planned.** PRD-251 now mines its vanilla Three/WebGPU quadtree, seam and CPU/GPU query invariants; PRD-253 remains the one residency scheduler. |
+| 3 | `agargaro/octahedral-impostor` | `ca0046a49fef8f8c75745a6e49e52752ef3cf8e3`, MIT | **Defer behind PRD-253's real-consumer gate.** No parallel `AutoLOD`; a later build-time terminal HLOD level needs its own measured visual-error case first. |
+| 4 | `Ibrahim-3d/three-lightmap-baker` | `f0eee56182e0c13ff5232c265fb5c8d4dcae2ab7`, MIT | **Already planned.** Licensed implementation reference added to PRD-256; no second baker PRD. |
+| 5 | `mariojgt/featherEngine` | `a8d5c580a139c41f2ed07ea2c3e0bb72f9ff2667`, MIT | **Reject.** Editor, serialized project/prefab graph and visual scripting are explicitly closed; mine no parallel engine architecture. |
+| 6 | `sweriko/ai4anim-webgpu` | `b539455f849f284a1e814eb11ab649eb594319dc`, CC BY-NC 4.0 | **Research only.** No source absorption or commercial dependency. PRD-258 explicitly excludes neural motion matching. |
+| 7 | `flement/VAT-blender-addon` | `f832300d704349f9eef4b284035641810e426066`, no licence found | **Game/tool source, not framework.** No code may be copied; arbitrary vertex-cache playback stays outside PRD-258 until a licensed repeated consumer exists. |
+| 8 | `Usnul/meep` | `fe637fea2ea0abdc9301510377c675151bcaf5b5`, MIT archived tree | **Mine concepts into existing owners only.** Terrain/residency, workers and rendering already have PRDs; its ECS/engine/time/visibility architecture is not a ThreeNative surface. |
+| 9 | `Feelsrat/creature-playground` | `8970dbe40ba8716f535ac75ae6df99cc0a3be44a`, no licence found | **Application reference / prior withdrawal stands.** PRD-144 already proved a ragdoll wrapper loses the LOC kill switch; active-ragdoll gait and recovery remain gameplay. |
+| 10 | `promontis/threejs-pom` | `8ae189a974f9d833c9123e3f8ca3ca474dd2316a`, MIT | **Ordinary game dependency / generated `src/render/`.** POM is a material/look choice; no `@threenative/materials` wrapper. |
+| 11 | CDLOD references | `nickyvanurk/cdlod` `1b92e75c920c5f28218420645792562139115fef`; `tschie/terrain-cdlod` `d2b6d4e746dd9b7175cc114d87d5e60435740fe7`, MIT | **Already planned.** Morph/bounds math added to PRD-251; no competing terrain system. |
+| 12 | `ext-sakamoro/ALICE-SDF` + `BorisTheBrave/mc-dc` | `6aeee904d80bd162cd838a65b52a2635ba6f77a8`, MIT core with trademark/scope notice; `c7fae71b90da0d82e083bfae8b4dccac795fac6f`, CC0 | **Consumer-gated research.** WASM/format/experimental package work has no live game owner; ordinary dependencies or game tooling win today. |
+| 13 | GPU skeletal animation | `mbarbier/threejs-gpu-skinning` `09f184c23bc85022da6ad51b38dea4dfc0c85cb8`, ISC declaration; upstream Three `444f238c63b594fbaf1d5adde301fa7e10c29a83`, MIT | **New framework candidate: PRD-258.** The measured many-soldier subject can prove or decline shared baked bone data without inventing animation policy. |
+| 14 | `LinearAbiltyCastingThreeJS` | `ba61847cb6887e5ccae9cd591e6390082cac5f05`, MIT | **Generated game source.** Ability shapes, colours, timing and targeting semantics are gameplay/look; no `TN.Indicator` API. |
+| 15 | upstream WebGPU occlusion + Meep visibility policy | Three `444f238c63b594fbaf1d5adde301fa7e10c29a83`, MIT; Meep above | **Compatibility row / existing-owner amendment.** Prove `object.occlusionTest` and `renderer.isOccluded()` through PRD-123; PRD-238 owns measured render culling. AI/audio/animation cadence stays game-owned until a repeated consumer proves otherwise. |
+
+Source audit is complete for all fifteen rows. Missing source licences are a rejection, not a TODO
+silently converted into permission. Current upstream Three support is also not evidence that the
+catalog version and native host pass it; PRD-123 must execute that claim.
+
+## Seventh survey — current framework state, native fit and measured reconstruction
+
+The deeper source/consumer audit on 2026-08-29 corrected two earlier deferrals without promoting a
+library API into ThreeNative. PRD-228 proved both sides of the upscaling decision: fill rate has a
+real `9.94 ms/Mpx` slope, while Bayview's remaining miss at scale 0.32 is a 13.79 ms CPU fixed term.
+That evidence earns **PRD-259's bounded quality spike**, not an engine upscaling option. Catalog Three
+`TAAUNode` is the first arm; `pmndrs/upscaler` is only the challenger. Emulator evidence is useful
+now for native compatibility and temporal artifacts, while the physical Pixel remains the timing
+authority.
+
+The same audit found one credible new native platform lead: `isaac-mason/navcat` is maintained, MIT,
+pure JavaScript, renderer-independent and supports solo/tiled construction plus query/corridor/crowd
+building blocks. It could remove the Recast-WASM native wall while preserving the already-shipped
+Godot-shaped navigation API. Prior evidence still says 31 lines of steering beat framework work for
+the platformer, so **PRD-260 starts with a named-consumer refusal gate** and may end as ordinary
+dependency or DECLINED.
+
+Everything else remains under an existing owner:
+
+| Candidate | Verdict after deep check |
+| --- | --- |
+| `needle-tools/gltf-progressive` | Mine screen-error/loader behavior into PRD-253; do not adopt its browser patching, cloud or extension vocabulary. |
+| `agargaro/batched-mesh-extensions` | Algorithm reference for PRD-238/253; no prototype/private-field patch dependency. |
+| `mrdoob/draco.js` | PRD-123 compatibility row for pure-JS Draco on iOS/JSC; it does not solve Meshopt/KTX2. |
+| `stats-gl` | Compatibility/reference row only: core/playtest already own timestamp GPU ms, frame/render/host-gap windows and native phase profiling. |
+| `pixiv/three-vrm`, `pmndrs/meshline` | High-value PRD-123 unchanged-source rows; no avatar or line-rendering framework API. |
+| `model-viewer` | Mine golden-image/fidelity workflow only; reject DOM/WebGL runtime. |
+| IK/retargeting references | Continue consumer-defer until a real weapon-grip, uneven-ground foot or repeated cross-rig case exists. |
 
 ## Not filed — already shipped here
 
