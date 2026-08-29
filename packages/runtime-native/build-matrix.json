@@ -31,6 +31,8 @@
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
         "threenative-webgpu-bindings-reentrancy-test",
+        "threenative-webtransport-surface-test",
+        "threenative-webtransport-wire-test",
         "threenative-wgpu-null-handle-test",
         "threenative-worker-production-test"
       ]
@@ -65,6 +67,8 @@
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
         "threenative-webgpu-bindings-reentrancy-test",
+        "threenative-webtransport-surface-test",
+        "threenative-webtransport-wire-test",
         "threenative-wgpu-null-handle-test",
         "threenative-worker-production-test"
       ]

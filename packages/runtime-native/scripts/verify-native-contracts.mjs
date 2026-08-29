@@ -135,6 +135,12 @@ export const executionContracts = {
   "threenative-webgpu-bindings-reentrancy-test": {
     invocations: [{ args: [], passLine: "native WebGPU bindings reentrancy passed" }],
   },
+  "threenative-webtransport-surface-test": {
+    invocations: [{ args: [], passLine: "native webtransport surface contract passed" }],
+  },
+  "threenative-webtransport-wire-test": {
+    invocations: [{ args: [], passLine: "webtransport wire contract passed" }],
+  },
   "threenative-wgpu-null-handle-test": {
     invocations: [{ args: [], passLine: "native wgpu NULL-handle contract passed" }],
   },
