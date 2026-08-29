@@ -1,0 +1,56 @@
+{
+  "name": "prd-238-projection-consumer-conformance",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "height": 720, "width": 1280 },
+  "warmupFrames": 4,
+  "steps": [{ "label": "reconcile-and-raycast", "release": true, "waitTicks": 1 }],
+  "assert": {
+    "components": [
+      {
+        "changed": true,
+        "component": "ProjectionConformance",
+        "entity": "projection.proof",
+        "equals": true,
+        "path": "sourceRaycastHit"
+      },
+      {
+        "changed": true,
+        "component": "ProjectionConformance",
+        "entity": "projection.proof",
+        "equals": true,
+        "path": "projectedRaycastHit"
+      },
+      {
+        "changed": true,
+        "component": "ProjectionConformance",
+        "entity": "projection.proof",
+        "equals": true,
+        "path": "reconciled"
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "states": [{ "entity": "projection.proof", "equals": "raycast-match-reconciled" }],
+    "visual": [
+      {
+        "region": {
+          "height": 720,
+          "minNonblankPixelRatio": 0.02,
+          "width": 1280,
+          "x": 0,
+          "y": 0
+        }
+      }
+    ]
+  },
+  "artifacts": {
+    "console": true,
+    "network": true,
+    "screenshots": "before-after"
+  }
+}

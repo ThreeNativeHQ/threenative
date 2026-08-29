@@ -26,10 +26,7 @@ import {
   SpriteMaterial,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { ProjectionMirror } from "../src/projection-apply.js";
 import {
-  type IProjectionMaterialGroup,
-  type IProjectionProjectPlan,
   createProjectionScanWorkspace,
   releaseProjectionScanWorkspace,
   scanProjection,
@@ -115,38 +112,6 @@ function preparedSubDraws(batch: BatchedMesh, root: Scene, camera: PerspectiveCa
     group,
   );
   return (batch as BatchedMesh & { _multiDrawCount: number })._multiDrawCount;
-}
-
-function materialBatchPlan(
-  meshes: readonly Mesh[],
-  material: MeshStandardMaterial,
-): IProjectionProjectPlan {
-  const geometries = new Map(meshes.map((mesh) => [mesh.geometry, { scan: 1, sum: 0 }] as const));
-  const group: IProjectionMaterialGroup = {
-    material,
-    castShadow: false,
-    receiveShadow: false,
-    layersMask: 1,
-    members: [...meshes],
-    memberCount: meshes.length,
-    activeScan: 1,
-    geometries,
-    revision: geometries.size,
-  };
-  return {
-    action: "project",
-    batchGroups: [],
-    batchGroupCount: 0,
-    materialGroups: [group],
-    materialGroupCount: 1,
-    belowFloor: [],
-    belowFloorCount: 0,
-    exactLane: [],
-    exactLaneCount: 0,
-    lights: [],
-    lightCount: 0,
-    seen: { has: () => true },
-  };
 }
 
 /** A structural fingerprint of the authored graph: identity, parentage, naming and order. */
@@ -424,9 +389,10 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.exact.tooFewToBatch).toBe(1);
   });
 
-  it("should submit fewer batched sub-draws when most objects are behind the camera", () => {
+  it("should submit fewer material-batch sub-draws through the production planner", () => {
     const scene = new Scene();
     const material = new MeshStandardMaterial();
+    fill(scene, material, 299);
     const meshes: Mesh[] = [];
     for (let index = 0; index < 299; index += 1) {
       const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
@@ -435,15 +401,13 @@ describe("SceneRenderProjection", () => {
       meshes.push(mesh);
     }
 
-    // The scan deliberately refuses this packed-copy lane until its visual conformance proof;
-    // this test exercises the apply seam that owns the declared culling setting without changing
-    // that separate admission decision.
-    scene.updateMatrixWorld(true);
-    const mirror = new ProjectionMirror();
+    const projection = projected(scene);
     try {
-      mirror.prepare([], 0);
-      expect(mirror.apply(materialBatchPlan(meshes, material))).toBeUndefined();
-      const batch = findMaterialBatch(mirror.scene);
+      expect(projection.deoptimized).toBe(false);
+      expect(projection.report.materialBatches).toBe(1);
+      expect(projection.report.instancedBatches).toBe(1);
+      expect(drawCandidates(projection.root).length).toBe(2);
+      const batch = findMaterialBatch(projection.root);
       const camera = new PerspectiveCamera(60, 1, 0.1, 100);
       camera.position.set(0, 0, 10);
       camera.lookAt(0, 0, 0);
@@ -453,9 +417,9 @@ describe("SceneRenderProjection", () => {
       // Control: disabling the flag restores every active sub-draw, proving the ON count is not
       // an artifact of the packed batch itself.
       batch.perObjectFrustumCulled = false;
-      expect(preparedSubDraws(batch, mirror.scene, camera)).toBe(299);
+      expect(preparedSubDraws(batch, projection.root, camera)).toBe(299);
       batch.perObjectFrustumCulled = true;
-      const submitted = preparedSubDraws(batch, mirror.scene, camera);
+      const submitted = preparedSubDraws(batch, projection.root, camera);
       expect(batch.instanceCount).toBe(299);
       expect(submitted).toBe(75);
       expect(submitted).toBeLessThan(batch.instanceCount);
@@ -466,13 +430,13 @@ describe("SceneRenderProjection", () => {
       awayCamera.position.set(0, 0, -10);
       awayCamera.lookAt(0, 0, -100);
       awayCamera.updateMatrixWorld(true);
-      expect(preparedSubDraws(batch, mirror.scene, awayCamera)).toBe(0);
+      expect(preparedSubDraws(batch, projection.root, awayCamera)).toBe(0);
     } finally {
-      mirror.releaseAll();
+      projection.dispose();
     }
   });
 
-  it("should compact large instanced batches into a visible prefix", () => {
+  it("keeps large instanced batches uncompacted after the measured regression", () => {
     const scene = new Scene();
     const geometry = new BoxGeometry(1, 1, 1);
     geometry.computeBoundingSphere();
@@ -495,9 +459,9 @@ describe("SceneRenderProjection", () => {
       camera.lookAt(0, 0, 0);
       camera.updateMatrixWorld(true);
       const group = new Group();
-      const compact = batch.onBeforeRender;
+      const onBeforeRender = batch.onBeforeRender;
       projection.root.updateMatrixWorld(true);
-      compact(
+      onBeforeRender(
         undefined as never,
         projection.root,
         camera,
@@ -506,7 +470,7 @@ describe("SceneRenderProjection", () => {
         group,
       );
 
-      expect(batch.count).toBe(256);
+      expect(batch.count).toBe(uncompactedCount);
       expect(projection.inspect(first)?.matrixWorld.elements).toEqual(first.matrixWorld.elements);
       expect(graphSnapshot(scene)).toBe(before);
 
@@ -515,7 +479,7 @@ describe("SceneRenderProjection", () => {
       scene.updateMatrixWorld(true);
       projection.reconcile();
       projection.root.updateMatrixWorld(true);
-      compact(
+      onBeforeRender(
         undefined as never,
         projection.root,
         camera,
@@ -525,19 +489,9 @@ describe("SceneRenderProjection", () => {
       );
       expect(projection.inspect(first)?.matrixWorld.elements).toEqual(first.matrixWorld.elements);
 
-      // Negative control: disabling the compaction hook restores the full-buffer draw count.
-      batch.onBeforeRender = () => undefined;
-      batch.count = uncompactedCount;
-      batch.onBeforeRender(
-        undefined as never,
-        projection.root,
-        camera,
-        batch.geometry,
-        batch.material as MeshStandardMaterial,
-        group,
-      );
+      // The disabled choice is deliberate: the measured ON arm lost at both 1,024 and 4,096.
+      // Keeping the full prefix means the default hook cannot silently change draw semantics.
       expect(batch.count).toBe(uncompactedCount);
-      batch.onBeforeRender = compact;
     } finally {
       projection.dispose();
     }

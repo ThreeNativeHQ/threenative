@@ -55,24 +55,22 @@ const BATCH_MIN_SLOTS = 16;
 
 /**
  * PRD-238 measurement (2026-08-28, tn-web on NVIDIA/Turing, 3 paired runs, frames 226–899): the
- * 4,096-member rung with 75% outside the frustum reported 4,097 → 1,025 draw submissions
- * (culling off → on) and render.p50 1.40 → 1.10 ms (median of the three p50s, −0.30 ms). Keep
- * culling enabled; the verification record is `docs/verification/runtime-perf-state.md` under
- * PRD-238.
+ * 4,096-member rung with 75% outside the frustum reported 4,097 → 1,025 scene draw submissions
+ * (culling off → on; the harness excludes one presentation draw) and render.p50 1.60 → 1.10 ms
+ * (median of the three p50s, −0.50 ms). Keep culling enabled; the verification record is
+ * `docs/verification/runtime-perf-state.md` under PRD-238.
  */
 const PER_OBJECT_FRUSTUM_CULLED = true;
 const SORT_BATCH_OBJECTS = false;
 
 /**
  * PRD-238 Phase 3 measurement (2026-08-28, tn-web on NVIDIA/Turing, moving source, 3 paired runs,
- * frames 226–899, 75% outside): 128/256/512 members stayed at 192/384/768 submissions with no
- * compaction; 1,024 compacted 1,536 → 256 instances (18,433 → 3,073 triangles) at median
- * render.p50 0.70 → 0.80 ms, and 4,096 compacted 6,144 → 1,024 (73,729 → 12,289) at 0.30 →
- * 0.60 ms (compaction OFF → ON). Use 1,024 as the first measured floor that removes
- * instance work; the full comparison is in `docs/verification/runtime-perf-state.md` under PRD-238.
+ * frames 226–899, 75% outside): compaction lost at both tested sizes — 1,024 members went from
+ * 0.70 to 0.80 ms and 4,096 from 0.30 to 0.60 ms (OFF → ON). Keep the measured optimization
+ * disabled until a workload records an enabled-path win; the exact comparison is in
+ * `docs/verification/runtime-perf-state.md` under PRD-238.
  */
-const COMPACT_INSTANCED_BATCHES = true;
-const COMPACTION_MIN_INSTANCES = 1_024;
+const COMPACT_INSTANCED_BATCHES = false;
 
 // Shared callback scratch: render hooks run serially, so these never cross a renderer call.
 const INSTANCE_CULL_MATRIX = /* @__PURE__ */ new Matrix4();
@@ -594,6 +592,7 @@ export class ProjectionMirror {
     state.geometry = geometry;
     state.material = material;
     state.batch = target;
+    if (!target.compact) target.mesh.count = target.used;
     return true;
   }
 
@@ -715,8 +714,7 @@ export class ProjectionMirror {
    */
   #ensureBatch(group: IProjectionBatchGroup): IBatch | undefined {
     const existing = this.#batches.get(group);
-    const shouldCompact =
-      COMPACT_INSTANCED_BATCHES && group.memberCount >= COMPACTION_MIN_INSTANCES;
+    const shouldCompact = COMPACT_INSTANCED_BATCHES;
     if (
       existing !== undefined &&
       existing.capacity >= group.memberCount &&
@@ -760,7 +758,7 @@ export class ProjectionMirror {
       free: [],
       used: 0,
       capacity,
-      compact: COMPACT_INSTANCED_BATCHES && group.memberCount >= COMPACTION_MIN_INSTANCES,
+      compact: COMPACT_INSTANCED_BATCHES,
       compactCount: 0,
       compactDirty: true,
       lastCamera: undefined,

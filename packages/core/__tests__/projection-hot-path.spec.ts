@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   type BatchedMesh,
   BoxGeometry,
@@ -15,11 +17,8 @@ import {
   SpriteMaterial,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProjectionMirror } from "../src/projection-apply.js";
 import {
   type IProjectionExactEntry,
-  type IProjectionMaterialGroup,
-  type IProjectionProjectPlan,
   createProjectionScanWorkspace,
   exactLaneReason,
   scanProjection,
@@ -62,52 +61,25 @@ function materialBatchProbe(): {
   batch: BatchedMesh;
   camera: PerspectiveCamera;
   group: Group;
-  mirror: ProjectionMirror;
+  projection: SceneRenderProjection;
   root: Scene;
 } {
   const source = new Scene();
   const material = new MeshBasicMaterial();
-  const meshes: Mesh[] = [];
+  const anchorGeometry = new BoxGeometry(1, 1, 1);
+  for (let index = 0; index < 64; index += 1) {
+    source.add(new Mesh(anchorGeometry, material));
+  }
   for (let index = 0; index < 64; index += 1) {
     const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
     mesh.position.z = index < 16 ? 0 : 1_000;
     source.add(mesh);
-    meshes.push(mesh);
   }
-  source.updateMatrixWorld(true);
 
-  const geometries = new Map(meshes.map((mesh) => [mesh.geometry, { scan: 1, sum: 0 }] as const));
-  const group: IProjectionMaterialGroup = {
-    material,
-    castShadow: false,
-    receiveShadow: false,
-    layersMask: 1,
-    members: meshes,
-    memberCount: meshes.length,
-    activeScan: 1,
-    geometries,
-    revision: geometries.size,
-  };
-  const plan: IProjectionProjectPlan = {
-    action: "project",
-    batchGroups: [],
-    batchGroupCount: 0,
-    materialGroups: [group],
-    materialGroupCount: 1,
-    belowFloor: [],
-    belowFloorCount: 0,
-    exactLane: [],
-    exactLaneCount: 0,
-    lights: [],
-    lightCount: 0,
-    seen: { has: () => true },
-  };
-  const mirror = new ProjectionMirror();
-  mirror.prepare([], 0);
-  if (mirror.apply(plan) !== undefined) throw new Error("Projection mirror setup failed");
+  const projection = projectionOver(source);
 
   let batch: BatchedMesh | undefined;
-  mirror.scene.traverse((object) => {
+  projection.root.traverse((object) => {
     if ((object as BatchedMesh).isBatchedMesh === true) batch = object as BatchedMesh;
   });
   if (batch === undefined) throw new Error("Projection mirror did not build a material batch");
@@ -116,8 +88,8 @@ function materialBatchProbe(): {
   camera.position.set(0, 0, 10);
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld(true);
-  mirror.scene.updateMatrixWorld(true);
-  return { batch, camera, group: new Group(), mirror, root: mirror.scene };
+  projection.root.updateMatrixWorld(true);
+  return { batch, camera, group: new Group(), projection, root: projection.root };
 }
 
 function instancedBatchProbe(): {
@@ -186,6 +158,19 @@ describe("projection hot path", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps the culling benchmark on the production projection consumer", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../../examples/engine-load-test/src/main.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("SceneRenderProjection");
+    expect(source).toContain("projection.reconcile()");
+    expect(source).not.toContain("ProjectionMirror");
+    expect(source).not.toContain("IProjectionProjectPlan");
+    expect(source).not.toMatch(/(?:mirror|projectionMirror)\.apply\(/u);
+  });
+
   // RED: walkProjection never descends into an LOD (projection-plan.ts skips the subtree), so
   // no object the scan visits can have an LOD ancestor. specializedLaneReason still walks every
   // ancestor of every renderable on every scan checking isLOD — work that can never fire. The
@@ -248,7 +233,7 @@ describe("projection hot path", () => {
   // RED mutation: change PER_OBJECT_FRUSTUM_CULLED to false in projection-apply.ts; the setting
   // assertion fails and the companion sub-draw test returns the uncompacted count.
   it("should still allocate nothing per frame with culling enabled", () => {
-    const { batch, camera, group, mirror, root } = materialBatchProbe();
+    const { batch, camera, group, projection, root } = materialBatchProbe();
     try {
       expect(batch.perObjectFrustumCulled).toBe(true);
       const allocations = countCollectionConstructors(() => {
@@ -265,11 +250,11 @@ describe("projection hot path", () => {
       });
       expect(allocations).toEqual({ maps: 0, sets: 0 });
     } finally {
-      mirror.releaseAll();
+      projection.dispose();
     }
   });
 
-  it("should still allocate nothing per frame while compacting instanced batches", () => {
+  it("should still allocate nothing per frame while syncing instanced batches", () => {
     const { batch, camera, group, projection, root } = instancedBatchProbe();
     try {
       const allocations = countCollectionConstructors(() => {
@@ -284,7 +269,7 @@ describe("projection hot path", () => {
           );
         }
       });
-      expect(batch.count).toBe(256);
+      expect(batch.count).toBe(1_024);
       expect(allocations).toEqual({ maps: 0, sets: 0 });
     } finally {
       projection.dispose();

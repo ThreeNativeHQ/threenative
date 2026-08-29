@@ -48,7 +48,14 @@ export default defineConfig({
         rollupOptions: { output: { codeSplitting: false } },
         target: "es2022",
       }
-    : {},
+    : {
+        rollupOptions: {
+          input: {
+            loadTest: resolve(import.meta.dirname, "index.html"),
+            projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
+          },
+        },
+      },
   define: {
     // The native host has no `navigator`, so the target is stamped at build time. `--arm` on the
     // collector never sets it: the arm a report claims comes from the binary that ran.

@@ -197,6 +197,9 @@ importers:
 
   examples/engine-load-test:
     dependencies:
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
         version: 0.185.1
