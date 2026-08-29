@@ -9,7 +9,8 @@
 // disposition. These assertions keep the shape it proves from being undone in the default gate.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -17,18 +18,50 @@ import { test } from "vitest";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFileSync(join(root, path), "utf8");
 
+const POLICY_BUILD_DIRECTORY = "build/tn-linux";
+const POLICY_TARGET = "threenative-crash-handler-policy-test";
+
+/** Runs the contract executable and returns everything it printed. An unbuilt executable is
+ * unexecuted and says so — never a silent skip, which would read as a pass. */
+export function crashPolicyContractOutput() {
+  const executable = join(root, POLICY_BUILD_DIRECTORY, POLICY_TARGET);
+  if (!existsSync(executable))
+    assert.fail(
+      `${executable} is not built. Run: cmake --build ${POLICY_BUILD_DIRECTORY} --target ${POLICY_TARGET}`,
+    );
+  return execFileSync(executable, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
 test("the crash-handler decision is one pure function, not a scattered ifdef", () => {
-  const policy = read("include/mystral/platform/crash_policy.h");
+  // Converted from two assertions that read crash_policy.h as text (PRD-229 Phase 5). Both went
+  // red on 8ff06738, which added a third parameter and let clang-format wrap the ternary across
+  // two lines — a reformat that changed no behaviour, which is the failure mode source-text
+  // assertions have. What they were protecting is that the decision can be *called* with a
+  // platform argument rather than compiled into one, because that is what makes it provable
+  // without crashing a process. So the proof is now the call, and a rename or a reformat cannot
+  // move it.
+  const output = crashPolicyContractOutput();
   assert.match(
-    policy,
-    /constexpr CrashHandlerPolicy crashHandlerPolicy\(bool androidPlatform,\s*const char\* showCrashDialogEnv\)/u,
+    output,
+    /PASS Android with no MYSTRAL_SHOW_CRASH_DIALOG leaves the handlers to the platform/u,
     "the decision must be a pure function so it can be proven without crashing a process",
   );
   assert.match(
-    policy,
-    /androidPlatform \? CrashHandlerPolicy::LeaveToPlatform/u,
+    output,
+    /PASS Android with MYSTRAL_SHOW_CRASH_DIALOG=1 still leaves the handlers to the platform/u,
     "Android must never reach an install branch",
   );
+  assert.match(
+    output,
+    /PASS desktop with no MYSTRAL_SHOW_CRASH_DIALOG suppresses its crash dialog/u,
+    "the same function must decide the desktop case too, or it is not one decision",
+  );
+  assert.match(
+    output,
+    /PASS no signal was raised while proving this/u,
+    "the decision must be observable without faulting the process that observes it",
+  );
+  assert.match(output, /native crash-handler policy contract passed/u);
 });
 
 test("Android installs no crash handler, so debuggerd keeps writing tombstones", () => {

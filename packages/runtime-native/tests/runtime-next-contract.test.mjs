@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -488,11 +489,35 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
   assert.match(runtime, /platform::installCrashHandlers\(\)/, 'the runtime must reach the crash-handler policy rather than calling signal() itself');
   assert.doesNotMatch(runtime, /\bsignal\s*\(\s*SIG(SEGV|ABRT|BUS|TRAP|ILL)/, 'runtime.cpp must not install crash-signal handlers directly again');
 
-  const crashPolicy = read('include/mystral/platform/crash_policy.h');
-  assert.match(crashPolicy, /androidPlatform \? CrashHandlerPolicy::LeaveToPlatform/, 'Android must preserve the original signal for debuggerd tombstones');
-
-  const crashHandlers = read('src/platform/crash_handlers.cpp');
-  assert.match(crashHandlers, /LeaveToPlatform/, 'the applier must honour the Android policy');
+  // Converted from two source-text assertions (PRD-229 Phase 5) that read crash_policy.h and
+  // crash_handlers.cpp as strings. They went red on 8ff06738 for a reformat that changed no
+  // behaviour. The contract executable observes the real signal disposition through
+  // sigaction(2) with a stand-in for debuggerd, so it answers the same question by watching what
+  // happens rather than by reading how it is written.
+  const policyExecutable = join(root, 'build/tn-linux', 'threenative-crash-handler-policy-test');
+  if (!existsSync(policyExecutable))
+    assert.fail(
+      `${policyExecutable} is not built. Run: cmake --build build/tn-linux --target threenative-crash-handler-policy-test`,
+    );
+  const policyOutput = execFileSync(policyExecutable, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  assert.match(
+    policyOutput,
+    /PASS Android with no MYSTRAL_SHOW_CRASH_DIALOG leaves the handlers to the platform/u,
+    'Android must preserve the original signal for debuggerd tombstones',
+  );
+  assert.match(
+    policyOutput,
+    /PASS the Android policy leaves SIGSEGV chained to debuggerd's stand-in/u,
+    'the applier must honour the Android policy on the signal that lost the tombstones',
+  );
+  assert.match(
+    policyOutput,
+    /PASS negative control: the desktop policy replaces SIGSEGV/u,
+    'the proof needs its negative control: a policy that takes the disposition away, observably',
+  );
 
   const quickjs = read('src/js/quickjs_engine.cpp');
   for (const marker of [
