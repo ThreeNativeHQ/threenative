@@ -7,6 +7,7 @@ import {
 } from "three";
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
+import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
 import type { IThreeNativeConfig } from "./config.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "./frame-budget.js";
@@ -16,7 +17,6 @@ import {
   type IRenderPerformanceMetrics,
   type IRenderPerformanceSample,
 } from "./loop.js";
-import { GPUParticles3D } from "./particles.js";
 import { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
 import { type IRandom, createRandom } from "./random.js";
@@ -350,9 +350,8 @@ function validateCameraConfig(config: CameraConfig | undefined): void {
   positiveCameraValue("size", config.size);
 }
 
-function clearScene(scene: ThreeScene, particles: Set<GPUParticles3D>): void {
-  for (const particle of particles) particle.detach();
-  particles.clear();
+function clearScene(scene: ThreeScene, computeDriven: ComputeDrivenRegistry): void {
+  computeDriven.clear();
   scene.clear();
   scene.background = null;
   scene.environment = null;
@@ -421,7 +420,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #loop: FixedStepLoop | undefined;
   #projection: SceneRenderProjection | undefined;
   #cleanup: Array<() => void> = [];
-  #particles = new Set<GPUParticles3D>();
+  #computeDriven = new ComputeDrivenRegistry();
   #entities: Registry | undefined;
   #random: IRandom | undefined;
   #picker: ScenePicker | undefined;
@@ -533,7 +532,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // scene is cleared, so a scene change cannot leave the next level drawing the last one's
     // props — and released rather than rebuilt, because every source it referenced is about to go.
     this.#projection?.dispose();
-    clearScene(ctx.scene, this.#particles);
+    clearScene(ctx.scene, this.#computeDriven);
     const scene = new SceneType();
     this.#scene = scene;
     const loaded = scene.load(ctx);
@@ -683,6 +682,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         projection.reconcile();
         report = await warmUpScene(renderer, projection.root, camera, {
           budgetMs: STARTUP_COMPILE_BUDGET_MS,
+          computeNodes: this.#computeDriven.warmupNodes,
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
@@ -698,6 +698,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 unsupported: report.unsupported,
                 abandoned: report.abandoned,
                 timedOut: report.timedOut,
+                computeCompiled: report.computeCompiled,
+                computeAbandoned: report.computeAbandoned,
+                computeUnsupported: report.computeUnsupported,
+                computeTimedOut: report.computeTimedOut,
               },
         )}`,
       );
@@ -705,12 +709,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         threeScene.add(object);
-        if (object instanceof GPUParticles3D) {
+        if (isComputeDriven(object)) {
           const activeRenderer = this.#renderer;
           if (activeRenderer === undefined)
-            throw new Error("Cannot add particles before the game starts.");
-          object.attachRenderer(activeRenderer);
-          this.#particles.add(object);
+            throw new Error("Cannot add a compute-driven object before the game starts.");
+          this.#computeDriven.add(object, activeRenderer);
         }
         return object;
       },
@@ -802,14 +805,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
-        for (const particle of this.#particles) {
-          if (particle.released || particle.parent === null) {
-            particle.detach();
-            this.#particles.delete(particle);
-          } else {
-            particle.process(this.#renderer);
-          }
-        }
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
         // before the render, inside the same frame, so a change the game made this tick reaches
@@ -885,6 +880,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
+        const computeBlockedByStartup =
+          !worldRendered &&
+          canvasLayer.opaque &&
+          (this.#config.warmUp === undefined || this.#config.warmUp === false);
+        if (this.#renderer !== undefined && !computeBlockedByStartup)
+          this.#computeDriven.process(this.#renderer);
       },
       onFrame: (frameMs) => startupReadiness.observe(frameMs),
       step: this.#config.step,
@@ -978,12 +979,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       let failure: string | undefined;
       try {
         projection.reconcile();
-        report = await warmUpScene(
-          this.#renderer,
-          projection.root,
-          camera,
-          this.#config.warmUp === true ? {} : this.#config.warmUp,
-        );
+        const warmUpOptions: IWarmUpOptions =
+          this.#config.warmUp === true ? {} : this.#config.warmUp;
+        report = await warmUpScene(this.#renderer, projection.root, camera, {
+          ...warmUpOptions,
+          computeNodes: [...(warmUpOptions.computeNodes ?? []), ...this.#computeDriven.warmupNodes],
+        });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
@@ -1001,6 +1002,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 unsupported: report.unsupported,
                 abandoned: report.abandoned,
                 timedOut: report.timedOut,
+                computeCompiled: report.computeCompiled,
+                computeAbandoned: report.computeAbandoned,
+                computeUnsupported: report.computeUnsupported,
+                computeTimedOut: report.computeTimedOut,
               },
         )}`,
       );
@@ -1082,7 +1087,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         failures.push(error);
       }
     }
-    if (ctx !== undefined) clearScene(ctx.scene, this.#particles);
+    if (ctx !== undefined) clearScene(ctx.scene, this.#computeDriven);
     this.#input?.dispose();
     this.#state.stop();
     ctx?.canvasLayer.dispose();

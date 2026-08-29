@@ -193,7 +193,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/core",
-      "signature": "export class GPUParticles3D extends Sprite { … }",
+      "signature": "export class GPUParticles3D extends Sprite implements IComputeDriven { … }",
       "situations": [
         "emit sparks, smoke, or other transient effects",
         "update many small visual particles"

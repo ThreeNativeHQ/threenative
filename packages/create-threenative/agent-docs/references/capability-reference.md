@@ -169,7 +169,7 @@ if (isMobile()) showTouchControls();
 `class` — Dispatch a game-owned particle surface and process function through a pooled system.
 
 ```ts
-export class GPUParticles3D extends Sprite { … }
+export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
 - **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles

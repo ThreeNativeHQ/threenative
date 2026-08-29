@@ -1,6 +1,7 @@
 import { Sprite } from "three";
 import { instancedArray } from "three/tsl";
 import type { ComputeNode, SpriteNodeMaterial, StorageBufferNode } from "three/webgpu";
+import type { IComputeDriven } from "./compute-driven.js";
 import type { IRendererLike } from "./renderer.js";
 
 export interface IGPUParticles3DBuffers {
@@ -26,9 +27,10 @@ function computeNode(name: string, value: unknown): ComputeNode {
   return value as ComputeNode;
 }
 
-export class GPUParticles3D extends Sprite {
+export class GPUParticles3D extends Sprite implements IComputeDriven {
   readonly amount: number;
   readonly buffers: IGPUParticles3DBuffers;
+  readonly warmupNodes: readonly ComputeNode[];
   emitting = true;
   #start: ComputeNode;
   #process: ComputeNode;
@@ -54,6 +56,7 @@ export class GPUParticles3D extends Sprite {
     this.frustumCulled = false;
     this.#start = computeNode("start", options.start(this.buffers));
     this.#process = computeNode("process", options.process(this.buffers));
+    this.warmupNodes = [this.#start, this.#process];
     this.addEventListener("removed", this.#onRemoved);
   }
 

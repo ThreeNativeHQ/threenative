@@ -33,6 +33,8 @@ export interface IWarmUpProgress {
 }
 
 export interface IWarmUpOptions {
+  /** Compute kernels to compile in the same bounded startup window as draw pipelines. */
+  readonly computeNodes?: readonly unknown[];
   /**
    * Distinct pipelines compiled between yields. Default 24.
    *
@@ -107,16 +109,42 @@ export interface IWarmUpReport {
   readonly abandoned: number;
   /** True when the overall budget ran out before every pipeline was warmed. */
   readonly timedOut: boolean;
+  /** Compute kernels compiled before the scene pipelines. Present only when computeNodes was set. */
+  readonly computeCompiled?: number;
+  /** Compute kernels that rejected or exceeded their bound. Present only when computeNodes was set. */
+  readonly computeAbandoned?: number;
+  /** True when the renderer exposed no computeAsync seam. Present only when computeNodes was set. */
+  readonly computeUnsupported?: boolean;
+  /** True when compute warm-up consumed the startup budget. Present only when computeNodes was set. */
+  readonly computeTimedOut?: boolean;
 }
 
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
+  computeAsync?: (node: unknown) => Promise<void>;
+  raw?: unknown;
 }
 
 const DEFAULT_SLICE_SIZE = 24;
 const DEFAULT_COMPILE_TIMEOUT_MS = 2000;
 const DEFAULT_BUDGET_MS = 15000;
+
+interface IComputeWarmUpReport {
+  readonly compiled: number;
+  readonly abandoned: number;
+  readonly unsupported: boolean;
+  readonly timedOut: boolean;
+}
+
+function computeAsyncOf(renderer: IWarmUpRenderer): ((node: unknown) => Promise<void>) | undefined {
+  if (typeof renderer.computeAsync === "function") return renderer.computeAsync.bind(renderer);
+  const raw = renderer.raw;
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const computeAsync = (raw as { computeAsync?: unknown }).computeAsync;
+  if (typeof computeAsync !== "function") return undefined;
+  return computeAsync.bind(raw) as (node: unknown) => Promise<void>;
+}
 
 /**
  * Resolves when `work` settles or when `limitMs` elapses, whichever comes first.
@@ -142,6 +170,53 @@ async function within(work: Promise<unknown>, limitMs: number): Promise<boolean>
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+}
+
+async function warmUpComputeNodes(
+  renderer: IWarmUpRenderer,
+  nodes: readonly unknown[],
+  compileTimeoutMs: number,
+  deadline: number,
+  now: () => number,
+): Promise<IComputeWarmUpReport> {
+  const computeAsync = computeAsyncOf(renderer);
+  if (computeAsync === undefined) {
+    return { compiled: 0, abandoned: 0, unsupported: true, timedOut: false };
+  }
+
+  let compiled = 0;
+  let abandoned = 0;
+  let timedOut = false;
+  for (let index = 0; index < nodes.length; index += 1) {
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      timedOut = true;
+      abandoned += nodes.length - index;
+      break;
+    }
+    const finished = await within(
+      Promise.resolve().then(() => computeAsync(nodes[index])),
+      Math.min(compileTimeoutMs, remaining),
+    );
+    if (finished) compiled += 1;
+    else abandoned += 1;
+    if (now() >= deadline && index + 1 < nodes.length) {
+      timedOut = true;
+      abandoned += nodes.length - index - 1;
+      break;
+    }
+  }
+  return { compiled, abandoned, unsupported: false, timedOut };
+}
+
+function withComputeReport(report: IWarmUpReport, compute: IComputeWarmUpReport): IWarmUpReport {
+  return {
+    ...report,
+    computeCompiled: compute.compiled,
+    computeAbandoned: compute.abandoned,
+    computeUnsupported: compute.unsupported,
+    computeTimedOut: compute.timedOut,
+  };
 }
 
 /**
@@ -280,9 +355,20 @@ export async function warmUpScene(
   }
   const now = (): number => globalThis.performance?.now() ?? Date.now();
   const startedAt = now();
+  const computeNodes = options.computeNodes ?? [];
+  const compute =
+    computeNodes.length === 0
+      ? undefined
+      : await warmUpComputeNodes(
+          renderer,
+          computeNodes,
+          compileTimeoutMs,
+          startedAt + budgetMs,
+          now,
+        );
 
   if (typeof renderer.compileAsync !== "function") {
-    return {
+    const report: IWarmUpReport = {
       compiled: 0,
       slices: 0,
       elapsedMs: now() - startedAt,
@@ -290,6 +376,7 @@ export async function warmUpScene(
       abandoned: 0,
       timedOut: false,
     };
+    return compute === undefined ? report : withComputeReport(report, compute);
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
   const yieldFrame = options.yieldFrame ?? yieldToHost;
@@ -299,16 +386,32 @@ export async function warmUpScene(
   // for its duration. What it does buy is that the cost is paid here, before the loop is released,
   // rather than inside the first frame the player is watching.
   if ((options.granularity ?? "scene") === "scene") {
-    const finished = await within(compileAsync(scene, camera), budgetMs);
+    if (compute === undefined) {
+      const finished = await within(compileAsync(scene, camera), budgetMs);
+      options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
+      return {
+        compiled: finished ? 1 : 0,
+        slices: 1,
+        elapsedMs: now() - startedAt,
+        unsupported: false,
+        abandoned: finished ? 0 : 1,
+        timedOut: !finished,
+      };
+    }
+    const remaining = Math.max(0, startedAt + budgetMs - now());
+    const finished = remaining > 0 ? await within(compileAsync(scene, camera), remaining) : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-    return {
-      compiled: finished ? 1 : 0,
-      slices: 1,
-      elapsedMs: now() - startedAt,
-      unsupported: false,
-      abandoned: finished ? 0 : 1,
-      timedOut: !finished,
-    };
+    return withComputeReport(
+      {
+        compiled: finished ? 1 : 0,
+        slices: 1,
+        elapsedMs: now() - startedAt,
+        unsupported: false,
+        abandoned: finished ? 0 : 1,
+        timedOut: compute.timedOut || (!finished && now() >= startedAt + budgetMs),
+      },
+      compute,
+    );
   }
 
   const renderables = collectRenderables(scene);
@@ -316,7 +419,7 @@ export async function warmUpScene(
   // Nothing to warm up is a real answer, not a reason to skip the report.
   if (total === 0) {
     options.onProgress?.({ done: 0, total: 0 });
-    return {
+    const report: IWarmUpReport = {
       compiled: 0,
       slices: 0,
       elapsedMs: now() - startedAt,
@@ -324,6 +427,7 @@ export async function warmUpScene(
       abandoned: 0,
       timedOut: false,
     };
+    return compute === undefined ? report : withComputeReport(report, compute);
   }
 
   let slices = 0;
@@ -363,7 +467,7 @@ export async function warmUpScene(
     }
   }
 
-  return {
+  const report: IWarmUpReport = {
     compiled,
     slices,
     elapsedMs: now() - startedAt,
@@ -371,4 +475,7 @@ export async function warmUpScene(
     abandoned,
     timedOut,
   };
+  return compute === undefined
+    ? report
+    : withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute);
 }
