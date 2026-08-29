@@ -29,7 +29,7 @@ So PRD-229 builds the instruments, PRD-230 does the move behind them, and everyt
 | [231](./PRD-231-the-backend-dialect-stops-leaking-into-the-binding-code.md) | 339 dialect `#if`s leave the binding logic for `webgpu_compat.h`; all three dialects build and are named | 6 → MEDIUM | 230 |
 | [232](./PRD-232-profiling-is-a-component-not-a-smear.md) | `TN_ANDROID_JS_PROFILE`'s 64 sites and the frame-phase counters become one `FrameProfiler`, with byte-identical output | 5 → MEDIUM | 230 phase 2; **coordinate with [227](../PRD-227-the-frame-crosses-once.md) and [228](../PRD-228-the-pixel-budget-is-the-engines.md)** |
 | [233](./PRD-233-runtime-cpp-stops-being-the-place-everything-goes.md) | `runtime.cpp`'s thirteen `setup*` shims move into files named after what they shim; `shim-manifest.json` is the control | 5 → MEDIUM | 229 only |
-| [234](./PRD-234-the-scripts-tier-has-one-device-library.md) | Nine private `adb` wrappers across 15,347 script lines collapse to one device library | 4 → MEDIUM | none |
+| [234](../done/PRD-234-the-scripts-tier-has-one-device-library.md) | Rejected and reverted: the shared device layer added 404 census lines, firing its kill switch | 4 → MEDIUM | none |
 | [235](./PRD-235-the-build-directory-matrix-is-one-documented-thing.md) | The nine build directories get one enforced manifest; an unbuildable target stops looking like an unrun one | 3 → LOW | 229 phases 1–2 |
 
 ## Order
