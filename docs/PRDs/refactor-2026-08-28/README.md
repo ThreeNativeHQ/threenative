@@ -84,7 +84,11 @@ this batch only on the strength of a result. One caveat for whoever picks them u
 currently reds on `threenative-webgpu-bindings-reentrancy-test` (1 of 6). That failure is **not**
 from the libuv change - an attribution control on 2026-08-29 with the source hidden and the
 prebuilt linked failed identically, `83% tests passed, 1 tests failed out of 6`. It is a
-pre-existing ASan finding and wants its own red-green.
+pre-existing ASan finding and wants its own red-green. **It is now fully diagnosed**: the lane's
+own crash handler was swallowing the report, and once stood down under sanitizers ASan named it as
+`SEGV in dawn::RefCounted::Release()` from `RuntimeImpl::~RuntimeImpl()` at `runtime.cpp:349` — a
+Dawn object released after its owner is gone, which is PRD-184's subject. See
+[asan-shutdown-segv-2026-08-29](../../verification/asan-shutdown-segv-2026-08-29.md).
 
 ## Deliberately not in this batch
 

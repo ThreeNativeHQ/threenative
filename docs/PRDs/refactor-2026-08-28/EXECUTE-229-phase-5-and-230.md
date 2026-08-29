@@ -289,9 +289,22 @@ were parked because ASan could not see inside the prebuilt `libuv.a`. **That blo
 They are **attemptable, not proven**. Nobody has run their negative controls. Attempt, record what
 happened, and `git mv` them into this batch only on the strength of a result — never on a plan.
 
-Whoever picks them up inherits one open finding, and it is a real one rather than a nuisance:
-`threenative-webgpu-bindings-reentrancy-test` passes in `tn-linux` and **SIGSEGVs under
-`tn-linux-asan`** during shutdown, right after `[V8] Destroying engine...`. It is not the libuv
-change — an attribution control with the source hidden and the prebuilt linked failed identically.
-It is a shutdown-lifetime defect of exactly the class PRD-177/184 are about, and the sanitizer lane
-found it. It wants its own red-green before either PRD is called done.
+A third blocker was removed on the way: **the lane could not report what it caught.** The desktop
+crash-handler policy installed a SIGSEGV handler that `_exit(1)`s, so ASan's own handler never ran
+and the lane's entire output was `[Mystral] Caught signal SIGSEGV, exiting gracefully`.
+`CrashHandlerPolicy::LeaveToSanitizer` now stands the handler down under `__SANITIZE_ADDRESS__`.
+
+With that fixed the lane immediately named the defect:
+
+```text
+SUMMARY: AddressSanitizer: SEGV in dawn::RefCounted::Release()
+    #9  mystral::RuntimeImpl::~RuntimeImpl()  src/runtime.cpp:349
+    #12 main  tests/webgpu_bindings_reentrancy_test.cpp:1806
+```
+
+A Dawn ref-counted object released during runtime teardown after its owner is gone — a
+shutdown-ownership defect, which is PRD-184's subject. Full record and reproduction:
+[asan-shutdown-segv-2026-08-29](../../verification/asan-shutdown-segv-2026-08-29.md).
+
+**Red-green this before calling either PRD done, and give it its own fix commit** rather than
+folding it into a refactor.
