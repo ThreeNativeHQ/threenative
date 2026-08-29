@@ -58,6 +58,37 @@ export class AudioBus { … }
 const effects = new AudioBus({ camera });
 ```
 
+### `Billboard3D`
+
+`class` — Face a game-owned object toward a perspective or orthographic camera.
+
+```ts
+export class Billboard3D { … }
+```
+
+- **Use when:** keep a world-space marker or nameplate facing the camera · billboard a tree, label, or effect under a rotated parent
+- **Constraints:** call update from the owning scene; no global scene scan is installed · orthographic cameras use their forward direction, and lockAxis restricts world rotation
+
+```ts
+const billboard = new Billboard3D(label, { camera });
+billboard.update();
+```
+
+### `CameraShake`
+
+`class` — Produce a game-authored camera shake offset for a template-owned camera rig.
+
+```ts
+export class CameraShake { … }
+```
+
+- **Use when:** add a hit, explosion, or landing shake to a camera · compose a transient camera offset after camera damping
+- **Constraints:** amplitude, rotationAmplitude, frequency, decay, and curve are required game choices · update returns an offset and never writes to a camera
+
+```ts
+const shake = new CameraShake({ amplitude, rotationAmplitude, frequency, decay, curve });
+```
+
 ### `CanvasLayer`
 
 `class` — Manage a camera or screen-facing canvas layer.
@@ -451,6 +482,21 @@ export function softCircleDataTexture(size = 64, hardness = 0.25): DataTexture {
 
 ```ts
 const puff = softCircleDataTexture(64, 0.25);
+```
+
+### `SpriteAnimator3D`
+
+`class` — Advance a game-owned non-uniform sprite atlas on the fixed step.
+
+```ts
+export class SpriteAnimator3D { … }
+```
+
+- **Use when:** play an animated pickup or sprite-sheet effect · sequence atlas frames with different authored durations
+- **Constraints:** the game supplies the atlas texture, surface, filtering, layout, and every frame duration · update is driven by the scene fixed step; no wall clock or default frame rate is used
+
+```ts
+const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: "pingPong" });
 ```
 
 ### `TracerPool3D`

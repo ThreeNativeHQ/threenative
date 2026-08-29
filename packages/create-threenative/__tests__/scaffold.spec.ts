@@ -60,6 +60,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
+  // Recomputed after PRD-247 added per-item capabilities, the shooter's proof scenario, and the
+  // unrestricted billboard example in the generated capability reference.
+  // Recomputed after the roll continuation updated the generated shooter's nameplate observer.
 };
 
 const GENERATED_SCAFFOLD_METADATA =

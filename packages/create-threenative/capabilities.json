@@ -65,6 +65,44 @@
       "symbol": "AudioBus"
     },
     {
+      "constraints": [
+        "call update from the owning scene; no global scene scan is installed",
+        "orthographic cameras use their forward direction, and lockAxis restricts world rotation"
+      ],
+      "example": "const billboard = new Billboard3D(label, { camera });\nbillboard.update();",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class Billboard3D { … }",
+      "situations": [
+        "keep a world-space marker or nameplate facing the camera",
+        "billboard a tree, label, or effect under a rotated parent"
+      ],
+      "summary": "Face a game-owned object toward a perspective or orthographic camera.",
+      "supersedes": [],
+      "symbol": "Billboard3D"
+    },
+    {
+      "constraints": [
+        "amplitude, rotationAmplitude, frequency, decay, and curve are required game choices",
+        "update returns an offset and never writes to a camera"
+      ],
+      "example": "const shake = new CameraShake({ amplitude, rotationAmplitude, frequency, decay, curve });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class CameraShake { … }",
+      "situations": [
+        "add a hit, explosion, or landing shake to a camera",
+        "compose a transient camera offset after camera damping"
+      ],
+      "summary": "Produce a game-authored camera shake offset for a template-owned camera rig.",
+      "supersedes": [],
+      "symbol": "CameraShake"
+    },
+    {
       "constraints": [],
       "example": "const hud = new CanvasLayer({ camera });",
       "importPath": "@threenative/core",
@@ -519,6 +557,25 @@
       "summary": "Build a soft round sprite as pixel data instead of painting a canvas.",
       "supersedes": [],
       "symbol": "softCircleDataTexture"
+    },
+    {
+      "constraints": [
+        "the game supplies the atlas texture, surface, filtering, layout, and every frame duration",
+        "update is driven by the scene fixed step; no wall clock or default frame rate is used"
+      ],
+      "example": "const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: \"pingPong\" });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class SpriteAnimator3D { … }",
+      "situations": [
+        "play an animated pickup or sprite-sheet effect",
+        "sequence atlas frames with different authored durations"
+      ],
+      "summary": "Advance a game-owned non-uniform sprite atlas on the fixed step.",
+      "supersedes": [],
+      "symbol": "SpriteAnimator3D"
     },
     {
       "constraints": [
