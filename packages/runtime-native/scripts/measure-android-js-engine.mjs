@@ -11,7 +11,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -26,6 +25,7 @@ import {
 import {
   assertDeviceReady,
   MINIMUM_BATTERY_PERCENT,
+  resolveAdbExecutable,
   suppressPlayProtectOnAdbInstalls,
 } from "./device-preflight.mjs";
 
@@ -52,12 +52,11 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function adbPath(environment = process.env) {
-  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
-  const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
-  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-  if (existsSync(candidate)) return candidate;
-  throw new AndroidJsEngineMeasurementError("TN_ANDROID_JS_ADB_MISSING", { exitCode: 2 });
+export function adbPath(environment = process.env, dependencies = {}) {
+  return resolveAdbExecutable(environment, {
+    ...dependencies,
+    onMissing: () => new AndroidJsEngineMeasurementError("TN_ANDROID_JS_ADB_MISSING", { exitCode: 2 }),
+  });
 }
 
 function run(command, args, options = {}) {

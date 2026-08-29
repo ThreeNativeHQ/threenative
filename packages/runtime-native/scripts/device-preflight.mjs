@@ -222,7 +222,13 @@ async function readDisplayState(execute) {
   return { ...parseActiveDisplayMode(display), ...parseRefreshRateSettings({ peak, min, lowPower }) };
 }
 
-function adbPath(environment = process.env) {
+/**
+ * The one place that answers "which adb binary". Every device lane resolves through this: an
+ * explicit THREENATIVE_ADB wins, then the three documented SDK roots in order, then the default
+ * layout. Lanes that must fail closed on a missing adb pass `onMissing` and get their own typed
+ * error instead of the PATH fallback.
+ */
+export function resolveAdbExecutable(environment = process.env, dependencies = {}) {
   if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
   const sdk =
     environment.THREENATIVE_ANDROID_SDK ??
@@ -230,12 +236,13 @@ function adbPath(environment = process.env) {
     environment.ANDROID_HOME ??
     join(homedir(), "Android", "Sdk");
   const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-  if (existsSync(candidate)) return candidate;
+  if ((dependencies.existsSyncImpl ?? existsSync)(candidate)) return candidate;
+  if (dependencies.onMissing) throw dependencies.onMissing(candidate);
   return "adb";
 }
 
 function runAdb(serial, args, environment = process.env) {
-  const result = spawnSync(adbPath(environment), ["-s", serial, ...args], {
+  const result = spawnSync(resolveAdbExecutable(environment), ["-s", serial, ...args], {
     encoding: "utf8",
     env: environment,
     maxBuffer: 8 * 1024 * 1024,

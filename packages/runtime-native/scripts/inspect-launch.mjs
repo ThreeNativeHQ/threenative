@@ -22,10 +22,10 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
+import { resolveAdbExecutable } from "./device-preflight.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -301,12 +301,11 @@ export function assertLaunchFrameSequence(frames) {
   };
 }
 
-function adbPath(environment = process.env) {
-  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
-  const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
-  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-  if (!existsSync(candidate)) throw new InspectError("TN_INSPECT_ADB_MISSING", 2);
-  return candidate;
+export function adbPath(environment = process.env, dependencies = {}) {
+  return resolveAdbExecutable(environment, {
+    ...dependencies,
+    onMissing: () => new InspectError("TN_INSPECT_ADB_MISSING", 2),
+  });
 }
 
 function adb(serial, args, timeoutMs = 180_000) {

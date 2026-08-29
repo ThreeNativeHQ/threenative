@@ -25,11 +25,14 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
+import {
+  assertDeviceReady,
+  MINIMUM_BATTERY_PERCENT,
+  resolveAdbExecutable,
+} from "./device-preflight.mjs";
 import { readAndroidConfig } from "./package-android.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -99,12 +102,11 @@ export class ColdStartError extends Error {
   }
 }
 
-function adbPath(environment = process.env) {
-  if (environment.THREENATIVE_ADB) return environment.THREENATIVE_ADB;
-  const sdk = environment.THREENATIVE_ANDROID_SDK ?? join(homedir(), "Android", "Sdk");
-  const candidate = join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-  if (!existsSync(candidate)) throw new ColdStartError("TN_COLD_START_ADB_MISSING", 2);
-  return candidate;
+export function adbPath(environment = process.env, dependencies = {}) {
+  return resolveAdbExecutable(environment, {
+    ...dependencies,
+    onMissing: () => new ColdStartError("TN_COLD_START_ADB_MISSING", 2),
+  });
 }
 
 function adb(serial, args, timeoutMs = 120_000) {

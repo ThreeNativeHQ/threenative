@@ -19,8 +19,9 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { resolveAdbExecutable, suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
 
 function parseArgs(argv) {
   const args = { launches: 10, windowSeconds: 62, quiet: false };
@@ -53,10 +54,16 @@ const say = (quiet, message) => {
   if (!quiet) console.log(message);
 };
 
-function adb(args, options = {}) {
+// Resolves through the shared device resolver so this lane honours THREENATIVE_ADB and the SDK
+// roots exactly as the other six do; it used to hardcode 'adb' and only worked when adb was on PATH.
+export function adb(args, options = {}) {
   const argv = [];
   if (options.serial) argv.push('-s', options.serial);
-  return execFileSync('adb', [...argv, ...args], { encoding: 'utf8', timeout: 120_000 });
+  const executable = resolveAdbExecutable(options.environment ?? process.env);
+  return (options.execFileSyncImpl ?? execFileSync)(executable, [...argv, ...args], {
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
 }
 
 function main() {
@@ -124,9 +131,11 @@ function main() {
   console.log(`physics stability: ${args.launches}/${args.launches} launches clean`);
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }

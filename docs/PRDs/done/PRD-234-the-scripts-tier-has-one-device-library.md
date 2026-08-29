@@ -106,3 +106,9 @@ fails to resolve, and the suite reds.
 - The unchecked acceptance boxes above are intentionally not rewritten as passes: the one-device
   abstraction did not meet its stated size bar. Rejection is the terminal outcome required by the
   project rule that a more expensive abstraction is deleted.
+- **Do not re-attempt the generic-client shape.** Measured 2026-08-29: the real duplication across
+  all six scripts is 60 lines, against the 690 the attempted library added, and every adopter kept
+  its own helper and gained an adapter on top. The goal PRD-234 wanted was already reachable by
+  exporting the resolver `device-preflight.mjs` had all along, which is what landed
+  (+16 lines, three bug fixes, two new test files). See the follow-up section of
+  [native-scripts-adb-kill-switch-2026-08-28](../../verification/native-scripts-adb-kill-switch-2026-08-28.md).
