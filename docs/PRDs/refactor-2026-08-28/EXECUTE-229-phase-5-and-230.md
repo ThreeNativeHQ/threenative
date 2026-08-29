@@ -100,8 +100,9 @@ for f in sorted(glob.glob('*.mjs')+glob.glob('*.ts')):
 PY
 ```
 
-Snapshot 2026-08-29 — **27 files**. Convert in this order; it is dependency order for PRD-230, not
-alphabetical.
+Snapshot 2026-08-29 — **27 files** across both subjects, of which **15 block PRD-230** (Tier 1 +
+Tier 2; the §3.3 gate counts exactly these). `frame-op-stream.test.mjs` is already converted and is
+the worked example. Convert in this order; it is dependency order for PRD-230, not alphabetical.
 
 **Tier 1 — the `bindings.cpp` heavyweights. PRD-230 cannot start until these are done.**
 
@@ -158,14 +159,37 @@ Control (b) behaviour broken -> red:   <pasted>
 ### 3.3 Phase 5 exit criterion
 
 Not "the files were converted". PRD-229's wording: *every property Phases 7–9 could break is
-asserted by a test that survives a rename and fails on a behaviour change.* Concretely:
+asserted by a test that survives a rename and fails on a behaviour change.*
 
-```sh
-# must return nothing for bindings.cpp, bindings_state.h and registration_table.cpp
-cd packages/runtime-native/tests && grep -l 'readFileSync' *.mjs *.ts \
-  | xargs grep -l 'bindings\.cpp\|bindings_state\.h\|registration_table\.cpp' \
-  | grep -v native-coverage.test.mjs
+The progress gate below **exits 0 only when no file is left**, and it ignores comment lines — a
+converted file legitimately still names `bindings.cpp` in the comment explaining what it used to
+do, and a plain `grep` counts that as unconverted forever. Save it as `phase5.py` and run it from
+`packages/runtime-native/tests`:
+
+```python
+import re, glob, sys
+SUBJECTS = ('bindings.cpp', 'bindings_state.h', 'registration_table.cpp')
+IGNORE = {'native-coverage.test.mjs'}   # fixture data for the coverage summarizer, not assertions
+remaining = []
+for f in sorted(glob.glob('*.mjs') + glob.glob('*.ts')):
+    if f in IGNORE:
+        continue
+    code = ''.join(l for l in open(f)
+                   if not l.lstrip().startswith('//') and not l.lstrip().startswith('*'))
+    if 'readFileSync' not in code:
+        continue
+    hits = [s for s in SUBJECTS if s in code]
+    if hits:
+        remaining.append((f, hits))
+for f, hits in remaining:
+    print(f"{f:<46} {', '.join(hits)}")
+print(f"\n{len(remaining)} files still read a PRD-230 subject as source text")
+sys.exit(1 if remaining else 0)
 ```
+
+Baseline observed 2026-08-29 after the exemplar landed: **15 files, exit 1**. Those 15 are exactly
+Tier 1 + Tier 2 below. When it prints `0 files` and exits 0, Phase 5 is done for PRD-230's purposes
+and §4 may start. Tier 3 is not counted by this gate — it gates PRD-233, not PRD-230.
 
 Then update PRD-229's evidence section with the per-file control table and flip its status to
 EXECUTED.
