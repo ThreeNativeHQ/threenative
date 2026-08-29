@@ -30,6 +30,11 @@ function(tn_register_blocked_test name reason)
     set_tests_properties(${name} PROPERTIES DISABLED TRUE LABELS "native-contract;blocked")
 endfunction()
 
+function(tn_mark_sanitizer_contract_test target)
+    set_property(TEST ${target} APPEND PROPERTY LABELS "native-sanitizer")
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_SANITIZER_TARGETS ${target})
+endfunction()
+
 if(APPLE)
     enable_language(OBJCXX)
 endif()
@@ -99,6 +104,7 @@ option(TN_WEBGPU_GPU_DRAIN_PROFILE "Block after present to measure remaining GPU
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
 option(TN_ENABLE_COVERAGE "Instrument native targets for source-based coverage" OFF)
+option(TN_ENABLE_SANITIZERS "Instrument native targets with AddressSanitizer and UBSan" OFF)
 # PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
 # picture by construction and must never ship. Asserted absent from every shipped preset.
 option(TN_ABLATE_BACKEND "PRD-226 arm A2: no-op the hot backend command entry points, keeping JS, trampoline and argument parsing intact" OFF)
@@ -124,6 +130,13 @@ if(TN_ENABLE_COVERAGE)
     endif()
     add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
     add_link_options(-fprofile-instr-generate)
+endif()
+
+if(TN_ENABLE_SANITIZERS)
+    if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR
+            "TN_ENABLE_SANITIZERS requires a Clang or GCC desktop toolchain")
+    endif()
 endif()
 
 # Native GLTF is deliberately not mapped to any implementation. AGENTS.md marks
@@ -1937,8 +1950,28 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
     tn_register_contract_test(threenative-webgpu-bindings-reentrancy-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
+    tn_mark_sanitizer_contract_test(threenative-bindings-creation-test)
+    tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)
+    tn_mark_sanitizer_contract_test(threenative-frame-op-stream-replay-test)
+    tn_mark_sanitizer_contract_test(threenative-handle-lifetime-test)
+    tn_mark_sanitizer_contract_test(threenative-shutdown-lifetime-test)
+    tn_mark_sanitizer_contract_test(threenative-webgpu-bindings-reentrancy-test)
+    get_property(TN_NATIVE_SANITIZER_TARGETS GLOBAL PROPERTY TN_NATIVE_SANITIZER_TARGETS)
+    if(TN_ENABLE_SANITIZERS)
+        # V8 and Skia are prebuilt without exported RTTI. UBSan's vptr check alone requires those
+        # unavailable typeinfo symbols; all other address and undefined-behaviour checks stay on.
+        set(TN_SANITIZER_COMPILE_OPTIONS
+            -fsanitize=address,undefined -fno-sanitize=vptr -fno-omit-frame-pointer)
+        set(TN_SANITIZER_LINK_OPTIONS -fsanitize=address,undefined -fno-sanitize=vptr)
+        target_compile_options(mystral-runtime PRIVATE ${TN_SANITIZER_COMPILE_OPTIONS})
+        foreach(target IN LISTS TN_NATIVE_SANITIZER_TARGETS)
+            target_compile_options(${target} PRIVATE ${TN_SANITIZER_COMPILE_OPTIONS})
+            target_link_options(${target} PRIVATE ${TN_SANITIZER_LINK_OPTIONS})
+        endforeach()
+    endif()
     get_property(TN_NATIVE_CONTRACT_TARGETS GLOBAL PROPERTY TN_NATIVE_CONTRACT_TARGETS)
     add_custom_target(threenative-native-tests DEPENDS ${TN_NATIVE_CONTRACT_TARGETS})
+    add_custom_target(threenative-native-sanitizer-tests DEPENDS ${TN_NATIVE_SANITIZER_TARGETS})
 
     # Add webp include directories and definitions for video recording
     if(TARGET webp::mux)

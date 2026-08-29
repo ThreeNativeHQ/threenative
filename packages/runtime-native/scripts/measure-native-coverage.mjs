@@ -32,6 +32,8 @@ const defaultRecord = resolve(
 const coverageProfileEnvironmentVariable = "LLVM_PROFILE_FILE";
 const generatedRecordStart = "<!-- native-coverage-generated:start -->";
 const generatedRecordEnd = "<!-- native-coverage-generated:end -->";
+const sanitizerGeneratedStart = "<!-- native-sanitizer-generated:start -->";
+const sanitizerGeneratedEnd = "<!-- native-sanitizer-generated:end -->";
 const sourceExtensions = new Set([".c", ".cc", ".cpp", ".cxx", ".m", ".mm"]);
 const configurationBlockers = new Map([
   [
@@ -43,6 +45,14 @@ const configurationBlockers = new Map([
     "TN_ENABLE_VIDEO=OFF: the video recorder target is not configured",
   ],
 ]);
+export const sanitizerTargets = [
+  "threenative-bindings-creation-test",
+  "threenative-dom-dispatch-lifetime-test",
+  "threenative-frame-op-stream-replay-test",
+  "threenative-handle-lifetime-test",
+  "threenative-shutdown-lifetime-test",
+  "threenative-webgpu-bindings-reentrancy-test",
+];
 
 function percentage(covered, lines) {
   return lines === 0 ? 0 : Number(((covered / lines) * 100).toFixed(2));
@@ -239,14 +249,19 @@ ${generatedRecordEnd}
 `;
 }
 
-function writeCoverageRecord(recordPath, generatedRecord) {
+function writeGeneratedRecord(
+  recordPath,
+  generatedRecord,
+  startMarker = generatedRecordStart,
+  endMarker = generatedRecordEnd,
+) {
   let contents = generatedRecord;
   if (existsSync(recordPath)) {
     const previous = readFileSync(recordPath, "utf8");
-    const start = previous.indexOf(generatedRecordStart);
-    const end = previous.indexOf(generatedRecordEnd);
+    const start = previous.indexOf(startMarker);
+    const end = previous.indexOf(endMarker);
     if (start !== -1 && end > start) {
-      contents = `${previous.slice(0, start)}${generatedRecord}${previous.slice(end + generatedRecordEnd.length).replace(/^\n/u, "")}`;
+      contents = `${previous.slice(0, start)}${generatedRecord}${previous.slice(end + endMarker.length).replace(/^\n/u, "")}`;
     }
   }
   writeFileSync(recordPath, contents);
@@ -327,15 +342,18 @@ function coverageExports({ buildDirectory, compiledProducts, executedTargets, pr
   return { reports, zeroLineSources };
 }
 
-function ctestRegistrations(buildDirectory, ctest) {
+function ctestInventory(buildDirectory, ctest) {
   const inventory = JSON.parse(
     runForStdout(ctest, ["--test-dir", buildDirectory, "--show-only=json-v1"]),
   );
-  const names = inventory?.tests?.map(({ name }) => name);
-  if (!Array.isArray(names) || names.length === 0) {
+  if (!Array.isArray(inventory?.tests) || inventory.tests.length === 0) {
     throw new Error("CTest registered zero native contract tests");
   }
-  return names;
+  return inventory.tests;
+}
+
+function ctestRegistrations(buildDirectory, ctest) {
+  return ctestInventory(buildDirectory, ctest).map(({ name }) => name);
 }
 
 function resolveCtest(cmake) {
@@ -359,6 +377,132 @@ export function runNativeCtest() {
   });
   console.info(output);
   return targets;
+}
+
+export function summarizeSanitizerLane({ allTargets, selectedTargets }) {
+  if (!Array.isArray(allTargets) || allTargets.length === 0) {
+    throw new Error("native sanitizer source inventory is empty");
+  }
+  const selected = new Set(selectedTargets);
+  const missing = sanitizerTargets.filter((target) => !selected.has(target));
+  if (missing.length > 0) {
+    throw new Error(`sanitizer lane omitted required targets: ${missing.join(", ")}`);
+  }
+  const unknown = selectedTargets.filter((target) => !allTargets.includes(target));
+  if (unknown.length > 0) {
+    throw new Error(`sanitizer lane selected unknown targets: ${unknown.join(", ")}`);
+  }
+  return {
+    notRun: allTargets.filter((target) => !selected.has(target)).sort(),
+    ran: [...selected].sort(),
+  };
+}
+
+function sanitizerMarkdown(report) {
+  return `${sanitizerGeneratedStart}
+# Native sanitizer lane — 2026-08-28
+
+Configuration: \`${desktopPreset()}-asan\`
+
+## Ran under ASan + UBSan
+
+${report.ran.map((target) => `- \`${target}\``).join("\n")}
+
+## Not run by this lifetime-focused lane
+
+${report.notRun.map((target) => `- \`${target}\`: outside the lifetime sanitizer scope`).join("\n")}
+${sanitizerGeneratedEnd}
+`;
+}
+
+export function runNativeSanitizers({ recordPath } = {}) {
+  if (process.platform === "win32") {
+    throw new Error("native sanitizer lane currently requires a Clang or GCC desktop host");
+  }
+  const cmake = resolveCmake();
+  const ctest = resolveCtest(cmake);
+  const buildDirectory = desktopBuildDirectory("asan");
+  run(
+    cmake,
+    [
+      "--preset",
+      desktopPreset(),
+      "-B",
+      buildDirectory,
+      "-G",
+      "Unix Makefiles",
+      "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+      "-DTN_ENABLE_SANITIZERS=ON",
+      "-DTN_ENABLE_COVERAGE=OFF",
+      "-DTN_ENABLE_NATIVE_PHYSICS=OFF",
+      "-DTN_ENABLE_UI_OVERLAY=OFF",
+    ],
+    { timeout: 900_000 },
+  );
+  run(
+    cmake,
+    [
+      "--build",
+      buildDirectory,
+      "--target",
+      "threenative-native-sanitizer-tests",
+      "--parallel",
+      "--",
+      "-s",
+    ],
+    { timeout: 1_800_000 },
+  );
+  const selectedTargets = ctestInventory(buildDirectory, ctest)
+    .filter(({ properties }) =>
+      properties?.some(
+        ({ name, value }) => name === "LABELS" && value.includes("native-sanitizer"),
+      ),
+    )
+    .map(({ name }) => name);
+  const cmakeSource = readFileSync(join(runtimeRoot, "CMakeLists.txt"), "utf8");
+  const report = summarizeSanitizerLane({
+    allTargets: discoverNativeTestTargets(cmakeSource),
+    selectedTargets,
+  });
+  const suppressionPath = join(buildDirectory, "native-lsan-2026-08-28.supp");
+  writeFileSync(
+    suppressionPath,
+    `# 2026-08-28: DBus retains process-global loader state after the Vulkan adapter probe.
+leak:_dbus_message_loader_queue_messages
+# 2026-08-28: NVIDIA's userspace Vulkan driver retains process-global allocation state.
+leak:libnvidia-glcore.so
+# 2026-08-28: NVIDIA's GL/Vulkan support library retains process-global allocation state.
+leak:libnvidia-glsi.so
+# 2026-08-28: NVIDIA EGL initialization retains process-global Vulkan ICD allocation state.
+leak:libEGL_nvidia.so
+# 2026-08-28: Dawn's Vulkan queue retains driver-owned work until process teardown.
+leak:dawn::native::vulkan::Queue
+`,
+  );
+  const sanitizerEnvironment = { ...process.env };
+  Reflect.set(
+    sanitizerEnvironment,
+    "ASAN_OPTIONS",
+    "abort_on_error=1:fast_unwind_on_malloc=0:halt_on_error=1",
+  );
+  Reflect.set(sanitizerEnvironment, "LSAN_OPTIONS", `suppressions=${suppressionPath}`);
+  Reflect.set(sanitizerEnvironment, "UBSAN_OPTIONS", "halt_on_error=1:print_stacktrace=1");
+  const output = run(
+    ctest,
+    ["--test-dir", buildDirectory, "--output-on-failure", "--label-regex", "native-sanitizer"],
+    {
+      env: sanitizerEnvironment,
+      timeout: 900_000,
+    },
+  );
+  const markdown = sanitizerMarkdown(report);
+  const outputPath =
+    recordPath ??
+    resolve(runtimeRoot, "..", "..", "docs", "verification", "native-sanitizer-lane-2026-08-28.md");
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeGeneratedRecord(outputPath, markdown, sanitizerGeneratedStart, sanitizerGeneratedEnd);
+  console.info(`${output}\n${markdown}`);
+  return report;
 }
 
 function registrationsForTarget(registrations, target) {
@@ -485,12 +629,13 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   });
   const markdown = renderMarkdown(report, executedTargets);
   mkdirSync(dirname(recordPath), { recursive: true });
-  writeCoverageRecord(recordPath, markdown);
+  writeGeneratedRecord(recordPath, markdown);
   console.info(markdown);
   return report;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv.includes("--ctest")) runNativeCtest();
+  if (process.argv.includes("--sanitizers")) runNativeSanitizers();
+  else if (process.argv.includes("--ctest")) runNativeCtest();
   else measureNativeCoverage();
 }
