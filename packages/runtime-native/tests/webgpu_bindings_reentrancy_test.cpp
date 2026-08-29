@@ -1598,13 +1598,14 @@ bool verifyPerRuntimeBlendDescriptors(mystral::Runtime& first, mystral::Runtime&
         second.getWebGPUBindingsState());
     const size_t firstBefore = firstState->blendStates.size();
     const size_t secondBefore = secondState->blendStates.size();
-    constexpr auto createBlendPipeline = R"JS((() => {
+    constexpr auto createPipelineWrappers = R"JS((() => {
         const device = navigator.gpu.requestAdapter().requestDevice();
         const shader = device.createShaderModule({code:
             "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { " +
             "var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0)); " +
             "return vec4f(p[i], 0.0, 1.0); } " +
-            "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(1.0); }"});
+            "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(1.0); } " +
+            "@compute @workgroup_size(1) fn compute_main() {}"});
         globalThis.__tnOwnedBlendPipeline = device.createRenderPipeline({
             layout: "auto",
             vertex: {module: shader, entryPoint: "vs_main"},
@@ -1616,17 +1617,31 @@ bool verifyPerRuntimeBlendDescriptors(mystral::Runtime& first, mystral::Runtime&
                 },
             }]},
         });
-        if (!__tnOwnedBlendPipeline) throw new Error("blend pipeline was not created");
+        globalThis.__tnOwnedComputePipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: {module: shader, entryPoint: "compute_main"},
+        });
+        for (const [label, pipeline] of [
+            ["render", __tnOwnedBlendPipeline],
+            ["compute", __tnOwnedComputePipeline],
+        ]) {
+            if (!pipeline || typeof pipeline.getBindGroupLayout !== "function") {
+                throw new Error(label + " pipeline wrapper binding missing");
+            }
+            if (!pipeline.getBindGroupLayout(0)) {
+                throw new Error(label + " pipeline bind-group layout missing");
+            }
+        }
     })())JS";
 
-    if (!first.evalScript(createBlendPipeline, "webgpu-first-blend-owner.js") ||
+    if (!first.evalScript(createPipelineWrappers, "webgpu-first-pipeline-owner.js") ||
         firstState->blendStates.size() <= firstBefore ||
         secondState->blendStates.size() != secondBefore) {
         std::cerr << "first runtime blend descriptors were not independently owned" << std::endl;
         return false;
     }
     const size_t firstAfter = firstState->blendStates.size();
-    if (!second.evalScript(createBlendPipeline, "webgpu-second-blend-owner.js") ||
+    if (!second.evalScript(createPipelineWrappers, "webgpu-second-pipeline-owner.js") ||
         secondState->blendStates.size() <= secondBefore ||
         firstState->blendStates.size() != firstAfter) {
         std::cerr << "second runtime blend descriptors were not independently owned" << std::endl;
@@ -1669,6 +1684,7 @@ bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
         const bundle = device.createRenderBundleEncoder({colorFormats: ["rgba8unorm"]});
         const canvas = document.createElement("canvas");
         const canvasContext = canvas.getContext("webgpu");
+        const mainCanvasContext = globalThis.canvas.getContext("webgpu");
 
         requireMethods("GPU", navigator.gpu, ["requestAdapter", "getPreferredCanvasFormat"]);
         requireMethods("GPUAdapter", adapter, ["requestDevice"]);
@@ -1696,10 +1712,20 @@ bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
             "setPipeline", "setVertexBuffer", "setIndexBuffer", "setBindGroup", "draw",
             "drawIndexed", "finish",
         ]);
-        requireMethods("GPUTexture", texture, ["createView", "destroy"]);
         requireMethods("GPUCanvasContext", canvasContext, [
             "configure", "unconfigure", "getCurrentTexture",
         ]);
+        const requireSurfaceTexture = (label, context) => {
+            context.configure({device, format: navigator.gpu.getPreferredCanvasFormat()});
+            const surfaceTexture = context.getCurrentTexture();
+            requireMethods(label, surfaceTexture, ["createView", "destroy"]);
+            if (!surfaceTexture.createView()) {
+                throw new Error(label + ".createView returned no wrapper");
+            }
+        };
+        requireSurfaceTexture("main surface texture", mainCanvasContext);
+        requireSurfaceTexture("offscreen surface texture", canvasContext);
+        requireMethods("GPUTexture", texture, ["createView", "destroy"]);
         requireMethods("WebGPU", globalThis, [
             "__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D",
         ]);

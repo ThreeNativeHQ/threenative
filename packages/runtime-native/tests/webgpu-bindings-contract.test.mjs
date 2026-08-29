@@ -637,7 +637,7 @@ test("all migrated WebGPU registration families use the shared table dispatcher"
   );
 });
 
-test("texture and pipeline wrapper factories use the shared table dispatcher", () => {
+test("texture and pipeline wrapper factories propagate table-install failure", () => {
   const factories = read("src/webgpu/wrapper_factories.cpp");
   assert.match(factories, /#include "mystral\/webgpu\/registration_table\.h"/u);
   assert.match(factories, /installBindingTable\(/u);
@@ -655,27 +655,14 @@ test("texture and pipeline wrapper factories use the shared table dispatcher", (
   assert.doesNotMatch(factories, /newFunction\(/u);
   assertEveryTableInstallIsChecked(factories);
 
-  const directRegistration = factories.replaceAll("installBindingTable(", "directRegistration(");
+  const ignoredFailure = factories.replace(
+    "if (!installBindingTable(",
+    "installBindingTable(",
+  );
   assert.throws(
-    () => assert.match(directRegistration, /installBindingTable\(/u),
-    /installBindingTable/u,
+    () => assertEveryTableInstallIsChecked(ignoredFailure),
+    /propagate failure/u,
   );
-});
-
-test("windowed and offscreen wrappers share factories", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-  const factories = read("src/webgpu/wrapper_factories.cpp");
-  assert.equal((bindings.match(/createTextureWrapper\(/gu) ?? []).length, 2);
-  assert.match(bindings, /createPipelineWrapper\(state, pipeline, pipelineId, true\)/u);
-  assert.match(bindings, /createPipelineWrapper\(state, pipeline, pipelineId, false\)/u);
-  assert.match(factories, /createTextureWrapper\(/u);
-  assert.match(factories, /createPipelineWrapper\(/u);
-
-  const withoutFactory = bindings.replaceAll(
-    "createTextureWrapper(",
-    "createWindowTextureWrapper(",
-  );
-  assert.throws(() => assert.match(withoutFactory, /createTextureWrapper\(/u));
 });
 
 test("backend and canvas contexts do not use process-global ownership", () => {

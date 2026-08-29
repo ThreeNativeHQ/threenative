@@ -15,6 +15,7 @@
 | destination validation and dynamic canvas identity survive implementation moves | Rejects proxies without running their traps and proves two canvases keep distinct contexts after their public IDs are made equal; descriptor retention during installation remains narrowly source-protected | executable exit status after `proof: whole-table-verification` |
 | binding-state destruction and surface acquisition fail closed | Destroys the owned state twice through its public nulling API, and forces both new- and existing-texture surface transactions to roll back the registry and frame counter | executable exit status after `proof: whole-table-verification` |
 | binding-owned registries and Canvas2D contexts are runtime-local | Creates two runtimes, compares their binding-state owners, counts protected handles, contexts, and blend descriptors through mutations, tears one runtime down, then uses the survivor | executable exit status |
+| texture and pipeline wrappers expose the required API across creation paths | Creates real render and compute pipelines in both runtimes, invokes `getBindGroupLayout` on each wrapper, gets main and offscreen surface textures, and calls `createView` after requiring both texture methods; factory install-failure propagation remains narrowly source-protected | `proof: public-binding-surface` + executable exit status |
 
 The remaining source assertions stay in `webgpu-bindings-contract.test.mjs` until their behavior
 probes exist. The default Vitest lane uses a fixture executable to prove the output contract; CTest
@@ -75,6 +76,16 @@ sets `TN_NATIVE_BEHAVIOR_EXECUTABLE` so that same test drives the built product 
 - Blend-state behavior break: changed the registry to an `inline static` vector. The rebuilt product
   CTest failed with `first runtime blend descriptors were not independently owned`; the mutation was
   reverted. Renaming the private probe to `verifyPerRuntimeBlendDescriptors` stayed green.
+- Factory-shape source retirement: deleted the `bindings.cpp` assertion that main and offscreen
+  paths call a particular private factory. Public wrapper behavior is product-backed; the separate
+  checked-install propagation assertion in `wrapper_factories.cpp` remains source-protected. No
+  cleanup behavior claim is made by this checkpoint.
+- Pipeline-wrapper behavior break: registered `getBindGroupLayout` under a different public name.
+  The rebuilt product CTest failed with `render pipeline wrapper binding missing`; the mutation was
+  reverted.
+- Surface-texture behavior break: registered `createView` under a different public name in the
+  shared wrapper. The rebuilt product CTest failed with
+  `main surface texture.createView binding missing`; the mutation was reverted.
 - Sanitizer: the creation executable passed ASan + UBSan. The full six-target lane remains red in
   the unchanged reentrancy executable on a `RenderBundleEncoder` leak, so no full-lane green is
   claimed for this checkpoint.
