@@ -1591,6 +1591,50 @@ bool runProbe(mystral::Runtime& runtime, const char* marker) {
         "webgpu-bindings-reentrancy-check.js");
 }
 
+bool verifyPerRuntimeBlendDescriptors(mystral::Runtime& first, mystral::Runtime& second) {
+    auto* firstState = static_cast<mystral::webgpu::BindingsState*>(
+        first.getWebGPUBindingsState());
+    auto* secondState = static_cast<mystral::webgpu::BindingsState*>(
+        second.getWebGPUBindingsState());
+    const size_t firstBefore = firstState->blendStates.size();
+    const size_t secondBefore = secondState->blendStates.size();
+    constexpr auto createBlendPipeline = R"JS((() => {
+        const device = navigator.gpu.requestAdapter().requestDevice();
+        const shader = device.createShaderModule({code:
+            "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { " +
+            "var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0)); " +
+            "return vec4f(p[i], 0.0, 1.0); } " +
+            "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(1.0); }"});
+        globalThis.__tnOwnedBlendPipeline = device.createRenderPipeline({
+            layout: "auto",
+            vertex: {module: shader, entryPoint: "vs_main"},
+            fragment: {module: shader, entryPoint: "fs_main", targets: [{
+                format: "rgba8unorm",
+                blend: {
+                    color: {srcFactor: "one", dstFactor: "zero", operation: "add"},
+                    alpha: {srcFactor: "one", dstFactor: "zero", operation: "add"},
+                },
+            }]},
+        });
+        if (!__tnOwnedBlendPipeline) throw new Error("blend pipeline was not created");
+    })())JS";
+
+    if (!first.evalScript(createBlendPipeline, "webgpu-first-blend-owner.js") ||
+        firstState->blendStates.size() <= firstBefore ||
+        secondState->blendStates.size() != secondBefore) {
+        std::cerr << "first runtime blend descriptors were not independently owned" << std::endl;
+        return false;
+    }
+    const size_t firstAfter = firstState->blendStates.size();
+    if (!second.evalScript(createBlendPipeline, "webgpu-second-blend-owner.js") ||
+        secondState->blendStates.size() <= secondBefore ||
+        firstState->blendStates.size() != firstAfter) {
+        std::cerr << "second runtime blend descriptors were not independently owned" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
     return runtime.evalScript(R"JS((() => {
         const requireMethods = (label, value, names) => {
@@ -1716,6 +1760,7 @@ int main() {
             "webgpu-bindings-reentrancy-second-check.js")) {
         return 1;
     }
+    if (!verifyPerRuntimeBlendDescriptors(*first, *second)) return 1;
 
     if (!checkQuickJSExceptionReplacement(*first) ||
         !queueQuickJSTeardownProbe(*first) ||

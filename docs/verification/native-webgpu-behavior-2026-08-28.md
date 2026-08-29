@@ -14,6 +14,7 @@
 | registration-table rows are preflighted as one atomic transaction | Installs a mixed-destination table, rejects its invalid row before any property write, and requires rollback to restore every earlier descriptor exactly | `proof: whole-table-verification` |
 | destination validation and dynamic canvas identity survive implementation moves | Rejects proxies without running their traps and proves two canvases keep distinct contexts after their public IDs are made equal; descriptor retention during installation remains narrowly source-protected | executable exit status after `proof: whole-table-verification` |
 | binding-state destruction and surface acquisition fail closed | Destroys the owned state twice through its public nulling API, and forces both new- and existing-texture surface transactions to roll back the registry and frame counter | executable exit status after `proof: whole-table-verification` |
+| binding-owned registries and Canvas2D contexts are runtime-local | Creates two runtimes, compares their binding-state owners, counts protected handles, contexts, and blend descriptors through mutations, tears one runtime down, then uses the survivor | executable exit status |
 
 The remaining source assertions stay in `webgpu-bindings-contract.test.mjs` until their behavior
 probes exist. The default Vitest lane uses a fixture executable to prove the output contract; CTest
@@ -67,6 +68,13 @@ sets `TN_NATIVE_BEHAVIOR_EXECUTABLE` so that same test drives the built product 
   check fails; the two descriptor-retention assertions remain until GC is forced during install.
 - State-lifetime source retirement: deleted the nulling-owner and surface-transaction source-shape
   checks; the real executable performs both public teardown calls and both rollback branches.
+- Owned-state source retirement: deleted `BindingsState` field-placement and cleanup-loop assertions;
+  the native probe observes their counts and cross-runtime survival, including independent
+  blend-bearing pipelines in two live runtimes. Backend-specific no-global checks remain
+  source-protected because QuickJS and JSC do not execute in this Linux lane.
+- Blend-state behavior break: changed the registry to an `inline static` vector. The rebuilt product
+  CTest failed with `first runtime blend descriptors were not independently owned`; the mutation was
+  reverted. Renaming the private probe to `verifyPerRuntimeBlendDescriptors` stayed green.
 - Sanitizer: the creation executable passed ASan + UBSan. The full six-target lane remains red in
   the unchanged reentrancy executable on a `RenderBundleEncoder` leak, so no full-lane green is
   claimed for this checkpoint.

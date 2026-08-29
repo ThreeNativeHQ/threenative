@@ -678,23 +678,8 @@ test("windowed and offscreen wrappers share factories", () => {
   assert.throws(() => assert.match(withoutFactory, /createTextureWrapper\(/u));
 });
 
-test("owned WebGPU binding state is wired to the executable reentrancy proof", () => {
-  const state = read("src/webgpu/bindings_state.h");
-  const bindings = read("src/webgpu/bindings.cpp");
+test("backend and canvas contexts do not use process-global ownership", () => {
   const context = read("src/webgpu/context.cpp");
-  const source = read("tests/webgpu_bindings_reentrancy_test.cpp");
-  assert.match(state, /struct BindingsState \{/u);
-  assert.match(state, /std::vector<js::JSValueHandle> protectedHandles;/u);
-  assert.match(state, /std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;/u);
-  assert.match(bindings, /for \(auto it = state->protectedHandles\.rbegin\(\)/u);
-  assert.match(bindings, /engine->freeHandle\(\*it\)/u);
-  assert.match(bindings, /state->canvas2DContexts\.clear\(\)/u);
-  assert.match(bindings, /createOwnedCanvas2DContext\(/u);
-  assert.doesNotMatch(bindings, /canvas::createCanvas2DContext\(state->engine/u);
-  assert.match(source, /protectedHandles\.size\(\)/u);
-  assert.match(state, /std::vector<std::unique_ptr<WGPUBlendState>> blendStates;/u);
-  assert.doesNotMatch(state, /static\s+std::vector<.*blendStates/u);
-  assert.doesNotMatch(bindings, /static\s+std::vector<.*blendStates/u);
   assert.doesNotMatch(read("src/js/v8_engine.cpp"), /g_protectedHandles/u);
   const quickjs = read("src/js/quickjs_engine.cpp");
   assert.doesNotMatch(quickjs, /g_protectedHandles/u);
@@ -705,21 +690,7 @@ test("owned WebGPU binding state is wired to the executable reentrancy proof", (
   const canvas2d = read("src/canvas/canvas2d_bindings.cpp");
   assert.doesNotMatch(canvas2d, /g_canvas2dContexts|g_jsEngine/u);
   assert.doesNotMatch(canvas2d, /engine->freezeHandle\(jsCtx\)/u);
-  assert.match(source, /__tnEngineLocalCanvasContext\.fillRect/u);
   assert.doesNotMatch(context, /static\s+WGPUFeatureName\s+requiredFeatures/u);
-  assert.match(source, /Runtime::create\(config\)[\s\S]*Runtime::create\(config\)/u);
-  assert.match(source, /getWebGPUBindingsState\(\)[\s\S]*getWebGPUBindingsState\(\)/u);
-  assert.match(source, /evalScript\([\s\S]*first[\s\S]*evalScript\([\s\S]*second/u);
-  assert.match(source, /native WebGPU bindings reentrancy passed/u);
-
-  const sharedStateMutation = state.replace(
-    "std::vector<std::unique_ptr<WGPUBlendState>> blendStates;",
-    "static std::vector<std::unique_ptr<WGPUBlendState>> blendStates;",
-  );
-  assert.throws(
-    () => assert.doesNotMatch(sharedStateMutation, /static\s+std::vector<.*blendStates/u),
-    /static/u,
-  );
 
   // The array is sized to the features actually requested; it grew to four when PRD-228 added
   // timestamp-query. The literal is spelled out here on purpose — a stale one makes this
