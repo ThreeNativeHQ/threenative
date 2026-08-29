@@ -4,8 +4,25 @@ prd_contract: v1
 
 # EXECUTE — the runtime-native refactor batch, in order
 
-Covers all seven PRDs. §3 and §4 are the critical path (PRD-229 Phase 5, then PRD-230); §7 carries
-the rest of the batch, which is gated behind them or runs beside them.
+**Covers every PRD in this folder, with executable phases for each — not pointers to them.**
+
+| § | PRD | Start |
+| --- | --- | --- |
+| 3 | 229 Phase 5 — source-text assertions become behaviour tests | **now**, critical path |
+| 4 | 233 — `runtime.cpp` stops being the place everything goes | **now**, in parallel |
+| 5 | 235 — the build directory matrix is one documented thing | **now**, in parallel |
+| 6 | 230 — the WebGPU bindings move, one surface at a time | after §3.3 exits 0 |
+| 7 | 231 — the backend dialect stops leaking into the binding code | after §6 |
+| 8 | 232 — profiling is a component, not a smear | after §6.2 **and** PRD-227/228 |
+| 11.1 | 234 | never — executed, rejected, reverted |
+| 11.2 | 177, 184 (outside the batch) | attemptable; §11.2 names what to red-green first |
+
+Three lanes can start today: §3, §4 and §5 touch different files and different gates. Everything
+else is genuinely ordered — §10 says what happens if you ignore that.
+
+Every number here was measured on 2026-08-29, not taken from the PRDs' filing day. Read
+[PRD-229](./PRD-229-the-native-host-is-provable-before-it-is-moved.md) and the PRD for whichever
+section you are executing; this file is the how, they are the why.
 
 **A runbook, not a proposal.** Every command here has been run on 2026-08-29 unless the step says
 otherwise. Follow it top to bottom; each step names what makes it fail.
@@ -214,101 +231,274 @@ and §4 may start. Tier 3 is not counted by this gate — it gates PRD-233, not 
 
 Then update PRD-229's evidence section with the per-file control table and flip its status to
 EXECUTED.
+---
 
-## 4. PRD-230 — only after §3.3 returns nothing
+## 4. [PRD-233](./PRD-233-runtime-cpp-stops-being-the-place-everything-goes.md) — `runtime.cpp` stops being the place everything goes
 
-Read PRD-230 for the full design. The execution constraints that matter:
+**Start now, in parallel with §3.** Depends only on PRD-229, touches no WebGPU file, and has the
+control the WebGPU side lacks: `shim-manifest.json` must come out byte-identical.
 
-1. **Baseline perf before the first move**, per PRD-229 Phase 6: desktop `render.p50` and the
-   `TN_HOST_GAP` sub-phases, recorded with the exact command into
-   `docs/verification/runtime-perf-state.md`. Budget: `render.p50` may not rise more than 2%, no
-   sub-phase share may move more than 2 points. **Exceeding it reverts the phase — it does not get
-   explained.** Desktop fps is not a verdict; the Xvfb present throttle pins it.
-2. **One surface per commit.** `bindings.cpp` took 60 commits in 90 days from the perf lane; land
-   these on days that lane is paused, or you will spend the batch in conflicts.
-3. **Name the 87 `tnWebgpuHandlerNN` after what they bind** before moving them. An agent grepping
-   `GPUQueue.writeBuffer` finds nothing today; that is the whole point of the PRD.
-4. After each commit: `pnpm --filter @threenative/runtime-native native:coverage` and check the
-   per-subsystem floor for `src/webgpu/` (33.82%) has not dropped. `pnpm budgets` owns it.
+Measured 2026-08-29: `src/runtime.cpp` is **3,654 lines** with **27 `setup*` call sites**.
 
-## 5. Gates — all of these, every commit
+One surface per commit, least entangled first. For each: create `src/runtime/<surface>.cpp`
+exposing one installer that takes the engine and runtime state, move the functions **verbatim**,
+call it from `Runtime::initialize`, add it to `target_sources`, convert that surface's Tier 3 test
+from §3.1, and delete the text assertion in the same commit.
+
+| # | File | Why here | Existing executable test |
+| --- | --- | --- | --- |
+| 1 | `performance.cpp`, `process.cpp`, `url.cpp` | small, self-contained — do these first to settle the installer shape | — |
+| 2 | `storage.cpp` | already has an executable test at 86.54% coverage | `local_storage_test.cpp` |
+| 3 | `fetch.cpp` | ~276 lines | `fetch-shim`, `fetch-local-asset` |
+| 4 | `timers.cpp` | three installers, on the hot path | `timer_delivery_test.cpp` |
+| 5 | `dom_events.cpp` | ~630 lines, most entangled with lifecycle — last | — |
+
+**Per commit, all of these:**
 
 ```sh
-pnpm typecheck && pnpm lint && pnpm test
+pnpm budgets            # shim-manifest.json byte-identical: the primary control
+ctest --test-dir packages/runtime-native/build/tn-linux --output-on-failure
+pnpm --filter @threenative/runtime-native native:test:asan   # see §9 on its inherited red
+pnpm --filter @threenative/runtime-native native:coverage    # floors hold; runtime.cpp lines fall
+```
+
+`render.p50` within 2% — timers and the frame callback are hot-path.
+
+**Negative control, once per commit, pasted:** delete one installer call from `initialize` →
+`pnpm budgets` must fail *naming the missing globals*. If it passes, the manifest is not actually
+guarding the move and the commit is not proven.
+
+---
+
+## 5. [PRD-235](./PRD-235-the-build-directory-matrix-is-one-documented-thing.md) — the build directory matrix is one documented thing
+
+**Start now, in parallel.** Depends on PRD-229 phases 1–2, both landed. Lowest complexity in the
+batch (3 → LOW) and the highest ratio of pain removed to work done — **this session lost time to
+both traps it retires** (§11.1). Measured 2026-08-29: **12 build directories** under
+`packages/runtime-native/build/`.
+
+**Phase 1 — the matrix exists and is enforced.** New `build-matrix.json`, new
+`scripts/check-build-matrix.ts`, called from `scripts/check-budgets.ts`, new
+`tests/build-matrix.test.mjs`.
+
+| Test | Assertion | Negative control (observe red, paste it) |
+| --- | --- | --- |
+| `should fail when a test target belongs to no configuration` | named failure | add an `add_executable` with no matrix row → red |
+| `should fail when a configuration names a preset that does not exist` | named failure | rename a preset in `CMakePresets.json` → red |
+
+Revert check: remove the call from `check-budgets.ts` → the spec asserting `pnpm budgets` runs it
+reds.
+
+**Extend the matrix with the generator.** Each row should carry its CMake generator, because the
+coverage lane uses `Unix Makefiles` while every preset uses `Ninja` — the mismatch that cost this
+session a rebuild. §1's guard is the point fix; the matrix is the general one.
+
+**Phase 2 — wrappers read the matrix.** A few vitest wrappers per commit, plus
+`tests/runtime-test-utils.ts`. A wrapper resolves its executable through the matrix and reports
+**blocked with the reason** when that configuration was never built — never a silent skip, never a
+bare "not found".
+
+**Phase 3 — retire what is dead.** For each of the 12 directories name the PRD or lane that still
+needs it; drop the unreferenced from the documented matrix. The directories themselves are
+untracked, so this is a documentation delete, not an `rm`.
+
+---
+
+## 6. [PRD-230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md) — the WebGPU bindings move, one surface at a time
+
+**Only after §3.3 exits 0.** Measured 2026-08-29: `bindings.cpp` is **7,870 lines**, **87**
+`tnWebgpuHandlerNN`, **109** `BindingsState` fields.
+
+Land these on days the perf lane is paused — that file took 60 commits in 90 days, and 6 touched it
+in the week before this runbook was written.
+
+### 6.0 Before the first move: the perf baseline
+
+PRD-229 Phase 6 requires it and PRD-230 cannot be judged without it. Record desktop `render.p50`
+and every `TN_HOST_GAP` sub-phase (`drain`, `replay`, `present`, `gpuDrain`, `poll`, `other`) at
+the current HEAD into `docs/verification/runtime-perf-state.md`, with the exact command and machine
+state. **Desktop fps is not a verdict** — the Xvfb present throttle pins it; `render.p50` is.
+
+Budget for every later phase: `render.p50` may not rise more than **2%**, and no `TN_HOST_GAP`
+sub-phase may move its share by more than **2 points**. A phase that exceeds it is **reverted, not
+explained**.
+
+### 6.1 Phase 1 — the 87 handlers get their names back
+
+One commit, `bindings.cpp` only. Each `tnWebgpuHandlerNN` takes the name of the surface and method
+its `bindingTable({…})` registration row already declares — `handleGpuQueueWriteBuffer`,
+`handleHtmlCanvasElementGetContext`. The mapping is derivable from that row; you are not inventing
+names, you are reading them.
+
+**The verification is the phase.** Paste this into the record:
+
+```sh
+git diff -w --word-diff       # identifier changes ONLY - no statement added, removed or reordered
+```
+
+`readability-identifier-naming` (PRD-229 Phase 4, and it is in `WarningsAsErrors`) holds the
+convention. Then: every §3 behaviour test green, `ctest` green, ASan lane green, and **coverage
+unchanged within noise** — a rename cannot change coverage, so a drop means something else moved.
+
+### 6.2 Phase 2 — `BindingsState` becomes cohesive sub-structs
+
+One commit. Group the 109 fields into `ResourceRegistries`, `PresentationState`, `FrameProfiling`,
+`ScreenshotCapture`, `Canvas2DComposite`; device and engine handles stay top-level. Access becomes
+`state->registries.textureRegistry` and the compiler finds every site. The
+`#if TN_ANDROID_JS_PROFILE` members move inside `FrameProfiling` so the struct's conditional shape
+stops leaking to the top level.
+
+**No field is added, removed, renamed in meaning, or given a different default.** Placement
+changes; identity does not.
+
+**The perf A/B is mandatory here, not optional** — struct layout is cache behaviour.
+
+### 6.3 Phase 3 — the split, one commit per surface
+
+Most independent first, most churned last:
+
+| # | New translation unit | Note |
+| --- | --- | --- |
+| 1 | `bindings_canvas2d_composite.cpp` | ~325 lines, most self-contained — proves the pattern |
+| 2 | `bindings_screenshot.cpp` | |
+| 3 | `bindings_presentation.cpp` | surface acquire, sRGB bridge, present |
+| 4 | `bindings_resources.cpp` | buffer/texture/view/sampler creation and registries |
+| 5 | `bindings_pipelines.cpp` | shader modules, pipelines, bind groups |
+| 6 | `bindings_commands.cpp` | encoder, render and compute passes |
+| 7 | `bindings_frame_stream.cpp` | packed replay — `replayPackedFrameOpStream` lives here, and §2's exemplar already follows it |
+| 8 | `bindings.cpp` | what remains: install tables, device/adapter, state lifecycle |
+
+Per commit: the new TU, `bindings.cpp`, `CMakeLists.txt` (`target_sources`), the record.
+
+Functions move **verbatim**. If a body must change to compile, the only permitted changes are a
+shared header declaration or a namespace qualification — **never logic**. Review the diff as
+move-only with `git diff -M --stat`; moves must dominate.
+
+**Record the payoff per commit:** single-TU compile time, starting from the measured **16 s**. If
+it is not falling, the split is not buying what the PRD claims and that belongs in the record.
+
+### 6.4 Phase 4 — re-measure and say what did not run
+
+Coverage per subsystem after vs before. `render.p50` and `TN_HOST_GAP` shares, same command, same
+machine. Single-TU compile times. `pnpm census` (generated, never retyped).
+
+**The device row:** only a Pixel 8 run can speak to fps. If no device run happens, this PRD records
+**"no device result claimed"** and stays open on that row — it does not close on desktop evidence.
+
+---
+
+## 7. [PRD-231](./PRD-231-the-backend-dialect-stops-leaking-into-the-binding-code.md) — the backend dialect stops leaking into the binding code
+
+**After §6.** Moving the `#if`s before the split means moving them twice. Measured 2026-08-29:
+**231** preprocessor directives in `bindings.cpp`, **140** in `context.cpp`.
+
+**Phase 1 — the dialects build, and a gate counts the directives.** New
+`scripts/check-native-dialects.ts` called from `check-budgets.ts`, new
+`docs/verification/native-dialect-baseline-2026-08-28.md`. Record which build directory covers
+which dialect today — `build/tn-linux` = Dawn, `build/tn-linux-wgpu` and `build/tn-android` = wgpu
+— **and which dialect has no lane at all**, named rather than implied. The gate records the current
+per-file directive count and fails when it rises.
+
+| Test | Assertion | Negative control |
+| --- | --- | --- |
+| `check-native-dialects.spec.ts` → `should fail when a file gains preprocessor directives` | count > baseline fails | add one `#if` to a fixture → red |
+| `native-dialect-lane.test.mjs` → `should name every dialect with no build lane` | unlaned dialects listed | remove the naming branch → red |
+
+**Phase 2 — `context.cpp` stops branching.** The double-signature `onWgpuLog` becomes one function
+taking a compat string type; adapter/device request, surface creation and present call compat
+helpers in `include/mystral/webgpu_compat.h`. All three dialects compile; behaviour tests, `ctest`
+and ASan stay green; `render.p50` within 2%; **the directive count drops and the gate's baseline is
+lowered in the same commit** — a ratchet, like the coverage floors.
+
+**Phase 3 — the per-surface files stop branching.** One `bindings_*.cpp` per commit, same
+verification set each time.
+
+---
+
+## 8. [PRD-232](./PRD-232-profiling-is-a-component-not-a-smear.md) — profiling is a component, not a smear
+
+**After §6 Phase 2, and after PRD-227/228.** Those two own the meters this touches and are **live**
+— coordinate with them before starting; do not assume they wait for you. Measured 2026-08-29:
+`TN_ANDROID_JS_PROFILE` appears in `bindings.cpp` (48), `v8_engine.cpp` (15), `bindings_state.h`
+(3), `runtime.cpp` (2), `main.cpp` (1).
+
+**Phase 1 — the meters get a test before they get a home.** Capture a real profile log from the
+*current* build for a fixed scene and store it as a fixture; `tests/frame_profiler_test.cpp` drives
+the emission path with known inputs and asserts the **byte-exact** line. The fixture is the
+pre-refactor output, so any later phase that alters the format reds here. That is the whole point
+of doing this before the move.
+
+**Phase 2 — `FrameProfiler` takes ownership.** New `src/webgpu/frame_profiler.h/.cpp`. Counters,
+phase timings and emission move verbatim. **Flag-off builds must contain no profiling code, and
+that is verified by symbol absence, not by reading** — `nm` the binary. `render.p50` within 2%
+measured with profiling both on *and* off.
+
+**Phase 3 — the Android meter.** A Pixel 8 run comparing profile output before and after, or the
+PRD records **"no device result claimed"** and stays open on that row.
+
+---
+
+## 9. Gates — all of these, every commit
+
+```sh
+pnpm typecheck && pnpm lint
+pnpm test
 pnpm --filter @threenative/runtime-native native:coverage
 pnpm budgets
+ctest --test-dir packages/runtime-native/build/tn-linux --output-on-failure
+pnpm --filter @threenative/runtime-native native:test:asan
 ```
 
 A red in `packages/runtime-native` aborts the root suite before ~2,463 root tests run, so never
 read a green root suite as proof while that package is failing.
 
-`pnpm test` does **not** currently reach zero failures, and waiting for it to will stall you
-forever. The bar for this work is: **2,497 passed, and the only failure is the inherited one named
-in §1.** Anything else is yours. Check it explicitly rather than reading the exit code:
+**Two gates do not currently reach zero failures. Waiting for them to will stall you forever.**
+Judge by the named baseline instead:
 
-```sh
-pnpm test 2>&1 | tail -5      # expect: Tests  1 failed | 2497 passed (2498)
-```
+| Gate | Bar |
+| --- | --- |
+| `pnpm test` | `Tests 1 failed | 2497 passed (2498)` — the one failure is the shooter capture named in §1. Anything else is yours. |
+| `native:test:asan` | `83% tests passed, 1 tests failed out of 6` — the failure is the shutdown SEGV in §11.2. A **second** failure is yours. |
 
-The one inherited failure is `generated-shooter-input.spec.ts` with
-`TN_CAPTURE_BLANK: bright pixel ratio 0.04470 is below 0.05` — the shooter template's visual
-capture, a render/threshold question owned by the templates lane and untouched by this batch. It
-has drifted (0.01987 on 2026-08-27, 0.04470 on 2026-08-29) and sits just under the floor, so treat
-a *different* ratio as movement in that lane rather than as something you broke.
+---
 
-## 6. What fails this work
+## 10. What fails this work
 
 - A converted test that passes control (b) but not (a). It is the old assertion in new syntax.
 - Claiming a phase green without pasting the control output.
 - Splitting `bindings.cpp` while any Tier 1 file still reads it as text.
 - Letting `render.p50` rise past 2% and writing a justification instead of reverting.
-- Building a shared abstraction because the conversions look repetitive. **PRD-234 died exactly
-  there**: 690 library lines to carry 60 lines of duplication, every caller keeping its own helper
-  and gaining an adapter. See
+- Moving a `#if` before the surface it lives in has moved — you will move it twice.
+- Landing PRD-232 without talking to the PRD-227/228 lanes first.
+- Building a shared abstraction because the work looks repetitive. **PRD-234 died exactly there**:
+  690 library lines to carry 60 lines of duplication, every caller keeping its own helper and
+  gaining an adapter. See
   [the kill-switch record](../../verification/native-scripts-adb-kill-switch-2026-08-28.md).
 
-## 7. The rest of the batch
+---
 
-The batch [README](./README.md) fixes the order and the reasons; this is the execution view. Only
-PRD-233 and PRD-235 can start before PRD-230 — everything else waits.
+## 11. The rest of the folder
 
-| PRD | Runs when | What it needs from this file |
-| --- | --- | --- |
-| [233](./PRD-233-runtime-cpp-stops-being-the-place-everything-goes.md) — `runtime.cpp`'s thirteen `setup*` shims move to files named after what they shim | **In parallel, now.** Depends on PRD-229 only, and touches different files from 230. | Its Tier 3 conversions (§3.1). It already has an enforced control the WebGPU side lacks: `shim-manifest.json`. |
-| [235](./PRD-235-the-build-directory-matrix-is-one-documented-thing.md) — the nine build directories get one enforced manifest | **In parallel, now.** Depends on PRD-229 phases 1–2, both landed. | Nothing. Lowest complexity in the batch (3 → LOW) and it retires a real trap — see §7.1. |
-| [230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md) — `bindings.cpp` splits, the 87 `tnWebgpuHandlerNN` get real names | After §3.3 exits 0. | Everything in §3 and §4. |
-| [231](./PRD-231-the-backend-dialect-stops-leaking-into-the-binding-code.md) — 339 dialect `#if`s leave the binding logic for `webgpu_compat.h` | After 230. | The split must land first or the `#if`s move twice. |
-| [232](./PRD-232-profiling-is-a-component-not-a-smear.md) — `TN_ANDROID_JS_PROFILE`'s 64 sites become one `FrameProfiler` | After 230 phase 2, **and** after PRD-227/228. | Those two own the meters it touches and are live. Coordinate before starting; do not assume they wait for you. |
-| [234](../done/PRD-234-the-scripts-tier-has-one-device-library.md) — one device library for the scripts tier | **Never.** Executed, measured, rejected, reverted. | Read §6's last bullet before proposing anything shaped like it. |
+### 11.1 [PRD-234](../done/PRD-234-the-scripts-tier-has-one-device-library.md) — do not revive it
 
-### 7.1 PRD-235 is worth doing early, and this session proved why
+Executed, measured, rejected, reverted. `docs/PRDs/done/`. Read §10's last bullet before proposing
+anything shaped like it.
 
-Its thesis is that an unbuildable target should not look like an unrun one. Two directory traps
-cost real time on 2026-08-29 and are exactly what its manifest would have named:
+Its two directory traps are also why §5 (PRD-235) is worth doing early — both cost this session
+real time: `build/tn-linux-coverage` configured by Ninja while the coverage lane wants
+`Unix Makefiles` and CMake named no fix; and `third_party/` absent, so a missing toolchain read as
+a stale coverage digest.
 
-- `build/tn-linux-coverage` was configured by Ninja while the coverage lane wants `Unix Makefiles`,
-  and CMake's error named no fix. §1 now handles it, but the manifest is the general answer.
-- `third_party/` was absent, so nothing native compiled and `pnpm budgets` read as a stale digest
-  rather than as a missing toolchain. `pnpm native:build` restores it (706 MB).
+### 11.2 PRD-177 and PRD-184 — attemptable, unproven
 
-### 7.2 Two PRDs outside the batch that this work unblocks
+Parked under `BLOCKED/requires-asan-libuv-source-build` because ASan could not see inside the
+prebuilt `libuv.a`. **All three prerequisites now exist**: the ASan lane (`1e530c4a`), libuv built
+from source (2026-08-29), and — the one nobody had noticed was missing — a lane that can actually
+report what it catches.
 
-[PRD-177](../BLOCKED/requires-asan-libuv-source-build/PRD-177-native-restart-shutdown-lifetime.md)
-and
-[PRD-184](../BLOCKED/requires-asan-libuv-source-build/PRD-184-native-shutdown-ownership-transfer.md)
-were parked because ASan could not see inside the prebuilt `libuv.a`. **That blocker was removed on
-2026-08-29**: the sanitizer configuration now builds libuv 1.51.0 from source
-(`build/tn-linux-asan/libuv-src/libuv.a`).
-
-They are **attemptable, not proven**. Nobody has run their negative controls. Attempt, record what
-happened, and `git mv` them into this batch only on the strength of a result — never on a plan.
-
-A third blocker was removed on the way: **the lane could not report what it caught.** The desktop
-crash-handler policy installed a SIGSEGV handler that `_exit(1)`s, so ASan's own handler never ran
-and the lane's entire output was `[Mystral] Caught signal SIGSEGV, exiting gracefully`.
-`CrashHandlerPolicy::LeaveToSanitizer` now stands the handler down under `__SANITIZE_ADDRESS__`.
-
-With that fixed the lane immediately named the defect:
+The crash handler used to `_exit(1)` on SIGSEGV before AddressSanitizer's handler ran, so the lane's
+entire output was `[Mystral] Caught signal SIGSEGV, exiting gracefully`.
+`CrashHandlerPolicy::LeaveToSanitizer` stands it down. The lane then immediately named:
 
 ```text
 SUMMARY: AddressSanitizer: SEGV in dawn::RefCounted::Release()
@@ -316,9 +506,10 @@ SUMMARY: AddressSanitizer: SEGV in dawn::RefCounted::Release()
     #12 main  tests/webgpu_bindings_reentrancy_test.cpp:1806
 ```
 
-A Dawn ref-counted object released during runtime teardown after its owner is gone — a
-shutdown-ownership defect, which is PRD-184's subject. Full record and reproduction:
+A Dawn ref-counted object released during teardown after its owner is gone — **a
+shutdown-ownership defect, which is PRD-184's subject.** Full record:
 [asan-shutdown-segv-2026-08-29](../../verification/asan-shutdown-segv-2026-08-29.md).
 
-**Red-green this before calling either PRD done, and give it its own fix commit** rather than
-folding it into a refactor.
+Neither PRD is proven; nobody has run their negative controls. Red-green this defect first, in its
+own fix commit, then attempt them and `git mv` them into this batch **on the strength of a result,
+never a plan**.
