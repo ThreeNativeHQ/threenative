@@ -111,6 +111,16 @@ export type { IRandom } from "./random.js";
  */
 export { defineGame } from "./game.js";
 /**
+ * Register game-owned IComputeDriven objects with the shared compute lifetime.
+ * @situation use IComputeDriven for a cloth, fluid, boid, or other GPU simulation
+ * @situation run a cloth or fluid simulation with ordered GPU passes
+ * @situation keep IComputeDriven kernels warm before the first visible frame
+ * @constraint add the object through ctx.add so it attaches, dispatches, and releases with its scene
+ * @example class Cloth extends Mesh implements IComputeDriven { ... }
+ */
+export { ComputeDrivenRegistry } from "./compute-driven.js";
+export type { IComputeDriven } from "./compute-driven.js";
+/**
  * Read where the frame's milliseconds went, per presented frame, on any platform.
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay

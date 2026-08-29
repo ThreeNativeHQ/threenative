@@ -103,6 +103,21 @@ export class CanvasLayer { … }
 const hud = new CanvasLayer({ camera });
 ```
 
+### `ComputeDrivenRegistry`
+
+`class` — Register game-owned IComputeDriven objects with the shared compute lifetime.
+
+```ts
+export class ComputeDrivenRegistry { … }
+```
+
+- **Use when:** use IComputeDriven for a cloth, fluid, boid, or other GPU simulation · run a cloth or fluid simulation with ordered GPU passes · keep IComputeDriven kernels warm before the first visible frame
+- **Constraints:** add the object through ctx.add so it attaches, dispatches, and releases with its scene
+
+```ts
+class Cloth extends Mesh implements IComputeDriven { ... }
+```
+
 ### `createAssetLoader`
 
 `function` — Create the portable asset loader a scene also receives as `ctx.assets`.
@@ -200,7 +215,7 @@ if (isMobile()) showTouchControls();
 `class` — Dispatch a game-owned particle surface and process function through a pooled system.
 
 ```ts
-export class GPUParticles3D extends Sprite { … }
+export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
 - **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles

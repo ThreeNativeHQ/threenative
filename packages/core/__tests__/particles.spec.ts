@@ -71,6 +71,7 @@ describe("GPUParticles3D", () => {
     parent.add(particle);
     const gpu = renderer(dispatched);
 
+    expect(particle.processCadence).toBe("render");
     particle.attachRenderer(gpu);
     expect(dispatched).toHaveLength(1);
     particle.process();

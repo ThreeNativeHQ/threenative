@@ -690,6 +690,19 @@
       "required": true
     },
     {
+      "id": "75-compute-driven-lifetime",
+      "title": "compute-driven lifetime",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "../../examples/prd242-compute-lifetime/src/conformance.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",

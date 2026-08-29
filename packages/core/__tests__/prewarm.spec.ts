@@ -10,9 +10,14 @@ import {
   Sprite,
   SpriteMaterial,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { IComputeDriven } from "../src/compute-driven.js";
+import { defineGame } from "../src/game.js";
 import { prewarm } from "../src/index.js";
 import { createRenderer } from "../src/renderer.js";
+import type { IRendererLike } from "../src/renderer.js";
+import { Scene as GameScene, type ICtx } from "../src/scene.js";
+import { warmUpScene } from "../src/warmup.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -33,7 +38,129 @@ function effectivelyVisible(object: Object3D): boolean {
   return true;
 }
 
+class StartupComputeProbe extends Group implements IComputeDriven {
+  readonly warmupNodes: readonly unknown[] = ["startup-kernel"];
+  #released = false;
+
+  get released(): boolean {
+    return this.#released;
+  }
+
+  attachRenderer(_renderer: IRendererLike): void {}
+
+  process(_renderer: IRendererLike): void {}
+
+  detach(): void {
+    this.#released = true;
+  }
+}
+
 describe("prewarm", () => {
+  it("should compile compute kernels before startup reports ready", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    let resolveCompute: () => void = () => undefined;
+    const computePromise = new Promise<void>((resolve) => {
+      resolveCompute = resolve;
+    });
+    const computeAsync = vi.fn(() => computePromise);
+    const compileAsync = vi.fn(() => Promise.resolve());
+    const raw = {
+      compileAsync,
+      compute: () => undefined,
+      computeAsync,
+      dispose: () => undefined,
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: () => undefined,
+    };
+    const frames: Array<(time: number) => void> = [];
+    const previousFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frames.push(callback);
+        return frames.length;
+      },
+    });
+    class ComputeScene extends GameScene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.add(new StartupComputeProbe());
+        ctx.canvasLayer.opaque = true;
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        webgpuFactory: () => raw,
+      },
+      scenes: { compute: ComputeScene },
+      start: "compute",
+    });
+
+    try {
+      await game.start();
+      const ctx = game.ctx;
+      if (ctx === undefined || frames.length === 0)
+        throw new Error("Game did not start its render loop.");
+      let ready = false;
+      const readiness = ctx.startup.whenReady().then(() => {
+        ready = true;
+      });
+
+      frames[0]?.(16);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(computeAsync).toHaveBeenCalledWith("startup-kernel");
+      expect(compileAsync).not.toHaveBeenCalled();
+      expect(ready).toBe(false);
+
+      resolveCompute();
+      for (let index = 1; index < 20; index += 1) {
+        await Promise.resolve();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        frames[index]?.(16 + index * 16);
+      }
+      await readiness;
+      expect(compileAsync).toHaveBeenCalledWith(ctx.scene, ctx.camera);
+      expect(computeAsync.mock.invocationCallOrder[0]).toBeLessThan(
+        compileAsync.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
+    } finally {
+      game.stop();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+      if (previousFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: previousFrame });
+    }
+  });
+
+  it("should still resolve when a kernel fails to compile", async () => {
+    const report = await warmUpScene(
+      {
+        compileAsync: async () => undefined,
+        computeAsync: async () => {
+          throw new Error("compute backend rejected the kernel");
+        },
+      },
+      {} as never,
+      {} as never,
+      { computeNodes: ["broken-kernel"] },
+    );
+
+    expect(report.computeCompiled).toBe(0);
+    expect(report.computeAbandoned).toBe(1);
+    expect(report.computeUnsupported).toBe(false);
+    expect(report.timedOut).toBe(false);
+  });
+
   it("keeps meshes visible while setting their material opacity to zero", () => {
     const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
     mesh.visible = false;

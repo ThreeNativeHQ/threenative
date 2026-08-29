@@ -1,0 +1,45 @@
+{
+  "name": "prd242-compute-lifetime",
+  "schemaVersion": 1,
+  "subject": "Two-pass ping-pong compute field survives scene changes",
+  "target": "web",
+  "artifacts": { "screenshots": false },
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 0,
+  "steps": [
+    {
+      "label": "compute-before-startup",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "at": { "x": 0, "y": 0 },
+      "kind": "click",
+      "label": "startup-transition",
+      "release": true,
+      "waitFrames": 8
+    },
+    {
+      "label": "compute-lifetime",
+      "waitTicks": 24,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "round", "equals": 2, "changed": true },
+      { "id": "GameState", "path": "attachments", "gte": 3, "changed": true },
+      { "id": "GameState", "path": "releases", "gte": 2, "changed": true },
+      { "id": "GameState", "path": "gpuSteps", "gte": 10, "changed": true },
+      { "id": "GameState", "path": "passOneDispatches", "gte": 10, "changed": true },
+      { "id": "GameState", "path": "passTwoDispatches", "gte": 10, "changed": true },
+      { "id": "GameState", "path": "startupReady", "equals": true, "changed": true },
+      { "id": "GameState", "path": "worldRendersAfterStartup", "gte": 1, "changed": true }
+    ]
+  }
+}
