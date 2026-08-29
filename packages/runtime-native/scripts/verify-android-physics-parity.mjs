@@ -12,7 +12,14 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertDeviceReady, MINIMUM_BATTERY_PERCENT } from "./device-preflight.mjs";
+import { createAdbClient } from "./lib/adb.mjs";
+import {
+  assertDeviceReady,
+  MINIMUM_BATTERY_PERCENT,
+  resolveAndroidPackageId,
+  suppressPlayProtectOnAdbInstalls,
+  verifyInstalledPackage,
+} from "./lib/device.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
@@ -352,6 +359,23 @@ function run(command, args, options = {}) {
   return result.stdout;
 }
 
+function parityAdbClient(adb, device, execute = run) {
+  return createAdbClient(device, {
+    allowDefaultTransport: device == null,
+    commandImpl: (executable, args, options) => ({
+      status: 0,
+      stderr: "",
+      stdout: execute(executable, args, {
+        allowFailure: options.allowFailure,
+        timeout: options.timeout,
+      }),
+    }),
+    environment: { THREENATIVE_ADB: adb },
+    maxBuffer: 64 * 1024 * 1024,
+    timeoutMs: 600_000,
+  });
+}
+
 export function parseArgs(argv) {
   const result = {
     allowDeviceCondition: false,
@@ -390,7 +414,7 @@ function discoverAdb() {
 }
 
 function selectDevice(adb, requested) {
-  const output = run(adb, ["devices"]);
+  const output = parityAdbClient(adb, undefined).run(["devices"]);
   const online = output
     .split(/\r?\n/)
     .map((line) => /^(\S+)\s+device(?:\s|$)/.exec(line)?.[1])
@@ -401,6 +425,29 @@ function selectDevice(adb, requested) {
   if (online.length !== 1)
     throw new ParityError(`Expected one online Android device, found ${online.length}.`);
   return online[0];
+}
+
+export async function prepareAndroidParityDevice(options, dependencies = {}) {
+  const client = parityAdbClient(options.adb, options.device, dependencies.command);
+  const deviceCondition = await assertDeviceReady(
+    options.device,
+    {
+      allowOverride: options.allowDeviceCondition,
+      maxThermalStatus: "NONE",
+      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
+      requireDischarging: true,
+    },
+    { adb: (args) => client.run(args) },
+  );
+  if (!options.skipInstall) {
+    suppressPlayProtectOnAdbInstalls(options.device, { adb: (args) => client.run(args) });
+    client.run(["install", "-r", options.apk]);
+    verifyInstalledPackage(
+      (args) => client.run(args),
+      options.appId ?? resolveAndroidPackageId(),
+    );
+  }
+  return deviceCondition;
 }
 
 function writeJson(path, value) {
@@ -537,17 +584,13 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const apk = join(runtimeRoot, "android/app/build/outputs/apk/debug/app-debug.apk");
   if (!existsSync(apk)) throw new ParityError(`Android APK is missing at ${apk}.`);
-  const deviceCondition = await assertDeviceReady(
+  const deviceCondition = await prepareAndroidParityDevice({
+    adb,
+    allowDeviceCondition: options.allowDeviceCondition,
+    apk,
     device,
-    {
-      allowOverride: options.allowDeviceCondition,
-      maxThermalStatus: "NONE",
-      minBatteryPercent: MINIMUM_BATTERY_PERCENT,
-      requireDischarging: true,
-    },
-    { adb: (args) => run(adb, ["-s", device, ...args]) },
-  );
-  if (!options.skipInstall) run(adb, ["-s", device, "install", "-r", apk]);
+    skipInstall: options.skipInstall,
+  });
   const deviceStdout = run(
     process.execPath,
     [

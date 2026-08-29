@@ -1,4 +1,5 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -14,6 +15,7 @@ import {
   normalizeReport,
   parseArgs,
   parsePlaytestStdout,
+  prepareAndroidParityDevice,
   readFreshObservation,
 } from "../scripts/verify-android-physics-parity.mjs";
 
@@ -30,6 +32,42 @@ const templatePath = join(
 const templateBytes = readFileSync(templatePath);
 const template = JSON.parse(templateBytes.toString("utf8"));
 const sha = createHash("sha256").update(fixtureBytes).digest("hex");
+
+it("prepares the Android parity device through shared safeguards", async () => {
+  const calls = [];
+  const execute = (_command, args) => {
+    const operation = args.slice(2).join(" ");
+    calls.push(operation);
+    const outputs = {
+      "get-state": "device\n",
+      "shell dumpsys battery": "AC powered: false\nUSB powered: false\nWireless powered: false\nstatus: 3\nlevel: 80\n",
+      "shell dumpsys thermalservice": "Thermal Status: 0\n",
+      "shell dumpsys power": "mScreenOn=true\n",
+      "shell dumpsys display": "mSupportedRefreshRates=[60.0]\nmActiveSfDisplayMode=DisplayMode{id=0, peakRefreshRate=60.0}\n",
+      "shell settings get system peak_refresh_rate": "60\n",
+      "shell settings get system min_refresh_rate": "60\n",
+      "shell settings get global low_power": "0\n",
+      "shell settings get global package_verifier_enable": "0\n",
+      "shell settings get global upload_apk_enable": "0\n",
+      "shell settings get global verifier_verify_adb_installs": "0\n",
+      "shell pm path com.threenative.game": "package:/data/app/com.threenative.game/base.apk\n",
+    };
+    return outputs[operation] ?? (operation.startsWith("install ") ? "Success\n" : "");
+  };
+  const condition = await prepareAndroidParityDevice(
+    { adb: "/sdk/adb", allowDeviceCondition: false, apk: "/tmp/game.apk", device: "device-1", skipInstall: false },
+    { command: execute },
+  );
+  assert.equal(condition.charging, false);
+  const ordered = [
+    "get-state",
+    "shell settings put global package_verifier_enable 0",
+    "install -r /tmp/game.apk",
+    "shell pm path com.threenative.game",
+  ].map((operation) => calls.indexOf(operation));
+  assert.ok(ordered.every((index) => index >= 0));
+  assert.deepEqual(ordered, [...ordered].sort((left, right) => left - right));
+});
 const web = {
   areaMembership: ["dynamicBox"],
   areaMembershipSnapshots: [
