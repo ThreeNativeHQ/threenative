@@ -717,6 +717,9 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"setIndexBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::SetIndexBuffer)]
            << ",\"writeBuffer\":" << counts[static_cast<size_t>(ProfiledRenderCommand::WriteBuffer)]
            << ",\"endRenderPass\":" << counts[static_cast<size_t>(ProfiledRenderCommand::EndRenderPass)]
+           << ",\"beginRenderPass\":" << counts[static_cast<size_t>(ProfiledRenderCommand::BeginRenderPass)]
+           << ",\"submit\":" << counts[static_cast<size_t>(ProfiledRenderCommand::Submit)]
+           << ",\"devicePoll\":" << counts[static_cast<size_t>(ProfiledRenderCommand::DevicePoll)]
            << "},\"commandNs\":{\"setPipeline\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::SetPipeline)]
            << ",\"setBindGroup\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::SetBindGroup)]
            << ",\"draw\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::Draw)]
@@ -727,6 +730,9 @@ static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPoll
            << ",\"setIndexBuffer\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::SetIndexBuffer)]
            << ",\"writeBuffer\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::WriteBuffer)]
            << ",\"endRenderPass\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::EndRenderPass)]
+           << ",\"beginRenderPass\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::BeginRenderPass)]
+           << ",\"submit\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::Submit)]
+           << ",\"devicePoll\":" << commandNs[static_cast<size_t>(ProfiledRenderCommand::DevicePoll)]
            << "}}";
     {
         std::vector<std::pair<const void*, js::BridgeStat>> top(
@@ -5907,7 +5913,15 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
 #endif
                 r.cursor = (r.cursor + n + 7) & ~size_t(7); break; }
             case 2: { const uint32_t id = r.u32(); if (!id || encoders.find(id) != encoders.end()) { fail("duplicate command encoder id"); break; } WGPUCommandEncoderDescriptor d{}; auto e = wgpuDeviceCreateCommandEncoder(state->device, &d); if (!e) { fail("createCommandEncoder failed"); break; } encoders[id] = e; break; }
-            case 3: { const uint32_t eid = r.u32(), pid = r.u32(), count = r.u32(); if (!pid || renderPasses.find(pid) != renderPasses.end()) { fail("duplicate render pass id"); break; } auto e = encoder(eid); bool touchesSurface = false; std::vector<WGPURenderPassColorAttachment> colors(count); for (auto& c : colors) { c.view = viewFor(r.u32()); touchesSurface = touchesSurface || c.view == state->currentTextureView; const uint32_t resolve = r.u32(); c.resolveTarget = resolve ? viewFor(resolve) : nullptr; c.loadOp = r.u32() ? WGPULoadOp_Load : WGPULoadOp_Clear; c.storeOp = r.u32() ? WGPUStoreOp_Discard : WGPUStoreOp_Store; c.clearValue = {r.f64(),r.f64(),r.f64(),r.f64()}; c.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; } WGPURenderPassDepthStencilAttachment depth{}; WGPURenderPassDescriptor d{}; d.colorAttachmentCount=colors.size(); d.colorAttachments=colors.data(); if (r.u32()) { depth.view=viewFor(r.u32()); depth.depthClearValue=r.f64(); depth.depthLoadOp=r.u32()?WGPULoadOp_Load:WGPULoadOp_Clear; depth.depthStoreOp=r.u32()?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.depthReadOnly=r.u32(); depth.stencilClearValue=r.u32(); const auto sl=r.u32(), ss=r.u32(); depth.stencilLoadOp=sl==2?WGPULoadOp_Undefined:sl?WGPULoadOp_Load:WGPULoadOp_Clear; depth.stencilStoreOp=ss==2?WGPUStoreOp_Undefined:ss?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.stencilReadOnly=r.u32(); d.depthStencilAttachment=&depth; } WGPURenderPassTimestampWrites_Compat rtw{}; if (r.u32()) { rtw.querySet = querySetFor(r.u32()); rtw.beginningOfPassWriteIndex = r.u32(); rtw.endOfPassWriteIndex = r.u32(); if (!rtw.querySet) break; d.timestampWrites = &rtw; } if (!r.ok) break; auto p=wgpuCommandEncoderBeginRenderPass(e,&d); if (!p) { fail("beginRenderPass failed"); break; } if (touchesSurface) { state->surfaceRenderEncoder=e; state->surfaceRenderPassEnded=false; } renderPasses[pid]=p; renderOwners[pid]=e; break; }
+            case 3: { const uint32_t eid = r.u32(), pid = r.u32(), count = r.u32(); if (!pid || renderPasses.find(pid) != renderPasses.end()) { fail("duplicate render pass id"); break; } auto e = encoder(eid); bool touchesSurface = false; std::vector<WGPURenderPassColorAttachment> colors(count); for (auto& c : colors) { c.view = viewFor(r.u32()); touchesSurface = touchesSurface || c.view == state->currentTextureView; const uint32_t resolve = r.u32(); c.resolveTarget = resolve ? viewFor(resolve) : nullptr; c.loadOp = r.u32() ? WGPULoadOp_Load : WGPULoadOp_Clear; c.storeOp = r.u32() ? WGPUStoreOp_Discard : WGPUStoreOp_Store; c.clearValue = {r.f64(),r.f64(),r.f64(),r.f64()}; c.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; } WGPURenderPassDepthStencilAttachment depth{}; WGPURenderPassDescriptor d{}; d.colorAttachmentCount=colors.size(); d.colorAttachments=colors.data(); if (r.u32()) { depth.view=viewFor(r.u32()); depth.depthClearValue=r.f64(); depth.depthLoadOp=r.u32()?WGPULoadOp_Load:WGPULoadOp_Clear; depth.depthStoreOp=r.u32()?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.depthReadOnly=r.u32(); depth.stencilClearValue=r.u32(); const auto sl=r.u32(), ss=r.u32(); depth.stencilLoadOp=sl==2?WGPULoadOp_Undefined:sl?WGPULoadOp_Load:WGPULoadOp_Clear; depth.stencilStoreOp=ss==2?WGPUStoreOp_Undefined:ss?WGPUStoreOp_Discard:WGPUStoreOp_Store; depth.stencilReadOnly=r.u32(); d.depthStencilAttachment=&depth; } WGPURenderPassTimestampWrites_Compat rtw{}; if (r.u32()) { rtw.querySet = querySetFor(r.u32()); rtw.beginningOfPassWriteIndex = r.u32(); rtw.endOfPassWriteIndex = r.u32(); if (!rtw.querySet) break; d.timestampWrites = &rtw; } if (!r.ok) break;
+#if TN_ANDROID_JS_PROFILE
+                const auto beginPassStart = beginProfiledBinding();
+#endif
+                auto p=wgpuCommandEncoderBeginRenderPass(e,&d);
+#if TN_ANDROID_JS_PROFILE
+                endProfiledBinding(state, ProfiledRenderCommand::BeginRenderPass, beginPassStart);
+#endif
+                if (!p) { fail("beginRenderPass failed"); break; } if (touchesSurface) { state->surfaceRenderEncoder=e; state->surfaceRenderPassEnded=false; } renderPasses[pid]=p; renderOwners[pid]=e; break; }
             case 4: { auto p=renderPass(r.u32()); const auto it=state->renderPipelineRegistry.find(r.u32()); if(it==state->renderPipelineRegistry.end()) fail("unknown render pipeline id"); else wgpuRenderPassEncoderSetPipeline(p,it->second); break; }
             case 5: { auto p=renderPass(r.u32()); const uint32_t index=r.u32(), gid=r.u32(), n=r.u32(); const auto it=state->bindGroupRegistry.find(gid); std::vector<uint32_t> values(n); for(auto& v:values)v=r.u32(); if(it==state->bindGroupRegistry.end()) fail("unknown bind group id"); else wgpuRenderPassEncoderSetBindGroup(p,index,it->second,n,values.data()); break; }
             case 6: { auto p=renderPass(r.u32()); const uint32_t slot=r.u32(); auto b=buffer(r.u32()); const uint64_t off=static_cast<uint64_t>(r.f64()); const double z=r.f64(); wgpuRenderPassEncoderSetVertexBuffer(p,slot,b,off,z<0?WGPU_WHOLE_SIZE:static_cast<uint64_t>(z)); break; }
@@ -5942,11 +5956,15 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                     values.emplace_back(id, it->second);
                 }
                 if (r.ok) {
+#if TN_ANDROID_JS_PROFILE
+                    const auto submitStart = beginProfiledBinding();
+#endif
                     flushUploadStaging(state);
                     std::vector<WGPUCommandBuffer> rawBuffers;
                     for (const auto& value : values) rawBuffers.push_back(value.second);
                     wgpuQueueSubmit(state->queue, rawBuffers.size(), rawBuffers.data());
 #if TN_ANDROID_JS_PROFILE
+                    endProfiledBinding(state, ProfiledRenderCommand::Submit, submitStart);
                     state->androidJsNativeProfile.submits += 1;
 #endif
                     replaySubmits += 1;
@@ -5954,10 +5972,16 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                         wgpuCommandBufferRelease(commandBuffer);
                         commandBuffers.erase(id);
                     }
+#if TN_ANDROID_JS_PROFILE
+                    const auto pollStart = beginProfiledBinding();
+#endif
 #if defined(MYSTRAL_WEBGPU_DAWN)
                     wgpuDeviceTick(state->device);
 #elif defined(MYSTRAL_WEBGPU_WGPU)
                     wgpuDevicePoll(state->device, false, nullptr);
+#endif
+#if TN_ANDROID_JS_PROFILE
+                    endProfiledBinding(state, ProfiledRenderCommand::DevicePoll, pollStart);
 #endif
                 }
                 break;

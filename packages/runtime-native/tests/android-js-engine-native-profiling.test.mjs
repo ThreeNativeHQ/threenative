@@ -130,6 +130,9 @@ test("native profiling reports direct and bundled render commands per submit", (
     "writeBufferLargeCalls",
     "writeBufferLargeNs",
     "endRenderPass",
+    "beginRenderPass",
+    "submit",
+    "devicePoll",
     "bundlesExecuted",
     "setVertexBuffer",
     "setIndexBuffer",
@@ -146,8 +149,8 @@ test("native profiling reports direct and bundled render commands per submit", (
   assert.match(bindings, /androidJsProfileBufferRegistry/u);
   assert.equal(
     (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
-    19,
-    "direct and packed-replay commands, queue uploads, and render-pass finalization must be timed independently",
+    22,
+    "direct and packed-replay commands, queue uploads, render-pass finalization, and the replay's own pass-begin, submit and device-poll must be timed independently",
   );
   assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
 

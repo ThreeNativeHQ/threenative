@@ -97,6 +97,12 @@ enum class ProfiledRenderCommand : size_t {
     SetIndexBuffer,
     WriteBuffer,
     EndRenderPass,
+    // The replay's own boundary work, split out so `frameOpReplayNs` has no unexplained
+    // remainder: wgpu concentrates a pass's real encoding cost in begin/end, not in the
+    // per-draw calls between them, and a submit drags a device poll behind it.
+    BeginRenderPass,
+    Submit,
+    DevicePoll,
     Count
 };
 
