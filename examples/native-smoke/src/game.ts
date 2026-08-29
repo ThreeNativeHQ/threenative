@@ -20,6 +20,7 @@ import {
   Vector3,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
+import { type IWorkerProof, startWorkerProof } from "./worker-proof.js";
 
 interface ISmokeState extends Record<string, unknown> {
   airborne: boolean;
@@ -45,6 +46,12 @@ interface ISmokeState extends Record<string, unknown> {
   /** Native loading proof: the overlay must remain visible until startup work settles. */
   loadingVisible: boolean;
   startupReady: boolean;
+  workerCallbacksAfterTerminate: number;
+  workerComplete: boolean;
+  workerFramesAdvanced: number;
+  workerInputChecksum: number;
+  workerOutputChecksum: number;
+  workerIdentity: string;
 }
 
 export interface ISmokeStatus {
@@ -241,6 +248,7 @@ runtimeCanvas.style.touchAction = "none";
 class NativeSmoke extends Scene<ISmokeState> {
   #profileFirstFrameAt: number | undefined;
   #profileFrames = 0;
+  #workerProof: IWorkerProof | undefined;
   static override readonly initialState: ISmokeState = {
     airborne: false,
     currentPointers: 0,
@@ -258,7 +266,32 @@ class NativeSmoke extends Scene<ISmokeState> {
     uiRegions: 0,
     loadingVisible: false,
     startupReady: false,
+    workerCallbacksAfterTerminate: 0,
+    workerComplete: false,
+    workerFramesAdvanced: 0,
+    workerInputChecksum: 0,
+    workerOutputChecksum: 0,
+    workerIdentity: "pending",
   };
+
+  #startWorkerProofIfReady(ctx: ICtx<ISmokeState>): void {
+    if (this.#workerProof !== undefined || status.frames !== 9) return;
+    this.#workerProof = startWorkerProof(status.frames, (result) => {
+      ctx.state.set({
+        workerCallbacksAfterTerminate: result.callbacksAfterTerminate,
+        workerComplete: true,
+        workerFramesAdvanced: result.framesAdvanced,
+        workerInputChecksum: result.inputChecksum,
+        workerOutputChecksum: result.outputChecksum,
+        workerIdentity: result.workerIdentity,
+      });
+      ctx.state.flush();
+    });
+  }
+
+  #observeWorkerProof(): void {
+    this.#workerProof?.observeFrame(status.frames);
+  }
 
   override enter(ctx: ICtx<ISmokeState>) {
     ctx.camera.position.z = 3;
@@ -421,6 +454,9 @@ class NativeSmoke extends Scene<ISmokeState> {
       console.info(`TN_SMOKE_POINTER_DOWN:${pointerDowns}`);
     });
     return (frameCtx: ICtx<ISmokeState>, dt: number) => {
+      // Start after the renderer has reached steady frames. Starting during enter() lets native
+      // renderer compilation overlap the worker and proves startup latency instead of continuity.
+      this.#startWorkerProofIfReady(ctx);
       cube.rotation.x += dt * 0.5;
       cube.rotation.y += dt;
       const pointers = [...frameCtx.input.raw.pointers.values()];
@@ -448,6 +484,8 @@ class NativeSmoke extends Scene<ISmokeState> {
           : {}),
       });
       status.frames += 1;
+      frameCtx.state.set({ frames: status.frames });
+      this.#observeWorkerProof();
       if (status.frames === 1) console.info("TN_NATIVE_SMOKE_FIRST_FRAME");
       if (status.frames === 300) console.info("TN_NATIVE_SMOKE_300_FRAMES:300");
     };
