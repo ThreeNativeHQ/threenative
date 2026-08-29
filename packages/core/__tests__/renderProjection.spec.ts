@@ -26,7 +26,10 @@ import {
   SpriteMaterial,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { ProjectionMirror } from "../src/projection-apply.js";
 import {
+  type IProjectionMaterialGroup,
+  type IProjectionProjectPlan,
   createProjectionScanWorkspace,
   releaseProjectionScanWorkspace,
   scanProjection,
@@ -80,6 +83,70 @@ function countInstanceMatrices(root: Object3D, expected: Matrix4): number {
 
 function isLightObject(object: Object3D): boolean {
   return (object as { isLight?: boolean }).isLight === true;
+}
+
+function findMaterialBatch(root: Object3D): BatchedMesh {
+  let found: BatchedMesh | undefined;
+  root.traverse((object) => {
+    if ((object as BatchedMesh).isBatchedMesh === true) found = object as BatchedMesh;
+  });
+  if (found === undefined) throw new Error("Projection mirror did not build a material batch");
+  return found;
+}
+
+function findInstancedBatch(root: Object3D): InstancedMesh {
+  let found: InstancedMesh | undefined;
+  root.traverse((object) => {
+    if ((object as InstancedMesh).isInstancedMesh === true) found = object as InstancedMesh;
+  });
+  if (found === undefined) throw new Error("Projection mirror did not build an instanced batch");
+  return found;
+}
+
+function preparedSubDraws(batch: BatchedMesh, root: Scene, camera: PerspectiveCamera): number {
+  root.updateMatrixWorld(true);
+  const group = new Group();
+  batch.onBeforeRender(
+    undefined as never,
+    root,
+    camera,
+    batch.geometry,
+    batch.material as MeshStandardMaterial,
+    group,
+  );
+  return (batch as BatchedMesh & { _multiDrawCount: number })._multiDrawCount;
+}
+
+function materialBatchPlan(
+  meshes: readonly Mesh[],
+  material: MeshStandardMaterial,
+): IProjectionProjectPlan {
+  const geometries = new Map(meshes.map((mesh) => [mesh.geometry, { scan: 1, sum: 0 }] as const));
+  const group: IProjectionMaterialGroup = {
+    material,
+    castShadow: false,
+    receiveShadow: false,
+    layersMask: 1,
+    members: [...meshes],
+    memberCount: meshes.length,
+    activeScan: 1,
+    geometries,
+    revision: geometries.size,
+  };
+  return {
+    action: "project",
+    batchGroups: [],
+    batchGroupCount: 0,
+    materialGroups: [group],
+    materialGroupCount: 1,
+    belowFloor: [],
+    belowFloorCount: 0,
+    exactLane: [],
+    exactLaneCount: 0,
+    lights: [],
+    lightCount: 0,
+    seen: { has: () => true },
+  };
 }
 
 /** A structural fingerprint of the authored graph: identity, parentage, naming and order. */
@@ -355,6 +422,125 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.projectedObjects).toBe(400);
     expect(projection.report.batches).toBe(1);
     expect(projection.report.exact.tooFewToBatch).toBe(1);
+  });
+
+  it("should submit fewer batched sub-draws when most objects are behind the camera", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const meshes: Mesh[] = [];
+    for (let index = 0; index < 299; index += 1) {
+      const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
+      mesh.position.z = index < 75 ? 0 : 1_000;
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
+
+    // The scan deliberately refuses this packed-copy lane until its visual conformance proof;
+    // this test exercises the apply seam that owns the declared culling setting without changing
+    // that separate admission decision.
+    scene.updateMatrixWorld(true);
+    const mirror = new ProjectionMirror();
+    try {
+      mirror.prepare([], 0);
+      expect(mirror.apply(materialBatchPlan(meshes, material))).toBeUndefined();
+      const batch = findMaterialBatch(mirror.scene);
+      const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+      camera.position.set(0, 0, 10);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld(true);
+
+      expect(batch.perObjectFrustumCulled).toBe(true);
+      // Control: disabling the flag restores every active sub-draw, proving the ON count is not
+      // an artifact of the packed batch itself.
+      batch.perObjectFrustumCulled = false;
+      expect(preparedSubDraws(batch, mirror.scene, camera)).toBe(299);
+      batch.perObjectFrustumCulled = true;
+      const submitted = preparedSubDraws(batch, mirror.scene, camera);
+      expect(batch.instanceCount).toBe(299);
+      expect(submitted).toBe(75);
+      expect(submitted).toBeLessThan(batch.instanceCount);
+
+      // Negative control: turn the camera away from the entire batch; the culling flag must reach
+      // the renderer's per-object preparation and produce no submitted sub-draws.
+      const awayCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+      awayCamera.position.set(0, 0, -10);
+      awayCamera.lookAt(0, 0, -100);
+      awayCamera.updateMatrixWorld(true);
+      expect(preparedSubDraws(batch, mirror.scene, awayCamera)).toBe(0);
+    } finally {
+      mirror.releaseAll();
+    }
+  });
+
+  it("should compact large instanced batches into a visible prefix", () => {
+    const scene = new Scene();
+    const geometry = new BoxGeometry(1, 1, 1);
+    geometry.computeBoundingSphere();
+    const material = new MeshStandardMaterial();
+    const meshes: Mesh[] = [];
+    for (let index = 0; index < 1_024; index += 1) {
+      const mesh = new Mesh(geometry, material);
+      mesh.position.z = index < 256 ? 0 : 1_000;
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
+    const before = graphSnapshot(scene);
+    const first = meshes[0] as Mesh;
+    const projection = projected(scene);
+    try {
+      const batch = findInstancedBatch(projection.root);
+      const uncompactedCount = batch.count;
+      const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+      camera.position.set(0, 0, 10);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld(true);
+      const group = new Group();
+      const compact = batch.onBeforeRender;
+      projection.root.updateMatrixWorld(true);
+      compact(
+        undefined as never,
+        projection.root,
+        camera,
+        batch.geometry,
+        batch.material as MeshStandardMaterial,
+        group,
+      );
+
+      expect(batch.count).toBe(256);
+      expect(projection.inspect(first)?.matrixWorld.elements).toEqual(first.matrixWorld.elements);
+      expect(graphSnapshot(scene)).toBe(before);
+
+      // Reconciliation remains authoritative: a moved source is uploaded to its new dense slot.
+      first.position.x = 1;
+      scene.updateMatrixWorld(true);
+      projection.reconcile();
+      projection.root.updateMatrixWorld(true);
+      compact(
+        undefined as never,
+        projection.root,
+        camera,
+        batch.geometry,
+        batch.material as MeshStandardMaterial,
+        group,
+      );
+      expect(projection.inspect(first)?.matrixWorld.elements).toEqual(first.matrixWorld.elements);
+
+      // Negative control: disabling the compaction hook restores the full-buffer draw count.
+      batch.onBeforeRender = () => undefined;
+      batch.count = uncompactedCount;
+      batch.onBeforeRender(
+        undefined as never,
+        projection.root,
+        camera,
+        batch.geometry,
+        batch.material as MeshStandardMaterial,
+        group,
+      );
+      expect(batch.count).toBe(uncompactedCount);
+      batch.onBeforeRender = compact;
+    } finally {
+      projection.dispose();
+    }
   });
 
   /**
