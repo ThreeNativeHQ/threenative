@@ -75,8 +75,10 @@ export function runAdbResult(serial, args, options = {}) {
   const environment = options.environment ?? process.env;
   const invocation = buildAdbInvocation(serial, args, environment, options);
   const commandOptions = {
+    allowFailure: options.allowFailure,
+    binary: options.binary,
     cwd: options.cwd,
-    encoding: "utf8",
+    encoding: options.binary ? null : "utf8",
     env: environment,
     maxBuffer: options.maxBuffer ?? DEFAULT_ADB_MAX_BUFFER,
     timeout: options.timeoutMs ?? DEFAULT_ADB_TIMEOUT_MS,
@@ -89,8 +91,8 @@ export function runAdbResult(serial, args, options = {}) {
     invocation,
     rawStatus: result.status,
     status: result.status == null ? 1 : result.status,
-    stderr: String(result.stderr ?? ""),
-    stdout: String(result.stdout ?? ""),
+    stderr: options.binary ? result.stderr : String(result.stderr ?? ""),
+    stdout: options.binary ? result.stdout : String(result.stdout ?? ""),
   };
 }
 
@@ -116,8 +118,10 @@ export async function runAdbResultAsync(serial, args, options = {}) {
   const environment = options.environment ?? process.env;
   const invocation = buildAdbInvocation(serial, args, environment, options);
   const commandOptions = {
+    allowFailure: options.allowFailure,
+    binary: options.binary,
     cwd: options.cwd,
-    encoding: "utf8",
+    encoding: options.binary ? null : "utf8",
     env: environment,
     maxBuffer: options.maxBuffer ?? DEFAULT_ADB_MAX_BUFFER,
     timeout: options.timeoutMs ?? DEFAULT_ADB_TIMEOUT_MS,
@@ -131,8 +135,8 @@ export async function runAdbResultAsync(serial, args, options = {}) {
       invocation,
       rawStatus: result.status ?? 0,
       status: result.status ?? 0,
-      stderr: String(result.stderr ?? ""),
-      stdout: String(result.stdout ?? ""),
+      stderr: options.binary ? result.stderr : String(result.stderr ?? ""),
+      stdout: options.binary ? result.stdout : String(result.stdout ?? ""),
     };
   } catch (error) {
     const status = typeof error?.code === "number" ? error.code : 2;
@@ -141,8 +145,8 @@ export async function runAdbResultAsync(serial, args, options = {}) {
       invocation,
       rawStatus: status,
       status,
-      stderr: String(error?.stderr ?? ""),
-      stdout: String(error?.stdout ?? ""),
+      stderr: options.binary ? error?.stderr : String(error?.stderr ?? ""),
+      stdout: options.binary ? error?.stdout : String(error?.stdout ?? ""),
     };
   }
 }

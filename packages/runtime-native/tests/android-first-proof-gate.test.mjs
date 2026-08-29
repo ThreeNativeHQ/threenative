@@ -91,6 +91,10 @@ test('first proof prepares emulator before installation and launch', async () =>
           ? { status: 0, stdout: log }
           : args.includes('exec-out')
             ? { status: 0, stdout: output }
+            : args.includes('pm') && args.includes('path')
+              ? { status: 0, stdout: `package:${apk}\n` }
+              : args.includes('settings') && args.includes('get')
+                ? { status: 0, stdout: '0\n' }
             : args.includes('start')
               ? { status: 0, stdout: 'Status: ok\n' }
               : args.includes('install')
@@ -103,9 +107,11 @@ test('first proof prepares emulator before installation and launch', async () =>
   };
   const report = await verifyAndroidFirstProof(parseArgs(['--device', 'emulator-5554', '--apk', apk, '--skip-build', '--timeout-ms', '1000', '--settle-ms', '0', '--logcat', join(temporary, 'logcat.txt'), '--report', join(temporary, 'report.json'), '--screenshot', join(temporary, 'proof.png')]), { tools: { adb: 'fake-adb', javaHome: 'fake-java', sdkRoot: 'fake-sdk' }, run: execute, verifyAndroidBundle: () => ({ entry: 'test', outputSha256: 'test', publicApiPackage: '@threenative/core' }), verifyPackagedAndroidBundle: () => {}, delay: async () => {} });
   const preparation = calls.findIndex((args) => args.includes('immersive_mode_confirmations'));
+  const suppression = calls.findIndex((args) => args.includes('package_verifier_enable'));
   const installation = calls.findIndex((args) => args.includes('install'));
+  const verification = calls.findIndex((args) => args.includes('pm') && args.includes('path'));
   const launch = calls.findIndex((args) => args.includes('start'));
-  assert.ok(preparation >= 0 && preparation < installation && installation < launch); assert.deepEqual(report.devicePreparation, { prepared: true });
+  assert.ok(preparation >= 0 && preparation < suppression && suppression < installation && installation < verification && verification < launch); assert.deepEqual(report.devicePreparation, { prepared: true });
 });
 
 test('adb device parsing selects one online target and explains ambiguous states', () => {
