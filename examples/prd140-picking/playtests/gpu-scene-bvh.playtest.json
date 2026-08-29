@@ -1,0 +1,38 @@
+{
+  "name": "prd244-gpu-scene-bvh",
+  "schemaVersion": 1,
+  "subject": "A game-owned TSL contact surface traces its selected scene through GPUSceneBVH",
+  "target": "web",
+  "artifacts": { "screenshots": true },
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "steps": [
+    { "kind": "wait", "label": "before-rebuild", "waitTicks": 10 },
+    { "kind": "wait", "label": "after-rebuild", "waitTicks": 80, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "visual": [
+      { "frameDiff": { "minChangedPixelRatio": 0.001 } },
+      {
+        "region": { "x": 0, "y": 300, "width": 1280, "height": 420, "minNonblankPixelRatio": 0.02 }
+      }
+    ],
+    "resources": [
+      { "id": "GameState", "path": "bvhObjects", "equals": 5, "changed": true },
+      { "id": "GameState", "path": "bvhTriangles", "equals": 72, "changed": true },
+      { "id": "GameState", "path": "bvhRebuilds", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "bvhEffectLive", "equals": 1, "changed": true },
+      {
+        "id": "GameState",
+        "path": "bvhRebuilds",
+        "atSteps": [{ "label": "after-rebuild", "equals": 1 }]
+      }
+    ]
+  }
+}
