@@ -73,6 +73,48 @@ int main() {
                 failures.push(`surviving document listener fired ${seenAfterNoop.length} times after an unknown-callback removal`);
             }
 
+            const mainCanvas = globalThis.canvas;
+            let mainRemovedCalls = 0;
+            const mainRemoved = () => { mainRemovedCalls += 1; };
+            mainCanvas.addEventListener('pointerdown', mainRemoved, false);
+            mainCanvas.removeEventListener('pointerdown', mainRemoved, false);
+            mainCanvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2 }));
+            if (mainRemovedCalls !== 0) {
+                failures.push(`main canvas dispatched a removed callback ${mainRemovedCalls} times`);
+            }
+
+            let mainCaptureCalls = 0;
+            const mainCapture = () => { mainCaptureCalls += 1; };
+            mainCanvas.addEventListener('pointerup', mainCapture, true);
+            mainCanvas.addEventListener('pointerup', mainCapture, { capture: false });
+            mainCanvas.removeEventListener('pointerup', mainCapture, { capture: false });
+            mainCanvas.dispatchEvent(new PointerEvent('pointerup', { pointerId: 3 }));
+            if (mainCaptureCalls !== 1) {
+                failures.push(`main canvas capture identity delivered ${mainCaptureCalls} callbacks (want 1)`);
+            }
+            mainCanvas.removeEventListener('pointerup', mainCapture, true);
+
+            const rendererCanvas = document.createElement('canvas');
+            let forwardedRemovedCalls = 0;
+            const forwardedRemoved = () => { forwardedRemovedCalls += 1; };
+            rendererCanvas.addEventListener('pointerdown', forwardedRemoved, true);
+            rendererCanvas.removeEventListener('pointerdown', forwardedRemoved, true);
+            rendererCanvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 4 }));
+            if (forwardedRemovedCalls !== 0) {
+                failures.push(`renderer canvas dispatched a removed callback ${forwardedRemovedCalls} times`);
+            }
+
+            let forwardedCaptureCalls = 0;
+            const forwardedCapture = () => { forwardedCaptureCalls += 1; };
+            rendererCanvas.addEventListener('pointerup', forwardedCapture, true);
+            rendererCanvas.addEventListener('pointerup', forwardedCapture, { capture: false });
+            rendererCanvas.removeEventListener('pointerup', forwardedCapture, { capture: false });
+            rendererCanvas.dispatchEvent(new PointerEvent('pointerup', { pointerId: 5 }));
+            if (forwardedCaptureCalls !== 1) {
+                failures.push(`renderer canvas capture identity delivered ${forwardedCaptureCalls} callbacks (want 1)`);
+            }
+            rendererCanvas.removeEventListener('pointerup', forwardedCapture, true);
+
             if (failures.length > 0) {
                 console.error('[input-restart] ' + failures.join('; '));
                 process.exit(1);
@@ -90,7 +132,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "[input-restart] two register-dispose cycles delivered each event exactly once"
+    std::cout << "[input-restart] listener identity and capture survived restart, main canvas, and renderer canvas"
               << std::endl;
     return 0;
 }

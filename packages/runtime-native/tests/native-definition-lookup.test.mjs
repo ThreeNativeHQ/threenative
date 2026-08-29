@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { nativeDefinition } from "../../../test-support/native-definition.js";
+import {
+  nativeBindingDefinition,
+  nativeDefinition,
+} from "../../../test-support/native-definition.js";
 
 // Phase 5's whole point: an assertion must survive the file moving and still red on the behaviour.
 // Locating a definition by symbol instead of by path is what makes both controls possible.
@@ -28,5 +31,66 @@ describe("native definition lookup", () => {
         ],
       }),
     ).toThrow(/more than one/iu);
+  });
+
+  it("does not mistake a multiline call followed by a block for a definition", () => {
+    const found = nativeDefinition("readCanvasDimension", {
+      readFiles: () => [
+        {
+          path: "call-site.cpp",
+          text: `if (!readCanvasDimension(
+            state, canvas, "width", width)) {
+              return false;
+            }`,
+        },
+        {
+          path: "qualified-call-site.cpp",
+          text: `if (copyDimension(
+            namespace_name::readCanvasDimension(
+              state, canvas, "width", value),
+            output)) { return true; }`,
+        },
+        {
+          path: "moved-definition.cpp",
+          text: "bool readCanvasDimension(State*, Value, const char*, unsigned&) { return true; }",
+        },
+      ],
+    });
+
+    expect(found.path).toBe("moved-definition.cpp");
+  });
+
+  it("follows nested registration rows to the current handler definition", () => {
+    const files = [
+      {
+        path: "install.cpp",
+        text: `bool installWebGPUBindingTables() {
+          bindingTable({{"GPU", "requestAdapter", 0, nullptr, &requestAdapter}});
+          return true;
+        }`,
+      },
+      {
+        path: "adapter.cpp",
+        text: `Value requestAdapter() {
+          bindingTable({{"GPUAdapter", "requestDevice", 0, nullptr, &requestDevice}});
+          return {};
+        }`,
+      },
+      {
+        path: "device.cpp",
+        text: `Value requestDevice() {
+          bindingTable({{"GPUDevice", "createBindGroup", 0, nullptr, &createBindGroup}});
+          return {};
+        }
+        Value createBindGroup() { return failClosed(); }`,
+      },
+    ];
+
+    const found = nativeBindingDefinition("GPUDevice", "createBindGroup", {
+      readFiles: () => files,
+    });
+
+    expect(found.path).toBe("device.cpp");
+    expect(found.text).toMatch(/failClosed/u);
   });
 });

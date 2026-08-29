@@ -20,7 +20,7 @@ void expect(bool condition, const std::string& what) {
 void expectMalformed(mystral::webgpu::BindingsState* state, const char* expression,
                      const std::string& expected, const std::string& what) {
     auto* engine = state->engine;
-    state->frameOpStreamDrain = engine->evalScriptWithResult(expression, "tn-malformed-frame.js");
+    state->profiling.frameOpStreamDrain = engine->evalScriptWithResult(expression, "tn-malformed-frame.js");
     mystral::webgpu::endDawnFrame(state);
     const std::string exception = engine->hasException() ? engine->getException() : "";
     expect(exception.find(expected) != std::string::npos, what + ": " + exception);
@@ -38,9 +38,8 @@ void runContract(bool disableStreamControl) {
     }
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
     auto* engine = state->engine;
-    expect(!state->captureFrameOpStreamTrace,
-           "production replay does not allocate an operation-name trace");
-    state->captureFrameOpStreamTrace = true;
+    expect(!state->profiling.captureFrameOpStreamTrace, "production replay does not allocate an operation-name trace");
+    state->profiling.captureFrameOpStreamTrace = true;
 
     expect(engine->evalScript(
         R"JS((async () => {
@@ -79,36 +78,38 @@ void runContract(bool disableStreamControl) {
         if (!engine->isUndefined(engine->getGlobalProperty("__tnFrameCallbackRan"))) break;
         engine->processMicrotasks();
     }
-    expect(state->frameOpStreamDrain.ptr, "production frame op stream is installed");
-    const auto installedDrain = state->frameOpStreamDrain;
-    if (disableStreamControl) state->frameOpStreamDrain = {};
+    expect(state->profiling.frameOpStreamDrain.ptr, "production frame op stream is installed");
+    const auto installedDrain = state->profiling.frameOpStreamDrain;
+    if (disableStreamControl)
+        state->profiling.frameOpStreamDrain = {};
     runtime->pollEvents();
     expect(engine->toBoolean(engine->getGlobalProperty("__tnFrameCallbackRan")),
            "commands ran inside a real requestAnimationFrame callback");
-    expect(state->frameOpStreamReplayCrossings == 1,
+    expect(state->profiling.frameOpStreamReplayCrossings == 1,
            "writeBuffer, encoder, finish, and submit replay in one crossing");
-    expect(state->frameOpStreamDirectCommandCalls == 0,
+    expect(state->profiling.frameOpStreamDirectCommandCalls == 0,
            "no recorded command reached a direct command callback");
     if (disableStreamControl) {
         // Restore ownership so teardown frees the protected handle and the remaining fail-closed
         // parser controls can run. The crossing assertion above must already be red.
-        state->frameOpStreamDrain = installedDrain;
+        state->profiling.frameOpStreamDrain = installedDrain;
     }
     const std::vector<std::string> expectedOrder = {
         "writeBuffer", "createCommandEncoder", "clearBuffer", "copyBufferToBuffer",
         "beginRenderPass", "render.end",
         "beginComputePass", "compute.end", "finish", "submit", "buffer.destroy"};
-    if (state->frameOpStreamLastOrder != expectedOrder) {
+    if (state->profiling.frameOpStreamLastOrder != expectedOrder) {
         std::cerr << "observed order:";
-        for (const auto& op : state->frameOpStreamLastOrder) std::cerr << " " << op;
+        for (const auto& op : state->profiling.frameOpStreamLastOrder)
+            std::cerr << " " << op;
         std::cerr << std::endl;
     }
-    expect(state->frameOpStreamLastOrder == expectedOrder,
+    expect(state->profiling.frameOpStreamLastOrder == expectedOrder,
            "native replay preserves the exact operation order and census");
-    expect(state->frameOpStreamLastOpCount == expectedOrder.size(),
+    expect(state->profiling.frameOpStreamLastOpCount == expectedOrder.size(),
            "native replay reports every operation exactly once");
 #if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
-    expect(!state->uploadStaging.retired.empty() || !state->uploadStaging.ready.empty(),
+    expect(!state->registries.uploadStaging.retired.empty() || !state->registries.uploadStaging.ready.empty(),
            "packed writeBuffer uses the configured upload-staging backend");
 #endif
     expect(engine->evalScript(
@@ -142,7 +143,7 @@ void runContract(bool disableStreamControl) {
     expectMalformed(state,
         "() => { const b=new ArrayBuffer(40),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,1,true); v.setUint32(8,40,true); v.setUint32(12,1,true); v.setUint32(16,1,true); v.setUint32(20,24,true); v.setUint32(24,0xffffffff,true); return b; }",
         "unknown buffer id", "native parser rejects an unknown resource id");
-    state->frameOpStreamDrain = {};
+    state->profiling.frameOpStreamDrain = {};
 }
 
 }  // namespace

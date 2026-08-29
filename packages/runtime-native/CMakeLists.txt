@@ -22,7 +22,7 @@ enable_testing()
 function(tn_register_contract_test target)
     if(target STREQUAL "threenative-webgpu-bindings-reentrancy-test")
         set(TN_BEHAVIOR_CONTRACT "webgpu")
-        set(TN_BEHAVIOR_PROOFS "public-binding-surface,whole-table-verification,wrapper-rollback")
+        set(TN_BEHAVIOR_PROOFS "public-binding-surface,call-trace,async-observation,whole-table-verification,wrapper-rollback")
     elseif(target STREQUAL "threenative-bindings-creation-test")
         set(TN_BEHAVIOR_CONTRACT "creation")
         set(TN_BEHAVIOR_PROOFS "creation-refusal")
@@ -1268,6 +1268,13 @@ set(MYSTRAL_SOURCES
     src/js/module_system.cpp
     src/js/ts_transpiler.cpp
     src/webgpu/bindings.cpp
+    src/webgpu/bindings_canvas2d_composite.cpp
+    src/webgpu/bindings_commands.cpp
+    src/webgpu/bindings_frame_stream.cpp
+    src/webgpu/bindings_pipelines.cpp
+    src/webgpu/bindings_presentation.cpp
+    src/webgpu/bindings_resources.cpp
+    src/webgpu/bindings_screenshot.cpp
     src/webgpu/registration_table.cpp
     src/webgpu/wrapper_factories.cpp
     src/webgpu/checked_handle.cpp
@@ -1990,6 +1997,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
         tests/lifecycle_policy_test.cpp)
     target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-lifecycle-policy-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-lifecycle-policy-test PRIVATE
+            ${WGPU_TEST_INCLUDES})
+    endif()
 
     tn_register_contract_test(threenative-audio-decode-ogg-test)
     tn_register_contract_test(threenative-audio-decode-promise-test)

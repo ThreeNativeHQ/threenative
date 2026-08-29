@@ -16,8 +16,8 @@ js::JSValueHandle createTextureViewBinding(
     BindingsState* state,
     uint64_t textureId,
     const std::vector<js::JSValueHandle>&) {
-    const auto it = state->textureRegistry.find(textureId);
-    if (it == state->textureRegistry.end()) {
+    const auto it = state->registries.textureRegistry.find(textureId);
+    if (it == state->registries.textureRegistry.end()) {
         state->engine->throwException("Texture not found in registry");
         return state->engine->newUndefined();
     }
@@ -35,16 +35,17 @@ js::JSValueHandle createTextureViewBinding(
     viewDesc.arrayLayerCount = 1;
     viewDesc.aspect = WGPUTextureAspect_All;
     WGPUTextureView view = wgpuTextureCreateView(it->second.texture, &viewDesc);
-    state->currentTextureView = view;
-    state->currentViewSourceTexture = it->second.texture;
+    state->presentation.currentTextureView = view;
+    state->presentation.currentViewSourceTexture = it->second.texture;
 
     auto jsView = createNativeWrapper(state, "GPUTextureView", view);
-    const uint64_t viewId = state->nextTextureViewId++;
-    state->textureViewRegistry[viewId] = view;
+    const uint64_t viewId = state->registries.nextTextureViewId++;
+    state->registries.textureViewRegistry[viewId] = view;
     state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
     state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
     state->engine->registerRelease(jsView, [state, view, viewId]() {
-        if (state->textureViewRegistry.erase(viewId) != 0) wgpuTextureViewRelease(view);
+        if (state->registries.textureViewRegistry.erase(viewId) != 0)
+            wgpuTextureViewRelease(view);
     });
     return jsView;
 }
@@ -65,15 +66,15 @@ js::JSValueHandle getPipelineBindGroupLayoutBinding(
     WGPUBindGroupLayout layout = nullptr;
     const uint32_t groupIndex = args.empty() ? 0 : static_cast<uint32_t>(state->engine->toNumber(args[0]));
     if (renderPipeline) {
-        const auto it = state->renderPipelineRegistry.find(pipelineId);
-        if (it == state->renderPipelineRegistry.end() || !it->second) {
+        const auto it = state->registries.renderPipelineRegistry.find(pipelineId);
+        if (it == state->registries.renderPipelineRegistry.end() || !it->second) {
             std::cerr << "[WebGPU] getBindGroupLayout: Render pipeline not found" << std::endl;
             return state->engine->newUndefined();
         }
         layout = wgpuRenderPipelineGetBindGroupLayout(it->second, groupIndex);
     } else {
-        const auto it = state->computePipelineRegistry.find(pipelineId);
-        if (it == state->computePipelineRegistry.end() || !it->second) {
+        const auto it = state->registries.computePipelineRegistry.find(pipelineId);
+        if (it == state->registries.computePipelineRegistry.end() || !it->second) {
             std::cerr << "[WebGPU] getBindGroupLayout: Compute pipeline not found" << std::endl;
             return state->engine->newUndefined();
         }

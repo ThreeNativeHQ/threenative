@@ -36,9 +36,9 @@ them, it does not restate their reasoning.
 | | |
 | --- | --- |
 | PRD-229 phases 1–4, 6 | **Landed** 2026-08-28 under commits that never cited the PRD. Reconciled into its evidence section on 2026-08-29. |
-| PRD-229 phase 5 | **The only open phase.** 27 test files still read C++ source as text. |
-| PRD-230 | Blocked on phase 5, and on nothing else. |
-| `src/webgpu/bindings.cpp` | 7,870 lines, still growing (+102 since filing). |
+| PRD-229 phase 5 | **Executed.** The PRD-230 source-text gate reports 0 files. |
+| PRD-230 | **Implementation complete.** Phases 1–3 and desktop Phase 4 are executed; inherited ASan-clean and physical-device rows remain open. |
+| `src/webgpu/bindings.cpp` | 7,870 lines before the PRD-230 moves (+102 since filing). |
 
 **Phase 5 is not busywork, and this is the measurement that proves it.** The assertion that
 `frame-op-stream.test.mjs` made against `bindings.cpp` was:
@@ -85,6 +85,7 @@ you introduce.
 | --- | --- |
 | `packages/playtest/__tests__/generated-shooter-input.spec.ts` — `expect(report.pass).toBe(true)` | Pre-existing, unrelated to the refactor. The root suite is otherwise **2,497 passed / 1 failed**. A `console.info("PROBE-FAILED-ASSERTION:")` probe sits above the assertion; it is another lane's debugging aid, not the cause. |
 | `threenative-webgpu-bindings-reentrancy-test` under `tn-linux-asan` | Real shutdown-lifetime defect, found by the sanitizer lane. Passes in `tn-linux`, SIGSEGVs under ASan. See §7.2. |
+| `threenative-bindings-creation-test` under `tn-linux-asan` after Phase 5 | Dawn sampler/queue leak. PRD-230 Phase 1 proved it against the committed pre-rename source by rebuilding after mechanically reversing all 87 renames; the same sampler allocation leaked. |
 
 `pnpm typecheck` and `pnpm lint` are exit 0. `native:coverage` and `pnpm budgets` are exit 0.
 
@@ -340,6 +341,14 @@ git diff -w --word-diff       # identifier changes ONLY - no statement added, re
 convention. Then: every §3 behaviour test green, `ctest` green, ASan lane green, and **coverage
 unchanged within noise** — a rename cannot change coverage, so a drop means something else moved.
 
+Executed 2026-08-29: the identifier-only negative control red and final gate green; shipping
+compilation and 27/27 enabled CTests passed; coverage held at total 35.70%, `src/webgpu/` 40.66%,
+and `src/runtime.cpp` 39.97%; steady `render.p50` held at 1.3 / 1.2 ms. Full parity recorded web
+72/0/1 and desktop 69/2/2. Mechanically reversing the 87 renames and rebuilding reproduced the
+same two desktop failures (`25-camera-parented-overlay`, `61-offscreen-screenshot`), proving they
+were inherited. Android recorded 0/0/73 because no device lane was available. The ASan lane kept
+its two separately attributed inherited reds from the current-run bar in §1.2.
+
 ### 6.2 Phase 2 — `BindingsState` becomes cohesive sub-structs
 
 One commit. Group the 109 fields into `ResourceRegistries`, `PresentationState`, `FrameProfiling`,
@@ -352,6 +361,15 @@ stops leaking to the top level.
 changes; identity does not.
 
 **The perf A/B is mandatory here, not optional** — struct layout is cache behaviour.
+
+Executed 2026-08-29: the compile control red on every unmigrated flat path, then the shipping host
+and all native tests built after the nested-path migration. CTest passed 27/27 enabled targets;
+runtime-native held its inherited two-test red; ASan held its inherited 4/6 bar. Coverage rose to
+35.76% total and 40.68% WebGPU while runtime.cpp held 39.97%. Mandatory performance passed at
+steady `render.p50` 1.2 / 1.2 ms with a largest host-phase share shift of 0.078 points. A fresh
+`TN_ANDROID_JS_PROFILE=ON` build passed with both Dawn and wgpu-native, and the regenerated
+109,232-line census passed budgets. Full parity matched Phase 1 exactly: web 72/0/1, desktop
+69/2/2 with the same two inherited failures, and Android 0/0/73 with no device lane available.
 
 ### 6.3 Phase 3 — the split, one commit per surface
 
@@ -376,6 +394,85 @@ move-only with `git diff -M --stat`; moves must dominate.
 
 **Record the payoff per commit:** single-TU compile time, starting from the measured **16 s**. If
 it is not falling, the split is not buying what the PRD claims and that belongs in the record.
+
+Surface 1 executed 2026-08-29: the 327-line Canvas2D compositor body moved byte-for-byte into
+`bindings_canvas2d_composite.cpp`. The CMake omission control red-linked at `endDawnFrame`; after
+registration, shipping compilation, 27/27 enabled CTests, the inherited runtime-native and ASan
+bars, and unchanged coverage all passed. The isolated TU rebuild plus archive/link measured 22.32 s
+against the 17.09 s baseline, so no compile-time payoff is claimed yet. Idle steady performance
+passed at `render.p50` 1.0 / 1.0 ms with a maximum required host-phase share shift of 0.217 points;
+an earlier 1.5 / 1.5 ms noisy sample was rejected and is retained in the performance record. Full
+parity matched Phases 1–2 exactly, and the regenerated 109,263-line census passed budgets.
+
+Surface 2 executed 2026-08-29: screenshot accessors and the capture body moved verbatim into
+`bindings_screenshot.cpp`; the only linkage change was a private shared declaration for the former
+static capture function. The CMake omission control red-linked at every existing consumer, then
+shipping compilation, focused screenshot tests 9/9, 27/27 enabled CTests, inherited runtime-native
+and ASan bars, and increased coverage passed. The isolated TU rebuild plus archive/link fell to
+5.04 s; performance passed at `render.p50` 1.0 / 1.0 ms and a maximum required host-phase share
+shift of 0.264 points. Full parity matched the existing bar, and the regenerated 109,300-line
+census passed budgets.
+
+Surface 3 executed 2026-08-29: surface acquire, resize, sRGB bridge, presentation pacing and present
+reporting moved verbatim into `bindings_presentation.cpp`; only cross-TU linkage and private
+declarations changed. The CMake omission control red-linked at the existing callers, then shipping
+compilation, focused presentation tests 47/47 and 27/27 enabled CTests passed. Runtime-native and
+ASan retained their inherited bars, and coverage held the Phase 2 floors. The isolated TU rebuild
+plus archive/link measured 6.05 s; performance passed at `render.p50` 1.0 / 1.0 ms and a maximum
+required host-phase share shift of 0.296 points. Full parity matched the existing bar, and the
+regenerated 109,370-line census passed budgets and the kill switch.
+
+Surface 4 executed 2026-08-29: buffer, texture, texture-view and sampler creation, mapping,
+accounting and registry bodies moved verbatim into `bindings_resources.cpp`; the captured-handler
+templates moved verbatim into a private shared header. The CMake omission control red-linked only
+at moved symbols, then shipping compilation, focused resource tests 55/55 and 27/27 enabled CTests
+passed. Runtime-native and ASan retained their inherited bars, and coverage rose to 35.84% total
+and 40.89% WebGPU. The isolated TU rebuild plus archive/link measured 5.83 s; performance passed at
+`render.p50` 1.0 / 1.0 ms and a maximum required host-phase share shift of 0.265 points. Full parity
+matched the existing bar, and the regenerated 109,445-line census passed budgets and the kill
+switch.
+
+Surface 5 executed 2026-08-29: shader modules, pipeline layouts, bind-group layouts, bind groups,
+compute/render pipelines and pipeline registries moved verbatim into `bindings_pipelines.cpp`;
+only six handler linkage qualifiers and private declarations changed. The CMake omission control
+red-linked only at moved symbols, then shipping compilation, focused pipeline tests 47/47 and
+27/27 enabled CTests passed. Runtime-native and ASan retained their inherited bars, and coverage
+remained above the pre-move bar. The isolated TU rebuild plus archive/link measured 8.13 s;
+performance passed at `render.p50` 1.0 / 1.0 ms and a maximum required host-phase share shift of
+0.267 points. Full parity matched the existing bar, and the regenerated census recorded 109,497
+lines; budgets and the kill switch passed.
+
+Surface 6 executed 2026-08-29: render-bundle, query-set, command-encoder, render-pass and
+compute-pass bodies moved verbatim into `bindings_commands.cpp`; only three handler linkage
+qualifiers and private declarations changed. The CMake omission control red-linked only at moved
+entry points, then shipping compilation, focused command tests 57/57 and 27/27 enabled CTests
+passed. Runtime-native and ASan retained their inherited bars, and coverage held at 35.75% total
+and 40.67% WebGPU. The 1,681-line TU rebuild plus archive/link measured 19.29 s, 12.9% slower than
+the 17.09 s monolith baseline, so this surface claims no compile-time payoff. Performance passed at
+`render.p50` 0.7 / 0.9 ms and a maximum required host-phase share shift of 1.106 points. Full
+parity matched the existing bar, and the regenerated census recorded 109,553 lines; budgets and
+the kill switch passed.
+
+Surface 7 executed 2026-08-29: `PackedFrameReader` and the 374-line
+`replayPackedFrameOpStream` body moved verbatim into `bindings_frame_stream.cpp`; only the upload
+staging helper's linkage and a private declaration changed. The CMake omission control red-linked
+only at the moved replay symbol, then shipping compilation, focused frame-stream tests 21/21 and
+27/27 enabled CTests passed. Runtime-native and ASan retained their inherited bars, and coverage
+held at 35.75% total and 40.67% WebGPU. The TU rebuild plus archive/link measured 8.04 s, 53.0%
+faster than the 17.09 s monolith baseline. A 1.3 / 1.3 ms sample under an unrelated ~850%-CPU
+SwiftShader workload was rejected; after it exited, performance passed at `render.p50` 1.2 / 1.2
+ms and a maximum required host-phase share shift of 1.099 points. Full parity matched the existing
+bar, and the regenerated census recorded 109,605 lines; budgets and the kill switch passed.
+
+Surface 8 and Phase 4 executed 2026-08-29: the retained `bindings.cpp` owns state/upload lifecycle,
+profiling, compatibility installers, queue/device/adapter handlers, binding tables and frame
+boundaries. It is 2,937 lines, down 62.7% from 7,870, and its isolated rebuild measured 9.50 s,
+44.4% below the 17.09 s baseline. Final coverage was 35.75% total, 40.67% WebGPU and 39.97%
+`runtime.cpp`; final steady `render.p50` was 1.2 / 1.2 ms with a maximum required host-share shift
+of 1.099 points. Parity and test bars were unchanged, and the Phase-5 source-text gate remained at
+zero files. `adb devices -l` listed only `emulator-5554`, so the physical Pixel 8 lane remains open:
+**no device result claimed**. The ASan-clean acceptance row also remains open on its two proven
+inherited failures; no new sanitizer failure appeared.
 
 ### 6.4 Phase 4 — re-measure and say what did not run
 
@@ -458,7 +555,7 @@ Judge by the named baseline instead:
 | Gate | Bar |
 | --- | --- |
 | `pnpm test` | `Tests 1 failed | 2497 passed (2498)` — the one failure is the shooter capture named in §1. Anything else is yours. |
-| `native:test:asan` | `83% tests passed, 1 tests failed out of 6` — the failure is the shutdown SEGV in §11.2. A **second** failure is yours. |
+| `native:test:asan` | Current post-Phase-5 bar is `67% tests passed, 2 tests failed out of 6` — the shutdown SEGV in §11.2 plus the binding-creation Dawn leak named in §1. A **third** failure is yours. |
 
 ---
 

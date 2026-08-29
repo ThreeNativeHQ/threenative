@@ -3,17 +3,16 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
+import { nativeDefinition } from "../../../test-support/native-definition.js";
+
 const contextSource = readFileSync(
   fileURLToPath(new URL("../src/webgpu/context.cpp", import.meta.url)),
   "utf8",
 );
-const bindingsSource = readFileSync(
-  fileURLToPath(new URL("../src/webgpu/bindings.cpp", import.meta.url)),
-  "utf8",
-);
+const screenshotFormatDefinition = nativeDefinition("getScreenshotFormat").text;
 
 function assertScreenshotFormatContract(context, bindings) {
-  assert.match(bindings, /getScreenshotFormat\(BindingsState\* state\)[\s\S]*state->surfaceFormat/u);
+  assert.match(bindings, /return static_cast<uint32_t>\(state->presentation\.surfaceFormat\)/u);
   assert.match(context, /WGPUTextureFormat_BGRA8UnormSrgb/u);
   assert.match(context, /WGPUTextureFormat_RGBA8UnormSrgb/u);
   assert.match(context, /output\[0\] = bgra \? pixel\[2\] : pixel\[0\]/u);
@@ -26,7 +25,7 @@ function assertScreenshotFormatContract(context, bindings) {
 }
 
 test("renderer screenshots preserve RGBA surfaces and swizzle BGRA surfaces", () => {
-  assert.doesNotThrow(() => assertScreenshotFormatContract(contextSource, bindingsSource));
+  assert.doesNotThrow(() => assertScreenshotFormatContract(contextSource, screenshotFormatDefinition));
 });
 
 test("renderer screenshot contract fails if RGBA is silently treated as BGRA", () => {
@@ -34,5 +33,5 @@ test("renderer screenshot contract fails if RGBA is silently treated as BGRA", (
     "output[0] = bgra ? pixel[2] : pixel[0];",
     "output[0] = pixel[2];",
   );
-  assert.throws(() => assertScreenshotFormatContract(alwaysSwizzles, bindingsSource));
+  assert.throws(() => assertScreenshotFormatContract(alwaysSwizzles, screenshotFormatDefinition));
 });

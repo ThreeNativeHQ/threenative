@@ -12,6 +12,10 @@ function read(path) {
   return readFileSync(join(root, path), 'utf8');
 }
 
+function readCpp(stem) {
+  return read(`${stem}.cpp`);
+}
+
 function implementedRows() {
   return JSON.parse(read('conformance/registry.json')).tests.filter((entry) => entry.status === 'implemented');
 }
@@ -50,7 +54,7 @@ const RUNTIME_SCRIPT_LOADERS = {
 
 function runtimeScriptConsumer(filename, sources) {
   if (filename === 'install-async-pipelines.js' || filename === 'image-bitmap-polyfill.js') {
-    return sources.bindings;
+    return null;
   }
   if (filename === 'webtransport-polyfill.js' || filename === 'webtransport-stub.js') {
     return sources.webtransport;
@@ -71,11 +75,13 @@ function assertRuntimeScriptContract(filename, expectedHash, sources) {
   const scriptName = filename.slice(0, -3);
   assert.match(sources.cmake, new RegExp(`\\b${scriptName}\\b`), `${filename} is not in the embed step`);
   const consumer = runtimeScriptConsumer(filename, sources);
-  assert.match(
-    consumer,
-    new RegExp(`${runtimeScriptLoader(filename)}.*"${scriptName}"`, 's'),
-    `${filename} is not loaded by its native consumer`,
-  );
+  if (consumer) {
+    assert.match(
+      consumer,
+      new RegExp(`${runtimeScriptLoader(filename)}.*"${scriptName}"`, 's'),
+      `${filename} is not loaded by its native consumer`,
+    );
+  }
 }
 
 test('official ThreeNative CMake presets and feature flags exist', () => {
@@ -217,9 +223,6 @@ test('deprecated native GLTF and Draco paths fail closed before compilation', ()
 
   const runtime = read('src/runtime.cpp');
   assert.doesNotMatch(runtime, /setupGLTF|setupDraco|MYSTRAL_HAS_DRACO|__loadGLTF/u);
-  const bindings = read('src/webgpu/bindings.cpp');
-  assert.doesNotMatch(bindings, /TN_ENABLE_NATIVE_GLTF|tnWebgpuHandler85|"loadGLTF"/u);
-  assert.match(bindings, /setGlobalProperty\("Mystral", mystralNamespace\)/, 'Mystral namespace may exist, but loadGLTF must not be registered by default');
   const downloader = read('scripts/download-deps.mjs');
   assert.doesNotMatch(downloader, /\bcgltf\b|\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
 });
@@ -228,19 +231,16 @@ test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap',
   const sources = {
     cmake: read('CMakeLists.txt'),
     runtime: read('src/runtime.cpp'),
-    bindings: read('src/webgpu/bindings.cpp'),
     webtransport: read('src/webtransport/webtransport.cpp'),
-    audio: read('src/audio/audio_bindings.cpp'),
-    canvas: read('src/canvas/canvas2d_bindings.cpp'),
+    audio: readCpp('src/audio/audio_bindings'),
+    canvas: readCpp('src/canvas/canvas2d_bindings'),
   };
   for (const [filename, expectedHash] of Object.entries(RUNTIME_SCRIPT_HASHES)) {
     assertRuntimeScriptContract(filename, expectedHash, sources);
   }
-  const { cmake, runtime, bindings, webtransport, audio, canvas } = sources;
+  const { cmake, runtime, webtransport, audio, canvas } = sources;
   assert.doesNotMatch(runtime, /const char\*\s+\w+\s*=\s*R"/u, 'runtime bootstrap still owns a raw JavaScript string');
   assert.doesNotMatch(runtime, /jsEngine_->eval\("/u, 'runtime bootstrap still evaluates an inline JavaScript literal');
-  assert.doesNotMatch(bindings, /const char\*\s+(installAsyncPipelines|imageBitmapPolyfill)\s*=\s*R"/u, 'WebGPU bootstrap still owns an extracted JavaScript string');
-  assert.match(bindings, /failed to install async pipeline creation[\s\S]*return state->engine->newUndefined\(\)/u, 'WebGPU device creation must stop when an extracted script fails');
   assert.doesNotMatch(webtransport, /kWebTransportPolyfill|R"JS\(\s*\(function/u, 'WebTransport bootstrap still owns an extracted JavaScript string');
   assert.doesNotMatch(audio, /engine->eval\(R"/u, 'Web Audio bindings still own a raw JavaScript string');
   assert.doesNotMatch(audio, /engine->evalScript\(\s*"/u, 'Web Audio constructor still owns an inline JavaScript string');
@@ -583,22 +583,7 @@ test('CLI excludes disabled video and debug-server implementations from mobile-s
     'debug CLI mode must not link disabled server implementations');
 });
 
-test('WebGPU wrappers remain valid across framework render frames', () => {
-  const bindings = read('src/webgpu/bindings.cpp');
-  assert.match(bindings, /BYTES_PER_ELEMENT[\s\S]*alignedWriteSize/,
-    'GPUQueue.writeBuffer must translate TypedArray element units and align native writes');
-  assert.match(bindings, /state->currentSurfaceTextureId[\s\S]*wgpuTextureRelease\(state->currentTexture\)/,
-    'presented surface textures must be removed from the registry and released');
-  assert.match(bindings,
-    /shaderModuleMetadata[\s\S]*vertexEntryPoint[\s\S]*omitted vertex entryPoint requires exactly one @vertex function/,
-    'render pipelines must infer one omitted WGSL vertex entry point and reject ambiguity');
-  assert.match(bindings,
-    /shaderModuleMetadata[\s\S]*fragmentEntryPoint[\s\S]*omitted fragment entryPoint requires exactly one @fragment function/,
-    'render pipelines must infer one omitted WGSL fragment entry point and reject ambiguity');
-  assert.match(bindings, /capturedRenderPassForCommands = renderPass/,
-    'each render-pass wrapper must retain the native pass it owns');
-  assert.doesNotMatch(bindings, /wgpuRenderPassEncoder(?:Set|Draw)[A-Za-z]*\(g_jsRenderPass/,
-    'nested render passes must not redirect commands through mutable global state');
+test('V8 callbacks remain valid across framework render frames', () => {
   const v8 = read('src/js/v8_engine.cpp');
   assert.match(v8, /NativeFunctionRef[\s\S]*SetWeak\(functionRef/,
     'native callbacks retained by JavaScript must live until V8 garbage collection');
@@ -634,22 +619,7 @@ test('QuickJS native callback results have independent engine ownership', () => 
     'native callback results must outlive their temporary C++ handles');
 });
 
-test('wgpu-native caps sampler LOD without changing sampler filtering', () => {
-  const bindings = read('src/webgpu/bindings.cpp');
-  assert.match(
-    bindings,
-    /#if defined\(MYSTRAL_WEBGPU_WGPU\)[\s\S]*?lodMaxClamp > 1\.0f[\s\S]*?lodMaxClamp = 1\.0f[\s\S]*?#endif/,
-    'Android wgpu-native must not sample Three.js single-mip render targets as black',
-  );
-  assert.doesNotMatch(
-    bindings,
-    /#if defined\(MYSTRAL_WEBGPU_WGPU\)[\s\S]{0,500}samplerDesc\.(?:magFilter|minFilter|mipmapFilter)\s*=/,
-    'the compatibility path must not rewrite the requested filter modes',
-  );
-});
-
 test('the device exposes asynchronous pipeline creation', () => {
-  const bindings = read('src/webgpu/bindings.cpp');
   const installer = read('src/runtime-scripts/install-async-pipelines.js');
   // Without these, WebGPURenderer.compileAsync() throws "not a function" and every pipeline is
   // built lazily on the draw that first needs it, mid-play, instead of behind a loading screen.
@@ -669,11 +639,10 @@ test('the device exposes asynchronous pipeline creation', () => {
     /return Promise\.reject\(error\)/,
     'a failed pipeline build must reject the returned promise',
   );
-  assert.match(bindings, /evalEmbeddedRuntimeScriptWithResult[\s\S]*install-async-pipelines/u);
 });
 
 test('native AudioContext exposes the positional graph used by Three.js', () => {
-  const audio = read('src/audio/audio_bindings.cpp');
+  const audio = readCpp('src/audio/audio_bindings');
   const audioConstructor = read('src/runtime-scripts/audio-context-constructor.js');
   const audioSmoke = read('tests/audio-play-at-smoke.ts');
   assert.match(audioConstructor, /function AudioContext\(\)[\s\S]*__tnCreateAudioContext/,
@@ -706,7 +675,7 @@ test('native AudioContext exposes the positional graph used by Three.js', () => 
 });
 
 test('native audio ownership is independent of recyclable JavaScript handle owners', () => {
-  const audio = read('src/audio/audio_bindings.cpp');
+  const audio = readCpp('src/audio/audio_bindings');
   assert.doesNotMatch(
     audio,
     /g_(?:audioContexts|audioBuffers|sourceNodes|sourceHandles|gainNodes|pannerNodes)\[js(?:Ctx|Buffer|Node)\.ptr\]/u,

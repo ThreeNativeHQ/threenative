@@ -26,6 +26,15 @@ constexpr const char* kScript = R"JS((() => {
   const adapter = navigator.gpu.requestAdapter();
   const device = adapter.requestDevice();
 
+  const wideLodSampler = device.createSampler({
+    lodMinClamp: 0,
+    lodMaxClamp: 32,
+    magFilter: "nearest",
+    minFilter: "linear",
+    mipmapFilter: "nearest",
+  });
+  if (!wideLodSampler) throw new Error("wide-LOD sampler compatibility returned no sampler");
+
   // Reject an inverted LOD range at the binding boundary instead of returning an invalid sampler.
   expectCreationFailure("createSampler", "Failed to create sampler", () =>
     device.createSampler({ lodMinClamp: 2, lodMaxClamp: 1 }),

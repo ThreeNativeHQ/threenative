@@ -12,6 +12,8 @@
 
 #include "mystral/audio/audio_context.h"
 #include "mystral/platform/lifecycle.h"
+#include "mystral/webgpu/bindings.h"
+#include "../src/webgpu/bindings_state.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -74,6 +76,28 @@ const EventCase kEvents[] = {
     {SDL_EVENT_MOUSE_MOTION, "MOUSE_MOTION", LifecycleAction::None},
 };
 
+bool surfaceBindingStateFollowsRebuild() {
+    auto* state = mystral::webgpu::createBindingsState();
+    if (!state) return false;
+    void* replacement = reinterpret_cast<void*>(0x1);
+    mystral::webgpu::republishSurface(
+        state,
+        replacement,
+        static_cast<uint32_t>(WGPUTextureFormat_BGRA8Unorm),
+        static_cast<uint32_t>(WGPUPresentMode_Fifo),
+        720,
+        1280);
+    const bool published = state->surface == reinterpret_cast<WGPUSurface>(replacement) &&
+                           state->presentation.surfaceFormat == WGPUTextureFormat_BGRA8Unorm &&
+                           state->presentation.presentMode == WGPUPresentMode_Fifo &&
+                           state->presentation.canvasWidth == 720 && state->presentation.canvasHeight == 1280;
+    state->presentation.framePresentPending = true;
+    mystral::webgpu::detachSurfaceForRebuild(state);
+    const bool detached = state->surface == nullptr && !state->presentation.framePresentPending;
+    mystral::webgpu::destroyBindingsState(state);
+    return published && detached && state == nullptr;
+}
+
 }  // namespace
 
 int main() {
@@ -109,6 +133,8 @@ int main() {
           "the resume is reported as a TN_LIFECYCLE marker");
 
     // 2b. Resume is not just "unset the flag": the surface it presents to died with the window.
+    check(surfaceBindingStateFollowsRebuild(),
+          "surface detach and republish update the binding state");
     mystral::platform::resetLifecycleForTesting();
     check(mystral::platform::backgroundMode() == BackgroundMode::Pause,
           "the default background mode is pause");

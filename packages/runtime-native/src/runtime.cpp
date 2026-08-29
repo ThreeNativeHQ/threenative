@@ -1308,9 +1308,9 @@ public:
         // The replay boundary's own split (drain / replay / present / poll / other) was timed
         // inside endDawnFrame; fold it into this frame's sample.
         hostGapMeter_.recordEndFramePhases(
-            bindingsState_->framePhaseDrainNs, bindingsState_->framePhaseReplayNs,
-            bindingsState_->framePhasePresentNs, bindingsState_->framePhaseGpuDrainNs,
-            bindingsState_->framePhasePollNs, bindingsState_->framePhaseOtherNs);
+            bindingsState_->profiling.framePhaseDrainNs, bindingsState_->profiling.framePhaseReplayNs,
+            bindingsState_->profiling.framePhasePresentNs, bindingsState_->profiling.framePhaseGpuDrainNs,
+            bindingsState_->profiling.framePhasePollNs, bindingsState_->profiling.framePhaseOtherNs);
 
         // Free non-protected handles only after the replay boundary consumed the frame stream.
         hostGapMeter_.begin(HostGapMeter::kHandles);

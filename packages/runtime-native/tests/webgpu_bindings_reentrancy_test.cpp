@@ -1,7 +1,9 @@
 #include <iostream>
 #include <cstdint>
+#include <fstream>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -970,8 +972,8 @@ bool leaveQuickJSOutstandingException(mystral::Runtime& runtime) {
 
 bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
-    const size_t protectedBefore = state->protectedHandles.size();
-    const size_t nativeContextsBefore = state->canvas2DContexts.size();
+    const size_t protectedBefore = state->registries.protectedHandles.size();
+    const size_t nativeContextsBefore = state->canvas2D.canvas2DContexts.size();
     if (!runtime.evalScript(R"JS((() => {
         const first = document.createElement("canvas");
         const second = document.createElement("canvas");
@@ -996,13 +998,13 @@ bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
     })())JS", "webgpu-binding-dynamic-canvas.js")) {
         return false;
     }
-    if (state->protectedHandles.size() != protectedBefore + 4) {
+    if (state->registries.protectedHandles.size() != protectedBefore + 4) {
         std::cerr << "binding protection proof failed: each dynamic canvas and context must be "
                      "state-owned exactly once"
                   << std::endl;
         return false;
     }
-    if (state->canvas2DContexts.size() != nativeContextsBefore + 2) {
+    if (state->canvas2D.canvas2DContexts.size() != nativeContextsBefore + 2) {
         std::cerr << "binding protection proof failed: native Canvas2D contexts were not "
                      "state-owned"
                   << std::endl;
@@ -1013,7 +1015,7 @@ bool checkDynamicCanvasOwnership(mystral::Runtime& runtime) {
 
 bool checkBindingProtectionOwnership(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
-    if (state->protectedHandles.size() < 4) {
+    if (state->registries.protectedHandles.size() < 4) {
         std::cerr << "binding protection proof failed: dynamic handles were not state-owned"
                   << std::endl;
         return false;
@@ -1024,26 +1026,26 @@ bool checkBindingProtectionOwnership(mystral::Runtime& runtime) {
 bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
-    const size_t buffersBefore = state->bufferRegistry.size();
-    const size_t texturesBefore = state->textureRegistry.size();
-    const uint64_t bufferBytesBefore = state->bufferBytesLive;
-    const uint64_t textureBytesBefore = state->textureBytesLive;
-    const uint64_t bufferCountBefore = state->bufferCountLive;
-    const uint64_t textureCountBefore = state->textureCountLive;
-    const uint64_t textureBytesCreatedBefore = state->textureBytesCreated;
-    const uint64_t nextBufferIdBefore = state->nextBufferId;
-    const uint64_t nextTextureIdBefore = state->nextTextureId;
-    const size_t computePipelinesBefore = state->computePipelineRegistry.size();
-    const uint64_t nextComputePipelineIdBefore = state->nextComputePipelineId;
-    const size_t renderPipelinesBefore = state->renderPipelineRegistry.size();
-    const uint64_t nextRenderPipelineIdBefore = state->nextRenderPipelineId;
-    const size_t blendStatesBefore = state->blendStates.size();
-    const size_t commandEncodersBefore = state->commandEncoderRegistry.size();
-    const auto currentCommandEncoderBefore = state->jsCommandEncoder;
-    const size_t renderPassesBefore = state->encoderRenderPassMap.size();
-    const size_t computePassesBefore = state->encoderComputePassMap.size();
-    const auto currentComputePassBefore = state->jsComputePass;
-    const bool frameRecorderActive = state->frameOpStreamDrain.ptr != nullptr;
+    const size_t buffersBefore = state->registries.bufferRegistry.size();
+    const size_t texturesBefore = state->registries.textureRegistry.size();
+    const uint64_t bufferBytesBefore = state->profiling.bufferBytesLive;
+    const uint64_t textureBytesBefore = state->profiling.textureBytesLive;
+    const uint64_t bufferCountBefore = state->profiling.bufferCountLive;
+    const uint64_t textureCountBefore = state->profiling.textureCountLive;
+    const uint64_t textureBytesCreatedBefore = state->profiling.textureBytesCreated;
+    const uint64_t nextBufferIdBefore = state->registries.nextBufferId;
+    const uint64_t nextTextureIdBefore = state->registries.nextTextureId;
+    const size_t computePipelinesBefore = state->registries.computePipelineRegistry.size();
+    const uint64_t nextComputePipelineIdBefore = state->registries.nextComputePipelineId;
+    const size_t renderPipelinesBefore = state->registries.renderPipelineRegistry.size();
+    const uint64_t nextRenderPipelineIdBefore = state->registries.nextRenderPipelineId;
+    const size_t blendStatesBefore = state->registries.blendStates.size();
+    const size_t commandEncodersBefore = state->registries.commandEncoderRegistry.size();
+    const auto currentCommandEncoderBefore = state->registries.jsCommandEncoder;
+    const size_t renderPassesBefore = state->registries.encoderRenderPassMap.size();
+    const size_t computePassesBefore = state->registries.encoderComputePassMap.size();
+    const auto currentComputePassBefore = state->registries.jsComputePass;
+    const bool frameRecorderActive = state->profiling.frameOpStreamDrain.ptr != nullptr;
     if (!runtime.evalScript(R"JS((() => {
         globalThis.__tnDynamicInstallDevice = navigator.gpu.requestAdapter().requestDevice();
         globalThis.__tnDynamicInstallWorkingEncoder =
@@ -1120,49 +1122,48 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
                   << std::endl;
         return false;
     }
-    if (state->bufferRegistry.size() != buffersBefore ||
-        state->textureRegistry.size() != texturesBefore ||
-        state->bufferBytesLive != bufferBytesBefore || state->textureBytesLive != textureBytesBefore ||
-        state->bufferCountLive != bufferCountBefore || state->textureCountLive != textureCountBefore ||
-        state->textureBytesCreated != textureBytesCreatedBefore ||
-        state->nextBufferId != nextBufferIdBefore || state->nextTextureId != nextTextureIdBefore ||
-        state->computePipelineRegistry.size() != computePipelinesBefore ||
-        state->nextComputePipelineId != nextComputePipelineIdBefore ||
-        state->renderPipelineRegistry.size() != renderPipelinesBefore ||
-        state->nextRenderPipelineId != nextRenderPipelineIdBefore ||
-        state->blendStates.size() != blendStatesBefore ||
-        state->commandEncoderRegistry.size() !=
-            commandEncodersBefore + (frameRecorderActive ? 0 : 1) ||
-        state->encoderRenderPassMap.size() != renderPassesBefore ||
-        state->encoderComputePassMap.size() != computePassesBefore ||
-        state->jsComputePass != currentComputePassBefore ||
-        !runtime.evalScript(
-            (std::string(
-                 "if (__tnDynamicInstallBuffer !== undefined || "
-                 "__tnDynamicInstallTexture !== undefined || "
-                 "__tnDynamicInstallPipeline !== undefined || "
-                 "__tnDynamicInstallRenderPipeline !== undefined || "
-                 "__tnDynamicInstallBufferGetterCalls !== 1 || "
-                 "__tnDynamicInstallTextureGetterCalls !== 1 || ") +
-             (frameRecorderActive
-                  ? "typeof __tnDynamicInstallPass !== 'object' || "
-                    "typeof __tnDynamicInstallEncoder !== 'object' || "
-                  : "__tnDynamicInstallPass !== undefined || "
-                    "__tnDynamicInstallEncoder !== undefined || ") +
-             "typeof __tnDynamicInstallWorkingEncoder.finish !== 'function') "
-             "throw new Error('dynamic install did not fail closed'); " +
-             (frameRecorderActive ? "__tnDynamicInstallPass.end(); " : "") +
-             "__tnDynamicInstallWorkingEncoder.finish(); " +
-             (frameRecorderActive ? "__tnDynamicInstallEncoder.finish();" : ""))
-                .c_str(),
-            "webgpu-binding-dynamic-install-unwind-check.js")) {
+    if (state->registries.bufferRegistry.size() != buffersBefore ||
+        state->registries.textureRegistry.size() != texturesBefore ||
+        state->profiling.bufferBytesLive != bufferBytesBefore ||
+        state->profiling.textureBytesLive != textureBytesBefore ||
+        state->profiling.bufferCountLive != bufferCountBefore ||
+        state->profiling.textureCountLive != textureCountBefore ||
+        state->profiling.textureBytesCreated != textureBytesCreatedBefore ||
+        state->registries.nextBufferId != nextBufferIdBefore ||
+        state->registries.nextTextureId != nextTextureIdBefore ||
+        state->registries.computePipelineRegistry.size() != computePipelinesBefore ||
+        state->registries.nextComputePipelineId != nextComputePipelineIdBefore ||
+        state->registries.renderPipelineRegistry.size() != renderPipelinesBefore ||
+        state->registries.nextRenderPipelineId != nextRenderPipelineIdBefore ||
+        state->registries.blendStates.size() != blendStatesBefore ||
+        state->registries.commandEncoderRegistry.size() != commandEncodersBefore + (frameRecorderActive ? 0 : 1) ||
+        state->registries.encoderRenderPassMap.size() != renderPassesBefore ||
+        state->registries.encoderComputePassMap.size() != computePassesBefore ||
+        state->registries.jsComputePass != currentComputePassBefore ||
+        !runtime.evalScript((std::string("if (__tnDynamicInstallBuffer !== undefined || "
+                                         "__tnDynamicInstallTexture !== undefined || "
+                                         "__tnDynamicInstallPipeline !== undefined || "
+                                         "__tnDynamicInstallRenderPipeline !== undefined || "
+                                         "__tnDynamicInstallBufferGetterCalls !== 1 || "
+                                         "__tnDynamicInstallTextureGetterCalls !== 1 || ") +
+                             (frameRecorderActive ? "typeof __tnDynamicInstallPass !== 'object' || "
+                                                    "typeof __tnDynamicInstallEncoder !== 'object' || "
+                                                  : "__tnDynamicInstallPass !== undefined || "
+                                                    "__tnDynamicInstallEncoder !== undefined || ") +
+                             "typeof __tnDynamicInstallWorkingEncoder.finish !== 'function') "
+                             "throw new Error('dynamic install did not fail closed'); " +
+                             (frameRecorderActive ? "__tnDynamicInstallPass.end(); " : "") +
+                             "__tnDynamicInstallWorkingEncoder.finish(); " +
+                             (frameRecorderActive ? "__tnDynamicInstallEncoder.finish();" : ""))
+                                .c_str(),
+                            "webgpu-binding-dynamic-install-unwind-check.js")) {
         std::cerr << "dynamic install unwind retained native state" << std::endl;
         return false;
     }
-    if (state->commandEncoderRegistry.size() != commandEncodersBefore ||
-        state->jsCommandEncoder != currentCommandEncoderBefore ||
-        state->encoderRenderPassMap.size() != renderPassesBefore ||
-        state->encoderComputePassMap.size() != computePassesBefore) {
+    if (state->registries.commandEncoderRegistry.size() != commandEncodersBefore ||
+        state->registries.jsCommandEncoder != currentCommandEncoderBefore ||
+        state->registries.encoderRenderPassMap.size() != renderPassesBefore ||
+        state->registries.encoderComputePassMap.size() != computePassesBefore) {
         std::cerr << "dynamic install encoder unwind retained native state" << std::endl;
         return false;
     }
@@ -1177,11 +1178,9 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
         std::cerr << "dynamic install encoder control did not finish the older encoder" << std::endl;
         return false;
     }
-    if (state->commandEncoderRegistry.size() !=
-            commandEncodersBefore + (frameRecorderActive ? 0 : 1) ||
-        (frameRecorderActive
-             ? state->jsCommandEncoder != currentCommandEncoderBefore
-             : state->jsCommandEncoder == currentCommandEncoderBefore)) {
+    if (state->registries.commandEncoderRegistry.size() != commandEncodersBefore + (frameRecorderActive ? 0 : 1) ||
+        (frameRecorderActive ? state->registries.jsCommandEncoder != currentCommandEncoderBefore
+                             : state->registries.jsCommandEncoder == currentCommandEncoderBefore)) {
         std::cerr << "dynamic install encoder control retained the wrong current encoder" << std::endl;
         return false;
     }
@@ -1190,8 +1189,8 @@ bool checkDynamicInstallUnwind(mystral::Runtime& runtime) {
             "webgpu-binding-multiple-encoder-cleanup.js")) {
         return false;
     }
-    if (state->commandEncoderRegistry.size() != commandEncodersBefore ||
-        state->jsCommandEncoder != currentCommandEncoderBefore) {
+    if (state->registries.commandEncoderRegistry.size() != commandEncodersBefore ||
+        state->registries.jsCommandEncoder != currentCommandEncoderBefore) {
         std::cerr << "dynamic install encoder control retained a finished encoder" << std::endl;
         return false;
     }
@@ -1234,14 +1233,14 @@ bool verifyActiveWrapperRollbackBehavior(mystral::Runtime& runtime) {
         return failed("active multi-encoder setup");
     }
 
-    const auto computePassBefore = state->jsComputePass;
-    const auto renderPassBefore = state->jsRenderPass;
-    const auto commandEncoderBefore = state->jsCommandEncoder;
-    const auto computeMapBefore = state->encoderComputePassMap;
-    const auto renderMapBefore = state->encoderRenderPassMap;
-    const auto encoderRegistryBefore = state->commandEncoderRegistry;
-    const auto surfaceEncoderBefore = state->surfaceRenderEncoder;
-    const auto surfaceEndedBefore = state->surfaceRenderPassEnded;
+    const auto computePassBefore = state->registries.jsComputePass;
+    const auto renderPassBefore = state->registries.jsRenderPass;
+    const auto commandEncoderBefore = state->registries.jsCommandEncoder;
+    const auto computeMapBefore = state->registries.encoderComputePassMap;
+    const auto renderMapBefore = state->registries.encoderRenderPassMap;
+    const auto encoderRegistryBefore = state->registries.commandEncoderRegistry;
+    const auto surfaceEncoderBefore = state->presentation.surfaceRenderEncoder;
+    const auto surfaceEndedBefore = state->presentation.surfaceRenderPassEnded;
 
     const auto forceWrapperFailure = [&](const char* script, const char* filename,
                                          const char* marker) {
@@ -1258,35 +1257,31 @@ bool verifyActiveWrapperRollbackBehavior(mystral::Runtime& runtime) {
         return exception.find("forced wrapper install failure") != std::string::npos;
     };
 
-    if (!forceWrapperFailure(
-            "globalThis.__tnRollbackComputeCall = true; "
-            "globalThis.__tnRollbackFailedCompute = "
-            "__tnRollbackComputeFailureEncoder.beginComputePass();",
-            "webgpu-binding-wrapper-rollback-compute.js",
-            "__tnRollbackComputeCall") ||
-        state->jsComputePass != computePassBefore ||
-        state->encoderComputePassMap != computeMapBefore ||
-        state->jsCommandEncoder != commandEncoderBefore ||
-        state->jsRenderPass != renderPassBefore ||
-        state->encoderRenderPassMap != renderMapBefore) {
+    if (!forceWrapperFailure("globalThis.__tnRollbackComputeCall = true; "
+                             "globalThis.__tnRollbackFailedCompute = "
+                             "__tnRollbackComputeFailureEncoder.beginComputePass();",
+                             "webgpu-binding-wrapper-rollback-compute.js", "__tnRollbackComputeCall") ||
+        state->registries.jsComputePass != computePassBefore ||
+        state->registries.encoderComputePassMap != computeMapBefore ||
+        state->registries.jsCommandEncoder != commandEncoderBefore ||
+        state->registries.jsRenderPass != renderPassBefore ||
+        state->registries.encoderRenderPassMap != renderMapBefore) {
         return failed("compute pass pointer or map state was not restored");
     }
 
-    if (!forceWrapperFailure(
-            "globalThis.__tnRollbackRenderCall = true; "
-            "globalThis.__tnRollbackFailedRender = "
-            "__tnRollbackRenderFailureEncoder.beginRenderPass({colorAttachments: [{"
-            "view: __tnRollbackView, loadOp: 'clear', storeOp: 'store', "
-            "clearValue: {r: 0, g: 0, b: 0, a: 1}}]});",
-            "webgpu-binding-wrapper-rollback-render.js",
-            "__tnRollbackRenderCall") ||
-        state->jsRenderPass != renderPassBefore ||
-        state->encoderRenderPassMap != renderMapBefore ||
-        state->jsCommandEncoder != commandEncoderBefore ||
-        state->jsComputePass != computePassBefore ||
-        state->encoderComputePassMap != computeMapBefore ||
-        state->surfaceRenderEncoder != surfaceEncoderBefore ||
-        state->surfaceRenderPassEnded != surfaceEndedBefore) {
+    if (!forceWrapperFailure("globalThis.__tnRollbackRenderCall = true; "
+                             "globalThis.__tnRollbackFailedRender = "
+                             "__tnRollbackRenderFailureEncoder.beginRenderPass({colorAttachments: [{"
+                             "view: __tnRollbackView, loadOp: 'clear', storeOp: 'store', "
+                             "clearValue: {r: 0, g: 0, b: 0, a: 1}}]});",
+                             "webgpu-binding-wrapper-rollback-render.js", "__tnRollbackRenderCall") ||
+        state->registries.jsRenderPass != renderPassBefore ||
+        state->registries.encoderRenderPassMap != renderMapBefore ||
+        state->registries.jsCommandEncoder != commandEncoderBefore ||
+        state->registries.jsComputePass != computePassBefore ||
+        state->registries.encoderComputePassMap != computeMapBefore ||
+        state->presentation.surfaceRenderEncoder != surfaceEncoderBefore ||
+        state->presentation.surfaceRenderPassEnded != surfaceEndedBefore) {
         return failed("render pass pointer, map, or surface state was not restored");
     }
 
@@ -1305,40 +1300,38 @@ bool verifyActiveWrapperRollbackBehavior(mystral::Runtime& runtime) {
     // The production frame recorder replaces createCommandEncoder on the device. Its encoder and
     // pass objects are JS records, so they must leave the legacy native registry untouched. Keep
     // the native rollback proof below for engines without the recorder capability.
-    if (state->frameOpStreamDrain.ptr) {
-        if (state->commandEncoderRegistry != encoderRegistryBefore ||
-            state->jsCommandEncoder != commandEncoderBefore ||
-            state->jsComputePass != computePassBefore ||
-            state->encoderComputePassMap != computeMapBefore ||
-            state->jsRenderPass != renderPassBefore ||
-            state->encoderRenderPassMap != renderMapBefore) {
+    if (state->profiling.frameOpStreamDrain.ptr) {
+        if (state->registries.commandEncoderRegistry != encoderRegistryBefore ||
+            state->registries.jsCommandEncoder != commandEncoderBefore ||
+            state->registries.jsComputePass != computePassBefore ||
+            state->registries.encoderComputePassMap != computeMapBefore ||
+            state->registries.jsRenderPass != renderPassBefore ||
+            state->registries.encoderRenderPassMap != renderMapBefore) {
             return failed("frame recorder mutated legacy native encoder state");
         }
         return cleanup() || failed("frame recorder control cleanup");
     }
 
-    if (state->commandEncoderRegistry.size() < 2) {
+    if (state->registries.commandEncoderRegistry.size() < 2) {
         return failed("multi-encoder control did not create enough encoders");
     }
-    const auto firstRegistryEncoder = *state->commandEncoderRegistry.begin();
-    for (const auto encoder : state->commandEncoderRegistry) {
+    const auto firstRegistryEncoder = *state->registries.commandEncoderRegistry.begin();
+    for (const auto encoder : state->registries.commandEncoderRegistry) {
         if (encoder != firstRegistryEncoder) {
-            state->jsCommandEncoder = encoder;
+            state->registries.jsCommandEncoder = encoder;
             break;
         }
     }
-    const auto selectedCommandEncoderBefore = state->jsCommandEncoder;
-    if (!forceWrapperFailure(
-            "globalThis.__tnRollbackEncoderCall = true; "
-            "globalThis.__tnRollbackFailedEncoder = __tnRollbackDevice.createCommandEncoder();",
-            "webgpu-binding-wrapper-rollback-encoder.js",
-            "__tnRollbackEncoderCall") ||
-        state->jsCommandEncoder != selectedCommandEncoderBefore ||
-        state->commandEncoderRegistry != encoderRegistryBefore ||
-        state->jsComputePass != computePassBefore ||
-        state->encoderComputePassMap != computeMapBefore ||
-        state->jsRenderPass != renderPassBefore ||
-        state->encoderRenderPassMap != renderMapBefore) {
+    const auto selectedCommandEncoderBefore = state->registries.jsCommandEncoder;
+    if (!forceWrapperFailure("globalThis.__tnRollbackEncoderCall = true; "
+                             "globalThis.__tnRollbackFailedEncoder = __tnRollbackDevice.createCommandEncoder();",
+                             "webgpu-binding-wrapper-rollback-encoder.js", "__tnRollbackEncoderCall") ||
+        state->registries.jsCommandEncoder != selectedCommandEncoderBefore ||
+        state->registries.commandEncoderRegistry != encoderRegistryBefore ||
+        state->registries.jsComputePass != computePassBefore ||
+        state->registries.encoderComputePassMap != computeMapBefore ||
+        state->registries.jsRenderPass != renderPassBefore ||
+        state->registries.encoderRenderPassMap != renderMapBefore) {
         return failed("command encoder or pass state was not restored");
     }
 
@@ -1439,36 +1432,37 @@ bool checkControllableSurfaceTextureTransaction(mystral::Runtime& runtime) {
     const auto release = [&](mystral::webgpu::BindingsState*, WGPUTexture,
                              WGPUTexture) { ++releaseCalls; };
 
-    controlledState.frameCount = 10;
-    controlledState.nextTextureId = 7;
+    controlledState.profiling.frameCount = 10;
+    controlledState.registries.nextTextureId = 7;
     const auto firstResult = mystral::webgpu::acquireSurfaceTexture(
         &controlledState, acquire, wrap, release);
     if (!firstResult.ptr || engine->isUndefined(firstResult) || acquireCalls != 1 ||
         createdSurfaceTexture.size() != 1 || !createdSurfaceTexture.front() ||
-        controlledState.currentTexture != firstTexture ||
-        controlledState.currentSurfaceTextureId != 7 || controlledState.nextTextureId != 8 ||
-        controlledState.frameCount != 11 || controlledState.textureRegistry.size() != 1) {
+        controlledState.presentation.currentTexture != firstTexture ||
+        controlledState.presentation.currentSurfaceTextureId != 7 || controlledState.registries.nextTextureId != 8 ||
+        controlledState.profiling.frameCount != 11 || controlledState.registries.textureRegistry.size() != 1) {
         return failed("new-entry success branch");
     }
 
-    const auto existingFrameCount = controlledState.frameCount;
-    const auto existingId = controlledState.currentSurfaceTextureId;
+    const auto existingFrameCount = controlledState.profiling.frameCount;
+    const auto existingId = controlledState.presentation.currentSurfaceTextureId;
     const auto existingResult = mystral::webgpu::acquireSurfaceTexture(
         &controlledState, acquire, wrap, release);
     if (!existingResult.ptr || engine->isUndefined(existingResult) || acquireCalls != 1 ||
         createdSurfaceTexture.size() != 2 || createdSurfaceTexture.back() ||
-        controlledState.currentSurfaceTextureId != existingId ||
-        controlledState.frameCount != existingFrameCount || controlledState.textureRegistry.size() != 1) {
+        controlledState.presentation.currentSurfaceTextureId != existingId ||
+        controlledState.profiling.frameCount != existingFrameCount ||
+        controlledState.registries.textureRegistry.size() != 1) {
         return failed("existing-entry wrapper branch");
     }
 
-    controlledState.currentTexture = nullptr;
-    controlledState.currentSurfaceTextureId = 0;
-    controlledState.nextTextureId = 19;
-    controlledState.frameCount = 31;
-    controlledState.textureRegistry.clear();
-    const auto previousFrameCount = controlledState.frameCount;
-    const auto previousNextTextureId = controlledState.nextTextureId;
+    controlledState.presentation.currentTexture = nullptr;
+    controlledState.presentation.currentSurfaceTextureId = 0;
+    controlledState.registries.nextTextureId = 19;
+    controlledState.profiling.frameCount = 31;
+    controlledState.registries.textureRegistry.clear();
+    const auto previousFrameCount = controlledState.profiling.frameCount;
+    const auto previousNextTextureId = controlledState.registries.nextTextureId;
     const auto failedWrap = [&](mystral::webgpu::BindingsState*, WGPUTexture, uint64_t,
                                 uint32_t, uint32_t, const char*, bool created) {
         if (!created) return engine->newObject();
@@ -1480,10 +1474,11 @@ bool checkControllableSurfaceTextureTransaction(mystral::Runtime& runtime) {
     const bool failureObserved = engine->hasException();
     if (failureObserved) engine->getException();
     if (!engine->isUndefined(failedResult) || !failureObserved || acquireCalls != 2 ||
-        controlledState.currentTexture != nullptr || controlledState.currentSurfaceTextureId != 0 ||
-        controlledState.nextTextureId != previousNextTextureId ||
-        controlledState.frameCount != previousFrameCount ||
-        !controlledState.textureRegistry.empty() || releaseCalls != 1) {
+        controlledState.presentation.currentTexture != nullptr ||
+        controlledState.presentation.currentSurfaceTextureId != 0 ||
+        controlledState.registries.nextTextureId != previousNextTextureId ||
+        controlledState.profiling.frameCount != previousFrameCount ||
+        !controlledState.registries.textureRegistry.empty() || releaseCalls != 1) {
         return failed("new-entry failure cleanup");
     }
     return true;
@@ -1596,8 +1591,8 @@ bool verifyPerRuntimeBlendDescriptors(mystral::Runtime& first, mystral::Runtime&
         first.getWebGPUBindingsState());
     auto* secondState = static_cast<mystral::webgpu::BindingsState*>(
         second.getWebGPUBindingsState());
-    const size_t firstBefore = firstState->blendStates.size();
-    const size_t secondBefore = secondState->blendStates.size();
+    const size_t firstBefore = firstState->registries.blendStates.size();
+    const size_t secondBefore = secondState->registries.blendStates.size();
     constexpr auto createPipelineWrappers = R"JS((() => {
         const device = navigator.gpu.requestAdapter().requestDevice();
         const shader = device.createShaderModule({code:
@@ -1635,15 +1630,15 @@ bool verifyPerRuntimeBlendDescriptors(mystral::Runtime& first, mystral::Runtime&
     })())JS";
 
     if (!first.evalScript(createPipelineWrappers, "webgpu-first-pipeline-owner.js") ||
-        firstState->blendStates.size() <= firstBefore ||
-        secondState->blendStates.size() != secondBefore) {
+        firstState->registries.blendStates.size() <= firstBefore ||
+        secondState->registries.blendStates.size() != secondBefore) {
         std::cerr << "first runtime blend descriptors were not independently owned" << std::endl;
         return false;
     }
-    const size_t firstAfter = firstState->blendStates.size();
+    const size_t firstAfter = firstState->registries.blendStates.size();
     if (!second.evalScript(createPipelineWrappers, "webgpu-second-pipeline-owner.js") ||
-        secondState->blendStates.size() <= secondBefore ||
-        firstState->blendStates.size() != firstAfter) {
+        secondState->registries.blendStates.size() <= secondBefore ||
+        firstState->registries.blendStates.size() != firstAfter) {
         std::cerr << "second runtime blend descriptors were not independently owned" << std::endl;
         return false;
     }
@@ -1701,7 +1696,8 @@ bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
         requireFeatures("GPUDevice.features", device.features);
         requireMethods("GPUDevice", device, [
             "destroy", "createBuffer", "createShaderModule", "createRenderPipeline",
-            "createComputePipeline", "createCommandEncoder", "createTexture", "createSampler",
+            "createRenderPipelineAsync", "createComputePipeline", "createComputePipelineAsync",
+            "createCommandEncoder", "createTexture", "createSampler",
             "createBindGroupLayout", "createBindGroup", "createPipelineLayout",
             "createTextureView", "createRenderBundleEncoder", "pushErrorScope", "popErrorScope",
         ]);
@@ -1737,9 +1733,180 @@ bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
         requireMethods("GPUTexture", texture, ["createView", "destroy"]);
         requireMethods("WebGPU", globalThis, [
             "__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D",
+            "createImageBitmap",
         ]);
+        if (globalThis.Mystral && typeof globalThis.Mystral.loadGLTF !== "undefined") {
+            throw new Error("deprecated native GLTF binding is still published");
+        }
         computePass.end();
     })())JS", "webgpu-public-binding-surface.js");
+}
+
+bool exercisePreservedCallTrace(mystral::Runtime& runtime) {
+    std::ifstream fixture("tests/fixtures/webgpu-bindings-call-trace.js");
+    if (!fixture) {
+        std::cerr << "could not open the preserved WebGPU call trace" << std::endl;
+        return false;
+    }
+    std::ostringstream source;
+    source << fixture.rdbuf();
+    std::string script = source.str();
+    const std::string traceLog =
+        "console.log(`TN_WEBGPU_CALL_TRACE:${JSON.stringify(trace)}`);";
+    const size_t traceLogAt = script.find(traceLog);
+    if (traceLogAt == std::string::npos) {
+        std::cerr << "preserved WebGPU call trace lost its result marker" << std::endl;
+        return false;
+    }
+    script.replace(
+        traceLogAt,
+        traceLog.size(),
+        "globalThis.__tnWebGpuCallTrace = JSON.stringify(trace);");
+    const std::string exitCall = "process.exit(0);";
+    const size_t exitAt = script.find(exitCall);
+    if (exitAt == std::string::npos) {
+        std::cerr << "preserved WebGPU call trace lost its completion sentinel" << std::endl;
+        return false;
+    }
+    script.erase(exitAt, exitCall.size());
+    script += R"JS(
+        {
+            const actual = JSON.parse(__tnWebGpuCallTrace);
+            if (!Array.isArray(actual) || actual.length < 60)
+                throw new Error("live WebGPU call trace is incomplete");
+            for (const entry of actual) {
+                if (typeof entry.surface !== "string" || typeof entry.name !== "string" ||
+                    !Array.isArray(entry.args) ||
+                    (Object.hasOwn(entry, "result") === Object.hasOwn(entry, "error")))
+                    throw new Error("live WebGPU call trace contains a malformed entry");
+            }
+            const calls = new Set(actual.map((entry) => `${entry.surface}.${entry.name}`));
+            const required = [
+                "Document.querySelector", "Document.createElement",
+                "HTMLElement.appendChild", "HTMLElement.addEventListener",
+                "HTMLCanvasElement.getContext", "HTMLCanvasElement.addEventListener",
+                "GPUCanvasContext.configure", "GPUCanvasContext.unconfigure",
+                "GPUCanvasContext.getCurrentTexture", "GPU.getPreferredCanvasFormat",
+                "GPUAdapter.features.has", "GPUDevice.createBuffer",
+                "GPUDevice.createShaderModule", "GPUQueue.submit", "GPUQueue.writeBuffer",
+                "GPUBuffer.getMappedRange", "GPUBuffer.destroy", "GPUTexture.createView",
+                "GPUTexture.destroy", "GPUCommandEncoder.beginRenderPass",
+                "GPUCommandEncoder.beginComputePass", "GPUCommandEncoder.finish",
+                "GPURenderPipeline.getBindGroupLayout", "GPUComputePipeline.getBindGroupLayout",
+                "GPURenderPassEncoder.setPipeline", "GPURenderPassEncoder.setBindGroup",
+                "GPURenderPassEncoder.draw", "GPURenderPassEncoder.end",
+                "GPUComputePassEncoder.setPipeline", "GPUComputePassEncoder.setBindGroup",
+                "GPUComputePassEncoder.dispatchWorkgroups", "GPUComputePassEncoder.end",
+                "GPURenderBundleEncoder.setPipeline", "GPURenderBundleEncoder.setVertexBuffer",
+                "GPURenderBundleEncoder.setBindGroup", "GPURenderBundleEncoder.draw",
+                "GPURenderBundleEncoder.finish", "WebGPU.__decodeImageData",
+                "WebGPU.createOffscreenCanvas2D",
+            ];
+            for (const key of required)
+                if (!calls.has(key)) throw new Error(`live WebGPU call trace is missing ${key}`);
+            const dynamicCreates = actual.filter(
+                (entry) => entry.surface === "Document" && entry.name === "createElement");
+            const dynamicContexts = actual.filter(
+                (entry) => entry.surface === "HTMLCanvasElement" && entry.name === "getContext");
+            if (dynamicCreates.length < 2 || dynamicContexts.length < 5 ||
+                dynamicContexts.some((entry) => !Object.hasOwn(entry, "result")))
+                throw new Error("live dynamic canvas trace controls failed");
+        }
+    )JS";
+    return runtime.evalScript(script, "webgpu-bindings-call-trace.js");
+}
+
+bool exerciseAsyncWebGPUObservation(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    std::string report;
+    if (!engine->setGlobalProperty(
+            "__tnReportAsyncObservation",
+            engine->newFunction(
+                "__tnReportAsyncObservation",
+                [engine, &report](
+                    void*, const std::vector<mystral::js::JSValueHandle>& args) {
+                    if (!args.empty()) report = engine->toString(args[0]);
+                    return engine->newUndefined();
+                }))) {
+        return false;
+    }
+
+    if (!runtime.evalScript(R"JS((() => {
+        const adapter = navigator.gpu.requestAdapter();
+        const device = adapter.requestDevice();
+        device.pushErrorScope("validation");
+        const invalidBuffer = device.createBuffer({
+            label: "tn-deliberately-invalid-zero-usage-buffer",
+            size: 16,
+            usage: 0,
+        });
+        const errorScope = device.popErrorScope();
+        const submittedWork = device.queue.onSubmittedWorkDone();
+        const renderShader = device.createShaderModule({
+            code: "@vertex fn vertexMain() -> @builtin(position) vec4f { return vec4f(0.0); } " +
+                "@fragment fn fragmentMain() -> @location(0) vec4f { return vec4f(1.0); }",
+        });
+        const computeShader = device.createShaderModule({
+            code: "@compute @workgroup_size(1) fn computeMain() {}",
+        });
+        let renderPipeline;
+        let computePipeline;
+        try {
+            renderPipeline = device.createRenderPipelineAsync({
+                layout: "auto",
+                vertex: { module: renderShader, entryPoint: "vertexMain" },
+                fragment: {
+                    module: renderShader,
+                    entryPoint: "fragmentMain",
+                    targets: [{ format: "rgba8unorm" }],
+                },
+            });
+            computePipeline = device.createComputePipelineAsync({
+                layout: "auto",
+                compute: { module: computeShader, entryPoint: "computeMain" },
+            });
+        } catch (error) {
+            throw new Error(`async pipeline creation threw synchronously: ${String(error)}`);
+        }
+        if (!(errorScope instanceof Promise) || !(submittedWork instanceof Promise) ||
+            !(renderPipeline instanceof Promise) || !(computePipeline instanceof Promise)) {
+            throw new Error("async WebGPU observation did not return native Promises");
+        }
+        Promise.all([
+            errorScope,
+            submittedWork,
+            renderPipeline.then(() => "resolved", () => "rejected"),
+            computePipeline.then(() => "resolved", () => "rejected"),
+        ]).then(
+            ([error, _submitted, renderResult, computeResult]) => {
+                invalidBuffer?.destroy?.();
+                if (!error || typeof error.message !== "string" || error.message.length === 0) {
+                    __tnReportAsyncObservation("validation error was not observed");
+                    return;
+                }
+                if (renderResult !== "resolved" || computeResult !== "resolved") {
+                    __tnReportAsyncObservation("valid async pipelines did not resolve");
+                    return;
+                }
+                __tnReportAsyncObservation("ok");
+            },
+            (error) => __tnReportAsyncObservation(`async observation rejected: ${String(error)}`),
+        );
+    })())JS", "webgpu-async-observation.js")) {
+        return false;
+    }
+
+    for (int pass = 0; pass < 8 && report.empty(); pass += 1) {
+        engine->processMicrotasks();
+        if (!runtime.evalScript("undefined", "webgpu-async-observation-drain.js")) return false;
+    }
+    if (report != "ok") {
+        std::cerr << "WebGPU async observation proof failed: "
+                  << (report.empty() ? "Promise did not settle" : report) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 }  // namespace
@@ -1759,6 +1926,10 @@ int main() {
 
     if (!exercisePublishedWebGPUObjects(*first)) return 1;
     std::cout << "proof: public-binding-surface" << std::endl;
+    if (!exercisePreservedCallTrace(*first)) return 1;
+    std::cout << "proof: call-trace" << std::endl;
+    if (!exerciseAsyncWebGPUObservation(*first)) return 1;
+    std::cout << "proof: async-observation" << std::endl;
 
     if (!checkRowOwnedAndAtomicInstall(*first)) return 1;
     if (!checkCaughtNativeExceptionDoesNotPoisonLaterInstall(*first)) return 1;

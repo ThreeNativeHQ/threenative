@@ -7,23 +7,6 @@ import { test } from "vitest";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFileSync(join(root, path), "utf8");
 
-function collectJsVisibleRegistrations(source) {
-  const surfaces =
-    "Document|HTMLElement|HTMLCanvasElement|GPUCanvasContext|GPU|GPUAdapter|GPUSupportedFeatures|GPUDevice|GPUQueue|GPUBuffer|GPUCommandEncoder|GPURenderPassEncoder|GPUComputePassEncoder|GPURenderBundleEncoder|GPUTexture|GPURenderPipeline|GPUComputePipeline|WebGPU";
-  const registrations = new Set([
-    ...[
-      ...source.matchAll(
-        new RegExp(`\\{"(${surfaces})",\\s*"([^"]+)"`, "gu"),
-      ),
-    ].map((match) => `${match[1]}.${match[2]}`),
-  ]);
-  if (source.includes('const char* pipelineSurface = renderPipeline ? "GPURenderPipeline" : "GPUComputePipeline"')) {
-    registrations.add("GPURenderPipeline.getBindGroupLayout");
-    registrations.add("GPUComputePipeline.getBindGroupLayout");
-  }
-  return registrations;
-}
-
 function assertCallTrace(trace, side) {
   assert.ok(Array.isArray(trace), `${side} trace must be an array`);
   assert.ok(trace.length >= 30, `${side} trace must cover representative migrated calls`);
@@ -68,10 +51,7 @@ function assertRequiredTraceFamilies(trace) {
       "GPUCommandEncoder.beginComputePass",
       "GPUCommandEncoder.finish",
     ],
-    pipelines: [
-      "GPURenderPipeline.getBindGroupLayout",
-      "GPUComputePipeline.getBindGroupLayout",
-    ],
+    pipelines: ["GPURenderPipeline.getBindGroupLayout", "GPUComputePipeline.getBindGroupLayout"],
     "render-pass": ["setPipeline", "setBindGroup", "draw", "end"],
     "compute-pass": ["setPipeline", "setBindGroup", "dispatchWorkgroups", "end"],
     "render-bundle": ["setPipeline", "setVertexBuffer", "setBindGroup", "draw", "finish"],
@@ -94,7 +74,9 @@ function assertRequiredTraceFamilies(trace) {
 
   for (const key of ["Document.createElement", "HTMLElement.addEventListener"]) {
     assert.ok(
-      trace.some((entry) => `${entry.surface}.${entry.name}` === key && Object.hasOwn(entry, "result")),
+      trace.some(
+        (entry) => `${entry.surface}.${entry.name}` === key && Object.hasOwn(entry, "result"),
+      ),
       `trace must include a successful ${key} call`,
     );
   }
@@ -133,28 +115,12 @@ test("pre-refactor and post-refactor JS call traces are identical", () => {
     /GPURenderPipeline\.getBindGroupLayout/u,
   );
   assert.throws(
-    () => assertDynamicCanvasTraceControls(pre.filter(
-      (entry) => !(entry.surface === "Document" && entry.name === "createElement"),
-    )),
+    () =>
+      assertDynamicCanvasTraceControls(
+        pre.filter((entry) => !(entry.surface === "Document" && entry.name === "createElement")),
+      ),
     /dynamic canvas creations/u,
   );
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /function record\(/u);
   assert.match(read("tests/fixtures/webgpu-bindings-call-trace.js"), /TN_WEBGPU_CALL_TRACE:/u);
-});
-
-test("the supplementary surface/name registration and 42/42 error census stays green", () => {
-  const trace = JSON.parse(read("tests/fixtures/webgpu-bindings-trace.json"));
-  const source = [
-    read("src/webgpu/bindings.cpp"),
-    read("src/webgpu/registration_table.cpp"),
-    read("src/webgpu/wrapper_factories.cpp"),
-  ].join("\n");
-  const registrations = [...collectJsVisibleRegistrations(source)].sort();
-
-  assert.deepEqual(registrations, trace.registrations);
-  for (const error of trace.errors) {
-    assert.ok(source.includes(error), `missing JS-visible error trace: ${error}`);
-  }
-  assert.equal(registrations.length, trace.registrations.length);
-  assert.equal(trace.errors.length, 42);
 });

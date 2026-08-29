@@ -178,46 +178,11 @@ struct UploadStaging {
 };
 #endif
 
-struct BindingsState {
-    bool verboseLogging = false;
-
-    WGPUDevice device = nullptr;
-    WGPUAdapter adapter = nullptr;
-    WGPUQueue queue = nullptr;
-    WGPUSurface surface = nullptr;
-    WGPUPresentMode presentMode = WGPUPresentMode_Fifo;
-    WGPUInstance instance = nullptr;
-    js::Engine* engine = nullptr;
+struct ResourceRegistries {
     std::vector<js::JSValueHandle> protectedHandles;
-    std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;
 #if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
     UploadStaging uploadStaging;
 #endif
-
-    WGPUTexture offscreenTexture = nullptr;
-    WGPUTextureView offscreenTextureView = nullptr;
-    WGPUTextureFormat surfaceFormat = WGPUTextureFormat_BGRA8UnormSrgb;
-    WGPUTextureFormat nativeSurfaceFormat = WGPUTextureFormat_BGRA8UnormSrgb;
-    bool requiresSrgbPresentationBridge = false;
-    WGPURenderPipeline srgbPresentationPipeline = nullptr;
-    WGPUBindGroupLayout srgbPresentationBindGroupLayout = nullptr;
-    uint32_t canvasWidth = 800;
-    uint32_t canvasHeight = 600;
-    bool contextConfigured = false;
-    uint64_t frameEndCount = 0;
-
-#if TN_ANDROID_JS_PROFILE
-    AndroidJsNativeProfile androidJsNativeProfile;
-    bool presentReportedSinceLastPresent = false;
-#endif
-
-    WGPUTexture currentTexture = nullptr;
-    WGPUTextureView currentTextureView = nullptr;
-    uint64_t currentSurfaceTextureId = 0;
-    WGPUTexture currentViewSourceTexture = nullptr;
-    WGPUBuffer screenshotBuffer = nullptr;
-    size_t screenshotBufferSize = 0;
-    uint32_t screenshotBytesPerRow = 0;
     WGPURenderPassEncoder jsRenderPass = nullptr;
     WGPUComputePassEncoder jsComputePass = nullptr;
     WGPUCommandEncoder jsCommandEncoder = nullptr;
@@ -232,8 +197,61 @@ struct BindingsState {
     std::unordered_set<WGPUCommandEncoder> commandEncoderRegistry;
     std::unordered_map<WGPUCommandEncoder, WGPURenderPassEncoder> encoderRenderPassMap;
     std::unordered_map<WGPUCommandEncoder, WGPUComputePassEncoder> encoderComputePassMap;
+    std::unordered_map<uint64_t, TextureInfo> textureRegistry;
+    uint64_t nextTextureId = 1;
+    std::shared_ptr<ShaderModuleMetadataStore> shaderModuleMetadata = std::make_shared<ShaderModuleMetadataStore>();
+    std::unordered_map<uint64_t, BufferInfo> bufferRegistry;
+#if TN_ANDROID_JS_PROFILE
+    std::unordered_map<WGPUBuffer, BufferInfo> androidJsProfileBufferRegistry;
+#endif
+    uint64_t nextBufferId = 1;
+    std::unordered_map<uint64_t, WGPUComputePipeline> computePipelineRegistry;
+    uint64_t nextComputePipelineId = 1;
+    std::unordered_map<uint64_t, WGPURenderPipeline> renderPipelineRegistry;
+    uint64_t nextRenderPipelineId = 1;
+    // Resources referenced by the packed frame stream have stable numeric registry ids.
+    std::unordered_map<uint64_t, WGPUBindGroup> bindGroupRegistry;
+    uint64_t nextBindGroupId = 1;
+    std::unordered_map<uint64_t, WGPUTextureView> textureViewRegistry;
+    uint64_t nextTextureViewId = 1;
+    std::unordered_map<uint64_t, WGPURenderBundle> renderBundleRegistry;
+    uint64_t nextRenderBundleId = 1;
+    // Timestamp query sets. Registered by id like every other resource the packed frame stream
+    // references, because `timestampWrites` names a query set from inside a pass descriptor and
+    // the stream carries ids, never handles.
+    std::unordered_map<uint64_t, WGPUQuerySet> querySetRegistry;
+    uint64_t nextQuerySetId = 1;
+    std::vector<std::unique_ptr<WGPUBlendState>> blendStates;
+    BufferMapData bufferMapData;
+};
+
+struct PresentationState {
+    WGPUPresentMode presentMode = WGPUPresentMode_Fifo;
+    WGPUTexture offscreenTexture = nullptr;
+    WGPUTextureView offscreenTextureView = nullptr;
+    WGPUTextureFormat surfaceFormat = WGPUTextureFormat_BGRA8UnormSrgb;
+    WGPUTextureFormat nativeSurfaceFormat = WGPUTextureFormat_BGRA8UnormSrgb;
+    bool requiresSrgbPresentationBridge = false;
+    WGPURenderPipeline srgbPresentationPipeline = nullptr;
+    WGPUBindGroupLayout srgbPresentationBindGroupLayout = nullptr;
+    uint32_t canvasWidth = 800;
+    uint32_t canvasHeight = 600;
+    bool contextConfigured = false;
+    WGPUTexture currentTexture = nullptr;
+    WGPUTextureView currentTextureView = nullptr;
+    uint64_t currentSurfaceTextureId = 0;
+    WGPUTexture currentViewSourceTexture = nullptr;
     bool surfaceRenderPassEnded = false;
     bool framePresentPending = false;
+    WGPUCommandEncoder surfaceRenderEncoder = nullptr;
+};
+
+struct FrameProfiling {
+    uint64_t frameEndCount = 0;
+#if TN_ANDROID_JS_PROFILE
+    AndroidJsNativeProfile androidJsNativeProfile;
+    bool presentReportedSinceLastPresent = false;
+#endif
     uint64_t lastPresentNs = 0;
     uint64_t lastPresentThreadCpuNs = 0;
     // Wall-clock split of one endDawnFrame() call for the host-gap decomposition (TN_HOST_GAP,
@@ -259,37 +277,6 @@ struct BindingsState {
     uint64_t bufferBytesLive = 0;
     uint64_t bufferCountLive = 0;
     std::unordered_map<std::string, std::pair<uint64_t, uint64_t>> bufferBuckets;
-    WGPUCommandEncoder surfaceRenderEncoder = nullptr;
-    bool screenshotRequested = false;
-    bool screenshotReady = false;
-    bool screenshotCapturedThisFrame = false;
-    std::vector<uint8_t> screenshotData;
-    canvas::Canvas2DContext* mainCanvas2DContext = nullptr;
-    std::unordered_map<uint64_t, TextureInfo> textureRegistry;
-    uint64_t nextTextureId = 1;
-    std::shared_ptr<ShaderModuleMetadataStore> shaderModuleMetadata =
-        std::make_shared<ShaderModuleMetadataStore>();
-    std::unordered_map<uint64_t, BufferInfo> bufferRegistry;
-#if TN_ANDROID_JS_PROFILE
-    std::unordered_map<WGPUBuffer, BufferInfo> androidJsProfileBufferRegistry;
-#endif
-    uint64_t nextBufferId = 1;
-    std::unordered_map<uint64_t, WGPUComputePipeline> computePipelineRegistry;
-    uint64_t nextComputePipelineId = 1;
-    std::unordered_map<uint64_t, WGPURenderPipeline> renderPipelineRegistry;
-    uint64_t nextRenderPipelineId = 1;
-    // Resources referenced by the packed frame stream have stable numeric registry ids.
-    std::unordered_map<uint64_t, WGPUBindGroup> bindGroupRegistry;
-    uint64_t nextBindGroupId = 1;
-    std::unordered_map<uint64_t, WGPUTextureView> textureViewRegistry;
-    uint64_t nextTextureViewId = 1;
-    std::unordered_map<uint64_t, WGPURenderBundle> renderBundleRegistry;
-    uint64_t nextRenderBundleId = 1;
-    // Timestamp query sets. Registered by id like every other resource the packed frame stream
-    // references, because `timestampWrites` names a query set from inside a pass descriptor and
-    // the stream carries ids, never handles.
-    std::unordered_map<uint64_t, WGPUQuerySet> querySetRegistry;
-    uint64_t nextQuerySetId = 1;
     // Production frame recorder drain, installed when requestDevice creates the device wrapper.
     // The host invokes it once after all rAF callbacks and replays the returned operations here.
     js::JSValueHandle frameOpStreamDrain{};
@@ -298,24 +285,57 @@ struct BindingsState {
     uint64_t frameOpStreamLastOpCount = 0;
     bool captureFrameOpStreamTrace = false;
     std::vector<std::string> frameOpStreamLastOrder;
-    std::vector<std::unique_ptr<WGPUBlendState>> blendStates;
-    BufferMapData bufferMapData;
-    std::unordered_map<int, std::unique_ptr<OffscreenCanvas>> offscreenCanvases;
-    int nextOffscreenCanvasId = 0;
     int frameCount = 0;
     int submitCount = 0;
     bool firstPresentReported = false;
     uint32_t reportTickIndex = 0;
     std::chrono::steady_clock::time_point reportLastTick{};
+};
+
+struct ScreenshotCapture {
+    WGPUBuffer screenshotBuffer = nullptr;
+    size_t screenshotBufferSize = 0;
+    uint32_t screenshotBytesPerRow = 0;
+    bool screenshotRequested = false;
+    bool screenshotReady = false;
+    bool screenshotCapturedThisFrame = false;
+    std::vector<uint8_t> screenshotData;
+    void (*videoCaptureCallback)(void*, uint32_t, uint32_t, void*) = nullptr;
+    void* videoCaptureUserData = nullptr;
+};
+
+struct Canvas2DComposite {
+    std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;
+    canvas::Canvas2DContext* mainCanvas2DContext = nullptr;
+    std::unordered_map<int, std::unique_ptr<OffscreenCanvas>> offscreenCanvases;
+    int nextOffscreenCanvasId = 0;
     WGPUTexture canvas2DTexture = nullptr;
     WGPURenderPipeline canvas2DPipeline = nullptr;
     WGPUBindGroup canvas2DBindGroup = nullptr;
     WGPUSampler canvas2DSampler = nullptr;
     uint32_t canvas2DTextureWidth = 0;
     uint32_t canvas2DTextureHeight = 0;
-    void (*videoCaptureCallback)(void*, uint32_t, uint32_t, void*) = nullptr;
-    void* videoCaptureUserData = nullptr;
 };
+
+struct BindingsState {
+    bool verboseLogging = false;
+
+    WGPUDevice device = nullptr;
+    WGPUAdapter adapter = nullptr;
+    WGPUQueue queue = nullptr;
+    WGPUSurface surface = nullptr;
+    WGPUInstance instance = nullptr;
+    js::Engine* engine = nullptr;
+
+    ResourceRegistries registries;
+    PresentationState presentation;
+    FrameProfiling profiling;
+    ScreenshotCapture screenshot;
+    Canvas2DComposite canvas2D;
+};
+
+void flushUploadStaging(BindingsState* state);
+uint64_t readRenderThreadCpuNs();
 
 #else
 
@@ -327,5 +347,7 @@ struct BindingsState {
 };
 
 #endif
+
+void captureFrameScreenshot(BindingsState* state);
 
 }  // namespace mystral::webgpu

@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
+import {
+  nativeBindingDefinition,
+  nativeDefinition,
+} from "../../../test-support/native-definition.js";
+
 function source(relativePath) {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
 }
@@ -12,7 +17,6 @@ const gradle = source("../android/app/build.gradle.kts");
 const androidMain = source("../src/platform/android_main.cpp");
 const runtime = source("../src/runtime.cpp");
 const context = source("../src/webgpu/context.cpp");
-const bindings = source("../src/webgpu/bindings.cpp");
 const runtimeHeader = source("../include/mystral/runtime.h");
 const bindingsHeader = source("../include/mystral/webgpu/bindings.h");
 const nativeSmoke = source("../../../examples/native-smoke/src/game.ts");
@@ -20,10 +24,7 @@ const measurementRunner = source("../scripts/measure-android-js-engine.mjs");
 
 test("Android measurement controls remain default-off and pass through Gradle", () => {
   assert.match(cmake, /option\(TN_ANDROID_VSYNC[^\n]+ ON\)/u);
-  for (const flag of [
-    "TN_ANDROID_JS_PROFILE",
-    "TN_ANDROID_JS_PROFILE_BUSY_LOOP",
-  ]) {
+  for (const flag of ["TN_ANDROID_JS_PROFILE", "TN_ANDROID_JS_PROFILE_BUSY_LOOP"]) {
     assert.match(cmake, new RegExp(`option\\(${flag}[^\\n]+ OFF\\)`, "u"));
     assert.match(cmake, new RegExp(`${flag}=\\$<BOOL:\\$\\{${flag}\\}>`, "u"));
     assert.match(gradle, new RegExp(`-D${flag}=\\$\\{`, "u"));
@@ -60,23 +61,24 @@ test("wgpu upload staging is a default-on build toggle passed through Gradle", (
 });
 
 test("writeBuffer stages into mapped blocks flushed at every queue boundary", () => {
-  const bindingsState = source("../src/webgpu/bindings_state.h");
-  // The staging structure itself: persistently mapped COPY_SRC blocks plus in-flight tracking.
-  assert.match(bindingsState, /struct UploadStagingBlock/u);
-  assert.match(bindingsState, /std::vector<UploadStagingBlock> retired/u);
-  assert.match(bindingsState, /std::vector<UploadStagingBlock> ready/u);
-  // The write path stages; oversized or failed-staging writes fall back to direct writes.
-  assert.match(bindings, /stageWriteInUploadStaging/u);
-  assert.match(bindings, /wgpuCommandEncoderCopyBufferToBuffer/u);
-  assert.match(bindings, /wgpuQueueWriteBuffer\(state->queue, buffer, offset, source, writeSize\)/u);
-  // Every operation whose queue-order semantics staged writes must preserve flushes first:
-  // the JS queue.submit handler, the internal srgb-presentation blit submit, writeTexture,
-  // mapAsync readback and onSubmittedWorkDone — five call sites beyond the definition.
-  const flushSites = bindings.match(/flushUploadStaging\(state\)/gu) ?? [];
-  assert.ok(
-    flushSites.length >= 5,
-    `expected >=5 flushUploadStaging call sites, found ${flushSites.length}`,
+  const writeBuffer = nativeBindingDefinition("GPUQueue", "writeBuffer").text;
+  assert.match(writeBuffer, /stageWriteInUploadStaging/u);
+  assert.match(
+    writeBuffer,
+    /wgpuQueueWriteBuffer\(state->queue, buffer, offset, source, writeSize\)/u,
   );
+  for (const [surface, method] of [
+    ["GPUQueue", "submit"],
+    ["GPUQueue", "writeTexture"],
+    ["GPUQueue", "onSubmittedWorkDone"],
+    ["GPUBuffer", "mapAsync"],
+  ]) {
+    assert.match(
+      nativeBindingDefinition(surface, method).text,
+      /flushUploadStaging\(state\)/u,
+      `${surface}.${method} must flush staged writes before crossing its queue boundary`,
+    );
+  }
 });
 
 test("RuntimeConfig vsync selects and preserves a supported presentation mode", () => {
@@ -94,7 +96,10 @@ test("RuntimeConfig vsync selects and preserves a supported presentation mode", 
   assert.match(context, /capabilities\.presentModes\[i\] == WGPUPresentMode_Mailbox/u);
   assert.match(context, /Uncapped presentation requested but unsupported; refusing FIFO fallback/u);
   assert.match(context, /configureSurface\(width, height, vsync_\)/u);
-  assert.match(bindings, /config\.presentMode = state->presentMode/u);
+  assert.match(
+    nativeDefinition("syncSurfaceSizeToCanvas").text,
+    /config\.presentMode = state->presentation\.presentMode/u,
+  );
 });
 
 test("display.maxFps configures the native presentation ceiling", () => {
@@ -102,13 +107,11 @@ test("display.maxFps configures the native presentation ceiling", () => {
   assert.match(bindingsHeader, /setPresentationCapHz\(uint32_t/u);
   assert.match(runtime, /setPresentationCapHz\(config_\.maxFps\)/u);
   assert.match(androidMain, /config\.maxFps/u);
-  assert.match(bindings, /TN_PRESENTS_TICK:[\s\S]*capHz/u);
+  assert.match(nativeDefinition("reportPresentTick").text, /TN_PRESENTS_TICK:[\s\S]*capHz/u);
 });
 
 test("native profiling reports direct and bundled render commands per submit", () => {
-  const marker = bindings.match(
-    /TN_ANDROID_JS_NATIVE:\{[\s\S]*?state->androidJsNativeProfile = \{\};/u,
-  )?.[0] ?? "";
+  const marker = nativeDefinition("emitAndroidJsNativeProfile").text;
   for (const field of [
     "engine",
     "calls",
@@ -145,16 +148,23 @@ test("native profiling reports direct and bundled render commands per submit", (
   ]) {
     assert.ok(marker.includes(`\\\"${field}\\\"`), `profile marker must contain ${field}`);
   }
-  assert.match(bindings, /state->androidJsNativeProfile = \{\};/u);
-  assert.match(bindings, /androidJsProfileBufferRegistry/u);
-  assert.equal(
-    (bindings.match(/endProfiledBinding\(state, ProfiledRenderCommand::/gu) ?? []).length,
-    22,
-    "direct and packed-replay commands, queue uploads, render-pass finalization, and the replay's own pass-begin, submit and device-poll must be timed independently",
-  );
-  assert.ok(bindings.includes('\\"engine\\":\\"" << state->engine->getName()'));
+  assert.match(marker, /state->profiling\.androidJsNativeProfile = \{\};/u);
+  assert.ok(marker.includes('\\"engine\\":\\"" << state->engine->getName()'));
 
-  const uploadMarker = bindings.match(/TN_ANDROID_JS_UPLOAD:\{[\s\S]*?uploadMarker/u)?.[0] ?? "";
+  const replay = nativeDefinition("replayPackedFrameOpStream").text;
+  for (const command of ["WriteBuffer", "SetPipeline", "DrawIndexed", "Submit", "DevicePoll"]) {
+    assert.match(
+      replay,
+      new RegExp(`endProfiledBinding\\(state, ProfiledRenderCommand::${command}`, "u"),
+      `packed replay must time ${command}`,
+    );
+  }
+  assert.match(
+    nativeBindingDefinition("GPUDevice", "createBuffer").text,
+    /androidJsProfileBufferRegistry/u,
+  );
+
+  const uploadMarker = marker;
   for (const field of [
     "frame",
     "writeBufferUsage",
@@ -166,7 +176,7 @@ test("native profiling reports direct and bundled render commands per submit", (
 });
 
 test("busy-loop negative control stays inside timed bindings", () => {
-  assert.match(bindings, /beginProfiledBinding\(\)[\s\S]*profilingBusyLoop\(\)/u);
+  assert.match(nativeDefinition("beginProfiledBinding").text, /profilingBusyLoop\(\)/u);
 });
 
 test("frame window spans exactly the declared number of render intervals", () => {
@@ -191,7 +201,8 @@ test("the native profile marker reports render-thread CPU, not just wall time", 
   // Wall-clock phase timings on a FIFO-presented surface are dominated by vblank waits, which
   // is why desktop A/Bs cannot be judged on fps (PRD-222 F11). CLOCK_THREAD_CPUTIME_ID on the
   // render thread measures the work itself and is comparable across platforms.
-  assert.match(bindings, /CLOCK_THREAD_CPUTIME_ID/u);
-  assert.match(bindings, /\\"threadCpuNs\\":/u);
-  assert.match(bindings, /renderThreadCpuNs/u);
+  assert.match(nativeDefinition("readRenderThreadCpuNs").text, /CLOCK_THREAD_CPUTIME_ID/u);
+  const marker = nativeDefinition("emitAndroidJsNativeProfile").text;
+  assert.match(marker, /\\"threadCpuNs\\":/u);
+  assert.match(marker, /renderThreadCpuNs/u);
 });

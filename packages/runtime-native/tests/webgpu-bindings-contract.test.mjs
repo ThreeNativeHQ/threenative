@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
+import {
+  nativeBindingDefinition,
+  nativeDefinition,
+} from "../../../test-support/native-definition.js";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { runNativeBehavior } from "../scripts/run-native-behavior.mjs";
 
@@ -19,31 +23,11 @@ function blockBetween(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
-function handlerBlock(source, handlerName) {
-  const startMarker = `static js::JSValueHandle ${handlerName}`;
-  const start = source.indexOf(startMarker);
-  assert.ok(start >= 0, `missing named handler: ${handlerName}`);
-  const endMarkers = [
-    "\n}\n\nstatic js::JSValueHandle",
-    "\n}\n\n/** Every migrated WebGPU method",
-  ]
-    .map((marker) => source.indexOf(marker, start))
-    .filter((index) => index >= 0);
-  const end = Math.min(...endMarkers);
-  assert.ok(end > start, `unterminated named handler: ${handlerName}`);
-  return source.slice(start, end);
+function handlerForRow(surface, name) {
+  return nativeBindingDefinition(surface, name).text;
 }
 
-function handlerForRow(source, surface, name) {
-  const row = source.match(
-    new RegExp(`\\{"${surface}",\\s*"${name}"[\\s\\S]*?&([A-Za-z_][A-Za-z0-9_]*)`, "u"),
-  );
-  assert.ok(row, `missing registration row: ${surface}.${name}`);
-  return handlerBlock(source, row[1]);
-}
-
-function assertBindGroupViewOwnership(candidate) {
-  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
+function assertBindGroupViewOwnership(bindGroup) {
   assert.match(
     bindGroup,
     /auto releaseAutoCreatedViews = \[&autoCreatedViews\]\(\) \{\s*for \(auto v : autoCreatedViews\) \{\s*wgpuTextureViewRelease\(v\);\s*\}\s*\};/u,
@@ -58,11 +42,13 @@ function assertBindGroupViewOwnership(candidate) {
   assert.ok(failureRelease > failureStart, "the failure path must release every created view");
   assert.ok(failureRelease < failureReturn, "view cleanup must precede the error return");
   assert.ok(successRelease > failureReturn, "the successful path must retain its view cleanup");
-  assert.ok(successRelease < wrapperCreation, "successful ownership must be released before wrapping");
+  assert.ok(
+    successRelease < wrapperCreation,
+    "successful ownership must be released before wrapping",
+  );
 }
 
-function assertNullResourceValidation(candidate) {
-  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
+function assertNullResourceValidation(bindGroup) {
   assert.ok(
     bindGroup.includes(
       "if (state->engine->isUndefined(resource) || state->engine->isNull(resource)) {",
@@ -82,15 +68,19 @@ function assertNullResourceValidation(candidate) {
 }
 
 test("bind-group creation releases automatically created views on failure and success", () => {
-  assert.doesNotThrow(() => assertBindGroupViewOwnership(read("src/webgpu/bindings.cpp")));
+  assert.doesNotThrow(() =>
+    assertBindGroupViewOwnership(handlerForRow("GPUDevice", "createBindGroup")),
+  );
 });
 
 test("bind-group creation rejects null sampler, view, buffer, and generic resources", () => {
-  assert.doesNotThrow(() => assertNullResourceValidation(read("src/webgpu/bindings.cpp")));
+  assert.doesNotThrow(() =>
+    assertNullResourceValidation(handlerForRow("GPUDevice", "createBindGroup")),
+  );
 });
 
 test("resource validation contract rejects restoring the warning path", () => {
-  const warningPath = read("src/webgpu/bindings.cpp").replace(
+  const warningPath = handlerForRow("GPUDevice", "createBindGroup").replace(
     'return failResource("sampler", "native handle is null", bgEntry.binding);',
     'std::cerr << "[WebGPU] Warning: Sampler is null" << std::endl;',
   );
@@ -98,15 +88,14 @@ test("resource validation contract rejects restoring the warning path", () => {
 });
 
 test("bind-group ownership contract rejects removing failure-path view cleanup", () => {
-  const withoutFailureCleanup = read("src/webgpu/bindings.cpp").replace(
+  const withoutFailureCleanup = handlerForRow("GPUDevice", "createBindGroup").replace(
     /if \(!bindGroup\) \{\n\s*releaseAutoCreatedViews\(\);/u,
     "if (!bindGroup) {",
   );
   assert.throws(() => assertBindGroupViewOwnership(withoutFailureCleanup));
 });
 
-function assertBindGroupNativeResultCheck(candidate) {
-  const bindGroup = handlerForRow(candidate, "GPUDevice", "createBindGroup");
+function assertBindGroupNativeResultCheck(bindGroup) {
   assert.match(
     bindGroup,
     /WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(state->device, &bgDesc\);[\s\S]*?if \(!bindGroup\) \{[\s\S]*?state->engine->throwException\("Failed to create bind group"\);[\s\S]*?return state->engine->newUndefined\(\);/u,
@@ -115,11 +104,13 @@ function assertBindGroupNativeResultCheck(candidate) {
 }
 
 test("bind-group creation retains its post-call null native-handle guard", () => {
-  assert.doesNotThrow(() => assertBindGroupNativeResultCheck(read("src/webgpu/bindings.cpp")));
+  assert.doesNotThrow(() =>
+    assertBindGroupNativeResultCheck(handlerForRow("GPUDevice", "createBindGroup")),
+  );
 });
 
 test("bind-group native-result contract rejects deleting the post-call guard", () => {
-  const withoutGuard = read("src/webgpu/bindings.cpp").replace(
+  const withoutGuard = handlerForRow("GPUDevice", "createBindGroup").replace(
     /(WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup\(state->device, &bgDesc\);)\n\s*if \(!bindGroup\) \{[\s\S]*?state->engine->throwException\("Failed to create bind group"\);[\s\S]*?return state->engine->newUndefined\(\);\n\s*\}/u,
     "$1",
   );
@@ -138,17 +129,17 @@ test("all JS engines expose owned destination and descriptor controls", () => {
   assert.match(engine, /virtual void releasePropertyInfo\(JSPropertyInfo& info\) = 0;/u);
   assert.match(engine, /virtual bool hasProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
   assert.match(engine, /virtual bool deleteProperty\(JSValueHandle obj, const char\* name\) = 0;/u);
-  assert.match(
-    engine,
-    /virtual bool isBindingDestination\(JSValueHandle value\) = 0;/u,
-  );
+  assert.match(engine, /virtual bool isBindingDestination\(JSValueHandle value\) = 0;/u);
   for (const implementationPath of [
     "src/js/v8_engine.cpp",
     "src/js/quickjs_engine.cpp",
     "src/js/jsc_engine.mm",
   ]) {
     const source = read(implementationPath);
-    assert.match(source, /bool getPropertyInfo\(JSValueHandle obj, const char\* name, JSPropertyInfo& info\) override/u);
+    assert.match(
+      source,
+      /bool getPropertyInfo\(JSValueHandle obj, const char\* name, JSPropertyInfo& info\) override/u,
+    );
     assert.match(source, /void releasePropertyInfo\(JSPropertyInfo& info\) override/u);
     assert.match(source, /bool hasProperty\(JSValueHandle obj, const char\* name\) override/u);
     assert.match(source, /bool deleteProperty\(JSValueHandle obj, const char\* name\) override/u);
@@ -203,7 +194,7 @@ test("binding destinations reject proxies before descriptor traversal", () => {
 });
 
 test("descriptor snapshot ownership is explicit for V8, QuickJS, and JSC", () => {
-  const implementation = read("src/webgpu/registration_table.cpp");
+  const implementation = nativeDefinition("installBindingTable").text;
   const v8 = read("src/js/v8_engine.cpp");
   const quickjs = read("src/js/quickjs_engine.cpp");
   const jsc = read("src/js/jsc_engine.mm");
@@ -258,24 +249,34 @@ function behaviorExecutable(body) {
 test.runIf(!behaviorContract || behaviorContract === "webgpu")(
   "native behavior preserves binding transactions and active wrapper state",
   () => {
-  const productExecutable = process.env.TN_NATIVE_BEHAVIOR_EXECUTABLE;
-  const fixture = behaviorExecutable(`
+    const productExecutable = process.env.TN_NATIVE_BEHAVIOR_EXECUTABLE;
+    const fixture = behaviorExecutable(`
     console.log("proof: public-binding-surface");
+    console.log("proof: call-trace");
+    console.log("proof: async-observation");
     console.log("proof: whole-table-verification");
     console.log("proof: wrapper-rollback");
   `);
-  const executable = productExecutable ?? process.execPath;
-  const args = productExecutable ? [] : [fixture];
-  const result = runNativeBehavior(
-    executable,
-    ["public-binding-surface", "whole-table-verification", "wrapper-rollback"],
-    args,
-  );
-  assert.deepEqual(result.proofs, [
-    "public-binding-surface",
-    "whole-table-verification",
-    "wrapper-rollback",
-  ]);
+    const executable = productExecutable ?? process.execPath;
+    const args = productExecutable ? [] : [fixture];
+    const result = runNativeBehavior(
+      executable,
+      [
+        "public-binding-surface",
+        "call-trace",
+        "async-observation",
+        "whole-table-verification",
+        "wrapper-rollback",
+      ],
+      args,
+    );
+    assert.deepEqual(result.proofs, [
+      "public-binding-surface",
+      "call-trace",
+      "async-observation",
+      "whole-table-verification",
+      "wrapper-rollback",
+    ]);
   },
 );
 
@@ -378,8 +379,16 @@ test("QuickJS centrally replaces and clears owned exception values", () => {
   assert.match(destructor, /clearLastException\(\)[\s\S]*JS_FreeContext/u);
   for (const directReplacement of [
     blockBetween(quickjs, "JSValueHandle evalWithResult", "bool evalScript("),
-    blockBetween(quickjs, "JSValueHandle evalScriptWithResult", "// ========================================================================\n    // Global Object Access"),
-    blockBetween(quickjs, "JSValueHandle call(", "// ========================================================================\n    // Memory Management"),
+    blockBetween(
+      quickjs,
+      "JSValueHandle evalScriptWithResult",
+      "// ========================================================================\n    // Global Object Access",
+    ),
+    blockBetween(
+      quickjs,
+      "JSValueHandle call(",
+      "// ========================================================================\n    // Memory Management",
+    ),
   ]) {
     assert.match(directReplacement, /replaceLastException\(exception\)/u);
     assert.doesNotMatch(directReplacement, /lastException_ = exception/u);
@@ -411,10 +420,7 @@ test("JSC native callbacks use callable private data with owner-qualified lifeti
   assert.match(jsc, /nativeFunctionDefinition\.finalize = &finalizeNativeFunction/u);
   assert.match(jsc, /nativeFunctionDefinition\.callAsFunction = &nativeCallback/u);
   assert.match(jsc, /JSObjectGetPrivate\(function\)/u);
-  assert.match(
-    jsc,
-    /callbackData->owner != JSContextGetGlobalContext\(ctx\)/u,
-  );
+  assert.match(jsc, /callbackData->owner != JSContextGetGlobalContext\(ctx\)/u);
   assert.match(jsc, /delete static_cast<NativeFunctionData\*>\(JSObjectGetPrivate\(object\)\)/u);
   assert.match(jsc, /replaceLastException\([\s\S]*JSValueProtect/u);
   assert.match(jsc, /reflectSet_[\s\S]*JSObjectCallAsFunction/u);
@@ -432,7 +438,11 @@ test("all engines implement Object.is SameValue and QuickJS performance uses its
 
   assert.match(v8, /->SameValue\(/u);
   assert.doesNotMatch(
-    blockBetween(v8, "bool isSameValue", "// ========================================================================\n    // Object Operations"),
+    blockBetween(
+      v8,
+      "bool isSameValue",
+      "// ========================================================================\n    // Object Operations",
+    ),
     /StrictEquals/u,
   );
   assert.match(quickjs, /JS_IsSameValue\(context_/u);
@@ -462,32 +472,18 @@ function assertEveryTableInstallIsChecked(candidate) {
 }
 
 test("top-level WebGPU table installation propagates every failure", () => {
-  const bindings = read("src/webgpu/bindings.cpp");
-  const installer = blockBetween(
-    bindings,
-    "static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine) {",
-    "/** Initialize WebGPU bindings in the JS engine. */",
-  );
+  const installer = nativeDefinition("installWebGPUBindingTables").text;
   assertEveryTableInstallIsChecked(installer);
 
-  const ignoredFailure = installer.replace(
-    "if (!installBindingTable(",
-    "installBindingTable(",
-  );
-  assert.throws(
-    () => assertEveryTableInstallIsChecked(ignoredFailure),
-    /propagate failure/u,
-  );
+  const ignoredFailure = installer.replace("if (!installBindingTable(", "installBindingTable(");
+  assert.throws(() => assertEveryTableInstallIsChecked(ignoredFailure), /propagate failure/u);
 });
 
 test("texture and pipeline wrapper factories propagate table-install failure", () => {
   const factories = read("src/webgpu/wrapper_factories.cpp");
   assert.match(factories, /#include "mystral\/webgpu\/registration_table\.h"/u);
   assert.match(factories, /installBindingTable\(/u);
-  for (const key of [
-    '"GPUTexture", "createView"',
-    '"GPUTexture", "destroy"',
-  ]) {
+  for (const key of ['"GPUTexture", "createView"', '"GPUTexture", "destroy"']) {
     assert.match(factories, new RegExp(`\\{${key}`, "u"));
   }
   assert.match(
@@ -498,14 +494,8 @@ test("texture and pipeline wrapper factories propagate table-install failure", (
   assert.doesNotMatch(factories, /newFunction\(/u);
   assertEveryTableInstallIsChecked(factories);
 
-  const ignoredFailure = factories.replace(
-    "if (!installBindingTable(",
-    "installBindingTable(",
-  );
-  assert.throws(
-    () => assertEveryTableInstallIsChecked(ignoredFailure),
-    /propagate failure/u,
-  );
+  const ignoredFailure = factories.replace("if (!installBindingTable(", "installBindingTable(");
+  assert.throws(() => assertEveryTableInstallIsChecked(ignoredFailure), /propagate failure/u);
 });
 
 test("backend and canvas contexts do not use process-global ownership", () => {
@@ -514,10 +504,21 @@ test("backend and canvas contexts do not use process-global ownership", () => {
   const quickjs = read("src/js/quickjs_engine.cpp");
   assert.doesNotMatch(quickjs, /g_protectedHandles/u);
   assert.doesNotMatch(
-    blockBetween(quickjs, "void freezeHandle(JSValueHandle value)", "size_t outstandingHandleCount() const override"),
+    blockBetween(
+      quickjs,
+      "void freezeHandle(JSValueHandle value)",
+      "size_t outstandingHandleCount() const override",
+    ),
     /JS_DupValue/u,
   );
-  const canvas2d = read("src/canvas/canvas2d_bindings.cpp");
+  const canvas2d = [
+    "evalCanvasScript",
+    "createCanvas2DJSObject",
+    "createCanvas2DContext",
+    "getCanvas2DContextFromJS",
+  ]
+    .map((symbol) => nativeDefinition(symbol).text)
+    .join("\n");
   assert.doesNotMatch(canvas2d, /g_canvas2dContexts|g_jsEngine/u);
   assert.doesNotMatch(canvas2d, /engine->freezeHandle\(jsCtx\)/u);
   assert.doesNotMatch(context, /static\s+WGPUFeatureName\s+requiredFeatures/u);

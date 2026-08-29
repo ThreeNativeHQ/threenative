@@ -12,13 +12,18 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
+import {
+  nativeBindingDefinition,
+  nativeDefinition,
+} from "../../../test-support/native-definition.js";
+
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFileSync(join(root, path), "utf8");
-const bindings = () => read("src/webgpu/bindings.cpp");
 
 test("the checked-handle helper logs the operation and throws, and never silently continues", () => {
-  const source = read("src/webgpu/checked_handle.cpp");
-  assert.match(source, /const char\* const kNullHandleMarker = "TN_WGPU_NULL_HANDLE";/u);
+  const source = ["requireHandle", "nullHandleMessage", "reportNullHandle"]
+    .map((symbol) => nativeDefinition(symbol).text)
+    .join("\n");
   assert.match(
     source,
     /engine->throwException\(nullHandleMessage\(op, args\)\.c_str\(\)\)/u,
@@ -32,34 +37,37 @@ test("the checked-handle helper logs the operation and throws, and never silentl
 });
 
 test("every ranked create/begin/finish site is checked before its handle is used", () => {
-  const source = bindings();
   // The sites the 2026-08-24 investigation ranked as the plausible source of the six unnamed
   // SIGSEGV exits: the encoder chain, the shader/bind-group family, and the texture views.
   const operations = [
-    "device.createCommandEncoder",
-    "commandEncoder.beginRenderPass",
-    "commandEncoder.beginComputePass",
-    "commandEncoder.finish",
-    "queue.submit",
-    "device.createShaderModule",
-    "device.createBindGroupLayout",
-    "device.createBindGroup",
-    "device.createPipelineLayout",
-    "device.createTextureView",
+    ["GPUDevice", "createCommandEncoder", "device.createCommandEncoder"],
+    ["GPUCommandEncoder", "beginRenderPass", "commandEncoder.beginRenderPass"],
+    ["GPUCommandEncoder", "beginComputePass", "commandEncoder.beginComputePass"],
+    ["GPUCommandEncoder", "finish", "commandEncoder.finish"],
+    ["GPUQueue", "submit", "queue.submit"],
+    ["GPUDevice", "createShaderModule", "device.createShaderModule"],
+    ["GPUDevice", "createBindGroupLayout", "device.createBindGroupLayout"],
+    ["GPUDevice", "createBindGroup", "device.createBindGroup"],
+    ["GPUDevice", "createPipelineLayout", "device.createPipelineLayout"],
+    ["GPUDevice", "createTextureView", "device.createTextureView"],
     // PRD-207 routes the offscreen-canvas texture through the same `createTextureWrapper`, so
     // `texture.createView` is now the single site that main guarded as two.
-    "texture.createView",
+    ["GPUTexture", "createView", "texture.createView"],
   ];
-  for (const operation of operations)
+  for (const [surface, method, operation] of operations) {
+    const source = nativeBindingDefinition(surface, method).text;
     assert.match(
       source,
       new RegExp(`requireHandle\\(state->engine, [^;]*"${operation.replace(/\./gu, "\\.")}"`, "u"),
       `${operation} must check its handle before anything uses it`,
     );
+  }
 });
 
 test("host-side paths with no JS frame skip the work instead of carrying the NULL", () => {
-  const source = bindings();
+  const source = ["compositeCanvas2DToWebGPU", "captureFrameScreenshot"]
+    .map((symbol) => nativeDefinition(symbol).text)
+    .join("\n");
   for (const operation of [
     "canvas2D.createTexture",
     "canvas2DComposite.surfaceView",
@@ -80,7 +88,7 @@ test("queue.submit no longer drops a NULL command buffer on the floor", () => {
   // Dropping it turned "the GPU never got this frame's work" into a rendering mystery and left
   // the caller believing it had submitted.
   assert.doesNotMatch(
-    bindings(),
+    nativeBindingDefinition("GPUQueue", "submit").text,
     /WGPUCommandBuffer cmdBuffer = \(WGPUCommandBuffer\)g_engine->getPrivateData\(cmdBufferHandle\);\s*\n\s*if \(cmdBuffer\) \{/u,
   );
 });
@@ -90,5 +98,8 @@ test("the NULL-handle proof is built and run by a lane that needs no display", (
     read("CMakeLists.txt"),
     /add_executable\(threenative-wgpu-null-handle-test EXCLUDE_FROM_ALL\s*tests\/wgpu_null_handle_test\.cpp\)/u,
   );
-  assert.match(read("scripts/verify-desktop-stability.mjs"), /"threenative-wgpu-null-handle-test"/u);
+  assert.match(
+    read("scripts/verify-desktop-stability.mjs"),
+    /"threenative-wgpu-null-handle-test"/u,
+  );
 });

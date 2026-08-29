@@ -200,7 +200,8 @@ js::JSValueHandle dispatch(
         surface == "GPUQueue" || surface == "GPUCommandEncoder" ||
         surface == "GPURenderPassEncoder" || surface == "GPUComputePassEncoder" ||
         (surface == "GPUDevice" && name == "createCommandEncoder");
-    if (steadyStateCommand) state->frameOpStreamDirectCommandCalls += 1;
+    if (steadyStateCommand)
+        state->profiling.frameOpStreamDirectCommandCalls += 1;
     return registration.handler(state, destination, args);
 }
 

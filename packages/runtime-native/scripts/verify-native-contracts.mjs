@@ -68,7 +68,8 @@ export const executionContracts = {
     invocations: [
       {
         args: [],
-        passLine: "[input-restart] two register-dispose cycles delivered each event exactly once",
+        passLine:
+          "[input-restart] listener identity and capture survived restart, main canvas, and renderer canvas",
       },
     ],
   },

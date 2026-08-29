@@ -4,10 +4,10 @@ prd_contract: v1
 
 # PRD-229 — the native host is provable before it is moved
 
-**Status:** PARTIAL — filed 2026-08-28. **Phases 1–4 and 6 landed on 2026-08-28 under commits
+**Status:** EXECUTED — filed 2026-08-28. **Phases 1–4 and 6 landed on 2026-08-28 under commits
 that do not cite this PRD**, which is why this document read "no phase has executed" until the
-reconciliation of 2026-08-29 below. **Phase 5 is the one open phase, and it is the one that
-actually protects [PRD-230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md).**
+reconciliation of 2026-08-29 below. **Phase 5 completed on 2026-08-29 with its PRD-230 blocker
+inventory at zero.**
 Every number below is measured at `7b729e2d` unless it says otherwise.
 
 **Goal, in the owner's words: harden it first, so we catch the regression if we do some shit.**
@@ -438,7 +438,7 @@ table requires exists by name.
 | 2 — one command runs every test | `84640c6a` (PRD-223, predates this PRD) | `enable_testing()`, `native:test:cpp`, `tests/native-contract-lane.test.mjs` | set-equality assertion present |
 | 3 — ASan + UBSan | `1e530c4a` | `TN_ENABLE_SANITIZERS`, `native:test:asan`, `tests/native-sanitizer-lane.test.mjs`, [the record](../../verification/native-sanitizer-lane-2026-08-28.md) | 2, both required |
 | 4 — close the C++ lint hole | `dabfc35d`, record `70e5ce3f` | `.clang-tidy`, `.clang-format`, `tests/native-lint-config.test.mjs`, [the baseline](../../verification/native-lint-baseline-2026-08-28.md) | 1, the required automated one |
-| 5 — text assertions become behaviour tests | — | — | **NOT DONE** |
+| 5 — text assertions become behaviour tests | `7402d4df` through `edee7ca9` | definition lookup by symbol plus native behaviour proofs for binding publication, async observation, lifecycle surface state, call traces, canvas listeners and Promise settlement | 15 PRD-230-blocking files converted; exit inventory 0 |
 | 6 — the floors become gates | `c90c390b` | `scripts/check-native-coverage.ts` called from `scripts/check-budgets.ts`, 15 per-subsystem floors including `src/webgpu/` at 33.82% | 5, against 2 required |
 
 Negative controls that were observed and pasted at the time, in their own records: Phase 1's
@@ -475,7 +475,7 @@ the ratchet-release history for `src/runtime.cpp` 39.50% → 38.88% — sat *ins
 `native-coverage-generated` markers, so every regeneration deleted it silently. It now lives below
 the end marker, and a full re-run was observed leaving it intact.
 
-### Phase 5 — the one open phase
+### Phase 5 — completed 2026-08-29
 
 Measured 2026-08-29, unchanged from the filing:
 
@@ -503,6 +503,37 @@ and fails closed on zero or multiple matches. `frame-op-stream.test.mjs` is conv
 | (a) definition moved to another file | stays green | `Tests 8 passed (8)` |
 | (b) `someMap.contains(42)` injected into the body | reds | `× keeps native replay compatible with the runtime's C++17 toolchains` |
 
-The remaining 26 files are inventoried and ordered in
-[EXECUTE-229-phase-5-and-230](./EXECUTE-229-phase-5-and-230.md), which is the runbook for finishing
-this phase and then running PRD-230.
+The PRD-230 consumer-scoped inventory now exits 0:
+
+```text
+0 files still read a PRD-230 subject as source text
+```
+
+Each blocking file was committed only after a move/rename-safe lookup or executable proof was
+green and a named mutation was red. The runtime-wide move control physically renamed
+`src/webgpu/bindings.cpp`; the converted profiling test stayed **11/11 green** and the four
+converted `runtime-next-contract` cases stayed **4/4 green**. Renaming the embedded async-pipeline
+installer made the native WebGPU executable red, and renaming `threadCpuNs` made the profiling
+contract red.
+
+| Blocking test file | Commit(s) | Property now protected independently of the source path | Red control observed |
+| --- | --- | --- | --- |
+| `runtime-next-contract` | `6babae6a` | published async pipelines, absent deprecated GLTF API, wrapper lifetime | embedded installer rename refused device publication |
+| `webgpu-bindings-contract` | `e8ec7c81`, `292dbac9`, `86983c97`, `985614e6` | binding rows follow their registered surface/method and native guards execute | warning/null/metadata guard mutations red |
+| `lifecycle-pause` | `e8139ae2` | surface detach and republish update live binding state | retaining the dead surface red |
+| `webgpu-bindings-trace` | `6dc8ca05` | 60+ preserved calls execute against a live runtime | removing `GPUQueue.writeBuffer` from the trace red |
+| `android-js-engine-native-profiling` | `edee7ca9` | profile, staging and presentation definitions follow moves | `threadCpuNs` marker rename red |
+| `js-engine-fast-path` | `985614e6` | shader wrapper metadata remains private | publishing `_formatEnum` red |
+| `resize-attachment-invariant` | `7402d4df` | surface resize releases the outstanding attachment before reconfigure | removing the release ordering red |
+| `screenshot-format` | `a8539d90` | screenshot format reports the rendered format | returning the native surface format red |
+| `srgb-presentation` | `d4441693` | sRGB presentation conversion remains installed | removing `srgbToLinear` red |
+| `webgpu-async-observation` | `288e9899` | error scopes and submitted work settle through native callbacks | no-op `popErrorScope` red |
+| `wgpu-null-handle` | `86983c97` | null native handles fail closed | command-encoder guard removal red |
+| `wait-latency` | `b0a913a7` | callback waits use the bounded observation path | fixed-sleep substitution red |
+| `raytracing-contract` | `1dea3a78` | unsupported ray tracing refuses before backend work | refusal removal red |
+| `canvas-event-listener` | `aa301d53` | main and renderer-created canvases honor listener identity and capture | remove-forwarder mutation red |
+| `audio-decode-promise` | `f33046d7` | decode success and failure settle real Promises | returning a raw settled value red |
+
+The post-conversion coverage run executed 25 native targets, named 2 blocked targets, and exited 0:
+TOTAL **35.70%**, `src/webgpu/` **40.66%**, `src/runtime.cpp` **39.97%**. Record:
+[native-coverage-2026-08-28](../../verification/native-coverage-2026-08-28.md).

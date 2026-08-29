@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
+import {
+  nativeBindingDefinition,
+  nativeDefinition,
+} from "../../../test-support/native-definition.js";
+
 const v8Engine = readFileSync(
   fileURLToPath(new URL("../src/js/v8_engine.cpp", import.meta.url)),
   "utf8",
@@ -15,50 +20,65 @@ const jscEngine = readFileSync(
   fileURLToPath(new URL("../src/js/jsc_engine.mm", import.meta.url)),
   "utf8",
 );
-const bindings = readFileSync(
-  fileURLToPath(new URL("../src/webgpu/bindings.cpp", import.meta.url)),
-  "utf8",
-);
+const bindings = [
+  ["GPUDevice", "createShaderModule"],
+  ["GPUDevice", "createRenderPipeline"],
+  ["GPUDevice", "createComputePipeline"],
+  ["GPUDevice", "createTexture"],
+  ["GPUDevice", "createTextureView"],
+]
+  .map(([surface, name]) => nativeBindingDefinition(surface, name).text)
+  .concat(
+    nativeDefinition("findTextureInfoByHandle").text,
+    nativeDefinition("destroyBindingsState").text,
+  )
+  .join("\n");
 const wrapperFactories = readFileSync(
   fileURLToPath(new URL("../src/webgpu/wrapper_factories.cpp", import.meta.url)),
   "utf8",
 );
-const runtime = readFileSync(
-  fileURLToPath(new URL("../src/runtime.cpp", import.meta.url)),
-  "utf8",
-);
+const runtime = readFileSync(fileURLToPath(new URL("../src/runtime.cpp", import.meta.url)), "utf8");
 
 test("all engine property writes create ordinary own data properties", () => {
-  const v8SetProperty = v8Engine.match(
-    /bool setProperty\(JSValueHandle obj,[\s\S]*?\n {4}\}\n\n {4}JSValueHandle getProperty/u,
-  )?.[0] ?? "";
+  const v8SetProperty =
+    v8Engine.match(
+      /bool setProperty\(JSValueHandle obj,[\s\S]*?\n {4}\}\n\n {4}JSValueHandle getProperty/u,
+    )?.[0] ?? "";
   assert.match(v8SetProperty, /CreateDataProperty/u);
   assert.doesNotMatch(v8SetProperty, /setPropertyWithReflect/u);
 
-  const quickjsSetProperty = quickjsEngine.match(
-    /bool setProperty\(JSValueHandle obj,[\s\S]*?\n {4}\}\n\n {4}JSValueHandle getProperty/u,
-  )?.[0] ?? "";
+  const quickjsSetProperty =
+    quickjsEngine.match(
+      /bool setProperty\(JSValueHandle obj,[\s\S]*?\n {4}\}\n\n {4}JSValueHandle getProperty/u,
+    )?.[0] ?? "";
   assert.match(quickjsSetProperty, /JS_DefinePropertyValueStr/u);
   assert.match(quickjsSetProperty, /JS_PROP_C_W_E/u);
   assert.doesNotMatch(quickjsSetProperty, /JS_SetPropertyStr/u);
 
-  const jscSetProperty = jscEngine.match(
-    /bool setProperty\(JSValueHandle obj,[\s\S]*?\n {4}\}\n\n {4}JSValueHandle getProperty/u,
-  )?.[0] ?? "";
+  const jscSetProperty =
+    jscEngine.match(
+      /bool setProperty\(JSValueHandle obj,[\s\S]*?\n {4}\}\n\n {4}JSValueHandle getProperty/u,
+    )?.[0] ?? "";
   assert.match(jscSetProperty, /defineOwnDataProperty/u);
   assert.doesNotMatch(jscSetProperty, /setPropertyWithReflect|JSObjectSetProperty/u);
   assert.match(jscEngine, /objectDefineProperty_[\s\S]*JSValueProtect/u);
-  assert.match(jscEngine, /~JSCEngine\(\)[\s\S]*JSValueUnprotect\(context_, objectDefineProperty_\)/u);
+  assert.match(
+    jscEngine,
+    /~JSCEngine\(\)[\s\S]*JSValueUnprotect\(context_, objectDefineProperty_\)/u,
+  );
 
-  const v8Global = v8Engine.match(
-    /bool setGlobalProperty\([\s\S]*?\n {4}\}\n\n {4}JSValueHandle getGlobalProperty/u,
-  )?.[0] ?? "";
-  const quickjsGlobal = quickjsEngine.match(
-    /bool setGlobalProperty\([\s\S]*?\n {4}\}\n\n {4}JSValueHandle getGlobalProperty/u,
-  )?.[0] ?? "";
-  const jscGlobal = jscEngine.match(
-    /bool setGlobalProperty\([\s\S]*?\n {4}\}\n\n {4}JSValueHandle getGlobalProperty/u,
-  )?.[0] ?? "";
+  const v8Global =
+    v8Engine.match(
+      /bool setGlobalProperty\([\s\S]*?\n {4}\}\n\n {4}JSValueHandle getGlobalProperty/u,
+    )?.[0] ?? "";
+  const quickjsGlobal =
+    quickjsEngine.match(
+      /bool setGlobalProperty\([\s\S]*?\n {4}\}\n\n {4}JSValueHandle getGlobalProperty/u,
+    )?.[0] ?? "";
+  const jscGlobal =
+    jscEngine.match(
+      /bool setGlobalProperty\([\s\S]*?\n {4}\}\n\n {4}JSValueHandle getGlobalProperty/u,
+    )?.[0] ?? "";
   assert.match(v8Global, /setPropertyWithReflect/u);
   assert.match(quickjsGlobal, /JS_SetPropertyStr/u);
   assert.match(jscGlobal, /setPropertyWithReflect/u);
@@ -68,9 +88,8 @@ test("host methods share conditional V8 isolate and context entry", () => {
   assert.match(v8Engine, /class V8EntryScope/u);
   assert.match(v8Engine, /v8::Isolate::GetCurrent\(\) != isolate/u);
   assert.match(v8Engine, /isolate_->GetCurrentContext\(\) != context/u);
-  const entryScope = v8Engine.match(
-    /class V8EntryScope[\s\S]*?\n\};\n\nclass V8Engine/u,
-  )?.[0] ?? "";
+  const entryScope =
+    v8Engine.match(/class V8EntryScope[\s\S]*?\n\};\n\nclass V8Engine/u)?.[0] ?? "";
   assert.match(entryScope, /v8::HandleScope/u);
   assert.equal(
     (v8Engine.match(/v8::Isolate::Scope isolate_scope/gu) ?? []).length,
@@ -82,9 +101,10 @@ test("host methods share conditional V8 isolate and context entry", () => {
     1,
     "only engine construction may use a direct context scope",
   );
-  const nativeCallback = v8Engine.match(
-    /static void nativeCallback\([\s\S]*?\n {4}\}\n\n {4}\/\/ Weak reference data/u,
-  )?.[0] ?? "";
+  const nativeCallback =
+    v8Engine.match(
+      /static void nativeCallback\([\s\S]*?\n {4}\}\n\n {4}\/\/ Weak reference data/u,
+    )?.[0] ?? "";
   assert.match(nativeCallback, /V8EntryScope entry_scope\(isolate\)/u);
   assert.match(nativeCallback, /entry_scope\.enterContext\(context\)/u);
 });
@@ -111,9 +131,9 @@ test("C++-only WebGPU metadata stays out of JavaScript property bags", () => {
 });
 
 test("V8 native callbacks borrow local arguments until retention is requested", () => {
-  const nativeCallback = v8Engine.match(
-    /static void nativeCallback\([\s\S]*?static void nativeMethodCallback/u,
-  )?.[0] ?? "";
+  const nativeCallback =
+    v8Engine.match(/static void nativeCallback\([\s\S]*?static void nativeMethodCallback/u)?.[0] ??
+    "";
   assert.doesNotMatch(nativeCallback, /acquirePersistent\(isolate, info\[i\]\)/u);
   assert.match(nativeCallback, /callbackLocalsPool_/u);
   assert.match(v8Engine, /retainHandle\(JSValueHandle value\) override/u);
@@ -125,7 +145,7 @@ test("V8 native callbacks borrow local arguments until retention is requested", 
 });
 
 test("shader metadata follows wrapper release with a state-lifetime fallback", () => {
-  assert.match(bindings, /registerRelease\(jsShader,[\s\S]*weak_ptr/u);
+  assert.match(bindings, /registerRelease\(\s*jsShader,[\s\S]*weak_ptr/u);
   assert.match(bindings, /shaderModuleMetadata->release\(\s*shaderModule/u);
   assert.match(bindings, /shaderModuleMetadata->releaseAll/u);
 });

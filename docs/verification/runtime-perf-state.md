@@ -12,6 +12,244 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
+## PRD-230 pre-move desktop baseline — 2026-08-29
+
+This is the comparison baseline for splitting `src/webgpu/bindings.cpp`, captured before the first
+rename at clean source SHA `df797b7cac5e0a211f5d32c6cd522ecfc101d36e`. The external Bayview
+sandbox used by earlier runtime work was not present on this machine, so this round uses the
+in-repository `examples/native-smoke` bundle and shipping desktop host as its reproducible A/B
+fixture. Later PRD-230 measurements must use this same fixture and command. This is desktop/Xvfb
+evidence; fps is present-throttled and is not a verdict.
+
+Machine state: Linux `7.1.4-1-cachyos`, AMD Ryzen 9 5900X (12 cores / 24 threads), NVIDIA GeForce
+RTX 2080 TU104, Xvfb 1600×900×24 on `DISPLAY=:97`, SDL X11, Dawn FIFO present with vsync enabled.
+The game surface reported 1280×720, resolution scale 1 pinned, and 4× samples.
+
+```sh
+DISPLAY=:97 SDL_VIDEODRIVER=x11 node packages/playtest/dist/runner/cli.js perf \
+  --executable packages/runtime-native/build/tn-linux/mystral \
+  --host-arg run --host-arg examples/native-smoke/dist/native-smoke.js \
+  --require-windows 2 --timeout 900 --text
+```
+
+The harness captured three 300-frame windows and discarded window 1 as startup. Both steady
+windows passed. Window 2/3 `render.p50` was **1.3 / 1.2 ms** (`render.p95` 1.8 / 1.7 ms), and
+`hostGap.p50` was 30.4 / 29.9 ms. The last window reported GPU time 0.72 ms. The last host-gap
+window is the fixed share baseline used by PRD-230's two-point guard:
+
+| required sub-phase | p50 ms | share of the six required sub-phases |
+| --- | ---: | ---: |
+| `frameDrain` (`drain`) | 0.002 | 0.007% |
+| `frameReplay` (`replay`) | 0.234 | 0.787% |
+| `present` | 28.498 | 95.866% |
+| `gpuDrain` | 0.000 | 0.000% |
+| `devicePoll` (`poll`) | 0.992 | 3.337% |
+| `endFrameOther` (`other`) | 0.001 | 0.003% |
+
+The pre-split incremental compile measurement touched only `bindings.cpp` and rebuilt the shipping
+`mystral` target. zsh reported **17.09 s** for compile plus archive/link:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel
+```
+
+### PRD-230 Phase 1 — handler identifiers only
+
+After all 87 numbered handler identifiers were renamed, the same command on the same machine
+produced steady `render.p50` **1.3 / 1.2 ms**, unchanged from baseline. The last host-gap window
+measured `frameDrain` 0.002 ms (0.007%), `frameReplay` 0.226 ms (0.761%), `present` 28.504 ms
+(95.918%), `gpuDrain` 0.000 ms (0.000%), `devicePoll` 0.985 ms (3.315%), and `endFrameOther`
+0.000 ms (0.000%). The largest share shift was **0.052 percentage points** (`present`), below the
+two-point rejection threshold. The run captured three windows, discarded startup, and passed.
+
+### PRD-230 Phase 2 — cohesive `BindingsState`
+
+After the flat state became `ResourceRegistries`, `PresentationState`, `FrameProfiling`,
+`ScreenshotCapture`, and `Canvas2DComposite`, the same command and machine produced steady
+`render.p50` **1.2 / 1.2 ms**, no rise from the baseline's final steady window. The last host-gap
+window measured `frameDrain` 0.002 ms (0.007%), `frameReplay` 0.226 ms (0.759%), `present` 28.571
+ms (95.944%), `gpuDrain` 0.000 ms (0.000%), `devicePoll` 0.979 ms (3.288%), and `endFrameOther`
+0.001 ms (0.003%). The largest share shift from the pre-move baseline was **0.078 percentage
+points** (`present`), below the two-point rejection threshold. The run captured three windows,
+discarded startup, and passed.
+
+### PRD-230 Phase 3.1 — Canvas2D compositor translation unit
+
+After `compositeCanvas2DToWebGPU` moved byte-for-byte into its own translation unit, the first
+sample produced steady `render.p50` **1.5 / 1.5 ms**, outside the two-percent comparison guard, and
+was rejected. That sample's last required host-gap values were `frameDrain` 0.003 ms,
+`frameReplay` 0.306 ms, `present` 34.988 ms, `gpuDrain` 0.000 ms, `devicePoll` 1.035 ms and
+`endFrameOther` 0.001 ms.
+
+After the full parity workload completed and the machine returned idle, an immediate repeat with
+the identical command produced steady `render.p50` **1.0 / 1.0 ms**, below the baseline. Its last
+required host-gap window measured `frameDrain` 0.001 ms (0.004%), `frameReplay` 0.144 ms (0.561%),
+`present` 24.629 ms (95.881%), `gpuDrain` 0.000 ms (0.000%), `devicePoll` 0.913 ms (3.554%) and
+`endFrameOther` 0.000 ms (0.000%). The largest share shift from the pre-move baseline was **0.217
+percentage points** (`devicePoll`), below the two-point rejection threshold. The accepted run
+captured three windows, discarded startup, and passed.
+
+Touching only `bindings_canvas2d_composite.cpp` and rebuilding serially measured **22.32 s** for
+compile plus archive/link. That is slower than the 17.09 s monolith baseline, so this first surface
+split has not yet demonstrated the PRD's incremental-compile payoff. The exact command was:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings_canvas2d_composite.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+### PRD-230 Phase 3.2 — screenshot translation unit
+
+After screenshot accessors and `captureFrameScreenshot` moved into their own translation unit, the
+same command and machine produced steady `render.p50` **1.0 / 1.0 ms**, below the baseline. The last
+required host-gap window measured `frameDrain` 0.001 ms (0.004%), `frameReplay` 0.133 ms (0.523%),
+`present` 24.400 ms (95.957%), `gpuDrain` 0.000 ms (0.000%), `devicePoll` 0.894 ms (3.516%) and
+`endFrameOther` 0.000 ms (0.000%). The largest share shift from the pre-move baseline was **0.264
+percentage points** (`frameReplay`), below the two-point rejection threshold. The run captured
+three windows, discarded startup, and passed.
+
+Touching only `bindings_screenshot.cpp` and rebuilding serially measured **5.04 s** for compile
+plus archive/link, down 70.5% from the 17.09 s monolith baseline. The exact command was:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings_screenshot.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+### PRD-230 Phase 3.3 — presentation translation unit
+
+After surface acquire, resize, sRGB bridge, presentation pacing and present reporting moved into
+their own translation unit, the same command and machine produced steady `render.p50` **1.0 / 1.0
+ms**, below the baseline. The last required host-gap window measured `frameDrain` 0.001 ms
+(0.004%), `frameReplay` 0.121 ms (0.491%), `present` 23.619 ms (95.888%), `gpuDrain` 0.000 ms
+(0.000%), `devicePoll` 0.891 ms (3.616%) and `endFrameOther` 0.000 ms (0.000%). The largest share
+shift from the pre-move baseline was **0.296 percentage points** (`frameReplay`), below the
+two-point rejection threshold. The run captured three windows, discarded startup, and passed.
+
+Touching only `bindings_presentation.cpp` and rebuilding serially measured **6.05 s** for compile
+plus archive/link, down 64.6% from the 17.09 s monolith baseline. The exact command was:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings_presentation.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+### PRD-230 Phase 3.4 — resource translation unit
+
+After buffer, texture, texture-view and sampler bindings moved into their own translation unit,
+the same command and machine produced steady `render.p50` **1.0 / 1.0 ms**, below the baseline.
+The last required host-gap window measured `frameDrain` 0.001 ms (0.004%), `frameReplay` 0.132 ms
+(0.522%), `present` 24.275 ms (95.949%), `gpuDrain` 0.000 ms (0.000%), `devicePoll` 0.892 ms
+(3.526%) and `endFrameOther` 0.000 ms (0.000%). The largest share shift from the pre-move baseline
+was **0.265 percentage points** (`frameReplay`), below the two-point rejection threshold. The run
+captured three windows, discarded startup, and passed.
+
+Touching only `bindings_resources.cpp` and rebuilding serially measured **5.83 s** for compile plus
+archive/link, down 65.9% from the 17.09 s monolith baseline. The exact command was:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings_resources.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+### PRD-230 Phase 3.5 — pipeline translation unit
+
+After shader modules, pipeline layouts, bind groups and compute/render pipelines moved into their
+own translation unit, the same command and machine produced steady `render.p50` **1.0 / 1.0 ms**,
+below the baseline. The last required host-gap window measured `frameDrain` 0.001 ms (0.004%),
+`frameReplay` 0.132 ms (0.520%), `present` 24.348 ms (95.953%), `gpuDrain` 0.000 ms (0.000%),
+`devicePoll` 0.893 ms (3.519%) and `endFrameOther` 0.000 ms (0.000%). The largest share shift from
+the pre-move baseline was **0.267 percentage points** (`frameReplay`), below the two-point rejection
+threshold. The run captured three windows, discarded startup, and passed.
+
+Touching only `bindings_pipelines.cpp` and rebuilding serially measured **8.13 s** for compile plus
+archive/link, down 52.4% from the 17.09 s monolith baseline. The exact command was:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings_pipelines.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+### PRD-230 Phase 3.6 — command translation unit
+
+After render-bundle, query-set, command-encoder, render-pass and compute-pass bindings moved into
+their own translation unit, the same command and machine produced steady `render.p50`
+**0.7 / 0.9 ms**, below the baseline. The last required host-gap window measured `frameDrain`
+0.002 ms (0.007%), `frameReplay` 0.216 ms (0.810%), `present` 25.855 ms (96.951%), `gpuDrain`
+0.000 ms (0.000%), `devicePoll` 0.595 ms (2.231%) and `endFrameOther` 0.000 ms (0.000%). The
+largest share shift from the pre-move baseline was **1.106 percentage points** (`devicePoll`),
+below the two-point rejection threshold. The run captured three windows, discarded startup, and
+passed.
+
+Touching only `bindings_commands.cpp` and rebuilding serially measured **19.29 s** for compile plus
+archive/link, 12.9% slower than the 17.09 s monolith baseline. This 1,681-line surface does not
+show a compile-time payoff; the measurement is retained as the Phase 4 comparison input. The exact
+command was:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings_commands.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+### PRD-230 Phase 3.7 — frame-stream translation unit
+
+After packed frame-operation replay moved into its own translation unit, the first sample produced
+steady `render.p50` **1.3 / 1.3 ms** and was rejected: an unrelated Playwright SwiftShader process
+was consuming about 850% CPU and machine load was 28.81. After that workload exited, the same
+command produced steady `render.p50` **1.2 / 1.2 ms**, no rise from the baseline's final steady
+window. The accepted last required host-gap window measured `frameDrain` 0.002 ms (0.006%),
+`frameReplay` 0.330 ms (1.012%), `present` 31.550 ms (96.741%), `gpuDrain` 0.000 ms (0.000%),
+`devicePoll` 0.730 ms (2.238%) and `endFrameOther` 0.001 ms (0.003%). The largest share shift from
+the pre-move baseline was **1.099 percentage points** (`devicePoll`), below the two-point rejection
+threshold. The accepted run captured three windows, discarded startup, and passed.
+
+Touching only `bindings_frame_stream.cpp` and rebuilding serially measured **8.04 s** for compile
+plus archive/link, down 53.0% from the 17.09 s monolith baseline. The exact command was:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings_frame_stream.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+### PRD-230 Phase 3.8 and Phase 4 — retained bindings surface and final comparison
+
+The retained `bindings.cpp` is 2,937 lines after all seven actual moves, down 4,933 lines (62.7%)
+from the measured 7,870-line start. Touching only it and rebuilding serially measured **9.50 s**
+for compile plus archive/link, down 44.4% from the 17.09 s baseline:
+
+```sh
+touch packages/runtime-native/src/webgpu/bindings.cpp
+TIMEFMT='elapsed_seconds=%E'; time cmake --build \
+  packages/runtime-native/build/tn-linux --target mystral --parallel 1
+```
+
+| final edit surface | compile plus archive/link | change from 17.09 s |
+| --- | ---: | ---: |
+| Canvas2D compositor | 22.32 s | +30.6% |
+| screenshot | 5.04 s | -70.5% |
+| presentation | 6.05 s | -64.6% |
+| resources | 5.83 s | -65.9% |
+| pipelines | 8.13 s | -52.4% |
+| commands | 19.29 s | +12.9% |
+| frame stream | 8.04 s | -53.0% |
+| retained bindings | 9.50 s | -44.4% |
+
+Final steady `render.p50` was **1.2 / 1.2 ms** versus **1.3 / 1.2 ms** before the refactor. The
+largest required host-gap share shift was **1.099 percentage points**, below the two-point guard.
+This remains desktop/Xvfb evidence; no physical Pixel 8 was connected, so **no device result is
+claimed**.
+
+---
+
 ## 0. Native CPU attribution experiment — 2026-08-29
 
 **Decision: STOP the bounded native transform experiment for now.** The clean browser data does
