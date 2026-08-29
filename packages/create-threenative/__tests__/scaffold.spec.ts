@@ -50,13 +50,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // which changes the generated instructions embedded in every scaffold.
   // Recomputed again for the PRD-237 continuation repair: the defense pointer-placement scenario
   // clears mouse hover and captures the held touch highlight before its release.
-  "action-rpg": "63a8f368d561042acb6c6c955fabcc3301d2d8f93d8800018071cdd36b2329a6",
-  defense: "831fa9e1681cdd795b7cc6060e0922b54fdf36e759637011ff837b1c98d0d837",
-  minimal: "39d9a623700c54d10c3e1c82c4c6594066b35f80993d99d110b10f70f6239108",
-  platformer: "d1ebe76d4d41161aa0fe3475649d8a76a274acc29a2835510bf41e5760be08b0",
-  racing: "dba193fda16dc6072fa8f634672b7bb69f074e691afe034f0b82c2e3cd2b8c6b",
-  shooter: "f2bed378ff2ff3ece522ed2f5f2132ef95bee3c7b3b15398041550ab966d058d",
-  starter: "91ab6264dd4f6e5baec0978d1f9df4127274aff705ac1984886636e1b21018b5",
+  // Recomputed 2026-08-29: `RunnerConsoleEntry` was renamed to `IRunnerConsoleEntry` in
+  // packages/playtest/src/index.ts without regenerating the capability manifest. A scaffold
+  // generates its capability reference from source, so all seven trees moved while the
+  // committed reference stayed stale; both are fixed in the same commit.
+  "action-rpg": "5f4372d72a1293d306a2819ad1304445beba185ee6f3b74649b80250c4cfe649",
+  defense: "968d9f0bbebe82280bf814e9d10fd194175cd231faff8f5f9045f60030418688",
+  minimal: "0cae58a8d7a7929793d8322c116796348dd660f37b1f84b4493a29de0af8e14a",
+  platformer: "d56f8819014be0e17fc09395c2ff12d25ab8efe59c47047654e7e73e53165cbc",
+  racing: "6d4ed6c3cbe8e75bace3eecaa2946ed80f1a2b1b5c5c937cf9ce601dcd36f25c",
+  shooter: "ca1af6911a7e9b487d2248e8256dbc51e1646d33aecb0124f8d68704fed7f4cd",
+  starter: "84d486bd56f493d40755302fac9fe0a4f9193e485445a838939e593b3207bfbf",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
