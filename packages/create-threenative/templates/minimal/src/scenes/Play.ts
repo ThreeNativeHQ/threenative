@@ -1,6 +1,6 @@
 import { Atmosphere, type ICtx, Scene, type SceneFrame, solarPosition } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { BoxGeometry, Mesh, type PerspectiveCamera } from "three";
+import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Player } from "../entities/Player.js";
 import { setupCamera } from "../render/camera.js";
@@ -20,6 +20,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     score: 0,
     sunAzimuth: 0,
     sunElevation: 0,
+    sunTransmittanceRed: 0,
   };
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -120,6 +121,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         sunAzimuth: sun.azimuth,
         sunElevation: sun.elevation,
       });
+      if (atmosphere !== undefined) {
+        // The sun's angle is plain arithmetic and keeps moving with the atmosphere deleted, so a
+        // scenario asserting only on it proves nothing. This number cannot be produced without
+        // the node, which is what makes the atmosphere playtest able to go red.
+        const transmittance = atmosphere.sunTransmittance(atmosphere.getSunDirection());
+        if (transmittance instanceof Vector3)
+          frameCtx.state.set({ sunTransmittanceRed: transmittance.x });
+      }
     };
   }
 }

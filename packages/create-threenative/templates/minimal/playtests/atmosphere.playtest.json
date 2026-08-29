@@ -13,7 +13,8 @@
     },
     "resources": [
       { "id": "state", "path": "sunElevation", "changed": true },
-      { "id": "state", "path": "sunAzimuth", "changed": true }
+      { "id": "state", "path": "sunAzimuth", "changed": true },
+      { "id": "state", "path": "sunTransmittanceRed", "changed": true }
     ],
     "visual": [
       {

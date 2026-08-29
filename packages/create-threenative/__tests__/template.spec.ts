@@ -577,8 +577,11 @@ describe("template contracts", () => {
       const source = await readFile(file, "utf8").catch(() => undefined);
       if (source === undefined) continue;
       checked.push(file);
-      const material = /new MeshBasicMaterial\(\{[^}]*\}\)/u.exec(source)?.[0];
-      expect(material, `${file}: sky dome must build a MeshBasicMaterial`).toBeDefined();
+      // A dome whose colour comes from an atmosphere node builds `MeshBasicNodeMaterial`; the
+      // contract is the `fog: false` flag on whichever of the two the template chose, never the
+      // class name, so matching only the non-node class would let a fogged node dome through.
+      const material = /new MeshBasic(?:Node)?Material\(\{[^}]*\}\)/u.exec(source)?.[0];
+      expect(material, `${file}: sky dome must build a MeshBasic(Node)Material`).toBeDefined();
       expect(material, `${file}: sky dome material must set fog: false`).toContain("fog: false");
     }
     // Fail closed: a glob that matched nothing would otherwise pass this test silently.

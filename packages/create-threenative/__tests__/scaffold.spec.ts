@@ -44,13 +44,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // holds the frame budget instead of the game hand-authoring a resolution constant.
   // Recomputed after Biome reformatted nine template files: the previous values were measured
   // before that formatting ran and were therefore stale the moment they were committed.
-  "action-rpg": "4229783b897791764b708990f686a87a3e86cfb27e5c4e035f1d4fe9cf9880ac",
-  defense: "2069eafd127b35b89adf856f2087b7cdd5bb09c2b50337521271da2625419636",
-  minimal: "81783acebe32339ccc51623a186af197bb48196f133e77c3f5be3b0567a8c366",
-  platformer: "bf0619518da5b602cace0b691f5df77bacba0463ee81e81ee0af44ba6b0e7e9d",
-  racing: "2f5846f31af48e459ec18425f8034edacbfb312dce004268c7c48e089f12fcd9",
-  shooter: "23e8fa8029a7fd9e496214ed97dee8003d54c94e6fb527e588c348911a4b0196",
-  starter: "85b4fd037e2e8d1af45a70bfa23f97d6ac4eb87d31edd64b38869a3721fdf935",
+  // Recomputed 2026-08-28 for PRD-248. Every template moved because every scaffold embeds the
+  // capability manifest, which gained the atmosphere entries; `minimal` moved twice over, for its
+  // atmosphere-driven `src/render/` files, its new `playtests/atmosphere.playtest.json`, and the
+  // AGENTS.md paragraph that states the convention.
+  "action-rpg": "209469236b635a0191fae5bf2f05169cfb1992d1ee7b78f2bfe3cf742389c6c0",
+  defense: "ad2228e74a553982379ab8664a366abde862d8dba01283b893ddc5f7866e3808",
+  minimal: "8bbb75572331803577fd1ac077d0c0256daf132b69cc712185b428b669cd9fd4",
+  platformer: "b19003b1baf73133de9c22d1c34cf887c7a13176d621a0557f448e86cbcb2814",
+  racing: "aec3bbf7aca203e31251fce795b83526e5bfb1de2103027ae84a2450bc6fecb6",
+  shooter: "88c4b8d8f87aaf4495f0cdb85094968d8b290a9db92d23188d574c3f088bcb9f",
+  starter: "e32511264c79ca335ff99f50d97acbe93079cf83ce4e553042cb3e18fdd40817",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
