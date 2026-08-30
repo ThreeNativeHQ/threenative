@@ -314,6 +314,7 @@ function clothPass(options: {
  * @situation simulate a deforming surface while keeping one edge pinned
  * @constraint the mesh must use one Three.js node material and contain complete triangles
  * @constraint pinned, stiffness, damping, gravity, and wind are required game-owned inputs
+ * @constraint Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost
  * @override timeStep follows the engine 1/60-second convention unless the game overrides it
  * @override readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it
  * @example const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });

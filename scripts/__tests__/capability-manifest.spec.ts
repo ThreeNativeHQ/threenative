@@ -161,6 +161,20 @@ describe("capability manifest generator", () => {
     }
   });
 
+  it("keeps the measured Pixel 8 cloth cost in the shipped capability manifests", async () => {
+    for (const file of [
+      "packages/core/capabilities.json",
+      "packages/create-threenative/capabilities.json",
+    ]) {
+      const manifest = JSON.parse(await readFile(file, "utf8")) as {
+        entries: Array<{ constraints: string[]; symbol: string }>;
+      };
+      const softBody = manifest.entries.find((entry) => entry.symbol === "SoftBody3D");
+      expect(softBody, file).toBeDefined();
+      expect(softBody?.constraints.join(" "), file).toMatch(/Pixel 8.*steady.*ms/iu);
+    }
+  });
+
   it("carries @supersedes into the manifest entry as a source construct", async () => {
     const root = await makeTempDir("threenative-capability-supersedes-");
     temporaryRoots.push(root);

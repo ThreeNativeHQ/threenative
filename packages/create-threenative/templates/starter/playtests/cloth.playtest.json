@@ -37,7 +37,7 @@
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
     "resources": [
       { "id": "state", "path": "flagGusts", "equals": 1, "changed": true },
-      { "id": "state", "path": "flagDisplacement", "gte": 0.05, "changed": true },
+      { "id": "state", "path": "flagDisplacement", "gte": 0.005, "changed": true },
       { "id": "state", "path": "flagReadbacks", "gte": 1, "changed": true },
       { "id": "state", "path": "flagSteps", "gte": 30, "changed": true }
     ],

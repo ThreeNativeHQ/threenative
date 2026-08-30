@@ -90,13 +90,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // also materialises its SSR input once so the reflection graph presents instead of going blank.
   // Recomputed 2026-08-30 after documenting the starter's WorldEnvironment render layer in
   // every scaffold's visual reference and generated instructions.
-  "action-rpg": "9a8696720810ba00c83b6df020e59b3801c54f1c7ea3a3896b819a0ec41cd4a1",
-  defense: "e842090ccfc1f4090222e8343c5d1d8071ed57b4ace37dfcc3f80a6e4ac8cfa8",
-  minimal: "03894e2a254f9ddea407ac70c3513370f210a17d22d19920de58f2bf53d35dc7",
-  platformer: "a1a5fe4a155ac77464d52b6e6f8e313042a9f345fc0a7d2eaf508cb561929a5b",
-  racing: "1d8b024671c060a2706b4e337f77aa3e5c41c3662ec3e115192c5b6e1960a7ee",
-  shooter: "211192be5efeee36d3b7593a93bda3d3461a01a92361f8728435bb0727fdc18c",
-  starter: "486cb8603f9fea23e81228fe727ee9df181ff446dad6b626c24deabfa7fbfdc1",
+  // Recomputed when PRD-243 added the qualified Pixel 8 cost to the copied capability docs; the
+  // starter also carries the physical-device cloth displacement threshold.
+  "action-rpg": "2e8f22a6606aa1c041617eb1c59177221a0536bb4a068e6026223af01c8fac90",
+  defense: "0e5fc3af621d884ea9a72fba53b62df11a82b151e92f2358f8f7987ef6c3d79a",
+  minimal: "37a6ea6d1490706f1faf387ab0092b75d1f8b3c7bae537ebf6ebd9f99f6ec467",
+  platformer: "8412b160e579910ee492f62cf334bbb7e8c226e212ec03401aa41555c0b7b29e",
+  racing: "b7fba86244d1a2543a78fe28aa82c6543157fa7a78967613a6c2e0b1665f0cc6",
+  shooter: "43a2766149b04de6593f928c72bc9007bf7fbce6f55fa8a54ab9f405e79e3353",
+  starter: "4c01a11699bbed8ac029b0a4b4789c4a1fd4dc4014f492a10032ecd6880b4336",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

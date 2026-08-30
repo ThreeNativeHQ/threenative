@@ -696,7 +696,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
 ```
 
 - **Use when:** make a flag, cape, or curtain move as cloth · simulate a deforming surface while keeping one edge pinned
-- **Constraints:** the mesh must use one Three.js node material and contain complete triangles · pinned, stiffness, damping, gravity, and wind are required game-owned inputs
+- **Constraints:** the mesh must use one Three.js node material and contain complete triangles · pinned, stiffness, damping, gravity, and wind are required game-owned inputs · Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost
 - **Overrides:** timeStep follows the engine 1/60-second convention unless the game overrides it · readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it
 
 ```ts

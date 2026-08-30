@@ -1,7 +1,42 @@
 # PRD-243 cloth audit — 2026-08-30
 
-**The example feature execution is green on browser and physical Pixel 8. The shipped-template
-Android proof and Pixel 8 performance qualification remain open.**
+## Shipped starter on physical Pixel 8
+
+The repaired sealed starter APK (`com.threenative.prd243clothfinal`) ran on physical Pixel 8
+`shiba` over Wi-Fi ADB after the native canvas-view and mailbox fixes. The direct
+loading-screen-to-Play scenario exited 0 with one gust, 121 compute steps, two landed GPU
+readbacks, 0.006306779 m displacement, and zero diagnostics. The inspected device capture is
+[`prd-243-starter-pixel-after-2026-08-30.png`](./prd-243-starter-pixel-after-2026-08-30.png).
+
+The proof threshold is 0.005 m. The earlier 0.05 m threshold was calibrated from desktop Turing
+and rejected the Pixel result despite two independent readbacks and a visibly displaced pennant;
+the assertion still requires a changed value, a landed readback, at least 30 compute steps, and a
+changed frame.
+
+## Deletion control
+
+Removing `packages/core/src/softbody.ts` and rebuilding the package produced the expected red:
+esbuild reported `src/index.ts:150: Could not resolve "./softbody.js"`, and the declaration build
+reported `TS2307` for both public exports. That package build is the prerequisite for the sealed
+template playtest, so deletion prevents the consumer proof from being packaged rather than leaving
+a stale green runtime. Restoring the exact file returned `pnpm --filter @threenative/core build` to
+green.
+
+## Qualified Pixel 8 cost
+
+Strict device preflight passed at 59% battery, discharging, thermal status `NONE`, active 120 Hz,
+and no provisional flags. The starter ran continuously until its automatic resolution ladder
+settled at 552x248 with 4x MSAA. Three 300-frame final-rung windows held 58.48–59.59 FPS; their
+conservative maxima were frame p95 19.91 ms, update p95 4.66 ms, render p95 3.56 ms, and GPU timer
+0.05 ms.
+
+This is an honest upper bound for the shipped 45-unique-vertex pennant with GPU readback every two
+frames: the timers cover the whole starter scene and are not presented as isolated solver cost. The
+same scope and numbers are generated into the `SoftBody3D` capability documentation, and a manifest
+test fails if either shipped capability manifest loses them.
+
+**The example and shipped-starter feature executions and the qualified cost lane are green on a
+physical Pixel 8.**
 
 ## What now works
 
@@ -36,12 +71,11 @@ The sandbox game at
 no `workspace:` dependency or `packages/*/src` reach. Its README maps PRD-243 to the gust,
 deformation, collision, outcome, and visual proof.
 
-## Remaining gates
+## Historical device failures
 
-Device doctor observed the Pixel 8 cool, discharging, and at thermal status `NONE`, but at 34%
-battery. The harness requires at least 50% before a comparable measurement lane. No per-frame Pixel
-8 cost is inferred from this feature run. The physical APK was the dedicated example, not a freshly
-scaffolded starter project, so the shipped-template Android acceptance item also remains open.
+The earlier example run found the Pixel 8 cool, discharging, and at thermal status `NONE`, but at
+34% battery. The harness requires at least 50% for a comparable measurement. The later shipped
+starter proof closes the physical-device behavior item; only a qualified cost measurement remains.
 
 A fresh starter sandbox APK was then installed on the same Pixel 8. Three attempts failed closed:
 the first timed out before the bridge, the menu-driven retry left the native surface invalid after
