@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-266 — the hot-reload proof and the browser lane run somewhere
 
-**Status:** PROPOSED — filed 2026-08-30 from CI's first working browser lane. §1's cause is
-measured and named; §2 is fixed in `fe1f84dc` and stays here until the lane is green.
+**Status:** PARTIAL — filed 2026-08-30 from CI's first working browser lane. **§1 is fixed**
+(`16c92a11`) and **§2 is fixed** (`fe1f84dc`). §3, below, is what is left: the update is never
+delivered on GitHub's runners, and it is the only thing keeping `test-browser` red.
 
 **Goal: `pnpm test:browser` can pass, and the hot-reload proof proves something.**
 Two defects found by making CI run a lane it had never executed. Neither is CI plumbing; both are
@@ -79,14 +80,45 @@ and is what let this second failure surface at all.
 
 Recorded in [ci-has-never-been-green-2026-08-29](../../verification/ci-has-never-been-green-2026-08-29.md).
 
+## 3. The update never reaches the page on GitHub's runners
+
+With §1 fixed, the CI failure changed shape and separated cleanly from it. The game is now intact
+and still in its play scene, and has reloaded zero times:
+
+```text
+Error: HMR reload 1 was not observed within 90 seconds:
+{"reloads":0,"entities":3,"sceneObjects":38,"canvases":1,"physics":4}
+```
+
+Compare the same edit on a developer machine, where it hot-updates:
+
+```text
+[vite] hmr update /src/style.css, /src/main.ts
+BEFORE {"reloads":0,"entities":4,"sceneObjects":38,"physics":4}
+AFTER  {"reloads":1,"entities":4,"sceneObjects":38,"physics":4}
+```
+
+Nothing was reloaded because nothing was delivered: the spec writes the file, and vite never
+reports an update. **`CHOKIDAR_USEPOLLING` does not fix it** — tried, measured, reverted. This
+workspace is on vite 8 (rolldown), whose watcher may not read that variable at all; setting
+`server.watch.usePolling` in the served project's own config has not been tried, and is the next
+thing to try rather than the answer.
+
+Two things this is not, both established by measurement: not the scene defect in §1 (fixed, and the
+game now survives with all four entities), and not the deadline (15s, 90s and a 20s probe end in
+the same state).
+
 ## Acceptance criteria
 
-- [ ] `pnpm test:browser` passes on a developer machine with a GPU, with the adapter it used named
-      in the output.
-- [ ] After a hot update the game is in the scene it was in, with its entities and physics world,
-      or the claim that hot reload preserves state is withdrawn from every doc that makes it. A
-      proof that cannot pass is repaired or deleted, never left red.
-- [ ] The decision in §1's last bullet — whether a re-entered scene is preserved state or a fresh
-      scene wearing old state — is written down before the fix, and the templates' AGENTS.md says
-      which one a game author gets.
+- [x] `pnpm test:browser` passes on a developer machine with a GPU, with the adapter it used named
+      in the output — fixed in `fe1f84dc`; the sweep launches headed and the three non-HMR browser
+      specs pass here.
+- [x] After a hot update the game is in the scene it was in, with its entities and physics world —
+      fixed in `16c92a11`, measured 4 entities / 38 scene objects / 4 physics bodies across the
+      update, with a red-green unit test.
+- [x] The decision — a resumed scene runs its constructor again, so what is preserved is the state
+      and the scene, not the identity of the objects in it — is recorded in
+      [hot-reload-drops-the-scene-2026-08-30](../../verification/hot-reload-drops-the-scene-2026-08-30.md).
+- [ ] The templates' AGENTS.md says which one a game author gets.
+- [ ] §3: the update reaches the page on CI, or the lane records honestly that it cannot deliver one.
 - [ ] `test-browser` green on CI, and the run names the adapter it had.
