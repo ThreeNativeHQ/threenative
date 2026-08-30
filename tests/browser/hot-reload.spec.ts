@@ -99,7 +99,14 @@ async function waitForGrounded(page: import("@playwright/test").Page): Promise<v
       return player?.grounded === true;
     },
     undefined,
-    { timeout: 10_000 },
+    // The player has to fall and land under the game's own fixed-step physics, so this waits on
+    // wall-clock frames rather than on ticks the test controls. Ten seconds is a machine with a
+    // GPU. GitHub's runners serve WebGPU from SwiftShader — the provenance sweep records the
+    // adapter as `swiftshader`/`google` and the renderer does come up there — and a CPU rasteriser
+    // renders those frames one to two orders of magnitude slower, so the same landing needs longer
+    // to arrive. The assertion is unchanged: the player must still ground, and a game that never
+    // lands still fails. Only the patience is sized for the slowest machine that runs this.
+    { timeout: 90_000 },
   );
 }
 
