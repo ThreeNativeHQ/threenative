@@ -383,7 +383,7 @@ this PRD's job is to stop them rotting silently.
 |---|---|---|---|
 | `hostgap-instrumentation` (`codex/…`) | 7 | **ALREADY LANDED by the newer `73e0baec` + `6502502c` host-side meter; isolated desktop audit passed 2026-08-30.** The stale branch is not replayed | PRD-226 **open** for the remaining ablation ladder, not this meter |
 | `.claude/worktrees/agent-a15fb02a370974a26` | 4 | **ALREADY LANDED exactly by squash `31cba321`; detached tarball audit passed 2026-08-30.** The stale history is not replayed | PRD-214 remains **PARTIAL** for optimization phases 1–2, not this instrument |
-| `.claude/worktrees/agent-a60b0b3f74d66bb64` | 3 | tombstone/crash-handler proof on the phone; a resume defect it exposed | — |
+| `.claude/worktrees/agent-a60b0b3f74d66bb64` | 3 | **ALREADY LANDED exactly at `c3ae3b26`; the exposed resume defect was later fixed at `91e93d29`.** Isolated contract audit passed and repaired a mutation-test blind spot on 2026-08-30 | — |
 | `.claude/worktrees/agent-a5019321d7ca9cf88` | 2 | portable-text spike closed G-only, row 31 on the physical Pixel 8 | PRD-209 **open** |
 | `.claude/worktrees/agent-a5310592192d978ec` | 1 | **REJECTED 2026-08-30:** lifetime-held V8 entry repeatably segfaults the production worker contract; main's per-call entry passes the same binary | PRD-227 **open**; do not retry this lane |
 | `.claude/worktrees/agent-a78ac559a62314fcf` | 1 | **ALREADY LANDED at `5ebebd95`; detached tarball audit passed 2026-08-30.** The stale commit is not replayed | — |
@@ -414,6 +414,12 @@ from a later two-line census correction. A detached tarball game typechecked, em
 phase samples, passed its performance scenario, and failed when the game-owned render ceiling was
 mutated to zero. The consolidated performance record is
 [`docs/verification/runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
+
+The crash-handler lane (`a60b0b3`) is likewise the exact pre-squash history behind `c3ae3b26`.
+Its physical-Pixel proof is already in main, and the black-resume defect it exposed was subsequently
+fixed. Current policy/lifecycle contracts passed; the audit also tightened the Android branch test
+after a wrong-return mutation incorrectly stayed green. See
+[`docs/verification/prd-254-crash-resume-audit-2026-08-30.md`](../../../verification/prd-254-crash-resume-audit-2026-08-30.md).
 
 **6C · The 14 dirty files are noise, not work**
 

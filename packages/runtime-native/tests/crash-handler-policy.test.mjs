@@ -66,11 +66,15 @@ test("the crash-handler decision is one pure function, not a scattered ifdef", (
 
 test("Android installs no crash handler, so debuggerd keeps writing tombstones", () => {
   const handlers = read("src/platform/crash_handlers.cpp");
-  assert.match(
-    handlers,
-    /if \(policy == CrashHandlerPolicy::LeaveToPlatform\) \{[\s\S]*?return false;/u,
-    "LeaveToPlatform must return before any signal() call",
+  const branchStart = handlers.indexOf(
+    "if (policy == CrashHandlerPolicy::LeaveToPlatform) {",
   );
+  assert.notEqual(branchStart, -1, "LeaveToPlatform must have an explicit policy branch");
+  const branchEnd = handlers.indexOf("\n    }", branchStart);
+  assert.notEqual(branchEnd, -1, "LeaveToPlatform policy branch must close");
+  const branch = handlers.slice(branchStart, branchEnd);
+  assert.match(branch, /return false;/u, "LeaveToPlatform must report that it installed nothing");
+  assert.doesNotMatch(branch, /signal\(/u, "LeaveToPlatform must not replace debuggerd's handlers");
   const installBody = handlers.slice(handlers.indexOf("bool applyCrashHandlerPolicy"));
   const guard = installBody.indexOf("signal(SIGABRT");
   assert.ok(guard > installBody.indexOf("LeaveToPlatform"), "the guard must precede the installs");
