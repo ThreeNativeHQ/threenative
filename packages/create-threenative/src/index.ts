@@ -188,6 +188,17 @@ export function kitManifest(template: ScaffoldTemplate, root = templateRoot()): 
   return manifest;
 }
 
+/** Resolve an exact public genre to its kit. Unknown genres deliberately start from minimal:
+ * genre words are authoring input, not an invitation to guess the closest preset. */
+export function templateForGenre(genre: string, root = templateRoot()): ScaffoldTemplate {
+  const normalized = genre.trim().toLowerCase();
+  if (normalized.length === 0) throw new Error("Genre must not be empty.");
+  return (
+    discoverKitManifests(root).find((manifest) => manifest.genre.toLowerCase() === normalized)
+      ?.name ?? "minimal"
+  );
+}
+
 function templateHelp(manifests: readonly IKitManifest[]): string {
   const width = Math.max(...manifests.map(({ name }) => name.length), 0);
   return manifests
@@ -216,6 +227,7 @@ export function cliHelp(): string {
     "",
     "Options:",
     "  --template <name>  Choose a template.",
+    "  --genre <name>     Choose an exact genre kit; unknown genres use minimal.",
     "  --no-install       Copy the project without running pnpm install.",
     "  --help             Show this help.",
     "",
@@ -596,6 +608,7 @@ function packageNameFromFlag(flag: string): string | undefined {
 const BOOLEAN_FLAGS = new Set(["--no-install", "--help", "-h"]);
 const VALUE_FLAGS = new Set<string>([
   "--template",
+  "--genre",
   "--runtime-package",
   ...Object.values(PACKAGE_SOURCE_FLAGS),
 ]);
@@ -638,6 +651,10 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
     throw new Error(`Unexpected extra argument '${targets.at(1)}'. ${SCAFFOLD_USAGE}`);
   const template = values.get("--template") as ScaffoldTemplate | undefined;
   if (template !== undefined) kitManifest(template);
+  const genre = values.get("--genre");
+  if (template !== undefined && genre !== undefined)
+    throw new Error(`Options '--template' and '--genre' cannot be combined. ${SCAFFOLD_USAGE}`);
+  const resolvedTemplate = genre === undefined ? template : templateForGenre(genre);
   const packageSources: Record<string, string> = {};
   const knownPackageFlags = new Set<string>(Object.values(PACKAGE_SOURCE_FLAGS));
   for (const [name, flag] of Object.entries(PACKAGE_SOURCE_FLAGS)) {
@@ -657,7 +674,7 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
     install: !booleans.has("--no-install"),
     target,
     ...(Object.keys(packageSources).length === 0 ? {} : { packageSources }),
-    ...(template === undefined ? {} : { template }),
+    ...(resolvedTemplate === undefined ? {} : { template: resolvedTemplate }),
   };
 }
 

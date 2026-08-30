@@ -251,27 +251,25 @@ describe("threenative doctor", () => {
     expect(check(report, "native entry").status).toBe("ok");
   });
 
-  it("warns when nothing proves the game and when the agent has no capability search", () => {
+  it("fails when the authoring agent has no capability search", () => {
     const report = diagnoseProject(
       snapshot({ files: new Set(["package.json", "src/game.ts", "src/main.ts"]) }),
     );
     expect(check(report, "playtests").status).toBe("warn");
-    expect(check(report, "capability search").status).toBe("warn");
+    expect(check(report, "capability search").status).toBe("fail");
     expect(check(report, "capability search").detail).toMatch(/capabilit/i);
-    expect(report.pass).toBe(true);
+    expect(report.pass).toBe(false);
   });
 
-  it("fails capability search when the engine server package is absent", () => {
+  it("warns when the core package that owns engine discovery is absent", () => {
     const report = diagnoseProject(
       snapshot({
         readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
       }),
     );
-    const engine = report.checks.find(({ name }) => name.includes("threenative-engine-mcp"));
+    const engine = report.checks.find(({ name }) => name.includes("@threenative/core"));
     expect(engine).toMatchObject({ status: "warn" });
-    expect(engine?.detail).toMatch(
-      /threenative-engine-mcp.*0\.2\.0|0\.2\.0.*threenative-engine-mcp/u,
-    );
+    expect(engine?.detail).toMatch(/@threenative\/core.*0\.3\.0|0\.3\.0.*@threenative\/core/u);
   });
 
   it("reports each of the three MCP servers separately", () => {
@@ -280,13 +278,29 @@ describe("threenative doctor", () => {
         readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
       }),
     );
-    const serverChecks = report.checks.filter(
-      ({ name }) => name.includes("threenative-") && name.includes("capability"),
-    );
+    const serverChecks = report.checks.filter(({ name }) => name.startsWith("capability search:"));
     expect(serverChecks).toHaveLength(3);
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-assets/);
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-sculpt/);
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-engine/);
+  });
+
+  it("fails a resolved MCP server whose transport does not initialize", () => {
+    const report = diagnoseProject(
+      snapshot({
+        mcpServerHealth: new Map([
+          [
+            "threenative-engine",
+            { detail: "its MCP transport failed to start: boom", status: "fail" },
+          ],
+        ]),
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+        resolvePackageDirectory: (name) => (name === "@threenative/core" ? "/engine" : undefined),
+      }),
+    );
+    const engine = report.checks.find(({ name }) => name.includes("@threenative/core"));
+    expect(engine).toMatchObject({ status: "fail" });
+    expect(engine?.detail).toContain("transport failed to start");
   });
 
   it("reports malformed capability configuration distinctly", () => {
@@ -894,7 +908,7 @@ describe("threenative doctor edge coverage", () => {
     const packageNames = [
       ["threenative-asset-mcp", "0.4.0"],
       ["threenative-sculpt-mcp", "0.1.0"],
-      ["threenative-engine-mcp", "0.2.0"],
+      ["@threenative/core", "0.3.0"],
     ] as const;
     for (const [name, version] of packageNames) {
       const directory = path.join(root, "node_modules", name);
@@ -912,7 +926,7 @@ describe("threenative doctor edge coverage", () => {
     expect(check(resolved, "capability search")).toMatchObject({ status: "ok" });
 
     await writeFile(
-      path.join(root, "node_modules", "threenative-engine-mcp", "package.json"),
+      path.join(root, "node_modules", "@threenative/core", "package.json"),
       JSON.stringify({}),
     );
     const noVersion = diagnoseProject(
@@ -922,14 +936,12 @@ describe("threenative doctor edge coverage", () => {
         resolvePackageDirectory: resolver,
       }),
     );
-    expect(
-      noVersion.checks.find(({ name }) => name.includes("threenative-engine-mcp")),
-    ).toMatchObject({
+    expect(noVersion.checks.find(({ name }) => name.includes("@threenative/core"))).toMatchObject({
       status: "fail",
     });
 
     await writeFile(
-      path.join(root, "node_modules", "threenative-engine-mcp", "package.json"),
+      path.join(root, "node_modules", "@threenative/core", "package.json"),
       JSON.stringify({ version: "9.9.9" }),
     );
     const mismatch = diagnoseProject(
@@ -939,9 +951,7 @@ describe("threenative doctor edge coverage", () => {
         resolvePackageDirectory: resolver,
       }),
     );
-    expect(
-      mismatch.checks.find(({ name }) => name.includes("threenative-engine-mcp")),
-    ).toMatchObject({
+    expect(mismatch.checks.find(({ name }) => name.includes("@threenative/core"))).toMatchObject({
       status: "warn",
     });
   });

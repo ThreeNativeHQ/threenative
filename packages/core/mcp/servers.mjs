@@ -26,9 +26,10 @@ export const MCP_SERVERS = Object.freeze({
   }),
 });
 
-/** The package each shim launches, and the version `npx` falls back to when it is not installed.
- * Both servers carry heavy native dependencies — playwright, sharp — so core does not depend on
- * them: a game that never opens the asset tools must not pay hundreds of megabytes for them. */
+/** The external package each shim launches. Core installs asset and sculpt transitively and bundles
+ * engine discovery itself: a game author must never know these package names or install them
+ * separately. The pinned engine version remains an emergency fallback for a legacy development
+ * checkout whose bundle has not been built. */
 export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.4.0" }),
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.1.0" }),

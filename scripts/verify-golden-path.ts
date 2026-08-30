@@ -344,6 +344,7 @@ async function assertEngineCapabilityDiscovery(
 ): Promise<void> {
   const called = await request("tools/call", {
     arguments: {
+      scope: "request",
       situation:
         "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
     },

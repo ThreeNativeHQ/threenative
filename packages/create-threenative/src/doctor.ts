@@ -59,9 +59,15 @@ export interface IProjectSnapshot {
   /** Optional seams used by the diagnostic checks and by deterministic unit fixtures. */
   readonly androidToolchain?: IAndroidToolchainProbe;
   readonly directoryWritable?: (relative: string) => boolean | undefined;
+  readonly mcpServerHealth?: ReadonlyMap<string, IMcpServerHealth>;
   readonly playtestRunnerPath?: string;
   readonly resolvePackageDirectory?: (name: string) => string | undefined;
   readonly runPlaytestDoctor?: () => string;
+}
+
+export interface IMcpServerHealth {
+  readonly detail: string;
+  readonly status: "fail" | "ok";
 }
 
 export interface IDesktopOverlayProbe {
@@ -106,8 +112,8 @@ const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = [
   {
     configName: "threenative-engine",
     expectedArgs: "./node_modules/@threenative/core/mcp/engine.mjs",
-    packageName: "threenative-engine-mcp",
-    version: "0.2.0",
+    packageName: "@threenative/core",
+    version: "0.3.0",
   },
 ];
 
@@ -217,9 +223,16 @@ function resolvePackageDirectory(snapshot: IProjectSnapshot, name: string): stri
   if (snapshot.resolvePackageDirectory !== undefined) {
     return snapshot.resolvePackageDirectory(name);
   }
-  return snapshot.projectRoot === undefined
-    ? undefined
-    : resolvePackageDirectoryFrom(snapshot.projectRoot, name);
+  if (snapshot.projectRoot === undefined) return undefined;
+  const direct = resolvePackageDirectoryFrom(snapshot.projectRoot, name);
+  if (direct !== undefined) return direct;
+  const core = resolvePackageDirectoryFrom(snapshot.projectRoot, "@threenative/core");
+  if (core === undefined) return undefined;
+  try {
+    return resolvePackageDirectoryFrom(realpathSync(core), name);
+  } catch {
+    return undefined;
+  }
 }
 
 function resolveBinaryFrom(start: string, name: string): string | undefined {
@@ -327,6 +340,15 @@ function mcpServerCheck(
       status: "fail",
     };
   }
+  const health = snapshot.mcpServerHealth?.get(spec.configName);
+  if (health?.status === "fail") {
+    return {
+      detail: `${spec.configName} is configured, but ${health.detail}`,
+      fix: `Reinstall @threenative/core and ${spec.packageName}, then rerun doctor.`,
+      name,
+      status: "fail",
+    };
+  }
   const packageDirectory = resolvePackageDirectory(snapshot, spec.packageName);
   if (packageDirectory === undefined) {
     return {
@@ -355,10 +377,75 @@ function mcpServerCheck(
     };
   }
   return {
-    detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}`,
+    detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}${health === undefined ? "" : `; ${health.detail}`}`,
     name,
     status: "ok",
   };
+}
+
+function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHealth {
+  const initialize = JSON.stringify({
+    id: 1,
+    jsonrpc: "2.0",
+    method: "initialize",
+    params: {
+      capabilities: {},
+      clientInfo: { name: "threenative-doctor", version: "0.3.0" },
+      protocolVersion: "2025-06-18",
+    },
+  });
+  const initialized = JSON.stringify({
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+  });
+  const list = JSON.stringify({ id: 2, jsonrpc: "2.0", method: "tools/list", params: {} });
+  const result = spawnSync("node", [spec.expectedArgs], {
+    cwd: projectRoot,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...(spec.configName === "threenative-assets"
+        ? Object.fromEntries([
+            ["ASSET_DOWNLOAD_DIR", "./public/assets"],
+            ["AUDIO_DOWNLOAD_DIR", "./public/audio"],
+          ])
+        : {}),
+    },
+    input: `${initialize}\n${initialized}\n${list}\n`,
+    maxBuffer: 4 * 1024 * 1024,
+    timeout: 5_000,
+  });
+  if (result.error !== undefined || result.status !== 0) {
+    const stderr = result.stderr.trim();
+    const reason =
+      result.error?.message ?? (stderr.length > 0 ? stderr : `exited ${result.status}`);
+    return { detail: `its MCP transport failed to start: ${reason}`, status: "fail" };
+  }
+  const responses = result.stdout
+    .split(/\r?\n/u)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as unknown];
+      } catch {
+        return [];
+      }
+    })
+    .map(record)
+    .filter((value): value is Record<string, unknown> => value !== undefined);
+  const initializeResponse = responses.find(({ id }) => id === 1);
+  const listResponse = responses.find(({ id }) => id === 2);
+  const tools = record(listResponse?.result)?.tools;
+  if (
+    record(initializeResponse?.result) === undefined ||
+    !Array.isArray(tools) ||
+    tools.length === 0
+  ) {
+    return {
+      detail: "its MCP transport did not complete initialize and advertise tools",
+      status: "fail",
+    };
+  }
+  return { detail: `transport initialized and advertised ${tools.length} tool(s)`, status: "ok" };
 }
 
 function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
@@ -385,7 +472,7 @@ function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorChe
           "no .mcp.json, so an agent here cannot search engine capabilities and will hand-write what exists",
         fix: "Restore the .mcp.json a scaffolded project ships, which wires the ThreeNative MCP servers.",
         name: "capability search",
-        status: "warn",
+        status: "fail",
       },
     ];
   }
@@ -1214,10 +1301,19 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       ? undefined
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
   const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
+  const mcpServerHealth = new Map<string, IMcpServerHealth>();
+  if (files.has(".mcp.json")) {
+    for (const spec of MCP_SERVER_SPECS) {
+      if (existsSync(path.resolve(projectRoot, spec.expectedArgs))) {
+        mcpServerHealth.set(spec.configName, probeMcpServer(projectRoot, spec));
+      }
+    }
+  }
   return {
     config,
     files,
     installedVersions,
+    mcpServerHealth,
     packageJson,
     projectRoot,
     readText: (relative) => {
@@ -1236,7 +1332,6 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
           playtestRunnerPath,
           runPlaytestDoctor: () => executePlaytestDoctor(playtestRunnerPath, projectRoot),
         }),
-    resolvePackageDirectory: (name) => resolvePackageDirectoryFrom(projectRoot, name),
     ...(runtimeRoot === undefined
       ? {}
       : {

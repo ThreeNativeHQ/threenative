@@ -80,6 +80,24 @@ async function templatePinnedPackages(): Promise<Set<string>> {
   return pinned;
 }
 
+async function workspacePinnedPackages(): Promise<Set<string>> {
+  const pinned = new Set<string>();
+  const packagesRoot = path.join(repoRoot, "packages");
+  for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifest = JSON.parse(
+      await readFile(path.join(packagesRoot, entry.name, "package.json"), "utf8"),
+    ) as {
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    for (const source of [manifest.dependencies, manifest.optionalDependencies]) {
+      for (const name of Object.keys(source ?? {})) pinned.add(name);
+    }
+  }
+  return pinned;
+}
+
 /** Server names written into every generated project's `.mcp.json` by installing core. */
 async function shippedMcpServerNames(): Promise<string[]> {
   const config = JSON.parse(
@@ -140,6 +158,7 @@ describe("primary documentation agrees with the shipped surfaces", () => {
     const allowed = new Set([
       ...(await shippedPackages()).keys(),
       ...(await templatePinnedPackages()),
+      ...(await workspacePinnedPackages()),
       ...(await shippedMcpServerNames()),
     ]);
     for (const docPath of PRIMARY_DOCS) {

@@ -651,14 +651,16 @@ describe("template contracts", () => {
     }
   });
 
-  it("should keep external MCPs out of every workspace package", async () => {
+  it("should make core the single automatic owner of external MCP dependencies", async () => {
     const packagesRoot = path.resolve("packages");
     for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const manifestPath = path.join(packagesRoot, entry.name, "package.json");
       const manifest = await readFile(manifestPath, "utf8").catch(() => undefined);
-      for (const packageName of externalMcps)
-        expect(manifest ?? "", `${entry.name}/${packageName}`).not.toContain(packageName);
+      for (const packageName of externalMcps) {
+        if (entry.name === "core") expect(manifest ?? "", packageName).toContain(packageName);
+        else expect(manifest ?? "", `${entry.name}/${packageName}`).not.toContain(packageName);
+      }
     }
   });
 
@@ -798,11 +800,11 @@ describe("template contracts", () => {
         template,
       ).toEqual([]);
       for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
-      const manifest = JSON.parse(
-        await readFile(path.join(templateRoot, template, "package.json"), "utf8"),
-      ) as { devDependencies?: Record<string, string> };
-      expect(manifest.devDependencies?.["threenative-sculpt-mcp"], template).toBe(surface.version);
     }
+    const coreManifest = JSON.parse(
+      await readFile(path.resolve("packages/core/package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string> };
+    expect(coreManifest.dependencies?.["threenative-sculpt-mcp"]).toBe(surface.version);
   });
 
   it("should list @types/three in every template that runs tsc", async () => {

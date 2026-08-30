@@ -41,13 +41,15 @@
   "sideEffects": false,
   "scripts": {
     "postinstall": "node ./scripts/ensure-mcp.mjs",
-    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && publint",
+    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict"
   },
   "dependencies": {
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
+    "threenative-asset-mcp": "0.4.0",
+    "threenative-sculpt-mcp": "0.1.0",
     "zustand": "catalog:"
   },
   "devDependencies": {

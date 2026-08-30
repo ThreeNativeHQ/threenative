@@ -17,94 +17,64 @@ any of it.
 <!-- shared: framework-blocks-you -->
 ### Before you write a system, ask what already exists
 
-You have `engine_search_capabilities` in your tool list. Capability discovery is a required
-authoring pass, not one lookup you can satisfy with a generic noun:
+You have `engine_search_capabilities`. Discovery is required before planning:
 
-1. **Before planning, infer the concrete gameplay mechanics implied by the request.** A genre or
-   theme is not a capability: decompose it into the world, movement, interaction, simulation,
-   combat, camera, audio, and UI mechanics that game actually needs. If the core loop remains
-   ambiguous, ask one short question instead of assuming a preset.
-2. **Call it once with the complete, mechanically explicit request, then once per mechanic.** Use
-   the returned `matchedSituation` to confirm why each result was selected.
-3. **Do not write a replacement until every mechanic has either a capability result or a recorded
-   no-match.** A result for one mechanic says nothing about the others.
+1. Infer concrete mechanics from the request: world, traversal, interaction, simulation, combat,
+   camera, audio, and UI. Preserve its distinctive fantasy with the smallest loop using its
+   characteristic setting or traversal—not a generic game with themed props. Search implied
+   mechanics even when the user omits engine terms. Ask one short question only when two core loops
+   remain equally plausible.
+2. Search the full mechanical request with `scope: "request"`, then every mechanic with
+   `scope: "mechanic"`. Check each returned `matchedSituation`.
+3. Before writing replacements, record a capability or no-match for every mechanic.
 
-Repeat this before writing any entity system, movement system, pathfinding, attachment, audio bus,
-particle system, simulation, terrain helper, or measurement helper. Describe each situation in
-plain words: *"enemy walks around a wall"*, *"put a weapon in a character's hand"*, *"keep a
-character's feet on the floor"*.
+Repeat before writing entity, movement, navigation, attachment, audio, particle, simulation,
+terrain, or measurement systems. Describe situations plainly: *"enemy walks around a wall"*.
 
-The manifest is the complete public surface across four packages, and several exports are
-**subpath imports** like `@threenative/physics/navigation` that no amount of grepping this
-project will reveal — nothing imports them yet. The tool is the primary answer; this file is a
-summary and always will be. If the MCP server is unavailable, run the project doctor, then use
-`agent-docs/capability-reference.md` as the offline fallback and perform the same per-mechanic pass.
+The manifest is the complete public surface; grep misses unused subpath exports such as
+`@threenative/physics/navigation`. If MCP is unavailable, run doctor and search
+`agent-docs/capability-reference.md` per mechanic.
 
-Treat the returned constraints as binding. For patrol, chase, obstacle-avoidance, or line-of-sight
-movement, import `NavigationAgent3D` from exactly `@threenative/physics/navigation`;
-`@threenative/physics` is not a valid import for that symbol. For a weapon held in a hand, import
-and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the
-rifle. If the stock visual has no skeleton, add a portable Three.js `Bone` named `RightHand`
-under the character, then call the helper.
+Constraints are binding. Import navigation symbols from the returned subpath. Use `attachToBone`
+for held weapons; if needed, add a portable Three.js `Bone` named `RightHand` first. Capability
+detail governs platform support: never invent limits it does not report. Reject only for a reported
+constraint or a contract that does not fit.
 
-This is not a suggestion about tidiness. A previous game hand-wrote 446 lines of navigation and
-bone attachment that were installed and importable at the time, and the hand-written grounding
-that came with them ran the game at 9 FPS.
+This prevents reimplementing installed systems; one game did so in 446 lines and ran at 9 FPS.
 
 ## When the framework blocks you, write plain Three.js
 
-**First rule out your machine and your project**: when a build or a playtest fails for a reason that
-is not your game code — a browser that will not launch, a blank screenshot, a device that will not
-answer, an import that resolves to nothing — run `npx threenative doctor` and
-`npx @threenative/playtest doctor`. They check the project and the machine and name the cause; only
-after they come back clean is the framework itself the suspect.
-
-**And when the game runs but looks wrong, ask it what it is:**
+For browser, blank-frame, device, or import failures, first run `npx threenative doctor` and
+`npx @threenative/playtest doctor`. They separate project/machine failures from engine bugs. For a
+running game that looks wrong, inspect it:
 
 ```sh
 npx @threenative/playtest doctor --url http://127.0.0.1:5173 --text
 ```
 
-One sample from the running game: how many entities exist and how many are visible, the world
-extents they occupy, whether their scale is consistent with one unit being one metre, draw calls,
-triangles, frame time and frame rate, the states and animation clips actually advancing, and the
-console error count. It is the fastest way to tell "nothing is there" from "everything is there and
-off-screen", or a stall from a scene that is simply drawing far too much. It reports only what the
-bridge observes and names what it cannot see, so treat a missing line as unobserved, never as zero.
+This reports visibility, scale, draw cost, frame rate, advancing state, and errors. Missing output
+means unobserved, never zero.
 
-An API in `@threenative/*` that is broken, missing, or does not do what you need is **not
-something to wait for or to work around from inside its shape.** Drop to vanilla Three.js —
-or to the plain code that does the job — for that one thing and keep building. Your `src/`
-is ordinary source; nothing in `@threenative/*` reads it, so a hand-written `THREE.*`
-implementation sitting beside a framework API is a supported outcome, not a hack.
+When an `@threenative/*` API is broken, missing, or does not do what you need, implement only that
+piece with portable Three.js/plain code and continue:
 
-1. **Scope the fallback to what actually blocked you.** Keep the loop, scenes, input, entity
-   registry and playtest bridge; replacing all of them because one node misbehaved costs far
-   more than it saves.
-2. **Keep the fallback portable.** Plain Three.js and plain math run on native. `document`,
-   `window`, `localStorage`, dynamic `import()`, and a raw physics handle do not — reach for
-   one of those and this part of the game is web-only from then on.
-3. **Report what blocked you**: the API, what you expected, what happened, and what you
-   wrote instead. That is how the gap gets fixed for the next game; a silent workaround
-   leaves it in place.
+1. Keep the existing loop, scenes, input, registry, and playtest bridge.
+2. Avoid `document`, `window`, `localStorage`, dynamic `import()`, and raw physics handles.
+3. **Report what blocked you**: API, expectation, result, and replacement.
 
-Never contort the game to flatter the framework, and never stall on a framework bug. A
-finished game carrying a plain Three.js patch beats a blocked one every time.
+Never stall on a framework bug.
 
 ### Where the long recipes live
 
-This file and the sections around it are the mandatory inline instructions: the first-use
-capability search, the fallback rules, the platform constraints, and the fail-closed playtest
-rules. The step-by-step recipes are separate searchable pages shipped into this project under
-`agent-docs/` — open the one a pointer names when you need it:
+Open the relevant shipped recipe when needed:
 
-- `agent-docs/finding-assets.md` — the full asset-MCP loop: sources, licenses, downloads, ZIPs.
-- `agent-docs/sculpt-from-a-reference.md` — the sculpt gate loop and branch definitions.
-- `agent-docs/webview-ui.md` — the web-view UI layer: state, intents, hit regions.
-- `agent-docs/capture-the-frame.md` — how to screenshot a WebGPU game that actually renders.
-- `agent-docs/ctx-cookbook.md` — `ctx.raycast()`, scene rebuild, and seeded-randomness recipes.
-- `agent-docs/gameplay-recipes.md` — movement mapping, gamepad bindings, physics-step timing.
-- `agent-docs/visual-baseline.md` — the `src/render/` per-file baseline and its traps.
+- `agent-docs/finding-assets.md` — asset search, licenses, downloads, and archives.
+- `agent-docs/sculpt-from-a-reference.md` — sculpt gates and branches.
+- `agent-docs/webview-ui.md` — UI state, intents, and hit regions.
+- `agent-docs/capture-the-frame.md` — WebGPU screenshots.
+- `agent-docs/ctx-cookbook.md` — raycasts, rebuilds, and seeded randomness.
+- `agent-docs/gameplay-recipes.md` — movement, gamepads, and physics timing.
+- `agent-docs/visual-baseline.md` — generated render-source conventions.
 <!-- /shared -->
 
 ## Commands

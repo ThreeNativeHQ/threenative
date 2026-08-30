@@ -49,6 +49,16 @@ describe("mergeMcpServers", () => {
 });
 
 describe("MCP_SERVERS", () => {
+  it("installs every server transitively with core", () => {
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(manifest.dependencies).toMatchObject({
+      "threenative-asset-mcp": "0.4.0",
+      "threenative-sculpt-mcp": "0.1.0",
+    });
+  });
+
   // A renamed or moved shim would leave `.mcp.json` pointing at nothing, and the host reports that
   // as a server that failed to start rather than as a packaging mistake.
   it("names a shim this package actually ships", () => {

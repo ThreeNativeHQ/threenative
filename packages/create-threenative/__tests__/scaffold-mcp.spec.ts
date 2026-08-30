@@ -117,6 +117,7 @@ async function probeEngineServer(target: string): Promise<void> {
 
     const broad = await request(child, nextId, lines, "tools/call", {
       arguments: {
+        scope: "request",
         situation:
           "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
       },
@@ -153,7 +154,7 @@ describe("scaffolded engine MCP", () => {
       const project = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
         devDependencies?: Record<string, string>;
       };
-      expect(project.devDependencies?.[engineMcp], template).toBe("0.2.0");
+      expect(project.devDependencies?.[engineMcp], template).toBeUndefined();
       const manifest = JSON.parse(
         await readFile(path.join(target, "capabilities.json"), "utf8"),
       ) as {

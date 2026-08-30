@@ -42,7 +42,14 @@ export interface IEngineTool {
   };
   readonly inputSchema: {
     readonly type: "object";
-    readonly properties: Record<string, { readonly type: "string" }>;
+    readonly properties: Record<
+      string,
+      {
+        readonly description?: string;
+        readonly enum?: readonly string[];
+        readonly type: "string";
+      }
+    >;
     readonly required: readonly string[];
     readonly additionalProperties: false;
   };
@@ -81,7 +88,7 @@ const STOP_WORDS = new Set([
 const MAX_COMPLETE_REQUEST_RESULTS = 15;
 const MAX_SITUATION_RESULTS = 5;
 const AUTHORING_INSTRUCTIONS =
-  "Before authoring, infer the concrete gameplay mechanics implied by the request. Search once with the complete mechanically explicit request, then once per mechanic. A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing.";
+  'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state.';
 
 export function defaultManifestPath(cwd = process.cwd()): string {
   return path.resolve(cwd, process.env.THREENATIVE_CAPABILITIES_MANIFEST ?? DEFAULT_MANIFEST_FILE);
@@ -168,6 +175,7 @@ function situationScore(
     const score = overlap / Math.max(query.length, phrase.length);
     const phraseBonus =
       phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+    if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
     const candidate = score + phraseBonus;
     if (candidate > best) {
       best = candidate;
@@ -188,12 +196,13 @@ function capabilitySearchKey(entry: ICapabilityEntry): string {
 export function searchCapabilities(
   situation: string,
   manifestFile = defaultManifestPath(),
+  scope: "mechanic" | "request" = "mechanic",
 ): readonly ICapabilitySearchResult[] {
   if (typeof situation !== "string" || situation.trim().length === 0)
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
   const query = tokens(situation);
-  const limit = query.length >= 8 ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
+  const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   return manifest.entries
     .map((entry) => ({ entry, ...situationScore(query, entry.situations) }))
     .filter(({ score }) => score > 0)
@@ -238,10 +247,18 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
     description:
-      "Search the complete installed engine surface by concrete gameplay mechanic. First decompose genre or theme requests into mechanics. Search the mechanically explicit full request, then each mechanic; matchedSituation explains every result.",
+      'Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation explains every result.',
     inputSchema: {
       additionalProperties: false,
-      properties: { situation: { type: "string" } },
+      properties: {
+        scope: {
+          description:
+            "Use request for the complete cross-system game request; use mechanic or omit it for one mechanic.",
+          enum: ["request", "mechanic"],
+          type: "string",
+        },
+        situation: { type: "string" },
+      },
       required: ["situation"],
       type: "object",
     },
@@ -292,7 +309,10 @@ function handleToolCall(
   if (name === "engine_search_capabilities") {
     if (typeof argumentsValue.situation !== "string")
       throw new Error("engine_search_capabilities requires a string 'situation' argument.");
-    return toolText(searchCapabilities(argumentsValue.situation, manifestFile));
+    const scope = argumentsValue.scope ?? "mechanic";
+    if (scope !== "request" && scope !== "mechanic")
+      throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
+    return toolText(searchCapabilities(argumentsValue.situation, manifestFile, scope));
   }
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")

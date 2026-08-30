@@ -78,6 +78,7 @@ describe("threenative-engine-mcp", () => {
     const results = searchCapabilities(
       "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
       workspaceManifest,
+      "request",
     );
     const symbols = results.map((result) => result.symbol);
 
@@ -128,6 +129,15 @@ describe("threenative-engine-mcp", () => {
     expect(results.map((result) => result.symbol)).toEqual(
       expect.arrayContaining(["GPUParticles3D", "RigidBody3D"]),
     );
+    expect(results.length).toBeLessThanOrEqual(5);
+  });
+
+  it("filters one-word coincidences from a verbose mechanic query", () => {
+    const results = searchCapabilities(
+      "detect overlap with a treasure chest, collect it, update score, and reach a win state",
+      workspaceManifest,
+    );
+    expect(results.map((result) => result.symbol)).not.toContain("NavigationAgent3D");
     expect(results.length).toBeLessThanOrEqual(5);
   });
 

@@ -4,7 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { cliHelp, discoverKitManifests, kitManifest, parseArgs } from "../src/index.js";
+import {
+  cliHelp,
+  discoverKitManifests,
+  kitManifest,
+  parseArgs,
+  templateForGenre,
+} from "../src/index.js";
 
 const run = promisify(execFile);
 const threenativeCli = path.resolve(
@@ -20,6 +26,7 @@ describe("create-threenative CLI", () => {
 
     expect(help).toContain("Usage: npx create-threenative <directory> [options]");
     expect(help).toContain("--template <name>");
+    expect(help).toContain("--genre <name>");
     expect(help).toContain("--no-install");
     expect(help).toContain("--help");
     for (const manifest of manifests) {
@@ -27,6 +34,19 @@ describe("create-threenative CLI", () => {
         `${manifest.name.padEnd(width)}  ${manifest.title}: ${manifest.blurb}`,
       );
     }
+  });
+
+  it("uses an exact genre kit and falls back to minimal for an unknown genre", () => {
+    expect(templateForGenre("racing")).toBe("racing");
+    expect(templateForGenre("pirate")).toBe("minimal");
+    expect(parseArgs(["game", "--genre", "pirate", "--no-install"])).toMatchObject({
+      install: false,
+      target: "game",
+      template: "minimal",
+    });
+    expect(() => parseArgs(["game", "--genre", "pirate", "--template", "starter"])).toThrow(
+      /cannot be combined/u,
+    );
   });
 
   it("makes every template's genre reachable through the template flag", () => {

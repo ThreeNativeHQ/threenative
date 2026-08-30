@@ -28,9 +28,9 @@ const LIMITS = {
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
 
 /**
- * Authoring MCPs are npm dependencies of the *generated* project, never of this workspace.
- * Vendoring them would consume framework LOC and add packages that carry no runtime dependency
- * boundary.
+ * Authoring MCP source stays external, while @threenative/core owns the npm dependencies so every
+ * installation receives the servers automatically. Any other workspace package claiming those
+ * dependencies recreates the installation split this invariant is meant to prevent.
  * Salvage already exempts an `asset-mcp` directory from the LOC count, so nothing else here
  * would notice it arriving.
  */
@@ -262,7 +262,7 @@ async function vendoredExternalMcp(root: string): Promise<string[]> {
     ];
     if (
       (manifest.name !== undefined && EXTERNAL_MCPS.has(manifest.name)) ||
-      dependencies.some((dependency) => EXTERNAL_MCPS.has(dependency))
+      (entry.name !== "core" && dependencies.some((dependency) => EXTERNAL_MCPS.has(dependency)))
     )
       offenders.push(entry.name);
   }
@@ -426,7 +426,7 @@ export function budgetErrors(report: BudgetReport): string[] {
   const errors: string[] = [];
   if (report.vendoredExternalMcp.length > 0) {
     errors.push(
-      `External MCPs (${[...EXTERNAL_MCPS].join(", ")}) must stay external: ${report.vendoredExternalMcp.join(", ")} claims one. They are dependencies of generated projects, and vendoring them consumes framework LOC while adding packages with no runtime dependency boundary.`,
+      `Authoring MCP source (${[...EXTERNAL_MCPS].join(", ")}) must stay external and only @threenative/core may depend on it: ${report.vendoredExternalMcp.join(", ")} claims one.`,
     );
   }
   if (report.vendoredNativeRuntime.length > 0) {

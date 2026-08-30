@@ -14,4 +14,10 @@ const env =
     ? {}
     : Object.fromEntries([["THREENATIVE_CAPABILITIES_MANIFEST", bundled]]);
 
-await launchMcpServer({ ...MCP_PACKAGES.engine, env });
+const localServer = path.resolve(fileURLToPath(import.meta.url), "..", "engine-server.mjs");
+if (existsSync(localServer)) {
+  const { runServer } = await import("./engine-server.mjs");
+  runServer(env.THREENATIVE_CAPABILITIES_MANIFEST);
+} else {
+  await launchMcpServer({ ...MCP_PACKAGES.engine, env });
+}

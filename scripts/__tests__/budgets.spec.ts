@@ -149,7 +149,7 @@ describe("budget gate", () => {
     expect(budgetErrors(report).join("\n")).toContain("must stay external");
   });
 
-  it("should fail when a workspace package depends on the asset MCP", async () => {
+  it("should allow core to carry the asset MCP automatically", async () => {
     const root = await fixtureRoot();
     const directory = path.join(root, "packages", "core");
     await mkdir(directory, { recursive: true });
@@ -158,7 +158,7 @@ describe("budget gate", () => {
       JSON.stringify({ dependencies: { "threenative-asset-mcp": "0.4.0" }, name: "core" }),
     );
     const report = await collectBudgets(root);
-    expect(budgetErrors(report).join("\n")).toContain("must stay external");
+    expect(budgetErrors(report)).toEqual([]);
   });
 
   it("should fail when the sculpt MCP is vendored into packages", async () => {
@@ -174,19 +174,19 @@ describe("budget gate", () => {
     expect(budgetErrors(report).join("\n")).toContain("must stay external");
   });
 
-  it("should fail when a workspace package depends on the sculpt MCP", async () => {
+  it("should fail when a workspace package other than core depends on the sculpt MCP", async () => {
     const root = await fixtureRoot();
-    const directory = path.join(root, "packages", "core");
+    const directory = path.join(root, "packages", "physics");
     await mkdir(directory, { recursive: true });
     await writeFile(
       path.join(directory, "package.json"),
-      JSON.stringify({ dependencies: { "threenative-sculpt-mcp": "0.1.0" }, name: "core" }),
+      JSON.stringify({ dependencies: { "threenative-sculpt-mcp": "0.1.0" }, name: "physics" }),
     );
     const report = await collectBudgets(root);
     expect(budgetErrors(report).join("\n")).toContain("must stay external");
   });
 
-  it("should keep external MCPs out of the real tree", async () => {
+  it("should keep external MCP source out of the real tree and dependencies owned by core", async () => {
     const report = await collectBudgets(process.cwd());
     expect(report.vendoredExternalMcp).toEqual([]);
   });

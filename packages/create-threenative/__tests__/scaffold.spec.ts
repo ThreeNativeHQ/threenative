@@ -94,13 +94,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // starter also carries the physical-device cloth displacement threshold.
   // Recomputed after capability discovery became mechanic-driven and every scaffold gained the
   // project-scoped Codex MCP config required to expose the installed engine server.
-  "action-rpg": "7d072f28ba3200f35d718ebe84f88c7b161bac516f49f0e985b9dbaf457975a3",
-  defense: "8524300a6be3f1ce55ab6f5a05a3f2dc54adbad68a2235273303c6f5586523fc",
-  minimal: "b5506aa88f1bb69f05e0335b059c6d669243f59832d5fee9368c9541766a6bbd",
-  platformer: "3f337a3bc5a090d7e66e60b1c88dd5215cbb2ac76082bf2e187ff09616c349c4",
-  racing: "5d28182097eddb852bf182c9c61182396a8b3fc628e457044f86e42c21e35077",
-  shooter: "23995a3c4688d655b0bee7b30239fd9cdb3aa7eba002b8fecc9c5daee4f4d254",
-  starter: "243527fc4aee5f8b17f82d76de49d3cc9d4ec3d17c2d8343e8bee7715c876063",
+  // Recomputed after the authoring tools gained explicit request-versus-mechanic search scope.
+  // Recomputed after MCP server packages became automatic core payloads rather than scaffold pins.
+  "action-rpg": "35f9d3f6eb495a2be88b998369da4ce53b506408b4f853d110f40ca470e2e824",
+  defense: "a49b2a7b50556bba3998fb57e922cad4a60e84ee350341e14250df9b00c8f190",
+  minimal: "07d47b36694c09bb3e556424ca614b050737ee838d9ccf368b34e2e95e368393",
+  platformer: "bb3ed3881c1aaa533f11f7ac3bdbc072f74f968572a9457361117549787ac3fc",
+  racing: "07fba6abc9ca4ce5627d568cf8d85c1afab51cc23ce85a227f9d3b8e59ed52d3",
+  shooter: "4d0866bde94a106d32af55b57312ee4cebb5b4e51fda159e0b34cdf59d72e511",
+  starter: "302e7c2de5ff326fd150d95ef57f8c96517711a7c7c62fb582554fce9ad42c64",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -874,9 +876,9 @@ describe("create-threenative", () => {
       const manifest = JSON.parse(
         await readFile(path.join(result.target, "package.json"), "utf8"),
       ) as { devDependencies?: Record<string, string> };
-      expect(manifest.devDependencies?.[ASSET_MCP]).toBeDefined();
-      expect(manifest.devDependencies?.[SCULPT_MCP]).toBe("0.1.0");
-      expect(manifest.devDependencies?.[ENGINE_MCP]).toBe("0.2.0");
+      expect(manifest.devDependencies?.[ASSET_MCP]).toBeUndefined();
+      expect(manifest.devDependencies?.[SCULPT_MCP]).toBeUndefined();
+      expect(manifest.devDependencies?.[ENGINE_MCP]).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -905,12 +907,7 @@ describe("create-threenative", () => {
     );
     expect(new Set(configs.map((config) => config.toString("utf8"))).size).toBe(1);
     expect(new Set(codexConfigs.map((config) => config.toString("utf8"))).size).toBe(1);
-    expect(pins[0]?.asset).toMatch(/^\d+\.\d+\.\d+$/u);
-    expect(new Set(pins.map(({ asset }) => asset)).size, JSON.stringify(pins)).toBe(1);
-    expect(pins[0]?.sculpt).toBe("0.1.0");
-    expect(new Set(pins.map(({ sculpt }) => sculpt)).size, JSON.stringify(pins)).toBe(1);
-    expect(pins[0]?.engine).toBe("0.2.0");
-    expect(new Set(pins.map(({ engine }) => engine)).size, JSON.stringify(pins)).toBe(1);
+    expect(pins.every(({ asset, engine, sculpt }) => !asset && !engine && !sculpt)).toBe(true);
   });
 
   it("should document only tools the pinned asset MCP actually serves", async () => {
@@ -918,6 +915,10 @@ describe("create-threenative", () => {
       await readFile(path.resolve("packages/create-threenative/asset-mcp-tools.json"), "utf8"),
     ) as { recommended: string[]; tools: string[]; version: string };
     const served = new Set(surface.tools);
+    const coreManifest = JSON.parse(
+      await readFile(path.resolve("packages/core/package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string> };
+    expect(coreManifest.dependencies?.[ASSET_MCP]).toBe(surface.version);
     const namespaces = new Set(surface.tools.map((tool) => tool.split("_")[0]));
     for (const template of ALL_TEMPLATES) {
       const agents = await readFile(path.join(TEMPLATE_ROOT, template, "AGENTS.md"), "utf8");
@@ -929,10 +930,6 @@ describe("create-threenative", () => {
         template,
       ).toEqual([]);
       for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
-      const manifest = JSON.parse(
-        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
-      ) as { devDependencies?: Record<string, string> };
-      expect(manifest.devDependencies?.[ASSET_MCP], template).toBe(surface.version);
     }
   });
 
