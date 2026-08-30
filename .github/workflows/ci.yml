@@ -130,6 +130,14 @@ jobs:
   test-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # The hot-reload proof edits a source file and waits for vite to push the update. On this
+      # runner it waited and the game reported `reloads: 0` with everything else healthy —
+      # entities 3, physics 4, one canvas — so the edit landed and the watcher never saw it.
+      # inotify is what does not survive the container; chokidar, vite's watcher, polls instead
+      # when told to. Slower and reliable, which is the right trade for a watcher in CI.
+      CHOKIDAR_USEPOLLING: "1"
+      CHOKIDAR_INTERVAL: "200"
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
