@@ -223,13 +223,56 @@ function handleToolCall(
 ): { content: [{ type: "text"; text: string }] } {
   const name = params.name;
   const argumentsValue = isRecord(params.arguments) ? params.arguments : {};
+  // The raw value goes to the validator, never through String(): a numeric or null argument
+  // must come back as a tool error the authoring agent can read, not a vacuous empty search
+  // that looks like the engine having no such capability.
   if (name === "engine_search_capabilities") {
-    return toolText(searchCapabilities(String(argumentsValue.situation ?? ""), manifestFile));
+    if (typeof argumentsValue.situation !== "string")
+      throw new Error("engine_search_capabilities requires a string 'situation' argument.");
+    return toolText(searchCapabilities(argumentsValue.situation, manifestFile));
   }
   if (name === "engine_capability_detail") {
-    return toolText(capabilityDetail(String(argumentsValue.symbol ?? ""), manifestFile));
+    if (typeof argumentsValue.symbol !== "string")
+      throw new Error("engine_capability_detail requires a string 'symbol' argument.");
+    return toolText(capabilityDetail(argumentsValue.symbol, manifestFile));
   }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
+}
+
+/**
+ * Handles one raw stdin line and returns the JSON-RPC response to write, or `undefined` when the
+ * line must be consumed silently. Extracted so the stdio contract is testable without a live
+ * `process.stdin`: this framing is the whole surface an authoring agent's MCP client speaks.
+ */
+export function handleLine(line: string, manifestFile: string): string | undefined {
+  if (line.trim().length === 0) return undefined;
+  let request: unknown;
+  try {
+    request = JSON.parse(line) as unknown;
+  } catch (error) {
+    return jsonRpcError(null, -32700, `Invalid JSON: ${String(error)}`);
+  }
+  if (!isRecord(request) || request.id === undefined || typeof request.method !== "string")
+    return undefined;
+  try {
+    if (request.method === "initialize") {
+      return jsonRpcResult(request.id, {
+        capabilities: { tools: { listChanged: false } },
+        protocolVersion: "2025-06-18",
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.0" },
+      });
+    }
+    if (request.method === "tools/list") {
+      return jsonRpcResult(request.id, { tools: TOOL_DEFINITIONS });
+    }
+    if (request.method === "tools/call") {
+      if (!isRecord(request.params)) throw new Error("tools/call requires an object params value.");
+      return jsonRpcResult(request.id, handleToolCall(request.params, manifestFile));
+    }
+    return jsonRpcError(request.id, -32601, `Method not found: ${request.method}`);
+  } catch (error) {
+    return jsonRpcError(request.id, -32000, error instanceof Error ? error.message : String(error));
+  }
 }
 
 export function runServer(manifestFile = defaultManifestPath()): void {
@@ -238,39 +281,8 @@ export function runServer(manifestFile = defaultManifestPath()): void {
   loadCapabilityManifest(manifestFile);
   const input = createInterface({ input: process.stdin });
   input.on("line", (line) => {
-    if (line.trim().length === 0) return;
-    let request: unknown;
-    try {
-      request = JSON.parse(line) as unknown;
-    } catch (error) {
-      writeLine(jsonRpcError(null, -32700, `Invalid JSON: ${String(error)}`));
-      return;
-    }
-    if (!isRecord(request) || request.id === undefined || typeof request.method !== "string")
-      return;
-    try {
-      if (request.method === "initialize") {
-        writeLine(
-          jsonRpcResult(request.id, {
-            capabilities: { tools: { listChanged: false } },
-            protocolVersion: "2025-06-18",
-            serverInfo: { name: "threenative-engine-mcp", version: "0.2.0" },
-          }),
-        );
-      } else if (request.method === "tools/list") {
-        writeLine(jsonRpcResult(request.id, { tools: TOOL_DEFINITIONS }));
-      } else if (request.method === "tools/call") {
-        if (!isRecord(request.params))
-          throw new Error("tools/call requires an object params value.");
-        writeLine(jsonRpcResult(request.id, handleToolCall(request.params, manifestFile)));
-      } else {
-        writeLine(jsonRpcError(request.id, -32601, `Method not found: ${request.method}`));
-      }
-    } catch (error) {
-      writeLine(
-        jsonRpcError(request.id, -32000, error instanceof Error ? error.message : String(error)),
-      );
-    }
+    const response = handleLine(line, manifestFile);
+    if (response !== undefined) writeLine(response);
   });
 }
 
