@@ -104,13 +104,23 @@ describe("starter playtest proof", () => {
         };
         resources: unknown[];
       };
-      steps: Array<{ press?: string }>;
+      steps: Array<{ label?: string; press?: string }>;
     };
     const player = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/entities/Player.ts"),
       "utf8",
     );
-    expect(parsed.steps[0]?.press).toBe("ArrowRight");
+    // The starter boots to its menu, so a scenario that drives the player has to start the game
+    // before it can drive anything. This used to pin step 0 as the ArrowRight press, which is what
+    // let eighteen scenarios keep pressing keys at a player that did not exist yet once the menu
+    // landed. Pin the order instead: enter play, then move.
+    const startGame = parsed.steps.findIndex((step) => step.label === "start-game");
+    const moveRight = parsed.steps.findIndex((step) => step.press === "ArrowRight");
+    expect(
+      startGame,
+      "the scenario must leave the menu before it drives the player",
+    ).toBeGreaterThanOrEqual(0);
+    expect(moveRight, "the scenario must still drive the player right").toBeGreaterThan(startGame);
     expect(parsed.assert.diagnostics).toEqual({
       noConsoleErrors: true,
       noNetworkErrors: true,
