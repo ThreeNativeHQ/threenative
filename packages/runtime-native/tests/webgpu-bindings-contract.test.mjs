@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -26,6 +26,23 @@ function blockBetween(source, startMarker, endMarker) {
 function handlerForRow(surface, name) {
   return nativeBindingDefinition(surface, name).text;
 }
+
+test("every binding translation unit that polls wgpu-native includes its extension declaration", () => {
+  const bindingsDirectory = join(root, "src/webgpu");
+  const pollingSources = readdirSync(bindingsDirectory)
+    .filter((name) => name.startsWith("bindings") && name.endsWith(".cpp"))
+    .map((name) => ({ name, source: read(`src/webgpu/${name}`) }))
+    .filter(({ source }) => source.includes("wgpuDevicePoll("));
+
+  assert.ok(pollingSources.length > 0, "expected at least one wgpuDevicePoll binding caller");
+  for (const { name, source } of pollingSources) {
+    assert.match(
+      source,
+      /#include\s+[<"](?:webgpu|wgpu)\/wgpu\.h[>"]|WGPUBool\s+wgpuDevicePoll\s*\(/u,
+      `${name} calls wgpuDevicePoll without including or declaring the wgpu-native extension API`,
+    );
+  }
+});
 
 function assertBindGroupViewOwnership(bindGroup) {
   assert.match(

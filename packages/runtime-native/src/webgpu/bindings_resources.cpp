@@ -21,6 +21,14 @@
 
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 #include <webgpu/webgpu.h>
+
+#if defined(MYSTRAL_WEBGPU_WGPU)
+#if __has_include(<webgpu/wgpu.h>)
+#include <webgpu/wgpu.h>
+#else
+#include <wgpu/wgpu.h>
+#endif
+#endif
 #include "mystral/webgpu_compat.h"
 #endif
 

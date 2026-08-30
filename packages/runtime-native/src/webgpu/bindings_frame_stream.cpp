@@ -6,6 +6,14 @@
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu_compat.h"
 
+#if defined(MYSTRAL_WEBGPU_WGPU)
+#if __has_include(<webgpu/wgpu.h>)
+#include <webgpu/wgpu.h>
+#else
+#include <wgpu/wgpu.h>
+#endif
+#endif
+
 #include <cmath>
 #include <cstring>
 #include <iostream>

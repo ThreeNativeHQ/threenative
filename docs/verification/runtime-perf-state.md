@@ -248,6 +248,45 @@ largest required host-gap share shift was **1.099 percentage points**, below the
 This remains desktop/Xvfb evidence; no physical Pixel 8 was connected, so **no device result is
 claimed**.
 
+### Post-merge reconciliation — 2026-08-29
+
+After merging current `main` at `7f84b1a4`, the identical native-smoke meter on the rebuilt
+shipping host produced steady `render.p50` **1.0 / 1.2 ms**. The final host-gap window measured
+`frameDrain` 0.003 ms, `frameReplay` 0.345 ms, `present` 32.003 ms, `gpuDrain` 0.000 ms,
+`devicePoll` 0.696 ms and `endFrameOther` 0.001 ms. The largest required share shift from the
+pre-move baseline was **1.231 percentage points** (`devicePoll`), below the two-point guard. This
+is desktop/Xvfb evidence; the physical-device result remains a separate row.
+
+### PRD-230 physical Pixel 8 lane — 2026-08-29
+
+The post-split V8 APK ran the 500-mesh native-smoke subject on a physical Pixel 8 (`shiba`) over
+Wi-Fi ADB while unplugged. The accepted APK had application id `com.threenative.game` and SHA-256
+`3a743288c670c0598d754554da0969f20d124ca44959a4122ddcfd3ffcc35271`. Before measurement, the
+300-frame first proof passed with clean logs and a nonblank 1080x2400 screenshot (SHA-256
+`3bafc84d930a5886a7fd04c8a20496490819960fb910582ea018773962293fc3`).
+
+After clearing logcat and discarding the startup window, `playtest perf --logcat` accepted seven
+300-frame windows: **59.77–59.99 fps**, frame p50 **6.0–6.6 ms**, render p50 **4.8–5.3 ms**, render
+p95 **6.8–7.4 ms**, and zero hitches. Every window used scale 1, 1080x2400, and 4x samples. Device
+doctor reported thermal status `NONE` before and after, skin 36.7 -> 38.5 °C, battery 97 -> 96%,
+and discharging throughout.
+
+```sh
+node packages/runtime-native/scripts/verify-android-first-proof.mjs \
+  --device 192.168.1.192:5555 --skip-build --settle-ms 0 \
+  --apk packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk
+adb -s 192.168.1.192:5555 logcat -c
+node packages/playtest/dist/runner/cli.js perf \
+  --logcat 192.168.1.192:5555 --require-windows 4 --timeout 120 --text
+```
+
+The first Android compile exposed a refactor regression: `bindings_frame_stream.cpp` and
+`bindings_resources.cpp` used `wgpuDevicePoll` without the wgpu-native extension declaration.
+Commit `4ac7b273` added a red translation-unit contract and the conditional extension includes;
+Android and desktop then rebuilt and all 30 enabled CTests passed. The dependency downloader still
+rejects the pinned V8 artifact for 16 KB Android page compatibility. This Pixel reports a 4 KB page
+size, so the binary is valid for this run; the separate 16 KB compatibility blocker remains open.
+
 ---
 
 ## 0. Native CPU attribution experiment — 2026-08-29

@@ -7,9 +7,8 @@ prd_contract: v1
 **Status:** IMPLEMENTATION COMPLETE — execution began 2026-08-29 after
 [PRD-229](./PRD-229-the-native-host-is-provable-before-it-is-moved.md) reached EXECUTED with its
 Phase 5 source-text gate at zero files. The pre-move desktop performance and compile baseline is
-recorded; Phases 1–3 and desktop Phase 4 are complete. The clean-ASan acceptance row remains open
-on its two proven inherited failures, and no physical Pixel 8 was connected, so the device row
-remains open and no device result is claimed.
+recorded; Phases 1–3 and Phase 4 are complete, including the physical Pixel 8 lane. The clean-ASan
+acceptance row remains open on its two proven inherited failures; no new sanitizer failure appeared.
 
 Second PRD of [the runtime-native refactor batch](./README.md).
 
@@ -185,7 +184,7 @@ PRD's evidence section.
 - [x] Coverage after vs before, per subsystem.
 - [x] `render.p50` and `TN_HOST_GAP` shares after vs before, same command, same machine.
 - [x] Single-TU compile times after vs before.
-- [ ] **Device lane**: a Pixel 8 run is the only thing that can speak to fps. If no device run
+- [x] **Device lane**: a Pixel 8 run is the only thing that can speak to fps. If no device run
       happens, this PRD records **"no device result claimed"** and stays open on that row rather
       than closing on desktop evidence.
 
@@ -387,5 +386,31 @@ Filled during implementation. Nothing is claimed until it has executed and been 
   remained web 72/0/1, desktop 69/2/2 and Android 0/0/73; the Phase-5 source-text gate remained at
   zero files. Final CTest was 27/27, runtime-native retained 84 passing files / 605 passing tests /
   33 skipped with two inherited regex failures, and ASan retained its inherited 4/6 bar.
-- Phase 4 device lane — NOT RUN, OPEN. `adb devices -l` on 2026-08-29 listed only the Android
-  emulator `emulator-5554`; no physical Pixel 8 was connected. **No device result claimed.**
+- Phase 4 device lane — PASS on a physical Pixel 8 (`shiba`) over Wi-Fi ADB while unplugged. The
+  V8 APK (`com.threenative.game`, SHA-256
+  `3a743288c670c0598d754554da0969f20d124ca44959a4122ddcfd3ffcc35271`) passed the 300-frame
+  first proof with a nonblank 1080x2400 screenshot. After discarding the startup window, seven
+  300-frame windows held **59.77–59.99 fps**, `render.p50` **4.8–5.3 ms**, and zero hitches. The
+  device was discharging with thermal status `NONE` before and after (36.7 -> 38.5 °C skin).
+  Building this lane exposed missing wgpu-native declarations in the two split translation units;
+  the red contract and conditional headers landed at `4ac7b273`, after which Android and desktop
+  rebuilt and all 30 enabled CTests passed. The pinned V8 dependency still fails its separate 16 KB
+  page-alignment guard; this Pixel reports a 4 KB page size, so that upstream compatibility blocker
+  does not invalidate this run and is not claimed fixed.
+- Post-merge reconciliation — PASS at `f419a46b`. Root tests passed 255 files / 2,549 tests with
+  one file and three tests skipped. The rebuilt shipping host passed 30/30 enabled CTests; native
+  coverage rose to 38.50% total, held at 40.67% for `src/webgpu/`, and rose to 42.01% for
+  `runtime.cpp`. ASan reproduced only the same two inherited failures and passed 4/6 targets.
+  Parity remained web 72/0/1, desktop 69/2/2 and Android 0/0/73; the census was current at 111,050
+  lines. The idle desktop meter passed at steady `render.p50` 1.0 / 1.2 ms with a maximum required
+  host-share shift of 1.231 points. Typecheck passed across all 17 applicable workspace projects;
+  lint exited zero with no errors. Budgets and documentation links passed. The physical Pixel was
+  reachable over Wi-Fi ADB but still charging over its attached USB cable, so this reconciliation
+  does not close or claim the device row.
+- Final device-fix reconciliation — PASS at `e4b9a076`. After the Android-only compile defect was
+  fixed and the physical lane closed, `pnpm test` passed 255 files / 2,549 tests with one file and
+  three tests skipped. `pnpm typecheck` passed all 17 applicable workspace projects; `pnpm lint`
+  exited zero with no errors and 452 existing warnings. Documentation links, primary-doc tests,
+  budgets, coverage floors, 30/30 enabled CTests, and the regenerated 111,083-line census passed.
+  ASan remained exactly 4/6 on its two documented inherited Dawn failures, so the clean-ASan row
+  remains honestly open while the no-new-regression claim is closed.

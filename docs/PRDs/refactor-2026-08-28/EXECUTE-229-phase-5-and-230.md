@@ -37,7 +37,7 @@ them, it does not restate their reasoning.
 | --- | --- |
 | PRD-229 phases 1–4, 6 | **Landed** 2026-08-28 under commits that never cited the PRD. Reconciled into its evidence section on 2026-08-29. |
 | PRD-229 phase 5 | **Executed.** The PRD-230 source-text gate reports 0 files. |
-| PRD-230 | **Implementation complete.** Phases 1–3 and desktop Phase 4 are executed; inherited ASan-clean and physical-device rows remain open. |
+| PRD-230 | **Implementation complete.** Phases 1–4 are executed; only the inherited ASan-clean row remains open. |
 | `src/webgpu/bindings.cpp` | 7,870 lines before the PRD-230 moves (+102 since filing). |
 
 **Phase 5 is not busywork, and this is the measurement that proves it.** The assertion that
@@ -473,6 +473,35 @@ of 1.099 points. Parity and test bars were unchanged, and the Phase-5 source-tex
 zero files. `adb devices -l` listed only `emulator-5554`, so the physical Pixel 8 lane remains open:
 **no device result claimed**. The ASan-clean acceptance row also remains open on its two proven
 inherited failures; no new sanitizer failure appeared.
+
+Post-merge reconciliation executed 2026-08-29 after `main` merged at `7f84b1a4`: root tests passed
+255 files / 2,549 tests, the rebuilt shipping host passed 30/30 enabled CTests, coverage measured
+38.50% total / 40.67% WebGPU / 42.01% `runtime.cpp`, and ASan retained exactly its inherited 4/6
+bar. Parity was unchanged at web 72/0/1, desktop 69/2/2 and Android 0/0/73; the regenerated census
+was already current at 111,050 lines. The idle desktop meter passed at steady `render.p50` 1.0 /
+1.2 ms with a maximum required host-share shift of 1.231 points. Typecheck passed across all 17
+applicable workspace projects, and lint exited zero with no errors. The physical Pixel 8 was
+reachable over Wi-Fi ADB, but the attached USB transport left it charging, so that reconciliation
+did not claim the device row.
+
+The physical-device row closed later on 2026-08-29 after USB was unplugged. The current V8 APK
+(`com.threenative.game`, SHA-256
+`3a743288c670c0598d754554da0969f20d124ca44959a4122ddcfd3ffcc35271`) passed the 300-frame
+first proof on the Pixel 8 with a nonblank 1080x2400 screenshot. Seven kept 300-frame windows then
+held **59.77–59.99 fps**, `render.p50` **4.8–5.3 ms**, and zero hitches. Pre/post doctors reported
+thermal status `NONE`, 36.7 -> 38.5 °C skin, and discharging. The Android build first red-compiled
+because `bindings_frame_stream.cpp` and `bindings_resources.cpp` called `wgpuDevicePoll` without
+the wgpu-native extension declaration; the red contract and conditional includes landed at
+`4ac7b273`, after which Android and desktop rebuilt and 30/30 enabled CTests passed. The pinned V8
+artifact's separate 16 KB alignment guard remains upstream-blocked; the measured Pixel has a 4 KB
+page size, so that does not invalidate this device run and is not claimed fixed.
+
+Final gates ran at `e4b9a076`: `pnpm test` passed 255 files / 2,549 tests with one file and three
+tests skipped; `pnpm typecheck` passed all 17 applicable workspace projects; and `pnpm lint` exited
+zero with no errors and 452 existing warnings. Documentation links, primary-doc tests, budgets,
+coverage floors, 30/30 enabled CTests, and the regenerated 111,083-line census passed. ASan stayed
+exactly 4/6 on its two documented inherited Dawn failures: no new sanitizer failure appeared, and
+the clean-ASan acceptance row remains open rather than being misreported green.
 
 ### 6.4 Phase 4 — re-measure and say what did not run
 
