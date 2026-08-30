@@ -127,17 +127,32 @@ AFTER  {"reloads":1,"entities":4,"sceneObjects":38,"physics":4}
 
 So it is not how vite is launched. What remains is how the page is **driven**.
 
-**The specific hypothesis to test next.** The spec does something the probe does not: it steps the
-game through the playtest bridge, `__THREENATIVE_PLAYTEST_BRIDGE__.advance(150)`, rather than
-letting it run on its own clock. `waitForHotReload` then requires `reloads === expected` **and**
-`player.grounded === true`. A hot update rebuilds the scene, so the player must fall and land
-again — under a bridge that may not have been re-attached to the new game instance, and therefore
-may never advance it. That would leave a game that cannot ground no matter how long the wait, and
-it fits the local shape of the failure, where the page comes back reporting a game with nothing in
-it at all.
+**Eliminated: the playtest bridge.** The spec steps the game through
+`__THREENATIVE_PLAYTEST_BRIDGE__.advance(150)` rather than letting it run on its own clock, and
+`waitForHotReload` requires both the counter and `player.grounded === true` — so a bridge that did
+not survive the rebuild would explain everything. It survives:
 
-Test it directly: after the edit, read `__THREENATIVE_PLAYTEST_BRIDGE__` and whether `advance`
-still steps the rebuilt game, before touching anything else.
+```console
+BEFORE {"reloads":0,"entities":4,"sceneObjects":38,"physics":4}
+BRIDGE BEFORE: advanced; grounded=true
+AFTER  {"reloads":1,"entities":4,"sceneObjects":38,"physics":4}
+BRIDGE AFTER: advanced; grounded=true; position=[-2.000000476837158,0.5100999474525452,~0]
+```
+
+Every condition `waitForHotReload` waits for is satisfied here, through the same bridge, after the
+same edit, on the same project, with the harness's spawn form. Three hypotheses are now closed by
+measurement: the watcher, the spawn form, and the bridge.
+
+**The difference that remains is headedness.** The probe launches Chromium with `headless: false`;
+Playwright's test projects run headless unless told otherwise. Headless Chromium serves WebGPU from
+SwiftShader — the same fact that made §2's provenance sweep unfixable until it launched headed — and
+locally the spec's page comes back with `canvases: 0, physics: null`, which is a game that never
+finished booting rather than one that refused to reload. On CI the game is alive and the counter
+still does not move, so headedness may not be the whole story; it is the last unexamined
+difference, and it is where to start.
+
+Run the spec's own project headed and see whether the reload arrives, before changing any
+production code.
 
 Two things this is not, both established by measurement: not the scene defect in §1 (fixed, and the
 game now survives with all four entities), and not the deadline (15s, 90s and a 20s probe end in
