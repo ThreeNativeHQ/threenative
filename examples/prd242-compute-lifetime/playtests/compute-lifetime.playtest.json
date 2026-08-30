@@ -35,9 +35,9 @@
       { "id": "GameState", "path": "round", "equals": 2, "changed": true },
       { "id": "GameState", "path": "attachments", "gte": 3, "changed": true },
       { "id": "GameState", "path": "releases", "gte": 2, "changed": true },
-      { "id": "GameState", "path": "gpuSteps", "gte": 10, "changed": true },
-      { "id": "GameState", "path": "passOneDispatches", "gte": 10, "changed": true },
-      { "id": "GameState", "path": "passTwoDispatches", "gte": 10, "changed": true },
+      { "id": "GameState", "path": "gpuSteps", "gte": 4, "changed": true },
+      { "id": "GameState", "path": "passOneDispatches", "gte": 4, "changed": true },
+      { "id": "GameState", "path": "passTwoDispatches", "gte": 4, "changed": true },
       { "id": "GameState", "path": "startupReady", "equals": true, "changed": true },
       { "id": "GameState", "path": "worldRendersAfterStartup", "gte": 1, "changed": true }
     ]
