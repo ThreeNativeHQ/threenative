@@ -14,6 +14,54 @@ framework version has to handle. Evidence:
 Two changes fall out of that and are folded in below: the abstraction is named
 `WorldEnvironment`, and four defect classes have been observed rather than predicted.
 
+**BLOCKING QUESTION FOR THE OWNER — this PRD cannot ship without an answer.**
+
+`CHARTER.md` lists **"Post-processing composition"** in the *framework must never own*
+column, and the section beneath it says that column narrows what the framework may own **by
+kind, not by degree**. `packages/core/AGENTS.md` repeats it in stronger terms: post-processing
+must never enter that package, *"not as code, and not as a `defineGame` option"*, and names
+`postprocessing: ['bloom']` as the v1 mistake it is guarding against.
+
+`WorldEnvironment` composes a post-processing order. By name, it is the forbidden thing.
+
+The case for it anyway is that it passes the charter's own hard veto test — *can the game
+change the appearance completely without editing framework code?* — because the game still
+chooses every stage, every strength, every colour, the exposure and the tone curve. What
+moves into the framework is ordering, capability detection, degradation and reporting, none
+of which decides how anything looks. That is the same argument `GPUParticles3D` won on.
+
+The case against is that the charter already anticipated the argument and drew the line by
+kind precisely so it could not be relitigated per-feature.
+
+**The decision has a single, concrete form, and it is already executable.** The planner was
+written and tested, and landing it in `packages/core` **fails an existing test**:
+
+```
+packages/core/__tests__/constraints.spec.ts:62
+  expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
+```
+
+That assertion is the charter prohibition in executable form. It exempts a hand-maintained
+allowlist of eleven filenames — `particles.ts`, `renderer.ts`, `tracers.ts` and the rest —
+each one a previous instance of exactly this argument being had and won.
+
+So the question is not philosophical. **Shipping PRD-266 as framework code means adding one
+filename to that allowlist**, and `packages/core/AGENTS.md` says what that means: *"if one
+fails, the change is the problem, not the test."* The attempt was therefore reverted rather
+than the allowlist widened.
+
+The reference implementation and its ten specs live in
+[`design/`](./design/README.md), outside `packages/` and outside every test glob, as an
+appendix to this PRD rather than as a landed feature. Three of the ten reds were verified by
+mutation: removing the canonical sort, removing the unknown-stage throw, and restoring
+upstream's one-world-unit SSR default each fail exactly one case and nothing else.
+
+If the answer is no, the fallback is real and cheap: everything here ships as generated
+source in `templates/*/src/render/`, exactly as PRD-267 already does, and each of the four
+upstream defects below gets a comment in seven template files instead of one implementation.
+
+---
+
 **Goal: a game asks for global illumination once, gets the best chain the running target can
 execute, and can always read which one it got.** Today it cannot do either half.
 
