@@ -2,10 +2,62 @@
   "name": "starter-textures",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 365
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 428
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "run-toward-the-flag",
@@ -13,13 +65,38 @@
       "holdTicks": 205,
       "release": false
     },
-    { "kind": "input", "label": "jump-the-gap", "press": "Space", "holdTicks": 2, "release": true },
-    { "kind": "wait", "label": "land-beside-the-pennant", "waitTicks": 120, "release": true }
+    {
+      "kind": "input",
+      "label": "jump-the-gap",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "land-beside-the-pennant",
+      "waitTicks": 120,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
-    "movement": { "entity": "player", "minDistance": 0.5 },
-    "resources": [{ "id": "state", "path": "status", "equals": "won", "changed": true }],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "won",
+        "changed": true
+      }
+    ],
     "visibility": [
       {
         "allowTrivial": "The pennant is authored in frame from the first tick so the player can see where to jump; this row proves the KTX2-compressed texture still draws when the run reaches it.",

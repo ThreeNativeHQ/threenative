@@ -36,18 +36,34 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
     }
   }
   if (scenarioAssertions.movement?.minDistance !== undefined) {
-    const pass = input.report.distance >= scenarioAssertions.movement.minDistance;
+    // `distance` falls back to 0 when the entity is missing from either snapshot, and the
+    // maxDistance branch below already refuses to read that as evidence. This branch did read it:
+    // an entity that was never there reported "moved 0.000000", which names the wrong problem. A
+    // scenario that starts on a menu has no player at its first sample, and that is a different
+    // failure from a player who would not walk. Fails either way; only one of them is true.
+    const observed = input.report.before !== undefined && input.report.after !== undefined;
+    const entityName = scenarioAssertions.movement.entity ?? input.report.entity;
+    const pass = observed && input.report.distance >= scenarioAssertions.movement.minDistance;
     assertions.push({
-      details: { distance: input.report.distance, entity: input.report.entity, minimum: scenarioAssertions.movement.minDistance },
+      details: {
+        distance: input.report.distance,
+        entity: input.report.entity,
+        minimum: scenarioAssertions.movement.minDistance,
+        observed,
+      },
       id: "movement.distance",
       pass,
     });
     if (!pass && !input.report.diagnostics.some((diagnostic) => diagnostic.code === "TN_PLAYTEST_INPUT_NO_EFFECT")) {
       diagnostics.push({
         code: "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
-        message: `Entity '${scenarioAssertions.movement.entity ?? input.report.entity}' moved ${input.report.distance.toFixed(6)}, below required ${scenarioAssertions.movement.minDistance}.`,
+        message: observed
+          ? `Entity '${entityName}' moved ${input.report.distance.toFixed(6)}, below required ${scenarioAssertions.movement.minDistance}.`
+          : `Entity '${entityName}' was not observed in both samples, so its movement was never measured — the run reports no distance rather than a distance of zero.`,
         severity: "error",
-        suggestion: "Check input bindings, collision response, and whether the scenario holds input long enough.",
+        suggestion: observed
+          ? "Check input bindings, collision response, and whether the scenario holds input long enough."
+          : "The entity is absent from the first or last sample. A scenario that opens on a menu has no player until it starts the game; make sure the subject exists across the interval being measured.",
       });
     }
   }

@@ -2,15 +2,90 @@
   "name": "seed",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 0,
   "subject": "player",
-  "artifacts": { "runtimeTrace": true, "screenshots": false },
-  "steps": [{ "kind": "wait", "label": "seeded-level", "waitTicks": 60, "release": true }],
+  "artifacts": {
+    "runtimeTrace": true,
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 365
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 428
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "seeded-level",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "resources": [{ "id": "state", "path": "levelX", "changed": true, "gte": -1, "lte": 1 }],
-    "world": { "seed": 90210 },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "levelX",
+        "changed": true,
+        "gte": -1,
+        "lte": 1
+      }
+    ],
+    "world": {
+      "seed": 90210
+    },
     "visibility": [
       {
         "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the seed assertion.",

@@ -2,10 +2,62 @@
   "name": "starter-coyote-and-buffer",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 365
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 428
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "leave-ledge",
@@ -27,15 +79,45 @@
       "holdTicks": 5,
       "release": false
     },
-    { "kind": "input", "label": "late-jump", "press": "Space", "holdTicks": 2, "release": true },
-    { "kind": "wait", "label": "jump-arc", "waitTicks": 18, "release": true }
+    {
+      "kind": "input",
+      "label": "late-jump",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "jump-arc",
+      "waitTicks": 18,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
-      { "id": "state", "path": "jumps", "equals": 1, "changed": true },
-      { "id": "state", "path": "coyoteJumps", "equals": 1, "changed": true },
-      { "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }
+      {
+        "id": "state",
+        "path": "jumps",
+        "equals": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "coyoteJumps",
+        "equals": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "peakRise",
+        "gte": 0.5,
+        "changed": true
+      }
     ],
     "visibility": [
       {

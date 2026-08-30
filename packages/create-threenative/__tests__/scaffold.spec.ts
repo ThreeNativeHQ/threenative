@@ -62,13 +62,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // shooter hash also includes its 60-frame input-control warmup from current main.
   // Recomputed for PRD-251 Phase 1: every scaffold embeds the capability manifest and reference,
   // which now document the optional Heightfield world subpath.
+  // Recomputed 2026-08-30 for the starter only: eighteen of its playtest scenarios gained the
+  // menu-entry steps they had been missing since the menu screen flow landed, so a scaffolded
+  // project's own `npm test` can reach the play scene at all. Scenario bytes moved and no source
+  // did, so exactly one tree's hash moved.
   "action-rpg": "0aa79eec8aa59fadc5d9f62c0d49333c642ec4ae7d9cc9bfaacec8bc4933c53d",
   defense: "3c6cefc6fc4055a196cab27de55fb9f33c30d4028756648496dd8c787db92bfa",
   minimal: "a1267075c7a3a86bc9b9b47e5963e8681d4cdba314f3eb5e55b032e399b2aa58",
   platformer: "3ce84c8703d0fef931a7422c1cd6cc653185dd992c3e7a4a8c37bcffcb378156",
   racing: "61f41186019cab575d5ba7835fd0b7318704175da9bc70cb371c3a13e9d14f37",
   shooter: "5f362611efb180a9669686cb0af53bdef5f7e9cd81bebda2216dab75010ef274",
-  starter: "53bc1662f9af4495f8512b025a97de77cd124debe6b23c55be13f2821b51e105",
+  starter: "4e48cbf8032df86dee57cdb3ab2760cc0576f5ca84448de0f0cb1b6696e8101b",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

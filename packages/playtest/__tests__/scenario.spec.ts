@@ -689,6 +689,12 @@ test("should preserve every assertion family's result contract", async () => {
   const scenario = await loadFamilyScenario();
   const evaluate = async (observations: Record<string, unknown>) => evaluateRichPlaytestAssertions({
     report: {
+      // A distance is the length of a line between two observations, so a report that carries one
+      // carries both. minDistance now says so — it refuses to read a fallback zero as a
+      // measurement, the way maxDistance already did — and this fixture stands for a fulfilled
+      // run, which is a run that observed its subject.
+      after: { frame: 10, position: [5, 0, 0], tick: 10 },
+      before: { frame: 0, position: [0, 0, 0], tick: 0 },
       diagnostics: [],
       distance: 5,
       // occluded reads the retained effect log from the report, not from observations.

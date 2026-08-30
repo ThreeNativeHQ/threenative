@@ -2,19 +2,91 @@
   "name": "play",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1920, "height": 1080 },
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
   "warmupFrames": 60,
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 120, "release": true },
-    { "kind": "wait", "waitTicks": 600, "release": true }
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 960,
+        "y": 545
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 960,
+        "y": 608
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "ArrowRight",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 600,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
     "performance": {
       "maxDrawCalls": 53,
       "maxFrameMsP95": 33,
       "maxTriangles": 4403
     },
-    "resources": [{ "id": "state", "path": "score", "gte": 1, "changed": true }]
+    "resources": [
+      {
+        "id": "state",
+        "path": "score",
+        "gte": 1,
+        "changed": true
+      }
+    ]
   }
 }

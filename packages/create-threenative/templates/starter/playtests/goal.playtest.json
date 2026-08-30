@@ -2,10 +2,62 @@
   "name": "starter-goal",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 365
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 428
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "run-up",
@@ -13,14 +65,39 @@
       "holdTicks": 205,
       "release": false
     },
-    { "kind": "input", "label": "jump-the-gap", "press": "Space", "holdTicks": 2, "release": true },
-    { "kind": "wait", "label": "land-on-the-island", "waitTicks": 120, "release": true }
+    {
+      "kind": "input",
+      "label": "jump-the-gap",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "land-on-the-island",
+      "waitTicks": 120,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
-      { "id": "state", "path": "status", "equals": "won", "changed": true },
-      { "id": "state", "path": "playerX", "gte": 6.4, "changed": true }
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "won",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "playerX",
+        "gte": 6.4,
+        "changed": true
+      }
     ],
     "visibility": [
       {

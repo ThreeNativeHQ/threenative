@@ -43,7 +43,14 @@ describe("evaluator semantics (characterization)", () => {
       { id: "diagnostics", pass: true },
       { id: "movement.distance", pass: true },
     ]);
-    expect(result.assertions[1]?.details).toEqual({ distance: 2, entity: "player", minimum: 1 });
+    // `observed` joins the pin: minDistance now refuses to read a fallback zero as a measurement,
+    // the way maxDistance already did, so the details say whether the entity was there at all.
+    expect(result.assertions[1]?.details).toEqual({
+      distance: 2,
+      entity: "player",
+      minimum: 1,
+      observed: true,
+    });
     expect(result.diagnostics).toEqual([]);
   });
 

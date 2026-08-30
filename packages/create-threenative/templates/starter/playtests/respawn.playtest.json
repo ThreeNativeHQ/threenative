@@ -2,10 +2,62 @@
   "name": "starter-respawn",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 365
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 428
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "run-off-world",
@@ -13,18 +65,40 @@
       "holdTicks": 240,
       "release": true
     },
-    { "kind": "wait", "label": "respawn", "waitTicks": 90, "release": true }
+    {
+      "kind": "wait",
+      "label": "respawn",
+      "waitTicks": 90,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
     "movement": {
       "entity": "player",
       "pathLength": 4,
-      "reachesPositionWithin": { "position": [-2, 0.5, 0], "maxDistance": 0.35 }
+      "reachesPositionWithin": {
+        "position": [-2, 0.5, 0],
+        "maxDistance": 0.35
+      }
     },
     "resources": [
-      { "id": "state", "path": "respawns", "gte": 1, "changed": true },
-      { "id": "state", "path": "lives", "equals": 2, "changed": true }
+      {
+        "id": "state",
+        "path": "respawns",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "lives",
+        "equals": 2,
+        "changed": true
+      }
     ],
     "visibility": [
       {

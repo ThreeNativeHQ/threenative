@@ -2,10 +2,62 @@
   "name": "starter-react-restart",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 365
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 428
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "collected",
@@ -13,22 +65,62 @@
       "holdTicks": 100,
       "release": true
     },
-    { "kind": "input", "label": "focus-pause", "press": "Tab", "holdTicks": 1, "release": true },
-    { "kind": "input", "label": "focus-restart", "press": "Tab", "holdTicks": 1, "release": true },
-    { "kind": "input", "label": "restarted", "press": "Enter", "holdTicks": 1, "release": true }
+    {
+      "kind": "input",
+      "label": "focus-pause",
+      "press": "Tab",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "focus-restart",
+      "press": "Tab",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restarted",
+      "press": "Enter",
+      "holdTicks": 1,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
       {
         "id": "state",
         "path": "score",
-        "atSteps": [{ "label": "collected", "equals": 1 }, { "label": "restarted", "equals": 0 }]
+        "atSteps": [
+          {
+            "label": "collected",
+            "equals": 1
+          },
+          {
+            "label": "restarted",
+            "equals": 0
+          }
+        ]
       },
       {
         "id": "state",
         "path": "entityCount",
-        "atSteps": [{ "label": "collected", "equals": 3 }, { "label": "restarted", "equals": 4 }]
+        "atSteps": [
+          {
+            "label": "collected",
+            "equals": 3
+          },
+          {
+            "label": "restarted",
+            "equals": 4
+          }
+        ]
       }
     ],
     "visibility": [

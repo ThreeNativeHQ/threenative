@@ -2,12 +2,75 @@
   "name": "starter-jump-buffer",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "label": "first-jump", "press": "Space", "holdTicks": 2, "release": true },
-    { "kind": "wait", "label": "near-landing", "waitTicks": 55, "release": true },
+    {
+      "kind": "wait",
+      "label": "menu-is-up",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 365
+      },
+      "label": "focus-name-field"
+    },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 640,
+        "y": 428
+      },
+      "label": "start-game"
+    },
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "first-jump",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "near-landing",
+      "waitTicks": 55,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "buffered-jump",
@@ -15,19 +78,38 @@
       "holdTicks": 2,
       "release": true
     },
-    { "kind": "wait", "label": "buffered-arc", "waitTicks": 20, "release": true }
+    {
+      "kind": "wait",
+      "label": "buffered-arc",
+      "waitTicks": 20,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
-      { "id": "state", "path": "jumps", "equals": 2, "changed": true },
+      {
+        "id": "state",
+        "path": "jumps",
+        "equals": 2,
+        "changed": true
+      },
       {
         "id": "state",
         "path": "coyoteJumps",
         "equals": 0,
         "allowTrivial": "This buffer scenario exercises a jump without consuming coyote time; coyoteJumps staying at zero is the intentional held invariant."
       },
-      { "id": "state", "path": "peakRise", "gte": 0.5, "changed": true }
+      {
+        "id": "state",
+        "path": "peakRise",
+        "gte": 0.5,
+        "changed": true
+      }
     ],
     "visibility": [
       {
