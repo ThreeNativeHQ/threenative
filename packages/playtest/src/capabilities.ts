@@ -20,6 +20,7 @@ export type PlaytestCapability =
   | "runtime.fixedStep"
   | "runtime.physics"
   | "runtime.performance"
+  | "runtime.renderChain"
   | "runtime.resources"
   | "runtime.state"
   | "runtime.tags"
@@ -54,6 +55,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("runtime.fixedStep", "Advances an application-owned deterministic tick."),
   capability("runtime.physics", "Samples bounded application-owned physics observations."),
   capability("runtime.performance", "Samples bounded per-render frame cost and renderer counts."),
+  capability("runtime.renderChain", "Reports the render stages, quality tier, and velocity route actually applied."),
   capability("runtime.resources", "Reads and writes registered JSON-safe application state."),
   capability("runtime.state", "Samples application-owned state-machine state."),
   capability("runtime.tags", "Samples bounded application-owned entity tags."),

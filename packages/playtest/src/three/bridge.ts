@@ -8,6 +8,7 @@ import {
   type IPlaytestBridgeV1,
   type IPlaytestGameplayObservation,
   type IPlaytestRuntimeDiagnosticsSample,
+  type IPlaytestRenderChainObservation,
   type IPlaytestSetupRequest,
   type JsonValue,
 } from "../protocol.js";
@@ -49,6 +50,7 @@ export interface IThreePlaytestBridgeOptions {
   /** Physics bodies to retain per labelled step. Requires the authoritative tick provider. */
   physics?: IThreePlaytestPhysics;
   renderer: IThreePlaytestRenderer;
+  renderChain?: () => IPlaytestRenderChainObservation | undefined;
   resources?: IThreePlaytestResources;
   scene: Scene;
   tick?: () => number;
@@ -87,6 +89,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.gameplay === undefined ? [] : ["runtime.animation", "runtime.state"]),
     ...(options.physics === undefined ? [] : ["runtime.physics"]),
     ...(options.runtimeDiagnosticsSeries === undefined ? [] : ["runtime.performance"]),
+    ...(options.renderChain === undefined ? [] : ["runtime.renderChain"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
     ...(options.gameplayChannels?.().includes("runtime.world") === true ? ["runtime.world"] : []),
@@ -135,6 +138,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         diagnostics: options.diagnostics,
         gameplay: options.gameplay,
         runtimeDiagnosticsSeries: options.runtimeDiagnosticsSeries,
+        renderChain: options.renderChain,
         registry,
         renderer: options.renderer,
         resources: options.resources === undefined ? undefined : () => options.resources!.read(),

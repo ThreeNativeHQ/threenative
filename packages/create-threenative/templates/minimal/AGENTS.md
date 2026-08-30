@@ -356,10 +356,10 @@ Edit the six files in `src/render/` directly: `palette.ts`, `camera.ts`, `sky.ts
 this project, not a framework look or a config option. Keep the palette to six named colours
 with one `accent`; import it from materials and sky. Set tonemapping and exposure deliberately,
 use a rim light with soft shadows and `normalBias`, and route bloom
-through `renderer.setOutputNode()` so midtones remain readable. The per-file baseline and the
-traps are in `agent-docs/visual-baseline.md`: `CanvasTexture` black, an uncalled render module,
-and four TSL post stages that silently no-op (`SSRNode.maxDistance`, `reflectNonMetals`, a
-swizzled normal, a dangling branch).
+through `renderer.createRenderChain()` so midtones remain readable. The baseline in
+`agent-docs/visual-baseline.md` covers `CanvasTexture` black under `WebGPURenderer`, uncalled
+render modules, and four silent TSL no-ops: `SSRNode.maxDistance`, `reflectNonMetals`, a swizzled
+normal, and a dangling branch.
 
 The sky dome's colour, the sun light's colour and the depth haze all come from one `Atmosphere`
 node built in `src/scenes/Play.ts`, so `sky.ts` sets no fog. You supply every coefficient — there

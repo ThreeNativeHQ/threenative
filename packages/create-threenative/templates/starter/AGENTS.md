@@ -404,9 +404,11 @@ Edit everything in `src/render/` directly. The six baseline files are `palette.t
 `camera.ts`, `sky.ts`, `lighting.ts`, `materials.ts`, and `postprocessing.ts`; `shapes.ts`
 and `scenery.ts` are additional helpers. These are ordinary Three.js source in this project,
 not a framework look or a config option. Keep the palette to six named colours with one
-`accent`; import it from materials and sky. Set tonemapping and exposure deliberately, use a
-rim light with soft shadows and `normalBias`, derive fog from the sky, and route bloom through
-`renderer.setOutputNode()` so midtones remain readable. Build props out of `shapes.ts`
+`accent`; import it from materials and sky. Set tonemapping/exposure deliberately; use a
+rim light, soft shadows, and `normalBias`; derive fog from the sky; route postprocessing through
+`renderer.createRenderChain()`. Optional effects:
+`src/render/effects/lensDistortion.ts`, `sparkle.ts`, `gradualBackground.ts`. Build props out of
+`shapes.ts`
 (`roundedBox`, not raw `BoxGeometry`) and keep something in all three scenery bands — a lit
 floor alone in black reads as a test fixture.
 

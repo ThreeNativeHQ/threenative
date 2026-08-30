@@ -1,6 +1,7 @@
 import type {
   IPlaytestEntityObservation,
   IPlaytestObservationSnapshot,
+  IPlaytestRenderChainObservation,
   IPlaytestRuntimeDiagnosticsSample,
   IPlaytestSampleRequest,
   JsonValue,
@@ -18,6 +19,7 @@ export interface IThreeObservationInput {
   renderer: IThreePlaytestRenderer;
   runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
   resources?: () => Record<string, JsonValue>;
+  renderChain?: () => IPlaytestRenderChainObservation | undefined;
   scene: Scene;
   gameplay?: () => IPlaytestObservationSnapshot["gameplay"];
   tick?: number;
@@ -41,6 +43,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
   const entities = input.registry.select(request.entities).map(({ id, object }) =>
     observeEntity(id, object, input.camera, rendererSize.x, rendererSize.y));
   const renderPerformance = rendererPerformance(input.renderer);
+  const renderChain = input.renderChain?.();
   return {
     clock: {
       mode: input.clockMode,
@@ -50,6 +53,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
     entities,
     ...(input.gameplay === undefined ? {} : { gameplay: input.gameplay() }),
     ...(renderPerformance === undefined ? {} : { performance: renderPerformance }),
+    ...(renderChain === undefined ? {} : { renderChain }),
     ...(input.runtimeDiagnosticsSeries === undefined
       ? {}
       : { runtimeDiagnosticsSeries: input.runtimeDiagnosticsSeries().map((sample) => ({ ...sample })) }),

@@ -1,6 +1,7 @@
 import type { IPlaytestComponentAssertion, IPlaytestDiagnosticsAssertion, IPlaytestPathAssertion } from "./scenario.js";
 import type { IPlaytestDeviceMetricsObservation } from "./runner/deviceMetrics.js";
 import type { IPlaytestDiagnosticsPolicy } from "./report.js";
+import type { IPlaytestRenderChainObservation } from "./protocol.js";
 
 export type Vec3 = [number, number, number];
 
@@ -47,6 +48,7 @@ export interface IPlaytestObservations {
   physicsDebugBefore?: unknown;
   physicsDebugSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
   performanceSeries?: unknown[];
+  renderChain?: IPlaytestRenderChainObservation;
   resources: Record<string, { after?: unknown; before?: unknown }>;
   resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
   runtimeObservations?: unknown;

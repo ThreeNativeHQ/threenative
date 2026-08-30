@@ -450,6 +450,54 @@ test("rotationChanged falls back to before/after bridge quaternions", () => {
   expect(result.pass).toBe(true);
 });
 
+test("movement assertions can baseline a subject that appears after a scene transition", () => {
+  const currentScenario: IPlaytestScenario = {
+    ...scenario({ movement: { entity: "player", minAxisDelta: { axis: "-z", min: 0.5 } } }),
+    subject: "player",
+  };
+  const menuSnapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 20 },
+    entities: [{ id: "camera.main" }],
+    resources: { state: { screen: "menu" } },
+  };
+  const gameplaySnapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 40 },
+    entities: [{ id: "player", transform: { position: [0, 0, 0] } }],
+    resources: { state: { screen: "playing" } },
+  };
+  const afterSnapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "fixed-step", tick: 60 },
+    entities: [{ id: "player", transform: { position: [0, 0, -1] } }],
+    resources: { state: { screen: "playing" } },
+  };
+
+  const result = buildReport(
+    CONFIG,
+    currentScenario,
+    menuSnapshot,
+    afterSnapshot,
+    [],
+    [],
+    undefined,
+    {},
+    true,
+    undefined,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [],
+    undefined,
+    undefined,
+    gameplaySnapshot,
+  );
+
+  expect(result.movementDelta).toEqual([0, 0, -1]);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "movement.axisDelta", pass: true }));
+  expect(result.observations?.resources).toEqual({ state: { before: { screen: "menu" }, after: { screen: "playing" } } });
+  expect(result.pass).toBe(true);
+});
+
 test("anonymous movement rejects concurrent autonomous motion", () => {
   const currentScenario = {
     ...scenario({ movement: { minDistance: 1 } }),

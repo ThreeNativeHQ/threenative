@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
+import { PNG } from "pngjs";
 
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
@@ -30,6 +31,18 @@ import { connectDevicePlaytestBridge } from "../../playtest/src/three/device.js"
 const runtimeRoot = fileURLToPath(new URL("../", import.meta.url));
 const registryPath = join(runtimeRoot, "conformance/registry.json");
 const PROOF_ID = "generated-shooter-input-control";
+
+const STUB_SCREENSHOT = (() => {
+  const image = new PNG({ height: 4, width: 4 });
+  for (let pixel = 0; pixel < 16; pixel += 1) {
+    const offset = pixel * 4;
+    image.data[offset] = (pixel * 47) % 256;
+    image.data[offset + 1] = (pixel * 83) % 256;
+    image.data[offset + 2] = (pixel * 113) % 256;
+    image.data[offset + 3] = 255;
+  }
+  return PNG.sync.write(image);
+})();
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -156,6 +169,7 @@ class StubNativeDriver {
 
   async screenshot(path) {
     this.screenshots.push(path);
+    await writeFile(path, STUB_SCREENSHOT);
   }
 
   async stop() {

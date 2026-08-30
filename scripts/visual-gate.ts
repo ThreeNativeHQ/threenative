@@ -210,7 +210,7 @@ export function inspectTemplate(
   for (const marker of ["PCFSoftShadowMap", "normalBias"]) {
     if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
   }
-  for (const marker of ["toneMapping", "toneMappingExposure", "setOutputNode", "bloom("]) {
+  for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("]) {
     if (!post.includes(marker)) errors.push(`${template}: postprocessing.ts is missing ${marker}`);
   }
 

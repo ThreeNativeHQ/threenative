@@ -21,7 +21,7 @@ learned not to trust.
 ### 1. The coverage claim is prose, and prose drifts
 
 [The batch README](./README.md) maps all fourteen exports of `0beqz/realism-effects` to what this
-stack runs instead. Eleven land on `three@0.185.1` TSL nodes already installed, three become
+stack runs instead. Ten land on `three@0.185.1` TSL nodes already installed, three become
 template source under
 [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md).
 
@@ -103,7 +103,7 @@ So a covered row must also be a *findable* row, searchable by plain-words situat
 
 ## Out of scope
 
-Porting the eleven upstream-covered effects — they are already installed and
+Porting the ten upstream-covered effects — they are already installed and
 [PRD-267](../lighting/PRD-267-screen-space-gi-ships-in-the-templates.md) wires them into templates.
 Native execution, which is
 [PRD-275](./PRD-275-every-effect-runs-on-every-target-or-it-does-not-ship.md) — this PRD proves the

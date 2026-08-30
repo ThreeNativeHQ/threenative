@@ -1016,6 +1016,285 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "realism-ssgi",
+      "title": "realism-effects screen-space global illumination",
+      "category": "realism-effects",
+      "realismEffect": "SSGIEffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-ssgi.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-ssr",
+      "title": "realism-effects screen-space reflections",
+      "category": "realism-effects",
+      "realismEffect": "SSREffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-ssr.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-traa",
+      "title": "realism-effects temporal reprojection anti-aliasing",
+      "category": "realism-effects",
+      "realismEffect": "TRAAEffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-traa.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "captureFrames": 12,
+      "temporal": { "settledFrame": 8, "nextFrame": 9, "assertsDifferenceFromFrameZero": true },
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-temporal-reproject",
+      "title": "realism-effects temporal history reprojection",
+      "category": "realism-effects",
+      "realismEffect": "TemporalReprojectPass",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-temporal-reproject.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "captureFrames": 12,
+      "temporal": { "settledFrame": 8, "nextFrame": 9, "assertsDifferenceFromFrameZero": true },
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-denoise",
+      "title": "realism-effects Poisson and recurrent denoise",
+      "category": "realism-effects",
+      "realismEffect": "PoissonDenoisePass",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-denoise.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-motion-blur",
+      "title": "realism-effects motion blur from velocity",
+      "category": "realism-effects",
+      "realismEffect": "MotionBlurEffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-motion-blur.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-sharpen",
+      "title": "realism-effects image sharpening",
+      "category": "realism-effects",
+      "realismEffect": "SharpnessEffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-sharpen.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-velocity",
+      "title": "realism-effects per-object velocity",
+      "category": "realism-effects",
+      "realismEffect": "VelocityPass",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-velocity.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-velocity-depth-normal",
+      "title": "realism-effects velocity depth and normal MRT",
+      "category": "realism-effects",
+      "realismEffect": "VelocityDepthNormalPass",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-velocity-depth-normal.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-taa",
+      "title": "realism-effects temporal anti-aliasing",
+      "category": "realism-effects",
+      "realismEffect": "TAAPass",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-taa.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "captureFrames": 12,
+      "temporal": { "settledFrame": 8, "nextFrame": 9, "assertsDifferenceFromFrameZero": true },
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-lens-distortion",
+      "title": "realism-effects lens distortion",
+      "category": "realism-effects",
+      "realismEffect": "LensDistortionEffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-lens-distortion.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-sparkle",
+      "title": "realism-effects highlight sparkle",
+      "category": "realism-effects",
+      "realismEffect": "SparkleEffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-sparkle.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realism-gradual-background",
+      "title": "realism-effects gradual background",
+      "category": "realism-effects",
+      "realismEffect": "GradualBackgroundEffect",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realism-gradual-background.js",
+      "baseline": "conformance/baselines/realism-effects.json",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
     }
   ],
   "generatedPlaytestProofs": [
@@ -1029,6 +1308,17 @@
       "proof": "packages/runtime-native/tests/generated-shooter-input.test.mjs",
       "owner": "PRD-P2-7",
       "reason": "This proof drives a scaffolded generated game, not a conformance scene: registry tests[] rows are executed by the visual-parity lanes and must export startScene scenes, so a playtest scenario cannot live there without breaking those lanes. It is registered here so the versioned public registry still records it; the owning runner executes it on web and desktop, and an unreachable device lane is reported blocked, never passed."
+    },
+    {
+      "id": "native-render-chain",
+      "title": "generated starter composed render chain: sharpen and bloom report their tier",
+      "category": "rendering",
+      "status": "implemented",
+      "scenario": "../create-threenative/templates/starter/native-playtests/render-chain.playtest.json",
+      "runner": "packages/playtest CLI --target desktop and --target android against the scaffolded starter project",
+      "proof": "packages/runtime-native/tests/generated-render-chain.test.mjs",
+      "owner": "PRD-275",
+      "reason": "This proof drives the generated starter's real renderer through one scenario with two ordered stages, then requires a non-blank native screenshot and the TN_RENDER_CHAIN high-tier marker. The desktop and Android commands are the same scenario contract; a missing device or runtime is reported blocked by the runner, never converted into a pass."
     },
     {
       "id": "native-physics-collision-events",

@@ -256,6 +256,13 @@ export interface IPlaytestPerformanceAssertion {
   maxPhaseMsP95?: Readonly<Partial<Record<PlaytestFramePhase, number>>>;
 }
 
+export interface IPlaytestRenderChainAssertion {
+  tier?: "high" | "medium" | "low" | "off";
+  velocity?: {
+    maxRejectionFraction: number;
+  };
+}
+
 export interface IPlaytestFramebufferCoverageAssertion {
   backdrop: [number, number, number];
   grid?: {
@@ -341,6 +348,7 @@ export interface IPlaytestScenarioAssertions {
   occluded?: IPlaytestOccludedAssertion[];
   overlayNodes?: IPlaytestOverlayNodeAssertion[];
   performance?: IPlaytestPerformanceAssertion;
+  renderChain?: IPlaytestRenderChainAssertion;
   reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];

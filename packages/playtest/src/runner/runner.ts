@@ -37,6 +37,7 @@ import {
   type IPlaytestSetupApplication,
   type PlaytestVec3,
 } from "../index.js";
+import type { IPlaytestObservationSnapshot } from "../protocol.js";
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
 
@@ -348,6 +349,7 @@ async function runStandalonePlaytestInternal(
           ? []
           : ["physicsDebugSeries"]),
         ...(scenario.assert?.performance === undefined ? [] : ["runtimeDiagnosticsSeries"]),
+        ...(scenario.assert?.renderChain === undefined ? [] : ["renderChain"]),
       ],
       resources: resourceIds,
     } as const;
@@ -477,6 +479,28 @@ async function runStandalonePlaytestInternal(
     };
     const beforeSnapshot = await bridge?.sample(sampleRequest);
     let movementCursor = beforeSnapshot;
+    const movementEntity = scenario.assert?.movement?.entity ?? scenario.subject;
+    const movementNeedsBaseline = scenario.assert?.movement !== undefined
+      && movementEntity !== undefined
+      && entityPosition(beforeSnapshot, movementEntity) === undefined;
+    let movementBaselineSnapshot: IPlaytestObservationSnapshot | undefined;
+    const transitionEntity = scenario.subject ?? movementEntity;
+    let transitionSubjectNeedsSettle = transitionEntity !== undefined
+      && entityPosition(beforeSnapshot, transitionEntity) === undefined;
+    const establishSceneSubject = async (): Promise<void> => {
+      if (!transitionSubjectNeedsSettle || bridge === undefined || transitionEntity === undefined || page === undefined) return;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const snapshot = await bridge.sample(sampleRequest);
+        if (entityPosition(snapshot, transitionEntity) !== undefined) {
+          transitionSubjectNeedsSettle = false;
+          if (movementNeedsBaseline && movementBaselineSnapshot === undefined) {
+            movementBaselineSnapshot = snapshot;
+          }
+          return;
+        }
+        await waitFrames(page, 1);
+      }
+    };
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
       : scenario.assert.movement.entity ?? scenario.subject;
@@ -517,10 +541,14 @@ async function runStandalonePlaytestInternal(
         pathEntity,
         pathPositions,
         inputState,
-        capturesMovementSamples ? sampleRequest : undefined,
+        capturesMovementSamples || movementNeedsBaseline ? sampleRequest : undefined,
         index === scenario.steps.length - 1,
         scenario.subject,
       );
+      if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
+        const candidate = stepSamples.afterStep ?? stepSamples.afterInput;
+        if (entityPosition(candidate, movementEntity) !== undefined) movementBaselineSnapshot = candidate;
+      }
       if (capturesMovementSamples && movementCursor !== undefined && stepSamples.afterInput !== undefined) {
         movementSamples.push({
           after: stepSamples.afterInput,
@@ -542,8 +570,13 @@ async function runStandalonePlaytestInternal(
       if (step.label === scenario.assert?.framebufferCoverage?.window.endStep) {
         framebufferCoverage = await finishFramebufferCoverageProbe(page, activeConfig.artifactDirectory);
       }
+      await establishSceneSubject();
       if (step.label !== undefined && bridge !== undefined) {
         const snapshot = await bridge.sample({ ...sampleRequest, label: step.label });
+        if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined
+          && entityPosition(snapshot, movementEntity) !== undefined) {
+          movementBaselineSnapshot = snapshot;
+        }
         const signals = bridge.description.capabilities.includes("runtime.events")
           ? await bridge.drainEvents()
           : [];
@@ -594,6 +627,7 @@ async function runStandalonePlaytestInternal(
       movementSamples,
       setupApplication,
       deviceMetrics,
+      movementBaselineSnapshot,
     );
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,

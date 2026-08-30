@@ -1,0 +1,79 @@
+{
+  "generatedAt": "2026-08-30T13:08:37.519Z",
+  "rows": [
+    {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia"
+      },
+      "changedConstant": "LENS_DISTORTION_K1",
+      "comparisons": {
+        "defaultToChanged": {
+          "pixelMismatchRatio": 0.2083810763888889,
+          "perceptualDeltaE": 1.487055518459011,
+          "width": 640,
+          "height": 360
+        },
+        "offToDefault": {
+          "pixelMismatchRatio": 0.21405381944444443,
+          "perceptualDeltaE": 1.2901774309486034,
+          "width": 640,
+          "height": 360
+        }
+      },
+      "effect": "LensDistortionEffect",
+      "id": "lens-distortion",
+      "variants": ["off", "default", "changed"]
+    },
+    {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia"
+      },
+      "changedConstant": "SPARKLE_THRESHOLD",
+      "comparisons": {
+        "defaultToChanged": {
+          "pixelMismatchRatio": 0.04301215277777778,
+          "perceptualDeltaE": 0.20572126323822576,
+          "width": 640,
+          "height": 360
+        },
+        "offToDefault": {
+          "pixelMismatchRatio": 0.012352430555555556,
+          "perceptualDeltaE": 0.07433592336739461,
+          "width": 640,
+          "height": 360
+        }
+      },
+      "effect": "SparkleEffect",
+      "id": "sparkle",
+      "variants": ["off", "default", "changed"]
+    },
+    {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia"
+      },
+      "changedConstant": "GRADUAL_BACKGROUND_STRENGTH",
+      "comparisons": {
+        "defaultToChanged": {
+          "pixelMismatchRatio": 1,
+          "perceptualDeltaE": 6.856532870776177,
+          "width": 640,
+          "height": 360
+        },
+        "offToDefault": {
+          "pixelMismatchRatio": 0.9998350694444444,
+          "perceptualDeltaE": 25.059389846236442,
+          "width": 640,
+          "height": 360
+        }
+      },
+      "effect": "GradualBackgroundEffect",
+      "id": "gradual-background",
+      "variants": ["off", "default", "changed"]
+    }
+  ],
+  "schemaVersion": "0.1.0",
+  "source": "browser-webgpu-visual-variants"
+}

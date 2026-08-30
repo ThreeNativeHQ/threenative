@@ -39,6 +39,10 @@ native-smoke multitouch positive/negative proof after visual rows finish. Its re
 under `report.supplemental.androidMultitouch`; a failure forces exit 1 without discarding the
 visual results. Project mode does not substitute native-smoke input behavior for the project.
 
+`--target ios` validates and bundles the registry, then uses a signed iOS simulator/device adapter
+when one is available. On Linux, or on macOS without that adapter, each row is recorded as
+`skipped-with-reason`; the report never treats an unexecuted iOS lane as a pass.
+
 The runner does not synthesize a desktop toolchain. If no runtime binary exists, it reports
 `TN_PARITY_DESKTOP_RUNTIME_MISSING`: Node 20, JDK 17, and an Android SDK do not provide CMake,
 a C++ compiler, or platform development libraries. This is the precise remaining blocker to

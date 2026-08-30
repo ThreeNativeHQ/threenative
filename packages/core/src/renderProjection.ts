@@ -63,6 +63,7 @@ export type ProjectionExactReason =
   | "renderOrder"
   | "tooFewToBatch"
   | "batchOverflow"
+  | "batchVelocityPatchMissing"
   | "negativeScale"
   | "unsupportedGeometry";
 
@@ -103,6 +104,8 @@ export interface IRenderProjectionOptions {
    * the authored scene is rendered directly and nothing is built.
    */
   readonly minMeshes?: number;
+  /** Allocates per-sub-draw previous matrices for the material-batching lane. */
+  readonly velocity?: boolean | (() => boolean);
   readonly onReport?: (report: IRenderProjectionReport) => void;
 }
 
@@ -121,7 +124,8 @@ export class SceneRenderProjection {
   readonly #source: Scene;
   readonly #minMeshes: number;
   readonly #onReport: ((report: IRenderProjectionReport) => void) | undefined;
-  readonly #mirror = new ProjectionMirror();
+  readonly #mirror: ProjectionMirror;
+  readonly #velocity: boolean | (() => boolean);
   readonly #scanWorkspace = createProjectionScanWorkspace();
   #deoptimized = true;
   #reasonCode: ProjectionReasonCode = "belowMeshFloor";
@@ -140,6 +144,8 @@ export class SceneRenderProjection {
       throw new Error("SceneRenderProjection.minMeshes must be a positive integer.");
     this.#source = source;
     this.#minMeshes = minMeshes;
+    this.#velocity = options.velocity ?? false;
+    this.#mirror = new ProjectionMirror(resolveVelocityEnabled(this.#velocity));
     this.#onReport = options.onReport;
   }
 
@@ -171,6 +177,10 @@ export class SceneRenderProjection {
    */
   reconcile(): void {
     const startedAt = globalThis.performance?.now() ?? 0;
+    if (this.#mirror.setVelocityEnabled(resolveVelocityEnabled(this.#velocity))) {
+      this.#deoptimized = true;
+      this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
+    }
     // Re-read every frame, not once at construction: a game that swaps its sky or turns fog on
     // mid-level would otherwise keep the look it happened to have when the mirror was built.
     const mirrorScene = this.#mirror.scene;
@@ -341,3 +351,12 @@ export class SceneRenderProjection {
 }
 
 export type ProjectionCamera = Camera;
+
+function resolveVelocityEnabled(value: boolean | (() => boolean)): boolean {
+  const enabled = typeof value === "function" ? value() : value;
+  if (typeof enabled !== "boolean")
+    throw new Error(
+      `SceneRenderProjection.velocity must resolve to a boolean, received ${String(enabled)}.`,
+    );
+  return enabled;
+}

@@ -462,6 +462,22 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     triviality: "reject-initial-value",
     trivialityRationale: "A clip can already be playing at the first sample; an entered assertion must prove a transition or document why the clip is held.",
   },
+  {
+    description: "Proves the render chain reports the requested quality tier and, when asserted, a bounded temporal-history rejection fraction.",
+    example: { renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } } },
+    fields: [
+      { description: "Exact render-chain quality tier required after the chain applies.", name: "tier", type: "string" },
+      { description: "Temporal history rejection ceiling as a fraction from 0 to 1.", name: "velocity", type: "object" },
+    ],
+    cardinality: "object",
+    kind: "renderChain",
+    observationPath: "renderChain",
+    requiredCapabilities: ["runtime.renderChain"],
+    resultIdPrefix: "renderChain.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The runtime reports the installed chain and its measured rejection fraction; an initial scene value cannot substitute for that evidence.",
+  },
 ] as const;
 
 export interface IPlaytestSetupSchemaEntry {

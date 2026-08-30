@@ -10,7 +10,7 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "build": "tsx scripts/build-capability-manifest.ts && tsx scripts/generate-ctx-surface-table.ts && tsx scripts/generate-capability-reference.ts && pnpm -r --if-present run build",
+    "build": "tsx scripts/build-capability-manifest.ts && tsx scripts/generate-ctx-surface-table.ts && tsx scripts/generate-capability-reference.ts && tsx scripts/realism-effects-docs.ts && pnpm -r --if-present run build",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "bash scripts/run-test-suite.sh",
     "test:browser": "pnpm --filter @threenative/playtest build && playwright test --config=playwright.config.ts",
@@ -19,6 +19,7 @@
     "test:templates": "sh scripts/xvfb.sh tsx scripts/verify-template-playtests.ts",
     "verify:golden-path": "sh scripts/xvfb.sh tsx scripts/verify-golden-path.ts",
     "visuals": "sh scripts/xvfb.sh tsx scripts/visual-gate.ts",
+    "visuals:realism-effects": "sh scripts/xvfb.sh tsx scripts/realism-effects-visual.ts",
     "lint": "biome check .",
     "quality": "tsx scripts/check-quality.ts",
     "stamp:template-loading": "tsx scripts/stamp-template-loading.ts",
@@ -28,7 +29,7 @@
     "gate:doctor": "tsx scripts/gate-cli.ts doctor",
     "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
-    "budgets": "tsx scripts/workspace-packages.ts && tsx scripts/check-version-pins.ts && tsx scripts/check-native-shims.ts && tsx scripts/check-core-boundary.ts && tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts && tsx scripts/generate-ctx-surface-table.ts --check && tsx scripts/generate-capability-reference.ts --check  && tsx scripts/detect-capability-duplicates.ts examples --strict",
+    "budgets": "tsx scripts/workspace-packages.ts && tsx scripts/check-version-pins.ts && tsx scripts/check-native-shims.ts && tsx scripts/check-core-boundary.ts && tsx scripts/check-capability-docs.ts && tsx scripts/check-budgets.ts && tsx scripts/generate-ctx-surface-table.ts --check && tsx scripts/generate-capability-reference.ts --check && tsx scripts/realism-effects-docs.ts --check && tsx scripts/realism-effects-conformance.ts && tsx scripts/realism-effects-matrix.ts && tsx scripts/detect-capability-duplicates.ts examples --strict",
     "census": "tsx scripts/generate-native-census.ts",
     "publish:check": "tsx scripts/check-publish-state.ts",
     "release": "tsx scripts/release.ts",

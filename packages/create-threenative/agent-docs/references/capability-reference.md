@@ -535,6 +535,51 @@ export function prewarm(object: Object3D | readonly Object3D[]): void { … }
 prewarm(tracerPool);
 ```
 
+### `readRenderChainObservation`
+
+`function` — Compose game-provided render nodes in a measured, fail-closed chain.
+
+```ts
+export function readRenderChainObservation( renderer: unknown, ): IRenderChainMarker["applied"] | undefined { … }
+```
+
+- **Use when:** compose screen-space effects in a canonical order · report which render tier and velocity route actually ran
+- **Constraints:** stage factories own colour, strength, and all other appearance choices
+
+```ts
+const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
+```
+
+### `readRenderChainReport`
+
+`function` — Compose game-provided render nodes in a measured, fail-closed chain.
+
+```ts
+export function readRenderChainReport(renderer: unknown): IRenderChainMarker | undefined { … }
+```
+
+- **Use when:** compose screen-space effects in a canonical order · report which render tier and velocity route actually ran · expose the render tier and dropped-stage reasons to a playtest · inspect whether a temporal pass received velocity
+- **Constraints:** stage factories own colour, strength, and all other appearance choices · an absent value means no chain was installed and must fail a chain assertion
+
+```ts
+const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
+```
+
+### `RenderChain`
+
+`class` — Compose game-provided render nodes in a measured, fail-closed chain.
+
+```ts
+export class RenderChain { … }
+```
+
+- **Use when:** compose screen-space effects in a canonical order · report which render tier and velocity route actually ran
+- **Constraints:** stage factories own colour, strength, and all other appearance choices
+
+```ts
+const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
+```
+
 ### `replay`
 
 `function` — Record or replay deterministic game input and state.
@@ -2535,6 +2580,57 @@ export class ThreePlaytestPhysicsRecorder { … }
 const physics = new ThreePlaytestPhysicsRecorder();
 ```
 
+## `@threenative/template/starter/src/render/effects/gradualBackground`
+
+### `gradualBackground`
+
+`function` — ThreeNative equivalent for realism-effects gradualBackground.
+
+```ts
+function gradualBackground
+```
+
+- **Use when:** grade a background by distance
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+gradualBackground(...)
+```
+
+## `@threenative/template/starter/src/render/effects/lensDistortion`
+
+### `lensDistortion`
+
+`function` — ThreeNative equivalent for realism-effects lensDistortion.
+
+```ts
+function lensDistortion
+```
+
+- **Use when:** warp the image with radial lens distortion
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+lensDistortion(...)
+```
+
+## `@threenative/template/starter/src/render/effects/sparkle`
+
+### `sparkle`
+
+`function` — ThreeNative equivalent for realism-effects sparkle.
+
+```ts
+function sparkle
+```
+
+- **Use when:** add glints to bright highlights
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+sparkle(...)
+```
+
 ## `@threenative/ui`
 
 ### `DebugOverlay`
@@ -2624,5 +2720,237 @@ export function useUiState<TState extends object>(): TState | undefined;
 
 ```ts
 const score = useUiState((state) => state.score);
+```
+
+## `three/addons/tsl/display/DenoiseNode.js`
+
+### `DenoiseNode`
+
+`class` — ThreeNative equivalent for realism-effects DenoiseNode.
+
+```ts
+class DenoiseNode
+```
+
+- **Use when:** denoise a noisy screen-space pass
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+DenoiseNode(...)
+```
+
+## `three/addons/tsl/display/MotionBlur.js`
+
+### `motionBlur`
+
+`function` — ThreeNative equivalent for realism-effects motionBlur.
+
+```ts
+function motionBlur
+```
+
+- **Use when:** blur motion using a velocity buffer
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+motionBlur(...)
+```
+
+## `three/addons/tsl/display/RecurrentDenoiseNode.js`
+
+### `RecurrentDenoiseNode`
+
+`class` — ThreeNative equivalent for realism-effects RecurrentDenoiseNode.
+
+```ts
+class RecurrentDenoiseNode
+```
+
+- **Use when:** denoise a noisy screen-space pass
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+RecurrentDenoiseNode(...)
+```
+
+## `three/addons/tsl/display/SharpenNode.js`
+
+### `SharpenNode`
+
+`class` — ThreeNative equivalent for realism-effects SharpenNode.
+
+```ts
+class SharpenNode
+```
+
+- **Use when:** make the image sharper
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+SharpenNode(...)
+```
+
+## `three/addons/tsl/display/SSAAPassNode.js`
+
+### `SSAAPassNode`
+
+`class` — ThreeNative equivalent for realism-effects SSAAPassNode.
+
+```ts
+class SSAAPassNode
+```
+
+- **Use when:** anti-alias still and moving scenes
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+SSAAPassNode(...)
+```
+
+## `three/addons/tsl/display/SSGINode.js`
+
+### `SSGINode`
+
+`class` — ThreeNative equivalent for realism-effects SSGINode.
+
+```ts
+class SSGINode
+```
+
+- **Use when:** add screen-space global illumination
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+SSGINode(...)
+```
+
+## `three/addons/tsl/display/SSRNode.js`
+
+### `SSRNode`
+
+`class` — ThreeNative equivalent for realism-effects SSRNode.
+
+```ts
+class SSRNode
+```
+
+- **Use when:** add screen-space reflections
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+SSRNode(...)
+```
+
+## `three/addons/tsl/display/TemporalReprojectNode.js`
+
+### `TemporalReprojectNode`
+
+`class` — ThreeNative equivalent for realism-effects TemporalReprojectNode.
+
+```ts
+class TemporalReprojectNode
+```
+
+- **Use when:** reproject a temporal history
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+TemporalReprojectNode(...)
+```
+
+## `three/addons/tsl/display/TRAANode.js`
+
+### `TRAANode`
+
+`class` — ThreeNative equivalent for realism-effects TRAANode.
+
+```ts
+class TRAANode
+```
+
+- **Use when:** temporally resolve a moving image
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+TRAANode(...)
+```
+
+## `three/tsl`
+
+### `depth`
+
+`function` — ThreeNative equivalent for realism-effects depth.
+
+```ts
+function depth
+```
+
+- **Use when:** provide depth to screen-space effects
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+depth(...)
+```
+
+### `mrt`
+
+`function` — ThreeNative equivalent for realism-effects mrt.
+
+```ts
+function mrt
+```
+
+- **Use when:** provision velocity, normal, and depth render targets
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+mrt(...)
+```
+
+### `normal`
+
+`function` — ThreeNative equivalent for realism-effects normal.
+
+```ts
+function normal
+```
+
+- **Use when:** provide normals to screen-space effects
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+normal(...)
+```
+
+### `velocity`
+
+`function` — ThreeNative equivalent for realism-effects velocity.
+
+```ts
+function velocity
+```
+
+- **Use when:** provide motion vectors to temporal effects
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+velocity(...)
+```
+
+## `three/webgpu`
+
+### `VelocityNode`
+
+`class` — ThreeNative equivalent for realism-effects VelocityNode.
+
+```ts
+class VelocityNode
+```
+
+- **Use when:** provide motion vectors to temporal effects
+- **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
+
+```ts
+VelocityNode(...)
 ```
 

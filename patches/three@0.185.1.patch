@@ -1,0 +1,139 @@
+diff --git a/build/three.cjs b/build/three.cjs
+index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda32176ef6a 100644
+--- a/build/three.cjs
++++ b/build/three.cjs
+@@ -26116,6 +26116,8 @@ function copyArrayContents( src, target ) {
+  */
+ class BatchedMesh extends Mesh {
+ 
++	static threeNativeBatchedVelocityPatch = true;
++
+ 	/**
+ 	 * Constructs a new batched mesh.
+ 	 *
+diff --git a/build/three.core.js b/build/three.core.js
+index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d55d6dd6e7 100644
+--- a/build/three.core.js
++++ b/build/three.core.js
+@@ -26136,6 +26136,8 @@ function copyArrayContents( src, target ) {
+  */
+ class BatchedMesh extends Mesh {
+ 
++	static threeNativeBatchedVelocityPatch = true;
++
+ 	/**
+ 	 * Constructs a new batched mesh.
+ 	 *
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..e1948901ab99dc3d39ce732fa4929c9fc8f4a66f 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18599,6 +18599,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+ 	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
+ 
+ 	const matricesTexture = batchMesh._matricesTexture;
++	const previousMatricesTexture = batchMesh._previousMatricesTexture ?? matricesTexture;
+ 
+ 	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
+ 	const j = float( indirectId ).mul( 4 ).toInt().toConst();
+@@ -18626,6 +18627,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+ 
+ 	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
+ 
++	if ( builder.needsPreviousData() ) {
++
++		const previousBatchingMatrix = mat4(
++			textureLoad( previousMatricesTexture, ivec2( x, y ) ),
++			textureLoad( previousMatricesTexture, ivec2( x.add( 1 ), y ) ),
++			textureLoad( previousMatricesTexture, ivec2( x.add( 2 ), y ) ),
++			textureLoad( previousMatricesTexture, ivec2( x.add( 3 ), y ) )
++		);
++
++		positionPrevious.assign( previousBatchingMatrix.mul( positionPrevious ).xyz );
++
++	}
++
+ 	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
+ 
+ 	const batchingNormal = bm.mul( transformedNormal ).xyz;
+@@ -53841,7 +53855,7 @@ class NodeBuilder {
+ 
+ 		const mrt = this.renderer.getMRT();
+ 
+-		return ( mrt && mrt.has( 'velocity' ) ) || getDataFromObject( this.object ).useVelocity === true;
++		return ( mrt && mrt.has( 'velocity' ) ) || getDataFromObject( this.object ).useVelocity === true || this.object.userData?.useVelocity === true;
+ 
+ 	}
+ 
+diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
+index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b243694ef 100644
+--- a/src/nodes/accessors/Batch.js
++++ b/src/nodes/accessors/Batch.js
+@@ -1,6 +1,6 @@
+ 
+ import { normalLocal } from './Normal.js';
+-import { positionLocal } from './Position.js';
++import { positionLocal, positionPrevious } from './Position.js';
+ import { vec3, mat3, mat4, int, ivec2, float, Fn } from '../tsl/TSLBase.js';
+ import { textureLoad } from './TextureNode.js';
+ import { textureSize } from './TextureSizeNode.js';
+@@ -64,6 +64,7 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+ 	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
+ 
+ 	const matricesTexture = batchMesh._matricesTexture;
++	const previousMatricesTexture = batchMesh._previousMatricesTexture ?? matricesTexture;
+ 
+ 	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
+ 	const j = float( indirectId ).mul( 4 ).toInt().toConst();
+@@ -90,6 +91,19 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+ 	const bm = mat3( batchingMatrix );
+ 
+ 	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
++	if ( builder.needsPreviousData() ) {
++
++		const previousBatchingMatrix = mat4(
++			textureLoad( previousMatricesTexture, ivec2( x, y ) ),
++			textureLoad( previousMatricesTexture, ivec2( x.add( 1 ), y ) ),
++			textureLoad( previousMatricesTexture, ivec2( x.add( 2 ), y ) ),
++			textureLoad( previousMatricesTexture, ivec2( x.add( 3 ), y ) )
++		);
++
++		positionPrevious.assign( previousBatchingMatrix.mul( positionPrevious ).xyz );
++
++	}
++
+ 
+ 	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
+ 
+@@ -104,5 +118,3 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+ 	}
+ 
+ }, 'void' );
+-
+-
+diff --git a/src/nodes/core/NodeBuilder.js b/src/nodes/core/NodeBuilder.js
+index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966d8de3cb6 100644
+--- a/src/nodes/core/NodeBuilder.js
++++ b/src/nodes/core/NodeBuilder.js
+@@ -3450,7 +3450,7 @@ class NodeBuilder {
+ 
+ 		const mrt = this.renderer.getMRT();
+ 
+-		return ( mrt && mrt.has( 'velocity' ) ) || getDataFromObject( this.object ).useVelocity === true;
++		return ( mrt && mrt.has( 'velocity' ) ) || getDataFromObject( this.object ).useVelocity === true || this.object.userData?.useVelocity === true;
+ 
+ 	}
+ 
+diff --git a/src/objects/BatchedMesh.js b/src/objects/BatchedMesh.js
+index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820ca193f88d 100644
+--- a/src/objects/BatchedMesh.js
++++ b/src/objects/BatchedMesh.js
+@@ -181,6 +181,8 @@ function copyArrayContents( src, target ) {
+  */
+ class BatchedMesh extends Mesh {
+ 
++	static threeNativeBatchedVelocityPatch = true;
++
+ 	/**
+ 	 * Constructs a new batched mesh.
+ 	 *

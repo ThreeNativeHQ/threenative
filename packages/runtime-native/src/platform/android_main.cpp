@@ -14,6 +14,7 @@
 #include <fstream>
 #include <sstream>
 #include <cstdio>
+#include <cstdlib>
 #include <thread>
 #include <unistd.h>
 #include <android/log.h>
@@ -252,6 +253,7 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
     }
     if (argc > 3 && argv[3] && argv[3][0] != '\0') {
         std::string root = argv[3];
+        ::setenv("TN_PLAYTEST_MAILBOX_ROOT", root.c_str(), 1);
         runtime->evalScript(
             "globalThis.TN_PLAYTEST_MAILBOX={request:'" + root +
                 "/tn-playtest-request.json',response:'" + root +

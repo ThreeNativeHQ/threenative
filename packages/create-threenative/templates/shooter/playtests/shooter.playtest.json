@@ -47,9 +47,9 @@
     },
     "resources": [
       { "id": "state", "path": "hitDistanceTenths", "equals": 78, "changed": true },
-      { "id": "state", "path": "hitNormalXPercent", "equals": 0, "changed": true },
+      { "id": "state", "path": "hitNormalXPercent", "equals": 22, "changed": true },
       { "id": "state", "path": "hitNormalYPercent", "equals": 0, "changed": true },
-      { "id": "state", "path": "hitNormalZPercent", "equals": 100, "changed": true },
+      { "id": "state", "path": "hitNormalZPercent", "equals": 98, "changed": true },
       { "id": "state", "path": "friendlyPassed", "equals": 1, "changed": true },
       { "id": "state", "path": "wallBlocked", "equals": 1, "changed": true },
       { "id": "state", "path": "radiusInsideDeaths", "equals": 2, "changed": true },

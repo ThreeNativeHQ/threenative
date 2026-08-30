@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -53,6 +54,7 @@ const REGISTRY_SCHEMA_VERSION = "0.1.0";
 const runtimeRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
 const runnerPath = fileURLToPath(import.meta.url);
+const NATIVE_TEMPORAL_LABELS = Object.freeze(["frame-zero", "settled", "next"]);
 
 /**
  * The environment a parity run reads. Values are hashed, never recorded, so a report can say
@@ -157,8 +159,8 @@ export function buildProvenance(options = {}) {
 function usage() {
   return `Usage: node conformance/run-conformance.mjs [options]
 
-  --target web|desktop|android|all
-                                  Run one lane or the default web/desktop/emulator matrix
+  --target web|desktop|android|ios|all
+                                  Run one lane or the default web/desktop/emulator/simulator matrix
   --target android-hardware       Run only with an explicitly selected physical device
   --project PATH                  Run the configured native entry of a scaffolded project
   --only-tests id,id               Run selected rows; every other row is blocked
@@ -491,15 +493,30 @@ function makeEntry(test, target, port, entryRoot) {
 });
 console.info(${JSON.stringify(`TN_MULTITOUCH_PROOF_PASS:${test.id}`)});`
     : "";
+  const finalCapture = `const screenshot = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
+const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'image/png' }, body: screenshot });
+if (!response.ok) throw new Error('completion upload failed: ' + response.status);`;
+  const browserCapture = test.temporal
+    ? `const captureFrame = async (label) => {
+  const frame = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
+  const frameResponse = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}/' + label, { method: 'POST', headers: { 'content-type': 'image/png' }, body: frame });
+  if (!frameResponse.ok) throw new Error('temporal capture upload failed: ' + frameResponse.status);
+};
+await captureFrame('frame-zero');
+for (let frame = 0; frame < ${Number(test.temporal.settledFrame)}; frame += 1) await new Promise(requestAnimationFrame);
+await captureFrame('settled');
+await new Promise(requestAnimationFrame);
+await captureFrame('next');
+${finalCapture}`
+    : `for (let frame = 0; frame < ${test.captureFrames ?? 2}; frame += 1) await new Promise(requestAnimationFrame);
+${finalCapture}`;
   const completion =
     target === "browser"
       ? `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
 ${proofWait}
-for (let frame = 0; frame < ${test.captureFrames ?? 2}; frame += 1) await new Promise(requestAnimationFrame);
+${browserCapture}
 if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();
-const screenshot = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
-const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'image/png' }, body: screenshot });
-if (!response.ok) throw new Error('completion upload failed: ' + response.status);`
+`
       : `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
 ${proofWait}`;
   const error =
@@ -514,6 +531,7 @@ ${proofWait}`;
 ${proofImport}
 ${asyncStart}
 globalThis.__TN_ASSET_BASE__ = 'http://127.0.0.1:${port}/';
+globalThis.__TN_CONFORMANCE_TARGET__ = ${JSON.stringify(target)};
 const canvas = ${canvasExpression};
 try {
   const state = await startScene(canvas, { width: canvas.width || 1280, height: canvas.height || 720 });
@@ -603,9 +621,9 @@ function createCompletionBroker(captureRoot) {
       waiters.delete(id);
     },
     async handle(req, res, pathname) {
-      const match = pathname.match(/^\/__tn_conformance__\/(complete|error)\/([a-z0-9-]+)$/u);
+      const match = pathname.match(/^\/__tn_conformance__\/(complete|error)\/([a-z0-9-]+)(?:\/([a-z-]+))?$/u);
       if (!match || req.method !== "POST") return false;
-      const [, kind, id] = match;
+      const [, kind, id, frameLabel] = match;
       const chunks = [];
       let length = 0;
       for await (const chunk of req) {
@@ -620,10 +638,14 @@ function createCompletionBroker(captureRoot) {
       const data = Buffer.concat(chunks);
       const waiter = waiters.get(id);
       if (kind === "complete" && data.length > 0) {
-        const screenshot = join(captureRoot, `${id}.png`);
+        const screenshot = join(captureRoot, `${id}${frameLabel ? `-${frameLabel}` : ""}.png`);
         writeFileSync(screenshot, data);
         res.writeHead(204);
-        res.end(() => waiter?.settle({ kind: "complete", screenshot }));
+        if (frameLabel !== undefined) {
+          res.end();
+        } else {
+          res.end(() => waiter?.settle({ kind: "complete", screenshot }));
+        }
       } else {
         const error = data.toString("utf8") || "browser reported an empty screenshot";
         res.writeHead(kind === "error" ? 204 : 400);
@@ -697,6 +719,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
   const url = `http://127.0.0.1:${port}/${htmlRelative}`;
   let browser;
   const pageErrors = [];
+  let adapterInfo = null;
   try {
     browser = await chromium.launch({
       headless: false,
@@ -712,6 +735,23 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     page.on("pageerror", (error) => pageErrors.push(error.message));
     const completion = broker.wait(test.id, Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000));
     await page.goto(url, { waitUntil: "domcontentloaded" });
+    adapterInfo = await page.evaluate(async () => {
+      const adapter = await navigator.gpu?.requestAdapter();
+      if (!adapter) return null;
+      const info = adapter.info ?? {};
+      return {
+        architecture: info.architecture ?? "",
+        description: info.description ?? "",
+        device: info.device ?? "",
+        vendor: info.vendor ?? "",
+      };
+    });
+    if (test.requiresHardwareAdapter === true) {
+      const adapterText = JSON.stringify(adapterInfo ?? "");
+      if (adapterInfo === null || /cpu|fallback|llvmpipe|software|swiftshader/iu.test(adapterText)) {
+        throw new Error(`TN_CONFORMANCE_HARDWARE_ADAPTER_REQUIRED:${adapterText}`);
+      }
+    }
     if (test.inputProof === "multitouch") {
       await page.waitForFunction(() => globalThis.__TN_MULTITOUCH_INPUT_READY__ === true, null, {
         timeout: Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000),
@@ -744,6 +784,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       url,
       pageErrors,
       uniform: null,
+      adapterInfo,
     };
     if (outcome.kind !== "complete" || !outcome.screenshot || !existsSync(outcome.screenshot)) {
       result.status = "fail";
@@ -757,6 +798,33 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       result.browser.height = inspection.height;
       if (test.id === "30-screen-space-text") {
         result.browser.glyphRaster = inspectScreenSpaceGlyphs(readFileSync(outcome.screenshot));
+      }
+      if (test.temporal !== undefined) {
+        const temporalObservation = await page.evaluate(
+          () => globalThis.__TN_CONFORMANCE_TEMPORAL ?? null,
+        );
+        if (
+          temporalObservation === null
+          || temporalObservation.restoredFrameRendered !== true
+          || temporalObservation.restoredToFrameZero !== true
+        ) {
+          throw new Error(`TN_CONFORMANCE_TEMPORAL_RESTORE_MISSING:${test.id}`);
+        }
+        const temporal = {
+          frameZero: join(captureRoot, `${test.id}-frame-zero.png`),
+          settled: join(captureRoot, `${test.id}-settled.png`),
+          next: join(captureRoot, `${test.id}-next.png`),
+        };
+        if (Object.values(temporal).some((path) => !existsSync(path))) {
+          throw new Error(`TN_CONFORMANCE_TEMPORAL_CAPTURE_MISSING:${test.id}`);
+        }
+        const hashes = Object.fromEntries(
+          Object.entries(temporal).map(([label, path]) => [label, sha256(readFileSync(path))]),
+        );
+        if (hashes.settled === hashes.frameZero || hashes.next === hashes.frameZero) {
+          throw new Error(`TN_CONFORMANCE_FROZEN_TEMPORAL_HISTORY:${test.id}`);
+        }
+        result.browser.temporal = { captures: temporal, hashes, observation: temporalObservation };
       }
     } catch (error) {
       result.status = "fail";
@@ -772,6 +840,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       url,
       error: error instanceof Error ? error.message : String(error),
       pageErrors,
+      adapterInfo,
     };
   } finally {
     await browser?.close();
@@ -785,7 +854,144 @@ function validationErrors(output) {
   return output.match(pattern) || [];
 }
 
-function runDesktop(test, bundlePath, result, runtime, captureRoot, assets, runtimeBlocker = null) {
+function nativeTemporalCapturePaths(test, captureRoot) {
+  return Object.fromEntries(
+    NATIVE_TEMPORAL_LABELS.map((label) => [
+      label,
+      join(captureRoot, `${test.id}-${label}.png`),
+    ]),
+  );
+}
+
+function nativeTemporalMarker(test, label) {
+  return `TN_CONFORMANCE_TEMPORAL_FRAME:${test.realismEffect ?? test.id}:${label}`;
+}
+
+function writeNativeScreenshotRequest(mailboxRoot, screenshot) {
+  const request = join(mailboxRoot, "tn-playtest-screenshot-request.txt");
+  const temporary = `${request}.tmp`;
+  rmSync(temporary, { force: true });
+  writeFileSync(temporary, screenshot, "utf8");
+  renameSync(temporary, request);
+}
+
+async function waitForNativeMarker(child, output, marker, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    if (output.stdout.includes(marker) || output.stderr.includes(marker)) return;
+    if (output.error) throw output.error;
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(
+        `Native process exited before ${marker}: ${(output.stderr || output.stdout).slice(-2000)}`,
+      );
+    }
+    await wait(25);
+  }
+  throw new Error(`Native process timed out waiting for ${marker}.`);
+}
+
+async function waitForNativeScreenshot(child, outputPath, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    if (existsSync(outputPath)) return;
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`Native process exited before screenshot capture: ${outputPath}`);
+    }
+    await wait(25);
+  }
+  throw new Error(`Native screenshot capture timed out: ${outputPath}`);
+}
+
+async function stopNativeCaptureProcess(child) {
+  if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+  const deadline = Date.now() + 2_000;
+  while (Date.now() <= deadline && child.exitCode === null && child.signalCode === null) {
+    await wait(25);
+  }
+  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+}
+
+function validateNativeTemporalCaptures(test, captures) {
+  const inspections = Object.fromEntries(
+    NATIVE_TEMPORAL_LABELS.map((label) => {
+      const path = captures[label];
+      if (!existsSync(path)) throw new Error(`TN_CONFORMANCE_TEMPORAL_CAPTURE_MISSING:${test.id}:${label}`);
+      const inspection = inspectCapture(readFileSync(path));
+      if (inspection.uniform !== false) {
+        throw new Error(`TN_CONFORMANCE_TEMPORAL_CAPTURE_BLANK:${test.id}:${label}`);
+      }
+      return [label, inspection];
+    }),
+  );
+  const hashes = Object.fromEntries(
+    NATIVE_TEMPORAL_LABELS.map((label) => [label, sha256(readFileSync(captures[label]))]),
+  );
+  if (hashes.settled === hashes.frameZero || hashes.next === hashes.frameZero) {
+    throw new Error(`TN_CONFORMANCE_FROZEN_TEMPORAL_HISTORY:${test.id}`);
+  }
+  return { hashes, inspections };
+}
+
+async function captureNativeTemporalFrames(
+  test,
+  executableBundle,
+  runtime,
+  captureRoot,
+  cwd = runtimeRoot,
+) {
+  const captures = nativeTemporalCapturePaths(test, captureRoot);
+  const mailboxRoot = mkdtempSync(join(tmpdir(), "threenative-parity-native-temporal-"));
+  const output = { error: null, stderr: "", stdout: "" };
+  for (const path of Object.values(captures)) rmSync(path, { force: true });
+  writeNativeScreenshotRequest(mailboxRoot, captures["frame-zero"]);
+  const child = spawn(
+    runtime,
+    ["run", executableBundle, "--width", "1280", "--height", "720"],
+    {
+      cwd,
+      env: {
+        ...process.env,
+        ...(process.platform === "linux" ? { SDL_VIDEODRIVER: "x11" } : {}),
+        MYSTRAL_HEADLESS: "1",
+        TN_PLAYTEST_MAILBOX_ROOT: mailboxRoot,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  child.stdout?.on("data", (chunk) => {
+    output.stdout += String(chunk);
+  });
+  child.stderr?.on("data", (chunk) => {
+    output.stderr += String(chunk);
+  });
+  child.on("error", (error) => {
+    output.error = error;
+  });
+  const timeoutMs = 45_000;
+  try {
+    await waitForNativeScreenshot(child, captures["frame-zero"], timeoutMs);
+    await waitForNativeMarker(child, output, nativeTemporalMarker(test, "settled"), timeoutMs);
+    writeNativeScreenshotRequest(mailboxRoot, captures.settled);
+    await waitForNativeScreenshot(child, captures.settled, timeoutMs);
+    await waitForNativeMarker(child, output, nativeTemporalMarker(test, "next"), timeoutMs);
+    writeNativeScreenshotRequest(mailboxRoot, captures.next);
+    await waitForNativeScreenshot(child, captures.next, timeoutMs);
+    const temporal = validateNativeTemporalCaptures(test, captures);
+    const gpuValidationErrors = validationErrors(`${output.stdout}\n${output.stderr}`);
+    return {
+      ...temporal,
+      captures,
+      gpuValidationErrors,
+      stderr: output.stderr,
+      stdout: output.stdout,
+    };
+  } finally {
+    await stopNativeCaptureProcess(child);
+    rmSync(mailboxRoot, { recursive: true, force: true });
+  }
+}
+
+async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets, runtimeBlocker = null) {
   if (!runtime || !existsSync(runtime)) {
     result.status = "blocked";
     result.blockedReason =
@@ -796,57 +1002,94 @@ function runDesktop(test, bundlePath, result, runtime, captureRoot, assets, runt
   const screenshot = join(captureRoot, `${test.id}.png`);
   const staging = assets ? mkdtempSync(join(tmpdir(), "threenative-parity-desktop-")) : null;
   const executableBundle = staging ? stageDesktopFiles(bundlePath, assets, staging) : bundlePath;
-  const proc = spawnSync(
-    runtime,
-    [
-      "run",
-      executableBundle,
-      "--screenshot",
-      screenshot,
-      "--frames",
-      "300",
-      "--width",
-      "1280",
-      "--height",
-      "720",
-    ],
-    {
-      cwd: staging || runtimeRoot,
-      encoding: "utf8",
-      env:
-        process.platform === "linux"
-          ? { ...process.env, SDL_VIDEODRIVER: "x11" }
-          : process.env,
-      timeout: 180_000,
-    },
-  );
-  if (staging) rmSync(staging, { recursive: true, force: true });
-  const combined = `${proc.stdout || ""}\n${proc.stderr || ""}`;
-  const hasScreenshot = existsSync(screenshot);
-  result.native = {
-    completed: proc.status === 0 && hasScreenshot,
-    exitCode: proc.status,
-    screenshot: hasScreenshot ? screenshot : null,
-    stdout: (proc.stdout || "").slice(-4000),
-    stderr: (proc.stderr || "").slice(-4000),
-    uniform: null,
-  };
-  const gpuErrors = validationErrors(combined);
-  result.gpuValidationErrors.push(...gpuErrors);
-  if (
-    !result.native.completed ||
-    /TypeError|ReferenceError|SyntaxError/iu.test(combined) ||
-    gpuErrors.length > 0
-  ) {
-    result.status = "fail";
-    return;
-  }
   try {
+    if (test.temporal !== undefined) {
+      const temporal = await captureNativeTemporalFrames(
+        test,
+        executableBundle,
+        runtime,
+        captureRoot,
+        staging || runtimeRoot,
+      );
+      result.gpuValidationErrors.push(...temporal.gpuValidationErrors);
+      const finalInspection = temporal.inspections.next;
+      result.native = {
+        completed: temporal.gpuValidationErrors.length === 0,
+        exitCode: null,
+        screenshot: temporal.captures.next,
+        stdout: temporal.stdout.slice(-4000),
+        stderr: temporal.stderr.slice(-4000),
+        uniform: finalInspection.uniform,
+        width: finalInspection.width,
+        height: finalInspection.height,
+        temporal: {
+          captures: temporal.captures,
+          hashes: temporal.hashes,
+          observation: {
+            frameZeroRendered: true,
+            nextFrameRendered: true,
+            settledFrameRendered: true,
+          },
+        },
+      };
+      if (temporal.gpuValidationErrors.length > 0) result.status = "fail";
+      return;
+    }
+    const proc = spawnSync(
+      runtime,
+      [
+        "run",
+        executableBundle,
+        "--screenshot",
+        screenshot,
+        "--frames",
+        "300",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+      ],
+      {
+        cwd: staging || runtimeRoot,
+        encoding: "utf8",
+        env:
+          process.platform === "linux"
+            ? { ...process.env, SDL_VIDEODRIVER: "x11" }
+            : process.env,
+        timeout: 180_000,
+      },
+    );
+    const combined = `${proc.stdout || ""}\n${proc.stderr || ""}`;
+    const hasScreenshot = existsSync(screenshot);
+    result.native = {
+      completed: proc.status === 0 && hasScreenshot,
+      exitCode: proc.status,
+      screenshot: hasScreenshot ? screenshot : null,
+      stdout: (proc.stdout || "").slice(-4000),
+      stderr: (proc.stderr || "").slice(-4000),
+      uniform: null,
+    };
+    const gpuErrors = validationErrors(combined);
+    result.gpuValidationErrors.push(...gpuErrors);
+    if (
+      !result.native.completed ||
+      /TypeError|ReferenceError|SyntaxError/iu.test(combined) ||
+      gpuErrors.length > 0
+    ) {
+      result.status = "fail";
+      return;
+    }
     const inspection = inspectCapture(readFileSync(screenshot));
     result.native.uniform = inspection.uniform;
   } catch (error) {
     result.status = "fail";
-    result.native.error = error instanceof Error ? error.message : String(error);
+    result.native = {
+      completed: false,
+      ...(result.native || {}),
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    if (staging) rmSync(staging, { recursive: true, force: true });
   }
 }
 
@@ -869,6 +1112,45 @@ function runCommand(command, args, options = {}) {
 
 function androidArgs(serial, ...args) {
   return ["-s", serial, ...args];
+}
+
+function writeAndroidRemoteFile(adb, serial, remotePath, contents) {
+  const directory = mkdtempSync(join(tmpdir(), "threenative-conformance-android-file-"));
+  const localPath = join(directory, "payload");
+  const incomingPath = `${remotePath}.incoming-${process.pid}-${Date.now()}`;
+  try {
+    writeFileSync(localPath, contents, "utf8");
+    runCommand(adb, androidArgs(serial, "push", localPath, incomingPath), { timeout: 30_000 });
+    runCommand(adb, androidArgs(serial, "shell", "mv", incomingPath, remotePath), {
+      timeout: 30_000,
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    runCommand(adb, androidArgs(serial, "shell", "rm", "-f", incomingPath), {
+      allowFailure: true,
+      timeout: 10_000,
+    });
+  }
+}
+
+async function waitForAndroidRemoteFile(adb, serial, remotePath, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const probe = runCommand(adb, androidArgs(serial, "shell", "test", "-s", remotePath), {
+      allowFailure: true,
+      timeout: 10_000,
+    });
+    if (probe.status === 0) return;
+    await wait(25);
+  }
+  throw new Error(`Android screenshot capture timed out: ${remotePath}`);
+}
+
+function readAndroidRemoteBinary(adb, serial, remotePath) {
+  return runCommand(adb, androidArgs(serial, "exec-out", "cat", remotePath), {
+    binary: true,
+    timeout: 30_000,
+  }).stdout;
 }
 
 function androidPid(adb, serial) {
@@ -910,6 +1192,22 @@ function androidLog(adb, serial) {
       timeout: 15_000,
     }).stdout || "",
   );
+}
+
+export function readAndroidThermalObservation(adb, serial) {
+  const output = String(
+    runCommand(adb, androidArgs(serial, "shell", "dumpsys", "thermalservice"), {
+      timeout: 15_000,
+    }).stdout || "",
+  );
+  const status = Number.parseInt(/Thermal Status:\s*(\d+)/iu.exec(output)?.[1] ?? "", 10);
+  if (!Number.isInteger(status)) {
+    throw new Error("TN_ANDROID_THERMAL_UNOBSERVABLE: dumpsys thermalservice did not report Thermal Status.");
+  }
+  if (status !== 0) {
+    throw new Error(`TN_ANDROID_THERMALLY_CONFOUNDED: thermal status ${status} was observed before capture.`);
+  }
+  return { notThermallyConfounded: true, thermalStatus: status };
 }
 
 export function androidSystemDialog(windowDump) {
@@ -983,6 +1281,21 @@ async function waitForAndroidDisplaySize(common, expected) {
   throw new Error(
     `TN_ANDROID_DISPLAY_ORIENTATION: display reported ${observed ?? "no size"} instead of ${expected} before capture.`,
   );
+}
+
+async function waitForAndroidLogMarker(adb, serial, pid, marker, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let appLog = "";
+  while (Date.now() <= deadline) {
+    appLog = filterAppLog(androidLog(adb, serial), pid);
+    const analysis = analyzeAppLog(appLog);
+    if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
+    if (appLog.includes(marker)) return appLog;
+    if (pid && !androidPid(adb, serial))
+      throw new Error(androidDeathExcerpt(`Android process exited before ${marker}.`, appLog));
+    await wait(25);
+  }
+  throw new Error(`Android timed out waiting for ${marker}.`);
 }
 
 /**
@@ -1103,6 +1416,20 @@ async function runAndroid(
       return;
     }
   }
+  let deviceMetrics = null;
+  if (test.deviceMetrics?.notThermallyConfounded === true) {
+    try {
+      deviceMetrics = readAndroidThermalObservation(tools.adb, serial);
+    } catch (error) {
+      result.status = "fail";
+      result.native = {
+        completed: false,
+        phase: "device-metrics",
+        error: error instanceof Error ? error.message : String(error),
+      };
+      return;
+    }
+  }
   const androidBlockedReason = androidDependencyBlocker();
   if (androidBlockedReason !== null) {
     result.status = "blocked";
@@ -1151,6 +1478,19 @@ async function runAndroid(
   }
   const common = (...args) =>
     runCommand(tools.adb, androidArgs(serial, ...args), { timeout: 120_000 });
+  const temporalCaptures =
+    test.temporal === undefined ? null : nativeTemporalCapturePaths(test, captureRoot);
+  const androidMailboxRoot = `/sdcard/Android/data/${APP_ID}/files`;
+  const temporalRemoteCaptures =
+    temporalCaptures === null
+      ? null
+      : Object.fromEntries(
+          NATIVE_TEMPORAL_LABELS.map((label) => [
+            label,
+            `${androidMailboxRoot}/tn-conformance-${test.id}-${label}.png`,
+          ]),
+        );
+  const screenshotRequest = `${androidMailboxRoot}/tn-playtest-screenshot-request.txt`;
   let displayRestore = null;
   let releaseMultitouch = null;
   try {
@@ -1177,7 +1517,33 @@ async function runAndroid(
     common("shell", "wm", "size", ANDROID_CAPTURE_SIZE);
     common("shell", "am", "force-stop", APP_ID);
     common("logcat", "-c");
-    const launch = common("shell", "am", "start", "-W", "-n", ACTIVITY);
+    if (temporalRemoteCaptures !== null) {
+      common("shell", "mkdir", "-p", androidMailboxRoot);
+      common(
+        "shell",
+        "rm",
+        "-f",
+        screenshotRequest,
+        ...Object.values(temporalRemoteCaptures),
+      );
+      writeAndroidRemoteFile(
+        tools.adb,
+        serial,
+        screenshotRequest,
+        temporalRemoteCaptures["frame-zero"],
+      );
+    }
+    const launch = common(
+      "shell",
+      "am",
+      "start",
+      "-W",
+      "-n",
+      ACTIVITY,
+      ...(temporalRemoteCaptures === null
+        ? []
+        : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", androidMailboxRoot]),
+    );
     if (!/Status:\s*ok/iu.test(String(launch.stdout)))
       throw new Error(`Android activity failed to start: ${launch.stdout}`);
     const marker = `TN_CONFORMANCE_READY:${test.id}`;
@@ -1192,7 +1558,7 @@ async function runAndroid(
       if (appLog.includes(marker)) break;
       if (pid && !androidPid(tools.adb, serial))
         throw new Error(androidDeathExcerpt("Android process exited before the conformance marker.", appLog));
-      await wait(500);
+      await wait(test.temporal === undefined ? 500 : 25);
     }
     if (!appLog.includes(marker)) throw new Error(`Android timed out waiting for ${marker}.`);
     if (test.inputProof === "multitouch") {
@@ -1239,58 +1605,147 @@ async function runAndroid(
     }
     if (!pid || !androidPid(tools.adb, serial))
       throw new Error("Android process died after its conformance marker.");
-    const settleMs = Number(process.env.TN_ANDROID_SETTLE_MS || 3_000);
-    await wait(settleMs);
-    appLog = filterAppLog(androidLog(tools.adb, serial), pid);
-    const analysis = analyzeAppLog(appLog);
-    if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
-    if (!androidPid(tools.adb, serial))
-      throw new Error(`Android process died during the ${settleMs} ms settle window.`);
-    const beforeCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
-    if (beforeCaptureBlocker) {
-      throw new Error(beforeCaptureBlocker);
-    }
-    // The activity requests its own orientation as it starts, so the display can still be
-    // rotating when the settle window ends. Capturing then yields a 720x1280 frame that is
-    // reported as a pixel mismatch against the 1280x720 reference — a red row that names the
-    // wrong cause. Wait for the override to read back, and name it if it never does.
-    await waitForAndroidDisplaySize(common, ANDROID_CAPTURE_SIZE);
-    const png = runCommand(tools.adb, androidArgs(serial, "exec-out", "screencap", "-p"), {
-      binary: true,
-      timeout: 30_000,
-    }).stdout;
-    inspectScreenshot(png);
-    // Observe the capture instead of asserting it. A hard-coded `uniform: false` reports a
-    // blank device frame as a pass, which is the fail-open this lane exists to prevent.
-    const capture = inspectCapture(png);
-    if (`${capture.width}x${capture.height}` !== ANDROID_CAPTURE_SIZE) {
-      throw new Error(
-        `TN_ANDROID_DISPLAY_ORIENTATION: captured ${capture.width}x${capture.height} but the lane requires ${ANDROID_CAPTURE_SIZE}; the display was still rotating.`,
+    if (temporalCaptures !== null && temporalRemoteCaptures !== null) {
+      const temporalTimeoutMs = Number(process.env.TN_ANDROID_TIMEOUT_MS || 45_000);
+      const captureRemote = async (label) => {
+        const remotePath = temporalRemoteCaptures[label];
+        const localPath = temporalCaptures[label];
+        await waitForAndroidRemoteFile(tools.adb, serial, remotePath, temporalTimeoutMs);
+        const png = readAndroidRemoteBinary(tools.adb, serial, remotePath);
+        inspectScreenshot(png);
+        const capture = inspectCapture(png);
+        if (`${capture.width}x${capture.height}` !== ANDROID_CAPTURE_SIZE) {
+          throw new Error(
+            `TN_ANDROID_DISPLAY_ORIENTATION: captured ${capture.width}x${capture.height} but the lane requires ${ANDROID_CAPTURE_SIZE}; the display was still rotating.`,
+          );
+        }
+        writeFileSync(localPath, png);
+        runCommand(tools.adb, androidArgs(serial, "shell", "rm", "-f", remotePath), {
+          allowFailure: true,
+          timeout: 10_000,
+        });
+        return capture;
+      };
+      await captureRemote("frame-zero");
+      appLog = await waitForAndroidLogMarker(
+        tools.adb,
+        serial,
+        pid,
+        nativeTemporalMarker(test, "settled"),
+        temporalTimeoutMs,
       );
+      writeAndroidRemoteFile(
+        tools.adb,
+        serial,
+        screenshotRequest,
+        temporalRemoteCaptures.settled,
+      );
+      await captureRemote("settled");
+      appLog = await waitForAndroidLogMarker(
+        tools.adb,
+        serial,
+        pid,
+        nativeTemporalMarker(test, "next"),
+        temporalTimeoutMs,
+      );
+      writeAndroidRemoteFile(
+        tools.adb,
+        serial,
+        screenshotRequest,
+        temporalRemoteCaptures.next,
+      );
+      await captureRemote("next");
+      const temporal = validateNativeTemporalCaptures(test, temporalCaptures);
+      const analysis = analyzeAppLog(appLog);
+      if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
+      const gpuErrors = validationErrors(appLog);
+      result.gpuValidationErrors.push(...gpuErrors);
+      await waitForAndroidDisplaySize(common, ANDROID_CAPTURE_SIZE);
+      const beforeCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
+      if (beforeCaptureBlocker) throw new Error(beforeCaptureBlocker);
+      const afterCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
+      if (afterCaptureBlocker) throw new Error(afterCaptureBlocker);
+      const finalCapture = temporal.inspections.next;
+      result.native = {
+        completed: true,
+        screenshot: temporalCaptures.next,
+        uniform: finalCapture.uniform,
+        width: finalCapture.width,
+        height: finalCapture.height,
+        device: serial,
+        pid,
+        bundleSha256: bundleHash,
+        apkBundleVerified: true,
+        freshInstall: true,
+        webgpuLogChannel: true,
+        ...(deviceMetrics === null ? {} : { deviceMetrics }),
+        temporal: {
+          captures: temporalCaptures,
+          hashes: temporal.hashes,
+          observation: {
+            frameZeroRendered: true,
+            nextFrameRendered: true,
+            settledFrameRendered: true,
+          },
+        },
+        log: appLog.slice(-4000),
+      };
+      if (gpuErrors.length > 0) result.status = "fail";
+    } else {
+      const settleMs = Number(process.env.TN_ANDROID_SETTLE_MS || 3_000);
+      await wait(settleMs);
+      appLog = filterAppLog(androidLog(tools.adb, serial), pid);
+      const analysis = analyzeAppLog(appLog);
+      if (analysis.failures.length > 0) throw new Error(analysis.failures[0].excerpt);
+      if (!androidPid(tools.adb, serial))
+        throw new Error(`Android process died during the ${settleMs} ms settle window.`);
+      const beforeCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
+      if (beforeCaptureBlocker) {
+        throw new Error(beforeCaptureBlocker);
+      }
+      // The activity requests its own orientation as it starts, so the display can still be
+      // rotating when the settle window ends. Capturing then yields a 720x1280 frame that is
+      // reported as a pixel mismatch against the 1280x720 reference — a red row that names the
+      // wrong cause. Wait for the override to read back, and name it if it never does.
+      await waitForAndroidDisplaySize(common, ANDROID_CAPTURE_SIZE);
+      const png = runCommand(tools.adb, androidArgs(serial, "exec-out", "screencap", "-p"), {
+        binary: true,
+        timeout: 30_000,
+      }).stdout;
+      inspectScreenshot(png);
+      // Observe the capture instead of asserting it. A hard-coded `uniform: false` reports a
+      // blank device frame as a pass, which is the fail-open this lane exists to prevent.
+      const capture = inspectCapture(png);
+      if (`${capture.width}x${capture.height}` !== ANDROID_CAPTURE_SIZE) {
+        throw new Error(
+          `TN_ANDROID_DISPLAY_ORIENTATION: captured ${capture.width}x${capture.height} but the lane requires ${ANDROID_CAPTURE_SIZE}; the display was still rotating.`,
+        );
+      }
+      const afterCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
+      if (afterCaptureBlocker) {
+        throw new Error(afterCaptureBlocker);
+      }
+      const screenshot = join(captureRoot, `${test.id}.png`);
+      writeFileSync(screenshot, png);
+      if (!androidPid(tools.adb, serial))
+        throw new Error("Android process died after screenshot capture.");
+      result.native = {
+        completed: true,
+        screenshot,
+        uniform: capture.uniform,
+        width: capture.width,
+        height: capture.height,
+        device: serial,
+        pid,
+        bundleSha256: bundleHash,
+        apkBundleVerified: true,
+        freshInstall: true,
+        webgpuLogChannel: true,
+        settleMs,
+        ...(deviceMetrics === null ? {} : { deviceMetrics }),
+        log: appLog.slice(-4000),
+      };
     }
-    const afterCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
-    if (afterCaptureBlocker) {
-      throw new Error(afterCaptureBlocker);
-    }
-    const screenshot = join(captureRoot, `${test.id}.png`);
-    writeFileSync(screenshot, png);
-    if (!androidPid(tools.adb, serial))
-      throw new Error("Android process died after screenshot capture.");
-    result.native = {
-      completed: true,
-      screenshot,
-      uniform: capture.uniform,
-      width: capture.width,
-      height: capture.height,
-      device: serial,
-      pid,
-      bundleSha256: bundleHash,
-      apkBundleVerified: true,
-      freshInstall: true,
-      webgpuLogChannel: true,
-      settleMs,
-      log: appLog.slice(-4000),
-    };
   } catch (error) {
     result.status = "fail";
     result.native = {
@@ -1311,6 +1766,20 @@ async function runAndroid(
         };
       }
       releaseMultitouch = null;
+    }
+    if (temporalRemoteCaptures !== null) {
+      runCommand(
+        tools.adb,
+        androidArgs(
+          serial,
+          "shell",
+          "rm",
+          "-f",
+          screenshotRequest,
+          ...Object.values(temporalRemoteCaptures),
+        ),
+        { allowFailure: true, timeout: 10_000 },
+      );
     }
     if (displayRestore !== null) {
       const restored = runCommand(
@@ -1558,6 +2027,7 @@ function createReport(registry, mode, target, runtime, project, provenance) {
 function createResult(test) {
   return {
     id: test.id,
+    ...(test.realismEffect === undefined ? {} : { realismEffect: test.realismEffect }),
     scene: test.scene,
     status: "blocked",
     tolerance: test.tolerance,
@@ -1566,6 +2036,26 @@ function createResult(test) {
     metrics: { pixelMismatchRatio: null, perceptualDeltaE: null },
     gpuValidationErrors: [],
   };
+}
+
+function iosConformanceBlocker() {
+  if (process.platform !== "darwin") {
+    return "TN_PARITY_IOS_SKIPPED_WITH_REASON: iOS conformance requires macOS with Xcode and a booted simulator or signed device; this lane did not execute.";
+  }
+  const probe = spawnSync("xcrun", ["simctl", "list", "devices", "available", "--json"], {
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  if (probe.error || probe.status !== 0) {
+    return `TN_PARITY_IOS_SKIPPED_WITH_REASON: xcrun simctl is unavailable (${probe.error?.message ?? probe.stderr ?? "no simulator inventory"}); this lane did not execute.`;
+  }
+  return "TN_PARITY_IOS_SKIPPED_WITH_REASON: the generic registry runner has no signed iOS scene-app adapter yet; run the iOS simulator gate and project playtest lane before recording a pass.";
+}
+
+function runIos(test, result) {
+  result.status = "blocked";
+  result.platformResult = "skipped-with-reason";
+  result.blockedReason = iosConformanceBlocker();
 }
 
 function outputLayout(outArg, target) {
@@ -1649,10 +2139,10 @@ function runAll(argv) {
   const device = valueAfter(argv, "--device");
   const targetArg = valueAfter(argv, "--lane");
   const project = valueAfter(argv, "--project");
-  const targets = targetArg ? [targetArg] : ["web", "desktop", "android"];
+  const targets = targetArg ? [targetArg] : ["web", "desktop", "android", "ios"];
   let exitCode = 0;
   for (const target of targets) {
-    if (!["web", "desktop", "android", "android-hardware"].includes(target))
+    if (!["web", "desktop", "android", "android-hardware", "ios"].includes(target))
       throw new Error(`Unknown --lane target: ${target}`);
     const args = [runnerPath, "--target", target, "--out", join(base, target)];
     if (onlyTests) args.push("--only-tests", onlyTests);
@@ -1717,9 +2207,9 @@ async function main(argv = process.argv.slice(2)) {
     runAll(argv);
     return;
   }
-  if (!["web", "desktop", "android", "android-hardware"].includes(target)) {
+  if (!["web", "desktop", "android", "android-hardware", "ios"].includes(target)) {
     throw new Error(
-      `--target must be web, desktop, android, android-hardware, or all; received ${target}`,
+      `--target must be web, desktop, android, android-hardware, ios, or all; received ${target}`,
     );
   }
   const dryRun = argv.includes("--dry-run");
@@ -1850,7 +2340,7 @@ async function main(argv = process.argv.slice(2)) {
         if (!dryRun && bundled && target === "web") {
           await runBrowser(test, bundlePath, result, port, broker, captureRoot);
         } else if (!dryRun && bundled && target === "desktop") {
-          runDesktop(
+          await runDesktop(
             test,
             bundlePath,
             result,
@@ -1879,6 +2369,8 @@ async function main(argv = process.argv.slice(2)) {
             result,
             referencePath(valueAfter(argv, "--reference"), test.id),
           );
+        } else if (!dryRun && bundled && target === "ios") {
+          runIos(test, result);
         }
       }
       report.summary[result.status] += 1;

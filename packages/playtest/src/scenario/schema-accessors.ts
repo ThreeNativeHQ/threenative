@@ -2,7 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
-import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion } from "./schema-base.js";
+import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -258,6 +258,36 @@ export function validatePerformanceAssertion(value: unknown, scenarioPath: strin
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
     ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
   };
+}
+
+export function validateRenderChainAssertion(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestRenderChainAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  const tier = record.tier;
+  if (tier !== undefined && tier !== "high" && tier !== "medium" && tier !== "low" && tier !== "off") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.tier' must be high, medium, low, or off, received ${describeValue(tier)}.`);
+  }
+  const velocityValue = record.velocity;
+  const velocity = velocityValue === undefined
+    ? undefined
+    : requireRecord(velocityValue, scenarioPath, `${objectPath}.velocity`);
+  if (velocity !== undefined) {
+    const maxRejectionFraction = optionalNumber(velocity, "maxRejectionFraction", scenarioPath, `${objectPath}.velocity`);
+    if (maxRejectionFraction === undefined || maxRejectionFraction < 0 || maxRejectionFraction > 1) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.velocity.maxRejectionFraction' must be a finite number between 0 and 1.`);
+    }
+    return {
+      ...(tier === undefined ? {} : { tier }),
+      velocity: { maxRejectionFraction },
+    };
+  }
+  if (tier === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must assert tier or velocity.maxRejectionFraction; an empty render-chain assertion observes nothing.`);
+  }
+  return { tier };
 }
 
 /** Re-exported so a scenario author and the protocol never disagree about the phase names. */
@@ -687,6 +717,14 @@ export function validateNestedAssertionKeys(
       ["agent", "core", "randomState", "rapier", "step"],
       scenarioPath,
       `assert.${kind}${suffix}.runtime`,
+    );
+  }
+  if (kind === "renderChain" && isRecord(value.velocity)) {
+    rejectUnknownKeys(
+      value.velocity,
+      ["maxRejectionFraction"],
+      scenarioPath,
+      `assert.${kind}${suffix}.velocity`,
     );
   }
 }

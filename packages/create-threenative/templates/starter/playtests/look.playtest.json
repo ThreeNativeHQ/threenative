@@ -12,6 +12,11 @@
     "screenshots": "before-after"
   },
   "steps": [
+    { "kind": "wait", "label": "menu-is-up", "waitTicks": 20, "release": true },
+    { "kind": "click", "at": { "x": 640, "y": 365 }, "label": "focus-name-field" },
+    { "kind": "input", "label": "type-name", "press": "a", "holdTicks": 1, "release": true },
+    { "kind": "click", "at": { "x": 640, "y": 428 }, "label": "start-game" },
+    { "kind": "wait", "label": "play-scene-loads", "waitTicks": 600, "release": true },
     {
       "kind": "wait",
       "label": "menu-is-up",

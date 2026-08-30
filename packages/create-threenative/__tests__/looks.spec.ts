@@ -22,7 +22,7 @@ describe("starter visual floor", () => {
   it("should route setupPost through the framework output node", async () => {
     const post = await readFile(path.join(starter, "src/render/postprocessing.ts"), "utf8");
     const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
-    expect(post).toContain("setOutputNode");
+    expect(post).toContain("createRenderChain");
     expect(post).toContain("bloom");
     expect(play).toContain("setupPost");
   });
@@ -58,16 +58,12 @@ describe("starter visual floor", () => {
     // reaching back in. The cap is now a smell test for a hidden engine.
     const roots = [starter, minimal, platformer];
     const files = await Promise.all(
-      roots.flatMap((root) =>
-        readdir(path.join(root, "src/render")).then((names) =>
-          Promise.all(
-            names.map(
-              async (name) =>
-                [name, await readFile(path.join(root, "src/render", name), "utf8")] as const,
-            ),
-          ),
-        ),
-      ),
+      roots.flatMap(async (root) => {
+        const names = await renderFiles(path.join(root, "src/render"));
+        return Promise.all(
+          names.map(async (file) => [file, await readFile(file, "utf8")] as const),
+        );
+      }),
     );
     for (const entries of files) {
       for (const [name, source] of entries) {
@@ -167,3 +163,14 @@ describe("starter visual floor", () => {
     expect(css).toContain("#app canvas");
   });
 });
+
+async function renderFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await renderFiles(file)));
+    else files.push(file);
+  }
+  return files;
+}

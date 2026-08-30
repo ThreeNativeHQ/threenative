@@ -627,3 +627,26 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
   ]
 }
 ```
+
+### `renderChain`
+
+Proves the render chain reports the requested quality tier and, when asserted, a bounded temporal-history rejection fraction. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** runtime.renderChain
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `tier` | string | no |
+| `velocity` | object | no |
+
+
+```json
+{
+  "renderChain": {
+    "tier": "high",
+    "velocity": {
+      "maxRejectionFraction": 0.2
+    }
+  }
+}
+```

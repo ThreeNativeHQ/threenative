@@ -540,7 +540,7 @@ test("generatedPlaytestProofs fail closed on unknown ids and missing proof files
 test("help exits without starting any parity lane", () => {
   const proc = run(["--help"]);
   assert.equal(proc.status, 0, proc.stderr || proc.stdout);
-  assert.match(proc.stdout, /--target web\|desktop\|android\|all/u);
+  assert.match(proc.stdout, /--target web\|desktop\|android\|ios\|all/u);
   assert.doesNotMatch(proc.stdout, /"wrote"/u);
 });
 

@@ -75,13 +75,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // favour of the identical `createRandom` the framework already exports. That swap is
   // output-identical — same multiplier, same increment, verified over 35,000 draws — so the ridge
   // does not move; the bytes around it do.
-  "action-rpg": "c9d546da89e91498b037f0a58b2b2cff4f5c65de862060339a12da08717f91e9",
-  defense: "57b90bbec355e59ab1c5bc39cc12c68d3e86c74d1de2666ed75b84eaa53d85ce",
-  minimal: "753f05b64515ba8b84f409c76627963e0794aed55a366497353a3f742970a8f1",
-  platformer: "fe63a06972dddc7286d565043941944de13ed842855659e51b65fce12800b67d",
-  racing: "27431b8257f500ddda9f4934e3d5a4c6c2bed5c34e0aa94decb904306aab0d75",
-  shooter: "5a9ffd3c9f41f8f269aeebfc43393c3205f4a4604aef699cec6a4e69385943d6",
-  starter: "29dc0dedba452904dbd65f99c9495e9176ad760730ffd405f53a7ca1701ceec7",
+  // Recomputed 2026-08-30 for the realism-effects roll. Every template moved because the shared
+  // render-chain API, generated instructions, and optional effect sources are scaffolded bytes.
+  // Recomputed again after the starter's composed sharpen/bloom proof, optional effect parameters,
+  // and its migrated browser fixtures; the shooter hash also moved with its fixture corrections.
+  // Recomputed 2026-08-30 for the distributed Three.js batched-velocity patch, its generated
+  // project pnpm declaration, and the completed-frame render-chain measurement field.
+  "action-rpg": "96f78bd8efe6236cbcfccd69d112ca8cfbe011126dd326f44e5eb12285a26af0",
+  defense: "d5f708aedc0a477b75c068bbd0330ebccde3c5b6e5f6b9065ed68f8dfdc5f2ae",
+  minimal: "5b42357061f0aeef19733b3cc998f1f2d711aa2ea9dccbffa247d70942094bf1",
+  platformer: "82cffc8d36afcd40e43892f818f6da562da1cd2333798d75094d12a3cdfafdea",
+  racing: "69e248b55379a960f6eb52691a2f682bfac9f3f63ec802a47f658493f8d860cd",
+  shooter: "08e2b489d1618a9525cd701888040ed9610dcd481413d9e875bf14c2886a4bb1",
+  starter: "fb9338e4db8b1f013cecbd5c2c1e674071ccc17a431bb14904f9c7cf33c04bf0",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -167,6 +173,7 @@ const STARTER_PATHS = [
   "CLAUDE.md",
   "kit.json",
   "package.json",
+  "patches/three@0.185.1.patch",
   "threenative.config.ts",
   "tools/look.mjs",
   "index.html",
@@ -434,6 +441,12 @@ describe("create-threenative", () => {
       expect(result.template).toBe("starter");
       const packageJson = await readFile(path.join(result.target, "package.json"), "utf8");
       expect(packageJson).not.toContain("catalog:");
+      const packageManifest = JSON.parse(packageJson) as {
+        pnpm?: { patchedDependencies?: Record<string, string> };
+      };
+      expect(packageManifest.pnpm?.patchedDependencies).toEqual({
+        "three@0.185.1": "patches/three@0.185.1.patch",
+      });
       expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {
         await expect(

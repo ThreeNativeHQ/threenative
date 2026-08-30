@@ -405,6 +405,26 @@ async function copyCapabilityManifest(
   await cp(source, path.join(target, "capabilities.json"));
 }
 
+const FRAMEWORK_PATCH_DIRECTORY = "patches";
+const THREE_PATCH_NAME = "three@0.185.1.patch";
+
+async function copyFrameworkPatches(target: string, templateRootDirectory: string): Promise<void> {
+  const source = path.join(
+    path.dirname(templateRootDirectory),
+    "template-assets",
+    FRAMEWORK_PATCH_DIRECTORY,
+    THREE_PATCH_NAME,
+  );
+  if (!existsSync(source)) {
+    throw new Error(
+      `TN_FRAMEWORK_PATCH_MISSING: '${source}' is not in the package; the generated project needs the Three.js velocity patch for batched temporal history.`,
+    );
+  }
+  const destination = path.join(target, FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME);
+  await mkdir(path.dirname(destination), { recursive: true });
+  await cp(source, destination);
+}
+
 const NODE_MODULES_PREFIX = "./node_modules/";
 // Every server launches through a shim inside `@threenative/core`, the one package a ThreeNative
 // project always has as a direct dependency. Pointing straight at `threenative-asset-mcp` only
@@ -533,6 +553,7 @@ export async function createProject(
   await renderTemplate(target, replacements);
   await copyReferenceBundle(target, root, replacements);
   await copyCapabilityManifest(target, root);
+  await copyFrameworkPatches(target, root);
   await applyPackageSources(target, options.packageSources);
   await assertMcpConfig(target);
   await assertReferenceBundle(target);

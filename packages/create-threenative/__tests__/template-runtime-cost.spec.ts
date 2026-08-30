@@ -121,6 +121,7 @@ function sceneContext(physics: IPhysicsFixture["physics"], initialState: Record<
       compileAsync: async () => undefined,
       kind: "webgl",
       raw: { shadowMap: { enabled: false, type: 0 } },
+      createRenderChain: () => undefined,
       setOutputNode: () => undefined,
     },
     scene,

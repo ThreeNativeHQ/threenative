@@ -233,6 +233,44 @@ describe("createRenderer", () => {
     }
   });
 
+  it("feeds automatic render-chain tiers from the renderer's frame-budget observer", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      const chain = renderer.createRenderChain?.({
+        input: {},
+        request: { stages: ["bloom"], tier: "auto" },
+        stages: [{ build: (input) => input, name: "bloom" }],
+      });
+      if (chain === undefined || renderer.observeRenderChainBudget === undefined)
+        throw new Error("render-chain observer is unavailable");
+
+      renderer.observeRenderChainBudget({ phases: { render: { p95: 30 } } });
+      renderer.observeRenderChainBudget({ phases: { render: { p95: 30 } } });
+
+      expect(chain.applied.tier).toBe("medium");
+      renderer.dispose();
+      expect(chain.disposed).toBe(true);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("draws an overlay without clearing or entering the world output pipeline", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

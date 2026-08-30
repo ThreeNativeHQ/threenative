@@ -1,0 +1,12 @@
+{
+  "name": "native-render-chain",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 2,
+  "steps": [{ "label": "chain-settled", "waitTicks": 12 }],
+  "artifacts": { "screenshots": "after" },
+  "assert": {
+    "renderChain": { "tier": "high" }
+  }
+}

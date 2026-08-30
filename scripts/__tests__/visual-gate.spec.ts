@@ -92,6 +92,7 @@ describe("visual gate", () => {
               distinctColors: 8,
               height: 1,
               luminanceStdDev: 1,
+              maxLuminance: 1,
               width: 1,
             },
           }),

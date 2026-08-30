@@ -15,6 +15,7 @@ import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
+import { readRenderChainObservation } from "./render/chain.js";
 import type { ICtx } from "./scene.js";
 import { CORE_VERSION } from "./version.js";
 
@@ -59,6 +60,18 @@ export function playtest<
         gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime),
         gameplayChannels: () => gameplayChannels(ctx),
         renderer: ctx.renderer.raw as { getDrawingBufferSize(target: Vector2): Vector2 },
+        renderChain: () => {
+          const observation = readRenderChainObservation(ctx.renderer);
+          return observation === undefined
+            ? undefined
+            : {
+                ...observation,
+                dropped: observation.dropped.map((stage) => ({ ...stage })),
+                requested: [...observation.requested],
+                stages: [...observation.stages],
+                velocity: { ...observation.velocity },
+              };
+        },
         resources: stateResources(ctx),
         scene: ctx.scene,
       });

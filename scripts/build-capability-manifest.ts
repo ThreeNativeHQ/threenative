@@ -3,6 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
+import {
+  REALISM_EFFECTS_COVERAGE,
+  REALISM_EFFECTS_MANIFEST_ENTRIES,
+  validateRealismEffectsCoverage,
+} from "./realism-effects-coverage.js";
+
 export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/capabilities.json";
 // `@threenative/core` ships the same manifest so the capability MCP server still answers in a
 // project that was not scaffolded and therefore has no committed copy of its own.
@@ -481,9 +487,24 @@ export function buildCapabilityManifest(
       supersedes: candidate.documentation.supersedes,
       symbol: candidate.symbol,
     }))
+    .concat(REALISM_EFFECTS_MANIFEST_ENTRIES)
     .sort((left, right) =>
       `${left.importPath}:${left.symbol}`.localeCompare(`${right.importPath}:${right.symbol}`),
     );
+  // Fixture roots used by the manifest unit tests intentionally contain only synthetic package
+  // sources. The checked-in realism-effects mapping is validated when the repository has its PRD
+  // record; requiring those unrelated fixture trees to copy Three and every template would make
+  // the generic manifest builder impossible to exercise in isolation.
+  if (existsSync(path.join(root, "docs", "PRDs", "realism-effects"))) {
+    const coverageErrors = validateRealismEffectsCoverage({
+      coverage: REALISM_EFFECTS_COVERAGE,
+      manifest: entries,
+      root,
+    });
+    if (coverageErrors.length > 0) {
+      throw new Error(`Realism-effects coverage validation failed:\n${coverageErrors.join("\n")}`);
+    }
+  }
   return { entries, version: MANIFEST_VERSION };
 }
 

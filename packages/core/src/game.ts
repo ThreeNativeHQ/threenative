@@ -749,7 +749,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const loopState: { current?: FixedStepLoop } = {};
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
-    const projection = new SceneRenderProjection(threeScene);
+    const projection = new SceneRenderProjection(threeScene, {
+      velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
+    });
     this.#projection = projection;
     let projectionSettled = false;
     let worldRendered = false;
@@ -880,6 +882,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // The scaler reads the same windows the marker reports, so what it acted on and what
             // the record shows are the same measurement rather than two sampling paths.
             onWindow: (reported) => {
+              renderer.observeRenderChainBudget?.(reported);
               if (this.#config.frameBudget !== false)
                 this.#config.frameBudget?.onWindow?.(reported);
               if (scaler === undefined) return;
@@ -952,6 +955,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           this.#projection?.reconcile();
           renderer.render(this.#projection?.root ?? threeScene, camera);
+          renderer.observeRenderChainFrame?.();
           frameBudget?.addRender(budgetNow() - renderStart);
           // Resolve the GPU timestamps every frame, not once per reported window.
           //

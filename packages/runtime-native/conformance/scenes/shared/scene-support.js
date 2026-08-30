@@ -20,11 +20,14 @@ export async function startVisualScene(canvas, dimensions, type, build, options 
   if (!options.camera) camera.position.set(0, 0.25, 3.2);
 
   const subject = await build({ renderer, scene, camera, dimensions });
+  const renderFrame = typeof subject?.render === "function"
+    ? () => subject.render()
+    : () => renderer.render(scene, camera);
   function frame() {
-    renderer.render(scene, camera);
+    renderFrame();
     requestAnimationFrame(frame);
   }
-  renderer.render(scene, camera);
+  if (options.deferInitialRender !== true) renderFrame();
   requestAnimationFrame(frame);
   globalThis.__TN_CONFORMANCE = { ok: true, type, detail: subject?.detail ?? null };
   return { renderer, scene, camera, subject };

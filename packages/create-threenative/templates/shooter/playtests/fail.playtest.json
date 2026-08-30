@@ -5,6 +5,7 @@
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 10,
   "subject": "player",
+  "artifacts": { "screenshots": false },
   "steps": [
     { "kind": "input", "label": "first-hit", "press": "KeyX", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "first-respawn", "waitTicks": 45, "release": true },

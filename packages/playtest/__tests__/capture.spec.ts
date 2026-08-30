@@ -52,3 +52,20 @@ test("a real archived frame remains accepted by the package guard", async () => 
   expect(stats.height).toBe(720);
   expect(stats.distinctColors).toBeGreaterThanOrEqual(8);
 });
+
+test("a dark but varied game frame remains accepted below the bright-pixel threshold", () => {
+  const colors: Array<readonly [number, number, number, number]> = Array.from(
+    { length: 64 },
+    (_, index) =>
+      [index % 13, Math.floor(index / 13) % 13, 0, 255] as [number, number, number, number],
+  );
+  colors[62] = [80, 80, 80, 255];
+  colors[63] = [100, 100, 100, 255];
+
+  const stats = assertCaptureNotBlank(image(colors), "dark-scene.png");
+
+  expect(stats.brightPixelRatio).toBeLessThan(0.05);
+  expect(stats.distinctColors).toBeGreaterThanOrEqual(32);
+  expect(stats.luminanceStdDev).toBeGreaterThanOrEqual(0.02);
+  expect(stats.maxLuminance).toBeLessThanOrEqual(0.5);
+});

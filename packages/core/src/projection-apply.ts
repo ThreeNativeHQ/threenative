@@ -26,6 +26,13 @@ import type {
   IProjectionMaterialGroup,
   IProjectionProjectPlan,
 } from "./projection-plan.js";
+import {
+  disposeBatchedMeshVelocity,
+  ensureBatchedMeshVelocity,
+  isBatchedMeshVelocityPatched,
+  setBatchedMeshMatrixWithVelocity,
+  setBatchedMeshPreviousMatrix,
+} from "./render/batched-velocity.js";
 import type { ProjectionExactReason } from "./renderProjection.js";
 
 /**
@@ -213,6 +220,19 @@ export class ProjectionMirror {
   #extraExactCount = 0;
   #projectedObjects = 0;
   #compileMs = 0;
+  #velocityEnabled: boolean;
+
+  constructor(velocityEnabled = false) {
+    this.#velocityEnabled = velocityEnabled;
+  }
+
+  /** Rebuilds the private mirror when a temporal chain turns per-object history on or off. */
+  setVelocityEnabled(enabled: boolean): boolean {
+    if (this.#velocityEnabled === enabled) return false;
+    this.releaseAll();
+    this.#velocityEnabled = enabled;
+    return true;
+  }
 
   get projectedObjects(): number {
     return this.#projectedObjects;
@@ -347,6 +367,14 @@ export class ProjectionMirror {
   #applyMaterialGroups(plan: IProjectionProjectPlan): void {
     for (let index = 0; index < plan.materialGroupCount; index += 1) {
       const group = plan.materialGroups[index] as IProjectionMaterialGroup;
+      if (this.#velocityEnabled && !isBatchedMeshVelocityPatched()) {
+        for (let member = 0; member < group.memberCount; member += 1) {
+          const mesh = group.members[member] as Mesh;
+          this.#release(mesh);
+          this.#appendExact(mesh, "batchVelocityPatchMissing");
+        }
+        continue;
+      }
       let viableCount = 0;
       for (let member = 0; member < group.memberCount; member += 1) {
         if ((group.members[member] as Mesh).matrixWorld.determinant() > 0) viableCount += 1;
@@ -699,6 +727,10 @@ export class ProjectionMirror {
     mesh.perObjectFrustumCulled = PER_OBJECT_FRUSTUM_CULLED && group.frustumCulled;
     mesh.sortObjects = SORT_BATCH_OBJECTS;
     mesh.frustumCulled = false;
+    if (this.#velocityEnabled) {
+      mesh.userData.useVelocity = true;
+      ensureBatchedMeshVelocity(mesh);
+    }
     // Carried from the sources, exactly as the instanced lane carries them: every member agreed,
     // because the flags are part of what keyed the group.
     mesh.castShadow = reference.castShadow;
@@ -741,6 +773,7 @@ export class ProjectionMirror {
     this.#releaseProxy(mesh);
 
     let slot = target.instances.get(mesh);
+    const newSlot = slot === undefined;
     if (slot === undefined) {
       if (target.used >= target.capacity) return false;
       const geometryId = target.geometries.get(mesh.geometry);
@@ -767,11 +800,20 @@ export class ProjectionMirror {
 
     const state = this.#state.get(mesh) as ISourceState;
     const visible = this.#visibleInWorld(mesh);
-    if (visible !== state.visible || !matrixEquals(state.matrixWorld, mesh.matrixWorld)) {
+    const matrixChanged = !matrixEquals(state.matrixWorld, mesh.matrixWorld);
+    if (visible !== state.visible || matrixChanged) {
+      if (this.#velocityEnabled) {
+        const previousMatrix =
+          newSlot || (!state.visible && visible) ? mesh.matrixWorld : state.matrixWorld;
+        setBatchedMeshMatrixWithVelocity(target.mesh, slot, mesh.matrixWorld, previousMatrix);
+      } else target.mesh.setMatrixAt(slot, mesh.matrixWorld);
       state.matrixWorld.copy(mesh.matrixWorld);
       state.visible = visible;
-      target.mesh.setMatrixAt(slot, mesh.matrixWorld);
       target.mesh.setVisibleAt(slot, visible);
+    } else if (this.#velocityEnabled) {
+      const previousMatrix =
+        newSlot || (!state.visible && visible) ? mesh.matrixWorld : state.matrixWorld;
+      setBatchedMeshPreviousMatrix(target.mesh, slot, previousMatrix);
     }
     state.geometry = mesh.geometry;
     state.material = mesh.material;
@@ -797,6 +839,7 @@ export class ProjectionMirror {
    */
   #disposeBatched(batch: IBatched): void {
     this.scene.remove(batch.mesh);
+    if (this.#velocityEnabled) disposeBatchedMeshVelocity(batch.mesh);
     batch.mesh.dispose();
     for (const object of batch.instances.keys()) this.#state.delete(object);
     this.#materialBatches.delete(batch.group);
@@ -935,6 +978,7 @@ export class ProjectionMirror {
     this.#batches.clear();
     for (const batch of this.#materialBatches.values()) {
       this.scene.remove(batch.mesh);
+      if (this.#velocityEnabled) disposeBatchedMeshVelocity(batch.mesh);
       batch.mesh.dispose();
     }
     this.#materialBatches.clear();

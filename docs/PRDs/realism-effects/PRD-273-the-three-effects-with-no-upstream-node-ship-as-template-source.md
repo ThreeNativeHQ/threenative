@@ -8,8 +8,9 @@ prd_contract: v1
 [PRD-266](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for the chain
 seam these attach to. Batch: [docs/PRDs/realism-effects](./README.md).
 
-**Goal: every effect `0beqz/realism-effects` exports has a working equivalent here.** Eleven of its
-fourteen exports map to a `three@0.185.1` TSL node already installed. This PRD is the other three.
+**Goal: every covered effect `0beqz/realism-effects` exports has a working equivalent here.** Ten
+of its fourteen exports map to a `three@0.185.1` TSL node already installed. This PRD is the three
+template-source effects; `HBAOEffect` remains explicitly uncovered under PRD-274.
 
 **Complexity:** three fragment shaders totalling 273 lines of GLSL, rewritten as TSL and placed in
 generated template source = **LOW**. The work is small; the placement is the whole point.
@@ -113,7 +114,7 @@ gets all three.
 ## Out of scope
 
 `HBAOEffect`, whose equivalent is a measurement question rather than a translation — see
-[PRD-274](./PRD-274-every-export-has-a-named-tested-equivalent.md). The eleven exports upstream
+[PRD-274](./PRD-274-every-export-has-a-named-tested-equivalent.md). The ten exports upstream
 already covers. Any preset or genre system that would choose these effects on a game's behalf,
 which the charter closes with evidence.
 

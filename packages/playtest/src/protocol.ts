@@ -83,6 +83,21 @@ export interface IPlaytestPerformanceObservation {
   triangles?: number;
 }
 
+export interface IPlaytestRenderChainObservation {
+  dropped: Array<{ name: string; reason: string }>;
+  requested: string[];
+  source: "pinned" | "auto";
+  stages: string[];
+  tier: "high" | "medium" | "low" | "off";
+  velocity: {
+    measurementFrame?: number;
+    provisioned: boolean;
+    required: boolean;
+    rejectionFraction?: number;
+    source: "mrt" | "per-object" | null;
+  };
+}
+
 export interface IPlaytestWorldRuntimeObservation {
   agent: string;
   core: string;
@@ -143,6 +158,7 @@ export interface IPlaytestObservationSnapshot {
   gameplay?: IPlaytestGameplayObservation;
   physicsDebugSeries?: Array<{ label: string; snapshot: JsonValue; tick: number }>;
   performance?: IPlaytestPerformanceObservation;
+  renderChain?: IPlaytestRenderChainObservation;
   runtimeDiagnosticsSeries?: IPlaytestRuntimeDiagnosticsSample[];
   resources?: Record<string, JsonValue>;
 }

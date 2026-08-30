@@ -205,6 +205,39 @@ export type {
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
+/**
+ * Compose game-provided render nodes in a measured, fail-closed chain.
+ * @situation compose screen-space effects in a canonical order
+ * @situation report which render tier and velocity route actually ran
+ * @constraint stage factories own colour, strength, and all other appearance choices
+ * @example const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
+ */
+export {
+  RENDER_CHAIN_MARKER,
+  RENDER_CHAIN_STAGE_ORDER,
+  RENDER_CHAIN_TIERS,
+  RenderChain,
+  readRenderChainObservation,
+  readRenderChainReport,
+} from "./render/chain.js";
+export type {
+  IRenderChainApplied,
+  IRenderChainBudgetWindow,
+  IRenderChainDroppedStage,
+  IRenderChainOptions,
+  IRenderChainRenderer,
+  IRenderChainRequest,
+  IRenderChainStage,
+  IRenderChainStageContext,
+  IRenderChainVelocityMeasurement,
+  IRenderChainVelocityReport,
+  IRenderChainVelocityRequest,
+  RenderChainSource,
+  RenderChainStageName,
+  RenderChainTier,
+  RenderChainTierRequest,
+  RenderChainVelocitySource,
+} from "./render/chain.js";
 export { warmUpScene } from "./warmup.js";
 export type {
   IWarmUpOptions,

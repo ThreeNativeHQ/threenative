@@ -87,3 +87,13 @@ test("should keep the playtest bridge tier browser-safe", async () => {
   expect(seen.size).toBeGreaterThan(3);
   expect(offenders).toEqual([]);
 });
+
+test("should ship the Three.js batched velocity patch with core", async () => {
+  const manifest = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { files?: string[] };
+  expect(manifest.files).toContain("patches");
+  const patch = await readFile(new URL("../patches/three@0.185.1.patch", import.meta.url), "utf8");
+  expect(patch).toContain("this.object.userData?.useVelocity === true");
+  expect(patch).toContain("_previousMatricesTexture ?? matricesTexture");
+});

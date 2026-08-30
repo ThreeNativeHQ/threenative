@@ -1,6 +1,7 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { assertCaptureNotBlank } from "../capture.js";
 import {
   loadPlaytestScenario,
   playtestDiagnostic,
@@ -335,7 +336,10 @@ async function runDevicePlaytestInternal(
         labeledSamples.push({ label: step.label, signals, snapshot });
       }
       if (step.screenshot !== undefined) {
-        await target.driver.screenshot(join(config.artifactDirectory, `${safePart(step.screenshot)}.png`));
+        await captureDeviceScreenshot(
+          target,
+          join(config.artifactDirectory, `${safePart(step.screenshot)}.png`),
+        );
       }
       if (step.release && pressed !== undefined) {
         const released = typeof pressed === "string" ? [pressed] : [...pressed];
@@ -392,7 +396,7 @@ async function runDevicePlaytestInternal(
     metrics?.stop();
     await metrics?.sampleNow("after").catch(() => undefined);
     if (scenario.artifacts?.screenshots !== false) {
-      await target.driver.screenshot(join(config.artifactDirectory, "after.png"));
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"));
     }
     if (!(await target.driver.isAlive())) {
       return failureReport(config, scenario, playtestDiagnostic(
@@ -475,6 +479,14 @@ async function runDevicePlaytestInternal(
     metrics?.stop();
     if (cleanupErrors.length > 0) cleanupState.error = cleanupFailure(cleanupErrors);
   }
+}
+
+async function captureDeviceScreenshot(
+  target: IDevicePlaytestTarget,
+  path: string,
+): Promise<void> {
+  await target.driver.screenshot(path);
+  assertCaptureNotBlank(await readFile(path), path);
 }
 
 /**

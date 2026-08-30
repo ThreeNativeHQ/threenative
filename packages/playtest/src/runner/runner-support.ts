@@ -168,6 +168,7 @@ export function buildReport(
   movementSamples: readonly IMovementSampleInterval[] = [],
   setup: IPlaytestSetupApplication | undefined = undefined,
   deviceMetrics: IPlaytestDeviceMetricsObservation | undefined = undefined,
+  movementBaselineSnapshot: IPlaytestObservationSnapshot | undefined = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -191,7 +192,7 @@ export function buildReport(
     : entityObservedWindow(movementSamples, entity);
   const movementBeforeSnapshot = movementSample?.before
     ?? observedWindow?.before
-    ?? (isAnonymousMovementScenario(scenario) ? undefined : beforeSnapshot);
+    ?? (isAnonymousMovementScenario(scenario) ? undefined : movementBaselineSnapshot ?? beforeSnapshot);
   const movementAfterSnapshot = movementSample?.after
     ?? observedWindow?.after
     ?? (isAnonymousMovementScenario(scenario) ? undefined : afterSnapshot);
@@ -254,6 +255,9 @@ export function buildReport(
       ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
       network: networkEntries,
       ...(performanceSeries === undefined ? {} : { performanceSeries }),
+      ...(afterSnapshot?.renderChain === undefined && beforeSnapshot?.renderChain === undefined
+        ? {}
+        : { renderChain: afterSnapshot?.renderChain ?? beforeSnapshot?.renderChain }),
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
       ...(beforeSnapshot?.gameplay === undefined
         && afterSnapshot?.gameplay === undefined

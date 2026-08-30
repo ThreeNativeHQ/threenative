@@ -1,6 +1,6 @@
 {
   "acceptanceId": "prd-194-performance-shooter",
-  "artifacts": { "screenshots": "after" },
+  "artifacts": { "screenshots": false },
   "assert": {
     "performance": {
       "maxDrawCalls": 96,

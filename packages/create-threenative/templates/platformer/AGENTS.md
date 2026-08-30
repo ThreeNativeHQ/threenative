@@ -199,7 +199,7 @@ deferred `moveAndSlide(dt)` step-timing rule and save/load snippets are in
 Keep the palette to six named colours with exactly one `accent`, and import it from materials
 and sky. Set camera framing, tonemapping and exposure deliberately; keep the rim light,
 soft shadows with `normalBias`, sky-derived fog, and bloom through
-`renderer.setOutputNode()`. These visual decisions belong in this generated project, not in
+`renderer.createRenderChain()`. These visual decisions belong in this generated project, not in
 the framework packages; the per-file baseline is `agent-docs/visual-baseline.md`. Run
 `pnpm visuals` when changing the render layer.
 

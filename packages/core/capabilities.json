@@ -620,6 +620,59 @@
       "symbol": "prewarm"
     },
     {
+      "constraints": ["stage factories own colour, strength, and all other appearance choices"],
+      "example": "const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: [\"bloom\"], tier: \"auto\" } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readRenderChainObservation( renderer: unknown, ): IRenderChainMarker[\"applied\"] | undefined { … }",
+      "situations": [
+        "compose screen-space effects in a canonical order",
+        "report which render tier and velocity route actually ran"
+      ],
+      "summary": "Compose game-provided render nodes in a measured, fail-closed chain.",
+      "supersedes": [],
+      "symbol": "readRenderChainObservation"
+    },
+    {
+      "constraints": [
+        "stage factories own colour, strength, and all other appearance choices",
+        "an absent value means no chain was installed and must fail a chain assertion"
+      ],
+      "example": "const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: [\"bloom\"], tier: \"auto\" } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readRenderChainReport(renderer: unknown): IRenderChainMarker | undefined { … }",
+      "situations": [
+        "compose screen-space effects in a canonical order",
+        "report which render tier and velocity route actually ran",
+        "expose the render tier and dropped-stage reasons to a playtest",
+        "inspect whether a temporal pass received velocity"
+      ],
+      "summary": "Compose game-provided render nodes in a measured, fail-closed chain.",
+      "supersedes": [],
+      "symbol": "readRenderChainReport"
+    },
+    {
+      "constraints": ["stage factories own colour, strength, and all other appearance choices"],
+      "example": "const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: [\"bloom\"], tier: \"auto\" } });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class RenderChain { … }",
+      "situations": [
+        "compose screen-space effects in a canonical order",
+        "report which render tier and velocity route actually ran"
+      ],
+      "summary": "Compose game-provided render nodes in a measured, fail-closed chain.",
+      "supersedes": [],
+      "symbol": "RenderChain"
+    },
+    {
       "constraints": [
         "use a seeded random source and fixed-step simulation for meaningful replays"
       ],
@@ -2774,6 +2827,51 @@
       "symbol": "ThreePlaytestPhysicsRecorder"
     },
     {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "gradualBackground(...)",
+      "importPath": "@threenative/template/starter/src/render/effects/gradualBackground",
+      "kind": "function",
+      "overrides": [],
+      "package": "template:starter",
+      "signature": "function gradualBackground",
+      "situations": ["grade a background by distance"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects gradualBackground.",
+      "symbol": "gradualBackground"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "lensDistortion(...)",
+      "importPath": "@threenative/template/starter/src/render/effects/lensDistortion",
+      "kind": "function",
+      "overrides": [],
+      "package": "template:starter",
+      "signature": "function lensDistortion",
+      "situations": ["warp the image with radial lens distortion"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects lensDistortion.",
+      "symbol": "lensDistortion"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "sparkle(...)",
+      "importPath": "@threenative/template/starter/src/render/effects/sparkle",
+      "kind": "function",
+      "overrides": [],
+      "package": "template:starter",
+      "signature": "function sparkle",
+      "situations": ["add glints to bright highlights"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects sparkle.",
+      "symbol": "sparkle"
+    },
+    {
       "constraints": [],
       "example": "<DebugOverlay game={game} />",
       "importPath": "@threenative/ui",
@@ -2868,6 +2966,216 @@
       "summary": "Read the game's published state from a UI that may be in another process.",
       "supersedes": [],
       "symbol": "useUiState"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "DenoiseNode(...)",
+      "importPath": "three/addons/tsl/display/DenoiseNode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class DenoiseNode",
+      "situations": ["denoise a noisy screen-space pass"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects DenoiseNode.",
+      "symbol": "DenoiseNode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "motionBlur(...)",
+      "importPath": "three/addons/tsl/display/MotionBlur.js",
+      "kind": "function",
+      "overrides": [],
+      "package": "three",
+      "signature": "function motionBlur",
+      "situations": ["blur motion using a velocity buffer"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects motionBlur.",
+      "symbol": "motionBlur"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "RecurrentDenoiseNode(...)",
+      "importPath": "three/addons/tsl/display/RecurrentDenoiseNode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class RecurrentDenoiseNode",
+      "situations": ["denoise a noisy screen-space pass"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects RecurrentDenoiseNode.",
+      "symbol": "RecurrentDenoiseNode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "SharpenNode(...)",
+      "importPath": "three/addons/tsl/display/SharpenNode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class SharpenNode",
+      "situations": ["make the image sharper"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects SharpenNode.",
+      "symbol": "SharpenNode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "SSAAPassNode(...)",
+      "importPath": "three/addons/tsl/display/SSAAPassNode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class SSAAPassNode",
+      "situations": ["anti-alias still and moving scenes"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects SSAAPassNode.",
+      "symbol": "SSAAPassNode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "SSGINode(...)",
+      "importPath": "three/addons/tsl/display/SSGINode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class SSGINode",
+      "situations": ["add screen-space global illumination"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects SSGINode.",
+      "symbol": "SSGINode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "SSRNode(...)",
+      "importPath": "three/addons/tsl/display/SSRNode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class SSRNode",
+      "situations": ["add screen-space reflections"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects SSRNode.",
+      "symbol": "SSRNode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "TemporalReprojectNode(...)",
+      "importPath": "three/addons/tsl/display/TemporalReprojectNode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class TemporalReprojectNode",
+      "situations": ["reproject a temporal history"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects TemporalReprojectNode.",
+      "symbol": "TemporalReprojectNode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "TRAANode(...)",
+      "importPath": "three/addons/tsl/display/TRAANode.js",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class TRAANode",
+      "situations": ["temporally resolve a moving image"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects TRAANode.",
+      "symbol": "TRAANode"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "depth(...)",
+      "importPath": "three/tsl",
+      "kind": "function",
+      "overrides": [],
+      "package": "three",
+      "signature": "function depth",
+      "situations": ["provide depth to screen-space effects"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects depth.",
+      "symbol": "depth"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "mrt(...)",
+      "importPath": "three/tsl",
+      "kind": "function",
+      "overrides": [],
+      "package": "three",
+      "signature": "function mrt",
+      "situations": ["provision velocity, normal, and depth render targets"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects mrt.",
+      "symbol": "mrt"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "normal(...)",
+      "importPath": "three/tsl",
+      "kind": "function",
+      "overrides": [],
+      "package": "three",
+      "signature": "function normal",
+      "situations": ["provide normals to screen-space effects"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects normal.",
+      "symbol": "normal"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "velocity(...)",
+      "importPath": "three/tsl",
+      "kind": "function",
+      "overrides": [],
+      "package": "three",
+      "signature": "function velocity",
+      "situations": ["provide motion vectors to temporal effects"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects velocity.",
+      "symbol": "velocity"
+    },
+    {
+      "constraints": [
+        "Use the running WebGPU renderer and keep appearance choices in template render source."
+      ],
+      "example": "VelocityNode(...)",
+      "importPath": "three/webgpu",
+      "kind": "class",
+      "overrides": [],
+      "package": "three",
+      "signature": "class VelocityNode",
+      "situations": ["provide motion vectors to temporal effects"],
+      "supersedes": [],
+      "summary": "ThreeNative equivalent for realism-effects VelocityNode.",
+      "symbol": "VelocityNode"
     }
   ],
   "version": 1

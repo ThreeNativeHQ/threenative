@@ -97,6 +97,18 @@ test("the existing device-smoke scenario reaches its visibility assertion on And
   expect(exitCodeForReport(result)).toBe(0);
 });
 
+test("native screenshot evidence fails closed when the driver does not produce a frame", async () => {
+  const driver = new FakeAndroidDriver(movingBridge().bridge);
+  await expect(runDevice(
+    { movement: { entity: "player", maxDistance: 10 } },
+    driver,
+    1_000,
+    [{ waitTicks: 1 }],
+    "player",
+    "after",
+  )).rejects.toThrow(/ENOENT|no such file/u);
+});
+
 test("buttonless native pointer movement drives anonymous evidence", async () => {
   const moving = movingBridge({ clearHeldAfterAdvance: true });
   const pointerEvents: string[] = [];
@@ -560,10 +572,11 @@ async function runDevice(
   timeoutMs = 1_000,
   steps: unknown[] = [{ holdFrames: 3, press: "KeyW", release: true }],
   subject: string | null = "player",
+  screenshots: "after" | false = false,
 ) {
   const projectPath = await makeTempDir("playtest-device-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
-    artifacts: { screenshots: false },
+    artifacts: { screenshots },
     assert,
     name: "same-cross-target-scenario",
     schemaVersion: 1,

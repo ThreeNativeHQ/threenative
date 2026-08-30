@@ -147,6 +147,7 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
   // tsc reads vite.config.ts through the root-level *.ts include.
   await linkDependency(target, "@threenative/assets", path.resolve("packages/assets"));
   await linkDependency(target, "@threenative/playtest", path.resolve("packages/playtest"));
+  await linkDependency(target, "@threenative/ui", path.resolve("packages/ui"));
   await linkDependency(target, "create-threenative", path.resolve("packages/create-threenative"));
   await linkDependency(target, "three", path.resolve("packages/core/node_modules/three"));
   if (packageJson.devDependencies?.["@types/three"] !== undefined)
@@ -169,6 +170,20 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
     path.resolve("packages/core/node_modules/typescript/bin/tsc"),
     path.join(target, "node_modules/.bin/tsc"),
   );
+}
+
+async function linkScaffoldBuildDependencies(target: string): Promise<void> {
+  await linkScaffoldDependencies(target);
+  for (const name of [
+    "@tailwindcss/vite",
+    "@vitejs/plugin-react",
+    "react",
+    "react-dom",
+    "react-reconciler",
+    "tailwindcss",
+  ]) {
+    await linkDependency(target, name, await findPnpmPackage(name));
+  }
 }
 
 describe("template contracts", () => {
@@ -406,8 +421,10 @@ describe("template contracts", () => {
     for (const template of templates) {
       const root = path.join(templateRoot, template);
       const sources = await sourceFiles(root);
-      for (const [file, source] of sources.filter(([file]) =>
-        file.includes(`${path.sep}render${path.sep}`),
+      for (const [file, source] of sources.filter(
+        ([file]) =>
+          file.includes(`${path.sep}render${path.sep}`) &&
+          !file.includes(`${path.sep}render${path.sep}effects${path.sep}`),
       )) {
         for (const { callable, name } of runtimeExports(source)) {
           const caller = sources.some(
@@ -821,6 +838,26 @@ describe("template contracts", () => {
       await rm(root, { force: true, recursive: true });
     }
   }, 15_000);
+
+  it("should build a scaffold after deleting its optional realism effects", async () => {
+    const root = await makeTempDir("threenative-optional-effects-");
+    try {
+      const result = await createProject(
+        { install: false, target: "optional-effects", template: "starter" },
+        root,
+      );
+      for (const file of ["lensDistortion.ts", "sparkle.ts", "gradualBackground.ts"]) {
+        await rm(path.join(result.target, "src/render/effects", file));
+      }
+      await linkScaffoldBuildDependencies(result.target);
+      const vite = await findPnpmPackage("vite");
+      await execFileAsync(process.execPath, [path.join(vite, "bin/vite.js"), "build"], {
+        cwd: result.target,
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 30_000);
 
   it("should document and apply the forward axis conversion once per template", async () => {
     const movementFiles = [

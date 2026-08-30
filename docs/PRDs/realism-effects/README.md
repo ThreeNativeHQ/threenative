@@ -14,17 +14,18 @@ below.**
 
 ## The answer to the porting question
 
-**Not a port. Fourteen exports, eleven of which are already installed.**
+**Not a port. Fourteen exports: ten installed equivalents, three template effects, and HBAO explicitly uncovered.**
 
 `0beqz/realism-effects` exports fourteen names from `src/index.js`. Against `three@0.185.1` — the
-`catalog:` version already in `pnpm-workspace.yaml` — eleven have a TSL equivalent in
+`catalog:` version already in `pnpm-workspace.yaml` — ten have a TSL equivalent in
 `three/addons/tsl/display/` or `three/tsl` that runs on `WebGPURenderer` and therefore crosses the
 native seam. Three have no upstream counterpart, total 273 lines of fragment shader between them,
-and are pure appearance.
+and are pure appearance. `HBAOEffect` remains explicitly uncovered because the required blind
+comparison has not been run.
 
 So "supporting everything it does" is not a porting project. It is: turn on what is installed,
 write three small template effects, fix one real defect that blocks half the set, and prove the
-whole surface runs on four targets instead of one.
+covered surface runs on four targets instead of one.
 
 ## Coverage — every export, checked against the installed tree
 
@@ -32,22 +33,24 @@ whole surface runs on four targets instead of one.
 [PRD-274](./PRD-274-every-export-has-a-named-tested-equivalent.md) this table is **generated from a
 fixture and gated**, because a hand-maintained parallel list in this repository drifts.
 
+<!-- BEGIN GENERATED: realism-effects-coverage -->
 | `realism-effects` export | Equivalent here | Where it comes from |
 | --- | --- | --- |
-| `SSGIEffect` | `SSGINode` | `three/addons/tsl/display/SSGINode.js` — cites the same SSRT3 reference |
-| `SSREffect` | `SSRNode` | `three/addons/tsl/display/SSRNode.js` |
-| `TRAAEffect` | `TRAANode` | `three/addons/tsl/display/TRAANode.js` |
-| `TemporalReprojectPass` | `TemporalReprojectNode` | `three/addons/tsl/display/TemporalReprojectNode.js` |
-| `PoissonDenoisePass` | `DenoiseNode`, `RecurrentDenoiseNode` | `three/addons/tsl/display/` |
-| `MotionBlurEffect` | `MotionBlur` | `three/addons/tsl/display/MotionBlur.js` |
-| `SharpnessEffect` | `SharpenNode` | `three/addons/tsl/display/SharpenNode.js` |
-| `VelocityPass` | `velocity` / `VelocityNode` | `three/tsl` — **defective for `BatchedMesh`**, see below |
-| `VelocityDepthNormalPass` | MRT velocity + normal + depth outputs | renderer MRT, no separate pass needed |
-| `TAAPass` | `SSAAPassNode` (still camera) + `TRAANode` (moving) | two nodes for one export — a row PRD-274 must **check**, not assert |
-| `HBAOEffect` | `GTAONode` — *if* a blind comparison says so | different algorithm; [PRD-274](./PRD-274-every-export-has-a-named-tested-equivalent.md) decides by measurement |
-| `LensDistortionEffect` | template source, TSL | [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md) — 75 lines, pure look |
-| `SparkleEffect` | template source, TSL | [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md) — 129 lines, pure look |
-| `GradualBackgroundEffect` | template source, TSL | [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md) — 69 lines, pure look |
+| `SSGIEffect` | `SSGINode` | `three/examples/jsm/tsl/display/SSGINode.js` |
+| `SSREffect` | `SSRNode` | `three/examples/jsm/tsl/display/SSRNode.js` |
+| `TRAAEffect` | `TRAANode` | `three/examples/jsm/tsl/display/TRAANode.js` |
+| `TemporalReprojectPass` | `TemporalReprojectNode` | `three/examples/jsm/tsl/display/TemporalReprojectNode.js` |
+| `PoissonDenoisePass` | `DenoiseNode`, `RecurrentDenoiseNode` | `three/examples/jsm/tsl/display` |
+| `MotionBlurEffect` | `motionBlur` | `three/examples/jsm/tsl/display/MotionBlur.js` |
+| `SharpnessEffect` | `SharpenNode` | `three/examples/jsm/tsl/display/SharpenNode.js` |
+| `VelocityPass` | `velocity`, `VelocityNode` | `three/src/nodes/accessors/VelocityNode.js` |
+| `VelocityDepthNormalPass` | `mrt`, `depth`, `normal` | `three/src/nodes` |
+| `TAAPass` | `SSAAPassNode`, `TRAANode` | `three/examples/jsm/tsl/display` |
+| `HBAOEffect` | not covered | No HBAO implementation is available in the pinned workspace for the required blind GTAO comparison; do not claim GTAO is equivalent until that comparison is run. |
+| `LensDistortionEffect` | `lensDistortion` | `packages/create-threenative/templates/starter/src/render/effects/lensDistortion.ts` |
+| `SparkleEffect` | `sparkle` | `packages/create-threenative/templates/starter/src/render/effects/sparkle.ts` |
+| `GradualBackgroundEffect` | `gradualBackground` | `packages/create-threenative/templates/starter/src/render/effects/gradualBackground.ts` |
+<!-- END GENERATED: realism-effects-coverage -->
 
 The last three go to `templates/*/src/render/` and not to a package because charter rule 3 is a veto
 over rule 1: anything that decides how the game looks ships as generated source **at any size**.

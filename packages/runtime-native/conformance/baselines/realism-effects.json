@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "0.1.0",
+  "source": "browser-webgpu-capture",
+  "recipe": "webgpu",
+  "rows": [
+    { "exportName": "SSGIEffect", "capture": "realism-ssgi.png" },
+    { "exportName": "SSREffect", "capture": "realism-ssr.png" },
+    { "exportName": "TRAAEffect", "capture": "realism-traa.png", "settledFrame": 8 },
+    { "exportName": "TemporalReprojectPass", "capture": "realism-temporal-reproject.png", "settledFrame": 8 },
+    { "exportName": "PoissonDenoisePass", "capture": "realism-denoise.png" },
+    { "exportName": "MotionBlurEffect", "capture": "realism-motion-blur.png" },
+    { "exportName": "SharpnessEffect", "capture": "realism-sharpen.png" },
+    { "exportName": "VelocityPass", "capture": "realism-velocity.png" },
+    { "exportName": "VelocityDepthNormalPass", "capture": "realism-velocity-depth-normal.png" },
+    { "exportName": "TAAPass", "capture": "realism-taa.png", "settledFrame": 8 },
+    { "exportName": "LensDistortionEffect", "capture": "realism-lens-distortion.png" },
+    { "exportName": "SparkleEffect", "capture": "realism-sparkle.png" },
+    { "exportName": "GradualBackgroundEffect", "capture": "realism-gradual-background.png" }
+  ]
+}

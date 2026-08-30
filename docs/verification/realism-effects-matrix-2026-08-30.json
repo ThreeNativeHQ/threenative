@@ -1,0 +1,241 @@
+{
+  "schemaVersion": "0.1.0",
+  "generatedAt": "2026-08-30",
+  "source": "run-conformance.mjs bounded realism-effects lane runs",
+  "results": [
+    {
+      "exportName": "SSGIEffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native RG11B10UFloat render target is not color-renderable on this adapter; no qualified desktop result"
+    },
+    {
+      "exportName": "SSGIEffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "SSGIEffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "SSREffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "SSREffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "SSREffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "TRAAEffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "TRAAEffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "TRAAEffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "TemporalReprojectPass",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "TemporalReprojectPass",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "TemporalReprojectPass",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "PoissonDenoisePass",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "PoissonDenoisePass",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "PoissonDenoisePass",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "MotionBlurEffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "MotionBlurEffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "MotionBlurEffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "SharpnessEffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "SharpnessEffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "SharpnessEffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "VelocityPass",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "VelocityPass",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "VelocityPass",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "VelocityDepthNormalPass",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "VelocityDepthNormalPass",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "VelocityDepthNormalPass",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "TAAPass",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "TAAPass",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "TAAPass",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "LensDistortionEffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "LensDistortionEffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "LensDistortionEffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "SparkleEffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "SparkleEffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "SparkleEffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    },
+    {
+      "exportName": "GradualBackgroundEffect",
+      "platform": "desktop",
+      "result": "skipped-with-reason",
+      "reason": "native frame completed; browser reference unavailable"
+    },
+    {
+      "exportName": "GradualBackgroundEffect",
+      "platform": "android",
+      "result": "skipped-with-reason",
+      "reason": "missing pinned SDL3/native Android dependencies"
+    },
+    {
+      "exportName": "GradualBackgroundEffect",
+      "platform": "ios",
+      "result": "skipped-with-reason",
+      "reason": "Linux has no Xcode/signed-app adapter"
+    }
+  ]
+}

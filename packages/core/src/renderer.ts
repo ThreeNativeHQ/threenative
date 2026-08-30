@@ -1,6 +1,11 @@
 import type { Camera, Object3D, WebGLRenderer } from "three";
 import { RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
+import {
+  type IRenderChainBudgetWindow,
+  type IRenderChainOptions,
+  RenderChain,
+} from "./render/chain.js";
 
 export type RendererKind = "webgpu" | "webgl2";
 
@@ -115,6 +120,18 @@ export interface IRendererLike {
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
+  /** Removes the output pipeline installed by a render-chain. */
+  clearOutputNode?(): void;
+  /** Creates the core-owned chain seam without making generated render source import the package. */
+  createRenderChain?: (options: Omit<IRenderChainOptions, "renderer">) => RenderChain;
+  /** Feeds automatic render-chain tiers the completed frame-budget window. */
+  observeRenderChainBudget?: (window: IRenderChainBudgetWindow) => void;
+  /** Samples render-chain telemetry after the renderer completes a frame. */
+  observeRenderChainFrame?: () => void;
+  /** Whether the active chain requested core-owned per-object velocity history. */
+  renderChainUsesPerObjectVelocity?: () => boolean;
+  /** Internal callback used by RenderChain; games should request velocity through the chain. */
+  setRenderChainVelocityEnabled?: (enabled: boolean) => void;
   setOutputNode(node: unknown): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   /**
@@ -220,8 +237,10 @@ function wrapRenderer(
   reapply: { resize: (() => void) | undefined },
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
+  const renderChains = new Set<RenderChain>();
+  let renderChainUsesPerObjectVelocity = false;
 
-  return {
+  const wrapped: IRendererLike = {
     gpuFrameMs: () => {
       const timestamp = raw.info?.render?.timestamp;
       return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0
@@ -288,6 +307,9 @@ function wrapRenderer(
       return raw.getArrayBufferAsync(attribute);
     },
     dispose: () => {
+      for (const chain of renderChains) chain.dispose();
+      renderChains.clear();
+      renderChainUsesPerObjectVelocity = false;
       outputPipeline?.dispose();
       outputPipeline = undefined;
       raw.dispose?.();
@@ -316,8 +338,44 @@ function wrapRenderer(
         node as ConstructorParameters<typeof RenderPipeline>[1],
       );
     },
+    clearOutputNode: () => {
+      outputPipeline?.dispose();
+      outputPipeline = undefined;
+    },
+    renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,
+    setRenderChainVelocityEnabled: (enabled) => {
+      renderChainUsesPerObjectVelocity = enabled;
+    },
+    createRenderChain: (options) => {
+      // One renderer has one output pipeline. Disposing the previous chain prevents an old scene's
+      // automatic tier from reinstalling its graph after a scene transition.
+      for (const chain of renderChains) chain.dispose();
+      renderChains.clear();
+      const chain = new RenderChain(wrapped, options);
+      renderChains.add(chain);
+      return chain;
+    },
+    observeRenderChainBudget: (window) => {
+      for (const chain of renderChains) {
+        if (chain.disposed) {
+          renderChains.delete(chain);
+          continue;
+        }
+        chain.observeFrameBudget(window);
+      }
+    },
+    observeRenderChainFrame: () => {
+      for (const chain of renderChains) {
+        if (chain.disposed) {
+          renderChains.delete(chain);
+          continue;
+        }
+        chain.observeFrame();
+      }
+    },
     setSize: (width, height, updateStyle = false) => raw.setSize(width, height, updateStyle),
   };
+  return wrapped;
 }
 
 function addResizeHandling(
