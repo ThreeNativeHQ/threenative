@@ -27,6 +27,7 @@ export interface ICapabilitySearchResult {
   readonly summary: string;
   readonly example: string;
   readonly constraints: readonly string[];
+  readonly matchedSituation: string;
 }
 
 export interface ICapabilityDetail extends ICapabilityEntry {}
@@ -34,6 +35,11 @@ export interface ICapabilityDetail extends ICapabilityEntry {}
 export interface IEngineTool {
   readonly name: string;
   readonly description: string;
+  readonly annotations: {
+    readonly destructiveHint: false;
+    readonly openWorldHint: false;
+    readonly readOnlyHint: true;
+  };
   readonly inputSchema: {
     readonly type: "object";
     readonly properties: Record<string, { readonly type: "string" }>;
@@ -48,7 +54,34 @@ export const ENGINE_MCP_TOOL_NAMES = [
 ] as const;
 
 const DEFAULT_MANIFEST_FILE = "capabilities.json";
-const STOP_WORDS = new Set(["a", "an", "and", "around", "for", "in", "of", "the", "to"]);
+const STOP_WORDS = new Set([
+  "a",
+  "add",
+  "an",
+  "and",
+  "around",
+  "build",
+  "by",
+  "create",
+  "for",
+  "from",
+  "game",
+  "in",
+  "into",
+  "it",
+  "make",
+  "of",
+  "on",
+  "that",
+  "the",
+  "to",
+  "use",
+  "with",
+]);
+const MAX_COMPLETE_REQUEST_RESULTS = 15;
+const MAX_SITUATION_RESULTS = 5;
+const AUTHORING_INSTRUCTIONS =
+  "Before authoring, infer the concrete gameplay mechanics implied by the request. Search once with the complete mechanically explicit request, then once per mechanic. A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing.";
 
 export function defaultManifestPath(cwd = process.cwd()): string {
   return path.resolve(cwd, process.env.THREENATIVE_CAPABILITIES_MANIFEST ?? DEFAULT_MANIFEST_FILE);
@@ -112,22 +145,44 @@ function tokens(value: string): string[] {
   return value
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
-    .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
+    .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
+    .map((token) => {
+      if (token.length > 4 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
+      if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss"))
+        return token.slice(0, -1);
+      return token;
+    });
 }
 
-function situationScore(query: readonly string[], situations: readonly string[]): number {
-  if (query.length === 0) return 0;
+function situationScore(
+  query: readonly string[],
+  situations: readonly string[],
+): { readonly matchedSituation: string; readonly score: number } {
+  if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryText = query.join(" ");
   let best = 0;
+  let matchedSituation = "";
   for (const situation of situations) {
     const phrase = tokens(situation);
-    const overlap = phrase.filter((token) => query.includes(token)).length;
+    const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
     const score = overlap / Math.max(query.length, phrase.length);
     const phraseBonus =
       phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    best = Math.max(best, score + phraseBonus);
+    const candidate = score + phraseBonus;
+    if (candidate > best) {
+      best = candidate;
+      matchedSituation = situation;
+    }
   }
-  return best;
+  return { matchedSituation, score: best };
+}
+
+function capabilitySearchKey(entry: ICapabilityEntry): string {
+  // One export declaration can expose a primary helper plus inspection aliases. The manifest
+  // correctly keeps every public symbol for detail lookup, but returning the same declaration
+  // twice wastes a broad authoring search slot. Import path + signature + authored docs identify
+  // equivalent aliases without conflating distinct APIs that happen to share documentation.
+  return `${entry.importPath}\n${entry.signature}\n${entry.summary}\n${entry.situations.join("\n")}`;
 }
 
 export function searchCapabilities(
@@ -138,11 +193,9 @@ export function searchCapabilities(
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
   const query = tokens(situation);
+  const limit = query.length >= 8 ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   return manifest.entries
-    .map((entry) => ({
-      entry,
-      score: situationScore(query, entry.situations),
-    }))
+    .map((entry) => ({ entry, ...situationScore(query, entry.situations) }))
     .filter(({ score }) => score > 0)
     .sort(
       (left, right) =>
@@ -151,11 +204,18 @@ export function searchCapabilities(
           `${right.entry.importPath}:${right.entry.symbol}`,
         ),
     )
-    .slice(0, 3)
-    .map(({ entry }) => ({
+    .filter(
+      (candidate, index, candidates) =>
+        candidates.findIndex(
+          (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry),
+        ) === index,
+    )
+    .slice(0, limit)
+    .map(({ entry, matchedSituation }) => ({
       constraints: entry.constraints,
       example: entry.example,
       importPath: entry.importPath,
+      matchedSituation,
       summary: entry.summary,
       symbol: entry.symbol,
     }));
@@ -175,8 +235,10 @@ export function capabilityDetail(
 
 const TOOL_DEFINITIONS: readonly IEngineTool[] = [
   {
+    annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
-    description: "Find engine capabilities by describing the authoring situation in plain words.",
+    description:
+      "Search the complete installed engine surface by concrete gameplay mechanic. First decompose genre or theme requests into mechanics. Search the mechanically explicit full request, then each mechanic; matchedSituation explains every result.",
     inputSchema: {
       additionalProperties: false,
       properties: { situation: { type: "string" } },
@@ -185,6 +247,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
     },
   },
   {
+    annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_capability_detail",
     description:
       "Inspect one engine capability's import, signature, example, constraints, and overrides.",
@@ -258,6 +321,7 @@ export function handleLine(line: string, manifestFile: string): string | undefin
     if (request.method === "initialize") {
       return jsonRpcResult(request.id, {
         capabilities: { tools: { listChanged: false } },
+        instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
         serverInfo: { name: "threenative-engine-mcp", version: "0.2.0" },
       });

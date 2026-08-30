@@ -504,6 +504,15 @@ async function assertMcpConfig(target: string): Promise<void> {
       );
     }
   }
+  const codexPath = path.join(target, ".codex", "config.toml");
+  const codex = await readFile(codexPath, "utf8").catch(() => {
+    throw new Error(`Scaffold produced no Codex MCP config at '${codexPath}'.`);
+  });
+  for (const [name, entry] of Object.entries(REQUIRED_MCP_SERVERS)) {
+    if (!codex.includes(`[mcp_servers.${name}]`) || !codex.includes(`args = ["${entry}"]`)) {
+      throw new Error(`'${codexPath}' does not wire required MCP server '${name}' to '${entry}'.`);
+    }
+  }
 }
 
 async function runInstall(target: string): Promise<void> {

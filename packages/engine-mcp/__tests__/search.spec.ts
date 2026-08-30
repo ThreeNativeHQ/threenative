@@ -70,6 +70,67 @@ describe("threenative-engine-mcp", () => {
     ).toMatch(/import and call `attachToBone` from `@threenative\/core`/u);
   });
 
+  it("does not pretend a genre label is a concrete capability recipe", () => {
+    expect(searchCapabilities("make a pirate game", workspaceManifest)).toEqual([]);
+  });
+
+  it("finds a cross-system set from a mechanically explicit complete request", () => {
+    const results = searchCapabilities(
+      "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
+      workspaceManifest,
+    );
+    const symbols = results.map((result) => result.symbol);
+
+    expect(symbols).toEqual(
+      expect.arrayContaining([
+        "AudioBus",
+        "FluidField2D",
+        "GPUParticles3D",
+        "GPUReadback",
+        "Heightfield",
+        "NavigationAgent3D",
+        "RigidBody3D",
+        "SoftBody3D",
+        "SpectralOcean",
+        "attachToBone",
+      ]),
+    );
+    expect(symbols).not.toContain("SharpenNode");
+    expect(results.length).toBeLessThanOrEqual(15);
+    expect(results.every((result) => result.matchedSituation.length > 0)).toBe(true);
+  });
+
+  it("finds cloth simulation from natural sail vocabulary", () => {
+    const results = searchCapabilities("cloth sails blowing in wind on a ship", workspaceManifest);
+    expect(results[0]?.symbol).toBe("SoftBody3D");
+  });
+
+  it("ranks fluid simulation for ocean currents affecting a ship", () => {
+    const results = searchCapabilities(
+      "ocean fluid dynamics and currents affect the ship",
+      workspaceManifest,
+    );
+    expect(results[0]?.symbol).toBe("FluidField2D");
+    expect(results[0]?.matchedSituation).toContain("fluid dynamics");
+  });
+
+  it("does not advertise SpectralOcean as the ocean-current solver", () => {
+    expect(capabilityDetail("SpectralOcean", workspaceManifest).situations).not.toContain(
+      "simulate ocean waves and currents that affect a sailing ship",
+    );
+  });
+
+  it("finds physical cannonballs and pooled cannon smoke without broad-result noise", () => {
+    const results = searchCapabilities(
+      "fire a cannonball projectile with cannon smoke particles",
+      workspaceManifest,
+    );
+    expect(results.map((result) => result.symbol)).toEqual(
+      expect.arrayContaining(["GPUParticles3D", "RigidBody3D"]),
+    );
+    expect(results.length).toBeLessThanOrEqual(5);
+  });
+
   it("returns one compilable example for the plain-language zoom capability", async () => {
     const results = searchCapabilities(
       "let the player zoom the camera with a wheel, pinch, or gamepad axis",

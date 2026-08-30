@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile,
@@ -30,6 +31,20 @@ const SCULPT_RESOURCE_UNSAFE_BLOCK =
 const MCP_SURFACES = [
   { name: "threenative-assets", file: "asset-mcp-tools.json" },
   { name: "threenative-sculpt", file: "sculpt-mcp-tools.json" },
+  { name: "threenative-engine", file: "engine-mcp-tools.json" },
+] as const;
+
+const AUTHORING_CAPABILITIES = [
+  "AudioBus",
+  "FluidField2D",
+  "GPUParticles3D",
+  "GPUReadback",
+  "Heightfield",
+  "NavigationAgent3D",
+  "RigidBody3D",
+  "SoftBody3D",
+  "SpectralOcean",
+  "attachToBone",
 ] as const;
 
 export const GOLDEN_PATH_STEPS = [
@@ -324,6 +339,39 @@ async function assertSculptResources(
   }
 }
 
+async function assertEngineCapabilityDiscovery(
+  request: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
+): Promise<void> {
+  const called = await request("tools/call", {
+    arguments: {
+      situation:
+        "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
+    },
+    name: "engine_search_capabilities",
+  });
+  if (!isRecord(called) || !Array.isArray(called.content)) {
+    throw new Error("threenative-engine returned no content for the authoring request.");
+  }
+  const text = called.content
+    .map((item) => (isRecord(item) && typeof item.text === "string" ? item.text : ""))
+    .join("");
+  const parsed = JSON.parse(text) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error("threenative-engine returned a non-array capability search result.");
+  }
+  const results = parsed.filter(isRecord);
+  const symbols = results.flatMap((entry) =>
+    typeof entry.symbol === "string" ? [entry.symbol] : [],
+  );
+  const missing = AUTHORING_CAPABILITIES.filter((symbol) => !symbols.includes(symbol));
+  if (missing.length > 0) {
+    throw new Error(`threenative-engine authoring request missed: ${missing.join(", ")}.`);
+  }
+  if (results.some((entry) => typeof entry.matchedSituation !== "string")) {
+    throw new Error("threenative-engine returned a capability without matchedSituation evidence.");
+  }
+}
+
 function resolveMcpMessage(value: unknown, pending: Map<number, IMcpPendingRequest>): void {
   if (!isRecord(value) || typeof value.id !== "number") return;
   const waiter = pending.get(value.id);
@@ -444,6 +492,7 @@ export async function probeMcpServer(
     const listed = await request("tools/list");
     assertMcpToolSurface(serverName, surface.tools, listed);
     if (serverName === "threenative-sculpt") await assertSculptResources(request);
+    if (serverName === "threenative-engine") await assertEngineCapabilityDiscovery(request);
     process.stdout.write(
       `${serverName} ok: ${surface.tools.length} tools from ${surface.version}\n`,
     );
@@ -484,6 +533,33 @@ export async function assertMcpServers(target: string): Promise<void> {
       await readMcpSurface(path.join(REPO_ROOT, "packages/create-threenative", file)),
       target,
     );
+  }
+
+  // A project that adds @threenative/core by hand has no scaffold-owned capabilities.json.
+  // Temporarily remove the generated copy and prove the packed core shim falls back to the
+  // manifest inside its own tarball, which is the only source-less surface that adopter has.
+  const projectManifest = path.join(target, "capabilities.json");
+  const hiddenManifest = path.join(target, ".capabilities.golden-path-backup.json");
+  const engine = parsed.mcpServers["threenative-engine"];
+  if (!isRecord(engine) || typeof engine.command !== "string" || !Array.isArray(engine.args)) {
+    throw new Error(`TN_GOLDEN_PATH_MCP_SERVER_MISSING: ${configPath} lacks 'threenative-engine'.`);
+  }
+  await rename(projectManifest, hiddenManifest);
+  try {
+    await probeMcpServer(
+      "threenative-engine",
+      {
+        args: engine.args.filter((argument): argument is string => typeof argument === "string"),
+        command: engine.command,
+        ...(isStringRecord(engine.env) ? { env: engine.env } : {}),
+      },
+      await readMcpSurface(
+        path.join(REPO_ROOT, "packages/create-threenative", "engine-mcp-tools.json"),
+      ),
+      target,
+    );
+  } finally {
+    await rename(hiddenManifest, projectManifest);
   }
 }
 

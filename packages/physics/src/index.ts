@@ -83,6 +83,8 @@ export { interactionGroups } from "./collision.js";
  * Simulate a dynamic or static rigid body.
  * @situation give a crate or prop physical motion
  * @situation create a body that collides with a character
+ * @situation fire physical cannonballs that collide with ships or scenery
+ * @situation fire a cannonball projectile with cannon smoke particles
  * @constraint register rapier() in the game plugin list before using bodies
  * @example const crate = new RigidBody3D({ context, object, mode: "dynamic" });
  */

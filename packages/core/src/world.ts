@@ -46,6 +46,7 @@ function count(value: number, name: string): number {
  *
  * @situation build terrain geometry and collision from one game-authored height function
  * @situation query the same ground height or normal that a player sees and collides with
+ * @situation build islands and coastlines from terrain
  * @constraint sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output
  * @constraint rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order
  * @override rows, columns, width, depth, origin, and sampleHeight are explicit on every field

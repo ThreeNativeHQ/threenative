@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 // @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
-import { ensureMcpConfig, installTarget } from "../mcp/install.mjs";
+import { ensureCodexMcpConfig, ensureMcpConfig, installTarget } from "../mcp/install.mjs";
 // @ts-expect-error — same module graph as the shims themselves.
 import { MCP_SERVERS, mergeMcpServers } from "../mcp/servers.mjs";
 
@@ -103,5 +103,38 @@ describe("ensureMcpConfig", () => {
 
     expect(ensureMcpConfig(directory)).toBe("unreadable");
     expect(readFileSync(configPath, "utf8")).toBe("{ not json");
+  });
+});
+
+describe("ensureCodexMcpConfig", () => {
+  it("creates Codex project config with all servers, then leaves it alone", () => {
+    const directory = project();
+
+    expect(ensureCodexMcpConfig(directory)).toBe("created");
+    const configPath = path.join(directory, ".codex", "config.toml");
+    const written = readFileSync(configPath, "utf8");
+    expect(written).toContain("[mcp_servers.threenative-assets]");
+    expect(written).toContain("[mcp_servers.threenative-sculpt]");
+    expect(written).toContain("[mcp_servers.threenative-engine]");
+    expect(written).toContain("./node_modules/@threenative/core/mcp/engine.mjs");
+    expect(ensureCodexMcpConfig(directory)).toBe("unchanged");
+    expect(readFileSync(configPath, "utf8")).toBe(written);
+  });
+
+  it("preserves user settings and an existing server while appending missing servers", () => {
+    const directory = project();
+    const codexDirectory = path.join(directory, ".codex");
+    mkdirSync(codexDirectory);
+    const configPath = path.join(codexDirectory, "config.toml");
+    const existing =
+      'model = "user-choice"\n\n[mcp_servers.threenative-engine]\ncommand = "custom"\n';
+    writeFileSync(configPath, existing);
+
+    expect(ensureCodexMcpConfig(directory)).toBe("updated");
+    const written = readFileSync(configPath, "utf8");
+    expect(written.startsWith(existing)).toBe(true);
+    expect(written.match(/\[mcp_servers\.threenative-engine\]/gu)).toHaveLength(1);
+    expect(written).toContain("[mcp_servers.threenative-assets]");
+    expect(written).toContain("[mcp_servers.threenative-sculpt]");
   });
 });

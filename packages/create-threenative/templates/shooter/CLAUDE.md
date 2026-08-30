@@ -18,15 +18,28 @@ targets, waves, and every visual decision.
 <!-- shared: framework-blocks-you -->
 ### Before you write a system, ask what already exists
 
-You have `engine_search_capabilities` in your tool list. **Call it before writing any entity
-system, movement system, pathfinding, attachment, audio bus, particle system, or measurement
-helper** — describe the situation in plain words: *"enemy walks around a wall"*, *"put a weapon
-in a character's hand"*, *"keep a character's feet on the floor"*.
+You have `engine_search_capabilities` in your tool list. Capability discovery is a required
+authoring pass, not one lookup you can satisfy with a generic noun:
 
-The engine's public surface is about twenty classes across four packages, and several are
+1. **Before planning, infer the concrete gameplay mechanics implied by the request.** A genre or
+   theme is not a capability: decompose it into the world, movement, interaction, simulation,
+   combat, camera, audio, and UI mechanics that game actually needs. If the core loop remains
+   ambiguous, ask one short question instead of assuming a preset.
+2. **Call it once with the complete, mechanically explicit request, then once per mechanic.** Use
+   the returned `matchedSituation` to confirm why each result was selected.
+3. **Do not write a replacement until every mechanic has either a capability result or a recorded
+   no-match.** A result for one mechanic says nothing about the others.
+
+Repeat this before writing any entity system, movement system, pathfinding, attachment, audio bus,
+particle system, simulation, terrain helper, or measurement helper. Describe each situation in
+plain words: *"enemy walks around a wall"*, *"put a weapon in a character's hand"*, *"keep a
+character's feet on the floor"*.
+
+The manifest is the complete public surface across four packages, and several exports are
 **subpath imports** like `@threenative/physics/navigation` that no amount of grepping this
-project will reveal — nothing imports them yet. The tool is the only complete answer; this file
-is a summary and always will be.
+project will reveal — nothing imports them yet. The tool is the primary answer; this file is a
+summary and always will be. If the MCP server is unavailable, run the project doctor, then use
+`agent-docs/capability-reference.md` as the offline fallback and perform the same per-mechanic pass.
 
 Treat the returned constraints as binding. For patrol, chase, obstacle-avoidance, or line-of-sight
 movement, import `NavigationAgent3D` from exactly `@threenative/physics/navigation`;
@@ -337,9 +350,10 @@ const bounds = new Box3().setFromObject(viewmodel); // engine-override: measurin
 ## Engine capabilities — look it up before writing a replacement
 
 <!-- shared: engine-capabilities -->
-Two routes to look a capability up, and the second needs no MCP server:
-`engine_search_capabilities("pool decals on surfaces")` — plain situations work — or the
-generated index at `agent-docs/capability-reference.md`.
+Use `engine_search_capabilities("pool decals on surfaces")`; plain situations and complete game
+requests both work. If the MCP server is unavailable after `npx threenative doctor`, use the
+generated `agent-docs/capability-reference.md` and repeat the same full-request plus per-mechanic
+search pass manually. Grepping existing imports is never capability discovery.
 <!-- /shared -->
 
 

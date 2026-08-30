@@ -65,7 +65,7 @@ const luts = new AtmosphereLuts({ rayleigh, mie, ozone, planetRadius, atmosphere
 export function attachToBone(root: Object3D, boneName: string, child: Object3D): Object3D { … }
 ```
 
-- **Use when:** put a weapon in a character's hand · hold a rifle in a character's right hand · add an enemy that patrols the level, chases the player when it sees them, and holds a rifle in its right hand · attach an accessory to a skinned model
+- **Use when:** put a weapon in a character's hand · hold a rifle in a character's right hand · add an enemy that patrols the level, chases the player when it sees them, and holds a rifle in its right hand · attach an accessory to a skinned model · equip crew with swords and pistols · put a sword or pistol in a crew member's hand
 - **Constraints:** when a request is to hold or attach a weapon to a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle · if a stock visual has no skeleton, add a portable Three.js Bone named `RightHand` under the character, then call `attachToBone`; do not replace the helper with manual parenting
 
 ```ts
@@ -81,7 +81,7 @@ attachToBone(character, "RightHand", rifle);
 export class AudioBus { … }
 ```
 
-- **Use when:** play a sound effect with a volume bus · mute or adjust a category of game audio · keep a gunshot audible at 20 metres by tuning positional falloff
+- **Use when:** play a sound effect with a volume bus · mute or adjust a category of game audio · keep a gunshot audible at 20 metres by tuning positional falloff · play cannon, wave, and ship sound effects
 - **Constraints:** create buses before playing clips and dispose them with the game · refDistance and rolloffFactor tune positional falloff and apply to playAt only
 - **Supersedes (writing this fails `pnpm budgets`):** new Audio(
 
@@ -249,7 +249,7 @@ const direction = directionFromSolarPosition(sun.elevation, sun.azimuth);
 export class FluidField2D extends Group { … }
 ```
 
-- **Use when:** simulate smoke, fire, fog, wind, or fluid response on a grid · inject a touch, pointer, or gameplay impulse into a fluid field · sample fluid dye or velocity in a game-owned render node
+- **Use when:** simulate smoke, fire, fog, wind, or fluid response on a grid · inject a touch, pointer, or gameplay impulse into a fluid field · sample fluid dye or velocity in a game-owned render node · simulate ocean currents and wind affecting a sailing ship · simulate ocean fluid dynamics and currents that affect a ship
 - **Constraints:** add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic · `dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code · the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold
 - **Overrides:** pressureIterations, viscosity, vorticity, and splatRadius tune the solver without changing its pass order
 
@@ -297,7 +297,7 @@ if (isMobile()) showTouchControls();
 export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
-- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles
+- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles
 - **Constraints:** geometry, color, and timing remain supplied by the game
 
 ```ts
@@ -312,7 +312,7 @@ const particles = new GPUParticles3D(particleOptions);
 export class GPUReadback { … }
 ```
 
-- **Use when:** read a GPU simulation on the CPU without stalling the frame · float a body on a wave field whose height only exists on the GPU · count GPU-side survivors for a diagnostic without blocking drawing
+- **Use when:** read a GPU simulation on the CPU without stalling the frame · float a body on a wave field whose height only exists on the GPU · count GPU-side survivors for a diagnostic without blocking drawing · keep a ship floating on simulated ocean waves
 - **Constraints:** the copy is asynchronous, so every sample carries staleFrames and is never this frame · WebGPU only; the seam throws on a WebGL2 renderer rather than returning nothing · one copy is in flight at a time and requests made during one are dropped, not queued
 
 ```ts
@@ -673,18 +673,17 @@ await ctx.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
 
 ### `skeletonBones`
 
-`function` — Attach a game-owned object to a named skeleton bone.
+`function` — List the names of every bone in a character hierarchy.
 
 ```ts
 export function skeletonBones(root: Object3D): readonly string[] { … }
 ```
 
-- **Use when:** put a weapon in a character's hand · hold a rifle in a character's right hand · add an enemy that patrols the level, chases the player when it sees them, and holds a rifle in its right hand · attach an accessory to a skinned model
-- **Constraints:** when a request is to hold or attach a weapon to a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle · if a stock visual has no skeleton, add a portable Three.js Bone named `RightHand` under the character, then call `attachToBone`; do not replace the helper with manual parenting
+- **Use when:** inspect the available bones before attaching a game-owned object · debug a missing skeleton bone name
 
 ```ts
-import { attachToBone } from "@threenative/core";
-attachToBone(character, "RightHand", rifle);
+import { skeletonBones } from "@threenative/core";
+const bones = skeletonBones(character);
 ```
 
 ### `SoftBody3D`
@@ -695,7 +694,7 @@ attachToBone(character, "RightHand", rifle);
 export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IComputeDriven { … }
 ```
 
-- **Use when:** make a flag, cape, or curtain move as cloth · simulate a deforming surface while keeping one edge pinned
+- **Use when:** make a flag, cape, or curtain move as cloth · simulate a deforming surface while keeping one edge pinned · simulate cloth sails blowing in the wind · make cloth sails billow in wind on a ship
 - **Constraints:** the mesh must use one Three.js node material and contain complete triangles · pinned, stiffness, damping, gravity, and wind are required game-owned inputs · Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost
 - **Overrides:** timeStep follows the engine 1/60-second convention unless the game overrides it · readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it
 
@@ -756,7 +755,7 @@ const sun = solarPositionAt(new Date(), 49.28, -123.12);
 export class SpectralOcean extends Object3D implements IComputeDriven { … }
 ```
 
-- **Use when:** make an ocean whose surface is the view rather than a background · float a boat on waves the GPU is drawing · drive a water material from a wave simulation without writing an FFT
+- **Use when:** make an ocean whose surface is the view rather than a background · float a boat on waves the GPU is drawing · drive a water material from a wave simulation without writing an FFT · sail a ship on simulated ocean waves with buoyancy
 - **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · CPU height is a throttled copy carrying staleFrames, never this frame and never exact · an exact free CPU height needs an analytic wave field instead; that is a different contract · cascades are ordered largest patchSize first and every tuning number is required
 
 ```ts
@@ -1076,7 +1075,7 @@ const mirror = subscribeUiState(bridge);
 export class Heightfield { … }
 ```
 
-- **Use when:** build terrain geometry and collision from one game-authored height function · query the same ground height or normal that a player sees and collides with
+- **Use when:** build terrain geometry and collision from one game-authored height function · query the same ground height or normal that a player sees and collides with · build islands and coastlines from terrain
 - **Constraints:** sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output · rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order
 - **Overrides:** rows, columns, width, depth, origin, and sampleHeight are explicit on every field
 
@@ -1198,7 +1197,7 @@ const game = defineGame({ plugins: [rapier()] });
 export class RigidBody3D { … }
 ```
 
-- **Use when:** give a crate or prop physical motion · create a body that collides with a character
+- **Use when:** give a crate or prop physical motion · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles
 - **Constraints:** register rapier() in the game plugin list before using bodies
 
 ```ts
@@ -1230,7 +1229,7 @@ const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wa
 export class NavigationAgent3D { … }
 ```
 
-- **Use when:** enemy walks around a wall · enemy patrols a level and chases the player · enemy walks around a patrol path and chases the player when it sees them · enemy patrols and chases while avoiding obstacles · enemy chases the player with line of sight and obstacle avoidance · NPC walks to a destination
+- **Use when:** enemy walks around a wall · enemy patrols a level and chases the player · enemy walks around a patrol path and chases the player when it sees them · enemy patrols and chases while avoiding obstacles · enemy chases the player with line of sight and obstacle avoidance · NPC walks to a destination · move crew around a ship deck
 - **Constraints:** import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D
 
 ```ts

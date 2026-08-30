@@ -92,13 +92,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // every scaffold's visual reference and generated instructions.
   // Recomputed when PRD-243 added the qualified Pixel 8 cost to the copied capability docs; the
   // starter also carries the physical-device cloth displacement threshold.
-  "action-rpg": "2e8f22a6606aa1c041617eb1c59177221a0536bb4a068e6026223af01c8fac90",
-  defense: "0e5fc3af621d884ea9a72fba53b62df11a82b151e92f2358f8f7987ef6c3d79a",
-  minimal: "37a6ea6d1490706f1faf387ab0092b75d1f8b3c7bae537ebf6ebd9f99f6ec467",
-  platformer: "8412b160e579910ee492f62cf334bbb7e8c226e212ec03401aa41555c0b7b29e",
-  racing: "b7fba86244d1a2543a78fe28aa82c6543157fa7a78967613a6c2e0b1665f0cc6",
-  shooter: "43a2766149b04de6593f928c72bc9007bf7fbce6f55fa8a54ab9f405e79e3353",
-  starter: "4c01a11699bbed8ac029b0a4b4789c4a1fd4dc4014f492a10032ecd6880b4336",
+  // Recomputed after capability discovery became mechanic-driven and every scaffold gained the
+  // project-scoped Codex MCP config required to expose the installed engine server.
+  "action-rpg": "7d072f28ba3200f35d718ebe84f88c7b161bac516f49f0e985b9dbaf457975a3",
+  defense: "8524300a6be3f1ce55ab6f5a05a3f2dc54adbad68a2235273303c6f5586523fc",
+  minimal: "b5506aa88f1bb69f05e0335b059c6d669243f59832d5fee9368c9541766a6bbd",
+  platformer: "3f337a3bc5a090d7e66e60b1c88dd5215cbb2ac76082bf2e187ff09616c349c4",
+  racing: "5d28182097eddb852bf182c9c61182396a8b3fc628e457044f86e42c21e35077",
+  shooter: "23995a3c4688d655b0bee7b30239fd9cdb3aa7eba002b8fecc9c5daee4f4d254",
+  starter: "243527fc4aee5f8b17f82d76de49d3cc9d4ec3d17c2d8343e8bee7715c876063",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -179,6 +181,7 @@ async function scaffoldTreeHash(directory: string): Promise<string> {
 const STARTER_PATHS = [
   // Ignores the asset compile step's generated outputs; the sources in assets/ ship.
   ".gitignore",
+  ".codex/config.toml",
   ".mcp.json",
   "AGENTS.md",
   "CLAUDE.md",
@@ -865,6 +868,9 @@ describe("create-threenative", () => {
       const engineServer = config.mcpServers["threenative-engine"];
       expect(engineServer?.command).toBe("node");
       expect(engineServer?.args[0]).toBe(`${CORE_SHIM}/engine.mjs`);
+      const codex = await readFile(path.join(result.target, ".codex", "config.toml"), "utf8");
+      expect(codex).toContain("[mcp_servers.threenative-engine]");
+      expect(codex).toContain(`args = ["${CORE_SHIM}/engine.mjs"]`);
       const manifest = JSON.parse(
         await readFile(path.join(result.target, "package.json"), "utf8"),
       ) as { devDependencies?: Record<string, string> };
@@ -880,6 +886,11 @@ describe("create-threenative", () => {
     const configs = await Promise.all(
       ALL_TEMPLATES.map((template) => readFile(path.join(TEMPLATE_ROOT, template, ".mcp.json"))),
     );
+    const codexConfigs = await Promise.all(
+      ALL_TEMPLATES.map((template) =>
+        readFile(path.join(TEMPLATE_ROOT, template, ".codex", "config.toml")),
+      ),
+    );
     const pins = await Promise.all(
       ALL_TEMPLATES.map(async (template) => {
         const manifest = JSON.parse(
@@ -893,6 +904,7 @@ describe("create-threenative", () => {
       }),
     );
     expect(new Set(configs.map((config) => config.toString("utf8"))).size).toBe(1);
+    expect(new Set(codexConfigs.map((config) => config.toString("utf8"))).size).toBe(1);
     expect(pins[0]?.asset).toMatch(/^\d+\.\d+\.\d+$/u);
     expect(new Set(pins.map(({ asset }) => asset)).size, JSON.stringify(pins)).toBe(1);
     expect(pins[0]?.sculpt).toBe("0.1.0");

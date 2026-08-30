@@ -114,6 +114,23 @@ async function probeEngineServer(target: string): Promise<void> {
     const navigation = results.find((result) => result.symbol === "NavigationAgent3D");
     expect(navigation?.importPath).toBe("@threenative/physics/navigation");
     expect(navigation?.example).toContain('from "@threenative/physics/navigation"');
+
+    const broad = await request(child, nextId, lines, "tools/call", {
+      arguments: {
+        situation:
+          "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
+      },
+      name: "engine_search_capabilities",
+    });
+    const broadContent = broad.content as Array<{ text: string }>;
+    const broadResults = JSON.parse(broadContent[0]?.text ?? "null") as Array<{
+      matchedSituation: string;
+      symbol: string;
+    }>;
+    expect(broadResults.map((result) => result.symbol)).toEqual(
+      expect.arrayContaining(["FluidField2D", "GPUReadback", "SoftBody3D", "SpectralOcean"]),
+    );
+    expect(broadResults.every((result) => result.matchedSituation.length > 0)).toBe(true);
   } finally {
     lines.close();
     if (child.exitCode === null && child.signalCode === null) {

@@ -67,6 +67,7 @@ export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
  * @situation play a sound effect with a volume bus
  * @situation mute or adjust a category of game audio
  * @situation keep a gunshot audible at 20 metres by tuning positional falloff
+ * @situation play cannon, wave, and ship sound effects
  * @constraint create buses before playing clips and dispose them with the game
  * @constraint refDistance and rolloffFactor tune positional falloff and apply to playAt only
  * @supersedes new Audio(
@@ -260,6 +261,7 @@ export type {
  * @situation make an ocean whose surface is the view rather than a background
  * @situation float a boat on waves the GPU is drawing
  * @situation drive a water material from a wave simulation without writing an FFT
+ * @situation sail a ship on simulated ocean waves with buoyancy
  * @constraint it draws nothing; the game supplies the mesh, the material and every colour
  * @constraint CPU height is a throttled copy carrying staleFrames, never this frame and never exact
  * @constraint an exact free CPU height needs an analytic wave field instead; that is a different contract
@@ -277,6 +279,7 @@ export type {
  * @situation read a GPU simulation on the CPU without stalling the frame
  * @situation float a body on a wave field whose height only exists on the GPU
  * @situation count GPU-side survivors for a diagnostic without blocking drawing
+ * @situation keep a ship floating on simulated ocean waves
  * @constraint the copy is asynchronous, so every sample carries staleFrames and is never this frame
  * @constraint WebGPU only; the seam throws on a WebGL2 renderer rather than returning nothing
  * @constraint one copy is in flight at a time and requests made during one are dropped, not queued
@@ -288,6 +291,8 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects
  * @situation update many small visual particles
+ * @situation emit cannon smoke and muzzle flash particles
+ * @situation fire a cannonball projectile with cannon smoke particles
  * @constraint geometry, color, and timing remain supplied by the game
  * @example const particles = new GPUParticles3D(particleOptions);
  */
@@ -297,6 +302,8 @@ export { GPUParticles3D } from "./particles.js";
  * @situation simulate smoke, fire, fog, wind, or fluid response on a grid
  * @situation inject a touch, pointer, or gameplay impulse into a fluid field
  * @situation sample fluid dye or velocity in a game-owned render node
+ * @situation simulate ocean currents and wind affecting a sailing ship
+ * @situation simulate ocean fluid dynamics and currents that affect a ship
  * @constraint add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic
  * @constraint `dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code
  * @constraint the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold
@@ -490,12 +497,22 @@ export type { INormaliseToMetresOptions, NormaliseAxis } from "./scale.js";
  * @situation hold a rifle in a character's right hand
  * @situation add an enemy that patrols the level, chases the player when it sees them, and holds a rifle in its right hand
  * @situation attach an accessory to a skinned model
+ * @situation equip crew with swords and pistols
+ * @situation put a sword or pistol in a crew member's hand
  * @constraint when a request is to hold or attach a weapon to a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle
  * @constraint if a stock visual has no skeleton, add a portable Three.js Bone named `RightHand` under the character, then call `attachToBone`; do not replace the helper with manual parenting
  * @example import { attachToBone } from "@threenative/core";
  * attachToBone(character, "RightHand", rifle);
  */
-export { attachToBone, skeletonBones } from "./skeleton.js";
+export { attachToBone } from "./skeleton.js";
+/**
+ * List the names of every bone in a character hierarchy.
+ * @situation inspect the available bones before attaching a game-owned object
+ * @situation debug a missing skeleton bone name
+ * @example import { skeletonBones } from "@threenative/core";
+ * const bones = skeletonBones(character);
+ */
+export { skeletonBones } from "./skeleton.js";
 export type {
   ContextMenuPolicy,
   IInputAction,

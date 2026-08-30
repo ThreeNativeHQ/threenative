@@ -16,6 +16,8 @@ describe("threenative-engine-mcp stdio contract", () => {
       jsonrpc: "2.0",
       result: {
         capabilities: { tools: { listChanged: false } },
+        instructions:
+          "Before authoring, infer the concrete gameplay mechanics implied by the request. Search once with the complete mechanically explicit request, then once per mechanic. A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing.",
         protocolVersion: "2025-06-18",
         serverInfo: { name: "threenative-engine-mcp", version: "0.2.0" },
       },
@@ -28,6 +30,13 @@ describe("threenative-engine-mcp stdio contract", () => {
       "engine_search_capabilities",
       "engine_capability_detail",
     ]);
+    expect(response.result.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
+        }),
+      ]),
+    );
   });
 
   it("answers tools/call for a search with the results as text content", () => {
