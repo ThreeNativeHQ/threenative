@@ -21,7 +21,11 @@ measured and tuned, +1 four packages (`assets`, `core`, `create-threenative`, `r
 material system that the mined references all solve by owning the shading path this framework may
 not own = **9 → HIGH mode.**
 
-Sibling context: the [feature-mining batch](./feature-mining/README.md), whose correction about
+**This is the batch's design document.** It holds the charter argument, the verified state of this
+repository, the sources and their licences, and the risks. The execution is six sibling PRDs
+indexed in [README.md](./README.md), each owning one phase and its decline condition.
+
+Sibling context: the [feature-mining batch](../feature-mining/README.md), whose correction about
 `GPUParticles3D` — *mechanism is not the look* — is the rule this PRD lives or dies by.
 
 ## 1. Why this is proposed at all
@@ -29,7 +33,7 @@ Sibling context: the [feature-mining batch](./feature-mining/README.md), whose c
 The framework's public surface has **194 capability entries**
 (`packages/create-threenative/capabilities.json`) and **not one of them is a level of detail, a
 cluster, or a per-triangle culler**. The only culling that ships decides per *object*: the render
-projection's frustum pass, landed by [PRD-238](./done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md),
+projection's frustum pass, landed by [PRD-238](../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md),
 removes sub-draws whose whole object is off screen. A single 2-million-triangle asset in view is
 therefore submitted whole, every frame, at every distance.
 
@@ -157,44 +161,19 @@ its material resolve, impostors, skinned and morphed geometry, alpha-tested foli
 (Phase 5 at the earliest), and shadow passes driven by their own cut — v1 shadows draw the
 coarsest cut resident, or the game keeps its existing shadow proxy.
 
-## 6. Phases, each with the condition that ends the project
+## 6. The phases, and the PRD that owns each
 
-**Phase 0 — price the problem and read the sources. No code in `packages/`.**
-Extend `examples/engine-load-test` with a dense-static-asset rung, and measure, on browser WebGPU
-and on packed Linux desktop native: frame p50, `render.p50`, draw calls and triangles for a
-2M-triangle asset at 1080p, against the same scene decimated to 5%. Clone all eight sources at
-depth 1 and rewrite §4 with file-and-line citations.
-**Decline if** the dense asset costs less than roughly 2 ms over the decimated one at a realistic
-view — nothing downstream is worth 9 complexity points for that — **or** if the frame is already
-CPU-bound at the submission stage, in which case the honest PRD is a cheaper one about submission.
+Every phase is a separate PRD in this folder, and each one names the condition that ends the whole
+batch rather than just itself. Nothing downstream is written until the phase above it is green.
 
-**Phase 1 — the baker, offline, no renderer.**
-Meshlets from `buildMeshletsFlex`, groups, locked simplify, re-cluster, error propagation, written
-into `TN_virtual_geometry`. Partitioning must be solved *without* adding a native build step to
-the asset pipeline: port the graph partition in TypeScript, or build a WASM of `meshoptimizer`
-that exports the partitioner, in that order of preference.
-**Decline if** partitioning cannot be solved that way, or if the DAG's error bounds cannot be made
-monotonic on real scanned assets — a crack in a cut is a visible hole, and there is no runtime fix
-for it.
-
-**Phase 2 — selection on the CPU, one indirect draw.**
-Walk the cut on the CPU, write the index ranges, submit one `drawIndexedIndirect` per material
-batch through the game's own material. Slower than a compute cut, and that is the point: it is
-deterministic, it runs in the node-environment test suite, and it is the oracle Phase 3 is checked
-against.
-**Decline if** the selected cut cannot beat drawing the source mesh whole on the Phase 0 scene —
-the same rule `projection-plan.ts` already enforces on the projection.
-
-**Phase 3 — the cut moves to compute (TSL), and native runs it.**
-Same cut, computed in a kernel, dispatched through `ComputeDrivenRegistry`. Parity with the Phase 2
-oracle is the acceptance test. The native lane is not optional: `--target desktop` in the same
-commit, and the missing `dispatchWorkgroupsIndirect` binding is resolved here or the dispatch count
-stays CPU-side and is measured as such.
-
-**Phase 4 — two-pass occlusion with a hierarchical depth buffer.** Only after Phase 3 holds.
-
-**Phase 5 — pages, residency and streaming**, mined from Nyx. Only if a game in this repository or
-in the sandbox has an asset that does not fit in memory. Not before.
+| Phase | PRD | Ends the batch if |
+| --- | --- | --- |
+| 0 — the instrument and the price | [PRD-280 — the quarry is the instrument](./PRD-280-the-quarry-is-the-instrument.md) | The dense arm is not meaningfully more expensive than the decimated one |
+| 1 — the bake | [PRD-281 — a dense mesh bakes to a crack-free cluster DAG](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md) | Partitioning needs a native build step in the asset pipeline, or the error bounds cannot be made monotonic |
+| 2 — the cut, on the CPU | [PRD-282 — the cut is chosen on the CPU first](./PRD-282-the-cut-is-chosen-on-the-cpu-first.md) | The selected cut cannot beat drawing the source mesh whole |
+| 3 — the cut, on the GPU, on both targets | [PRD-283 — the cut moves to the GPU and native runs it](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | The kernel cannot match the CPU oracle, or native cannot run it |
+| 4 — occlusion | [PRD-284 — the frame does not draw what the frame already hid](./PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) | Nothing: this phase declines alone |
+| 5 — streaming | [PRD-285 — clusters arrive when the camera asks for them](./PRD-285-clusters-arrive-when-the-camera-asks-for-them.md) | Nothing: this phase declines alone |
 
 ## 7. The kill switch
 
@@ -216,26 +195,27 @@ of this size that only breaks even is worse than nothing, because every future c
 
 Unchecked, and several are conditional on the phase before them surviving its gate.
 
-- [ ] **AC0 — the problem has a number.** Phase 0's measurement is in `docs/verification/`, naming
-      both targets, with the decline threshold evaluated in writing.
+- [ ] **AC0 — the problem has a number.** Owned by [PRD-280](./PRD-280-the-quarry-is-the-instrument.md):
+      the measurement is in `docs/verification/`, naming both targets, with the decline threshold
+      evaluated in writing.
 - [ ] **AC1 — the sources are read, not cited from memory.** §4 carries file-and-line citations
       against depth-1 clones, dated, and any row that does not survive is struck rather than
-      quietly softened.
-- [ ] **AC2 — the DAG has no cracks.** A test picks cuts at many error thresholds on a real asset
+      quietly softened. This one belongs to this PRD and is its only unblocked work.
+- [ ] **AC2 — the DAG has no cracks.** ([PRD-281](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md)) A test picks cuts at many error thresholds on a real asset
       and asserts every boundary edge is shared by exactly two selected triangles.
 - [ ] **AC3 — red-green, monotonic error.** Removing the parent-error `max` propagation in the
       baker fails AC2's test with a named hole count, and that failure is pasted.
 - [ ] **AC4 — red-green, the empty cut.** A camera that resolves nothing produces zero submitted
       clusters and no draw, not a zero-count indirect draw that draws nothing and warns nothing —
       the failure mode `projection-apply.ts:146` already records for `InstancedMesh`.
-- [ ] **AC5 — compute matches the CPU oracle.** For a fixed camera set, the Phase 3 kernel selects
+- [ ] **AC5 — compute matches the CPU oracle.** ([PRD-283](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md)) For a fixed camera set, the Phase 3 kernel selects
       the same cluster set as the Phase 2 walk, exactly.
 - [ ] **AC6 — it originates no appearance.** `packages/core/__tests__/constraints.spec.ts` asserts
       the module constructs no material, light or colour and contains no hex literal, on the same
       terms as `tracers.ts` and `instanced-batch.ts`.
 - [ ] **AC7 — the game still owns the look.** A test swaps the material on a virtualized mesh and
       asserts the swapped material is what draws; no framework shader participates.
-- [ ] **AC8 — a named caller.** `examples/engine-load-test` with the dense rung, and a playtest
+- [ ] **AC8 — a named caller.** ([PRD-280](./PRD-280-the-quarry-is-the-instrument.md)) `examples/engine-load-test` with the dense rung, and a playtest
       scenario that asserts the frame result, not that the code ran.
 - [ ] **AC9 — native.** A `--target desktop` playtest in the same commit as Phase 3, with
       `adapter.info` named. Android and iOS may be `UNVERIFIED`, and must say so.

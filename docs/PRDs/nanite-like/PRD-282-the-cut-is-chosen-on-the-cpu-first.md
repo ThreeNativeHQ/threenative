@@ -1,0 +1,89 @@
+---
+prd_contract: v1
+---
+
+# PRD-282 — the cut is chosen on the CPU first
+
+**Status: NOT STARTED — filed 2026-08-30. Phase 2 of the [virtual geometry batch](./README.md),
+blocked on [PRD-281](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md). Nothing measured.**
+
+**Goal: at run time, the framework walks the DAG on the CPU, selects the clusters this camera can
+resolve, and draws them through the game's own material — and beats drawing the mesh whole.**
+
+**Complexity:** +2 a new public class in the per-frame path, +1 an index buffer rewritten per frame,
++1 the kill-switch measurement that decides whether the GPU phase is even needed = **4 → MEDIUM
+mode.**
+
+## 1. Why the slow version is built first
+
+Three reasons, and the first is the one that matters:
+
+1. **It is the oracle.** PRD-283's kernel is accepted only if it selects the same cluster set as
+   this walk, exactly. Without a reference implementation, "the GPU picked something plausible" is
+   the whole verification, and this repository has already been burned by harnesses that graded
+   plausible.
+2. **It is testable without a GPU** — node-environment `vitest`, deterministic, no stubbing.
+3. **It might be enough.** A few thousand clusters walked per frame is not obviously expensive. If
+   the quarry runs on the CPU cut, PRD-283 becomes an optimisation with a measured baseline instead
+   of an assumption.
+
+## 2. The surface
+
+`ClusteredMesh` in `packages/core`: a `THREE.Mesh` that holds the baked clusters and, before each
+render, decides which ones are drawn. `geometry`, `material` and every appearance parameter are the
+game's, exactly as with `InstancedBatch` — the class constructs no material, no light and no colour,
+and the game can swap the material at any time and see the swap.
+
+Names considered and rejected, so the next survey does not re-propose them: `VirtualMesh` is Unity's
+term for the package this batch may only read; `NaniteMesh` borrows someone's product name for a
+mechanism; `LODMesh` collides with `THREE.LOD`, which is the discrete thing this is not. `Cluster` is
+`meshoptimizer`'s own word for the thing in the payload, and vocabulary here is borrowed, never
+invented.
+
+The loader returns a `ClusteredMesh` when the primitive carries `TN_virtual_geometry`, and an
+ordinary `Mesh` when it does not. A game that does nothing gets the plain mesh; a game that turned
+the pipeline pass on gets the clustered one with no code change. That is the whole user-facing
+surface.
+
+## 3. Submission, and the constraint that shapes it
+
+**There is no multi-draw indirect on this stack.** WebGPU unrolls a `BatchedMesh` into one
+`drawIndexed` per sub-draw (`docs/verification/prd-152-transparent-scene-optimization-2026-08-18.md:110`),
+so a design that submits one draw per cluster would trade vertex work for thousands of draws and
+lose. The selected clusters are therefore **compacted into one index range per material**, and drawn
+as one indexed draw — indirect, so PRD-283 can write the count from a kernel without changing the
+draw path (three `0.185.1` supports `IndirectStorageBufferAttribute` and `geometry.indirect`
+unpatched).
+
+The cost this moves onto the CPU is the compaction and its upload, every frame the cut changes. That
+cost is the risk in this phase and it is measured, not assumed. Two mitigations exist if it bites:
+upload only the ranges that changed, and re-cut only when the camera has moved enough to change one.
+
+**Popping is a defect, not a tuning parameter.** The threshold gets a hysteresis band so a cluster
+that just became eligible does not oscillate on a camera that is standing still and breathing.
+
+## 4. Acceptance criteria
+
+- [ ] **AC1 — the cut is correct.** For a set of camera poses, the selected clusters are exactly the
+      ones whose error is under the threshold and whose parent group's is not; asserted against a
+      brute-force enumeration of the DAG.
+- [ ] **AC2 — no holes on screen.** The quarry's route renders with no pixel of background visible
+      through a body that is closed in the source, at every frame of the route.
+- [ ] **AC3 — red-green, hysteresis.** Removing the band fails a test that holds the camera still
+      under sub-pixel jitter and asserts the cut does not change; the flicker count is pasted.
+- [ ] **AC4 — the game still owns the look.** Swapping the material on a `ClusteredMesh` changes what
+      draws; `constraints.spec.ts` asserts the module builds no material, light or colour and holds
+      no hex literal, on the same terms as `tracers.ts` and `instanced-batch.ts`.
+- [ ] **AC5 — red-green, the empty cut.** A camera that resolves nothing draws nothing, rather than
+      submitting a zero-count indirect draw that draws nothing and warns nothing — the exact failure
+      `packages/core/src/projection-apply.ts:146` records for `InstancedMesh`. Removing the guard
+      fails a test that asserts the draw was skipped.
+- [ ] **AC6 — the kill switch, measured.** On the quarry: `render.p50`, draw calls and triangles for
+      `virtual` against `decimated` and `dense`. **`virtual` must beat `decimated`.** Beating only
+      `dense` is not a pass — the same rule `projection-plan.ts` already applies to the projection,
+      which exists because a projection that could not beat doing nothing once turned a working
+      scene black.
+- [ ] **AC7 — a playtest, not a unit test, is the proof of the frame.** The quarry's route scenario
+      runs the `virtual` arm and asserts the frame result on browser WebGPU with its adapter named.
+- [ ] **AC8 — the capability is discoverable.** `capabilities.json` regenerated and the entry
+      findable by the words a game would use — *a model too detailed to draw*.
