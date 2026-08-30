@@ -811,10 +811,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             onWindow: (reported) => {
               if (this.#config.frameBudget !== false)
                 this.#config.frameBudget?.onWindow?.(reported);
-              // Kick the next resolve after the window that reported the last one, so reading it
-              // never waits on the GPU inside a frame. Before the scaler guard: a pinned game
-              // measures exactly as much as an auto one.
-              renderer.resolveGpuFrame();
               if (scaler === undefined) return;
               const stepped = scaler.observe(reported);
               if (stepped !== undefined) renderer.setResolutionScale(stepped, scaler.scaleSource);
@@ -882,6 +878,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           this.#projection?.reconcile();
           renderer.render(this.#projection?.root ?? threeScene, camera);
           frameBudget?.addRender(budgetNow() - renderStart);
+          // Resolve the GPU timestamps every frame, not once per reported window.
+          //
+          // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
+          // A scene with a post-processing chain runs tens of passes per frame — a cathedral
+          // with SSGI, denoise, godrays, SSR and bloom measured 27 — so the pool fills in
+          // 2048 / (2 x 27) = 38 frames. The resolve used to be wired to the frame-budget
+          // window boundary, 300 frames by default, which is eight times too slow: three
+          // warned `Maximum number of queries exceeded`, stopped recording, and every window
+          // after the first reported `gpuMs: undefined`. The one instrument that exists so the
+          // GPU record is not wall-clock algebra was reading nothing.
+          //
+          // This does not put the GPU on the frame path. `resolveTimestampsAsync` is
+          // fire-and-forget and already catch-guarded, which was the original cadence's only
+          // stated concern.
+          renderer.resolveGpuFrame();
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;
