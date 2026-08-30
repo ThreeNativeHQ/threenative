@@ -10,6 +10,7 @@ import {
   readEvidenceBlocks,
   renderTable,
   summariseAlphaBar,
+  writeGeneratedTableFile,
   writeTable,
 } from "../alpha-bar.js";
 
@@ -398,6 +399,25 @@ describe("pnpm alpha:bar", () => {
     const a7 = after.rows.find((row) => row.id === "A7");
     expect(a7?.status).toBe("unmeasured");
     expect(a7?.detail).toMatch(/TN_ALPHA_TABLE_MARKERS_MISSING/u);
+  });
+
+  it("creates a generated README when the baseline file is missing", async () => {
+    const root = await makeTempDir("threenative-alpha-write-");
+    roots.push(root);
+    const file = path.join(root, "docs/PRDs/alpha-readiness/README.md");
+    const rows = [
+      {
+        detail: "The registry query passed.",
+        evidence: "npm view @threenative/core versions --json",
+        id: "A1",
+        requirement: "A stranger can install it",
+        status: "pass",
+      },
+    ] as const;
+
+    writeGeneratedTableFile(file, renderTable(rows));
+
+    expect(fs.readFileSync(file, "utf8")).toBe(`${renderTable(rows)}\n`);
   });
 
   it("reports A4 unmeasured, not failed, when a round ledger cannot be parsed", async () => {

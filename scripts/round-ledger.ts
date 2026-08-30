@@ -549,13 +549,44 @@ export function readRoundLedger(file: string): RoundLedger {
   return ledger;
 }
 
+const ROUND_LEDGER_MARKER =
+  /^(?:Round:|#{1,6}\s+Improvement round ledger\b|##\s+(?:Arms|Column verdicts|Gap list|Dispositions|Deletions this round|Gates|Firewall attestation|Visual deltas)\b)/imu;
+
+function looksLikeRoundLedger(markdown: string): boolean {
+  return ROUND_LEDGER_MARKER.test(markdown);
+}
+
 export function latestRoundFile(repo: string): string {
   const directory = path.join(repo, "docs", "verification");
+  const rejected: string[] = [];
+  const malformed: string[] = [];
   const files = fs.readdirSync(directory).flatMap((file) => {
     const match = /^round-(\d+)-.+\.md$/u.exec(file);
-    return match === null ? [] : [{ file: path.join(directory, file), number: Number(match[1]) }];
+    if (match === null) return [];
+    const candidate = path.join(directory, file);
+    let markdown: string | undefined;
+    try {
+      markdown = fs.readFileSync(candidate, "utf8");
+      parseRoundLedger(markdown, candidate);
+    } catch (error) {
+      const detail = `${candidate}: ${error instanceof Error ? error.message : String(error)}`;
+      rejected.push(detail);
+      if (markdown !== undefined && looksLikeRoundLedger(markdown)) malformed.push(detail);
+      return [];
+    }
+    return [{ file: candidate, number: Number(match[1]) }];
   });
-  if (files.length === 0) throw new Error(`No round ledger found in ${directory}.`);
+  if (malformed.length > 0)
+    throw new Error(
+      `Malformed round ledger found in ${directory}. Rejected: ${malformed.join("; ")}`,
+    );
+  if (files.length === 0) {
+    if (rejected.length > 0)
+      throw new Error(
+        `No parseable round ledger found in ${directory}. Rejected: ${rejected.join("; ")}`,
+      );
+    throw new Error(`No round ledger found in ${directory}.`);
+  }
   const latest = files.sort(
     (left, right) => right.number - left.number || left.file.localeCompare(right.file),
   )[0];

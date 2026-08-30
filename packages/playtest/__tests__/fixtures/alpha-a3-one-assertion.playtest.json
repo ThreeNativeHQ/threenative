@@ -1,0 +1,18 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "SwiftShader emits known browser popErrorScope errors in this control run.",
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "SwiftShader emits known runtime popErrorScope errors in this control run."
+    },
+    "components": [{ "entity": "cube", "component": "quaternion", "path": "0", "changed": true }]
+  },
+  "artifacts": { "screenshots": false },
+  "name": "alpha-a3-one-assertion",
+  "schemaVersion": 1,
+  "steps": [{ "release": true, "waitTicks": 30 }],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 10
+}

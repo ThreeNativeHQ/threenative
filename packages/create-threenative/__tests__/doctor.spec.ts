@@ -1,14 +1,44 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { execFileSyncMock, spawnSyncMock } = vi.hoisted(() => ({
+  execFileSyncMock: vi.fn(),
+  spawnSyncMock: vi.fn(),
+}));
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, execFileSync: execFileSyncMock, spawnSync: spawnSyncMock };
+});
+
+import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
   type IProjectSnapshot,
   diagnoseProject,
   formatDoctorReport,
+  probeAndroidToolchain,
   probeDesktopOverlay,
   readProject,
 } from "../src/doctor.js";
+
+const MCP_CONFIG = JSON.stringify({
+  mcpServers: {
+    "threenative-assets": {
+      command: "node",
+      args: ["./node_modules/@threenative/core/mcp/assets.mjs"],
+      env: { ASSET_DOWNLOAD_DIR: "./public/assets", AUDIO_DOWNLOAD_DIR: "./public/audio" },
+    },
+    "threenative-sculpt": {
+      command: "node",
+      args: ["./node_modules/@threenative/core/mcp/sculpt.mjs"],
+    },
+    "threenative-engine": {
+      command: "node",
+      args: ["./node_modules/@threenative/core/mcp/engine.mjs"],
+    },
+  },
+});
 
 const HEALTHY: IProjectSnapshot = {
   config: { nativeEntry: "src/game.ts" },
@@ -29,7 +59,12 @@ const HEALTHY: IProjectSnapshot = {
     name: "my-game",
     optionalDependencies: { "@threenative/runtime-native": "0.4.0" },
   },
-  readText: (relative) => (relative === "src/game.ts" ? "export default defineGame({})" : ""),
+  readText: (relative) =>
+    relative === "src/game.ts"
+      ? "export default defineGame({})"
+      : relative === ".mcp.json"
+        ? MCP_CONFIG
+        : "",
   readRuntimeText: (relative) =>
     relative === "prebuilt/install-status.json"
       ? JSON.stringify({
@@ -62,6 +97,27 @@ function check(report: ReturnType<typeof diagnoseProject>, name: string) {
     throw new Error(`no check named '${name}' in ${report.checks.map((c) => c.name).join(", ")}`);
   return found;
 }
+
+function withPlatform<T>(platform: NodeJS.Platform, callback: () => T): T {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  if (descriptor === undefined) throw new Error("process.platform descriptor is missing");
+  Object.defineProperty(process, "platform", { ...descriptor, value: platform });
+  try {
+    return callback();
+  } finally {
+    Object.defineProperty(process, "platform", descriptor);
+  }
+}
+
+beforeEach(() => {
+  execFileSyncMock.mockReset();
+  spawnSyncMock.mockReset();
+  spawnSyncMock.mockReturnValue({
+    stderr: 'openjdk version "17.0.1"',
+    stdout: "",
+    status: 0,
+  });
+});
 
 describe("threenative doctor", () => {
   it("names the compositor-less X11 blocker before a build", () => {
@@ -201,6 +257,302 @@ describe("threenative doctor", () => {
     expect(check(report, "capability search").status).toBe("warn");
     expect(check(report, "capability search").detail).toMatch(/capabilit/i);
     expect(report.pass).toBe(true);
+  });
+
+  it("fails capability search when the engine server package is absent", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+      }),
+    );
+    const engine = report.checks.find(({ name }) => name.includes("threenative-engine-mcp"));
+    expect(engine).toMatchObject({ status: "warn" });
+    expect(engine?.detail).toMatch(
+      /threenative-engine-mcp.*0\.2\.0|0\.2\.0.*threenative-engine-mcp/u,
+    );
+  });
+
+  it("reports each of the three MCP servers separately", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+      }),
+    );
+    const serverChecks = report.checks.filter(
+      ({ name }) => name.includes("threenative-") && name.includes("capability"),
+    );
+    expect(serverChecks).toHaveLength(3);
+    expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-assets/);
+    expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-sculpt/);
+    expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-engine/);
+  });
+
+  it("reports malformed capability configuration distinctly", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readText: (relative) => (relative === ".mcp.json" ? "{not-json" : "export default {}"),
+      }),
+    );
+    expect(check(report, "capability search")).toMatchObject({ status: "fail" });
+    expect(check(report, "capability search").detail).toMatch(/malformed|invalid JSON/u);
+  });
+
+  it("warns before a native build when compiled assets target mobile", () => {
+    const report = diagnoseProject(
+      snapshot({
+        config: {
+          nativeEntry: "src/game.ts",
+          assets: {
+            models: {},
+            textures: { overrides: [{ codec: "etc1s", glob: "**/*.png" }] },
+          },
+        },
+        packageJson: {
+          ...(HEALTHY.packageJson as Record<string, unknown>),
+          scripts: { "build:android": "threenative build --target android" },
+        },
+      }),
+    );
+    expect(check(report, "asset pipeline")).toMatchObject({ status: "warn" });
+    expect(check(report, "asset pipeline").detail).toMatch(
+      /TN_NATIVE_KTX2_UNSUPPORTED.*TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED/u,
+    );
+  });
+
+  it("warns when mobile targets use the default asset passes", () => {
+    const report = diagnoseProject(
+      snapshot({
+        config: { nativeEntry: "src/game.ts" },
+        packageJson: {
+          ...(HEALTHY.packageJson as Record<string, unknown>),
+          scripts: { "build:android": "threenative build --target android" },
+        },
+      }),
+    );
+
+    expect(check(report, "asset pipeline")).toMatchObject({ status: "warn" });
+    expect(check(report, "asset pipeline").detail).toMatch(
+      /TN_NATIVE_KTX2_UNSUPPORTED.*TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED/u,
+    );
+  });
+
+  it("warns for an omitted asset pass in a partial mobile config", () => {
+    const report = diagnoseProject(
+      snapshot({
+        config: { nativeEntry: "src/game.ts", assets: { textures: "none" } },
+        packageJson: {
+          ...(HEALTHY.packageJson as Record<string, unknown>),
+          scripts: { "build:ios": "threenative build --target ios" },
+        },
+      }),
+    );
+
+    expect(check(report, "asset pipeline")).toMatchObject({ status: "warn" });
+    expect(check(report, "asset pipeline").detail).toContain(
+      "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED",
+    );
+    expect(check(report, "asset pipeline").detail).not.toContain("TN_NATIVE_KTX2_UNSUPPORTED");
+  });
+
+  it("keeps explicit mobile asset opt-outs green", () => {
+    const report = diagnoseProject(
+      snapshot({
+        config: {
+          nativeEntry: "src/game.ts",
+          assets: { models: "none", textures: "none" },
+        },
+        packageJson: {
+          ...(HEALTHY.packageJson as Record<string, unknown>),
+          scripts: { "build:android": "threenative build --target android" },
+        },
+      }),
+    );
+
+    expect(check(report, "asset pipeline")).toMatchObject({ status: "ok" });
+  });
+
+  it("uses the native build's KTX2 error name for the matching doctor warning", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-native-assets-");
+    await mkdir(path.join(root, "public"), { recursive: true });
+    await writeFile(
+      path.join(root, "public", "assets.manifest.json"),
+      JSON.stringify({ entries: { "hero.png": { output: "hero.ktx2" } } }),
+    );
+    await expect(assertNativeAssetsCompatible(root, "android", {} as never)).rejects.toThrow(
+      /TN_NATIVE_KTX2_UNSUPPORTED/u,
+    );
+  });
+
+  it("warns with the asset path when a download directory cannot be written", () => {
+    const report = diagnoseProject(
+      snapshot({
+        projectRoot: "/tmp/tn-doctor-assets",
+        directoryWritable: (relative: string) => relative !== "public/assets",
+      } as never),
+    );
+    expect(check(report, "asset pipeline")).toMatchObject({ status: "warn" });
+    expect(check(report, "asset pipeline").detail).toMatch(/public\/assets/u);
+  });
+
+  it("reports the playtest runner as missing rather than passing", () => {
+    const report = diagnoseProject(
+      snapshot({ projectRoot: "/tmp/tn-doctor-playtest", playtestRunnerPath: undefined } as never),
+    );
+    expect(check(report, "playtest")).toMatchObject({ status: "fail" });
+    expect(check(report, "playtest").detail).toMatch(
+      /threenative-playtest|@threenative\/playtest/u,
+    );
+  });
+
+  it("folds the installed playtest doctor result under the playtest heading", () => {
+    const report = diagnoseProject(
+      snapshot({
+        projectRoot: "/tmp/tn-doctor-playtest",
+        playtestRunnerPath: "/tmp/tn-doctor-playtest/node_modules/.bin/threenative-playtest",
+        runPlaytestDoctor: () => "✓ node: v20.19.6\n✓ chromium: installed",
+      } as never),
+    );
+    expect(check(report, "playtest")).toMatchObject({ status: "ok" });
+    expect(check(report, "playtest").detail).toMatch(/chromium.*installed/u);
+  });
+
+  it("keeps diagnostics when the delegated playtest doctor exits with output", () => {
+    const report = diagnoseProject(
+      snapshot({
+        projectRoot: "/tmp/tn-doctor-playtest",
+        playtestRunnerPath: "/tmp/tn-doctor-playtest/node_modules/.bin/threenative-playtest",
+        runPlaytestDoctor: () => {
+          throw Object.assign(new Error("runner exited with code 1"), {
+            stderr: Buffer.from("stderr blocker"),
+            stdout: "stdout context",
+          });
+        },
+      } as never),
+    );
+    expect(check(report, "playtest")).toMatchObject({ status: "fail" });
+    expect(check(report, "playtest").detail).toContain("stderr blocker");
+    expect(check(report, "playtest").detail).toContain("stdout context");
+  });
+
+  it("executes a POSIX playtest runner directly", () => {
+    const runner = "/tmp/tn-doctor-playtest/node_modules/.bin/threenative-playtest";
+    execFileSyncMock.mockReturnValue("runner output");
+    const report = diagnoseProject(
+      snapshot({ projectRoot: "/tmp/tn-doctor-playtest", playtestRunnerPath: runner } as never),
+    );
+
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      runner,
+      ["doctor", "--text"],
+      expect.objectContaining({
+        cwd: "/tmp/tn-doctor-playtest",
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    );
+    expect(check(report, "playtest").detail).toContain("runner output");
+  });
+
+  it("executes a Windows .cmd playtest shim through cmd.exe and preserves diagnostics", () => {
+    const runner = "C:\\game\\node_modules\\.bin\\threenative-playtest.cmd";
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error("runner failed"), {
+        stderr: Buffer.from("stderr blocker"),
+        stdout: "stdout context",
+      });
+    });
+
+    const report = withPlatform("win32", () =>
+      diagnoseProject(snapshot({ projectRoot: "C:\\game", playtestRunnerPath: runner } as never)),
+    );
+
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      "cmd.exe",
+      ["/d", "/s", "/c", `"${runner}" doctor --text`],
+      expect.objectContaining({
+        cwd: "C:\\game",
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    );
+    expect(check(report, "playtest").detail).toContain("stderr blocker");
+    expect(check(report, "playtest").detail).toContain("stdout context");
+  });
+
+  it("does not add a runtime dependency on the playtest package", async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { dependencies?: Record<string, unknown> };
+    expect(manifest.dependencies?.["@threenative/playtest"]).toBeUndefined();
+  });
+
+  it("names the Android JDK and SDK before a native build", () => {
+    const report = diagnoseProject(
+      snapshot({
+        projectRoot: "/tmp/tn-doctor-toolchain",
+        androidToolchain: { jdkMajor: 21, jdkVersion: "21.0.1", sdkVersion: "35.0.0" },
+      } as never),
+    );
+    expect(check(report, "target android").detail).toMatch(/JDK 21\.0\.1.*17/u);
+    expect(check(report, "target android").status).toBe("warn");
+    expect(check(report, "target android").detail).not.toContain("checked by build");
+    expect(check(report, "target android").fix).toMatch(/Install Android SDK platform android-35/u);
+    expect(check(report, "target android").fix).toMatch(/ANDROID_HOME|ANDROID_SDK_ROOT/u);
+    expect(check(report, "target android").fix).not.toContain("THREENATIVE_ANDROID_SDK");
+    expect(formatDoctorReport(report)).toMatch(
+      /fix: Install Android SDK platform android-35 and JDK 17/u,
+    );
+  });
+
+  it("uses JAVA_HOME, not THREENATIVE_JAVA_HOME, for the Android JDK probe", () => {
+    const buildJavaHome = "/build-jdk";
+    const doctorOnlyJavaHome = "/doctor-only-jdk";
+    const buildJava = path.join(
+      buildJavaHome,
+      "bin",
+      process.platform === "win32" ? "java.exe" : "java",
+    );
+    spawnSyncMock.mockImplementation((command: string) => ({
+      stderr: `openjdk version "${command === buildJava ? "17.0.1" : "21.0.1"}"`,
+      stdout: "",
+      status: 0,
+    }));
+
+    const probe = probeAndroidToolchain({
+      JAVA_HOME: buildJavaHome,
+      THREENATIVE_JAVA_HOME: doctorOnlyJavaHome,
+    });
+
+    expect(probe).toMatchObject({ jdkMajor: 17, jdkVersion: "17.0.1" });
+    expect(spawnSyncMock.mock.calls[0]?.[0]).toBe(buildJava);
+  });
+
+  it("prefers the standard Android SDK variable over the custom doctor-only variable", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-conflicting-sdk-");
+    const packagerSdk = path.join(root, "packager-sdk");
+    const doctorOnlySdk = path.join(root, "doctor-only-sdk");
+    for (const [sdk, revision] of [
+      [packagerSdk, "35.0.0"],
+      [doctorOnlySdk, "34.0.0"],
+    ] as const) {
+      const platform = path.join(sdk, "platforms", "android-35");
+      await mkdir(platform, { recursive: true });
+      await writeFile(path.join(platform, "source.properties"), `Pkg.Revision = ${revision}\n`);
+    }
+
+    const probe = probeAndroidToolchain({
+      ANDROID_HOME: packagerSdk,
+      THREENATIVE_ANDROID_SDK: doctorOnlySdk,
+    });
+
+    expect(probe.sdkVersion).toBe("35.0.0");
+  });
+
+  it("groups craft, test, and ship checks in the human-readable report", () => {
+    const output = formatDoctorReport(diagnoseProject(HEALTHY));
+    expect(output).toMatch(/Craft/);
+    expect(output).toMatch(/Test/);
+    expect(output).toMatch(/Ship/);
   });
 
   it("fails when the native runtime install recorded a failure", () => {

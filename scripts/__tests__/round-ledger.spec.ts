@@ -1,7 +1,13 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { NO_STOP_CONDITION, parseRoundLedger, validateRoundLedger } from "../round-ledger.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
+import {
+  NO_STOP_CONDITION,
+  latestRoundFile,
+  parseRoundLedger,
+  validateRoundLedger,
+} from "../round-ledger.js";
 
 function ledger(overrides: string[] = []): string {
   return [
@@ -335,6 +341,46 @@ describe("a round that declares no genres", () => {
       );
       expect(NO_STOP_CONDITION.has(ledger.stopCondition)).toBe(true);
     }
+  });
+});
+
+describe("latest round ledger selection", () => {
+  async function verificationDirectory(): Promise<string> {
+    const repo = await makeTempDir("threenative-round-ledger-");
+    const directory = path.join(repo, "docs", "verification");
+    await mkdir(directory, { recursive: true });
+    return directory;
+  }
+
+  it("should ignore a round-numbered file that is not a round ledger", async () => {
+    const directory = await verificationDirectory();
+    const realLedger = path.join(directory, "round-12-real-ledger.md");
+    const publishedInstallRecord = path.join(directory, "round-196-published-install.md");
+    await writeFile(realLedger, ledger().replace("Round: 1", "Round: 12"));
+    await writeFile(publishedInstallRecord, "# Published install record\n\nThe install failed.\n");
+
+    expect(latestRoundFile(path.resolve(directory, "../.."))).toBe(realLedger);
+  });
+
+  it("should reject a malformed newer ledger instead of falling back to an older one", async () => {
+    const directory = await verificationDirectory();
+    const realLedger = path.join(directory, "round-12-real-ledger.md");
+    const malformedLedger = path.join(directory, "round-13-ledger.md");
+    await writeFile(realLedger, ledger().replace("Round: 1", "Round: 12"));
+    await writeFile(
+      malformedLedger,
+      "# Improvement round ledger — round 13 — 2026-08-29\n\nRound: 13\n\n## Arms\n",
+    );
+
+    expect(() => latestRoundFile(path.resolve(directory, "../.."))).toThrow(malformedLedger);
+  });
+
+  it("should name the file it rejected when no ledger parses", async () => {
+    const directory = await verificationDirectory();
+    const rejected = path.join(directory, "round-196-published-install.md");
+    await writeFile(rejected, "# Published install record\n\nThe install failed.\n");
+
+    expect(() => latestRoundFile(path.resolve(directory, "../.."))).toThrow(rejected);
   });
 });
 

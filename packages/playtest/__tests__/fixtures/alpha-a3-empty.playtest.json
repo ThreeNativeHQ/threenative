@@ -1,0 +1,10 @@
+{
+  "assert": {},
+  "artifacts": { "screenshots": false },
+  "name": "alpha-a3-empty",
+  "schemaVersion": 1,
+  "steps": [{ "release": true, "waitTicks": 1 }],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 10
+}

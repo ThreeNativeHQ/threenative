@@ -531,6 +531,14 @@ export function writeTable(markdown: string, table: string, file: string): strin
   return `${markdown.slice(0, begin)}${table}${markdown.slice(end + TABLE_END.length)}`;
 }
 
+export function writeGeneratedTableFile(file: string, table: string): void {
+  const markdown = fs.existsSync(file)
+    ? fs.readFileSync(file, "utf8")
+    : `${TABLE_BEGIN}\n${TABLE_END}\n`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, writeTable(markdown, table, file));
+}
+
 function generatedTableRow(repo: string, rows: readonly IAlphaRowResult[]): IAlphaRowResult {
   const id = "A7";
   const requirement = "The bar is runnable, not transcribed";
@@ -625,7 +633,7 @@ async function main(argv: readonly string[]): Promise<void> {
   if (write) {
     const file = path.join(REPO, BATCH_README);
     const rows = report.rows.filter((row) => row.id !== "A7");
-    fs.writeFileSync(file, writeTable(fs.readFileSync(file, "utf8"), renderTable(rows), file));
+    writeGeneratedTableFile(file, renderTable(rows));
     // Re-measure A7 against what is now on disk rather than assuming the write took. Writing the
     // table never launders another row: A1 red before --write is A1 red after it.
     report = summariseAlphaBar([...rows, generatedTableRow(REPO, rows)]);

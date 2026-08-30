@@ -1,8 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  accessSync,
   closeSync,
   existsSync,
+  constants as fsConstants,
   openSync,
   readFileSync,
   readSync,
@@ -10,6 +12,7 @@ import {
   statSync,
 } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -53,6 +56,12 @@ export interface IProjectSnapshot {
   readonly runtimeRoot?: string;
   /** Desktop UI overlay preflight, when the machine exposes a display to probe. */
   readonly desktopOverlay?: IDesktopOverlayProbe;
+  /** Optional seams used by the diagnostic checks and by deterministic unit fixtures. */
+  readonly androidToolchain?: IAndroidToolchainProbe;
+  readonly directoryWritable?: (relative: string) => boolean | undefined;
+  readonly playtestRunnerPath?: string;
+  readonly resolvePackageDirectory?: (name: string) => string | undefined;
+  readonly runPlaytestDoctor?: () => string;
 }
 
 export interface IDesktopOverlayProbe {
@@ -61,8 +70,48 @@ export interface IDesktopOverlayProbe {
   readonly status: DoctorStatus;
 }
 
+export interface IAndroidToolchainProbe {
+  readonly jdkMajor?: number;
+  readonly jdkVersion?: string;
+  readonly sdkVersion?: string;
+  readonly status?: DoctorStatus;
+}
+
 const DEFAULT_NATIVE_ENTRY = "src/game.ts";
 const RUNTIME_PACKAGE = "@threenative/runtime-native";
+const PLAYTEST_BINARY = "threenative-playtest";
+const ANDROID_JDK_MAJOR = 17;
+const ANDROID_COMPILE_SDK = 35;
+
+interface IMcpServerSpec {
+  readonly configName: string;
+  readonly expectedArgs: string;
+  readonly packageName: string;
+  readonly version: string;
+}
+
+const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = [
+  {
+    configName: "threenative-assets",
+    expectedArgs: "./node_modules/@threenative/core/mcp/assets.mjs",
+    packageName: "threenative-asset-mcp",
+    version: "0.4.0",
+  },
+  {
+    configName: "threenative-sculpt",
+    expectedArgs: "./node_modules/@threenative/core/mcp/sculpt.mjs",
+    packageName: "threenative-sculpt-mcp",
+    version: "0.1.0",
+  },
+  {
+    configName: "threenative-engine",
+    expectedArgs: "./node_modules/@threenative/core/mcp/engine.mjs",
+    packageName: "threenative-engine-mcp",
+    version: "0.2.0",
+  },
+];
+
+const ASSET_DOWNLOAD_DIRECTORIES = ["public/assets", "public/audio"] as const;
 
 type CompositorProbe = (environment: NodeJS.ProcessEnv) => boolean | undefined;
 
@@ -151,6 +200,421 @@ function nativeEntryFrom(config: unknown): string {
 
 function usesDesktopOverlay(config: unknown): boolean {
   return record(record(config)?.ui)?.renderer === "web";
+}
+
+function resolvePackageDirectoryFrom(start: string, name: string): string | undefined {
+  let directory = path.resolve(start);
+  while (true) {
+    const candidate = path.join(directory, "node_modules", name);
+    if (existsSync(path.join(candidate, "package.json"))) return candidate;
+    const parent = path.dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+}
+
+function resolvePackageDirectory(snapshot: IProjectSnapshot, name: string): string | undefined {
+  if (snapshot.resolvePackageDirectory !== undefined) {
+    return snapshot.resolvePackageDirectory(name);
+  }
+  return snapshot.projectRoot === undefined
+    ? undefined
+    : resolvePackageDirectoryFrom(snapshot.projectRoot, name);
+}
+
+function resolveBinaryFrom(start: string, name: string): string | undefined {
+  let directory = path.resolve(start);
+  while (true) {
+    const binDirectory = path.join(directory, "node_modules", ".bin");
+    const candidates =
+      process.platform === "win32"
+        ? [path.join(binDirectory, `${name}.cmd`), path.join(binDirectory, name)]
+        : [path.join(binDirectory, name)];
+    const found = candidates.find((candidate) => existsSync(candidate));
+    if (found !== undefined) return found;
+    const parent = path.dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+}
+
+function expectedMcpServer(spec: IMcpServerSpec): Record<string, unknown> {
+  return {
+    command: "node",
+    args: [spec.expectedArgs],
+    ...(spec.configName === "threenative-assets"
+      ? {
+          env: Object.fromEntries([
+            ["ASSET_DOWNLOAD_DIR", "./public/assets"],
+            ["AUDIO_DOWNLOAD_DIR", "./public/audio"],
+          ]),
+        }
+      : {}),
+  };
+}
+
+function mcpServerMatches(spec: IMcpServerSpec, value: unknown): boolean {
+  const server = record(value);
+  if (server === undefined || server.command !== "node") return false;
+  if (
+    !Array.isArray(server.args) ||
+    server.args.length !== 1 ||
+    server.args[0] !== spec.expectedArgs
+  )
+    return false;
+  if (spec.configName !== "threenative-assets") return true;
+  const env = record(server.env);
+  return (
+    env?.ASSET_DOWNLOAD_DIR === "./public/assets" && env.AUDIO_DOWNLOAD_DIR === "./public/audio"
+  );
+}
+
+function mcpConfig(
+  snapshot: IProjectSnapshot,
+):
+  | { readonly kind: "missing" }
+  | { readonly kind: "malformed"; readonly detail: string }
+  | { readonly kind: "ready"; readonly servers: Record<string, unknown> } {
+  if (!snapshot.files.has(".mcp.json")) return { kind: "missing" };
+  const source = snapshot.readText(".mcp.json");
+  if (source === undefined) return { detail: ".mcp.json could not be read", kind: "malformed" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source) as unknown;
+  } catch (error) {
+    return {
+      detail: `invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      kind: "malformed",
+    };
+  }
+  const root = record(parsed);
+  const servers = record(root?.mcpServers);
+  return servers === undefined
+    ? { detail: "missing an object-valued mcpServers property", kind: "malformed" }
+    : { kind: "ready", servers };
+}
+
+function mcpServerCheck(
+  snapshot: IProjectSnapshot,
+  spec: IMcpServerSpec,
+  value: unknown,
+): IDoctorCheck {
+  const name = `capability search: ${spec.packageName}`;
+  if (value === undefined) {
+    return {
+      detail: `${spec.configName} is missing from .mcp.json; expected ${spec.packageName}@${spec.version}`,
+      fix: "Restore the server entry from the generated .mcp.json.",
+      name,
+      status: "fail",
+    };
+  }
+  if (!mcpServerMatches(spec, value)) {
+    return {
+      detail: `${spec.configName} is hand-edited or malformed; expected ${JSON.stringify(expectedMcpServer(spec))}`,
+      fix: "Restore the generated .mcp.json entry so the ThreeNative shim and asset directories remain wired.",
+      name,
+      status: "fail",
+    };
+  }
+  if (
+    snapshot.projectRoot !== undefined &&
+    !existsSync(path.resolve(snapshot.projectRoot, spec.expectedArgs))
+  ) {
+    return {
+      detail: `${spec.configName} points at missing ${spec.expectedArgs}; @threenative/core is not providing the configured server shim`,
+      fix: "Install @threenative/core again so the generated MCP server entry exists.",
+      name,
+      status: "fail",
+    };
+  }
+  const packageDirectory = resolvePackageDirectory(snapshot, spec.packageName);
+  if (packageDirectory === undefined) {
+    return {
+      detail: `${spec.configName} is reachable by npx only: ${spec.packageName}@${spec.version} is not installed (npx --yes ${spec.packageName}@${spec.version})`,
+      fix: `Install ${spec.packageName}@${spec.version} when this server is needed, or use the npx fallback named above.`,
+      name,
+      status: "warn",
+    };
+  }
+  const manifest = readJsonSync(path.join(packageDirectory, "package.json"));
+  const installedVersion = record(manifest)?.version;
+  if (typeof installedVersion !== "string") {
+    return {
+      detail: `${spec.configName} resolves ${spec.packageName}, but its package.json has no version`,
+      fix: `Reinstall ${spec.packageName}@${spec.version}.`,
+      name,
+      status: "fail",
+    };
+  }
+  if (installedVersion !== spec.version) {
+    return {
+      detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}; the .mcp.json fallback is ${spec.packageName}@${spec.version}`,
+      fix: `Install ${spec.packageName}@${spec.version} so the capability contract is version-matched.`,
+      name,
+      status: "warn",
+    };
+  }
+  return {
+    detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}`,
+    name,
+    status: "ok",
+  };
+}
+
+function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
+  const failed = serverChecks.filter(({ status }) => status === "fail").length;
+  const warned = serverChecks.filter(({ status }) => status === "warn").length;
+  const status: DoctorStatus = failed > 0 ? "fail" : warned > 0 ? "warn" : "ok";
+  return {
+    detail:
+      status === "ok"
+        ? "all three configured MCP servers resolve"
+        : `${serverChecks.length - failed - warned} server(s) resolve; ${warned} reachable by npx only; ${failed} malformed or missing`,
+    fix: status === "ok" ? undefined : "Inspect the per-server capability search checks below.",
+    name: "capability search",
+    status,
+  };
+}
+
+function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorCheck[] {
+  const config = mcpConfig(snapshot);
+  if (config.kind === "missing") {
+    return [
+      {
+        detail:
+          "no .mcp.json, so an agent here cannot search engine capabilities and will hand-write what exists",
+        fix: "Restore the .mcp.json a scaffolded project ships, which wires the ThreeNative MCP servers.",
+        name: "capability search",
+        status: "warn",
+      },
+    ];
+  }
+  if (config.kind === "malformed") {
+    return [
+      {
+        detail: `.mcp.json is malformed: ${config.detail}`,
+        fix: "Restore a valid generated .mcp.json, preserving any unrelated servers.",
+        name: "capability search",
+        status: "fail",
+      },
+    ];
+  }
+  const serverChecks = MCP_SERVER_SPECS.map((spec) =>
+    mcpServerCheck(snapshot, spec, config.servers[spec.configName]),
+  );
+  return [mcpSummary(serverChecks), ...serverChecks];
+}
+
+function readJsonSync(file: string): unknown {
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function addCommandTargets(targets: Set<string>, value: unknown): void {
+  if (typeof value !== "string") return;
+  for (const match of value.matchAll(/--target(?:=|\s+)(web|desktop|android|ios)\b/gu)) {
+    const target = match[1];
+    if (target !== undefined) targets.add(target);
+  }
+}
+
+function addConfiguredTargets(targets: Set<string>, value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const target of value) if (typeof target === "string") targets.add(target);
+  } else if (typeof value === "string") {
+    targets.add(value);
+  }
+}
+
+function configuredTargets(snapshot: IProjectSnapshot): readonly string[] {
+  const targets = new Set<string>();
+  const packageScripts = record(record(snapshot.packageJson)?.scripts);
+  for (const value of Object.values(packageScripts ?? {})) addCommandTargets(targets, value);
+  const configRecord = record(snapshot.config);
+  for (const key of ["targets", "nativeTargets"] as const)
+    addConfiguredTargets(targets, configRecord?.[key]);
+  return [...targets];
+}
+
+function directoryCanBeWritten(snapshot: IProjectSnapshot, relative: string): boolean | undefined {
+  if (snapshot.directoryWritable !== undefined) return snapshot.directoryWritable(relative);
+  if (snapshot.projectRoot === undefined) return undefined;
+  const root = path.resolve(snapshot.projectRoot);
+  let candidate = path.resolve(root, relative);
+  if (candidate !== root && !candidate.startsWith(`${root}${path.sep}`)) return false;
+  while (candidate !== root && !existsSync(candidate)) candidate = path.dirname(candidate);
+  if (!existsSync(candidate)) return false;
+  try {
+    if (!statSync(candidate).isDirectory()) return false;
+    accessSync(candidate, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function assetPipelineCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  const details: string[] = [];
+  let status: DoctorStatus = "ok";
+  for (const directory of ASSET_DOWNLOAD_DIRECTORIES) {
+    const writable = directoryCanBeWritten(snapshot, directory);
+    if (writable === false) {
+      details.push(`${directory} is not writable and cannot receive MCP downloads`);
+      status = "warn";
+    } else if (writable === true) {
+      details.push(`${directory} exists or can be created`);
+    } else {
+      details.push(`${directory} was not probed in this in-memory snapshot`);
+    }
+  }
+
+  const assets = record(record(snapshot.config)?.assets) ?? {};
+  const mobileTargets = configuredTargets(snapshot).filter(
+    (target) => target === "android" || target === "ios",
+  );
+  if (mobileTargets.length > 0) {
+    const textures = assets.textures;
+    if (textures !== "none") {
+      details.push(
+        `TN_NATIVE_KTX2_UNSUPPORTED: assets.textures compiles textures for ${mobileTargets.join("/")}; mobile native targets require assets.textures to be "none"`,
+      );
+      status = "warn";
+    }
+    const models = assets.models;
+    if (models !== "none") {
+      details.push(
+        `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: assets.models compiles model geometry for ${mobileTargets.join("/")}; mobile native targets require assets.models to be "none"`,
+      );
+      status = "warn";
+    }
+  }
+  return {
+    detail: details.join("; "),
+    ...(status === "ok"
+      ? {}
+      : {
+          fix: "Make public/assets and public/audio writable, and disable compiled assets for Android/iOS native builds.",
+        }),
+    name: "asset pipeline",
+    status,
+  };
+}
+
+function androidToolchainStatus(probe: IAndroidToolchainProbe): IDoctorCheck {
+  const details: string[] = [];
+  let status: DoctorStatus = probe.status ?? "ok";
+  if (probe.jdkVersion === undefined || probe.jdkMajor === undefined) {
+    details.push(`JDK not found; Android builds require JDK ${ANDROID_JDK_MAJOR}`);
+    status = "warn";
+  } else if (probe.jdkMajor !== ANDROID_JDK_MAJOR) {
+    details.push(
+      `JDK ${probe.jdkVersion} found; Android builds support JDK ${ANDROID_JDK_MAJOR} only`,
+    );
+    status = "warn";
+  } else {
+    details.push(`JDK ${probe.jdkVersion} found (supported JDK ${ANDROID_JDK_MAJOR})`);
+  }
+  if (probe.sdkVersion === undefined) {
+    details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} not found`);
+    status = "warn";
+  } else {
+    details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} ${probe.sdkVersion} found`);
+  }
+  return {
+    detail: details.join("; "),
+    fix:
+      status === "ok"
+        ? undefined
+        : `Install Android SDK platform android-${ANDROID_COMPILE_SDK} and JDK ${ANDROID_JDK_MAJOR}, or set ANDROID_HOME or ANDROID_SDK_ROOT and JAVA_HOME (or put JDK ${ANDROID_JDK_MAJOR} on PATH).`,
+    name: "android toolchain",
+    status,
+  };
+}
+
+function playtestRunner(snapshot: IProjectSnapshot): string | undefined {
+  if (snapshot.playtestRunnerPath !== undefined) return snapshot.playtestRunnerPath;
+  return snapshot.projectRoot === undefined
+    ? undefined
+    : resolveBinaryFrom(snapshot.projectRoot, PLAYTEST_BINARY);
+}
+
+function missingPlaytestCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  return {
+    detail:
+      snapshot.projectRoot === undefined
+        ? "runner was not probed in this in-memory snapshot"
+        : "threenative-playtest is missing from node_modules/.bin",
+    fix: "Install the test runner: npm install -D @threenative/playtest, then rerun doctor.",
+    name: "playtest",
+    status: snapshot.projectRoot === undefined ? "warn" : "fail",
+  };
+}
+
+function childOutput(value: unknown): string | undefined {
+  const text =
+    typeof value === "string" ? value : Buffer.isBuffer(value) ? value.toString("utf8") : undefined;
+  const trimmed = text?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
+function playtestFailureDetail(error: unknown): string {
+  const fields = record(error);
+  const output = [childOutput(fields?.stderr), childOutput(fields?.stdout)]
+    .filter((value): value is string => value !== undefined)
+    .join("\n");
+  return output.length > 0 ? output : error instanceof Error ? error.message : String(error);
+}
+
+function playtestInvocation(runner: string): {
+  readonly args: readonly string[];
+  readonly command: string;
+} {
+  if (process.platform !== "win32" || !/\.cmd$/iu.test(runner)) {
+    return { args: ["doctor", "--text"], command: runner };
+  }
+  const command = process.env.ComSpec ?? process.env.COMSPEC ?? "cmd.exe";
+  return {
+    args: ["/d", "/s", "/c", `"${runner}" doctor --text`],
+    command,
+  };
+}
+
+function executePlaytestDoctor(runner: string, projectRoot: string | undefined): string {
+  const invocation = playtestInvocation(runner);
+  return execFileSync(invocation.command, invocation.args, {
+    cwd: projectRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 30_000,
+  });
+}
+
+function playtestCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  const runner = playtestRunner(snapshot);
+  if (runner === undefined) return missingPlaytestCheck(snapshot);
+  try {
+    const output =
+      snapshot.runPlaytestDoctor?.() ?? executePlaytestDoctor(runner, snapshot.projectRoot);
+    const detail = output.trim();
+    return {
+      detail:
+        detail.length === 0
+          ? "threenative-playtest doctor completed"
+          : `threenative-playtest doctor completed:\n${detail}`,
+      name: "playtest",
+      status: "ok",
+    };
+  } catch (error) {
+    return {
+      detail: `threenative-playtest doctor failed: ${playtestFailureDetail(error)}`,
+      fix: "Run npx @threenative/playtest doctor --text directly and fix the first reported machine or browser blocker.",
+      name: "playtest",
+      status: "fail",
+    };
+  }
 }
 
 const APK_SIZE_RECORD = /^docs\/verification\/apk-size-(\d{4}-\d{2}-\d{2})\.md$/u;
@@ -474,11 +938,124 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   return { detail: `available (${key})`, name: "native runtime", status: "ok" };
 }
 
+function javaVersion(
+  output: string,
+): { readonly major: number; readonly version: string } | undefined {
+  const match = output.match(/version\s+["']([^"']+)["']/iu);
+  const version = match?.[1];
+  if (version === undefined) return undefined;
+  const majorMatch = version.startsWith("1.")
+    ? version.match(/^1\.(\d+)/u)
+    : version.match(/^(\d+)/u);
+  const majorText = majorMatch?.[1];
+  const major = majorText === undefined ? Number.NaN : Number(majorText);
+  return Number.isSafeInteger(major) ? { major, version } : undefined;
+}
+
+function androidSdkVersion(root: string): string | undefined {
+  const sourceProperties = path.join(
+    root,
+    "platforms",
+    `android-${ANDROID_COMPILE_SDK}`,
+    "source.properties",
+  );
+  try {
+    const source = readFileSync(sourceProperties, "utf8");
+    const match = source.match(/^Pkg\.Revision\s*=\s*(\S+)/mu);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+export function probeAndroidToolchain(
+  environment: NodeJS.ProcessEnv = process.env,
+): IAndroidToolchainProbe {
+  const javaHome = environment.JAVA_HOME?.trim() || undefined;
+  const java =
+    javaHome === undefined
+      ? "java"
+      : path.join(javaHome, "bin", process.platform === "win32" ? "java.exe" : "java");
+  let jdkMajor: number | undefined;
+  let jdkVersion: string | undefined;
+  try {
+    const result = spawnSync(java, ["-version"], {
+      encoding: "utf8",
+      env: { ...environment },
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 5_000,
+    });
+    const parsed = javaVersion(`${result.stdout ?? ""}${result.stderr ?? ""}`);
+    jdkMajor = parsed?.major;
+    jdkVersion = parsed?.version;
+  } catch {
+    // The doctor reports the missing version below; probing must not turn an absent toolchain into
+    // an opaque process exception.
+  }
+
+  const sdkCandidates = [
+    environment.ANDROID_HOME,
+    environment.ANDROID_SDK_ROOT,
+    path.join(homedir(), "Android", "Sdk"),
+  ]
+    .map((candidate) => candidate?.trim())
+    .filter((candidate): candidate is string => candidate !== undefined && candidate.length > 0);
+  const sdkRoot = sdkCandidates.find((candidate) => existsSync(candidate));
+  return {
+    ...(jdkMajor === undefined ? {} : { jdkMajor }),
+    ...(jdkVersion === undefined ? {} : { jdkVersion }),
+    ...(sdkRoot === undefined ? {} : { sdkVersion: androidSdkVersion(sdkRoot) }),
+  };
+}
+
 function runtimeFileAvailable(snapshot: IProjectSnapshot, relative: string): boolean {
   if (snapshot.runtimeRoot === undefined) return false;
   return (
     snapshot.runtimeFileExists?.(relative) ?? existsSync(path.join(snapshot.runtimeRoot, relative))
   );
+}
+
+function androidTargetCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  if (!runtimeFileAvailable(snapshot, "scripts/package-android.mjs")) {
+    return {
+      detail: "unavailable — @threenative/runtime-native has no Android packager",
+      name: "target android",
+      status: snapshot.runtimeRoot === undefined ? "warn" : "fail",
+    };
+  }
+  const androidToolchain =
+    snapshot.androidToolchain ??
+    (snapshot.projectRoot === undefined ? undefined : probeAndroidToolchain());
+  const toolchain =
+    androidToolchain === undefined ? undefined : androidToolchainStatus(androidToolchain);
+  return {
+    detail:
+      toolchain === undefined
+        ? "available — runtime packager installed; Android toolchain was not probed in this in-memory snapshot"
+        : `available — runtime packager installed; ${toolchain.detail}`,
+    ...(toolchain?.fix === undefined ? {} : { fix: toolchain.fix }),
+    name: "target android",
+    status: toolchain?.status ?? "ok",
+  };
+}
+
+function iosTargetCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  const iosPackager = runtimeFileAvailable(snapshot, "scripts/package-ios.mjs");
+  const iosHost = process.platform === "darwin" && process.arch === "arm64";
+  if (iosHost && iosPackager) {
+    return {
+      detail: "available — darwin-arm64 simulator packager installed",
+      name: "target ios",
+      status: "ok",
+    };
+  }
+  return {
+    detail: iosHost
+      ? "unavailable — @threenative/runtime-native has no iOS packager"
+      : `unavailable — iOS simulator packaging requires darwin-arm64; received ${process.platform}-${process.arch}`,
+    name: "target ios",
+    status: iosHost ? "fail" : "warn",
+  };
 }
 
 function targetChecks(
@@ -490,9 +1067,6 @@ function targetChecks(
     nativeRuntime.status === "ok"
       ? nativeRuntime.detail
       : `unavailable — ${nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, "")}`;
-  const androidPackager = runtimeFileAvailable(snapshot, "scripts/package-android.mjs");
-  const iosPackager = runtimeFileAvailable(snapshot, "scripts/package-ios.mjs");
-  const iosHost = process.platform === "darwin" && process.arch === "arm64";
   return [
     webAvailable
       ? { detail: "available — src/main.ts", name: "target web", status: "ok" }
@@ -506,31 +1080,8 @@ function targetChecks(
       name: "target desktop",
       status: nativeRuntime.status,
     },
-    androidPackager
-      ? {
-          detail:
-            "available — runtime packager installed; Android SDK and JDK are checked by build",
-          name: "target android",
-          status: "ok",
-        }
-      : {
-          detail: "unavailable — @threenative/runtime-native has no Android packager",
-          name: "target android",
-          status: snapshot.runtimeRoot === undefined ? "warn" : "fail",
-        },
-    iosHost && iosPackager
-      ? {
-          detail: "available — darwin-arm64 simulator packager installed",
-          name: "target ios",
-          status: "ok",
-        }
-      : {
-          detail: iosHost
-            ? "unavailable — @threenative/runtime-native has no iOS packager"
-            : `unavailable — iOS simulator packaging requires darwin-arm64; received ${process.platform}-${process.arch}`,
-          name: "target ios",
-          status: iosHost ? "fail" : "warn",
-        },
+    androidTargetCheck(snapshot),
+    iosTargetCheck(snapshot),
   ];
 }
 
@@ -560,11 +1111,13 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
   const nativeRuntime = nativeRuntimeCheck(snapshot);
   const apkSize = apkSizeCheck(snapshot);
+  const playtest = playtestCheck(snapshot);
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
     nativeEntryCheck(snapshot),
     nativeRuntime,
+    assetPipelineCheck(snapshot),
     ...(apkSize === undefined ? [] : [apkSize]),
     ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
       ? []
@@ -578,6 +1131,7 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
           name: "web entry",
           status: "warn",
         },
+    playtest,
     hasPlaytests
       ? { detail: "at least one scenario can prove this game", name: "playtests", status: "ok" }
       : {
@@ -586,19 +1140,7 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
           name: "playtests",
           status: "warn",
         },
-    snapshot.files.has(".mcp.json")
-      ? {
-          detail: "capability search is wired for an authoring agent",
-          name: "capability search",
-          status: "ok",
-        }
-      : {
-          detail:
-            "no .mcp.json, so an agent here cannot search engine capabilities and will hand-write what exists",
-          fix: "Restore the .mcp.json a scaffolded project ships, which wires threenative-engine-mcp.",
-          name: "capability search",
-          status: "warn",
-        },
+    ...capabilitySearchChecks(snapshot),
   ];
   return { checks, pass: checks.every(({ status }) => status !== "fail") };
 }
@@ -644,20 +1186,21 @@ async function runtimeReleaseManifestUrl(
 }
 
 export async function readProject(root: string): Promise<IProjectSnapshot> {
-  const packageJson = await readJson(path.join(root, "package.json"));
-  const configFile = await readJson(path.join(root, "threenative.config.json"));
+  const projectRoot = path.resolve(root);
+  const packageJson = await readJson(path.join(projectRoot, "package.json"));
+  const configFile = await readJson(path.join(projectRoot, "threenative.config.json"));
   const config =
-    configFile ?? record(packageJson)?.threenative ?? (await readTypeScriptConfig(root));
-  const files = new Set(await collectFiles(root));
+    configFile ?? record(packageJson)?.threenative ?? (await readTypeScriptConfig(projectRoot));
+  const files = new Set(await collectFiles(projectRoot));
   const installedVersions = new Map<string, string>();
   for (const name of declaredDependencies(packageJson)) {
-    const manifest = await readJson(path.join(root, "node_modules", name, "package.json"));
+    const manifest = await readJson(path.join(projectRoot, "node_modules", name, "package.json"));
     const version = record(manifest)?.version;
     if (typeof version === "string") installedVersions.set(name, version);
   }
   const runtimeRoot = installedVersions.has(RUNTIME_PACKAGE)
     ? (() => {
-        const candidate = path.join(root, "node_modules", RUNTIME_PACKAGE);
+        const candidate = path.join(projectRoot, "node_modules", RUNTIME_PACKAGE);
         try {
           return realpathSync(candidate);
         } catch {
@@ -670,21 +1213,30 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
     runtimeRoot === undefined || runtimeVersion === undefined
       ? undefined
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
+  const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
   return {
     config,
     files,
     installedVersions,
     packageJson,
-    projectRoot: root,
+    projectRoot,
     readText: (relative) => {
-      const file = path.join(root, relative);
+      const file = path.join(projectRoot, relative);
       try {
         return existsSync(file) ? readFileSync(file, "utf8") : undefined;
       } catch {
         return undefined;
       }
     },
+    androidToolchain: probeAndroidToolchain(),
     ...(usesDesktopOverlay(config) ? { desktopOverlay: probeDesktopOverlay() } : {}),
+    ...(playtestRunnerPath === undefined
+      ? {}
+      : {
+          playtestRunnerPath,
+          runPlaytestDoctor: () => executePlaytestDoctor(playtestRunnerPath, projectRoot),
+        }),
+    resolvePackageDirectory: (name) => resolvePackageDirectoryFrom(projectRoot, name),
     ...(runtimeRoot === undefined
       ? {}
       : {
@@ -714,10 +1266,28 @@ async function readTypeScriptConfig(root: string): Promise<unknown> {
 
 export function formatDoctorReport(report: IDoctorReport): string {
   const symbols: Record<DoctorStatus, string> = { fail: "✗", ok: "✓", warn: "!" };
-  const lines = report.checks.map(
-    ({ detail, fix, name, status }) =>
-      `${symbols[status]} ${name}: ${detail}${fix === undefined || status === "ok" ? "" : `\n    fix: ${fix}`}`,
-  );
+  const isBaseline = (name: string): boolean =>
+    ["package.json", "dependencies", "versions"].includes(name);
+  const isCraft = (name: string): boolean => name.startsWith("capability search");
+  const isTest = (name: string): boolean => name === "playtest" || name === "playtests";
+  const groups: readonly [string, (name: string) => boolean][] = [
+    ["Baseline", isBaseline],
+    ["Craft", isCraft],
+    ["Test", isTest],
+    ["Ship", (name) => !isBaseline(name) && !isCraft(name) && !isTest(name)],
+  ];
+  const lines: string[] = [];
+  for (const [group, belongs] of groups) {
+    const checks = report.checks.filter(({ name }) => belongs(name));
+    if (checks.length === 0) continue;
+    lines.push(`${group}:`);
+    lines.push(
+      ...checks.map(
+        ({ detail, fix, name, status }) =>
+          `${symbols[status]} ${name}: ${detail}${fix === undefined || status === "ok" ? "" : `\n    fix: ${fix}`}`,
+      ),
+    );
+  }
   if (!report.pass) lines.push("\nAt least one check failed; fix it before trusting a build here.");
   return `${lines.join("\n")}\n`;
 }
