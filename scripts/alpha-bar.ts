@@ -14,6 +14,14 @@
  *  - an empty row set is an error, because a bar that asserts nothing is the defect this file
  *    exists to prevent.
  *
+ * One exception, and it is narrow. A row may be declared `deferred`: it is printed with its
+ * requirement and a stated reason it cannot be measured yet, and it counts toward neither tally.
+ * A deferral is never a verdict — it is only what the bar says in place of `unmeasured` when the
+ * evidence is absent *and* the reason for its absence is a dependency this bar itself gates. Any
+ * real evidence block for that row outranks the deferral and is graded `pass` or `fail` normally,
+ * so a deferral can never overrule a run somebody actually made. Deleting the row instead would
+ * destroy the same information the `unmeasured` state exists to preserve, which is why it stays.
+ *
  * Exit `0` alpha, `1` a row is red, `2` a row could not be measured. `2` outranks `1`: not
  * knowing is worse than knowing the answer is no.
  */
@@ -46,7 +54,7 @@ export const TABLE_END = "<!-- END GENERATED: alpha-bar -->";
 const PARITY_LEDGER_PATTERN = /^(?:tier-1|parity)-\d{4}-\d{2}-\d{2}.*\.md$/u;
 const SUPERSEDED = /\bSUPERSEDED\b/u;
 
-export type AlphaRowStatus = "fail" | "pass" | "unmeasured";
+export type AlphaRowStatus = "deferred" | "fail" | "pass" | "unmeasured";
 
 export interface IAlphaRowResult {
   /** One line of what was actually read, including the numbers that decided it. */
@@ -59,6 +67,7 @@ export interface IAlphaRowResult {
 }
 
 export interface IAlphaBarReport {
+  readonly deferred: number;
   readonly exitCode: 0 | 1 | 2;
   readonly failed: number;
   readonly passed: number;
@@ -99,7 +108,9 @@ export function summariseAlphaBar(rows: readonly IAlphaRowResult[]): IAlphaBarRe
   }
   const unmeasured = rows.filter((row) => row.status === "unmeasured").length;
   const failed = rows.filter((row) => row.status === "fail").length;
+  // A deferred row decides nothing, so it moves neither tally and cannot move the exit code.
   return {
+    deferred: rows.filter((row) => row.status === "deferred").length,
     exitCode: unmeasured > 0 ? 2 : failed > 0 ? 1 : 0,
     failed,
     passed: rows.filter((row) => row.status === "pass").length,
@@ -161,22 +172,36 @@ export function readEvidenceBlocks(directory: string): readonly IEvidenceBlock[]
   return blocks;
 }
 
+/**
+ * `deferral`, when given, replaces only the *absent evidence* branch. Every other branch is
+ * untouched: a filed block still grades pass or fail, and two blocks that disagree are still
+ * unmeasured, because a disagreement is evidence that exists rather than evidence that is missing.
+ */
 function evidenceRow(
   id: string,
   requirement: string,
   blocks: readonly IEvidenceBlock[],
   repo: string,
+  deferral?: string,
 ): IAlphaRowResult {
   const evidence = `an alpha-bar evidence block for ${id} in docs/verification/`;
   const mine = blocks.filter((block) => block.row === id);
   if (mine.length === 0)
-    return {
-      detail: `No alpha-bar evidence block for ${id} was found in docs/verification/.`,
-      evidence,
-      id,
-      requirement,
-      status: "unmeasured",
-    };
+    return deferral === undefined
+      ? {
+          detail: `No alpha-bar evidence block for ${id} was found in docs/verification/.`,
+          evidence,
+          id,
+          requirement,
+          status: "unmeasured",
+        }
+      : {
+          detail: `${deferral} No alpha-bar evidence block for ${id} was found in docs/verification/; filing one grades this row normally and ends the deferral.`,
+          evidence,
+          id,
+          requirement,
+          status: "deferred",
+        };
   // Two runs disagreeing is not a tie to be broken by ordering; it is an unanswered question.
   const statuses = new Set(mine.map((block) => block.status));
   if (statuses.size > 1)
@@ -497,6 +522,7 @@ export async function parityRow(repo: string): Promise<IAlphaRowResult> {
 
 export function renderTable(rows: readonly IAlphaRowResult[]): string {
   const glyph: Record<AlphaRowStatus, string> = {
+    deferred: "deferred",
     fail: "red",
     pass: "green",
     unmeasured: "unmeasured",
@@ -586,6 +612,17 @@ function generatedTableRow(repo: string, rows: readonly IAlphaRowResult[]): IAlp
 
 /* ------------------------------------------------------------------ the bar */
 
+/**
+ * Owner decision, 2026-08-29: A6 stops blocking the verdict, because the question it asks cannot
+ * be answered in the order the bar is run. A stranger installs from the public registry, which is
+ * A1; A1 is red until the packages are published; and publication is gated on this bar going
+ * green. The row would therefore be permanently unmeasured for a reason no amount of work inside
+ * the repository can change, which is the resting-state failure this file was written to end.
+ * Recorded in docs/verification/alpha-a6-deferred-2026-08-29.md.
+ */
+const A6_DEFERRAL =
+  "Deferred: this row depends on A1 — a stranger cannot use what is not published, and publication is gated on this bar, so it is measured after publication and not before.";
+
 export interface IAlphaBarOptions {
   readonly registry?: RegistryProbe;
   readonly repo?: string;
@@ -600,7 +637,7 @@ export async function alphaBar(options: IAlphaBarOptions = {}): Promise<IAlphaBa
     evidenceRow("A3", "Verification cannot report green while asserting nothing", blocks, repo),
     pairedRoundRow(repo),
     await parityRow(repo),
-    evidenceRow("A6", "One stranger has actually used it", blocks, repo),
+    evidenceRow("A6", "One stranger has actually used it", blocks, repo, A6_DEFERRAL),
   ];
   rows.push(generatedTableRow(repo, rows));
   return summariseAlphaBar(rows);
@@ -612,10 +649,12 @@ export function formatReport(report: IAlphaBarReport): string {
     `    ${row.detail}`,
     `    evidence: ${row.evidence}`,
   ]);
+  // A verdict that did not mention its deferred rows would be a green with a silent asterisk.
+  const deferred = report.deferred > 0 ? `, ${report.deferred} deferred` : "";
   lines.push(
     report.exitCode === 0
-      ? `${report.passed} of ${report.rows.length} rows pass. Alpha.`
-      : `${report.unmeasured} of ${report.rows.length} rows unmeasured, ${report.failed} failed. Not alpha.`,
+      ? `${report.passed} of ${report.rows.length} rows pass${deferred}. Alpha.`
+      : `${report.unmeasured} of ${report.rows.length} rows unmeasured, ${report.failed} failed${deferred}. Not alpha.`,
   );
   return `${lines.join("\n")}\n`;
 }

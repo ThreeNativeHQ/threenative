@@ -252,13 +252,15 @@ describe("pnpm alpha:bar", () => {
   });
 
   it("exits 2 when a row's evidence file is absent", async () => {
+    // A2, not A6: A6 is a deferred row, and absence there is recorded rather than fatal. Every
+    // other evidence row still fails closed when the block it reads is not on disk.
     const root = await fixture();
     await greenBar(root);
-    await rm(path.join(root, "docs/verification/a6-2026-08-15.md"));
+    await rm(path.join(root, "docs/verification/a2-2026-08-15.md"));
     const after = await alphaBar({ registry: registryHasEverything, repo: root });
-    const a6 = after.rows.find((row) => row.id === "A6");
-    expect(a6?.status).toBe("unmeasured");
-    expect(a6?.detail).toMatch(/No alpha-bar evidence block for A6/u);
+    const a2 = after.rows.find((row) => row.id === "A2");
+    expect(a2?.status).toBe("unmeasured");
+    expect(a2?.detail).toMatch(/No alpha-bar evidence block for A2/u);
     expect(after.exitCode).toBe(2);
   });
 
@@ -267,7 +269,7 @@ describe("pnpm alpha:bar", () => {
     // missing measurement hide behind a failure somebody is already tracking.
     const root = await fixture();
     await greenBar(root);
-    await rm(path.join(root, "docs/verification/a6-2026-08-15.md"));
+    await rm(path.join(root, "docs/verification/a2-2026-08-15.md"));
     const after = await alphaBar({
       registry: (name) => (name === "create-threenative" ? "absent" : registryHasEverything(name)),
       repo: root,
@@ -363,6 +365,40 @@ describe("pnpm alpha:bar", () => {
     expect(() => readEvidenceBlocks(path.join(root, "docs/verification"))).toThrow(
       /TN_ALPHA_EVIDENCE_PRD_SOURCED/u,
     );
+  });
+
+  it("defers A6 instead of blocking the bar when it has no evidence block", async () => {
+    // A6 is circular before publication: a stranger cannot install packages that are not on the
+    // registry, and publication is gated on this bar. Absence there is deferred — still printed,
+    // still explained, and counted toward neither the failed nor the unmeasured tally.
+    const root = await fixture();
+    await rm(path.join(root, "docs/verification/a6-2026-08-15.md"));
+    const after = await greenBar(root);
+    const a6 = after.rows.find((row) => row.id === "A6");
+    expect(a6?.status).toBe("deferred");
+    expect(a6?.detail).toMatch(/A1/u);
+    expect(after.deferred).toBe(1);
+    expect(after.unmeasured).toBe(0);
+    expect(after.failed).toBe(0);
+    expect(after.exitCode).toBe(0);
+    // Deferred is not deleted: the row keeps its requirement text in the generated table.
+    expect(renderTable(after.rows)).toMatch(
+      /\| A6 \| One stranger has actually used it \| \*\*deferred\*\*/u,
+    );
+  });
+
+  it("grades a real A6 evidence block rather than deferring it, and can still fail", async () => {
+    // The deferral covers the absence of evidence only. A measurement somebody actually filed
+    // outranks it in both directions, or the deferral would be a way to overrule a run.
+    const root = await fixture();
+    write(root, "docs/verification/a6-2026-08-15.md", evidenceBlock("A6", "fail"));
+    const after = await greenBar(root);
+    const a6 = after.rows.find((row) => row.id === "A6");
+    expect(a6?.status).toBe("fail");
+    expect(a6?.detail).toMatch(/The A6 run was observed/u);
+    expect(after.deferred).toBe(0);
+    expect(after.failed).toBe(1);
+    expect(after.exitCode).toBe(1);
   });
 
   it("reports unmeasured when two evidence blocks for the same row disagree", async () => {
