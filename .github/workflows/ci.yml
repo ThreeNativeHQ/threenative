@@ -220,7 +220,15 @@ jobs:
           pnpm --dir "$target" install
           # MCP surface validation is centralized in verify-golden-path.ts below.
           pnpm exec playwright install --with-deps chromium
-          pnpm --dir "$target" test
+          # This job proves the golden path, not the pixels: a runner with no GPU cannot serve the
+          # scenarios that capture frames, and test-browser and visuals already cover those. The
+          # split is computed from the scenario files, and the script prints what it left out.
+          mapfile -t scenarios < <(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          scenario_args=()
+          for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
+          pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
+            --browser-recipe webgpu --headed \
+            --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
@@ -266,7 +274,12 @@ jobs:
             "${package_args[@]}"
           pnpm --dir "$target" install
           pnpm exec playwright install chromium
-          sh scripts/xvfb.sh pnpm --dir "$target" test
+          mapfile -t scenarios < <(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          scenario_args=()
+          for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
+          sh scripts/xvfb.sh pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
+            --browser-recipe webgpu --headed \
+            --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm verify:golden-path
 
