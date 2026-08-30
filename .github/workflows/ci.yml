@@ -13,20 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  install:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-
+  # Every job below checks out and installs for itself, so nothing gains from a shared `install`
+  # job that discards its own node_modules — it only added a serial edge in front of the run.
+  # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
-    needs: install
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -42,7 +32,6 @@ jobs:
       - run: pnpm typecheck
 
   lint:
-    needs: typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -55,14 +44,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
+  # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
+  # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
+  # one per push — which is what made the first-ever green take five sequential runs to find.
   test:
-    needs: lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 60
     env:
       # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
-      # settles. Its 30s default is a quiet-machine number: this job now compiles the native host
-      # too, and on a two-core runner the same gate passed one run and failed the next on a profile
+      # settles. Its 30s default is a quiet-machine number: this job also compiles the native host,
+      # and on a two-core runner the same gate passed one run and failed the next on a profile
       # directory that removes itself moments later. The knob exists for exactly this; the gate
       # still fails when a directory genuinely outlives the wait, and now names what holds it.
       TN_ORPHAN_SETTLE_SECONDS: 120
@@ -74,7 +65,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - uses: ./.github/actions/playwright-chromium
       # The runtime-native contract tests execute real binaries and refuse to skip when one is
       # missing — an unbuilt executable is unexecuted, and a silent skip would read as a pass. CI
       # never built them, so `pnpm test` had four permanently failing tests and this workflow had
@@ -92,6 +83,17 @@ jobs:
         with:
           path: packages/runtime-native/third_party
           key: native-third-party-${{ runner.os }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs') }}
+      # Compiling the host and 30 contract executables is the single most expensive step in this
+      # workflow. Keyed on the native sources, so it is paid once per C++ change and skipped by
+      # every push that only touches TypeScript — which is most of them.
+      - name: Cache the native build directories
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/runtime-native/build/tn-linux
+            packages/runtime-native/build/tn-linux-quickjs
+          key: native-build-${{ runner.os }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**') }}
+          restore-keys: native-build-${{ runner.os }}-
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       # The target names are discovered from CMakeLists.txt rather than listed here: a
@@ -120,6 +122,19 @@ jobs:
           cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
             --parallel "$(nproc)"
       - run: pnpm test
+
+  test-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
       - run: sh scripts/xvfb.sh pnpm test:browser
       # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame
       # it rejected comes back with the failure.
@@ -130,10 +145,23 @@ jobs:
           name: starter-look-frame
           path: test-results/starter-look
           if-no-files-found: ignore
+
+  test-playtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
 
   golden-path:
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -221,11 +249,11 @@ jobs:
           pnpm --dir "$target" install
           pnpm exec playwright install chromium
           sh scripts/xvfb.sh pnpm --dir "$target" test
-      - run: pnpm exec playwright install --with-deps chromium
+      - uses: ./.github/actions/playwright-chromium
       - run: pnpm verify:golden-path
 
   benchmark:
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -242,8 +270,9 @@ jobs:
       - run: pnpm --filter abyss-vanilla build
       - run: pnpm --filter abyss-framework build
       - run: pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: sh scripts/xvfb.sh pnpm test:browser
+      - uses: ./.github/actions/playwright-chromium
+      # `test:browser` is the test-browser job's gate; running it again here bought nothing but
+      # a second copy of the slowest step in the workflow.
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
 
   visuals:
@@ -258,11 +287,13 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - uses: ./.github/actions/playwright-chromium
       - run: pnpm visuals
 
+  # Building the workspace and checking the entity-registry boundary needs neither the native host
+  # nor a browser, so it is a gate the scaffold and benchmark lanes can wait on instead of waiting
+  # ~15 minutes behind the native suite.
   build:
-    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
