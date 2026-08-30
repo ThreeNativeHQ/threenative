@@ -1,4 +1,5 @@
-Dress the environment around the play area: the ground surface, the two side walls, and one
-background prop.
+Dress the environment around the play area: the platform surfaces the player runs on, the
+background skyline, and the ground below.
 
-Do not change the crate, its material, or its sound.
+Do not change the player capsule, the pushable block, the hazard, or the goal flag — not their
+geometry, their material, or their sound.
