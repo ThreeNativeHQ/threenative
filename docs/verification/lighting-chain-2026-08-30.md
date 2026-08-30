@@ -102,3 +102,71 @@ cause in one measurement and named the responsible stage in a second.
 `updateBefore`, so it cannot be traced at reduced resolution from outside the class. On this
 scene SSGI is the most expensive stage, which makes this the single largest missing lever
 for PRD-266's tier ladder.
+
+---
+
+# Addendum, same day — the GPU instrument was reading nothing
+
+Everything above used `render.p50`, a CPU-side wall-clock phase, because `gpuMs` came back
+`undefined` from every window. That turned out to be a defect in the engine's own instrument
+rather than an adapter limitation.
+
+## The bug
+
+`trackTimestamp: true` is set unconditionally in `packages/core/src/renderer.ts`, with the
+stated reason that it is *"the measurement itself"* and replaces a record where "every GPU
+number was wall-clock algebra". Three's `WebGPUTimestampQueryPool` holds **2048** queries and
+spends **two per render pass**. This scene runs **27 render passes per frame** (counted by
+wrapping `GPUCommandEncoder.beginRenderPass`), so:
+
+```
+2048 / (2 x 27) = 37.9 frames before the pool is full
+```
+
+The resolve was wired to the frame-budget **window** boundary — 300 frames by default. Eight
+times too slow. Three warned `WebGPUTimestampQueryPool [render]: Maximum number of queries
+exceeded`, stopped recording, and `renderer.info.render.timestamp` — the only thing
+`gpuFrameMs()` reads — went stale.
+
+Fixed in `209f6bf1` by resolving once per rendered frame. That does not put the GPU on the
+frame path, which was the old cadence's only stated concern: `resolveTimestampsAsync` is
+fire-and-forget and already `.catch()`-guarded.
+
+- Red: `resolveTimestampsAsync ran 0 times across 30 frames, expected >= 28`.
+- Green: 1 passed; full core suite 69 files / 684 tests green.
+- End to end, after repacking core into the sandbox game: `gpuMs` went from `undefined` to
+  **16.3 ms**, which matches an independent measurement taken by wrapping the WebGPU command
+  encoder. Two unrelated methods agreeing is the actual confirmation.
+
+## What that instrument then showed
+
+GPU milliseconds per frame at 1600x900, steady state, resolution scale pinned to 1:
+
+| arm | gpuMs |
+| --- | --- |
+| all five post stages on | 16.3 |
+| post chain off (scene + shadow only) | 3.5 |
+| post chain off, shadow map frozen | 2.5 |
+
+So the post chain is **12.8 ms of a 16.3 ms frame** and always was. Ranked within it: SSGI
+gather ~7.3, bloom ~4.6, SSR ~4.1, denoise ~1.9.
+
+Scene cost, by contrast: **98 draw calls, 413,060 triangles**, of which only 73 draws are
+geometry — the rest are full-screen post quads. Two draws carry 59% of the beauty pass and
+90% of the shadow pass: the compound piers (4,352 tris x 20) and the bay walls (3,324 x 18).
+Everything else — chandeliers, candelabra, screen, banners, flames — is noise.
+
+Freezing the static shadow map removes 22 draws and 164,000 triangles per frame for 1.0 ms.
+
+## A reporting trap, corrected
+
+An earlier note in this file reported a "58.6 -> 25.8 fps regression" after three lanes added
+geometry. **That regression was not real.** The playtest scenario was 300 frames, so it can
+only ever emit frame-budget window 1 — and window 1 contains the startup stall, while `fps`
+is `1000 / presented.mean`. One 4.3-second frame in a 300-frame mean halves the figure.
+`render.p50` across those same runs never left 5.2–7.5 ms.
+
+**Rule this leaves behind:** read window 2 or later, or pipe the log through
+`threenative-playtest perf --file`, which discards window 1 and requires two steady windows by
+default. A scenario short enough to produce only one window cannot measure steady state, and
+its `fps` field is a startup artefact rather than a frame rate.
