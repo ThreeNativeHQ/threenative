@@ -4,7 +4,10 @@ prd_contract: v1
 
 # PRD-267 — the starter scaffold fails its own tests
 
-**Status:** PROPOSED — filed 2026-08-30 from `golden-path`, the last red job in CI.
+**Status:** PARTIAL — filed 2026-08-30 from `golden-path`, the last red job in CI. **Mostly fixed**
+in `6e327a7f`: eighteen scenarios gained the menu-entry steps they had been missing, and the run
+went from **40 failures across seven kinds to one scenario's movement assertion**. What remains is
+§2, below — a harness limitation the menu exposed.
 
 **Goal: a stranger who scaffolds a project and runs `npm test` sees it pass.**
 Today they see a wall of failures, and they see it on the default template.
@@ -60,6 +63,38 @@ passes against `create-threenative@0.2.2`**, whose templates predate the menu.
 
 The alpha bar's golden-path row is green for a version of the scaffold nobody is shipping.
 
+## What is left: movement measured across a run that starts before the player exists
+
+`starter-assets` is the one scenario still red, on `movement.minDistance`. Its state proves the
+player moved — `playerX` goes `-2` to `6.999`, `status` reaches `won` — while the movement
+assertion reports nothing:
+
+```text
+Entity 'player' was not observed in both samples, so its movement was never measured —
+the run reports no distance rather than a distance of zero.
+```
+
+That message is new, and it is the second fix in `6e327a7f`: `distance` falls back to `0` when the
+entity is missing from a snapshot, and `minDistance` used to read that fallback as a measurement,
+reporting `moved 0.000000` for a player who was never there. `maxDistance` already refused to,
+with a comment explaining exactly this hazard. Now both refuse, and the message says which of the
+two happened.
+
+The underlying limitation: a **named** movement entity is measured between the run's first and last
+snapshot, and the first is taken after warmup — on the menu, where there is no player. Per-step
+sampling exists but only for *anonymous* movement scenarios, and dropping `entity` does not help
+either, because those samples still span the menu steps.
+
+Three ways out, none of them "delete the assertion":
+
+1. **Measure a named entity from its first observation to its last.** The plain reading of "the
+   player moved at least 0.5 during this run", and it needs the runner to sample a named entity
+   per step the way it already does for anonymous ones.
+2. **Let a scenario scope movement to a step interval** — `movement.from`/`movement.to` by label,
+   next to the labels `atSteps` already uses.
+3. **Warm up into the game**, so the first snapshot is taken after the menu. Smallest change,
+   and it makes every scenario's first sample mean something different depending on its steps.
+
 ## The decision this PRD has to make
 
 Not *whether* to fix it, but how a scenario should reach the play scene:
@@ -77,7 +112,7 @@ menu. It is also new harness surface, which is why this is a decision and not a 
 ## Acceptance criteria
 
 - [ ] A freshly scaffolded starter passes `npm test` with no edits, and the run names the adapter
-      it used.
+      it used. **One scenario short**: `starter-assets`, on the movement window described above.
 - [ ] `pnpm test:templates` does not abort at the first failing template — every template reports,
       so the default one can never be silently untested again.
 - [ ] `golden-path` is green on CI.
