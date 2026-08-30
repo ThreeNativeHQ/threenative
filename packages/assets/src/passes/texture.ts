@@ -48,6 +48,10 @@ const NORMAL_MAP_BASENAME = /(?:^|[_-])(?:normal|nrm)$/iu;
 
 export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
   return {
+    configuration: {
+      overrides: options.overrides ?? [],
+      quality: options.quality ?? DEFAULT_ETC1S_QUALITY,
+    },
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "texture") return input;
       const stats = textureStats(input);

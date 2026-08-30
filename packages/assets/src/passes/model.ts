@@ -486,6 +486,20 @@ function snapPositions(root: RootOf, bits: number): void {
 
 export function modelPass(options: IModelPassOptions = {}): IAssetPass {
   return {
+    configuration: {
+      passes: {
+        dedup: options.passes?.dedup ?? true,
+        meshopt: options.passes?.meshopt ?? true,
+        prune: options.passes?.prune ?? true,
+        quantize: options.passes?.quantize ?? true,
+        reorder: options.passes?.reorder ?? true,
+      },
+      quantize: {
+        normalBits: options.quantize?.normalBits ?? DEFAULT_NORMAL_BITS,
+        positionBits: options.quantize?.positionBits ?? DEFAULT_POSITION_BITS,
+        uvBits: options.quantize?.uvBits ?? DEFAULT_UV_BITS,
+      },
+    },
     name: "model",
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "model") return input;

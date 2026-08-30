@@ -86,6 +86,39 @@ describe("compileAssets", () => {
     expect((await stat(output)).mtimeMs).toBe(before);
   });
 
+  it("should recompile when the texture quality changes instead of re-serving stale bytes", async () => {
+    const root = await makeTempDir("threenative-compile-quality-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        blue: (x, y) => (x * 31 + y * 17) % 256,
+        green: (x, y) => (x * 7 + y * 29) % 256,
+        height: 128,
+        red: (x, y) => (x * 13 + y * 11) % 256,
+        width: 128,
+      }),
+    );
+
+    await compileAssets({
+      config: { textures: { quality: 255 } },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+    const manifestPath = path.join(root, "public", "assets.manifest.json");
+    const first = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    const second = await compileAssets({
+      config: { textures: { quality: 40 } },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+    const secondManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(second.written).toBe(1);
+    expect(secondManifest.entries["rock.png"].output).not.toBe(first.entries["rock.png"].output);
+  });
+
   it("should skip compilation without touching the output when no source directory exists", async () => {
     // The pre-pipeline state: projects built before this step have no assets/ and their
     // builds must keep working unchanged.

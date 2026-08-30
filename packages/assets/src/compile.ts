@@ -48,6 +48,13 @@ export interface IAssetPassOutput {
 
 export interface IAssetPass {
   readonly name: string;
+  /**
+   * JSON-serializable snapshot of every option that changes this pass's output. Part of the
+   * compile cache key: without it, editing a config value (texture quality, quantize bits, an
+   * override's codec) leaves the pass name and input hash untouched and the stale output is
+   * re-served forever. `undefined` for passes without options.
+   */
+  readonly configuration?: Readonly<Record<string, unknown>>;
   apply(
     input: Buffer,
     logicalPath: string,
@@ -660,6 +667,7 @@ export async function compileAssets(
   const passConfiguration = JSON.stringify({
     pipelineVersion: PIPELINE_VERSION,
     passes: passNames,
+    options: layout.passes.map((pass) => pass.configuration ?? null),
   });
   const entries: Record<string, IAssetManifestEntry> = {};
   const healthInputs: IAssetHealthInput[] = [];
