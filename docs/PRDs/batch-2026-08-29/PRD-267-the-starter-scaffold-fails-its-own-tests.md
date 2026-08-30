@@ -69,6 +69,31 @@ immediately:
 That one line replaced a whole diagnostic cycle, and it is what turned "golden-path is red" into
 "fifteen of sixteen pass and the sixteenth wants 30fps from a machine with no GPU".
 
+## §3 — `platformer-stomp`, the last red
+
+What is measured, on a scaffolded platformer:
+
+- **It passes on hardware.** `stomp.playtest.json` run headed against an RTX 2080 exits `0`.
+- **It fails on CI**, whose runner has no GPU, on `resource.state.defeated` (stagnated) and
+  `tags.patrol`.
+- **It is not the menu.** This template boots to `boot`, not to a menu with a form, so the cause
+  that explained the starter's eighteen scenarios does not apply.
+- **It is not the level failing to load.** `tags.patrol` was *evaluated* and disagreed, which means
+  patrol entities existed to be counted. A level that never arrived would have failed differently.
+
+So the level loads, the player runs, and the stomp does not land — only on the rasteriser. The
+scenario holds `ArrowRight`+`Space` for 42 ticks and settles for 45, and ticks are meant to be
+deterministic regardless of frame rate, which is what makes this worth understanding rather than
+padding: **if a fixed-step scenario can change outcome with frame rate, that is a harness or
+engine property worth knowing about, not a slow machine.**
+
+Reproducing it locally needs a GPU-less Chromium under a display; running headless locally reaches
+SwiftShader but drowns in backend console noise instead, so it is not the same condition. The next
+step is to run this one scenario on CI with the frame budget and substep counts printed, and see
+whether the physics stepped the same number of times as it does on hardware.
+
+Do not fix it by lengthening the waits until that is known.
+
 ## Why it was invisible
 
 Three gates should have caught it and none could. CI had never completed a run, so `golden-path`
@@ -129,11 +154,8 @@ menu. It is also new harness surface, which is why this is a decision and not a 
 - [x] A freshly scaffolded starter passes its non-visual scenarios with no edits — 14 of 14 on CI
       and exit 0 cold on a developer machine. The seven left out are the ones that need hardware:
       screenshots, baselines, a `visual` assertion, or a frame-time budget.
-- [ ] The **platformer** finishes too. It is one scenario short — `platformer-stomp`, on
-      `resource.state.defeated` and `tags.patrol`, both reported as stagnated. Unlike the starter
-      this template boots to `boot`, not a menu, so it is **not** the same cause and has not been
-      diagnosed. A stomp is a landing on a moving patrol, which is the kind of thing a CPU
-      rasteriser's frame timing can miss; that is a hypothesis, not a finding.
+- [ ] The **platformer** finishes too. It is one scenario short — `platformer-stomp` — and what is
+      known about it is in §3 below.
 - [ ] `pnpm test:templates` does not abort at the first failing template — every template reports,
       so the default one can never be silently untested again.
 - [ ] `golden-path` is green on CI.
