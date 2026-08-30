@@ -6,6 +6,7 @@ import type { GameState } from "../state.js";
 import type { Character, PLATFORMER_FEEL } from "./Character.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
+const PLAYTEST_FROZEN_MARKER = "__threenativeFrozen";
 
 export class Patrol {
   readonly mesh: Group;
@@ -60,6 +61,10 @@ export class Patrol {
 
   update(dt: number): void {
     if (this.defeated) return;
+    if (this.mesh.userData[PLAYTEST_FROZEN_MARKER] === true) {
+      this.area.setPosition(this.mesh.position);
+      return;
+    }
     const next = this.mesh.position.x + this.#direction * this.#feel.patrolSpeed * dt;
     if (next >= this.#to.x) {
       this.mesh.position.x = this.#to.x;

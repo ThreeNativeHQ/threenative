@@ -44,15 +44,25 @@ interface ISummary {
   blocked: number;
 }
 
+interface ISupplemental {
+  androidMultitouch?: { status?: string };
+  expiredExclusions?: unknown[];
+}
+
+interface IExitReport {
+  summary: ISummary;
+  supplemental?: ISupplemental;
+}
+
 /** The runner's rule, loaded from the runner so the two can never drift apart. */
-export async function loadReportExitCode(): Promise<(report: { summary: ISummary }) => number> {
+export async function loadReportExitCode(): Promise<(report: IExitReport) => number> {
   const module = (await import(pathToFileURL(runnerPath).href)) as Record<string, unknown>;
   const rule = module.reportExitCode;
   if (typeof rule !== "function") {
     const reason = "does not export reportExitCode, so no exit cell can be recomputed";
     throw new Error(`TN_PARITY_LEDGER_RULE_MISSING: ${runnerPath} ${reason}.`);
   }
-  return rule as (report: { summary: ISummary }) => number;
+  return rule as (report: IExitReport) => number;
 }
 
 function tableCells(line: string): string[] {
@@ -149,14 +159,21 @@ function summaryOf(report: unknown, target: string, path: string): ISummary {
   return numbers as unknown as ISummary;
 }
 
+function supplementalOf(report: unknown): ISupplemental | undefined {
+  return (report as { supplemental?: ISupplemental } | null)?.supplemental;
+}
+
 export function checkRow(
   row: ILedgerRow,
-  exitRule: (report: { summary: ISummary }) => number,
+  exitRule: (report: IExitReport) => number,
   readReport: (path: string) => unknown | null,
 ): ILedgerFinding[] {
   const findings: ILedgerFinding[] = [];
+  const path = reportPathFor(row.command);
+  const report = readReport(path);
+  const supplemental = supplementalOf(report);
   const recorded = { pass: row.pass, fail: row.fail, blocked: row.blocked };
-  const recomputed = exitRule({ summary: recorded });
+  const recomputed = exitRule({ summary: recorded, supplemental });
   if (recomputed !== row.exit) {
     findings.push({
       target: row.target,
@@ -166,8 +183,6 @@ export function checkRow(
         `${row.blocked} blocked exits ${recomputed}. The runner cannot emit the recorded value.`,
     });
   }
-  const path = reportPathFor(row.command);
-  const report = readReport(path);
   if (report === null) {
     findings.push({
       target: row.target,
@@ -190,7 +205,7 @@ export function checkRow(
       });
     }
   }
-  const reportExit = exitRule({ summary });
+  const reportExit = exitRule({ summary, supplemental });
   if (reportExit !== row.exit) {
     findings.push({
       target: row.target,

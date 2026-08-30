@@ -38,9 +38,11 @@ import {
   androidSystemDialog,
   buildProvenance,
   expiredExclusions,
+  reportExitCode,
   validateRegistry,
   validateReport,
 } from "../conformance/run-conformance.mjs";
+import { SDL3_ANDROID_VERSION } from "../scripts/package-android.mjs";
 import {
   buildAndroidConformanceAsset,
   parseConformanceBundleArgs,
@@ -48,6 +50,7 @@ import {
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const runner = join(root, "conformance/run-conformance.mjs");
+const SDL3_AAR = `SDL3-${SDL3_ANDROID_VERSION}.aar`;
 
 function run(args, env = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
@@ -379,7 +382,22 @@ test("Android parity owns the standalone multitouch proof without contaminating 
   );
   const source = readFileSync(runner, "utf8");
   assert.match(source, /report\.supplemental[\s\S]*androidMultitouch/u);
-  assert.match(source, /androidMultitouch\?\.status === "fail" \? 1 : reportExitCode/u);
+  assert.match(source, /process\.exitCode = reportExitCode\(report\)/u);
+  assert.doesNotMatch(
+    source,
+    /androidMultitouch\?\.status === "fail" \? 1 : reportExitCode/u,
+    "the runner must not maintain a second Android-only exit rule",
+  );
+});
+
+test("the exported exit rule owns a failing Android multitouch supplemental result", () => {
+  assert.equal(
+    reportExitCode({
+      summary: { pass: 67, fail: 0, blocked: 0 },
+      supplemental: { androidMultitouch: { status: "fail", exitCode: 1 } },
+    }),
+    1,
+  );
 });
 
 test("Android reports fail closed when multitouch supplemental evidence is missing", () => {
@@ -628,7 +646,10 @@ test("Android parity blocks before Gradle when the pinned SDL3 AAR is absent", (
   try {
     const reason = androidDependencyBlocker(dir);
     assert.match(reason ?? "", /^TN_PARITY_ANDROID_DEPS_BLOCKED:/u);
-    assert.match(reason ?? "", /SDL3-3\.2\.8\.aar does not exist/u);
+    assert.match(
+      reason ?? "",
+      new RegExp(`${SDL3_AAR.replaceAll(".", "\\.")} does not exist`, "u"),
+    );
     assert.match(reason ?? "", /checked source and packaged Android dependency layouts/u);
     assert.match(reason ?? "", /libmystral-runtime\.so/u);
     assert.match(reason ?? "", /pnpm native:build/u);
@@ -641,9 +662,9 @@ test("Android parity blocks a partial packaged layout even when the source AAR e
   const dir = makeTempDirSync("threenative-android-partial-prebuilt-");
   try {
     mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
-    writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
+    writeFileSync(join(dir, "third_party/sdl3-android", SDL3_AAR), "fixture");
     mkdirSync(join(dir, "android/prebuilt"), { recursive: true });
-    writeFileSync(join(dir, "android/prebuilt/SDL3-3.2.8.aar"), "fixture");
+    writeFileSync(join(dir, "android/prebuilt", SDL3_AAR), "fixture");
 
     assert.ok(androidDependencyBlocker(dir));
   } finally {
@@ -655,7 +676,7 @@ test("Android parity accepts a source-only SDL3 dependency layout", () => {
   const dir = makeTempDirSync("threenative-android-source-only-");
   try {
     mkdirSync(join(dir, "third_party/sdl3-android"), { recursive: true });
-    writeFileSync(join(dir, "third_party/sdl3-android/SDL3-3.2.8.aar"), "fixture");
+    writeFileSync(join(dir, "third_party/sdl3-android", SDL3_AAR), "fixture");
 
     assert.equal(androidDependencyBlocker(dir), null);
   } finally {
@@ -667,7 +688,7 @@ test("Android parity accepts a complete packaged dependency layout", () => {
   const dir = makeTempDirSync("threenative-android-prebuilt-");
   try {
     const files = [
-      "android/prebuilt/SDL3-3.2.8.aar",
+      join("android/prebuilt", SDL3_AAR),
       "android/prebuilt/jniLibs/arm64-v8a/libSDL3.so",
       "android/prebuilt/jniLibs/arm64-v8a/libmystral-runtime.so",
       "android/prebuilt/jniLibs/x86_64/libSDL3.so",

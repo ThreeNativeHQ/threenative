@@ -15,7 +15,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stageAndroidAssets } from "../scripts/package-android.mjs";
+import { SDL3_ANDROID_VERSION, stageAndroidAssets } from "../scripts/package-android.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 import {
   androidMultitouchScript,
@@ -1349,10 +1349,11 @@ async function runAndroid(
 
 export function androidDependencyBlocker(root = runtimeRoot) {
   const sourceRoot = join(root, "third_party", "sdl3-android");
-  const sourceAar = join(sourceRoot, "SDL3-3.2.8.aar");
+  const sdl3Aar = `SDL3-${SDL3_ANDROID_VERSION}.aar`;
+  const sourceAar = join(sourceRoot, sdl3Aar);
   const prebuiltRoot = join(root, "android", "prebuilt");
   const prebuiltFiles = [
-    join(prebuiltRoot, "SDL3-3.2.8.aar"),
+    join(prebuiltRoot, sdl3Aar),
     join(prebuiltRoot, "jniLibs", "arm64-v8a", "libSDL3.so"),
     join(prebuiltRoot, "jniLibs", "arm64-v8a", "libmystral-runtime.so"),
     join(prebuiltRoot, "jniLibs", "x86_64", "libSDL3.so"),
@@ -1631,10 +1632,11 @@ function writeReport(report, path) {
 
 /**
  * The one rule that decides a lane's exit code. Exported so a ledger checker recomputes it
- * from a summary instead of trusting a number somebody typed into a markdown table.
+ * from a report instead of trusting a number somebody typed into a markdown table.
  */
 export function reportExitCode(report) {
   if (report.summary.fail > 0) return 1;
+  if (report.supplemental?.androidMultitouch?.status === "fail") return 1;
   if (report.summary.blocked > 0) return 2;
   if ((report.supplemental?.expiredExclusions ?? []).length > 0) return 2;
   return 0;
@@ -1906,8 +1908,7 @@ async function main(argv = process.argv.slice(2)) {
     `${JSON.stringify({ wrote: reportPath, target, mode: report.mode, summary: report.summary }, null, 2)}\n`,
   );
   if (!dryRun || !argv.includes("--allow-blocked")) {
-    process.exitCode =
-      report.supplemental?.androidMultitouch?.status === "fail" ? 1 : reportExitCode(report);
+    process.exitCode = reportExitCode(report);
   }
 }
 

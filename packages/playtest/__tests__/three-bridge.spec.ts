@@ -319,6 +319,27 @@ test("setup on an unregistered entity fails loudly instead of being ignored", as
   installation.dispose();
 });
 
+test("setup refreshes dynamic entities before applying placement", async () => {
+  const scene = new Scene();
+  const camera = new PerspectiveCamera();
+  const player = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+  let entities: Array<{ id: string; object: Mesh }> = [];
+  const installation = installThreePlaytestBridge({
+    camera,
+    entities: () => entities,
+    renderer,
+    scene,
+  });
+
+  entities = [{ id: "player", object: player }];
+  await installation.bridge.applySetup?.({
+    entities: [{ entity: "player", transform: { position: [2, 0, 2] } }],
+  });
+
+  expect(player.position.toArray()).toEqual([2, 0, 2]);
+  installation.dispose();
+});
+
 test("dispose restores a previously installed bridge instead of deleting it", () => {
   const first = installThreePlaytestBridge({ camera: new PerspectiveCamera(), renderer, scene: new Scene() });
   const second = installThreePlaytestBridge({ camera: new PerspectiveCamera(), renderer, scene: new Scene() });

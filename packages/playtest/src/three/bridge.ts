@@ -106,7 +106,10 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
             return { clock: { mode: "fixed-step" as const, tick }, ticks: advanced };
           },
         }),
-    applySetup: async (request) => applySetup(registry, options.resources, request),
+    applySetup: async (request) => {
+      syncEntities(registry, options.entities);
+      applySetup(registry, options.resources, request);
+    },
     ...(options.events === undefined
       ? {}
       : {

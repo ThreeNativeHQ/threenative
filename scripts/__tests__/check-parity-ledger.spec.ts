@@ -81,6 +81,21 @@ describe("check-parity-ledger", () => {
     expect(exitRule({ summary: { pass: 67, fail: 0, blocked: 0 } })).toBe(0);
   });
 
+  it("passes Android supplemental failures to both recorded and actual exit recomputations", async () => {
+    const command = "pnpm parity -- --target android --out .runtime/fixture-android";
+    const ledger = `## Target results
+
+| Target | Command | Pass | Fail | Blocked | Exit | Outcome |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Android | \`${command}\` | 0 | 0 | 0 | 1 | Supplemental multitouch failed. |
+`;
+    const report = {
+      summary: { pass: 0, fail: 0, blocked: 0 },
+      supplemental: { androidMultitouch: { status: "fail", exitCode: 1 } },
+    };
+    expect(await checkLedger(ledger, reader({ [reportPathFor(command)]: report }))).toEqual([]);
+  });
+
   it("fails closed on a table it cannot parse or one with no rows", () => {
     expect(() => parseLedger("# no target results section\n")).toThrow(
       /TN_PARITY_LEDGER_UNPARSEABLE/u,

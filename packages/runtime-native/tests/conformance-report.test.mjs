@@ -97,6 +97,30 @@ test("should recompute exit from summary rather than trust the recorded value", 
     }),
     1,
   );
+  assert.equal(
+    reportExitCode({
+      summary: { pass: 67, fail: 0, blocked: 0 },
+      supplemental: { androidMultitouch: { status: "fail", exitCode: 1 } },
+    }),
+    1,
+  );
+  assert.equal(
+    reportExitCode({
+      summary: { pass: 66, fail: 0, blocked: 1 },
+      supplemental: { androidMultitouch: { status: "fail", exitCode: 1 } },
+    }),
+    1,
+  );
+  assert.equal(
+    reportExitCode({
+      summary: { pass: 67, fail: 0, blocked: 0 },
+      supplemental: {
+        androidMultitouch: { status: "fail", exitCode: 1 },
+        expiredExclusions: [{ id: "old", status: "blocked", expires: "2026-01-01" }],
+      },
+    }),
+    1,
+  );
 });
 
 test("provenance fails closed on unrecognised fields and unsorted environment keys", () => {
