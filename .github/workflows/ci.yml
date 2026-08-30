@@ -130,6 +130,17 @@ jobs:
   test-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Two bugs wore the same symptom here, and separating them took fixing the first.
+      # `reloads: 0` used to come with `entities: 0, physics: 0` — the game had been thrown back to
+      # its main menu, which 16c92a11 fixed. On this runner the same counter now reads 0 while the
+      # game is untouched and still playing: `entities: 3, sceneObjects: 38, physics: 4`. Nothing
+      # was reloaded because nothing was delivered — the edit lands and the watcher never sees it,
+      # which is inotify not surviving the container. Locally, with the scene bug fixed, the same
+      # edit does hot-update. chokidar polls when told to; slower and reliable is the right trade
+      # for a file watcher on CI, and it is scoped to this job so no local dev server polls.
+      CHOKIDAR_USEPOLLING: "1"
+      CHOKIDAR_INTERVAL: "200"
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
