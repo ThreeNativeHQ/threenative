@@ -94,17 +94,18 @@ jobs:
             cmake --build build/tn-linux --target "$target" --parallel "$(nproc)" || \
               echo "target $target is not buildable in build/tn-linux"
           done
-      # timestamp-query is a cross-engine contract and the JS engine is a build-time choice, so
-      # QuickJS needs its own configured build directory. Without it that test fails closed on CI
-      # naming build/tn-linux-quickjs, exactly as it did before this step existed.
-      - name: Build the QuickJS engine variant the cross-engine contract needs
+      # timestamp-query and rg11b10-renderable are cross-engine contracts and the JS engine is
+      # a build-time choice, so QuickJS needs its own configured build directory. Without it
+      # those tests fail closed on CI naming build/tn-linux-quickjs, exactly as happened to
+      # timestamp-query before this step existed.
+      - name: Build the QuickJS engine variant the cross-engine contracts need
         working-directory: packages/runtime-native
         run: |
           set -euo pipefail
           node scripts/download-deps.mjs --only quickjs
           cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF
           cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
-            --parallel "$(nproc)"
+            --target threenative-rg11b10-renderable-test --parallel "$(nproc)"
       - run: pnpm test
 
   test-browser:

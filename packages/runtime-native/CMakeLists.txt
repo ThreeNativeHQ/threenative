@@ -1994,6 +1994,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         target_link_libraries(threenative-wgpu-null-handle-test PRIVATE wgpu::wgpu)
     endif()
 
+    # rg11b10ufloat-renderable: the feature behind three's SSGI target format. The oracle
+    # is raw Dawn called directly — wgpuAdapterHasFeature on an instance this test owns —
+    # which is what makes a bindings refusal a red rather than an unexecuted skip.
+    add_executable(threenative-rg11b10-renderable-test EXCLUDE_FROM_ALL
+        tests/rg11b10_renderable_test.cpp)
+    target_link_libraries(threenative-rg11b10-renderable-test PRIVATE mystral-runtime)
+    if(TARGET dawn::webgpu)
+        target_link_libraries(threenative-rg11b10-renderable-test PRIVATE dawn::webgpu)
+    elseif(TARGET wgpu::wgpu)
+        target_link_libraries(threenative-rg11b10-renderable-test PRIVATE wgpu::wgpu)
+    endif()
+
     add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
         tests/lifecycle_policy_test.cpp)
     target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
@@ -2047,6 +2059,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tn_register_blocked_test(threenative-video-recorder-state-test "TN_ENABLE_VIDEO=OFF")
     endif()
     tn_register_contract_test(threenative-webgpu-bindings-reentrancy-test)
+    tn_register_contract_test(threenative-rg11b10-renderable-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
     tn_mark_sanitizer_contract_test(threenative-bindings-creation-test)
     tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)

@@ -897,6 +897,14 @@ static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
     // resolveQuerySet. Answered from the real adapter and device below, so an adapter without it
     // still reports false — the feature is advertised because it works, not because it is named.
     if (featureName == "timestamp-query") return WGPUFeatureName_TimestampQuery;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    // The feature behind three's SSGI target format (RGBFormat + UnsignedInt101111Type maps to
+    // an rg11b10ufloat render target). Without the name mapped here, adapter.features.has() and
+    // device.features.has() both answered false regardless of what the hardware supported, and
+    // a game enabling GI on native died in a device loss instead of degrading. Dawn-only: the
+    // wgpu-native C header has not been verified to carry this enum member.
+    if (featureName == "rg11b10ufloat-renderable") return WGPUFeatureName_RG11B10UfloatRenderable;
+#endif
     return static_cast<WGPUFeatureName>(0);
 }
 

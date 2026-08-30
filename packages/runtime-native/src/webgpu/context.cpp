@@ -441,7 +441,7 @@ bool Context::initializeHeadless() {
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesDawn[6];
+    WGPUFeatureName requiredFeaturesDawn[8];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -464,12 +464,25 @@ bool Context::initializeHeadless() {
     std::cout << "[WebGPU] adapter feature probe timestamp-query: "
               << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
     if (hasTimestampQuery_ && featureCount < 5) requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
+    // `rg11b10ufloat-renderable`, when the adapter advertises it. Three's SSGI builds its GI
+    // target as an rg11b10ufloat texture with RENDER_ATTACHMENT usage and no fallback, so a
+    // device without this feature cannot run that stage at all — Dawn rejects the render pass
+    // and the device is lost. Requested as an ordinary optional feature for the same reason as
+    // timestamp-query: on a desktop Vulkan adapter it is effectively always there, and where it
+    // truly is not, the honest answer still reaches three.js through device.features.
+    const bool hasRG11B10UFloatRenderable =
+        wgpuAdapterHasFeature(adapter_, WGPUFeatureName_RG11B10UfloatRenderable) != 0;
+    std::cout << "[WebGPU] adapter feature probe rg11b10ufloat-renderable: "
+              << (hasRG11B10UFloatRenderable ? "yes" : "no") << std::endl;
+    if (hasRG11B10UFloatRenderable && featureCount < 7) {
+        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_RG11B10UfloatRenderable;
+    }
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
     // `core-features-and-limits` is the single feature three.js reads to decide whether it is
     // talking to a WebGPU *compatibility* device. Absent, it sets `renderer._samples = 0` — MSAA
     // off outright — and switches the depth-texture, MRT-blending and shader texture paths.
     // Dawn reports only features that were *requested*, so asking the adapter is not enough.
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
+    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
     }
 #endif
