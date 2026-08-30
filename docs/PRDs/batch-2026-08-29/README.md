@@ -1,19 +1,47 @@
 # Batch — what stands between this repository and a public release, 2026-08-29
 
-**Status:** PARTIAL — filed 2026-08-29, measured at `8491c5d5`. **Lane A is done** (`73e158c8`,
-recorded in
-[prd-229-phase5-crash-policy-conversion-2026-08-29](../../verification/prd-229-phase5-crash-policy-conversion-2026-08-29.md)).
-Lanes B through G are planned and unexecuted. Every number below was measured on a clean `main`
-(`git status` empty, `.claude/worktrees/` empty, so no sibling lane owned these reds).
+**Status:** PARTIAL — filed 2026-08-29, measured at `8491c5d5`. **Lanes A, B and G are done**
+and archived: A in `73e158c8`
+([record](../../verification/prd-229-phase5-crash-policy-conversion-2026-08-29.md)), B and G in
+`273672e1` ([PRD-261](../done/PRD-261-the-release-instruments-report-again.md),
+[PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md)). The bar now
+reads **1 unmeasured, 2 failed** — A1 and A5 — where it read 3 unmeasured and 2 failed when this
+batch was filed. **Lanes C through F remain, and every one of them is an owner action**: C and D
+cannot start until 157 commits are pushed and CI goes green on the remote, E needs the phone, and F
+needs a person who is not us. Every number in the sections below was measured when this batch was
+filed, on a clean `main` (`git status` empty, `.claude/worktrees/` empty, so no sibling lane owned
+these reds); the *Where the instruments stand now* section carries the current readings.
 
-**The batch's whole shape: we cannot publish, and we cannot currently prove we could.** Four of the
-seven alpha-bar rows are not green, the test suite is red on `main`, CI is red on `main`, and the
-one instrument that answers "what next" throws. This batch contains only work that moves a row on
-`pnpm alpha:bar` or unblocks something that does. Nothing else was admitted, however tempting.
+**The batch's whole shape: we cannot publish, and we cannot currently prove we could.** Three of the
+seven alpha-bar rows are still not green, and CI is red on a remote `main` that is 157 commits
+behind. This batch contains only work that moves a row on `pnpm alpha:bar` or unblocks something
+that does. Nothing else was admitted, however tempting.
 
-## What is actually true today
+## Where the instruments stand now
 
-Five commands, run today, in the order a release would run them.
+Lanes A, B and G repaired the three instruments this batch is graded by, so the batch can now read
+its own state. Run on `main` at `07dfaf63`:
+
+| Command | Result | What it says |
+| --- | --- | --- |
+| `pnpm round:next` | **exit 0** | `close round 12` — computed from a genuine round ledger |
+| `pnpm alpha:bar` | **exit 2** | A2/A3/A4/A7 pass, **A1 and A5 fail**, A6 unmeasured. "1 of 7 rows unmeasured, 2 failed. Not alpha." |
+| `threenative doctor --text` | **exit 1** in `sandbox/last-harvest` | groups Craft/Test/Ship and names the `runtime-native-v0.3.0` `prebuilt-lock.json` 404 — the thing Lane C exists to fix |
+
+The three rows still short of green are exactly the three owner actions: **A1** needs the publish
+chain (Lanes C and D, gated on the push), **A5** needs the phone (Lane E), **A6** needs a stranger
+(Lane F).
+
+**One suite red stands between this tree and a release, and it is not on the bar.** `pnpm test` is
+2584/2585 on `07dfaf63`; `packages/playtest/__tests__/generated-shooter-input.spec.ts` fails on
+`TN_CAPTURE_BLANK` (bright-pixel ratio `0.04470`, floor `0.05`) with `signal.aim-engaged`,
+`signal.aim-released` and the two `aimedShots`/`aiming` resource assertions red. It reproduces
+isolated and with all of this batch's changes stashed, so it is a standing capture-lane red on
+`main` rather than a lane's damage. It is named here because Lane D publishes off this tree.
+
+## What was true when this batch was filed
+
+Five commands, run at filing time, in the order a release would run them.
 
 | Command | Result | The finding |
 | --- | --- | --- |
@@ -103,12 +131,12 @@ Only rows that move the bar. Each names the command that decides it.
 | Lane | PRD | Moves | Device | Gate that decides it |
 | --- | --- | --- | --- | --- |
 | A | ~~[PRD-229](../refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5, files 1–2~~ **DONE `73e158c8`** | nothing on the bar; unblocked every other lane | none | `pnpm lint` exit 0; `package-test` 89/89; `unit` 2550/2552, the two remainders being timeouts that pass alone |
-| B | [PRD-261](./PRD-261-the-release-instruments-report-again.md) | **A3**, **A7**, and `round:next` | none | `pnpm round:next` exit 0; `pnpm alpha:bar` shows A3 and A7 measured |
+| B | ~~[PRD-261](../done/PRD-261-the-release-instruments-report-again.md)~~ **DONE `273672e1`** | **A3** pass, **A7** pass, and `round:next` | none | `pnpm round:next` exit 0; `pnpm alpha:bar` A3/A7 pass, A1 and A5 the only reds |
 | C | [PRD-262](./PRD-262-the-runtime-native-prebuilt-release-exists.md) | unblocks A1 | none (CI runners) | `curl -sI .../runtime-native-v0.3.0/prebuilt-lock.json` → 200 |
 | D | [PRD-263](./PRD-263-version-0-3-0-is-installable-by-a-stranger.md) | **A1**, re-proves **A2** | none | `pnpm publish:check` exit 0, then `pnpm release --yes` |
 | E | [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md) | **A5** | Pixel 8 / emulator | `pnpm parity:ledger` exit 0 on a ledger dated today |
 | F | [PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) | **A6** | none | an `alpha-bar` block for A6, sourced from a session |
-| G | [PRD-264](./PRD-264-doctor-answers-all-three-questions-a-game-author-has.md) | no row — the diagnostic a stranger runs | none | `threenative doctor` fails on an unresolvable `threenative-engine-mcp` |
+| G | ~~[PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md)~~ **DONE `273672e1`** | no row — the diagnostic a stranger runs | none | `threenative doctor` fails naming `threenative-engine-mcp` when the server cannot resolve |
 
 Lane F is an owner action, not an agent lane — it needs a person who is not us, and it cannot start
 before D publishes something for them to install. It is listed so the bar's last row has a name

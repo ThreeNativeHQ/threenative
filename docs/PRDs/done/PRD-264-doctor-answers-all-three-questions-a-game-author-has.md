@@ -4,10 +4,13 @@ prd_contract: v1
 
 # PRD-264 — doctor answers all three questions a game author has
 
-**Status:** PROPOSED — filed 2026-08-29. Depends on Lane A (a green tree). Independent of the
-publish chain; it can run in parallel with [PRD-262](./PRD-262-the-runtime-native-prebuilt-release-exists.md).
+**Status:** DONE — filed 2026-08-29, landed in `273672e1`, re-verified on `main` at `07dfaf63`.
+Evidence in [doctor-2026-08-29](../../verification/doctor-2026-08-29.md);
+`packages/create-threenative/__tests__/doctor.spec.ts` is 42/42 green, and a live probe against a
+project whose `threenative-engine` server cannot resolve fails naming `threenative-engine-mcp`.
+Was independent of the publish chain.
 
-Seventh lane of [the release batch](./README.md). Moves no alpha-bar row, and is in the batch anyway:
+Seventh lane of [the release batch](../batch-2026-08-29/README.md). Moves no alpha-bar row, and is in the batch anyway:
 `threenative doctor` is the only diagnostic a user with just the library installed can run, and it
 currently under-reports two of the three things they are trying to do.
 
@@ -116,11 +119,11 @@ project, or run a build.
 **Files:** `packages/create-threenative/src/doctor.ts` (EDIT),
 `packages/create-threenative/__tests__/doctor.spec.ts` (EDIT), the record.
 
-- [ ] For each of the three servers in `.mcp.json`, resolve the package the way `launch.mjs` does —
+- [x] For each of the three servers in `.mcp.json`, resolve the package the way `launch.mjs` does —
       walk `node_modules` upward from the project — and report per server, not once for the file.
-- [ ] A server whose package is not installed is **not** a pass. Report it as reachable-by-npx only,
+- [x] A server whose package is not installed is **not** a pass. Report it as reachable-by-npx only,
       and name the package and version so the reader can check the registry themselves.
-- [ ] Report a malformed or hand-edited `.mcp.json` distinctly from a missing one.
+- [x] Report a malformed or hand-edited `.mcp.json` distinctly from a missing one.
 
 | Test file | Test name | Assertion | Negative control |
 |---|---|---|---|
@@ -133,8 +136,8 @@ project, or run a build.
 
 **Files:** `src/doctor.ts` (EDIT), `__tests__/doctor.spec.ts` (EDIT), the record.
 
-- [ ] Check the two download directories `ensure-mcp` configures exist or can be created.
-- [ ] Check the project's compiled-asset settings against the targets it declares, and warn with the
+- [x] Check the two download directories `ensure-mcp` configures exist or can be created.
+- [x] Check the project's compiled-asset settings against the targets it declares, and warn with the
       **same error name the build would emit** (`TN_NATIVE_KTX2_UNSUPPORTED`,
       `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`) so the two diagnostics are searchable as one thing.
 
@@ -146,11 +149,11 @@ the check warns, and the build refuses with the matching name. Paste both.
 **Files:** `src/doctor.ts` (EDIT), possibly `packages/playtest/src/runner/doctor.ts` (EDIT to expose
 a text mode already present), `__tests__/doctor.spec.ts` (EDIT), the record.
 
-- [ ] Detect the installed `threenative-playtest` bin. **No runtime dependency on
+- [x] Detect the installed `threenative-playtest` bin. **No runtime dependency on
       `@threenative/playtest` is added** — assert that in a spec over `package.json`.
-- [ ] When it is present, run its doctor and fold the result in under a `playtest` heading. When it
+- [x] When it is present, run its doctor and fold the result in under a `playtest` heading. When it
       is absent, say so and name the install command.
-- [ ] Keep the scenario-existence check as one line inside the folded result, not as the whole answer.
+- [x] Keep the scenario-existence check as one line inside the folded result, not as the whole answer.
 
 | Test file | Test name | Assertion | Negative control |
 |---|---|---|---|
@@ -164,8 +167,8 @@ missing. Paste it.
 
 **Files:** `src/doctor.ts` (EDIT), `__tests__/doctor.spec.ts` (EDIT), the record.
 
-- [ ] Resolve the JDK and Android SDK the Android build would use and report the versions found.
-- [ ] Warn, with the supported range, when the JDK is one Gradle will reject. **The message names the
+- [x] Resolve the JDK and Android SDK the Android build would use and report the versions found.
+- [x] Warn, with the supported range, when the JDK is one Gradle will reject. **The message names the
       version found and the range required** — the failure this replaces is a bare version string.
 
 **Revert check:** point `JAVA_HOME` at an unsupported JDK → the android target warns instead of
@@ -173,12 +176,12 @@ passing. Paste the warn and the build error it predicts.
 
 ## Acceptance criteria
 
-- [ ] Running `threenative doctor` in a project whose `threenative-engine-mcp` cannot resolve
+- [x] Running `threenative doctor` in a project whose `threenative-engine-mcp` cannot resolve
       **fails or warns naming that package**. This is the acceptance criterion the whole PRD exists
       for; it is checkable today, because the package is E404 right now.
-- [ ] Every check answers one of *craft*, *test*, *ship*, and the report groups them so a reader can
+- [x] Every check answers one of *craft*, *test*, *ship*, and the report groups them so a reader can
       see which of the three is unhealthy without reading twelve lines.
-- [ ] No check installs anything, writes to the project, or runs a build.
-- [ ] `create-threenative` gains no runtime dependency on `@threenative/playtest`, asserted by a spec.
-- [ ] Every phase pastes its red and its green in the same commit.
-- [ ] Re-run in `sandbox/last-harvest` and paste the before/after report side by side.
+- [x] No check installs anything, writes to the project, or runs a build.
+- [x] `create-threenative` gains no runtime dependency on `@threenative/playtest`, asserted by a spec.
+- [x] Every phase pastes its red and its green in the same commit.
+- [x] Re-run in `sandbox/last-harvest` and paste the before/after report side by side.

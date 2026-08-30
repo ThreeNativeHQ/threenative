@@ -4,11 +4,18 @@ prd_contract: v1
 
 # PRD-261 — the release instruments report again
 
-**Status:** PROPOSED — filed 2026-08-29. Depends on Lane A
+**Status:** DONE — filed 2026-08-29, landed in `273672e1`, corrected and verified on `main` at
+`07dfaf63`. All three phases executed; evidence in
+[alpha-a3-2026-08-29](../../verification/alpha-a3-2026-08-29.md). `pnpm round:next` exits 0 and
+computes `close round 12`; `pnpm alpha:bar` reports A3 **pass** and A7 **pass** with A1 and A5 the
+only failing rows, and the generated table is byte-identical to the run. The lane's own A3 block
+had been filed `status: fail` for a run in which the property held, and from a worktree path that
+no longer exists; both controls were re-executed from the committed fixtures on `main` and the
+block now reads `pass` from a reproducible source. Depended on Lane A
 ([PRD-229](../refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5,
-files 1–2) only so that its own record can cite a green `pnpm test`.
+files 1–2) only so that its own record could cite a green `pnpm test`.
 
-Second lane of [the release batch](./README.md).
+Second lane of [the release batch](../batch-2026-08-29/README.md).
 
 **Goal: the three instruments that grade this release can each run and say what they found.**
 Two of the seven alpha-bar rows are unmeasured for want of a run nobody has done, and the command
@@ -99,8 +106,8 @@ Three independent repairs, one commit each, no shared surface between them.
 | `scripts/__tests__/round-ledger.spec.ts` | `should ignore a round-numbered file that is not a round ledger` | `latestRoundFile` returns round 12, not 196, from a fixture containing both | delete the guard → the spec reds naming `round-196-*` |
 | `scripts/__tests__/round-ledger.spec.ts` | `should name the file it rejected when no ledger parses` | the thrown message contains the path | restore the bare heading message → red |
 
-- [ ] Paste `pnpm round:next` red before the change and its computed next action after.
-- [ ] Decide and record whether `round-196-published-install.md` is renamed instead of guarded
+- [x] Paste `pnpm round:next` red before the change and its computed next action after.
+- [x] Decide and record whether `round-196-published-install.md` is renamed instead of guarded
       against; if it is renamed, the guard still lands, because the next such file will not be.
 
 **Revert check:** revert `round-ledger.ts` alone → both specs red, `pnpm round:next` exit 1 again.
@@ -109,10 +116,10 @@ Three independent repairs, one commit each, no shared surface between them.
 
 **Files:** `docs/PRDs/alpha-readiness/README.md` (NEW, generated), the record.
 
-- [ ] `pnpm alpha:bar --write`, commit the generated file **unedited**.
-- [ ] Confirm the table reports the batch's real state — A1 and A5 failing, A3/A6 unmeasured. A
+- [x] `pnpm alpha:bar --write`, commit the generated file **unedited**.
+- [x] Confirm the table reports the batch's real state — A1 and A5 failing, A3/A6 unmeasured. A
       generated table that reads green while the bar exits 2 is the failure this row exists to catch.
-- [ ] Hand-edit one cell, run `pnpm alpha:bar`, paste the A7 red, revert the edit.
+- [x] Hand-edit one cell, run `pnpm alpha:bar`, paste the A7 red, revert the edit.
 
 **Revert check:** delete the file again → A7 returns to unmeasured with the same message.
 
@@ -120,11 +127,11 @@ Three independent repairs, one commit each, no shared surface between them.
 
 **Files:** `docs/verification/alpha-a3-<date>.md` (NEW), a fixture scenario asserting nothing, the record.
 
-- [ ] Build the playtest package, then drive the shipped CLI against a scenario with an empty
+- [x] Build the playtest package, then drive the shipped CLI against a scenario with an empty
       assertion set. Record the **exit code and the failure text verbatim**.
-- [ ] Run the true-positive control in the same session: the same scenario with one real assertion
+- [x] Run the true-positive control in the same session: the same scenario with one real assertion
       passes. A negative control alone proves the runner is broken, not that it is honest.
-- [ ] Write the ` ```alpha-bar ` block with `row: A3`, a `status`, a `detail`, and a `source` naming
+- [x] Write the ` ```alpha-bar ` block with `row: A3`, a `status`, a `detail`, and a `source` naming
       the command line. **`status: fail` is a legitimate outcome and gets filed as readily as pass.**
 
 **Revert check:** point the block's `source` at this PRD → `pnpm alpha:bar` throws
@@ -132,9 +139,14 @@ Three independent repairs, one commit each, no shared surface between them.
 
 ## Acceptance criteria
 
-- [ ] `pnpm round:next` exits 0 and names a next action computed from the newest genuine round ledger.
-- [ ] `pnpm alpha:bar` reports **A3 measured** and **A7 pass**, with the two failing rows unchanged
+- [x] `pnpm round:next` exits 0 and names a next action computed from the newest genuine round ledger.
+- [x] `pnpm alpha:bar` reports **A3 measured** and **A7 pass**, with the two failing rows unchanged
       and still failing. This PRD moves no row it did not measure.
-- [ ] `docs/PRDs/alpha-readiness/README.md` is committed and byte-identical to `--write` output.
-- [ ] Every phase pastes its red and its green, both in the same commit.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green — which requires Lane A to have landed.
+- [x] `docs/PRDs/alpha-readiness/README.md` is committed and byte-identical to `--write` output.
+- [x] Every phase pastes its red and its green, both in the same commit.
+- [x] `pnpm typecheck` exit 0 and `pnpm lint` exit 0. **`pnpm test` is 2584/2585**: the one red is
+      `packages/playtest/__tests__/generated-shooter-input.spec.ts`, which fails identically at
+      `07dfaf63` with this PRD's changes stashed — `TN_CAPTURE_BLANK` at bright-pixel ratio
+      `0.04470` and the same four aim assertions — so it is a pre-existing capture-lane red on
+      `main`, not this lane's. This criterion is recorded as met for what this PRD touches and
+      **not** claimed as a green suite.

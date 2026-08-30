@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-263 — version 0.3.0 is installable by a stranger
 
 **Status:** PROPOSED — filed 2026-08-29. Depends on Lane A (a green tree),
-[PRD-261](./PRD-261-the-release-instruments-report-again.md) (so the result can be graded) and
+[PRD-261](../done/PRD-261-the-release-instruments-report-again.md) (so the result can be graded) and
 [PRD-262](./PRD-262-the-runtime-native-prebuilt-release-exists.md) (so `publish:check` can pass).
 
 Fourth lane of [the release batch](./README.md). Moves alpha-bar row **A1** and re-proves **A2**.
