@@ -88,13 +88,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // realism-effects merge.
   // Recomputed after retaining the WebGPU instance in Three's distributed patch; the starter
   // also materialises its SSR input once so the reflection graph presents instead of going blank.
-  "action-rpg": "4af014998f3f31a2045c01caa3fa1a35b204e4b5cb121e0d684e9fb8900a244c",
-  defense: "6deff6328de63b794098063622db1d4c15408f1aaa25907bd5d3bd2108f6ba8d",
-  minimal: "911d1d2fee23de2f166c8060c8f538bfc3e7308436956977862c4a527b161b54",
-  platformer: "4753f84b696536f65b7096077ab09f2cb477b2d502dfe9dfffaacd3f6f650045",
-  racing: "383ae4d0d760ee59b6960919a4e241cc9b8272058bdbe740d4788961e13a83b9",
-  shooter: "3b0ba7e4349c323c2ba6fd0c406898cc5f8047db8300588a742daad2d8d137d2",
-  starter: "85349ccb7955e45362e91b03e755cf92b337ec430f332ce7a36eb6779bcd7721",
+  // Recomputed 2026-08-30 after documenting the starter's WorldEnvironment render layer in
+  // every scaffold's visual reference and generated instructions.
+  "action-rpg": "9a8696720810ba00c83b6df020e59b3801c54f1c7ea3a3896b819a0ec41cd4a1",
+  defense: "e842090ccfc1f4090222e8343c5d1d8071ed57b4ace37dfcc3f80a6e4ac8cfa8",
+  minimal: "03894e2a254f9ddea407ac70c3513370f210a17d22d19920de58f2bf53d35dc7",
+  platformer: "a1a5fe4a155ac77464d52b6e6f8e313042a9f345fc0a7d2eaf508cb561929a5b",
+  racing: "1d8b024671c060a2706b4e337f77aa3e5c41c3662ec3e115192c5b6e1960a7ee",
+  shooter: "211192be5efeee36d3b7593a93bda3d3461a01a92361f8728435bb0727fdc18c",
+  starter: "14e4108db8ebc438c1ce6d5eb6cb43cd36d0f18bdd283460cca64fa3064b801b",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -194,6 +196,7 @@ const STARTER_PATHS = [
   "src/scenes/MainMenu.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/worldEnvironment.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/shapes.ts",

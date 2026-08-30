@@ -103,48 +103,50 @@ await startVisualScene(canvas, ${JSON.stringify(DIMENSIONS)}, "exposure-ab", ({ 
 async function main(): Promise<void> {
   const out = process.argv[2] ?? DEFAULT_OUT;
   const directory = await mkdtemp(path.join(REPO_ROOT, "artifacts/exposure-ab-"));
-  const entry = path.join(directory, "entry.js");
-  const bundle = path.join(directory, "bundle.js");
-  await writeFile(entry, entrySource(), "utf8");
-  await execFileAsync(
-    ESBUILD,
-    [
-      entry,
-      "--bundle",
-      "--format=esm",
-      "--platform=browser",
-      `--outfile=${bundle}`,
-      '--define:import.meta.env={"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}',
-    ],
-    { cwd: REPO_ROOT, maxBuffer: 32 * 1024 * 1024 },
-  );
-
-  const server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
-    if (request.url === "/bundle.js") {
-      response.writeHead(200, { "content-type": "text/javascript" });
-      response.end(await readFile(bundle));
-      return;
-    }
-    response.writeHead(200, { "content-type": "text/html" });
-    response.end(
-      `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;width:${DIMENSIONS.width}px;height:${DIMENSIONS.height}px;overflow:hidden}canvas{display:block}</style>` +
-        `<canvas id="c" width="${DIMENSIONS.width}" height="${DIMENSIONS.height}"></canvas><script type="module" src="/bundle.js"></script>`,
-    );
-  });
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("no address");
-  const url = `http://127.0.0.1:${address.port}/`;
-
-  const browser = await chromium.launch({
-    args: [...WEBGPU_BROWSER_ARGS],
-    headless: false,
-  });
   const captures: { exposure: number; image: Buffer; adapter: Record<string, string> }[] = [];
+  let server: ReturnType<typeof createServer> | undefined;
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
+    const entry = path.join(directory, "entry.js");
+    const bundle = path.join(directory, "bundle.js");
+    await writeFile(entry, entrySource(), "utf8");
+    await execFileAsync(
+      ESBUILD,
+      [
+        entry,
+        "--bundle",
+        "--format=esm",
+        "--platform=browser",
+        `--outfile=${bundle}`,
+        '--define:import.meta.env={"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}',
+      ],
+      { cwd: REPO_ROOT, maxBuffer: 32 * 1024 * 1024 },
+    );
+
+    server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+      if (request.url === "/bundle.js") {
+        response.writeHead(200, { "content-type": "text/javascript" });
+        response.end(await readFile(bundle));
+        return;
+      }
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end(
+        `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;width:${DIMENSIONS.width}px;height:${DIMENSIONS.height}px;overflow:hidden}canvas{display:block}</style>` +
+          `<canvas id="c" width="${DIMENSIONS.width}" height="${DIMENSIONS.height}"></canvas><script type="module" src="/bundle.js"></script>`,
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      server?.once("error", reject);
+      server?.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("no address");
+    const url = `http://127.0.0.1:${address.port}/`;
+
+    browser = await chromium.launch({
+      args: [...WEBGPU_BROWSER_ARGS],
+      headless: false,
+    });
     for (const exposure of [...EXPOSURES, EXPOSURES[0]]) {
       const page = await browser.newPage({ viewport: DIMENSIONS });
       page.on("console", (message) =>
@@ -184,50 +186,67 @@ async function main(): Promise<void> {
         await page.close();
       }
     }
+
+    const low = captures[0];
+    const high = captures[1];
+    const control = captures[2];
+    if (low === undefined || high === undefined || control === undefined) {
+      throw new Error(`TN_EXPOSURE_AB_CAPTURES_MISSING: got ${String(captures.length)} of 3`);
+    }
+    if (process.env.EXPOSURE_AB_DEBUG !== undefined) {
+      await mkdir("/tmp/exposure-ab", { recursive: true });
+      await writeFile("/tmp/exposure-ab/low.png", low.image);
+      await writeFile("/tmp/exposure-ab/high.png", high.image);
+      console.log("debug captures written to /tmp/exposure-ab");
+    }
+
+    // A perceptual delta-E above the floor or a changed-pixel ratio above its floor means
+    // the frames differ; the control pair must sit at zero or the lane judges nothing.
+    const verdicts = {
+      lowToHigh: compareCaptures(low.image, high.image),
+      control: compareCaptures(low.image, control.image),
+    };
+    const classification = classifyExposureAb(verdicts.lowToHigh, verdicts.control);
+    const report = {
+      adapter: low.adapter,
+      exposures: [...EXPOSURES, EXPOSURES[0]],
+      lowToHigh: verdicts.lowToHigh,
+      control: verdicts.control,
+      verdict:
+        classification === "inconclusive"
+          ? "inconclusive:control-differed"
+          : classification === "changed"
+            ? "toneMappingExposure reaches the frame"
+            : "toneMappingExposure does not reach the frame",
+    };
+    await mkdir(out, { recursive: true });
+    await writeFile(path.join(out, "low.png"), low.image);
+    await writeFile(path.join(out, "high.png"), high.image);
+    await writeFile(path.join(out, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+    console.log(JSON.stringify(report, null, 2));
+    if (classification === "inconclusive") process.exitCode = 3;
   } finally {
-    await browser.close();
-    server.close();
-    await rm(directory, { recursive: true, force: true });
+    try {
+      if (browser !== undefined) await browser.close();
+    } finally {
+      try {
+        await closeServer(server);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    }
   }
-
-  const low = captures[0];
-  const high = captures[1];
-  const control = captures[2];
-  if (low === undefined || high === undefined || control === undefined) {
-    throw new Error(`TN_EXPOSURE_AB_CAPTURES_MISSING: got ${String(captures.length)} of 3`);
-  }
-  if (process.env.EXPOSURE_AB_DEBUG !== undefined) {
-    await mkdir("/tmp/exposure-ab", { recursive: true });
-    await writeFile("/tmp/exposure-ab/low.png", low.image);
-    await writeFile("/tmp/exposure-ab/high.png", high.image);
-    console.log("debug captures written to /tmp/exposure-ab");
-  }
-
-  // A perceptual delta-E above the floor or a changed-pixel ratio above its floor means
-  // the frames differ; the control pair must sit at zero or the lane judges nothing.
-  const verdicts = {
-    lowToHigh: compareCaptures(low.image, high.image),
-    control: compareCaptures(low.image, control.image),
-  };
-  const classification = classifyExposureAb(verdicts.lowToHigh, verdicts.control);
-  const report = {
-    adapter: low.adapter,
-    exposures: [...EXPOSURES, EXPOSURES[0]],
-    lowToHigh: verdicts.lowToHigh,
-    control: verdicts.control,
-    verdict:
-      classification === "inconclusive"
-        ? "inconclusive:control-differed"
-        : classification === "changed"
-          ? "toneMappingExposure reaches the frame"
-          : "toneMappingExposure does not reach the frame",
-  };
-  await mkdir(out, { recursive: true });
-  await writeFile(path.join(out, "low.png"), low.image);
-  await writeFile(path.join(out, "high.png"), high.image);
-  await writeFile(path.join(out, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify(report, null, 2));
-  if (classification === "inconclusive") process.exitCode = 3;
 }
 
-void main();
+async function closeServer(server: ReturnType<typeof createServer> | undefined): Promise<void> {
+  if (server === undefined) return;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined || (error as NodeJS.ErrnoException).code === "ERR_SERVER_NOT_RUNNING")
+        resolve();
+      else reject(error);
+    });
+  });
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) void main();

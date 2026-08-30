@@ -199,6 +199,8 @@ export function inspectTemplate(
   const sky = readRender("sky.ts");
   const lighting = readRender("lighting.ts");
   const post = readRender("postprocessing.ts");
+  const worldEnvironment = readRender("worldEnvironment.ts");
+  const postPipeline = `${post}\n${worldEnvironment}`;
   if (!/from ["']\.\/palette\.js["']/u.test(materials))
     errors.push(`${template}: materials.ts must import palette.ts`);
   if (!/from ["']\.\/palette\.js["']/u.test(sky))
@@ -211,7 +213,8 @@ export function inspectTemplate(
     if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
   }
   for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("]) {
-    if (!post.includes(marker)) errors.push(`${template}: postprocessing.ts is missing ${marker}`);
+    if (!postPipeline.includes(marker))
+      errors.push(`${template}: render pipeline is missing ${marker}`);
   }
 
   return { errors, files, template };

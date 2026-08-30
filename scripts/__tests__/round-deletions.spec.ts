@@ -376,6 +376,23 @@ describe("round:deletions", () => {
     );
   });
 
+  it("ignores round-numbered verification reports that are not ledgers", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    const current = await archive(root, "current", "framework", "exploration");
+    await ledger(root, 1, previous);
+    await ledger(root, 2, current);
+    await writeFile(
+      path.join(root, "docs/verification/round-196-published-install.md"),
+      "# PRD-196 published-install verification\n\nStatus: PARTIAL\n",
+    );
+
+    const report = findPersistentUnusedExports(root);
+
+    expect(report.currentRound).toBe(2);
+    expect(report.previousRound).toBe(1);
+  });
+
   it("fails closed when a round still names a placeholder archive", async () => {
     const root = await fixtureRoot();
     const current = await archive(root, "current", "framework", "exploration");

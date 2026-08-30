@@ -9,7 +9,7 @@ const platformer = path.resolve("packages/create-threenative/templates/platforme
 describe("starter visual floor", () => {
   it("should provide readable dynamic-range defaults without framework imports", async () => {
     const files = await Promise.all(
-      ["lighting.ts", "postprocessing.ts", "materials.ts"].map((file) =>
+      ["lighting.ts", "postprocessing.ts", "worldEnvironment.ts", "materials.ts"].map((file) =>
         readFile(path.join(starter, "src/render", file), "utf8"),
       ),
     );
@@ -20,10 +20,13 @@ describe("starter visual floor", () => {
   });
 
   it("should route setupPost through the framework output node", async () => {
-    const post = await readFile(path.join(starter, "src/render/postprocessing.ts"), "utf8");
+    const [post, environment] = await Promise.all([
+      readFile(path.join(starter, "src/render/postprocessing.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+    ]);
     const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
-    expect(post).toContain("createRenderChain");
-    expect(post).toContain("bloom");
+    expect(`${post}\n${environment}`).toContain("createRenderChain");
+    expect(`${post}\n${environment}`).toContain("bloom");
     expect(play).toContain("setupPost");
   });
 
@@ -71,7 +74,10 @@ describe("starter visual floor", () => {
         // Loading is the one generated surface that carries real startup behavior: safe-area
         // layout, texture crops, truthful progress and disposal. Its source stays game-owned; the
         // old 200-line smell cap must not reject that behavior.
-        if (!name.endsWith("loading.ts"))
+        // WorldEnvironment is the starter's complete, Godot-named visual recipe. It intentionally
+        // carries the stage contracts and their reasons in one editable file; the ownership check
+        // above still prevents it from becoming a hidden framework import.
+        if (!name.endsWith("loading.ts") && !name.endsWith("worldEnvironment.ts"))
           expect(source.trimEnd().split("\n").length, name).toBeLessThan(200);
       }
     }

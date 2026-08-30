@@ -17,7 +17,9 @@ Three.js source in this project, yours to rewrite or delete.
 - `camera.ts` — `createSpringArm`, a frame-rate-independent follow camera. Its offset and its
   **lead** are the framing: the default aims ahead of the character rather than centring it,
   because a level that runs one way puts half the picture behind the player otherwise.
-- `postprocessing.ts` — ACES tone mapping and the WebGPU render pipeline.
+- `postprocessing.ts` — the editable presets and `setupPost` delegation.
+- `worldEnvironment.ts` — the editable Godot-named render chain: tone mapping/exposure and
+  optional TSL stages, with `createRenderChain` reporting applied or refused stages.
 - `scenery.ts` — `createScenery`, the collider-free half of the world: columns under ledges,
   spires in the middle distance, an unlit ridge on the horizon. **Keep something in all three
   bands.** A lit floor alone in black reads as a test fixture no matter how good the floor

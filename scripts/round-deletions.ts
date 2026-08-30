@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { readManifest } from "./make-sandbox.js";
 import { measureSandbox } from "./measure-sandbox.js";
-import { type RoundArm, type RoundLedger, readRoundLedger } from "./round-ledger.js";
+import {
+  type RoundArm,
+  type RoundLedger,
+  readRoundLedger,
+  roundLedgerFiles,
+} from "./round-ledger.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const ARCHIVE_PLACEHOLDERS = new Set(["pending", "unmeasured", "None", "n/a"]);
@@ -30,11 +35,6 @@ export interface RoundDeletionReport {
   readonly visualOnlyRounds: readonly number[];
 }
 
-interface RoundFile {
-  readonly file: string;
-  readonly number: number;
-}
-
 function isDirectory(directory: string): boolean {
   return fs.existsSync(directory) && fs.statSync(directory).isDirectory();
 }
@@ -45,22 +45,8 @@ function archivePath(archive: string, repo: string): string {
   return path.isAbsolute(archive) ? archive : path.resolve(repo, archive);
 }
 
-function roundFiles(repo: string): RoundFile[] {
-  const directory = path.join(repo, "docs", "verification");
-  if (!isDirectory(directory)) throw new Error(`Missing round ledger directory: ${directory}`);
-  return fs
-    .readdirSync(directory)
-    .flatMap((name) => {
-      const match = /^round-(\d+)-.+\.md$/u.exec(name);
-      return match === null
-        ? []
-        : [{ file: path.join(directory, name), number: Number.parseInt(match[1] as string, 10) }];
-    })
-    .sort((left, right) => right.number - left.number || left.file.localeCompare(right.file));
-}
-
 function currentAndPreviousLedgers(repo: string): { current: RoundLedger; previous: RoundLedger } {
-  const files = roundFiles(repo);
+  const files = roundLedgerFiles(repo);
   const currentFile = files[0];
   if (currentFile === undefined)
     throw new Error(`No round ledger found in ${path.join(repo, "docs/verification")}.`);

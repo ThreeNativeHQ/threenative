@@ -47,6 +47,10 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/realism-effects-visual.ts",
     "The production realism-effects visual gate removes its bundle root in finally.",
   ],
+  [
+    "scripts/exposure-ab.ts",
+    "The production exposure A/B gate removes its bundle root in finally.",
+  ],
 ]);
 
 async function sourceFiles(directory: string): Promise<string[]> {

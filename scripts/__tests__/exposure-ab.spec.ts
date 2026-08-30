@@ -1,5 +1,10 @@
+import { execFile } from "node:child_process";
+import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { EXPOSURE_AB_THRESHOLDS, classifyExposureAb } from "../exposure-ab.js";
+
+const execFileAsync = promisify(execFile);
 
 // PRD-278 §5 / AC7. The mined WorldEnvironment claimed `toneMappingExposure` never reaches
 // the frame once an output node is installed; the measured settlement
@@ -63,5 +68,16 @@ describe("classifyExposureAb", () => {
       "unchanged",
     );
     expect(classifyExposureAb({ perceptualDeltaE: 9 }, {})).toBe("changed");
+  });
+
+  it("does not launch the capture workflow when imported for its classifier", async () => {
+    const modulePath = path.resolve("scripts/exposure-ab.ts");
+    const result = await execFileAsync(
+      path.resolve("node_modules/.bin/tsx"),
+      ["-e", `import(${JSON.stringify(modulePath)}).then(() => console.log("imported"))`],
+      { timeout: 5_000 },
+    );
+
+    expect(result.stdout).toContain("imported");
   });
 });

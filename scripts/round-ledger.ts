@@ -556,7 +556,20 @@ function looksLikeRoundLedger(markdown: string): boolean {
   return ROUND_LEDGER_MARKER.test(markdown);
 }
 
-export function latestRoundFile(repo: string): string {
+export interface RoundLedgerFile {
+  readonly file: string;
+  readonly number: number;
+}
+
+/**
+ * Lists parseable improvement ledgers, ignoring round-numbered verification reports.
+ *
+ * `docs/verification` also contains reports such as `round-196-published-install.md`. Their
+ * names carry a round number, but they are not improvement ledgers and cannot supply deletion
+ * evidence. A malformed file that looks like a ledger still fails closed so a damaged ledger is
+ * never silently omitted.
+ */
+export function roundLedgerFiles(repo: string): RoundLedgerFile[] {
   const directory = path.join(repo, "docs", "verification");
   const rejected: string[] = [];
   const malformed: string[] = [];
@@ -587,9 +600,14 @@ export function latestRoundFile(repo: string): string {
       );
     throw new Error(`No round ledger found in ${directory}.`);
   }
-  const latest = files.sort(
+  return files.sort(
     (left, right) => right.number - left.number || left.file.localeCompare(right.file),
-  )[0];
-  if (latest === undefined) throw new Error(`No round ledger found in ${directory}.`);
+  );
+}
+
+export function latestRoundFile(repo: string): string {
+  const latest = roundLedgerFiles(repo)[0];
+  if (latest === undefined)
+    throw new Error(`No round ledger found in ${path.join(repo, "docs", "verification")}.`);
   return latest.file;
 }
