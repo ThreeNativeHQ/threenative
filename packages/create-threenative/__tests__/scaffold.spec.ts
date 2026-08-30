@@ -57,13 +57,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-29 for PRD-246: `GPUReadback` and `SpectralOcean` entered the public
   // surface, so the capability manifest and the capability reference generated from it both grew,
   // and those bytes are copied into every scaffold.
-  "action-rpg": "05887c80c23eb5018032f7f9aac82a7cd254e76fff1345b582a873ada765d93d",
-  defense: "167d0908304a26b58fb59eaabd9459ab32ab76b0950bd844475a7957060b449f",
-  minimal: "15514ca978ce2365484b3c24670a27f207751ecdd440cbf315d3b9741d759cfc",
-  platformer: "245599f2a4afa632e3c86513a990e749ce1ed469eb230b8a67ded0613cc52edc",
-  racing: "ab63de25beea5fcfda73f34bb601629fb859f0e65d448d3b2945874cd1e49680",
-  shooter: "239699b37fe9cedb2cae8b64e874d185706aa52fe8252d99ede79dfacce97677",
-  starter: "215ffe6dc1f74390edac810d143210cac6712b9a190ee602c885b126c6959346",
+  "action-rpg": "d4fed9959d55f304978fcb12d5c5be19f625f86f0d9cb030e09c1d21c3d626cb",
+  defense: "e66e1dfa999eaacc43caf04eeb307d6a677390f2f3d22ac34fa510393595b41f",
+  minimal: "ae67d3ae9cadc392eaeb5d2e1b3b3105c864cbf0fe60c95a343e061f1d68d59f",
+  platformer: "cb7b4bd944d7ae1321ab04b1849830c1a7875fa174385538f4f7c66a4db7450a",
+  racing: "e5dedeac3100524dc328cead022cdc2ae1b47c4c93c18f0dcca09b654f786854",
+  shooter: "962fbc4be5cdc988c524b4ff3462de84a469dcaea19d955f28a8e0292773c2ba",
+  starter: "323176705902d2635b8e6779a9790be3f18d7db78fd51b8d6ea97eeb7d0d91e4",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -76,6 +76,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // capability manifest, which gained the atmosphere entries; `minimal` moved twice over, for its
   // atmosphere-driven `src/render/` files, its new `playtests/atmosphere.playtest.json`, and the
   // AGENTS.md paragraph that states the convention.
+  // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
+  // new FluidField2D capability manifest and generated capability-reference entry.
 };
 
 const GENERATED_SCAFFOLD_METADATA =

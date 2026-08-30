@@ -1,0 +1,41 @@
+{
+  "name": "prd249-fluid-field-native-input",
+  "schemaVersion": 1,
+  "subject": "two game-owned looks over one GPU fluid field",
+  "target": "desktop",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": true, "console": true },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "unsplatted",
+      "waitTicks": 12,
+      "release": true,
+      "screenshot": "unsplatted"
+    },
+    { "kind": "input", "label": "native-splat", "press": "Space", "holdTicks": 2, "release": true },
+    {
+      "kind": "wait",
+      "label": "settled-native-splat",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "settled-native-splat"
+    }
+  ],
+  "assert": {
+    "resources": [
+      { "id": "GameState", "path": "steps", "changed": true },
+      {
+        "id": "GameState",
+        "path": "splats",
+        "equals": 1,
+        "changed": true,
+        "atSteps": [
+          { "label": "unsplatted", "equals": 0 },
+          { "label": "settled-native-splat", "equals": 1 }
+        ]
+      }
+    ]
+  }
+}

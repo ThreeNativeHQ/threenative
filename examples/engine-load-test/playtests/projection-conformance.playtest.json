@@ -22,6 +22,12 @@
         "path": "projectedRaycastHit"
       },
       {
+        "component": "ProjectionConformance",
+        "entity": "projection.proof",
+        "equals": true,
+        "path": "renderSucceeded"
+      },
+      {
         "changed": true,
         "component": "ProjectionConformance",
         "entity": "projection.proof",

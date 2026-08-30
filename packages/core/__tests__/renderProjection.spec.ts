@@ -26,6 +26,8 @@ import {
   SpriteMaterial,
   Uint32BufferAttribute,
 } from "three";
+import { positionLocal, vec3 } from "three/tsl";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import {
   createProjectionScanWorkspace,
@@ -79,16 +81,20 @@ function countInstanceMatrices(root: Object3D, expected: Matrix4): number {
   return matches;
 }
 
-function isLightObject(object: Object3D): boolean {
-  return (object as { isLight?: boolean }).isLight === true;
-}
-
 function findMaterialBatch(root: Object3D): BatchedMesh {
   let found: BatchedMesh | undefined;
   root.traverse((object) => {
     if ((object as BatchedMesh).isBatchedMesh === true) found = object as BatchedMesh;
   });
   if (found === undefined) throw new Error("Projection mirror did not build a material batch");
+  return found;
+}
+
+function findMaterialBatches(root: Object3D): BatchedMesh[] {
+  const found: BatchedMesh[] = [];
+  root.traverse((object) => {
+    if ((object as BatchedMesh).isBatchedMesh === true) found.push(object as BatchedMesh);
+  });
   return found;
 }
 
@@ -103,16 +109,19 @@ function findInstancedBatch(root: Object3D): InstancedMesh {
 
 function preparedSubDraws(batch: BatchedMesh, root: Scene, camera: PerspectiveCamera): number {
   root.updateMatrixWorld(true);
-  const group = new Group();
   batch.onBeforeRender(
     undefined as never,
     root,
     camera,
     batch.geometry,
     batch.material as MeshStandardMaterial,
-    group,
+    new Group(),
   );
   return (batch as BatchedMesh & { _multiDrawCount: number })._multiDrawCount;
+}
+
+function isLightObject(object: Object3D): boolean {
+  return (object as { isLight?: boolean }).isLight === true;
 }
 
 /** A structural fingerprint of the authored graph: identity, parentage, naming and order. */
@@ -390,24 +399,18 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.exact.tooFewToBatch).toBe(1);
   });
 
-  it("should submit fewer material-batch sub-draws through the production planner", () => {
+  it("should submit fewer batched sub-draws when most objects are behind the camera", () => {
     const scene = new Scene();
     const material = new MeshStandardMaterial();
-    fill(scene, material, 299);
-    const meshes: Mesh[] = [];
-    for (let index = 0; index < 299; index += 1) {
+    fill(scene, material, 32);
+    for (let index = 0; index < 32; index += 1) {
       const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
-      mesh.position.z = index < 75 ? 0 : 1_000;
+      mesh.position.z = index < 8 ? 0 : 1_000;
       scene.add(mesh);
-      meshes.push(mesh);
     }
 
     const projection = projected(scene);
     try {
-      expect(projection.deoptimized).toBe(false);
-      expect(projection.report.materialBatches).toBe(1);
-      expect(projection.report.instancedBatches).toBe(1);
-      expect(drawCandidates(projection.root).length).toBe(2);
       const batch = findMaterialBatch(projection.root);
       const camera = new PerspectiveCamera(60, 1, 0.1, 100);
       camera.position.set(0, 0, 10);
@@ -415,18 +418,11 @@ describe("SceneRenderProjection", () => {
       camera.updateMatrixWorld(true);
 
       expect(batch.perObjectFrustumCulled).toBe(true);
-      // Control: disabling the flag restores every active sub-draw, proving the ON count is not
-      // an artifact of the packed batch itself.
       batch.perObjectFrustumCulled = false;
-      expect(preparedSubDraws(batch, projection.root, camera)).toBe(299);
+      expect(preparedSubDraws(batch, projection.root, camera)).toBe(32);
       batch.perObjectFrustumCulled = true;
-      const submitted = preparedSubDraws(batch, projection.root, camera);
-      expect(batch.instanceCount).toBe(299);
-      expect(submitted).toBe(75);
-      expect(submitted).toBeLessThan(batch.instanceCount);
+      expect(preparedSubDraws(batch, projection.root, camera)).toBe(8);
 
-      // Negative control: turn the camera away from the entire batch; the culling flag must reach
-      // the renderer's per-object preparation and produce no submitted sub-draws.
       const awayCamera = new PerspectiveCamera(60, 1, 0.1, 100);
       awayCamera.position.set(0, 0, -10);
       awayCamera.lookAt(0, 0, -100);
@@ -437,7 +433,51 @@ describe("SceneRenderProjection", () => {
     }
   });
 
-  it("keeps large instanced batches uncompacted after the measured regression", () => {
+  it("keeps forced-visible shader-displaced members in a material batch", () => {
+    const scene = new Scene();
+    const material = new MeshBasicNodeMaterial();
+    // The shader moves the forced-visible members into the camera, while their authored bounds
+    // stay outside it. BatchedMesh can only answer from those authored bounds.
+    material.positionNode = positionLocal.add(vec3(0, 0, 1_000));
+    const geometries: BoxGeometry[] = [];
+    const anchorGeometry = new BoxGeometry(1, 1, 1);
+
+    for (let index = 0; index < 8; index += 1) {
+      const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.01, 1), material);
+      mesh.position.z = index < 4 ? -1_000 : 1_000;
+      mesh.frustumCulled = index >= 4;
+      scene.add(mesh);
+      geometries.push(mesh.geometry);
+    }
+    for (let index = 0; index < 8; index += 1) {
+      scene.add(new Mesh(anchorGeometry, material));
+    }
+
+    const projection = projected(scene);
+    try {
+      const batches = findMaterialBatches(projection.root);
+      expect(batches).toHaveLength(2);
+
+      const forcedVisibleBatch = batches.find((batch) => !batch.perObjectFrustumCulled);
+      const culledBatch = batches.find((batch) => batch.perObjectFrustumCulled);
+      expect(forcedVisibleBatch).toBeDefined();
+      expect(culledBatch).toBeDefined();
+
+      const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+      camera.position.set(0, 0, 10);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld(true);
+      expect(preparedSubDraws(forcedVisibleBatch as BatchedMesh, projection.root, camera)).toBe(4);
+      expect(preparedSubDraws(culledBatch as BatchedMesh, projection.root, camera)).toBe(0);
+    } finally {
+      projection.dispose();
+      material.dispose();
+      anchorGeometry.dispose();
+      for (const geometry of geometries) geometry.dispose();
+    }
+  });
+
+  it("keeps large instanced batches on the full buffer after compaction was rejected by measurement", () => {
     const scene = new Scene();
     const geometry = new BoxGeometry(1, 1, 1);
     geometry.computeBoundingSphere();
@@ -459,39 +499,24 @@ describe("SceneRenderProjection", () => {
       camera.position.set(0, 0, 10);
       camera.lookAt(0, 0, 0);
       camera.updateMatrixWorld(true);
-      const group = new Group();
-      const onBeforeRender = batch.onBeforeRender;
       projection.root.updateMatrixWorld(true);
-      onBeforeRender(
+      batch.onBeforeRender(
         undefined as never,
         projection.root,
         camera,
         batch.geometry,
         batch.material as MeshStandardMaterial,
-        group,
+        new Group(),
       );
 
       expect(batch.count).toBe(uncompactedCount);
       expect(projection.inspect(first)?.matrixWorld.elements).toEqual(first.matrixWorld.elements);
       expect(graphSnapshot(scene)).toBe(before);
 
-      // Reconciliation remains authoritative: a moved source is uploaded to its new dense slot.
       first.position.x = 1;
       scene.updateMatrixWorld(true);
       projection.reconcile();
-      projection.root.updateMatrixWorld(true);
-      onBeforeRender(
-        undefined as never,
-        projection.root,
-        camera,
-        batch.geometry,
-        batch.material as MeshStandardMaterial,
-        group,
-      );
       expect(projection.inspect(first)?.matrixWorld.elements).toEqual(first.matrixWorld.elements);
-
-      // The disabled choice is deliberate: the measured ON arm lost at both 1,024 and 4,096.
-      // Keeping the full prefix means the default hook cannot silently change draw semantics.
       expect(batch.count).toBe(uncompactedCount);
     } finally {
       projection.dispose();

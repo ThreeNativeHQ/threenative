@@ -1,6 +1,6 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Seven are archived in
+**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Nine are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -11,7 +11,10 @@ and reachable on the public surface, each archived Status naming the native or d
 still `UNVERIFIED` rather than implying it passed; and
 [241](../done/PRD-241-a-sequence-is-one-cancellable-object.md), which shipped in `affb48e8` with its
 boxes unaudited and was closed on 2026-08-29 after every negative control it names was executed
-(`docs/verification/prd-241-easing-closure-2026-08-29.md`).
+(`docs/verification/prd-241-easing-closure-2026-08-29.md`); [238](../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md)
+with WebGPU culling and consumer conformance, native unverified; and
+[249](../done/PRD-249-a-fluid-field-is-data-the-game-draws.md) with web and desktop-native field
+evidence, Pixel 8 unverified.
 
 250 closed Phase 1 only and 254 is PARTIAL, so both stay. Everything else here is unbuilt: **no
 grass, ocean, fluid, soft body, surfel GI, procedural terrain or portable text exists in any
@@ -59,7 +62,7 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | PRD | Outcome | Mined from | Complexity |
 | --- | --- | --- | --- |
 | [237](../done/PRD-237-objects-answer-their-own-pointer-events.md) **DONE (web)** | `ctx.pointer.on(door, "tapped", …)` — hover, press, tap, drag on any `Object3D`, from `InputMap` + `ScenePicker`, no DOM. The `defense` template's blind tap-to-place gets hover feedback. | [`three.ez`](https://github.com/agargaro/three.ez) `src/events/` (1 258 lines), MIT | 5 → MEDIUM |
-| [238](./MEDIUM/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | The render projection stops submitting instances the camera cannot see. Prices the existing "per-instance culling is O(n)" decision instead of assuming it. | [`instanced-mesh`](https://github.com/agargaro/instanced-mesh) `src/core/feature/FrustumCulling.ts:172-196`, MIT | 6 → MEDIUM |
+| [238](../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) **DONE (web; native unverified)** | The render projection stops submitting instances the camera cannot see. Prices the existing "per-instance culling is O(n)" decision instead of assuming it. | [`instanced-mesh`](https://github.com/agargaro/instanced-mesh) `src/core/feature/FrustumCulling.ts:172-196`, MIT | 6 → MEDIUM |
 | [239](../done/PRD-239-camera-intent-is-one-portable-gesture-stream.md) **DONE (web)** | The zoom axis that does not exist: `InputMap` has no wheel and the native host installs no `WheelEvent`. Orbit/dolly/pan intent, same on mouse, pinch and stick. | [`camera-controls`](https://github.com/yomotsu/camera-controls) gesture table `src/CameraControls.ts:314-342`, MIT | 5 → MEDIUM |
 | [240](./HIGH/PRD-240-text-is-not-uppercase-only.md) | Text beyond 5×7 uppercase ASCII, HUD and world, on every target — via an offline bake, because the upstream runtime shaper is WASM and iOS JSC has none. | [`glyph`](https://github.com/pmndrs/glyph) bake CLI + `src/shaper.ts:89-92`, MIT | 8 → HIGH |
 | [241](../done/PRD-241-a-sequence-is-one-cancellable-object.md) **DONE** | `ctx.tween` takes a curve from the game. Sequencing, cancellation and vector targets turned out to be solved already; the PRD records why. | [`three.ez`](https://github.com/agargaro/three.ez) `src/tweening/`, [`timeline`](https://github.com/pmndrs/timeline) — MIT | 3 → LOW |
@@ -70,7 +73,7 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [246](../done/PRD-246-two-oceans-two-contracts.md) **DONE, web only** | `SpectralOcean` beside PRD-236's `WaveField` — **both ship**, different names because different contracts: analytic height is exact and free, spectral height is an async throttled readback that is N frames stale. | [`poseidon`](https://github.com/owenyuwono/poseidon), [`SeedOcean`](https://github.com/reed-soul/SeedOcean) `src/core/buoyancy.js` — MIT | 7 → HIGH |
 | [247](../done/PRD-247-drei-vanilla-per-item.md) **DONE (web)** | The drei-vanilla helpers that are mechanism, one at a time. **Reverses a bad refusal** — `billboarding` is named in CHARTER §5b as something the framework may own. | [`drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT | 5 → MEDIUM |
 | [248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) **DONE (web)** | `Atmosphere` bakes three LUTs and hands back `radiance()`, `sunTransmittance()` and `aerialPerspective()`. **No preset list, and it creates no light** — the sky mesh, the material and the `DirectionalLight` stay in the template. | [`SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky) `src/sky/SkyAtmosphereBaker.js` (526), MIT | 7 → HIGH |
-| [249](./MEDIUM/PRD-249-a-fluid-field-is-data-the-game-draws.md) | `FluidField2D` — the seven-pass incompressible solver, unfused from the material upstream welds it to. The game samples `field.dye` and decides whether it is smoke or fire. **Last in the batch: zero in-repo callers today.** | [`threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation) `src/FluidMaterialGPU.ts:53-325`, MIT | 6 → MEDIUM |
+| [249](../done/PRD-249-a-fluid-field-is-data-the-game-draws.md) **DONE (web + desktop; Pixel 8 unverified)** | `FluidField2D` — the seven-pass incompressible solver, unfused from the material upstream welds it to. The game samples `field.dye` and decides whether it is smoke or fire. **Last in the batch: zero in-repo callers today.** | [`threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation) `src/FluidMaterialGPU.ts:53-325`, MIT | 6 → MEDIUM |
 | [250](./HIGH/PRD-250-native-workers-are-actually-workers.md) | The standard `Worker` surface already exposed by the native host actually runs work off the game/render thread. It links the existing `WorkerRegistry`/`WorkerThread` path and removes the production main-thread polyfill; it does **not** add `TN.jobs`. | Web Worker semantics + the existing unlinked native worker subsystem | 8 → HIGH |
 | [251](./HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md) | Production procedural-world fields: deterministic height/flow/moisture/biome data, erosion/hydrology, CPU/GPU query parity and crack-free terrain consumption. The game still owns every material, biome look, species, water and sky decision. | [`threejs-world`](https://github.com/imsarah/threejs-world), mined as mechanism rather than public API | 10 → HIGH |
 | [252](./HIGH/PRD-252-imported-meshes-cook-portable-compound-colliders.md) | Opt-in offline decomposition of a real imported concave mesh into a deterministic bounded convex-part set, consumed as one logical Rapier body on web and native. No runtime cooker and no CoACD vocabulary in game code. | [`CoACD`](https://github.com/SarahWeiii/CoACD) tool-time candidate + Rapier compound semantics | 8 → HIGH |

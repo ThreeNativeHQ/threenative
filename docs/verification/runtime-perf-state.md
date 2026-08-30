@@ -1129,17 +1129,18 @@ triangles at the midpoint:
 | 1,024 | 1,536 → **256** | 18,433 → **3,073** | 0.70 → 0.80 |
 | 4,096 | 6,144 → **1,024** | 73,729 → **12,289** | 0.30 → 0.60 |
 
-Those numbers are a historical exploratory compaction arm, not an enabled default. The repair keeps
-`COMPACT_INSTANCED_BATCHES = false`: the 1,024-member case regressed from 0.70 to 0.80 ms and the
-4,096-member case regressed from 0.30 to 0.60 ms (OFF → ON), so no floor is claimed and no new
-winning measurement is being implied. The uncompacted path keeps `mesh.count` at the active member
-count and retains the no-allocation reconcile guard. No Phase 4 spatial index was added.
+Those numbers are a historical exploratory compaction arm, not an enabled default. The final repair
+removed the losing compaction path entirely: the 1,024-member case regressed from 0.70 to 0.80 ms
+and the 4,096-member case regressed from 0.30 to 0.60 ms (OFF → ON), so no floor is claimed and no
+new winning measurement is being implied. The production instanced lane keeps `mesh.count` at the
+active member count, has no compaction switch or scratch census, and retains the no-allocation
+reconcile guard. No Phase 4 spatial index was added.
 
-Core tests cover the dense-prefix/reconcile path, the disabled-compaction count control, and the
-steady-state constructor guard. A static regression check rejects a direct fabricated-plan or
-`ProjectionMirror.apply` shortcut in the load harness.
+Core tests cover the dense-prefix/reconcile path, the forced-visible material split, the failed
+render assertion, and the steady-state constructor guard. A static regression check rejects a
+direct fabricated-plan or `ProjectionMirror.apply` shortcut in the load harness.
 
-### 1.3.11 PRD-238 consumer conformance (2026-08-28)
+### 1.3.11 PRD-238 consumer conformance (2026-08-29)
 
 The real browser fixture uses `SceneRenderProjection` as the consumer, renders its `root`, and
 checks source/projected raycasts plus `projection.inspect()` reconciliation. An initial unheaded
@@ -1168,6 +1169,14 @@ network, and runtime errors. The captured files are
 `921,600` pixels, `0` differing pixels, and maximum channel delta `0`; the projected screenshot
 was inspected and showed the cyan world geometry plus the conformance readout. Native execution is
 **UNVERIFIED**: no native device or desktop lane was available in this repair round.
+
+The final repair reran both browser commands after the render-marker, allocation-guard, and
+compaction removals. Both exited 0 on NVIDIA/Turing and reported `renderSucceeded=true`, the two
+raycast distances `7.5`, `reconciled=true`, state `raycast-match-reconciled`, nonblank ratio `1`,
+and zero console, network, and runtime errors. The projected and source `after.png` captures were
+byte-identical: SHA-256
+`79a7ca015073d50096e10f0a385215fe627030beaf6e741a3bc5d1336e322a75`; `cmp` exited 0. Native
+execution remains **UNVERIFIED**.
 
 ### 1.4 Secondary engine defects, after draw collapse
 

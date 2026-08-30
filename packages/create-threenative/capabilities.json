@@ -270,6 +270,29 @@
     },
     {
       "constraints": [
+        "add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic",
+        "`dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code",
+        "the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold"
+      ],
+      "example": "const field = new FluidField2D({ resolution: 256, pressureIterations: 20 });\nctx.add(field);\nfield.splat({ x: 0.5, y: 0.5 }, { x: 0.2, y: 0 }, 1);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "pressureIterations, viscosity, vorticity, and splatRadius tune the solver without changing its pass order"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class FluidField2D extends Group { … }",
+      "situations": [
+        "simulate smoke, fire, fog, wind, or fluid response on a grid",
+        "inject a touch, pointer, or gameplay impulse into a fluid field",
+        "sample fluid dye or velocity in a game-owned render node"
+      ],
+      "summary": "Simulate a deterministic 2D velocity-and-dye field on the GPU while exposing its data to game-owned rendering.",
+      "supersedes": [],
+      "symbol": "FluidField2D"
+    },
+    {
+      "constraints": [
         "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement"
       ],
       "example": "defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });",

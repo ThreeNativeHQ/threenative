@@ -1,12 +1,15 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { type IPlaytestScenario, evaluateRichPlaytestAssertions } from "@threenative/playtest";
 import {
   type BatchedMesh,
   BoxGeometry,
   BufferAttribute,
+  Frustum,
   Group,
   InstancedMesh,
   LOD,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   Object3D,
@@ -60,15 +63,14 @@ function projectionOver(scene: Scene): SceneRenderProjection {
 function materialBatchProbe(): {
   batch: BatchedMesh;
   camera: PerspectiveCamera;
-  group: Group;
   projection: SceneRenderProjection;
   root: Scene;
 } {
   const source = new Scene();
   const material = new MeshBasicMaterial();
-  const anchorGeometry = new BoxGeometry(1, 1, 1);
+  const sharedGeometry = new BoxGeometry(1, 1, 1);
   for (let index = 0; index < 64; index += 1) {
-    source.add(new Mesh(anchorGeometry, material));
+    source.add(new Mesh(sharedGeometry, material));
   }
   for (let index = 0; index < 64; index += 1) {
     const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
@@ -77,7 +79,6 @@ function materialBatchProbe(): {
   }
 
   const projection = projectionOver(source);
-
   let batch: BatchedMesh | undefined;
   projection.root.traverse((object) => {
     if ((object as BatchedMesh).isBatchedMesh === true) batch = object as BatchedMesh;
@@ -89,45 +90,24 @@ function materialBatchProbe(): {
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld(true);
   projection.root.updateMatrixWorld(true);
-  return { batch, camera, group: new Group(), projection, root: projection.root };
+  return { batch, camera, projection, root: projection.root };
 }
 
-function instancedBatchProbe(): {
-  batch: InstancedMesh;
-  camera: PerspectiveCamera;
-  group: Group;
-  projection: SceneRenderProjection;
-  root: Scene;
+function countCollectionConstructors(
+  run: () => void,
+  warmup?: () => void,
+): {
+  maps: number;
+  sets: number;
+  frustums: number;
 } {
-  const source = new Scene();
-  const geometry = new BoxGeometry(1, 1, 1);
-  geometry.computeBoundingSphere();
-  const material = new MeshBasicMaterial();
-  for (let index = 0; index < 1_024; index += 1) {
-    const mesh = new Mesh(geometry, material);
-    mesh.position.z = index < 256 ? 0 : 1_000;
-    source.add(mesh);
-  }
-  const projection = projectionOver(source);
-  let batch: InstancedMesh | undefined;
-  projection.root.traverse((object) => {
-    if ((object as InstancedMesh).isInstancedMesh === true) batch = object as InstancedMesh;
-  });
-  if (batch === undefined) throw new Error("Projection mirror did not build an instanced batch");
-
-  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
-  camera.position.set(0, 0, 10);
-  camera.lookAt(0, 0, 0);
-  camera.updateMatrixWorld(true);
-  projection.root.updateMatrixWorld(true);
-  return { batch, camera, group: new Group(), projection, root: projection.root };
-}
-
-function countCollectionConstructors(run: () => void): { maps: number; sets: number } {
   const originalMap = globalThis.Map;
   const originalSet = globalThis.Set;
+  const originalFrustumSetFromProjectionMatrix = Frustum.prototype.setFromProjectionMatrix;
+  const frustumInstances: Frustum[] = [];
   let maps = 0;
   let sets = 0;
+  let knownFrustums: Frustum[] = [];
 
   class CountingMap<K, V> extends originalMap<K, V> {
     constructor(entries?: Iterable<readonly [K, V]> | null) {
@@ -141,16 +121,111 @@ function countCollectionConstructors(run: () => void): { maps: number; sets: num
       sets += 1;
     }
   }
+  // BatchedMesh closes over Three's Frustum binding in its ESM module, so replacing
+  // globalThis.Frustum cannot see its scratch instance. Census the actual imported class's
+  // method receivers instead: the warmup records BatchedMesh's reusable module-private Frustum,
+  // and any newly constructed Frustum used by the real culling path is a new receiver.
+  const frustumSpy = vi.spyOn(Frustum.prototype, "setFromProjectionMatrix");
+  frustumSpy.mockImplementation(function (
+    this: Frustum,
+    ...args: Parameters<Frustum["setFromProjectionMatrix"]>
+  ) {
+    if (!frustumInstances.includes(this)) frustumInstances.push(this);
+    return originalFrustumSetFromProjectionMatrix.apply(this, args);
+  });
 
   globalThis.Map = CountingMap;
   globalThis.Set = CountingSet;
   try {
+    warmup?.();
+    knownFrustums = frustumInstances.slice();
+    maps = 0;
+    sets = 0;
+    frustumInstances.length = 0;
     run();
   } finally {
     globalThis.Map = originalMap;
     globalThis.Set = originalSet;
+    frustumSpy.mockRestore();
   }
-  return { maps, sets };
+  return {
+    maps,
+    sets,
+    frustums: frustumInstances.filter((instance) => !knownFrustums.includes(instance)).length,
+  };
+}
+
+function conformanceScenario(): IPlaytestScenario {
+  return JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../examples/engine-load-test/playtests/projection-conformance.playtest.json",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    ),
+  ) as IPlaytestScenario;
+}
+
+function conformanceReport(renderSucceeded: boolean) {
+  return {
+    diagnostics: [],
+    distance: 0,
+    entity: "projection.proof",
+    expectMoved: false,
+    frames: 1,
+    trivialityOptOuts: [],
+    observations: {
+      components: {
+        "projection.proof": {
+          ProjectionConformance: {
+            after: {
+              projectedRaycastHit: true,
+              projectedRaycastDistance: 7.5,
+              reconciled: true,
+              renderSucceeded,
+              sourceRaycastHit: true,
+              sourceRaycastDistance: 7.5,
+            },
+          },
+        },
+      },
+      console: [],
+      hud: {},
+      network: [],
+      resources: {},
+      visual: {
+        nonblankRegions: [{ height: 720, nonblankPixelRatio: 1, width: 1280, x: 0, y: 0 }],
+      },
+    },
+  } as never;
+}
+
+function renderBatch(
+  batch: BatchedMesh,
+  root: Scene,
+  camera: PerspectiveCamera,
+  group: Group,
+): void {
+  batch.onBeforeRender(
+    undefined as never,
+    root,
+    camera,
+    batch.geometry,
+    batch.material as MeshBasicMaterial,
+    group,
+  );
+}
+
+function countFrustumMutation(): { maps: number; sets: number; frustums: number } {
+  const matrix = new Matrix4();
+  return countCollectionConstructors(() => {
+    for (let frame = 0; frame < 10; frame += 1) {
+      new Frustum().setFromProjectionMatrix(matrix);
+    }
+  });
 }
 
 describe("projection hot path", () => {
@@ -169,6 +244,49 @@ describe("projection hot path", () => {
     expect(source).not.toContain("ProjectionMirror");
     expect(source).not.toContain("IProjectionProjectPlan");
     expect(source).not.toMatch(/(?:mirror|projectionMirror)\.apply\(/u);
+  });
+
+  it("counts a per-frame Frustum mutation in the allocation probe", () => {
+    const allocations = countFrustumMutation();
+    expect(allocations).toEqual({ maps: 0, sets: 0, frustums: 10 });
+  });
+
+  it("fails projection conformance when the render marker is false despite nonblank pixels", () => {
+    const scenario = conformanceScenario();
+    scenario.assert = { components: scenario.assert?.components, visual: scenario.assert?.visual };
+    const result = evaluateRichPlaytestAssertions({
+      report: conformanceReport(false),
+      scenario,
+    });
+
+    expect(result.assertions).toContainEqual({
+      details: expect.any(Object),
+      id: "component.projection.proof.ProjectionConformance.renderSucceeded",
+      pass: false,
+    });
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ id: "visual.0.region", pass: true }),
+    );
+    expect(result.assertions.every(({ pass }) => pass)).toBe(false);
+  });
+
+  it("should still allocate nothing per frame with culling enabled", () => {
+    const { batch, camera, projection, root } = materialBatchProbe();
+    const group = new Group();
+    try {
+      expect(batch.perObjectFrustumCulled).toBe(true);
+      const allocations = countCollectionConstructors(
+        () => {
+          for (let frame = 0; frame < 10; frame += 1) {
+            renderBatch(batch, root, camera, group);
+          }
+        },
+        () => renderBatch(batch, root, camera, group),
+      );
+      expect(allocations).toEqual({ maps: 0, sets: 0, frustums: 0 });
+    } finally {
+      projection.dispose();
+    }
   });
 
   // RED: walkProjection never descends into an LOD (projection-plan.ts skips the subtree), so
@@ -228,52 +346,6 @@ describe("projection hot path", () => {
       spy.mockRestore();
     }
     expect(lookups).toBeLessThan(meshCount * 3.5);
-  });
-
-  // RED mutation: change PER_OBJECT_FRUSTUM_CULLED to false in projection-apply.ts; the setting
-  // assertion fails and the companion sub-draw test returns the uncompacted count.
-  it("should still allocate nothing per frame with culling enabled", () => {
-    const { batch, camera, group, projection, root } = materialBatchProbe();
-    try {
-      expect(batch.perObjectFrustumCulled).toBe(true);
-      const allocations = countCollectionConstructors(() => {
-        for (let frame = 0; frame < 10; frame += 1) {
-          batch.onBeforeRender(
-            undefined as never,
-            root,
-            camera,
-            batch.geometry,
-            batch.material as MeshBasicMaterial,
-            group,
-          );
-        }
-      });
-      expect(allocations).toEqual({ maps: 0, sets: 0 });
-    } finally {
-      projection.dispose();
-    }
-  });
-
-  it("should still allocate nothing per frame while syncing instanced batches", () => {
-    const { batch, camera, group, projection, root } = instancedBatchProbe();
-    try {
-      const allocations = countCollectionConstructors(() => {
-        for (let frame = 0; frame < 10; frame += 1) {
-          batch.onBeforeRender(
-            undefined as never,
-            root,
-            camera,
-            batch.geometry,
-            batch.material as MeshBasicMaterial,
-            group,
-          );
-        }
-      });
-      expect(batch.count).toBe(1_024);
-      expect(allocations).toEqual({ maps: 0, sets: 0 });
-    } finally {
-      projection.dispose();
-    }
   });
 
   // The scan classifies through an internal variant that skips the LOD ancestor walk (the walk

@@ -95,6 +95,7 @@ let proofState = "boot";
 let sourceRaycastHit = false;
 let projectedRaycastHit = false;
 let reconciled = false;
+let renderSucceeded = false;
 let sourceRaycastDistance: number | null = null;
 let projectedRaycastDistance: number | null = null;
 
@@ -155,6 +156,7 @@ function components() {
         projectedRaycastHit,
         projectedRaycastDistance,
         reconciled,
+        renderSucceeded,
         sourceRaycastHit,
         sourceRaycastDistance,
       },
@@ -165,11 +167,15 @@ function components() {
 async function renderFrame(): Promise<void> {
   renderer.setViewport(0, 0, WIDTH, HEIGHT);
   renderer.clear();
+  renderSucceeded = false;
   try {
     await renderer.render(renderSource ? source : projection.root, camera);
+    renderSucceeded = true;
     requestAnimationFrame(() => void renderFrame());
   } catch (error: unknown) {
+    renderSucceeded = false;
     status.textContent = `failed: ${String(error)}`;
+    throw error;
   }
 }
 
@@ -205,4 +211,5 @@ void renderer
   .catch((error: unknown) => {
     installation.dispose();
     status.textContent = `failed: ${String(error)}`;
+    throw error;
   });

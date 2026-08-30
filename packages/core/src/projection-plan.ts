@@ -218,6 +218,7 @@ export interface IProjectionBatchGroup {
   readonly material: Material;
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
+  readonly frustumCulled: boolean;
   readonly layersMask: number;
   /** High-water member storage; only the first `memberCount` slots belong to the current scan. */
   readonly members: Array<Mesh | undefined>;
@@ -234,7 +235,9 @@ export interface IProjectionBatchGroup {
  * flags) group fell below the member floor, so a mesh that can still instance-batch keeps doing
  * so and never reaches here.
  *
- * Keyed on (material identity, batch flags, attribute signature). The signature — attribute names
+ * Keyed on (material identity, batch flags, attribute signature). The flags include the source
+ * frustum-culling choice: a forced-visible mesh cannot share a per-object-culled batch, because
+ * three's packed bounds do not know about shader displacement. The signature — attribute names
  * with item sizes, plus index presence — is what three's `BatchedMesh._validateGeometry` refuses
  * to mix, so geometries that disagree about their attribute sets can never land in one batch.
  * It is keyed on material *identity*, never on material value: a plain property write does not
@@ -245,6 +248,7 @@ export interface IProjectionMaterialGroup {
   readonly material: Material;
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
+  readonly frustumCulled: boolean;
   readonly layersMask: number;
   /** High-water member storage; only the first `memberCount` slots belong to the current scan. */
   readonly members: Array<Mesh | undefined>;
@@ -478,7 +482,12 @@ function addExactEntry(
 }
 
 function batchFlagsOf(mesh: Mesh): number {
-  return (mesh.layers.mask >>> 0) * 4 + (mesh.castShadow ? 2 : 0) + (mesh.receiveShadow ? 1 : 0);
+  return (
+    (mesh.layers.mask >>> 0) * 8 +
+    (mesh.castShadow ? 4 : 0) +
+    (mesh.receiveShadow ? 2 : 0) +
+    (mesh.frustumCulled ? 1 : 0)
+  );
 }
 
 function addToBatchGroup(
@@ -506,6 +515,7 @@ function addToBatchGroup(
       material,
       castShadow: mesh.castShadow,
       receiveShadow: mesh.receiveShadow,
+      frustumCulled: mesh.frustumCulled,
       layersMask: mesh.layers.mask,
       members: [],
       memberCount: 0,
@@ -603,6 +613,7 @@ function addToMaterialGroup(
       material,
       castShadow: mesh.castShadow,
       receiveShadow: mesh.receiveShadow,
+      frustumCulled: mesh.frustumCulled,
       layersMask: mesh.layers.mask,
       members: [],
       memberCount: 0,

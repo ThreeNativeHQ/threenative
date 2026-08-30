@@ -4,14 +4,17 @@ prd_contract: v1
 
 # PRD-249 — A fluid field is data; what it looks like is the game's
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed. Depends on
-[PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md).**
+**Status: DONE, 2026-08-29 — web and desktop-native evidence; Pixel 8 and mobile fit remain
+`UNVERIFIED`.** `FluidField2D` is shipped with game-owned smoke and fire materials, and its
+desktop cost is recorded at 128², 256² and 512². Evidence:
+[docs/verification/prd-249-fluid-field-2026-08-29.md](../../verification/prd-249-fluid-field-2026-08-29.md).
+It depends on [PRD-242](./PRD-242-gpu-simulation-has-one-lifetime.md).
 
 Source: [`bandinopla/threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation)
 at `14ff3b0e`, MIT (Pavel Dobryakov's original WebGL shaders, ported to TSL). Cloned at depth 1 and
 read on 2026-08-28. **Nothing copied.**
 
-Parent batch: [feature-mining](../README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Complexity:** +2 new subsystem, +2 ping-pong state across frames inside a hot path, +1 ≤5 files
 per phase, +1 public surface = **6 → MEDIUM mode.**

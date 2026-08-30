@@ -33,7 +33,7 @@ Read at HEAD:
 | "the framework generates LODs" | `packages/assets/src/passes/model.ts:511` — the pass chain is `dedup → prune → reorder → quantize → meshopt`. There is no simplification step. `meshoptimizer` is imported at `model.ts:12` for **`MeshoptDecoder` / `MeshoptEncoder` only**. |
 | "the framework selects LODs" | `packages/core/src/projection-apply.ts:883-893` gives an `LOD` stand-in *the same levels at the same distances as the source*, and `projection-plan.ts:100,697` classifies an `LOD` on arrival and never descends into it. The projection **preserves** a game-authored `THREE.LOD`. It does not create one, does not compute error, and does not decide what is resident. |
 | "terrain streaming shipped in PRD-043" | `examples/abyss-framework/src/scenes/TerrainProbe.ts` — `CHUNK_SIZE = 64`, `CHUNK_RESOLUTION = 9`, `STREAM_RADIUS = 1`: **three 9×9 wireframe tiles along one axis**, load/unload by player X in a hand-written `#stream` method. A correct proof of two exports; not a residency system. |
-| "PRD-238 covers this" | [PRD-238](../MEDIUM/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) is **projection culling** — deciding what to *submit* from what is already in memory. It never decides what is in memory. The two are complementary and must not be conflated. |
+| "PRD-238 covers this" | [PRD-238](../../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) is **projection culling** — deciding what to *submit* from what is already in memory. It never decides what is in memory. The two are complementary and must not be conflated. |
 
 ### What is genuinely absent at HEAD
 
@@ -268,7 +268,7 @@ declares a budget. Both are named, both are measured against in §8.
 |---|---|---|
 | [PRD-098](../../done/PRD-098-lod-and-instancing.md) | Its Phase 0 census is the baseline this PRD's Phase 0 must beat or inherit. Its decline is a fact, not a dependency. | No |
 | [PRD-043](../../done/PRD-043-terrain-and-open-world.md) | Supplies `AssetLoader.release` and the terrain probe this PRD replaces. | No |
-| [PRD-238](../MEDIUM/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | Complementary and **independent**. Residency decides what is in memory; 238 decides what is submitted. If 238 lands first, Phase 4's A/B must hold its setting constant across both arms and say so. | No — but the A/B is invalid if 238's setting differs between arms |
+| [PRD-238](../../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | Complementary and **independent**. Residency decides what is in memory; 238 decides what is submitted. If 238 lands first, Phase 4's A/B must hold its setting constant across both arms and say so. | No — but the A/B is invalid if 238's setting differs between arms |
 | [PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md) | Shares the "one lifetime" discipline for GPU resources; its dispose ordering must not fight the refcount. | Check at Phase 1 |
 | [PRD-250](./PRD-250-native-workers-are-actually-workers.md) | If native workers become real, decode moves off the main thread and the native hitch numbers change. Phase 5 must record which state of 250 was live. | No — record only |
 | [PRD-251](./PRD-251-procedural-world-fields-and-terrain-residency.md) | **Consumes this.** 251 must not build a second residency system. | This PRD's Phase 6 blocks 251's residency half |

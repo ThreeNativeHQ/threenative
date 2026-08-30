@@ -135,7 +135,7 @@ rather than keep it because it was built.
 | fBm/domain-warped height synthesis | **Yes, ~40 lines**, and every line decides how the ground looks | **Game's.** PRD-043 row 3, unchanged. |
 | Scatter placement | **Yes, ~25 lines** on `ctx.random` | **Game's.** PRD-043 row 5, unchanged. |
 | LOD ladder, instancing | **Yes, 2 lines** of `THREE.LOD` | **Game's.** PRD-043 row 6 + PRD-098, unchanged. |
-| Frustum culling | Zero lines; already default, and [PRD-238](../MEDIUM/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) owns the rest | **Nothing to build.** |
+| Frustum culling | Zero lines; already default, and [PRD-238](../../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) owns the rest | **Nothing to build.** |
 | **CPU/GPU field parity** — the same height on the render path and the query path | **No.** The GPU synthesises in a compute pass; the CPU must reproduce it bit-comparably for collision and raycast. Getting these to agree is the framework's job or it is nobody's | **FRAMEWORK** |
 | **Crack-free LOD stitching across a tile boundary** | **No, not in 20 lines.** Neighbour-aware edge decimation plus skirts, recomputed on every residency change | **FRAMEWORK** |
 | **Bounded GPU generation scheduling** | **No.** Requires the frame-budget seam and `IComputeDriven`'s lifetime; a game that dispatches erosion inline stalls the frame | **FRAMEWORK** |

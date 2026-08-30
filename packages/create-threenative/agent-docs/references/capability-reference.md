@@ -241,6 +241,24 @@ export function directionFromSolarPosition(elevation: number, azimuth: number): 
 const direction = directionFromSolarPosition(sun.elevation, sun.azimuth);
 ```
 
+### `FluidField2D`
+
+`class` — Simulate a deterministic 2D velocity-and-dye field on the GPU while exposing its data to game-owned rendering.
+
+```ts
+export class FluidField2D extends Group { … }
+```
+
+- **Use when:** simulate smoke, fire, fog, wind, or fluid response on a grid · inject a touch, pointer, or gameplay impulse into a fluid field · sample fluid dye or velocity in a game-owned render node
+- **Constraints:** add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic · `dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code · the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold
+- **Overrides:** pressureIterations, viscosity, vorticity, and splatRadius tune the solver without changing its pass order
+
+```ts
+const field = new FluidField2D({ resolution: 256, pressureIterations: 20 });
+ctx.add(field);
+field.splat({ x: 0.5, y: 0.5 }, { x: 0.2, y: 0 }, 1);
+```
+
 ### `FrameBudget`
 
 `class` — Read where the frame's milliseconds went, per presented frame, on any platform.

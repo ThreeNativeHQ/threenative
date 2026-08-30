@@ -4,14 +4,18 @@ prd_contract: v1
 
 # PRD-238 — The projection culls what the camera cannot see
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: DONE, 2026-08-29 — WebGPU/browser evidence; native execution remains `UNVERIFIED`.**
+The batched culling arm removed 75% of scene sub-draws and moved steady `render.p50` from 1.60 ms
+to 1.10 ms. The losing instanced compaction arm was removed and no Phase 4 spatial index was
+added. Consumer evidence, including source/projected raycast and render parity, is recorded in
+[docs/verification/runtime-perf-state.md](../../verification/runtime-perf-state.md).
 
 Source of the borrowed technique:
 [`agargaro/instanced-mesh`](https://github.com/agargaro/instanced-mesh) (`@three.ez/instanced-mesh`),
 MIT, cloned at depth 1 on 2026-08-28. **The library itself is refused as a dependency** — see below.
 What is mined is one function of 25 lines and the idea behind it.
 
-Parent batch: [feature-mining](../README.md).
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Complexity:** +2 complex state (a per-frame visibility set inside a hot path that already exists
 to be fast), +2 the change is a measurement before it is a feature, +1 touches ≤5 files,

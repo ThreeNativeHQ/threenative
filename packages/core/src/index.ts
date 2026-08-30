@@ -234,6 +234,21 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  */
 export { GPUParticles3D } from "./particles.js";
 /**
+ * Simulate a deterministic 2D velocity-and-dye field on the GPU while exposing its data to game-owned rendering.
+ * @situation simulate smoke, fire, fog, wind, or fluid response on a grid
+ * @situation inject a touch, pointer, or gameplay impulse into a fluid field
+ * @situation sample fluid dye or velocity in a game-owned render node
+ * @constraint add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic
+ * @constraint `dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code
+ * @constraint the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold
+ * @override pressureIterations, viscosity, vorticity, and splatRadius tune the solver without changing its pass order
+ * @example const field = new FluidField2D({ resolution: 256, pressureIterations: 20 });
+ * ctx.add(field);
+ * field.splat({ x: 0.5, y: 0.5 }, { x: 0.2, y: 0 }, 1);
+ */
+export { FluidField2D } from "./fluid-field.js";
+export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from "./fluid-field.js";
+/**
  * Build a soft round sprite as pixel data instead of painting a canvas.
  * @situation give smoke, flash, or glow sprites a radial alpha falloff
  * @situation generate sprite images that render identically under every backend

@@ -716,6 +716,19 @@
       "required": true
     },
     {
+      "id": "77-fluid-field",
+      "title": "fluid field ping-pong solver",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "../../examples/prd249-fluid-field/src/conformance.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 5.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",
