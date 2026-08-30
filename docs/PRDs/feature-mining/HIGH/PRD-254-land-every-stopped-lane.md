@@ -386,7 +386,7 @@ this PRD's job is to stop them rotting silently.
 | `.claude/worktrees/agent-a60b0b3f74d66bb64` | 3 | tombstone/crash-handler proof on the phone; a resume defect it exposed | — |
 | `.claude/worktrees/agent-a5019321d7ca9cf88` | 2 | portable-text spike closed G-only, row 31 on the physical Pixel 8 | PRD-209 **open** |
 | `.claude/worktrees/agent-a5310592192d978ec` | 1 | **REJECTED 2026-08-30:** lifetime-held V8 entry repeatably segfaults the production worker contract; main's per-call entry passes the same binary | PRD-227 **open**; do not retry this lane |
-| `.claude/worktrees/agent-a78ac559a62314fcf` | 1 | keep three's WASM decoders out of the mobile bundle | — |
+| `.claude/worktrees/agent-a78ac559a62314fcf` | 1 | **ALREADY LANDED at `5ebebd95`; detached tarball audit passed 2026-08-30.** The stale commit is not replayed | — |
 | `.claude/worktrees/agent-a868a44e113b83123` | 1 | PRD-213 Pixel 8 GPU-memory attribution (docs only) | PRD-213 open in `mobile/` |
 | `.claude/worktrees/prd-222-resume` | 3 | config-change axes so mid-play changes stop killing the process | PRD-222 **open** |
 
@@ -397,6 +397,11 @@ The V8 isolate lane (`a5310`) was the highest-value one. It was rebased and exec
 then rejected: the candidate repeatably segfaulted `threenative-worker-production-test`, while a
 same-build main-path control passed every worker contract. It remains absent from `main` by design.
 See [`docs/verification/prd-254-v8-lifetime-rejection-2026-08-30.md`](../../../verification/prd-254-v8-lifetime-rejection-2026-08-30.md).
+
+The mobile-decoder lane (`a78ac559`) was stale by history, not absent by capability: main already
+contains the equivalent implementation at `5ebebd95`. A detached packed-tarball sandbox proved
+Android excludes the decoders while desktop retains them, and the mutation turned red. See
+[`docs/verification/prd-254-mobile-decoder-audit-2026-08-30.md`](../../../verification/prd-254-mobile-decoder-audit-2026-08-30.md).
 
 **6C · The 14 dirty files are noise, not work**
 
