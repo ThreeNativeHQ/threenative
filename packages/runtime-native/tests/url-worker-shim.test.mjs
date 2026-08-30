@@ -225,6 +225,6 @@ test("Phase 1 rejects module and non-Blob worker sources by stable names", () =>
 
   assert.deepEqual(guest(result), {
     module: "TN_NATIVE_WORKER_MODULE_UNSUPPORTED: module workers are not supported",
-    external: "TN_NATIVE_WORKER_URL_UNSUPPORTED: Phase 1 supports classic Blob workers only",
+    external: "TN_NATIVE_WORKER_URL_UNSUPPORTED: native workers support classic Blob URLs only",
   });
 });

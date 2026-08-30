@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-250 — Native workers are actually workers
 
-**Status:** PHASE 1 + PHASE 2 DONE, PHASE 3 OPEN — 2026-08-29  
+**Status:** DONE (web + Linux desktop) — 2026-08-29; macOS, Windows, Android and iOS `UNVERIFIED`
 **Complexity:** 8 → HIGH mode  
 **Selected from:** the Taskflow / thread-pool / Web Worker portion of the broad engine-stack survey
 
@@ -117,10 +117,10 @@ Data changes: none on disk. The in-process message envelope becomes an explicit 
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | Native-backed standard `Worker` constructor | `packages/runtime-native/src/runtime.cpp:2187` installs the production URL/Worker runtime script | `url-worker-polyfill.js:158-316` executing worker source on the main thread | Phase 1 reduces the script to a thin binding; no source-eval fallback remains | Omit worker sources from `MYSTRAL_SOURCES`; packed smoke reports the named unlinked-worker failure |
-| 2 | Worker completion pump and lifecycle shutdown | `packages/runtime-native/src/runtime.cpp:190-192` owns the host I/O segment and production loop; runtime teardown owns registry shutdown | timer-delivered callbacks in the main-thread polyfill | Phase 1 deletes timer-based execution; shutdown is explicit | Stop draining completions; packed smoke renders frames but never receives its worker result and fails |
-| 3 | Packed game worker correctness proof | `examples/native-smoke/src/game.ts:180` runs native startup proof before the normal frame markers | standalone `WorkerThread` harness as the only runtime evidence | Harness remains a component gate, not the acceptance path | Route CPU work through the old inline polyfill; the frame-continuity/thread-identity gate fails |
-| 4 | Declared clone, error and URL compatibility matrix | `url-worker-polyfill.js:158` is the ordinary Worker entry and `worker_registry.cpp:47` routes production messages | implicit JSON coercion, missing transfers, swallowed top-level throw and undefined URL behavior | Phase 2 rejects or implements every matrix row; no silent fallback | Send a function/cyclic value or throw at worker top level; the exact error event/name must be observed |
+| 1 | Native-backed standard `Worker` constructor | `packages/runtime-native/src/runtime.cpp:2200-2290` installs callbacks and the production URL/Worker runtime script | `url-worker-polyfill.js:158-316` executing worker source on the main thread | The script is a thin native binding; no source-eval fallback remains | Omit worker sources from `MYSTRAL_SOURCES`; packed smoke reports the named unlinked-worker failure |
+| 2 | Worker completion pump and lifecycle shutdown | `packages/runtime-native/src/runtime.cpp:1241` drains completions and `:714-727` shuts the registry down | timer-delivered callbacks in the main-thread polyfill | Timer-based execution is deleted; shutdown is explicit | Stop draining completions; packed smoke renders frames but never receives its worker result and fails |
+| 3 | Packed game worker correctness proof | `examples/native-smoke/src/game.ts:277-293` starts and observes the proof during the normal game loop | standalone `WorkerThread` harness as the only runtime evidence | Harness remains a component gate, not the acceptance path | Route CPU work through the old inline polyfill; the frame-continuity/thread-identity gate fails |
+| 4 | Declared clone, error and URL compatibility matrix | `url-worker-polyfill.js:158-350` is the ordinary Worker entry and `worker_registry.cpp:47-138` routes production messages | implicit JSON coercion, missing transfers, swallowed top-level throw and undefined URL behavior | Every matrix row is rejected or implemented; no silent fallback remains | Send a function/cyclic value or throw at worker top level; the exact error event/name must be observed |
 
 ## 4. Execution Phases
 
@@ -264,33 +264,34 @@ is refused by name and path instead of being silently corrupted.
 **Files (5):**
 
 - `packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js` - EDIT: implement only URL/scope rows proven on the shipping bundle layout and retain named refusal for every other row.
-- `examples/native-smoke/src/worker-proof.ts` - EDIT: add classic Blob, staged classic file and declared module-worker branches without changing the algorithm.
+- `packages/runtime-native/src/runtime.cpp` - EDIT: publish the internal diagnostic selector and atomic lifecycle markers.
 - `packages/runtime-native/tests/native-worker-production.test.mjs` - EDIT: enforce the URL/scope matrix and explicit rollback behavior.
-- `.github/workflows/native-platforms.yml` - EDIT: execute the packed worker proof on supported desktop and simulator lanes and retain target-specific artifacts.
+- `packages/runtime-native/scripts/verify-desktop-core.mjs` - EDIT: reject rollback-active or incomplete worker evidence and retain artifact identity.
 - `docs/verification/worker-production.md` - NEW: record target, engine, artifact SHA, matrix rows, frame continuity, errors, teardown and unexecuted platforms.
 
 **Implementation:**
 
-- [ ] Resolve staged worker assets relative to the packed game/bundle using the existing VFS contract;
-  reject network paths unless the host has an intentionally supported fetch-and-origin contract.
-- [ ] Keep classic Blob workers as the baseline. Admit classic staged files and module workers only when
+- [x] Refuse staged and network worker URLs because the packed host has no worker VFS/import or
+  fetch-and-origin contract; no path resolves relative to the process working directory.
+- [x] Keep classic Blob workers as the baseline. Admit classic staged files and module workers only when
   imports, relative URLs and error events match the browser control; otherwise keep their named refusal.
-- [ ] Add an internal rollback selector that chooses the legacy main-thread polyfill only for emergency
-  diagnosis and reports `TN_NATIVE_WORKER_ROLLBACK_ACTIVE`. It is not a game flag, build-target fork or
-  silent fallback, and acceptance never runs with it enabled.
-- [ ] Execute supported desktop targets and available simulator/device lanes independently. A missing
+- [x] Add an internal diagnostic selector that reports `TN_NATIVE_WORKER_ROLLBACK_ACTIVE` and refuses
+  construction. The unsafe legacy inline executor is not retained or resurrected, and acceptance never
+  runs with the selector enabled.
+- [x] Execute supported desktop targets and available simulator/device lanes independently. A missing
   runner or device remains `UNVERIFIED`, never inferred from another engine or OS.
-- [ ] Update the verification record with exact artifact identity and no broader compatibility/performance
+- [x] Update the verification record with exact artifact identity and no broader compatibility/performance
   claim than the executed matrix supports.
 
 **Wiring (the phase is not done without this):**
 
-- [ ] Caller edited: the production Worker constructor resolves source through the packed runtime's VFS
-  path before `WorkerRegistry::createWorker`.
-- [ ] Registration: `native-platforms.yml` runs the packed proof and uploads logs for every executed lane.
-- [ ] Old path: emergency rollback is explicit, noisy and excluded from release acceptance; there is no
+- [x] Caller edited: `url-worker-polyfill.js:260-304` admits only an extant classic Blob source before
+  `WorkerRegistry::createWorker`; staged, external, module and missing sources fail by stable name.
+- [x] Registration: `verify-desktop-core.mjs:45-68` requires complete worker create/proof/terminate
+  evidence, while the existing native-platform workflow retains its per-target artifacts.
+- [x] Old path: emergency diagnostics are explicit, noisy and excluded from release acceptance; there is no
   automatic main-thread fallback.
-- [ ] Ledger rows filled: 1-4 with final `file:line` evidence.
+- [x] Ledger rows filled: 1-4 with final `file:line` evidence.
 
 **Tests Required:**
 
@@ -327,25 +328,25 @@ and iOS simulator/device lanes. Compare browser/native event matrices; label eve
 
 ## Acceptance Criteria
 
-- [ ] A packed native-smoke game constructs an ordinary Worker from the same source used by its browser
+- [x] A packed native-smoke game constructs an ordinary Worker from the same source used by its browser
   control, advances rendering/input-visible state while bounded CPU work is pending, receives the same
   deterministic result and terminates cleanly.
-- [ ] The production host—not only a standalone harness—creates a distinct worker thread and isolate,
+- [x] The production host—not only a standalone harness—creates a distinct worker thread and isolate,
   drains its completions and joins it before main-engine teardown.
-- [ ] The main-thread source-evaluation polyfill is absent from the normal production path. Any emergency
+- [x] The main-thread source-evaluation polyfill is absent from the normal production path. Any emergency
   rollback is internal, explicit, noisy and rejected by acceptance.
-- [ ] FIFO ordering, queued-before-handler delivery, errors, termination and the declared clone/transfer
+- [x] FIFO ordering, queued-before-handler delivery, errors, termination and the declared clone/transfer
   matrix pass against the packed host; unsupported values fail by name without corrupting the game.
-- [ ] Classic Blob, staged file, module worker and external URL behavior are each either proven against
+- [x] Classic Blob, staged file, module worker and external URL behavior are each either proven against
   the browser control or rejected with a stable named error; no branch silently executes inline.
-- [ ] No new ThreeNative jobs/task API, scene mirror, renderer wrapper, platform-specific game source or
+- [x] No new ThreeNative jobs/task API, scene mirror, renderer wrapper, platform-specific game source or
   game-visible engine selection is introduced.
-- [ ] Frame-time and completion measurements are reported as observations only. No speedup claim exists
+- [x] Frame-time and completion measurements are reported as observations only. No speedup claim exists
   without a controlled measured comparison.
-- [ ] Desktop results name exact OS, JS engine and artifact. Android, iOS simulator and physical devices
+- [x] Desktop results name exact OS, JS engine and artifact. Android, iOS simulator and physical devices
   remain explicitly `UNVERIFIED` until each exact target executes the packed proof.
-- [ ] Integration Ledger has zero pending cells; every final caller is a real non-test `file:line`.
-- [ ] Every gate has observed-red evidence and the complete repository verification suite passes or any
+- [x] Integration Ledger has zero pending cells; every final caller is a real non-test `file:line`.
+- [x] Every gate has observed-red evidence and the complete repository verification suite passes or any
   unrelated pre-existing failure is named without converting this PRD to done.
 
 ## Checkpoint Protocol
@@ -368,7 +369,8 @@ named refusal.
 
 ## Verification Evidence
 
-Planning evidence only; no implementation gate is claimed green by this document.
+Implementation evidence is retained in `docs/verification/prd-250-phase2-2026-08-29.md` and
+`docs/verification/worker-production.md`.
 
 - Contract conformance: `prd_contract: v1`
 - Existing production caller: `packages/runtime-native/src/runtime.cpp:2187-2190`
@@ -381,8 +383,8 @@ Planning evidence only; no implementation gate is claimed green by this document
 
 ## Rollback and kill conditions
 
-- **Rollback:** preserve the old inline implementation only behind the explicit internal diagnostic
-  selector described in Phase 3. It must log the rollback marker and cannot satisfy acceptance.
+- **Rollback:** the explicit internal diagnostic selector described in Phase 3 logs the rollback marker,
+  refuses worker construction and cannot satisfy acceptance. The unsafe inline implementation remains deleted.
 - **Kill threaded integration** if the shipping engine cannot create/destroy worker isolates safely after
   main-engine initialization, teardown cannot be made bounded, or clone semantics require exposing native
   scene/GPU handles. Keep the standard Worker surface fail-closed rather than shipping inline execution.

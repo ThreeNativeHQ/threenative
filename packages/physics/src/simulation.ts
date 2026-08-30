@@ -166,7 +166,9 @@ export interface IPhysicsCharacterOptions {
 
 export interface IPhysicsCharacterState {
   readonly grounded: boolean;
+  readonly groundBody?: IPhysicsBodyHandle;
   readonly groundCollider?: number;
+  readonly groundNormal?: IPhysicsVector3;
 }
 
 export interface IPhysicsInputSnapshot {
@@ -335,6 +337,7 @@ export function physicsSimulationBackend(): IPhysicsSimulationBackend {
 interface ISimulationBody {
   readonly id: number;
   readonly body: rapier.RigidBody;
+  readonly bodyHandle: IPhysicsBodyHandle;
   readonly collider: rapier.Collider;
   readonly characterState: IStoredCharacterState;
   readonly entity?: string;
@@ -347,7 +350,9 @@ interface ISimulationBody {
 
 interface IStoredCharacterState {
   grounded: boolean;
+  groundBody?: IPhysicsBodyHandle;
   groundCollider?: number;
+  readonly groundNormal: { x: number; y: number; z: number };
 }
 
 interface IWebPhysicsSimulationOptions {
@@ -653,12 +658,19 @@ function characterState(
   const controller = simulationBody.controller;
   if (controller === undefined) return state;
   let groundCollider: number | undefined;
+  let groundBody: IPhysicsBodyHandle | undefined;
+  let groundNormal: IPhysicsVector3 | undefined;
   for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
     const collision = controller.computedCollision(index);
     if (collision?.collider === null || collision?.collider === undefined) continue;
     if ((collision.normal1.y ?? Number.NEGATIVE_INFINITY) >= 0.5) {
-      groundCollider = byCollider.get(collision.collider.handle)?.id;
-      if (groundCollider !== undefined) break;
+      const contacted = byCollider.get(collision.collider.handle);
+      if (contacted !== undefined) {
+        groundCollider = contacted.id;
+        groundBody = contacted.bodyHandle;
+        groundNormal = collision.normal1;
+        break;
+      }
     }
   }
   const grounded = controller.computedGrounded();
@@ -666,6 +678,17 @@ function characterState(
   else if (!grounded) simulationBody.groundCollider = undefined;
   state.grounded = grounded;
   state.groundCollider = simulationBody.groundCollider;
+  if (groundBody !== undefined) state.groundBody = groundBody;
+  else if (!grounded) state.groundBody = undefined;
+  if (groundNormal !== undefined) {
+    state.groundNormal.x = groundNormal.x;
+    state.groundNormal.y = groundNormal.y;
+    state.groundNormal.z = groundNormal.z;
+  } else if (!grounded) {
+    state.groundNormal.x = 0;
+    state.groundNormal.y = 1;
+    state.groundNormal.z = 0;
+  }
   return state;
 }
 
@@ -811,9 +834,11 @@ export function createWebPhysicsSimulation(
         ),
       );
       const rawCollider = options.world.createCollider(rawShape, rawBody);
+      const bodyHandle = physicsBodyHandle(id, rawBody, bodyOptions.entity);
       const entry: ISimulationBody = {
         body: rawBody,
-        characterState: { grounded: false },
+        bodyHandle,
+        characterState: { grounded: false, groundNormal: { x: 0, y: 1, z: 0 } },
         collider: rawCollider,
         entity: bodyOptions.entity,
         id,
@@ -828,7 +853,7 @@ export function createWebPhysicsSimulation(
       if (bodyOptions.sensor) areaIntersections.set(id, new Set());
       dirtyBodies.add(entry);
       return {
-        body: physicsBodyHandle(id, rawBody, bodyOptions.entity),
+        body: bodyHandle,
         collider: physicsColliderHandle(id, rawCollider),
         controller: entry.controllerHandle,
         rawShape,

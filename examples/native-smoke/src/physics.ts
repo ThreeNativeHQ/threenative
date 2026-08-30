@@ -74,12 +74,15 @@ interface IParityObservation extends Record<string, unknown> {
   characterDisplacement: VectorTuple;
   collisionEventSet: readonly string[];
   control: string;
+  groundBody: string | null;
   groundCollider: string | null;
+  groundNormal: VectorTuple;
   grounded: boolean;
   rapierVersion: string;
   restingPosition: VectorTuple;
   runtime: "native" | "web";
   scenarioSha256: string;
+  slopeAngle: number;
   scenarioCoverage: {
     areaExcludedCharacter: boolean;
     oneWayPassedUpward: boolean;
@@ -280,9 +283,9 @@ function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
       const query = spatialQuery(ctx.physics.directSpaceState);
       characterMaxY = Math.max(characterMaxY, characterPosition[1]);
       if (
-        state?.grounded === true &&
-        state.groundCollider !== undefined &&
-        logicalName(state.groundCollider) === "movingPlatform"
+        currentCharacter.grounded &&
+        currentCharacter.groundBody !== undefined &&
+        logicalName(currentCharacter.groundBody.id) === "movingPlatform"
       )
         platformGroundedObserved = true;
       const parity: IParityObservation = {
@@ -295,13 +298,19 @@ function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
         ],
         collisionEventSet: [...collisionEvents].sort(),
         control: __TN_PHYSICS_CONTROL__,
+        groundBody:
+          currentCharacter.groundBody === undefined
+            ? null
+            : logicalName(currentCharacter.groundBody.id),
         groundCollider:
           state?.groundCollider === undefined ? null : logicalName(state.groundCollider),
+        groundNormal: currentCharacter.groundNormal.toArray(),
         grounded: state?.grounded ?? false,
         rapierVersion,
         restingPosition: position(currentBox),
         runtime: __TN_RUNTIME__,
         scenarioSha256: __TN_PHYSICS_SCENARIO_SHA256__,
+        slopeAngle: currentCharacter.slopeAngle,
         scenarioCoverage: {
           areaExcludedCharacter: !members.includes("character"),
           oneWayPassedUpward: characterMaxY > 1.23,
@@ -363,12 +372,15 @@ const initialParity: IParityObservation = {
   characterDisplacement: [0, 0, 0],
   collisionEventSet: [],
   control: __TN_PHYSICS_CONTROL__,
+  groundBody: null,
   groundCollider: null,
+  groundNormal: [0, 1, 0],
   grounded: false,
   rapierVersion: "pending",
   restingPosition: [0, 0, 0],
   runtime: __TN_RUNTIME__,
   scenarioSha256: __TN_PHYSICS_SCENARIO_SHA256__,
+  slopeAngle: 0,
   scenarioCoverage: {
     areaExcludedCharacter: false,
     oneWayPassedUpward: false,

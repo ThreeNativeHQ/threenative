@@ -8,6 +8,7 @@ use std::sync::Mutex;
 const TRANSFORM_WIDTH: usize = 8;
 const SLEEP_STATE_WIDTH: usize = 2;
 const EVENT_WIDTH: usize = 4;
+const CHARACTER_STATE_WIDTH: usize = 6;
 
 #[repr(C)]
 pub struct TnPhysicsWorldOptions {
@@ -159,6 +160,7 @@ struct CharacterEntry {
     shape: SharedShape,
     grounded: bool,
     ground_collider: Option<u32>,
+    ground_normal: [f32; 3],
     one_way_layers: u32,
     pushes_dynamic_bodies: bool,
 }
@@ -395,6 +397,7 @@ impl Simulation {
                 shape: character_shape,
                 grounded: false,
                 ground_collider: None,
+                ground_normal: [0.0, 1.0, 0.0],
                 one_way_layers: options.one_way_layers,
                 pushes_dynamic_bodies: options.pushes_dynamic_bodies,
             },
@@ -668,6 +671,7 @@ impl Simulation {
                     .map(|(body_id, body_entry)| (body_entry.collider, *body_id))
                     .collect();
                 let mut ground_collider = None;
+                let mut ground_normal = None;
                 let mut collisions = Vec::new();
                 let movement = character.controller.move_shape(
                     delta_time,
@@ -678,6 +682,11 @@ impl Simulation {
                     |collision| {
                         if collision.hit.normal1.y >= 0.5 {
                             ground_collider = collider_ids.get(&collision.handle).copied();
+                            ground_normal = Some([
+                                collision.hit.normal1.x,
+                                collision.hit.normal1.y,
+                                collision.hit.normal1.z,
+                            ]);
                         }
                         if character.pushes_dynamic_bodies {
                             collisions.push(collision);
@@ -708,6 +717,13 @@ impl Simulation {
                 state.grounded = movement.grounded;
                 state.ground_collider = ground_collider
                     .or_else(|| movement.grounded.then_some(state.ground_collider).flatten());
+                state.ground_normal = ground_normal.unwrap_or_else(|| {
+                    if movement.grounded {
+                        state.ground_normal
+                    } else {
+                        [0.0, 1.0, 0.0]
+                    }
+                });
             } else {
                 let body = &mut self.bodies[entry.body];
                 if !body.is_kinematic() {
@@ -794,16 +810,19 @@ impl Simulation {
     }
 
     fn write_character_states(&self, output: &mut [f32]) -> Option<usize> {
-        if output.len() < self.characters.len() * 3 {
+        if output.len() < self.characters.len() * CHARACTER_STATE_WIDTH {
             return None;
         }
         for (index, (id, character)) in self.characters.iter().enumerate() {
-            let offset = index * 3;
+            let offset = index * CHARACTER_STATE_WIDTH;
             output[offset] = *id as f32;
             output[offset + 1] = if character.grounded { 1.0 } else { 0.0 };
             output[offset + 2] = character
                 .ground_collider
                 .map_or(-1.0, |collider| collider as f32);
+            output[offset + 3] = character.ground_normal[0];
+            output[offset + 4] = character.ground_normal[1];
+            output[offset + 5] = character.ground_normal[2];
         }
         Some(self.characters.len())
     }
@@ -1332,7 +1351,7 @@ pub extern "C" fn tn_physics_read_character_states(
     let Some(simulation) = (unsafe { simulation.as_ref() }) else {
         return -1;
     };
-    let required = simulation.characters.len() * 3;
+    let required = simulation.characters.len() * CHARACTER_STATE_WIDTH;
     if required > output_float_capacity || (required > 0 && output.is_null()) {
         return -1;
     }

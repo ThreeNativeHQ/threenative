@@ -9,6 +9,7 @@ import {
   READY_MARKER,
   analyzeDesktopLog,
   analyzePresentTicks,
+  analyzeWorkerProof,
   inspectOverlayBuffer,
   inspectScreenshot,
 } from '../scripts/verify-desktop-core.mjs';
@@ -41,6 +42,38 @@ test('desktop log requires both markers, exact frame completion, and clean error
   );
   expect(analyzeDesktopLog(`${clean}\nWebGPU validation error`)).toContain(
     'WebGPU validation error',
+  );
+});
+
+test('desktop worker evidence fails closed on rollback or an incomplete packed proof', () => {
+  const proof = {
+    callbacksAfterTerminate: 0,
+    completionOrder: [1],
+    framesAdvanced: 10,
+    inputChecksum: 353589368,
+    outputChecksum: 2624713848,
+    sourceForm: 'classic-blob',
+    workerIdentity: 'dedicated-worker',
+  };
+  const clean = [
+    'TN_NATIVE_WORKER_CREATED:{"id":1,"engine":"V8"}',
+    'TN_NATIVE_WORKER_TERMINATED:{"id":1}',
+    `TN_NATIVE_WORKER_PROOF_PASS:${JSON.stringify(proof)}`,
+  ].join('\n');
+
+  expect(analyzeWorkerProof(clean)).toEqual({
+    engine: 'V8',
+    ...proof,
+  });
+  expect(analyzeWorkerProof(clean.replace('\nTN_NATIVE_WORKER_TERMINATED', '[Worker 1] ready\nTN_NATIVE_WORKER_TERMINATED'))).toEqual({
+    engine: 'V8',
+    ...proof,
+  });
+  expect(() => analyzeWorkerProof(clean.replace('TN_NATIVE_WORKER_TERMINATED:{"id":1}', ''))).toThrow(
+    'missing TN_NATIVE_WORKER_TERMINATED',
+  );
+  expect(() => analyzeWorkerProof(`${clean}\nTN_NATIVE_WORKER_ROLLBACK_ACTIVE`)).toThrow(
+    'TN_NATIVE_WORKER_ROLLBACK_ACTIVE',
   );
 });
 

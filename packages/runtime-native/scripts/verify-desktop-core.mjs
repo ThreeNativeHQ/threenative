@@ -9,6 +9,7 @@ import { PNG } from 'pngjs';
 
 export const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 export const FIRST_FRAME_MARKER = 'TN_NATIVE_SMOKE_FIRST_FRAME';
+export const WORKER_PROOF_MARKER = 'TN_NATIVE_WORKER_PROOF_PASS:';
 const FAILURE_PATTERN = /(?:\bError:|\bRangeError:|validation error|shader parsing error|fatal signal|failed to)/i;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,6 +39,34 @@ export function analyzeDesktopLog(log, frames = 300) {
     if (FAILURE_PATTERN.test(line)) failures.push(line.trim());
   }
   return [...new Set(failures)];
+}
+
+export function analyzeWorkerProof(log) {
+  if (log.includes('TN_NATIVE_WORKER_ROLLBACK_ACTIVE')) {
+    throw new Error('TN_NATIVE_WORKER_ROLLBACK_ACTIVE: rollback-active runs cannot satisfy acceptance');
+  }
+  const createdMatch = log.match(/TN_NATIVE_WORKER_CREATED:(\{"id":\d+,"engine":"[^"]+"\})/u);
+  if (!createdMatch) throw new Error('missing TN_NATIVE_WORKER_CREATED');
+  const created = JSON.parse(createdMatch[1]);
+  const terminated = `TN_NATIVE_WORKER_TERMINATED:{"id":${created.id}}`;
+  if (!log.includes(terminated)) throw new Error(`missing TN_NATIVE_WORKER_TERMINATED for id ${created.id}`);
+  const proofMatch = log.match(/TN_NATIVE_WORKER_PROOF_PASS:(\{[^\r\n]*\})/u);
+  if (!proofMatch) throw new Error(`missing ${WORKER_PROOF_MARKER.slice(0, -1)}`);
+  const proof = JSON.parse(proofMatch[1]);
+  if (
+    created.engine !== 'V8' ||
+    proof.workerIdentity !== 'dedicated-worker' ||
+    proof.sourceForm !== 'classic-blob' ||
+    !Number.isInteger(proof.framesAdvanced) ||
+    proof.framesAdvanced < 1 ||
+    proof.callbacksAfterTerminate !== 0 ||
+    JSON.stringify(proof.completionOrder) !== '[1]' ||
+    !Number.isInteger(proof.inputChecksum) ||
+    !Number.isInteger(proof.outputChecksum)
+  ) {
+    throw new Error(`invalid packed worker proof: ${JSON.stringify({ created, proof })}`);
+  }
+  return { engine: created.engine, ...proof };
 }
 
 export function inspectScreenshot(path) {
@@ -178,8 +207,10 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
     },
   );
   const log = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  writeFileSync(logPath, log);
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`desktop runtime exited ${result.status}:\n${log}`);
+  const worker = analyzeWorkerProof(log);
   const failures = analyzeDesktopLog(log, frames);
   if (failures.length > 0) throw new Error(`desktop core gate failed:\n${failures.join('\n')}`);
   const image = inspectScreenshot(screenshot);
@@ -188,10 +219,15 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
     completedAt: new Date().toISOString(),
     frames,
     host: { arch: process.arch, platform: process.platform },
+    artifact: {
+      path: relative(workspace, binary),
+      sha256: createHash('sha256').update(readFileSync(binary)).digest('hex'),
+    },
     log: relative(workspace, logPath),
-    markers: [READY_MARKER, FIRST_FRAME_MARKER, `Rendered ${frames} frames`],
+    markers: [READY_MARKER, FIRST_FRAME_MARKER, WORKER_PROOF_MARKER.slice(0, -1), `Rendered ${frames} frames`],
     pass: true,
     preset,
+    worker,
     screenshot: {
       ...image,
       ...overlay,
@@ -199,7 +235,6 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
       sha256: createHash('sha256').update(readFileSync(screenshot)).digest('hex'),
     },
   };
-  writeFileSync(logPath, log);
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   return { ...image, ...overlay, frames, host: process.platform, log, preset, reportPath, screenshot };
 }

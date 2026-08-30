@@ -48,6 +48,85 @@ describe("native physics contract", () => {
     expect(NativePhysicsDirectSpaceState3D).toBe(PhysicsDirectSpaceState3D);
   });
 
+  it("reads ground body and normal through the existing bulk character-state call", () => {
+    let nextId = 0;
+    const readCharacterStates = vi.fn((buffer: Float32Array) => {
+      buffer.set([0, 1, 1, 0, 0.8, 0.6]);
+      return 1;
+    });
+    const raw = {
+      configureCharacter: vi.fn(),
+      createBody: vi.fn(() => nextId++),
+      dispose: vi.fn(),
+      drainCollisionEvents: vi.fn(() => 0),
+      intersectPoint: vi.fn(() => []),
+      intersectRay: vi.fn(() => null),
+      intersectShape: vi.fn(() => []),
+      readAreaIntersections: vi.fn(() => 0),
+      readBodySleepStates: vi.fn(() => 0),
+      readCharacterStates,
+      readVisibleTransforms: vi.fn(() => 0),
+      removeBody: vi.fn(),
+      step: vi.fn(),
+    } as unknown as INativeSimulation;
+    const simulation = createNativePhysicsSimulation(raw, "0.30.0");
+    const character = simulation.createBody({ ...bodyOptions("fixed"), type: "character" });
+    const floor = simulation.createBody(bodyOptions("fixed"));
+    simulation.configureCharacter(character.body.id, {
+      maxSlopeClimbAngle: Math.PI / 4,
+      offset: 0.01,
+      oneWayLayers: 0,
+    });
+    simulation.step(1 / 60);
+
+    const state = simulation.readCharacterState?.(character.body.id);
+    expect(state).toEqual(
+      expect.objectContaining({
+        groundBody: floor.body,
+        groundCollider: floor.body.id,
+        grounded: true,
+      }),
+    );
+    expect(state?.groundNormal?.x).toBe(0);
+    expect(state?.groundNormal?.y).toBeCloseTo(0.8, 6);
+    expect(state?.groundNormal?.z).toBeCloseTo(0.6, 6);
+    expect(readCharacterStates).toHaveBeenCalledOnce();
+  });
+
+  it("rejects the old three-float native character-state row", () => {
+    let nextId = 0;
+    const raw = {
+      configureCharacter: vi.fn(),
+      createBody: vi.fn(() => nextId++),
+      dispose: vi.fn(),
+      drainCollisionEvents: vi.fn(() => 0),
+      intersectPoint: vi.fn(() => []),
+      intersectRay: vi.fn(() => null),
+      intersectShape: vi.fn(() => []),
+      readAreaIntersections: vi.fn(() => 0),
+      readBodySleepStates: vi.fn(() => 0),
+      readCharacterStates: vi.fn((buffer: Float32Array) => {
+        buffer.set([0, 1, -1]);
+        return 1;
+      }),
+      readVisibleTransforms: vi.fn(() => 0),
+      removeBody: vi.fn(),
+      step: vi.fn(),
+    } as unknown as INativeSimulation;
+    const simulation = createNativePhysicsSimulation(raw, "old-runtime");
+    const character = simulation.createBody({ ...bodyOptions("fixed"), type: "character" });
+    simulation.configureCharacter(character.body.id, {
+      maxSlopeClimbAngle: Math.PI / 4,
+      offset: 0.01,
+      oneWayLayers: 0,
+    });
+    simulation.step(1 / 60);
+
+    expect(() => simulation.readCharacterState?.(character.body.id)).toThrow(
+      /malformed six-float character state/,
+    );
+  });
+
   it("rejects native shapes outside the ABI before calling the host", () => {
     const createBody = vi.fn(() => {
       throw new Error("unsupported shapes must not reach the native host");

@@ -197,7 +197,7 @@ Charter rule 5: *a package exists only when it carries a dependency the others m
 inherit.* Answer honestly, because the answer is not obviously yes:
 
 - `@threenative/world` needs no new npm dependency beyond `three`.
-- It **does** carry a worker-backed generation pool ([PRD-250](./PRD-250-native-workers-are-actually-workers.md))
+- It **does** carry a worker-backed generation pool ([PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md))
   and a multi-megabyte compute/residency surface that every `@threenative/core` consumer would
   otherwise inherit in its bundle.
 
@@ -818,7 +818,7 @@ converted into a pass.
   either read from HEAD source (cited by `file:line`) or written as a stated threshold that
   Phase 0/6 fills.
 - **Linchpin contract validator: NOT RUN — recorded as unverified, not as passing.** The
-  invocation is known from [PRD-250](./PRD-250-native-workers-are-actually-workers.md):
+  invocation is known from [PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md):
 
   ```sh
   sh ${LINCHPIN_PLUGIN_ROOT}/scripts/linchpin.sh contract \

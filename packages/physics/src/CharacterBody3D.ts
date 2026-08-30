@@ -1,4 +1,4 @@
-import type { Object3D, Vector3 } from "three";
+import { type Object3D, Vector3 } from "three";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
 import type {
@@ -67,6 +67,12 @@ export class CharacterBody3D {
   maxFallSpeed: number;
   readonly oneWayLayers: number;
   grounded = false;
+  /** Contact normal from the completed physics step; reset to +Y while airborne. */
+  readonly groundNormal = new Vector3(0, 1, 0);
+  /** Portable handle for the body currently supporting this character. */
+  groundBody: IPhysicsBodyHandle | undefined;
+  /** Radians between `groundNormal` and world up (+Y). */
+  slopeAngle = 0;
   readonly #simulation: IPhysicsSimulation;
   readonly #physics: IPhysicsContext | undefined;
   #desired = { x: 0, y: 0, z: 0 };
@@ -199,8 +205,7 @@ export class CharacterBody3D {
     this.#desired.y = 0;
     this.#desired.z = 0;
     this.#sliding = false;
-    this.#groundCollider = undefined;
-    this.grounded = false;
+    this.#clearGroundState();
   }
 
   applyTransform(values: Readonly<Float32Array>, offset: number): void {
@@ -217,6 +222,13 @@ export class CharacterBody3D {
       state?.grounded ??
       (this.#sliding && this.#desiredY < 0 && y - this.#beforeY > this.#desiredY + 0.0001);
     this.#groundCollider = state?.groundCollider;
+    if (this.grounded && state?.groundNormal !== undefined) {
+      this.groundNormal.set(state.groundNormal.x, state.groundNormal.y, state.groundNormal.z);
+      this.groundBody = state.groundBody;
+      this.slopeAngle = Math.acos(Math.max(-1, Math.min(1, this.groundNormal.y)));
+    } else if (!this.grounded) {
+      this.#clearGroundState();
+    }
     if (this.#sliding && this.grounded && this.velocity.y < 0) this.velocity.y = 0;
     this.object.position.set(x, y, z);
     this.object.quaternion.set(qx, qy, qz, qw);
@@ -249,5 +261,14 @@ export class CharacterBody3D {
     this.#disposed = true;
     this.#physics?.remove(this);
     this.#simulation.removeBody(this.body.id);
+    this.#clearGroundState();
+  }
+
+  #clearGroundState(): void {
+    this.grounded = false;
+    this.#groundCollider = undefined;
+    this.groundBody = undefined;
+    this.groundNormal.set(0, 1, 0);
+    this.slopeAngle = 0;
   }
 }

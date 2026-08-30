@@ -353,6 +353,87 @@ test("should keep the worker isolate's failure paths wired to the main isolate",
   expect(workerCpp).toMatch(/Error executing code[\s\S]*Type::ERROR/u);
 });
 
+test("should resolve only worker URL forms the packed host proves", () => {
+  const harness = createNativeWorkerHarness();
+  const { context } = setupWorkerContext(harness.natives);
+  const observed = vm.runInContext(
+    `(() => {
+       const capture = (create) => {
+         try {
+           create();
+           return null;
+         } catch (error) {
+           return { name: error.name, message: error.message };
+         }
+       };
+       const blob = URL.createObjectURL(new Blob(["postMessage(1);"]));
+       const admitted = capture(() => new Worker(blob));
+       const moduleWorker = capture(() => new Worker(blob, { type: "module" }));
+       const stagedClassic = capture(() => new Worker("workers/checksum.js"));
+       const external = capture(() => new Worker("https://example.invalid/checksum.js"));
+       URL.revokeObjectURL(blob);
+       const revoked = capture(() => new Worker(blob));
+       return { admitted, external, moduleWorker, revoked, stagedClassic };
+     })()`,
+    context,
+  );
+
+  expect(observed.admitted).toBeNull();
+  expect(harness.created).toEqual(["postMessage(1);"]);
+  expect(observed.moduleWorker).toMatchObject({
+    name: "NotSupportedError",
+    message: expect.stringContaining("TN_NATIVE_WORKER_MODULE_UNSUPPORTED"),
+  });
+  for (const row of [observed.stagedClassic, observed.external]) {
+    expect(row).toMatchObject({
+      name: "NotSupportedError",
+      message: expect.stringContaining("TN_NATIVE_WORKER_URL_UNSUPPORTED"),
+    });
+  }
+  expect(observed.revoked).toMatchObject({
+    name: "NetworkError",
+    message: expect.stringContaining("TN_NATIVE_WORKER_SOURCE_MISSING"),
+  });
+});
+
+test("should reject acceptance when the internal worker rollback selector is active", () => {
+  const harness = createNativeWorkerHarness();
+  const { context } = setupWorkerContext({
+    ...harness.natives,
+    __tnNativeWorkerRollbackActive: true,
+  });
+  const observed = vm.runInContext(
+    `(() => {
+       const blob = URL.createObjectURL(new Blob(["postMessage(1);"]));
+       try {
+         new Worker(blob);
+         return null;
+       } catch (error) {
+         return { name: error.name, message: error.message };
+       }
+     })()`,
+    context,
+  );
+
+  expect(observed).toMatchObject({
+    name: "NotSupportedError",
+    message: expect.stringContaining("TN_NATIVE_WORKER_ROLLBACK_ACTIVE"),
+  });
+  expect(harness.created).toEqual([]);
+  expect(readRuntimeCpp()).toContain('std::getenv("THREENATIVE_NATIVE_WORKER_ROLLBACK")');
+  expect(readRuntimeCpp()).toContain("TN_NATIVE_WORKER_ROLLBACK_ACTIVE");
+});
+
+test("should emit worker evidence as complete lines under concurrent logging", () => {
+  const runtimeCpp = readRuntimeCpp();
+  expect(runtimeCpp).toMatch(
+    /const std::string workerCreatedMarker[\s\S]*std::cout << workerCreatedMarker << std::endl;/u,
+  );
+  expect(runtimeCpp).toMatch(
+    /const std::string workerTerminatedMarker[\s\S]*std::cout << workerTerminatedMarker << std::endl;/u,
+  );
+});
+
 test("should drain a stopped worker before reaping it, and join every worker on shutdown", () => {
   // A worker that called close() has already queued its final result. Reaping it before draining
   // destroyed that result, so the game saw the worker vanish with no answer.

@@ -82,6 +82,13 @@ export function generateOperatorScenario(template, fixtureBytes) {
         },
         {
           allowTrivial:
+            "Native parity setup declares the floor body before stepping; this row checks the public CharacterBody3D groundBody identity.",
+          equals: "floor",
+          id: "GameState",
+          path: "parity.groundBody",
+        },
+        {
+          allowTrivial:
             "Native parity derives this assertion from the fixture bytes; this row checks the generated scenario hash remains fixed.",
           equals: scenarioSha256,
           id: "GameState",
@@ -189,10 +196,15 @@ export function normalizeReport(report, label) {
       `${label}.collisionEventSet`,
     ).sort(),
     control: requireString(parity.control, `${label}.control`),
+    groundBody:
+      parity.groundBody === null
+        ? null
+        : requireString(parity.groundBody, `${label}.groundBody`),
     groundCollider:
       parity.groundCollider === null
         ? null
         : requireString(parity.groundCollider, `${label}.groundCollider`),
+    groundNormal: requireVector(parity.groundNormal, `${label}.groundNormal`),
     grounded:
       typeof parity.grounded === "boolean"
         ? parity.grounded
@@ -203,6 +215,7 @@ export function normalizeReport(report, label) {
     restingPosition: requireVector(parity.restingPosition, `${label}.restingPosition`),
     runtime: requireString(parity.runtime, `${label}.runtime`),
     scenarioSha256: requireString(parity.scenarioSha256, `${label}.scenarioSha256`),
+    slopeAngle: requireNumber(parity.slopeAngle, `${label}.slopeAngle`),
     scenarioCoverage: {
       areaExcludedCharacter: requireBoolean(
         coverage.areaExcludedCharacter,
@@ -288,6 +301,13 @@ export function compareObservations(web, device, options = {}) {
     );
   if (web.grounded !== device.grounded || web.groundCollider !== device.groundCollider)
     failures.push("grounded or logical ground collider differs");
+  if (web.groundBody !== device.groundBody)
+    failures.push("public CharacterBody3D ground body differs");
+  const groundNormalMaxAxisDelta = maximumAxisDelta(web.groundNormal, device.groundNormal);
+  if (groundNormalMaxAxisDelta > 0.02)
+    failures.push(`ground normal delta ${groundNormalMaxAxisDelta} > 0.02`);
+  const slopeAngleDelta = Math.abs(web.slopeAngle - device.slopeAngle);
+  if (slopeAngleDelta > 0.02) failures.push(`slope angle delta ${slopeAngleDelta} > 0.02`);
   if (!equalSet(web.areaMembership, device.areaMembership))
     failures.push("logical area membership differs");
   if (!equalSet(web.collisionEventSet, device.collisionEventSet))
@@ -311,8 +331,10 @@ export function compareObservations(web, device, options = {}) {
     "dynamicBox-floor-1",
     "dynamicBox-movingPlatform-1",
   ];
-  if (!web.grounded || web.groundCollider !== "floor")
-    failures.push("final exact grounded/floor outcome was not observed");
+  if (!web.grounded || web.groundCollider !== "floor" || web.groundBody !== "floor")
+    failures.push("final exact grounded/floor body outcome was not observed");
+  if (web.groundNormal[1] < 0.99 || web.slopeAngle >= 0.02)
+    failures.push("final flat-floor normal/slope outcome was not observed");
   if (!equalSet(web.areaMembership, expectedArea))
     failures.push("final exact area outcome was not [dynamicBox]");
   if (!equalSet(web.collisionEventSet, expectedEvents))
@@ -321,8 +343,10 @@ export function compareObservations(web, device, options = {}) {
     characterDisplacementDelta,
     displacementTolerance,
     failures,
+    groundNormalMaxAxisDelta,
     pass: failures.length === 0,
     restingPositionMaxAxisDelta,
+    slopeAngleDelta,
     restingTolerance,
     scenarioSha256,
   };

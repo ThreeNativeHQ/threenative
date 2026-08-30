@@ -67,6 +67,7 @@ interface IArmObservation {
   readonly characterDisplacement: readonly [number, number, number];
   readonly grounded: boolean;
   readonly groundCollider: number | null;
+  readonly groundNormal: readonly [number, number, number];
   readonly areaMembership: readonly number[];
   readonly areaMembershipSnapshots: readonly string[];
   readonly collisionEventSet: readonly string[];
@@ -420,6 +421,11 @@ function runScenario(): IArmObservation {
     collisionEventSequence: allEvents,
     freshnessBeforeVisible,
     groundCollider: state?.groundCollider ?? null,
+    groundNormal: [
+      state?.groundNormal?.x ?? 0,
+      state?.groundNormal?.y ?? 1,
+      state?.groundNormal?.z ?? 0,
+    ],
     grounded: state?.grounded ?? false,
     quadraticBufferBytes: {
       area: scenario.bodies.length ** 2 * 2 * Uint32Array.BYTES_PER_ELEMENT,
@@ -645,7 +651,7 @@ describe("native adapter freshness", () => {
       }),
       readBodySleepStates: vi.fn(() => 0),
       readCharacterStates: vi.fn((buffer) => {
-        buffer.set([0, 1, 2]);
+        buffer.set([0, 1, 2, 0, 1, 0]);
         return 1;
       }),
       readVisibleTransforms: vi.fn(() => 0),
@@ -688,7 +694,12 @@ describe("native adapter freshness", () => {
     const members = [...(simulation.areaIntersections?.(1) ?? [])];
     expect({ members, state }).toEqual({
       members: [2],
-      state: { grounded: true, groundCollider: 2 },
+      state: {
+        groundBody: expect.objectContaining({ id: 2 }),
+        groundCollider: 2,
+        groundNormal: { x: 0, y: 1, z: 0 },
+        grounded: true,
+      },
     });
     simulation.readCharacterState?.(0);
     simulation.areaIntersections?.(1);

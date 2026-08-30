@@ -1,6 +1,6 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Nine are archived in
+**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Twelve are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -9,6 +9,14 @@
 [248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) with their features shipped
 and reachable on the public surface, each archived Status naming the native or device lane that is
 still `UNVERIFIED` rather than implying it passed; and
+[257](../done/PRD-257-character-ground-contact-is-observable.md), with clean-install web and packed
+Linux desktop evidence for all three public observations while Android/iOS remain `UNVERIFIED`; and
+[250](../done/PRD-250-native-workers-are-actually-workers.md), whose standard classic Blob Worker
+runs in a native V8 isolate/thread with clean-install web and packed Linux desktop evidence while
+other desktop and mobile targets remain `UNVERIFIED`; and
+[260](../done/PRD-260-standard-navigation-reaches-native-without-webassembly.md), declined at its
+opening consumer gate because no native navmesh caller exists and PRD-052's 31-line portable steering
+remains the measured Android answer; and
 [241](../done/PRD-241-a-sequence-is-one-cancellable-object.md), which shipped in `affb48e8` with its
 boxes unaudited and was closed on 2026-08-29 after every negative control it names was executed
 (`docs/verification/prd-241-easing-closure-2026-08-29.md`); [238](../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md)
@@ -16,8 +24,8 @@ with WebGPU culling and consumer conformance, native unverified; and
 [249](../done/PRD-249-a-fluid-field-is-data-the-game-draws.md) with web and desktop-native field
 evidence, Pixel 8 unverified.
 
-250 closed Phase 1 only and 254 is PARTIAL, so both stay. Everything else here is unbuilt: **no
-grass, ocean, fluid, soft body, surfel GI, procedural terrain or portable text exists in any
+254 is PARTIAL, so it stays. Everything else here is unbuilt: **no
+grass, ocean, soft body, surfel GI, procedural terrain or portable text exists in any
 package**, and a demo cannot be written against them.
 
 Every upstream repository named here was **cloned at depth 1 on 2026-08-28 and read**. Claims about
@@ -74,16 +82,16 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [247](../done/PRD-247-drei-vanilla-per-item.md) **DONE (web)** | The drei-vanilla helpers that are mechanism, one at a time. **Reverses a bad refusal** — `billboarding` is named in CHARTER §5b as something the framework may own. | [`drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT | 5 → MEDIUM |
 | [248](../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) **DONE (web)** | `Atmosphere` bakes three LUTs and hands back `radiance()`, `sunTransmittance()` and `aerialPerspective()`. **No preset list, and it creates no light** — the sky mesh, the material and the `DirectionalLight` stay in the template. | [`SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky) `src/sky/SkyAtmosphereBaker.js` (526), MIT | 7 → HIGH |
 | [249](../done/PRD-249-a-fluid-field-is-data-the-game-draws.md) **DONE (web + desktop; Pixel 8 unverified)** | `FluidField2D` — the seven-pass incompressible solver, unfused from the material upstream welds it to. The game samples `field.dye` and decides whether it is smoke or fire. **Last in the batch: zero in-repo callers today.** | [`threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation) `src/FluidMaterialGPU.ts:53-325`, MIT | 6 → MEDIUM |
-| [250](./HIGH/PRD-250-native-workers-are-actually-workers.md) | The standard `Worker` surface already exposed by the native host actually runs work off the game/render thread. It links the existing `WorkerRegistry`/`WorkerThread` path and removes the production main-thread polyfill; it does **not** add `TN.jobs`. | Web Worker semantics + the existing unlinked native worker subsystem | 8 → HIGH |
+| [250](../done/PRD-250-native-workers-are-actually-workers.md) **DONE (web + Linux desktop)** | The standard classic Blob `Worker` runs in a native V8 isolate/thread; staged, external and module sources fail by stable name. Clean-install web and packed Linux desktop proofs keep rendering while work is pending. | Web Worker semantics + the existing native worker subsystem | 8 → HIGH |
 | [251](./HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md) | Production procedural-world fields: deterministic height/flow/moisture/biome data, erosion/hydrology, CPU/GPU query parity and crack-free terrain consumption. The game still owns every material, biome look, species, water and sky decision. | [`threejs-world`](https://github.com/imsarah/threejs-world), mined as mechanism rather than public API | 10 → HIGH |
 | [252](./HIGH/PRD-252-imported-meshes-cook-portable-compound-colliders.md) | Opt-in offline decomposition of a real imported concave mesh into a deterministic bounded convex-part set, consumed as one logical Rapier body on web and native. No runtime cooker and no CoACD vocabulary in game code. | [`CoACD`](https://github.com/SarahWeiii/CoACD) tool-time candidate + Rapier compound semantics | 8 → HIGH |
 | [253](./HIGH/PRD-253-content-residency-and-screen-space-hlod.md) | Generic authored/generated content residency: measured-error LOD/HLOD, screen-space refinement, cancellation, refcount-safe eviction and hard resident-byte budgets. PRD-251 consumes this scheduler instead of creating a second one. | [`3DTilesRendererJS`](https://github.com/NASA-AMMOS/3DTilesRendererJS) mechanisms + existing `meshoptimizer` tooling | 10 → HIGH |
 | [255](../done/PRD-255-a-million-grass-candidates-are-game-source.md) **DONE, web only; the generic extraction was DECLINED** | A 1,048,576-candidate GPU field proven as game source: reset, game-supplied candidate kernel, atomic survivor compaction and an indirect draw over the existing `IComputeDriven`. The generic `GPUInstanceField` extraction is conditional and may end declined. | [`momentchan/false-earth`](https://github.com/momentchan/false-earth), MIT | 8 → HIGH |
 | [256](./HIGH/PRD-256-static-light-is-a-standard-baked-asset.md) | The existing asset compiler generates deterministic `TEXCOORD_1`/UV2 plus a compressed KTX2 static lightmap, and stock Three.js `material.lightMap` consumes the same compiled artifact on web and native. No runtime baker, scene format or copied unlicensed source. | [`repalash/xatlas-three`](https://github.com/repalash/xatlas-three) + `Ibrahim-3d/three-lightmap-baker`, MIT; unlicensed Lucas source is technique-only | 9 → HIGH |
-| [257](./HIGH/PRD-257-character-ground-contact-is-observable.md) | Consumer-gated `CharacterBody3D` observations: stable `groundNormal`, logical `groundBody` and derived `slopeAngle`, carried through the existing bulk web/native state seam. Phase 0 declines it unless one real consumer needs at least two fields. | [`pmndrs/ecctrl`](https://github.com/pmndrs/ecctrl), MIT; observation semantics only | 7 → HIGH |
+| [257](../done/PRD-257-character-ground-contact-is-observable.md) **DONE (web + Linux desktop)** | `CharacterBody3D` now exposes stable `groundNormal`, logical `groundBody` and derived `slopeAngle` through the existing bulk web/native state seam. The native-smoke consumer and clean-install slope game use all three. | [`pmndrs/ecctrl`](https://github.com/pmndrs/ecctrl), MIT; observation semantics only | 7 → HIGH |
 | [258](./HIGH/PRD-258-many-actors-share-one-animation-texture.md) | Consumer-gated GPU-instanced skeletal animation: bake shared clip bone matrices once, then let ordinary Three/WebGPU draw independently timed actors from one payload. No motion matching, state graph, ragdoll, VAT, WebGL shader patch or look ownership. | upstream Three WebGPU instanced-skinning examples, MIT; `mbarbier/threejs-gpu-skinning`, ISC, as historical technique only | 8 → HIGH |
 | [259](./HIGH/PRD-259-fewer-pixels-must-still-look-like-the-same-game.md) | Consumer-gated temporal reconstruction after PRD-228 lowers the drawing buffer: compare current presentation, catalog Three `TAAUNode` and `pmndrs/upscaler` without adding a renderer option or claiming the upscaler fixes Bayview's CPU term. Emulator closes compatibility/visual gates; physical Pixel closes performance. | upstream Three 0.185.1 `TAAUNode`, MIT; `pmndrs/upscaler`, MIT + AMD FSR notice | 8 → HIGH |
-| [260](./HIGH/PRD-260-standard-navigation-reaches-native-without-webassembly.md) | Consumer-gated native navigation through the existing `NavigationRegion3D`/`NavigationAgent3D` vocabulary, with a pure-JS backend only if a named native consumer beats the prior 31-line steering result. No second nav API, AI policy or WASM on native. | [`isaac-mason/navcat`](https://github.com/isaac-mason/navcat) `bc9d3c3f372a`, MIT | 8 → HIGH |
+| [260](../done/PRD-260-standard-navigation-reaches-native-without-webassembly.md) **DECLINED** | The opening consumer gate found no native navmesh caller; PRD-052's 31-line portable steering remains the measured Android answer. No navcat dependency, second backend/API, or synthetic benchmark was added. | [`isaac-mason/navcat`](https://github.com/isaac-mason/navcat) `bc9d3c3f372a`, MIT | 8 → HIGH |
 
 **Order to attack:** 259 Phase 0 → 257 Phase 0 → 256 Phase 0 → 258 Phase 0 → 260 Phase 0 → 250 → 253 → 251 → 252 → 237 → 239 → 247 → 242 → 244 → 238 → 241 → 248 → 243 → 246 → 240 → 245 → 249.
 259, 257, 256, 258 and 260 begin with bounded refusal gates, so run those cheap decisions before feature work. If any
@@ -93,8 +101,8 @@ an owed correctness gate, while the other items are product capabilities. 237, 2
 a game author writes on day one and are small. 242 gates 243–246.
 245 is the largest and the most likely to be refused on device cost, by design. 249 is last
 because §11.1's more-than-twice clause is not yet satisfied for it, and the PRD says so.
-260 additionally stops before comparison if no named native navmesh consumer exists; its place in the
-Phase 0 queue is permission to decide, not evidence that a second backend is wanted.
+260 stopped before comparison because no named native navmesh consumer exists; its Phase 0 place was
+permission to decide, not evidence that a second backend was wanted.
 
 ## Third survey — the broad engine-stack proposal
 

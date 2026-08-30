@@ -257,6 +257,12 @@ if (typeof Worker === "undefined") {
       this._terminated = false;
       this._id = -1;
 
+      if (globalThis.__tnNativeWorkerRollbackActive === true) {
+        throw namedError(
+          "NotSupportedError",
+          "TN_NATIVE_WORKER_ROLLBACK_ACTIVE: acceptance refuses the internal native worker rollback path",
+        );
+      }
       if (options?.type === "module") {
         throw namedError(
           "NotSupportedError",
@@ -266,7 +272,7 @@ if (typeof Worker === "undefined") {
       if (typeof url !== "string" || !url.startsWith("blob:")) {
         throw namedError(
           "NotSupportedError",
-          "TN_NATIVE_WORKER_URL_UNSUPPORTED: Phase 1 supports classic Blob workers only",
+          "TN_NATIVE_WORKER_URL_UNSUPPORTED: native workers support classic Blob URLs only",
         );
       }
       if (

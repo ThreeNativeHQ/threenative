@@ -65,7 +65,7 @@ describe("CharacterBody3D", () => {
 
   it("should zero downward velocity when grounded", async () => {
     const { ctx, plugin } = await setup();
-    fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 4), 0, -0.1);
+    const floor = fixedBody(ctx.physics, new BoxGeometry(10, 0.2, 4), 0, -0.1);
     const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
     mesh.position.set(0, 0.5, 0);
     const character = new CharacterBody3D({
@@ -82,7 +82,13 @@ describe("CharacterBody3D", () => {
 
     expect(character.grounded).toBe(true);
     expect(character.velocity.y).toBe(0);
+    expect(character.groundBody).toBe(floor.body);
+    expect(character.groundNormal.x).toBeCloseTo(0, 5);
+    expect(character.groundNormal.y).toBeCloseTo(1, 5);
+    expect(character.groundNormal.z).toBeCloseTo(0, 2);
+    expect(character.slopeAngle).toBeLessThan(0.01);
     character.dispose();
+    floor.dispose();
   });
 
   it("should carry a grounded rider with a moving kinematic platform", async () => {
@@ -111,6 +117,7 @@ describe("CharacterBody3D", () => {
     }
 
     expect(character.grounded).toBe(true);
+    expect(character.groundBody).toBe(platform.body);
     expect(mesh.position.x).toBeGreaterThan(1.5);
     character.dispose();
     platform.dispose();
@@ -216,6 +223,33 @@ describe("CharacterBody3D", () => {
 
     expect(mesh.position.x).toBeLessThan(0);
     character.dispose();
+  });
+
+  it("should expose the normal and angle of a walkable slope", async () => {
+    const { ctx, plugin } = await setup();
+    const slope = fixedBody(ctx.physics, new BoxGeometry(8, 0.2, 4), 0, 0, Math.PI / 6);
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.set(0, 2, 0);
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      object: mesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+
+    for (let step = 0; step < 120; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(character.grounded).toBe(true);
+    expect(character.groundBody).toBe(slope.body);
+    expect(character.groundNormal.y).toBeLessThan(0.99);
+    expect(character.groundNormal.y).toBeGreaterThan(0.8);
+    expect(character.slopeAngle).toBeGreaterThan(0.1);
+    expect(character.slopeAngle).toBeLessThan(Math.PI / 4);
+    character.dispose();
+    slope.dispose();
   });
 
   it("should ignore colliders outside its collision mask while moving", async () => {
@@ -351,6 +385,9 @@ describe("CharacterBody3D", () => {
     expect(object.position.toArray()).toEqual([3, 4, 5]);
     expect(character.velocity.lengthSq()).toBe(0);
     expect(character.grounded).toBe(false);
+    expect(character.groundBody).toBeUndefined();
+    expect(character.groundNormal.toArray()).toEqual([0, 1, 0]);
+    expect(character.slopeAngle).toBe(0);
     character.dispose();
   });
 

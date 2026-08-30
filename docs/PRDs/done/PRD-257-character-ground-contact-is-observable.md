@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-257 — Character ground contact is observable
 
-**Status:** PROPOSED — consumer-gated; do not implement before Phase 0 passes  
+**Status:** IMPLEMENTED — web, native-Rust parity, clean-sandbox WebGPU and packed Linux desktop
+proofs green on 2026-08-29; Android/iOS remain UNVERIFIED
 **Filed:** 2026-08-29  
 **Selected from:** `pmndrs/ecctrl` character grounding and slope observations, commit `f6c28b5bd989851885eafb55d2cdbec71b28046a`  
 **Owns:** `CharacterBody3D` measured ground-contact observations only
@@ -153,7 +154,7 @@ Semantics:
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 0 | Consumer gate for ground-contact observations | TBD in Phase 0; must be a real game/example consumer, not a unit test. Candidate: extend a non-frozen example/debug snapshot that already reads `grounded`; do **not** use `examples/abyss-vanilla`. | Speculation | n/a | If the consumer uses only `grounded` or one extra field, decline PRD-257. |
+| 0 | Consumer gate for ground-contact observations | `examples/native-smoke/src/physics.ts:285-313` uses `groundBody`, `groundNormal` and `slopeAngle` in the portable parity game | Speculation | n/a | If the public observations are removed, the parity consumer no longer compiles and its platform/body/normal comparison fails. |
 | 1 | `IPhysicsCharacterState.groundNormal` scalars | `CharacterBody3D.applyTransform()` copies the state after bulk `readVisibleTransforms` (`CharacterBody3D.ts:206-227`) | Direct-space ground ray a game would otherwise add | n/a | Remove/zero native normal slots; slope/normal parity tests fail while grounded stays true. |
 | 2 | `IPhysicsCharacterState.groundBody` handle | `CharacterBody3D.applyTransform()` updates `groundBody`; moving-platform carry keeps using private id until migrated safely | Existing internal `#groundCollider` body id | Internal name `groundCollider` may remain private during migration but no new public `groundCollider` field | Change the contacted platform id; consumer must observe the new body identity, not stale previous body. |
 | 3 | `CharacterBody3D.slopeAngle` | Phase 0 consumer records/uses slope class or debug state; tests prove flat and a walkable 30° slope differ | Each game computing angle from backend-specific ground hit | n/a | Replace normal with `(0, 1, 0)`; walkable-slope proof reports 0 and fails. |
@@ -180,14 +181,14 @@ grep -R "standNormal\|slopeAngle\|groundNormal\|isOnPlatform" \
 
 Gate:
 
-- [ ] Identify one real non-test consumer that already uses `CharacterBody3D` and has a concrete reason
+- [x] Identify one real non-test consumer that already uses `CharacterBody3D` and has a concrete reason
       to read at least two of: `groundNormal`, `groundBody`, `slopeAngle`.
-- [ ] Write the consumer requirement into ledger row 0 with exact `file:line`. Acceptable examples:
+- [x] Write the consumer requirement into ledger row 0 with exact `file:line`. Acceptable examples:
       animation/debug state that changes on flat vs sloped ground; moving-platform logic that needs the
       body id plus normal; IK/effect placement that only needs observations and stays in game code.
-- [ ] If no such consumer exists, mark this PRD **DECLINED** and stop. Do not implement a public API for
+- [x] If no such consumer exists, mark this PRD **DECLINED** and stop. Do not implement a public API for
       speculative future IK or animation.
-- [ ] If the consumer can satisfy itself with one `PhysicsDirectSpaceState3D.intersectRay()` on web and
+- [x] If the consumer can satisfy itself with one `PhysicsDirectSpaceState3D.intersectRay()` on web and
       native, record that LOC comparison and decline unless the duplicate query or backend branch is
       demonstrably worse than the proposed framework change.
 
@@ -279,11 +280,11 @@ Required negative controls to observe red before final green:
 
 Acceptance:
 
-- [ ] Web proof observes flat floor, moving platform body identity and a slope angle/normal distinction.
-- [ ] Native desktop proof observes the same categories through the bulk ABI, not through a web-only raw
+- [x] Web proof observes flat floor, moving platform body identity and a slope angle/normal distinction.
+- [x] Native desktop proof observes the same categories through the bulk ABI, not through a web-only raw
       Rapier object.
-- [ ] The evidence record states exact target(s). Android/iOS remain `UNVERIFIED` unless actually run.
-- [ ] No per-character JS↔native frame crossing is introduced; the implementation keeps one bulk
+- [x] The evidence record states exact target(s). Android/iOS remain `UNVERIFIED` unless actually run.
+- [x] No per-character JS↔native frame crossing is introduced; the implementation keeps one bulk
       character-state read per dirty step.
 
 ### Phase 5 — Documentation, budgets and kill switch
@@ -313,10 +314,10 @@ from a web run.
 
 Kill-switch pass:
 
-- [ ] Count the proposed framework API plus tests against a game-side direct-space query helper repeated
+- [x] Count the proposed framework API plus tests against a game-side direct-space query helper repeated
       in the Phase 0 consumer. If the game-side version is smaller, portable and does not duplicate a
       backend seam, withdraw.
-- [ ] If the public API grows beyond the three fields in this PRD, split or withdraw.
+- [x] If the public API grows beyond the three fields in this PRD, split or withdraw.
 - [ ] If implementation needs ray/shape casts per character per frame, withdraw.
 
 ## Acceptance criteria

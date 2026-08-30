@@ -167,6 +167,8 @@ int32_t tn_physics_read_visible_transforms(
 int32_t tn_physics_read_body_sleep_states(
     const TnPhysicsSimulation *simulation, float *output,
     size_t output_float_capacity);
+/* Writes six floats per character: id, grounded, ground body id (-1 when absent),
+   and the world-space ground normal x/y/z. */
 int32_t tn_physics_read_character_states(
     const TnPhysicsSimulation *simulation, float *output,
     size_t output_float_capacity);

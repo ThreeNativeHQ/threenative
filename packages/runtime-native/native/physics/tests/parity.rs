@@ -120,6 +120,7 @@ struct Observation {
     character_displacement: [f32; 3],
     grounded: bool,
     ground_collider: Option<u32>,
+    ground_normal: [f32; 3],
     area_membership: Vec<u32>,
     area_membership_snapshots: Vec<String>,
     collision_event_set: Vec<String>,
@@ -143,6 +144,7 @@ struct Comparison {
     character_displacement_max_axis_delta: f32,
     grounded_mismatch: u32,
     ground_collider_mismatch: u32,
+    ground_normal_max_axis_delta: f32,
     area_membership_symmetric_difference: usize,
     collision_event_symmetric_difference: usize,
     collision_event_sequence_mismatch: u32,
@@ -201,19 +203,23 @@ fn positions(simulation: *const Simulation, capacity: usize) -> BTreeMap<u32, [f
         .collect()
 }
 
-fn character_state(simulation: *const Simulation, body_id: u32) -> Option<(bool, Option<u32>)> {
-    let mut output = [0.0; 3];
+fn character_state(
+    simulation: *const Simulation,
+    body_id: u32,
+) -> Option<(bool, Option<u32>, [f32; 3])> {
+    let mut output = [0.0; 6];
     let count = tn_physics_read_character_states(simulation, output.as_mut_ptr(), output.len());
     assert!(
         count >= 0,
         "shipping Simulation rejected its parity character buffer"
     );
     (0..count as usize).find_map(|index| {
-        let offset = index * 3;
+        let offset = index * 6;
         (output[offset] as u32 == body_id).then(|| {
             (
                 output[offset + 1] == 1.0,
                 (output[offset + 2] >= 0.0).then_some(output[offset + 2] as u32),
+                [output[offset + 3], output[offset + 4], output[offset + 5]],
             )
         })
     })
@@ -591,6 +597,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
         ],
         grounded: state.0,
         ground_collider: state.1,
+        ground_normal: state.2,
         area_membership: area_membership.clone(),
         area_membership_snapshots: area_snapshots,
         collision_event_set: all_events.into_iter().collect(),
@@ -692,6 +699,7 @@ fn measures_the_shipping_simulation_against_the_web_artifact() {
         ),
         grounded_mismatch: u32::from(web.grounded != rust.grounded),
         ground_collider_mismatch: u32::from(web.ground_collider != rust.ground_collider),
+        ground_normal_max_axis_delta: max_axis_delta(&web.ground_normal, &rust.ground_normal),
         area_membership_symmetric_difference: web_area.symmetric_difference(&rust_area).count(),
         collision_event_symmetric_difference: symmetric_difference(
             &web.collision_event_set,
@@ -745,6 +753,11 @@ fn measures_the_shipping_simulation_against_the_web_artifact() {
         (rust.grounded, rust.ground_collider),
         (web.grounded, web.ground_collider),
         "grounded and groundCollider must agree exactly"
+    );
+    assert!(
+        comparison.ground_normal_max_axis_delta <= 0.02,
+        "ground normal exceeded the 0.02 per-axis tolerance: {}",
+        comparison.ground_normal_max_axis_delta
     );
     assert_eq!(rust_area, web_area, "area membership must agree exactly");
     assert_eq!(

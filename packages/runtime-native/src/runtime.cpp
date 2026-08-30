@@ -2200,6 +2200,16 @@ private:
     bool setupURL() {
         if (!jsEngine_) return false;
 
+        const char* workerRollback = std::getenv("THREENATIVE_NATIVE_WORKER_ROLLBACK");
+        const bool workerRollbackActive =
+            workerRollback != nullptr && std::string(workerRollback) == "1";
+        jsEngine_->setGlobalProperty(
+            "__tnNativeWorkerRollbackActive", jsEngine_->newBoolean(workerRollbackActive));
+        if (workerRollbackActive) {
+            std::cerr << "TN_NATIVE_WORKER_ROLLBACK_ACTIVE: native worker acceptance is disabled"
+                      << std::endl;
+        }
+
         auto* workerRegistry = &workers::WorkerRegistry::instance();
         if (!workerRegistry->isAvailable()) {
             std::cerr << "TN_NATIVE_WORKER_UNAVAILABLE: worker sources were not linked" << std::endl;
@@ -2239,8 +2249,10 @@ private:
                                 jsEngine_->newString(payload.c_str()),
                             });
                         });
-                    std::cout << "TN_NATIVE_WORKER_CREATED:{\"id\":" << workerId
-                              << ",\"engine\":\"" << jsEngine_->getName() << "\"}" << std::endl;
+                    const std::string workerCreatedMarker =
+                        "TN_NATIVE_WORKER_CREATED:{\"id\":" + std::to_string(workerId) +
+                        ",\"engine\":\"" + jsEngine_->getName() + "\"}";
+                    std::cout << workerCreatedMarker << std::endl;
                     return jsEngine_->newNumber(workerId);
                 }));
 
@@ -2267,8 +2279,9 @@ private:
                     const int workerId = static_cast<int>(jsEngine_->toNumber(args[0]));
                     activeWorkerIds_.erase(workerId);
                     workerRegistry->terminateWorker(workerId);
-                    std::cout << "TN_NATIVE_WORKER_TERMINATED:{\"id\":" << workerId << "}"
-                              << std::endl;
+                    const std::string workerTerminatedMarker =
+                        "TN_NATIVE_WORKER_TERMINATED:{\"id\":" + std::to_string(workerId) + "}";
+                    std::cout << workerTerminatedMarker << std::endl;
                     return jsEngine_->newUndefined();
                 }));
 

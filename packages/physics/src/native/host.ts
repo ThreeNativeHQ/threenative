@@ -218,8 +218,12 @@ function growUint32(buffer: Uint32Array, minimum: number): Uint32Array {
 
 interface IStoredCharacterState {
   grounded: boolean;
+  groundBody?: ReturnType<typeof physicsBodyHandle>;
   groundCollider?: number;
+  readonly groundNormal: { x: number; y: number; z: number };
 }
+
+const NATIVE_CHARACTER_STATE_STRIDE = 6;
 
 export function createNativePhysicsSimulation(
   raw: INativeSimulation,
@@ -300,24 +304,46 @@ export function createNativePhysicsSimulation(
   };
   const refreshCharacterState = () => {
     if (!characterStateDirty) return;
-    const required = Math.max(1, characterIds.size) * 3;
+    const required = Math.max(1, characterIds.size) * NATIVE_CHARACTER_STATE_STRIDE;
     if (characterStates.length < required) characterStates = new Float32Array(required);
+    characterStates.fill(Number.NaN, 0, required);
     const stateCount = raw.readCharacterStates(characterStates);
     characterStatePresent.clear();
     for (let index = 0; index < stateCount; index += 1) {
-      const offset = index * 3;
+      const offset = index * NATIVE_CHARACTER_STATE_STRIDE;
       const id = characterStates[offset];
       const grounded = characterStates[offset + 1];
       const groundCollider = characterStates[offset + 2];
-      if (id === undefined || grounded === undefined || groundCollider === undefined)
-        throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed character state");
+      const normalX = characterStates[offset + 3];
+      const normalY = characterStates[offset + 4];
+      const normalZ = characterStates[offset + 5];
+      if (
+        id === undefined ||
+        grounded === undefined ||
+        groundCollider === undefined ||
+        normalX === undefined ||
+        normalY === undefined ||
+        normalZ === undefined ||
+        !Number.isInteger(id) ||
+        id < 0 ||
+        (grounded !== 0 && grounded !== 1) ||
+        !Number.isFinite(groundCollider) ||
+        !Number.isFinite(normalX) ||
+        !Number.isFinite(normalY) ||
+        !Number.isFinite(normalZ)
+      )
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed six-float character state");
       let state = characterState.get(id);
       if (state === undefined) {
-        state = { grounded: false };
+        state = { grounded: false, groundNormal: { x: 0, y: 1, z: 0 } };
         characterState.set(id, state);
       }
       state.grounded = grounded === 1;
       state.groundCollider = groundCollider < 0 ? undefined : groundCollider;
+      state.groundBody = groundCollider < 0 ? undefined : bodyHandles.get(groundCollider);
+      state.groundNormal.x = normalX;
+      state.groundNormal.y = normalY;
+      state.groundNormal.z = normalZ;
       characterStatePresent.add(id);
     }
     characterStateDirty = false;
@@ -382,7 +408,7 @@ export function createNativePhysicsSimulation(
       }
       if (options.type === "character") {
         characterIds.add(id);
-        characterState.set(id, { grounded: false });
+        characterState.set(id, { grounded: false, groundNormal: { x: 0, y: 1, z: 0 } });
       }
       invalidateObservations();
       return {

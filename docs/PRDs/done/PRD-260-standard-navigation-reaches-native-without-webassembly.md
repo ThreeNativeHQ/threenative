@@ -4,12 +4,12 @@ prd_contract: v1
 
 # PRD-260 — Standard navigation reaches native without WebAssembly
 
-**Status: PROPOSED, 2026-08-29. Nothing below has been executed.**
+**Status: DECLINED IN PHASE 0, 2026-08-29. No product code or dependency added.**
 Repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `e8754ab24e8e227ab472690a3d8d7b6d2cd53550`. Binding charter:
-[`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
-[feature-mining](../README.md).
+[`docs/architecture/CHARTER.md`](../../architecture/CHARTER.md). Parent batch:
+[feature-mining](../feature-mining/README.md).
 
 **Outcome if Phase 0 survives:** the existing Godot-shaped `NavigationRegion3D`,
 `NavigationAgent3D` and query surface runs from the same game source on browser and native without
@@ -200,6 +200,42 @@ Proceed to integration only if:
 
 Otherwise mark this PRD DECLINED or record ordinary dependency as the final answer.
 
+### Phase 0 executed result — DECLINE
+
+The opening consumer gate failed, so the backend comparison intentionally stopped before building a
+synthetic fixture:
+
+1. The capability manifest still exposes `NavigationAgent3D` and `NavigationRegion3D` from
+   `@threenative/physics/navigation`, with Recast initialization as a binding constraint. The public
+   vocabulary exists and was not redesigned.
+2. The production caller census found exactly one non-test import outside the frozen control:
+   `examples/abyss-framework/src/scenes/NavigationProbe.ts`. It is the known web Recast probe, not a
+   named native or shared web/native acceptance path. No scaffold source imports the navigation
+   subpath.
+3. PRD-052 already executed the relevant native product decision: the platformer replaced its
+   navmesh dependency with 31 lines of portable steering and passed browser plus Android emulator
+   chase/avoidance scenarios. Reopening a second backend without a stronger caller would reverse
+   measured evidence.
+4. PRD-251 and PRD-253 remain `PROPOSED`; their `:→impl` rows are plans, not live consumers. They may
+   reopen this decision only after a real streamed/procedural traversal exists.
+5. Primary-source verification confirmed navcat `0.4.1` is MIT, pure JavaScript, JSON-serializable,
+   renderer-independent and exports `navcat`, `navcat/blocks` and optional `navcat/three`. That makes
+   it a credible future ordinary dependency, not a reason to manufacture current demand.
+
+Proceed-gate result:
+
+| Gate | Result |
+| --- | --- |
+| named native/shared consumer | **FAIL — none exists** |
+| ordinary navcat native parity | NOT RUN — synthetic evidence cannot satisfy the failed consumer gate |
+| at least 40 caller lines or unportable seam removed | **FAIL — the executed native need is 31 steering lines** |
+| startup/frame budget | NOT RUN — no named workload owns a budget |
+| bundle isolation | PRESERVED — no navcat dependency or adapter was added |
+
+No clean-install sandbox was built for PRD-260 because there is no feature to validate and the PRD
+explicitly rejects a benchmark-only crowd as a consumer. The `feature-mining-sandbox-validation`
+workflow applies to shipped features; this decline leaves the installed game surface unchanged.
+
 ---
 
 ## 6. Integration ledger
@@ -208,32 +244,29 @@ Every `→impl` cell must resolve or disappear on decline.
 
 | # | New thing | Live caller | Replaces | Negative control |
 | --- | --- | --- | --- | --- |
-| 1 | Shared backend-neutral fixture | `packages/physics/__tests__/navigation-backend-parity.spec.ts:→impl` | backend-specific happy paths | seal the valid gap → expected route becomes unreachable |
-| 2 | Ordinary navcat native control | isolated consumer `:→impl` | assumption that pure JS is portable | inject DOM/WASM token → native bundle gate red |
-| 3 | Private native backend adapter | `packages/physics/src/navigation/:→impl` | browser-only failure for named consumer | force unsupported option → explicit reason, no wrong path |
-| 4 | Backend report | real consumer snapshot `:→impl` | opaque backend selection | report wrong backend → marker assertion red |
-| 5 | Bundle isolation | non-navigation template build `:→impl` | accidental dependency leakage | import navigation → bytes appear; omit it → absent |
-| 6 | Android query scenario | runtime-native/playtest fixture `:→impl` | web-only evidence | unreachable island reported reachable → scenario red |
+| 1 | Shared backend-neutral fixture | NOT CREATED — no consumer | backend-specific happy paths | n/a |
+| 2 | Ordinary navcat native control | NOT CREATED — consumer gate stopped first | assumption that pure JS is portable | n/a |
+| 3 | Private native backend adapter | NOT CREATED | browser-only failure for named consumer | n/a |
+| 4 | Backend report | NOT CREATED | opaque backend selection | n/a |
+| 5 | Bundle isolation | unchanged; navigation stays an opt-in subpath | accidental dependency leakage | existing non-navigation builds remain the evidence |
+| 6 | Android query scenario | NOT CREATED — PRD-052's steering scenario remains the native answer | web-only evidence | n/a |
 
 ---
 
 ## 7. Acceptance criteria
 
-- [ ] Phase 0 names a real consumer and either declines or proves ordinary navcat on web, packed
-      desktop native and Android emulator without DOM/WASM/platform branches in game source.
-- [ ] Existing `NavigationRegion3D`, `NavigationAgent3D`, `NavigationObstacle3D` and query vocabulary
-      remain the public contract; no backend types leak.
-- [ ] Fixed route corpus proves reachable, unreachable, elevated, narrow-clearance and radius cases.
-- [ ] Recast and portable backend paths satisfy the same path envelope and clearance truths, with
-      differences reported rather than hidden.
-- [ ] Native artifact inspection proves no Recast or other navigation WASM when the portable backend
-      is selected.
-- [ ] A non-navigation template contains neither backend after tree shaking/bundle isolation.
-- [ ] The game still moves physics bodies and owns steering/AI/animation policy.
-- [ ] PRD-250 owns any off-thread execution; no custom jobs surface is added.
-- [ ] PRD-251/253 consume navigation without duplicating residency, world or tile scheduling.
-- [ ] Emulator evidence is labelled emulator; physical-device performance remains pending until run.
-- [ ] Integration removes at least 40 nonblank caller lines or closes a demonstrated platform seam.
+- [x] Phase 0 executed the caller census and declined before integration because no named native or
+      shared consumer exists.
+- [x] Existing `NavigationRegion3D`, `NavigationAgent3D`, `NavigationObstacle3D` and query vocabulary
+      remain unchanged; no backend types leak.
+- [x] No route corpus, native parity, performance or mobile claim is made for navcat because the
+      proceed gate did not open.
+- [x] No navcat dependency, private adapter, backend selector, jobs surface or navigation WASM path
+      was added.
+- [x] The executed native product answer remains PRD-052's game-owned steering, including its
+      browser/Android emulator evidence and explicit physical-device limits.
+- [x] PRD-251/253 may reopen this decision only when their proposed consumers become real and satisfy
+      this PRD's opening gate.
 
 ---
 
@@ -277,12 +310,12 @@ navcat dependency is already the simpler answer; route/clearance semantics diver
 startup/memory/bundle cost misses the named budget; integration needs backend-specific public types;
 mobile still requires WASM; or dual-backend maintenance is larger than the authoring/platform value.
 
-## 11. Validation command for this planning-only filing
+## 11. Validation command for this Phase 0 decision
 
 ```sh
-git diff --check -- docs/PRDs/feature-mining/PRD-260-standard-navigation-reaches-native-without-webassembly.md
+git diff --check -- docs/PRDs/done/PRD-260-standard-navigation-reaches-native-without-webassembly.md
 pnpm check:docs
 ```
 
-Expected: both commands exit zero. This filing changes planning documents only; it does not add
-navcat, change navigation code, build native artifacts, commit or push.
+Expected: both commands exit zero. This decision changes planning documents only; it does not add
+navcat, change navigation code or claim a native navigation backend.

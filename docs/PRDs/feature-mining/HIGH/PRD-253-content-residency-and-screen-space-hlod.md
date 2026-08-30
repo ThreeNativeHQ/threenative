@@ -270,7 +270,7 @@ declares a budget. Both are named, both are measured against in §8.
 | [PRD-043](../../done/PRD-043-terrain-and-open-world.md) | Supplies `AssetLoader.release` and the terrain probe this PRD replaces. | No |
 | [PRD-238](../../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | Complementary and **independent**. Residency decides what is in memory; 238 decides what is submitted. If 238 lands first, Phase 4's A/B must hold its setting constant across both arms and say so. | No — but the A/B is invalid if 238's setting differs between arms |
 | [PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md) | Shares the "one lifetime" discipline for GPU resources; its dispose ordering must not fight the refcount. | Check at Phase 1 |
-| [PRD-250](./PRD-250-native-workers-are-actually-workers.md) | If native workers become real, decode moves off the main thread and the native hitch numbers change. Phase 5 must record which state of 250 was live. | No — record only |
+| [PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md) | If native workers become real, decode moves off the main thread and the native hitch numbers change. Phase 5 must record which state of 250 was live. | No — record only |
 | [PRD-251](./PRD-251-procedural-world-fields-and-terrain-residency.md) | **Consumes this.** 251 must not build a second residency system. | This PRD's Phase 6 blocks 251's residency half |
 
 **Order:** 0 → 1 → 2 → 3 → 4 → 5 → 6 → (7 only if its stop gate opens).
@@ -987,7 +987,7 @@ incumbent; reverting it restores `#stream` from git and nothing else is entangle
   system, no ECS, and no CLI vocabulary. It adds one build pass, one runtime module, one options
   block, one diagnostics record, and it deletes a hand-written streaming loop.
 - **Linchpin contract validator: NOT RUN — recorded as unverified, not as passing.** The invocation
-  is known from [PRD-250](./PRD-250-native-workers-are-actually-workers.md) and
+  is known from [PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md) and
   [PRD-251](./PRD-251-procedural-world-fields-and-terrain-residency.md):
 
   ```sh
