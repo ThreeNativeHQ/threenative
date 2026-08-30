@@ -352,7 +352,11 @@ describe("compileAssets", () => {
       expect(entry.output).toMatch(/^character\.[0-9a-f]{8}\.glb$/u);
       expect(entry.kind).toBe("model");
       expect(entry.passes).toEqual(["ktx2", "model"]);
-      expect(entry.extensions).toEqual(["EXT_meshopt_compression", "KHR_mesh_quantization"]);
+      expect(entry.extensions).toEqual([
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization",
+        "KHR_texture_basisu",
+      ]);
       expect(entry.triangles).toBe(20);
       expect(entry.vertices).toBe(18);
       expect(entry.bytesBefore).toBe(source.length);

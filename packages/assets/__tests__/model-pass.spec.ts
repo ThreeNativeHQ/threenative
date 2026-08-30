@@ -41,7 +41,13 @@ describe("modelPass", () => {
     expect(result.entry?.triangles).toBe(20);
     expect(result.entry?.vertices).toBe(18);
     const extensions = (result.entry?.extensions as readonly string[] | undefined) ?? [];
-    expect([...extensions]).toEqual(["EXT_meshopt_compression", "KHR_mesh_quantization"]);
+    // The fixture carries two embedded maps, so the compiled output declares the Basis
+    // extension alongside the geometry ones.
+    expect([...extensions]).toEqual([
+      "EXT_meshopt_compression",
+      "KHR_mesh_quantization",
+      "KHR_texture_basisu",
+    ]);
   });
 
   it("should keep the bounding box within tolerance at default precision", async () => {
@@ -90,14 +96,17 @@ describe("modelPass", () => {
     // above measures the pass rather than the fixture.
     const uncompressed = await modelPass({
       passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+      textures: "none",
     }).apply(Buffer.from(await buildFixtureGlb()), "character.glb");
     expect(Buffer.isBuffer(uncompressed)).toBe(true);
   });
 
   it("should leave the model byte-identical when every sub-pass is switched off", async () => {
     const input = Buffer.from(await buildFixtureGlb());
+    // Embedded-texture compression is its own switch, so a complete opt-out names both.
     const result = await modelPass({
       passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+      textures: "none",
     }).apply(input, "character.glb");
     expect(Buffer.isBuffer(result)).toBe(true);
     expect((result as Buffer).equals(input)).toBe(true);

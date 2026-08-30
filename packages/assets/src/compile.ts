@@ -20,11 +20,19 @@ import type {
   IModelPassOptions,
   IModelPassesOptions,
   IModelQuantizeOptions,
+  IModelSimplifyOptions,
+  IModelTextureOverride,
+  IModelTexturesOptions,
 } from "./passes/model.js";
 import { texturePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
 import { formatModelSizes, formatTextureSizes } from "./report.js";
-import type { IModelSizeRow, ITextureSizeRow } from "./report.js";
+import type {
+  IEmbeddedTextureRow,
+  IModelSizeRow,
+  ISimplifyRow,
+  ITextureSizeRow,
+} from "./report.js";
 
 export type AssetKind = "audio" | "model" | "other" | "texture";
 
@@ -97,6 +105,13 @@ export interface IModelsConfig {
   readonly lightmap?: ILightmapPassOptions;
   readonly passes?: IModelPassesOptions;
   readonly quantize?: IModelQuantizeOptions;
+  /** LOD simplification. Absent means none: it is the one lossy stage, and it is opt-in. */
+  readonly simplify?: IModelSimplifyOptions;
+  /**
+   * Compression of the images embedded in a model, or the string `"none"` to ship them
+   * exactly as authored. Absent means compression runs with defaults.
+   */
+  readonly textures?: IModelTexturesOptions | "none";
 }
 
 export interface ITexturesConfig {
@@ -135,6 +150,10 @@ interface IAssetManifestEntry {
   readonly bytes: number;
   readonly bytesAfter?: number;
   readonly bytesBefore?: number;
+  /** What the model pass did to the images inside a `.glb` (model pass). */
+  readonly embeddedTextures?: IEmbeddedTextureRow;
+  /** Requested against achieved LOD simplification (model pass). */
+  readonly simplify?: ISimplifyRow;
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
@@ -173,13 +192,16 @@ const MANIFEST_NAME = "assets.manifest.json";
 const DEFAULT_SOURCE = "assets";
 const DEFAULT_OUTPUT = "public";
 const BASIS_DIRECTORY = "basis";
+/** Declared by a model whose embedded images were transcoded; the runtime needs the transcoder. */
+const BASISU_EXTENSION = "KHR_texture_basisu";
 /**
  * Baked into every output hash so a future change to how passes behave invalidates previously
  * compiled outputs even when pass names are unchanged. Bump it when a pass's behaviour changes.
  * v2: textures encode to KTX2 instead of passing through byte-identical.
  * v3: models run dedup/prune/reorder/quantize/meshopt instead of passing through byte-identical.
+ * v7: the images embedded in a model are transcoded to KTX2 and capped in resolution.
  */
-const PIPELINE_VERSION = 6;
+const PIPELINE_VERSION = 7;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
   glb: "model",
@@ -197,6 +219,57 @@ const CODECS: readonly string[] = ["etc1s", "none", "uastc"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Narrows a pass's embedded-texture summary to the manifest shape by reading every field it
+ * declares. A cast would let a pass that changed its own summary write nonsense into the
+ * manifest the runtime and the report both read; this drops anything that is not a number.
+ */
+function simplifyRow(value: unknown): ISimplifyRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const keys = [
+    "achievedRatio",
+    "error",
+    "requestedRatio",
+    "trianglesAfter",
+    "trianglesBefore",
+  ] as const;
+  if (keys.some((key) => typeof value[key] !== "number")) return undefined;
+  return {
+    achievedRatio: value.achievedRatio as number,
+    error: value.error as number,
+    requestedRatio: value.requestedRatio as number,
+    trianglesAfter: value.trianglesAfter as number,
+    trianglesBefore: value.trianglesBefore as number,
+  };
+}
+
+function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const numbers = [
+    "bytesAfter",
+    "bytesBefore",
+    "count",
+    "gpuBytesAfter",
+    "gpuBytesBefore",
+    "resized",
+  ] as const;
+  if (numbers.some((key) => typeof value[key] !== "number")) return undefined;
+  const formats = isRecord(value.formats)
+    ? Object.fromEntries(
+        Object.entries(value.formats).filter(([, codec]) => typeof codec === "string"),
+      )
+    : undefined;
+  return {
+    bytesAfter: value.bytesAfter as number,
+    bytesBefore: value.bytesBefore as number,
+    count: value.count as number,
+    ...(formats === undefined ? {} : { formats: formats as Record<string, string> }),
+    gpuBytesAfter: value.gpuBytesAfter as number,
+    gpuBytesBefore: value.gpuBytesBefore as number,
+    resized: value.resized as number,
+  };
 }
 
 function nonEmptyString(value: unknown, label: string): string {
@@ -315,7 +388,7 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = ["lightmap", "passes", "quantize"];
+  const allowed = ["lightmap", "passes", "quantize", "simplify", "textures"];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
@@ -326,10 +399,104 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   const passes = raw.passes === undefined ? {} : parseModelPasses(raw.passes);
   const quantize = raw.quantize === undefined ? {} : parseModelQuantize(raw.quantize);
   const lightmap = raw.lightmap === undefined ? undefined : parseLightmap(raw.lightmap);
+  const simplify = raw.simplify === undefined ? undefined : parseModelSimplify(raw.simplify);
+  const textures = raw.textures === undefined ? undefined : parseModelTextures(raw.textures);
   return {
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
+    ...(simplify === undefined ? {} : { simplify }),
+    ...(textures === undefined ? {} : { textures }),
+  };
+}
+
+const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality"];
+
+function positiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(
+      `TN_ASSETS_CONFIG_INVALID: assets.models.textures.${label} must be a positive integer.`,
+    );
+  }
+  return value;
+}
+
+/** `"none"` ships every embedded image as authored; an object configures the compression. */
+function parseModelTextures(raw: unknown): IModelTexturesOptions | "none" {
+  if (raw === "none") return "none";
+  if (!isRecord(raw)) {
+    throw new Error(
+      'TN_ASSETS_CONFIG_INVALID: assets.models.textures must be "none" or an object.',
+    );
+  }
+  for (const key of Object.keys(raw)) {
+    if (!MODEL_TEXTURE_KEYS.includes(key)) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.textures.${key} is not recognised.`,
+      );
+    }
+  }
+  return {
+    ...(raw.maxSize === undefined ? {} : { maxSize: positiveInteger(raw.maxSize, "maxSize") }),
+    ...(raw.overrides === undefined
+      ? {}
+      : { overrides: validateModelTextureOverrides(raw.overrides) }),
+    ...(raw.quality === undefined
+      ? {}
+      : { quality: textureQuality(raw.quality, "assets.models.textures.quality") }),
+  };
+}
+
+function validateModelTextureOverrides(raw: unknown): readonly IModelTextureOverride[] {
+  if (!Array.isArray(raw)) {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.textures.overrides must be an array.");
+  }
+  return raw.map((item, index): IModelTextureOverride => {
+    const label = `assets.models.textures.overrides[${String(index)}]`;
+    if (!isRecord(item)) throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be an object.`);
+    for (const key of Object.keys(item)) {
+      if (key !== "slot" && key !== "codec") {
+        throw new Error(
+          `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.textures.overrides.${key} is not recognised.`,
+        );
+      }
+    }
+    if (!CODECS.includes(item.codec as string)) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label}.codec must be one of ${CODECS.join(", ")}; received '${String(item.codec)}'.`,
+      );
+    }
+    return {
+      codec: item.codec as IModelTextureOverride["codec"],
+      slot: nonEmptyString(item.slot, `${label}.slot`),
+    };
+  });
+}
+
+function parseModelSimplify(raw: unknown): IModelSimplifyOptions {
+  if (!isRecord(raw)) {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.simplify must be an object.");
+  }
+  for (const key of Object.keys(raw)) {
+    if (key !== "error" && key !== "ratio") {
+      throw new Error(
+        `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.simplify.${key} is not recognised.`,
+      );
+    }
+  }
+  if (typeof raw.ratio !== "number" || !(raw.ratio > 0) || raw.ratio > 1) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.simplify.ratio must be a number greater than 0 and at most 1.",
+    );
+  }
+  if (raw.error !== undefined && (typeof raw.error !== "number" || raw.error < 0)) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.simplify.error must be a non-negative number.",
+    );
+  }
+  return {
+    ratio: raw.ratio,
+    ...(raw.error === undefined ? {} : { error: raw.error as number }),
   };
 }
 
@@ -538,6 +705,8 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     existing.kind === entry.kind &&
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
+    JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
+    JSON.stringify(existing.simplify) === JSON.stringify(entry.simplify) &&
     existing.bytes === entry.bytes &&
     existing.bytesBefore === entry.bytesBefore &&
     existing.bytesAfter === entry.bytesAfter &&
@@ -778,6 +947,7 @@ export async function compileAssets(
   let written = 0;
   let skipped = 0;
   let textureCount = 0;
+  let compressedModelCount = 0;
 
   const logicals = await walkSources(layout.sourceRoot);
 
@@ -812,6 +982,8 @@ export async function compileAssets(
         : {
             bytesAfter: applied.buffer.length,
             bytesBefore: input.length,
+            embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            simplify: simplifyRow(applied.entry.simplify),
             extensions: Array.isArray(applied.entry.extensions)
               ? (applied.entry.extensions as string[])
               : undefined,
@@ -829,6 +1001,7 @@ export async function compileAssets(
           }),
     };
     entries[logical] = entry;
+    if (entry.extensions?.includes(BASISU_EXTENSION) === true) compressedModelCount += 1;
     // The health report measures the source, not the compiled bytes — deliberately for both
     // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
     // output hides; model triangles and materials are the counts targets are declared
@@ -861,6 +1034,10 @@ export async function compileAssets(
         modelRows.push({
           after: entry.bytes,
           before: entry.bytesBefore,
+          ...(entry.embeddedTextures === undefined
+            ? {}
+            : { embeddedTextures: entry.embeddedTextures }),
+          ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
           extensions: entry.extensions,
           logicalPath: logical,
           ...(lightmap === undefined ? {} : { lightmap }),
@@ -902,8 +1079,10 @@ export async function compileAssets(
 
   // The transcoder ships once per build next to the compiled assets; the runtime loader points
   // at `<basePath>basis/` by convention. Copied when anything (re)encoded, and restored when a
-  // cleaned public/ still lists textures, so a served manifest never lacks its transcoder.
-  if (layout.texturesActive && textureCount > 0) {
+  // cleaned public/ still lists textures, so a served manifest never lacks its transcoder. A
+  // project with no standalone texture at all still needs it once a model publishes
+  // KHR_texture_basisu — otherwise GLTFLoader gets a KTX2Loader pointed at a 404.
+  if ((layout.texturesActive && textureCount > 0) || compressedModelCount > 0) {
     const basisJs = path.join(layout.outputRoot, BASIS_DIRECTORY, "basis_transcoder.js");
     if (written > 0 || !(await outputExists(basisJs))) {
       await copyBasisTranscoder(

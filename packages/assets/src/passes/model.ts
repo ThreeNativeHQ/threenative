@@ -8,22 +8,46 @@ import {
   type Skin,
 } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from "@gltf-transform/extensions";
-import { dedup, prune, quantize, reorder } from "@gltf-transform/functions";
-import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
+import { dedup, prune, quantize, reorder, simplify } from "@gltf-transform/functions";
+import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
 import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
+import {
+  type IEmbeddedTextureSummary,
+  type IModelTexturesOptions,
+  assertNoTextureDrift,
+  compressEmbeddedTextures,
+  textureBindings,
+} from "./model-textures.js";
+
+export {
+  assertNoTextureDrift,
+  textureBindings,
+  type IEmbeddedTextureSummary,
+  type IModelTextureBinding,
+  type IModelTextureBindings,
+  type IModelTextureOverride,
+  type IModelTexturesOptions,
+} from "./model-textures.js";
 
 /**
- * Optimizes compiled models: dedup → prune → reorder → quantize → meshopt, in that fixed
- * order, each individually switchable in config. Output declares `KHR_mesh_quantization` and
- * `EXT_meshopt_compression`; the runtime lazily wires three's own MeshoptDecoder for exactly
- * those files (see `core/src/assets.ts`).
+ * Optimizes compiled models: dedup → prune → simplify → reorder → quantize → textures →
+ * meshopt, in that fixed order, each individually switchable in config. Output declares
+ * `KHR_mesh_quantization` and `EXT_meshopt_compression`, plus `KHR_texture_basisu` when it
+ * carried images; the runtime lazily wires three's own MeshoptDecoder and the shared,
+ * support-detected KTX2Loader for exactly those files (see `core/src/assets.ts`).
+ *
+ * Geometry was only ever half of a model. The textures embedded inside a `.glb` are the
+ * expensive half — three 2048x2048 JPEGs are a small file and ~67 MB of VRAM decoded — so
+ * they go through the same Basis encoder the standalone texture pass uses, capped to a
+ * declared maximum resolution (`packages/assets/src/passes/model-textures.ts`).
  *
  * The pass verifies its own output before shipping it: the result is re-read and its
  * triangle, vertex, joint and clip counts and bounding box are compared against the source,
- * throwing and naming the drift beyond tolerance. A pipeline that silently loses a mesh is
- * worse than no pipeline. Counts are taken over scene-reachable content only, so `prune`
- * dropping DCC leftovers is not drift — losing *referenced* geometry is. Joint indices and
- * weights are never quantized below what the source declared.
+ * throwing and naming the drift beyond tolerance, and every embedded image is compared for
+ * the material slot and UV set it is bound to. A pipeline that silently loses a mesh — or a
+ * texture — is worse than no pipeline. Counts are taken over scene-reachable content only, so
+ * `prune` dropping DCC leftovers is not drift — losing *referenced* geometry is. Joint indices
+ * and weights are never quantized below what the source declared.
  *
  * Draco stays an input, never an output: a Draco `.glb` is decoded here (the codec loads
  * only when one is seen, so no project pays for it) and re-emitted as Meshopt. Animation
@@ -47,15 +71,48 @@ export interface IModelQuantizeOptions {
   readonly uvBits?: number;
 }
 
+/**
+ * Mesh simplification for LOD. Off unless declared, because it is the one stage that
+ * deliberately destroys the triangle count the pass otherwise guarantees: with it on, the
+ * self-verify swaps exact triangle equality for a bounded reduction and a wider bounding-box
+ * tolerance, and joints and animation clips are still compared exactly.
+ */
+export interface IModelSimplifyOptions {
+  /** Maximum positional error as a fraction of mesh extent, default 0.001. */
+  readonly error?: number;
+  /** Target fraction of the source triangle count, 0–1. */
+  readonly ratio: number;
+}
+
 export interface IModelPassOptions {
   readonly passes?: IModelPassesOptions;
   /** Preserve generated TEXCOORD_1 data that is consumed by a runtime-attached lightmap. */
   readonly preserveLightmapUv?: boolean;
   readonly quantize?: IModelQuantizeOptions;
+  /** LOD simplification; absent means no simplification at all. */
+  readonly simplify?: IModelSimplifyOptions;
+  /** Embedded-texture compression: options, or `"none"` to ship every image as authored. */
+  readonly textures?: IModelTexturesOptions | "none";
+}
+
+/**
+ * What simplification actually delivered. The error tolerance can stop the simplifier well
+ * short of the requested ratio — measured on a 99,482-triangle prop, `ratio: 0.05` with the
+ * default error lands at 15.2% — so both numbers are reported rather than only the one the
+ * config asked for.
+ */
+export interface IModelSimplifySummary {
+  readonly achievedRatio: number;
+  readonly error: number;
+  readonly requestedRatio: number;
+  readonly trianglesAfter: number;
+  readonly trianglesBefore: number;
 }
 
 export interface IModelPassOutputEntry {
+  readonly embeddedTextures?: IEmbeddedTextureSummary;
   readonly extensions: readonly string[];
+  readonly simplify?: IModelSimplifySummary;
   readonly triangles: number;
   readonly vertices: number;
 }
@@ -64,6 +121,11 @@ const DRACO_EXTENSION = "KHR_draco_mesh_compression";
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
+/** Simplification moves vertices on purpose; its silhouette tolerance is ten times wider. */
+const SIMPLIFY_BBOX_TOLERANCE = 0.01;
+/** How far below the requested ratio a simplified result may land before it is a failure. */
+const SIMPLIFY_RATIO_FLOOR = 0.5;
+const DEFAULT_SIMPLIFY_ERROR = 0.001;
 
 const DEFAULT_POSITION_BITS = 16;
 const DEFAULT_NORMAL_BITS = 8;
@@ -455,6 +517,49 @@ export function assertNoDrift(source: IModelStats, output: IModelStats, logicalP
 }
 
 /**
+ * The self-verify for a deliberately lossy stage. Simplification exists to remove triangles,
+ * so exact equality would reject every successful run; what must still hold is that the
+ * reduction stayed near what was asked for, that the silhouette barely moved, and that the
+ * skeleton and the animation clips came through untouched.
+ */
+export function assertSimplifiedWithinBounds(
+  source: IModelStats,
+  output: IModelStats,
+  ratio: number,
+  logicalPath: string,
+): void {
+  const failures: string[] = [];
+  if (source.joints !== output.joints) {
+    failures.push(`joints ${source.joints} -> ${output.joints}`);
+  }
+  if (source.clips !== output.clips) {
+    failures.push(`animation clips ${source.clips} -> ${output.clips}`);
+  }
+  if (output.triangles > source.triangles) {
+    failures.push(`triangles grew ${source.triangles} -> ${output.triangles}`);
+  }
+  const floor = Math.floor(source.triangles * ratio * SIMPLIFY_RATIO_FLOOR);
+  if (output.triangles < floor) {
+    failures.push(
+      `triangles ${source.triangles} -> ${output.triangles}, below the ${String(floor)} floor for ratio ${String(ratio)}`,
+    );
+  }
+  const bbox = bboxDrift(source, output);
+  if (bbox === undefined) {
+    failures.push("bounding box lost");
+  } else if (bbox > SIMPLIFY_BBOX_TOLERANCE) {
+    failures.push(
+      `bounding box drifted ${(bbox * 100).toFixed(3)}% (simplify tolerance ${(SIMPLIFY_BBOX_TOLERANCE * 100).toFixed(1)}%)`,
+    );
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `TN_ASSETS_MODEL_SIMPLIFY_DRIFT: self-verification failed for '${logicalPath}': ${failures.join("; ")}.`,
+    );
+  }
+}
+
+/**
  * Snaps every scene-reachable POSITION accessor onto a uniform `2^bits` grid spanning its
  * own bounds — the destructive low-precision quantization the underlying library refuses
  * to express. Used only for configured depths below its 8-bit floor; the self-verify is
@@ -501,6 +606,17 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         positionBits: options.quantize?.positionBits ?? DEFAULT_POSITION_BITS,
         uvBits: options.quantize?.uvBits ?? DEFAULT_UV_BITS,
       },
+      // Part of the compile cache key: change the cap or a codec and stale outputs must not
+      // be re-served.
+      simplify: options.simplify ?? null,
+      textures:
+        options.textures === "none"
+          ? "none"
+          : {
+              maxSize: options.textures?.maxSize ?? null,
+              overrides: options.textures?.overrides ?? [],
+              quality: options.textures?.quality ?? null,
+            },
     },
     name: "model",
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
@@ -513,9 +629,17 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         quantize: passes.quantize ?? true,
         reorder: passes.reorder ?? true,
       };
-      if (!Object.values(enabled).some(Boolean)) return input;
+      // Embedded-texture compression and simplification are switched separately from the
+      // geometry sub-passes: a model whose geometry is already final still ships images.
+      const textureOptions = options.textures === "none" ? undefined : (options.textures ?? {});
+      const geometryActive = Object.values(enabled).some(Boolean) || options.simplify !== undefined;
+      if (!geometryActive && textureOptions === undefined) return input;
 
       const document = await readDocument(input, logicalPath);
+      // Nothing left to do once the document turns out to carry no images: re-emitting it
+      // would rewrite the container for no gain, and the byte-identical output is what a
+      // fully switched-off pass promises.
+      if (!geometryActive && document.getRoot().listTextures().length === 0) return input;
       // Draco is an input format only: the extension was consumed by the reader's decode,
       // so it never reaches the writer — the output re-emits as Meshopt further below.
       for (const extension of document.getRoot().listExtensionsUsed()) {
@@ -524,10 +648,20 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       const source = reachableStats(document.getRoot());
       const jointFloor = jointComponentSizes(document.getRoot());
 
-      // Fixed order: dedup → prune → reorder → quantize → meshopt. None is reorderable.
+      // Fixed order: dedup → prune → simplify → reorder → quantize → textures → meshopt.
+      // None is reorderable: simplification needs float positions, so it must precede
+      // quantize, and texture compression must follow every stage that can drop a material.
       if (enabled.dedup) await dedup()(document);
       if (enabled.prune)
         await prune({ keepAttributes: options.preserveLightmapUv === true })(document);
+      if (options.simplify !== undefined) {
+        await MeshoptSimplifier.ready;
+        await simplify({
+          error: options.simplify.error ?? DEFAULT_SIMPLIFY_ERROR,
+          ratio: options.simplify.ratio,
+          simplifier: MeshoptSimplifier,
+        })(document);
+      }
       if (enabled.reorder || enabled.meshopt) await MeshoptEncoder.ready;
       if (enabled.reorder) await reorder({ encoder: MeshoptEncoder })(document);
       if (enabled.quantize) {
@@ -547,6 +681,14 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           normalizeWeights: false,
         })(document);
       }
+      // Taken after every geometry stage and before compression, so what it proves is that
+      // *this* stage plus the writer preserved each binding — prune's documented drops of
+      // unreferenced material are already settled by then.
+      const sourceTextures = textureBindings(document.getRoot());
+      const embeddedTextures =
+        textureOptions === undefined
+          ? undefined
+          : await compressEmbeddedTextures(document, logicalPath, textureOptions);
       if (enabled.meshopt) {
         document
           .createExtension(EXTMeshoptCompression)
@@ -574,10 +716,28 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       }
 
       const { buffer, extensions } = await writeDocument(document, logicalPath);
-      const output = reachableStats((await readDocument(buffer, logicalPath)).getRoot());
-      assertNoDrift(source, output, logicalPath);
+      const verified = (await readDocument(buffer, logicalPath)).getRoot();
+      const output = reachableStats(verified);
+      if (options.simplify === undefined) {
+        assertNoDrift(source, output, logicalPath);
+      } else {
+        assertSimplifiedWithinBounds(source, output, options.simplify.ratio, logicalPath);
+      }
+      assertNoTextureDrift(sourceTextures, textureBindings(verified), logicalPath);
       const entry: IModelPassOutputEntry = {
+        ...(embeddedTextures === undefined ? {} : { embeddedTextures }),
         extensions: [...extensions].sort(),
+        ...(options.simplify === undefined
+          ? {}
+          : {
+              simplify: {
+                achievedRatio: source.triangles === 0 ? 1 : output.triangles / source.triangles,
+                error: options.simplify.error ?? DEFAULT_SIMPLIFY_ERROR,
+                requestedRatio: options.simplify.ratio,
+                trianglesAfter: output.triangles,
+                trianglesBefore: source.triangles,
+              },
+            }),
         triangles: output.triangles,
         vertices: output.vertices,
       };
