@@ -57,12 +57,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-29 for PRD-246: `GPUReadback` and `SpectralOcean` entered the public
   // surface, so the capability manifest and the capability reference generated from it both grew,
   // and those bytes are copied into every scaffold.
+  // Recomputed 2026-08-29 for the shooter only: its input-control scenario raised warmupFrames
+  // from 10 to 60 so the run stops photographing the template's loading screen. One scenario
+  // file's bytes moved, so exactly one tree's hash moved.
   "action-rpg": "d4fed9959d55f304978fcb12d5c5be19f625f86f0d9cb030e09c1d21c3d626cb",
   defense: "e66e1dfa999eaacc43caf04eeb307d6a677390f2f3d22ac34fa510393595b41f",
   minimal: "ae67d3ae9cadc392eaeb5d2e1b3b3105c864cbf0fe60c95a343e061f1d68d59f",
   platformer: "cb7b4bd944d7ae1321ab04b1849830c1a7875fa174385538f4f7c66a4db7450a",
   racing: "e5dedeac3100524dc328cead022cdc2ae1b47c4c93c18f0dcca09b654f786854",
-  shooter: "962fbc4be5cdc988c524b4ff3462de84a469dcaea19d955f28a8e0292773c2ba",
+  shooter: "0884e66da56582a7f945600148c441d5dce602d417dd2c67d1ff09674d060eaa",
   starter: "323176705902d2635b8e6779a9790be3f18d7db78fd51b8d6ea97eeb7d0d91e4",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
