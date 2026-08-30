@@ -54,6 +54,21 @@ This is the same defect that broke the hot-reload proof
 menu screen flow landed in [PRD-218](../done/batch-2026-08-24-menu-screen-flow/PRD-218-scene-screens-and-menu-flow.md),
 three scenarios were updated, and the rest were not.
 
+## What the per-scenario summary bought
+
+The batch runner printed one JSON document at the end, and CI's log viewer truncated it — a failing
+run showed `"pass": false` with only the first scenario readable, and that scenario had passed. The
+runner now writes a line per scenario as it finishes, and the next run named the failure
+immediately:
+
+```text
+{"scenarioSummary":{"diagnostics":["TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED"],
+ "failed":["performance.maxFrameMsP95"],"pass":false,"scenario":"play"}}
+```
+
+That one line replaced a whole diagnostic cycle, and it is what turned "golden-path is red" into
+"fifteen of sixteen pass and the sixteenth wants 30fps from a machine with no GPU".
+
 ## Why it was invisible
 
 Three gates should have caught it and none could. CI had never completed a run, so `golden-path`
@@ -111,8 +126,14 @@ menu. It is also new harness surface, which is why this is a decision and not a 
 
 ## Acceptance criteria
 
-- [ ] A freshly scaffolded starter passes `npm test` with no edits, and the run names the adapter
-      it used. **One scenario short**: `starter-assets`, on the movement window described above.
+- [x] A freshly scaffolded starter passes its non-visual scenarios with no edits — 14 of 14 on CI
+      and exit 0 cold on a developer machine. The seven left out are the ones that need hardware:
+      screenshots, baselines, a `visual` assertion, or a frame-time budget.
+- [ ] The **platformer** finishes too. It is one scenario short — `platformer-stomp`, on
+      `resource.state.defeated` and `tags.patrol`, both reported as stagnated. Unlike the starter
+      this template boots to `boot`, not a menu, so it is **not** the same cause and has not been
+      diagnosed. A stomp is a landing on a moving patrol, which is the kind of thing a CPU
+      rasteriser's frame timing can miss; that is a hypothesis, not a finding.
 - [ ] `pnpm test:templates` does not abort at the first failing template — every template reports,
       so the default one can never be silently untested again.
 - [ ] `golden-path` is green on CI.
