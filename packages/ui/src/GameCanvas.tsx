@@ -1,5 +1,5 @@
 import type { IGame } from "@threenative/core";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface IGameCanvasProps<
   TState extends Record<string, unknown> = Record<string, unknown>,
@@ -14,9 +14,11 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
   game,
 }: IGameCanvasProps<TState, TPhysics>) {
   const host = useRef<HTMLDivElement>(null);
+  const [failure, setFailure] = useState<string>();
 
   useEffect(() => {
     let cancelled = false;
+    setFailure(undefined);
     void game
       .start()
       .then(() => {
@@ -34,7 +36,11 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) throw error;
+        // A rejected start must be visible, not an unhandled promise rejection that
+        // nobody renders: the DOM carries the message so a person or a playtest can
+        // see the canvas never came up. Styling stays the project's.
+        if (cancelled) return;
+        setFailure(error instanceof Error ? error.message : String(error));
       });
 
     return () => {
@@ -49,6 +55,12 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
       className={className}
       data-threenative-canvas="true"
       style={{ height: "100%", width: "100%" }}
-    />
+    >
+      {failure === undefined ? null : (
+        <div data-threenative-canvas-error="true" role="alert">
+          {failure}
+        </div>
+      )}
+    </div>
   );
 }

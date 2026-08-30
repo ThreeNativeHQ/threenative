@@ -39,6 +39,10 @@ interface IUiLayerValue {
 
 const UiLayerContext = createContext<IUiLayerValue | undefined>(undefined);
 
+interface IStopHandle {
+  readonly stop: () => void;
+}
+
 function useUiLayer(name: string): IUiLayerValue {
   const value = useContext(UiLayerContext);
   if (value === undefined) {
@@ -49,11 +53,17 @@ function useUiLayer(name: string): IUiLayerValue {
 
 export function UiLayer({ children }: { children: ReactNode }) {
   const [value, setValue] = useState<IUiLayerValue | undefined>(undefined);
+  const registryRef = useRef<IStopHandle | undefined>(undefined);
   useEffect(() => {
     const bridge = connectUiBridge({ end: "ui" });
     const mirror = subscribeUiState<Record<string, unknown>>(bridge);
     setValue({ bridge, mirror });
     return () => {
+      // Teardown order is load-bearing: the region registry must publish its empty set on an
+      // open bridge — a host still holding the last snapshot would keep eating touches over a
+      // UI that is gone — before the bridge closes underneath it.
+      registryRef.current?.stop();
+      registryRef.current = undefined;
       mirror.stop();
       bridge.close();
       setValue(undefined);
@@ -65,11 +75,14 @@ export function UiLayer({ children }: { children: ReactNode }) {
     // A registry started before the tree exists publishes an empty set, and an empty set means
     // every touch falls through to the game — a HUD whose buttons all look dead.
     const registry = publishHitRegions({ bridge: value.bridge });
+    registryRef.current = registry;
     // Announce the UI once it has rendered AND published, so the game can tell an overlay that
     // never came up from one that came up empty. Sent by the framework rather than left to each
     // game, because a game that forgets it has no way to notice.
     sendUiIntent(value.bridge, UI_READY_INTENT, registry.regions().length);
-    return () => registry.stop();
+    return () => {
+      registryRef.current = undefined;
+    };
   }, [value]);
   if (value === undefined) return null;
   return <UiLayerContext.Provider value={value}>{children}</UiLayerContext.Provider>;
