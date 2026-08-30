@@ -99,15 +99,47 @@ async function waitForGrounded(page: import("@playwright/test").Page): Promise<v
       return player?.grounded === true;
     },
     undefined,
-    // The player has to fall and land under the game's own fixed-step physics, so this waits on
-    // wall-clock frames rather than on ticks the test controls. Ten seconds is a machine with a
-    // GPU. GitHub's runners serve WebGPU from SwiftShader — the provenance sweep records the
-    // adapter as `swiftshader`/`google` and the renderer does come up there — and a CPU rasteriser
-    // renders those frames one to two orders of magnitude slower, so the same landing needs longer
-    // to arrive. The assertion is unchanged: the player must still ground, and a game that never
-    // lands still fails. Only the patience is sized for the slowest machine that runs this.
+    // Ninety seconds, not ten: GitHub's runners serve WebGPU from SwiftShader, and a CPU
+    // rasteriser renders the frames this landing depends on one to two orders of magnitude slower.
     { timeout: 90_000 },
   );
+}
+
+/**
+ * What the game was actually doing when the landing never came. A timeout that reports only its
+ * own duration cannot be diagnosed from a CI log — the frame is in a temp directory and the runner
+ * is not a machine anyone can log into — and 90 seconds elapsing says the player is not merely
+ * slow. This reads the same snapshot the wait polls, so the failure names the state it saw.
+ */
+async function describePlayerState(page: import("@playwright/test").Page): Promise<string> {
+  return page
+    .evaluate(() => {
+      const tools = (
+        window as Window & {
+          __THREENATIVE__?: {
+            hot?: () => unknown;
+            snapshot?: () => Record<string, unknown>;
+          };
+        }
+      ).__THREENATIVE__;
+      if (tools === undefined) return "window.__THREENATIVE__ is absent";
+      let diagnostics: unknown;
+      try {
+        diagnostics = tools.hot?.();
+      } catch (error) {
+        diagnostics = `hot() threw: ${String(error)}`;
+      }
+      let snapshot: Record<string, unknown> | string;
+      try {
+        snapshot = tools.snapshot?.() ?? "snapshot() returned nothing";
+      } catch (error) {
+        snapshot = `snapshot() threw: ${String(error)}`;
+      }
+      const entities = typeof snapshot === "string" ? [] : Object.keys(snapshot);
+      const player = typeof snapshot === "string" ? undefined : snapshot.player;
+      return JSON.stringify({ diagnostics, entities, player });
+    })
+    .catch((error: unknown) => `the page could not be read: ${String(error)}`);
 }
 
 async function jumpObservation(page: import("@playwright/test").Page): Promise<JumpObservation> {
@@ -242,7 +274,15 @@ test("preserves starter state and stays flat across ten real HMR updates", async
     }
   });
 
-  await waitForGrounded(page);
+  try {
+    await waitForGrounded(page);
+  } catch (error) {
+    throw new Error(
+      `the player never became grounded: ${await describePlayerState(page)}\n${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
   await page.keyboard.down("ArrowRight");
   try {
     await advanceFixedTicks(page, 150);
