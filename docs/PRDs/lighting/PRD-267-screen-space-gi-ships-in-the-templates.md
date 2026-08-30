@@ -74,7 +74,7 @@ Every knob lives in these files. `packages/core` gains nothing in this PRD.
 
 1. **A scaffolded template renders bounced light on the browser lane.** For each of the seven
    templates, a playtest scenario asserts `worldEnvironment.tier` is not `off` and the SSGI stage is in
-   `chain.applied`. *Mutation:* remove the SSGI request from the template's `postprocessing.ts` and
+   `environment.applied`. *Mutation:* remove the SSGI request from the template's `postprocessing.ts` and
    the scenario fails naming the missing stage — not a screenshot diff, which colour drift alone
    could satisfy.
 
