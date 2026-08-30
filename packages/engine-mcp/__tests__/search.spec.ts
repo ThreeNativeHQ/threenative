@@ -217,4 +217,43 @@ describe("threenative-engine-mcp", () => {
   it("uses the project-root manifest by default", () => {
     expect(defaultManifestPath()).toBe(path.resolve("capabilities.json"));
   });
+
+  it("rejects a structurally malformed manifest with the exact reason", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-malformed-");
+    try {
+      const file = path.join(root, "capabilities.json");
+      const entry = {
+        constraints: [],
+        example: "const game = defineGame({});",
+        importPath: "@threenative/core",
+        kind: "class",
+        package: "@threenative/core",
+        signature: "class GroundSnap",
+        situations: ["keep feet on the floor"],
+        summary: "Feet meet floor.",
+        symbol: "GroundSnap",
+      };
+      const entries = (overrides: Record<string, unknown>): string =>
+        JSON.stringify({ entries: [{ ...entry, ...overrides }], version: 1 });
+      const cases: ReadonlyArray<[string, string, RegExp]> = [
+        ["nonobject-root", "[]", /root must contain a numeric version and entries array/u],
+        [
+          "nonnumeric-version",
+          JSON.stringify({ entries: [entry], version: "1" }),
+          /root must contain a numeric version and entries array/u,
+        ],
+        ["entries-not-array", JSON.stringify({ entries: {}, version: 1 }), /entries array/u],
+        ["nonstring-symbol", entries({ symbol: 7 }), /entry 0 is malformed/u],
+        ["nonstring-situations", entries({ situations: [1, 2] }), /entry 0 is malformed/u],
+        ["nonstring-constraints", entries({ constraints: [false] }), /entry 0 is malformed/u],
+        ["nonrecord-entry", JSON.stringify({ entries: [42], version: 1 }), /entry 0 is malformed/u],
+      ];
+      for (const [name, content, expected] of cases) {
+        await writeFile(file, content);
+        expect(() => loadCapabilityManifest(file), name).toThrow(expected);
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });
