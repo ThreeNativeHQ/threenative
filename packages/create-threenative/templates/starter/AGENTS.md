@@ -400,7 +400,7 @@ definitions and environment-splitting guidance are `agent-docs/sculpt-from-a-ref
 
 ## Visuals
 
-Edit everything in `src/render/` directly. The baseline files are `palette.ts`, `camera.ts`,
+Edit everything in `src/render/`. The baseline files are `palette.ts`, `camera.ts`,
 `sky.ts`, `lighting.ts`, `materials.ts`, `postprocessing.ts`, and `worldEnvironment.ts`;
 `shapes.ts` and `scenery.ts` are additional helpers. These are ordinary Three.js source in
 this project, not a framework look or a config option. Keep the palette to six named colours

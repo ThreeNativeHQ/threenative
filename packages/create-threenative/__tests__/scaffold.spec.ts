@@ -96,7 +96,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "a1a5fe4a155ac77464d52b6e6f8e313042a9f345fc0a7d2eaf508cb561929a5b",
   racing: "1d8b024671c060a2706b4e337f77aa3e5c41c3662ec3e115192c5b6e1960a7ee",
   shooter: "211192be5efeee36d3b7593a93bda3d3461a01a92361f8728435bb0727fdc18c",
-  starter: "14e4108db8ebc438c1ce6d5eb6cb43cd36d0f18bdd283460cca64fa3064b801b",
+  starter: "486cb8603f9fea23e81228fe727ee9df181ff446dad6b626c24deabfa7fbfdc1",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
