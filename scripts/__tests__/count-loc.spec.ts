@@ -11,6 +11,7 @@ import {
   countGeneratedHudLoc,
   countLines,
   countPlatformerTemplateLoc,
+  countWorldHeightfieldLoc,
   normaliseSource,
   renderLocTable,
 } from "../count-loc.js";
@@ -102,5 +103,14 @@ describe("count-loc", () => {
     const comparison = countGeneratedHudLoc();
 
     expect(comparison.generated).toBeLessThanOrEqual(comparison.geometry);
+  });
+
+  it("prices heightfield framework wiring against every proven game repetition", () => {
+    const comparison = countWorldHeightfieldLoc(2);
+
+    expect(comparison.portableRepeated).toBe(comparison.implementation * 2);
+    expect(comparison.framework).toBe(comparison.implementation + comparison.wiring);
+    expect(comparison.framework).toBeLessThan(comparison.portableRepeated);
+    expect(() => countWorldHeightfieldLoc(0)).toThrow("positive integer");
   });
 });

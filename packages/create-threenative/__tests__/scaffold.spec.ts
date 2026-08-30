@@ -60,13 +60,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-29 for PRD-256: every scaffold now forwards its asset config to the dev
   // watcher and carries the bounded static-lightmap setup, rollback, and platform warning. The
   // shooter hash also includes its 60-frame input-control warmup from current main.
-  "action-rpg": "a7fac25242f0e12b65fe9d372d037fa99e418a938070547ccd46ef30973ddf3a",
-  defense: "c36d4ab3d837a9129434bcd4c1629c7d87aa9e7e757f2f3bb3127c8e0ae6661a",
-  minimal: "8474478529225f00a451c86312839e093d6b1e605790ebf1d942551f76ea735b",
-  platformer: "54b9979919242591403b8eae1b96cb350fda65e234c6a66d5b285cb9af995395",
-  racing: "ef0b66ee8d255bcf38f1653ba5a422e75c1878f5642205fba2b9a9eed88b2a28",
-  shooter: "fbc4f4d76f3b7e0b6a1b82a9a2882ddfed3a803c9bd6eaca333af66d68c6db8b",
-  starter: "99f842448efbe36fb1c926d6c1caa1c4e6955f08a7b8d1b0a55dfa7e6542dbe4",
+  // Recomputed for PRD-251 Phase 1: every scaffold embeds the capability manifest and reference,
+  // which now document the optional Heightfield world subpath.
+  "action-rpg": "0aa79eec8aa59fadc5d9f62c0d49333c642ec4ae7d9cc9bfaacec8bc4933c53d",
+  defense: "3c6cefc6fc4055a196cab27de55fb9f33c30d4028756648496dd8c787db92bfa",
+  minimal: "a1267075c7a3a86bc9b9b47e5963e8681d4cdba314f3eb5e55b032e399b2aa58",
+  platformer: "3ce84c8703d0fef931a7422c1cd6cc653185dd992c3e7a4a8c37bcffcb378156",
+  racing: "61f41186019cab575d5ba7835fd0b7318704175da9bc70cb371c3a13e9d14f37",
+  shooter: "5f362611efb180a9669686cb0af53bdef5f7e9cd81bebda2216dab75010ef274",
+  starter: "53bc1662f9af4495f8512b025a97de77cd124debe6b23c55be13f2821b51e105",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

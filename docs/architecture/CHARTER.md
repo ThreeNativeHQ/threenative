@@ -326,6 +326,13 @@ decided in the package. `softCircleDataTexture` writes radial-alpha sprite pixel
 owns the trap and the way around it, never where the sprite appears or what it shows. Both clear
 the same veto as every mechanism above.
 
+### Queryable heightfield storage is mechanism
+
+`Heightfield` owns one row-major numeric buffer, interpolation, normals, ordinary Three.js geometry,
+and the ordering consumed by the physics heightfield. The game supplies every height through its own
+sampler; core supplies no noise function, seed interpretation, landform, or other shape decision.
+Changing the terrain completely therefore edits only game source.
+
 ### "Looks good by default" and "never owns the look" are the same rule
 
 These sound contradictory. They aren't — and reconciling them is the core design move.

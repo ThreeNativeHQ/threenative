@@ -4,9 +4,8 @@ prd_contract: v1
 
 # PRD-251 — A world is queryable fields and resident tiles; what it looks like is the game's
 
-**Status: PHASE 0 COMPLETE, 2026-08-30. No product code exists.** Phase 0 baseline HEAD
-`982625c3`, branch `feature-mining-prd251-phase0-20260830`, remote
-`https://github.com/ThreeNativeHQ/threenative.git`. Binding charter:
+**Status: PHASE 1 COMPLETE, 2026-08-30; PHASES 2–6 UNEXECUTED.** Phase 1 baseline HEAD
+`9b2f64c8`, branch `feature-mining-prd251-phase1-20260830`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md).
 
 Parent batch: [feature-mining](../README.md).
@@ -94,7 +93,7 @@ A game asked to build an open world on ThreeNative today gets `CollisionShape3D.
 seams, its own eviction, and its own CPU-side height query — and the two halves of that last
 pair silently disagree, which is the defect class PRD-043 §3 already named.
 
-This PRD proposes **one optional package, `@threenative/world`**, that owns exactly the parts
+This PRD proposes **one optional subpath, `@threenative/core/world`**, that owns exactly the parts
 a game cannot write portably and cannot get right twice:
 
 1. **Deterministic, queryable world fields.** `seed → height, normal, slope, flow, moisture,
@@ -114,7 +113,7 @@ lighting, camera, post. The game gets numbers and a `THREE.BufferGeometry`; it d
 everything a screenshot shows.
 
 **The one-line test this PRD must pass:** two games over the *same seed and the same
-`@threenative/world` build* produce two completely different-looking worlds with no package
+`@threenative/core/world` build* produce two completely different-looking worlds with no package
 file edited.
 
 **The kill switch is armed from the start.** §11 states the numbers that delete this package
@@ -153,8 +152,8 @@ constructs a material.
 ### In scope
 
 - `Heightfield` — a deterministic, CPU-queryable, GPU-resident scalar field bundle.
-- `MacroMap` — the coarse, whole-world, seed-derived layer (landmass mask, base climate)
-  that keeps tiles globally consistent without generating every tile.
+- Game-supplied samplers over explicit world coordinates, stored once by `Heightfield`; core
+  provides no seed interpretation, landmass graph, climate model or terrain preset.
 - Ordered GPU passes: **height synthesis → hydraulic erosion → flow routing → derived
   moisture/biome index**, dispatched under a per-frame budget.
 - `TerrainTiles` — residency, LOD selection, neighbour-aware stitching, skirts, eviction.
@@ -182,7 +181,7 @@ constructs a material.
 
 Plain `three` / `three/webgpu` `WebGPURenderer`, TSL for compute. **No fork of three, no
 WebView, no proprietary renderer abstraction, no platform-specific game source, no
-raw-WGSL-only public contract.** A game imports `THREE` as it always did; `@threenative/world`
+raw-WGSL-only public contract.** A game imports `THREE` as it always did; `@threenative/core/world`
 hands it geometry and numbers.
 
 ---
@@ -192,7 +191,7 @@ hands it geometry and numbers.
 Charter rule 5: *a package exists only when it carries a dependency the others must not
 inherit.* Answer honestly, because the answer is not obviously yes:
 
-- `@threenative/world` needs no new npm dependency beyond `three`.
+- `@threenative/core/world` needs no new npm dependency beyond `three`.
 - It **does** carry a worker-backed generation pool ([PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md))
   and a multi-megabyte compute/residency surface that every `@threenative/core` consumer would
   otherwise inherit in its bundle.
@@ -206,8 +205,8 @@ inherit.* Answer honestly, because the answer is not obviously yes:
   Phase 1 must still measure a world-free consumer and hold its delta at exactly zero bytes.
 
 Filing this as an open adjudication rather than assuming the package is deliberate. The name
-`@threenative/world` is used throughout for readability; substitute
-`@threenative/core/world` if 0.5 rules that way.
+All implementation paths below use the Phase 0 verdict: the independent
+`@threenative/core/world` subpath and `packages/core/src/world*`.
 
 ---
 
@@ -291,12 +290,11 @@ worker.
 
 ```ts
 // src/scenes/Play.ts — the game's file
-import { MacroMap, TerrainTiles } from "@threenative/world";
+import { TerrainTiles } from "@threenative/core/world";
 import { terrainMaterial } from "../render/terrain.js";   // the look: yours, always
 
-const macro = new MacroMap({ seed: 1337 });
 const tiles = new TerrainTiles({
-  macro,
+  sampleHeight: terrainHeight, // game source owns the landform
   tileSize: 256,          // world units — one metre is one metre
   tileResolution: 129,
   residentTileBudget: 25,
@@ -340,7 +338,7 @@ package edits.
 ```sh
 # unit + type + lint
 pnpm typecheck && pnpm lint && pnpm test
-pnpm --filter @threenative/world test
+pnpm exec vitest run packages/core/__tests__/world-heightfield.spec.ts
 
 # the game, headed browser WebGPU, real input
 pnpm --filter @threenative/playtest build
@@ -370,11 +368,11 @@ pnpm budgets && pnpm quality
 pnpm tsx scripts/count-loc.ts
 pnpm build && pnpm sync:agents
 
-# the look-ownership gate (must return nothing under packages/world)
-rg -n "Material|new THREE\.Color|0x[0-9a-fA-F]{6}|Texture\(|Light\(|snow|desert|tundra" packages/world/src
+# the look-ownership gate (must return nothing from the optional world subpath)
+rg -n "Material|new THREE\.Color|0x[0-9a-fA-F]{6}|Texture\(|Light\(|snow|desert|tundra" packages/core/src/world.ts
 
 # caller census (must return a non-test consumer for every export)
-rg -n "TerrainTiles|Heightfield|MacroMap" --glob '!**/__tests__/**' --glob '!**/*.spec.ts' packages examples
+rg -n "TerrainTiles|Heightfield" --glob '!**/__tests__/**' --glob '!**/*.spec.ts' packages examples
 
 # free a dev server by port, never pkill -f vite
 lsof -ti tcp:5173 | xargs -r kill
@@ -388,7 +386,7 @@ Scored over an identical 1,024 m × 1,024 m region for the Phase 0 subjects, fro
 no material, no lighting, no screenshot in the metric. Thresholds are filled by Phase 0/6
 measurement; **the discrimination requirement is stated now.**
 
-| # | Metric | What it measures | PRD-043 sine wireframe | `@threenative/world` | Upstream `398320e9` |
+| # | Metric | What it measures | PRD-043 sine wireframe | `@threenative/core/world` | Upstream `398320e9` |
 | --- | --- | --- | --- | --- | --- |
 | 1 | **Directional anisotropy** — `abs(log(var(∂h/∂x)/var(∂h/∂z))) ≤ 0.1` | Is the field directionally balanced? | **0.255 — fail** | ≤ 0.1 | **0.054 — pass** |
 | 2 | **Log-log power-spectrum slope β**, wavelengths 8–256 m | Does the field have broadband scale structure? | **10.190 — fail** | 2.5–5.0 | **3.888 — pass** |
@@ -418,9 +416,9 @@ only by our own build is a self-comparison and is likewise invalid.
 
 ### 11.1 The rule-2 kill switch
 
-`pnpm tsx scripts/count-loc.ts` scores `@threenative/world` against a game writing the same
+`pnpm tsx scripts/count-loc.ts` scores `@threenative/core/world` against a game writing the same
 capability portably (Phase 0's baseline, §13.0.6). **If the framework arm is not materially
-smaller across every repetition — not one site — the package is deleted, however much work it
+smaller across every repetition — not one site — the subpath is deleted, however much work it
 took.** "It was hard to build" is not a defence; the charter is explicit.
 
 ### 11.2 The erosion/flow gate
@@ -446,14 +444,14 @@ this gate exists to prevent.
 ### 11.4 Rollback
 
 Every phase is additive behind an optional import until Phase 5. Rollback at any point before
-Phase 5 is `git rm -r packages/world` plus reverting `TerrainProbe.ts` — the example is the
+Phase 5 removes `packages/core/src/world*` plus reverting `TerrainProbe.ts` — the example is the
 only consumer. **After Phase 5, rollback means restoring PRD-043's sinusoid**, which is why
 Phase 5 is last and why its captures are archived before the incumbent is deleted.
 
 ### 11.5 Scope-creep tripwires
 
 Any of these means the PRD has drifted and must stop for re-scoping: a `Material` in
-`packages/world/`; a biome *name* in package code; a second culler, LOD system or renderer; a
+`packages/core/src/world*`; a biome *name* in package code; a second culler, LOD system or renderer; a
 preset/genre object; a raw-WGSL public signature; a platform branch in example scene code; a
 phase diff that reads as a wholesale transcription of upstream.
 
@@ -467,16 +465,16 @@ unnamed at phase end means the phase is incomplete.
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `MacroMap` | `examples/abyss-framework/src/scenes/TerrainProbe.ts` (Phase 1) | nothing — no global seed layer exists | n/a | seed from wall clock → determinism test reds |
-| 2 | `Heightfield` + `sample`/`heightAt`/`normalAt` | `examples/abyss-framework/src/scenes/TerrainProbe.ts` (Phase 1) | the inline `Math.sin`/`Math.cos` at `TerrainProbe.ts:48-49` | **Yes — deleted in Phase 1** | offset the field by one row → CPU/render parity test reds |
-| 3 | `toColliderHeights` → `CollisionShape3D.heightfield` | `examples/abyss-framework/src/scenes/TerrainProbe.ts` (Phase 1) | the hand-built `heights` array at `TerrainProbe.ts:43-52` | **Yes — deleted in Phase 1** | drop the length check → collider silently offset, unit test reds |
-| 4 | Erosion + flow passes on `IComputeDriven` | `packages/world/src/heightfield.ts` → PRD-242 scheduler | nothing | n/a | iterations = 0 → stream-order and sink metrics red |
-| 5 | Per-frame dispatch budget | `packages/world/src/heightfield.ts`, dispatched from the frame loop via `IComputeDriven` | nothing | n/a | remove the budget → dispatch-count test reds |
+| 1 | Required game sampler | `examples/abyss-framework/src/scenes/TerrainProbe.ts:18` | the incumbent two-term sampler | **Yes — replacement remains game source** | constant-height mutation → detached traversal outcome reds |
+| 2 | `Heightfield` + `sample`/`heightAt`/`normalAt` | `examples/abyss-framework/src/scenes/TerrainProbe.ts:53` | separately authored render/query buffers | **Yes — one stored field owns both** | row offset → CPU/render/collider parity test reds |
+| 3 | `toColliderHeights` → `CollisionShape3D.heightfield` | `examples/abyss-framework/src/scenes/TerrainProbe.ts:73` | hand-built row-major collider array | **Yes — Rapier ordering is exported explicitly** | return row-major values → detached player stalls and drifts |
+| 4 | Erosion + flow passes on `IComputeDriven` | `packages/core/src/world-passes.ts` → PRD-242 scheduler | nothing | n/a | iterations = 0 → stream-order and sink metrics red |
+| 5 | Per-frame dispatch budget | `packages/core/src/world-passes.ts`, dispatched from the frame loop via `IComputeDriven` | nothing | n/a | remove the budget → dispatch-count test reds |
 | 6 | `TerrainTiles` residency + eviction | `examples/abyss-framework/src/scenes/TerrainProbe.ts` (Phase 3) | the hand-rolled `#stream()` at `TerrainProbe.ts:153-170` | **Yes — deleted in Phase 3** | disable eviction → resident-bytes cap test reds |
-| 7 | Stitching + skirts | `packages/world/src/terrain-tiles.ts` | nothing | n/a | remove skirts → seam-gap test reds |
-| 8 | `AssetLoader.release` consumer | `packages/world/src/terrain-tiles.ts` | PRD-043's toy caller | PRD-043's caller is deleted with `#stream()` | stub the loader with a counter → no-op release reds |
+| 7 | Stitching + skirts | `packages/core/src/world-tiles.ts` | nothing | n/a | remove skirts → seam-gap test reds |
+| 8 | `AssetLoader.release` consumer | `packages/core/src/world-tiles.ts` | PRD-043's toy caller | PRD-043's caller is deleted with `#stream()` | stub the loader with a counter → no-op release reds |
 | 9 | Topology metrics | `packages/playtest/src/evaluators/world-gameplay.ts` | nothing | n/a | score PRD-043's field → must go red on metrics 1–8 |
-| 10 | `world.capabilities` | `packages/world/src/index.ts`, read by the example | nothing | n/a | stub compute limits low → path switches; silently proceeding reds |
+| 10 | `world.capabilities` | `packages/core/src/world-capabilities.ts`, read by the example | nothing | n/a | stub compute limits low → path switches; silently proceeding reds |
 | 11 | Native conformance case | `packages/runtime-native/conformance/registry.json` | nothing | n/a | patch one platform by one constant → field-hash parity reds |
 | 12 | Upgraded scenario | `examples/abyss-framework/playtests/terrain.playtest.json` (same `terrain-streaming` name) | its own weaker assertions | **Yes — edited in place, not duplicated** | run it against HEAD's sinusoid → must red |
 
@@ -534,53 +532,70 @@ eviction, GPU compute scheduling, native.
 **Phase that closes each gap:** Phase 2 (erosion, flow, GPU scheduling), Phase 3 (LOD,
 stitching, eviction), Phase 4 (native + mobile).
 
-**Files (5):**
+**Files (6):**
 
-- `packages/world/src/heightfield.ts` — NEW: `Heightfield`, CPU synthesis plus `sample`/`heightAt`/`normalAt`.
-- `packages/world/src/macro-map.ts` — NEW: `MacroMap`, seed to coarse layer.
-- `packages/world/src/index.ts` — NEW: public surface.
-- `examples/abyss-framework/src/scenes/TerrainProbe.ts` — EDIT: the sinusoid at `:48-49` is deleted and the chunk mesh is built from `Heightfield`; `#stream()` stays hand-rolled until Phase 3.
-- `packages/world/__tests__/heightfield.spec.ts` — NEW: determinism, parity and collider-convention tests.
+- `packages/core/src/world.ts` — NEW: optional `Heightfield` subpath with storage,
+  `sample`/`heightAt`/`normalAt`, geometry and collider ordering.
+- `packages/core/package.json` + `packages/core/tsup.config.ts` — EDIT: independent
+  `@threenative/core/world` export and build entry.
+- `packages/core/__tests__/world-heightfield.spec.ts` — NEW: determinism, parity and
+  collider-convention tests.
+- `packages/core/__tests__/build.spec.ts` — EDIT: subpath exists and the main entry does not
+  contain it.
+- `examples/abyss-framework/src/scenes/TerrainProbe.ts` — EDIT: the sinusoid is deleted and each
+  resident chunk is built from `Heightfield`; `#stream()` stays hand-rolled until Phase 3.
+- Charter and generated agent instructions — EDIT: numeric heightfield storage is mechanism;
+  terrain synthesis remains game source.
 
 **Implementation:**
-- [ ] `MacroMap(seed)` → deterministic coarse landmass/climate. Pure function of the seed; no
-      wall-clock, no `Math.random`, no module-level mutable state.
-- [ ] `Heightfield` synthesises on CPU into `Float32Array` channels; `heightAt(x,z)` and
-      `normalAt(x,z)` read the *same* storage the geometry was built from — **one owner, never
-      two evaluations of "the same" function.**
-- [ ] `toColliderHeights(tile)` returns the `Float32Array` in the exact row/column convention
+- [x] The domain-warped synthesis function and seed live in `TerrainProbe.ts`, because the
+      function decides the landform. Core receives it through required `sampleHeight`; it has no
+      noise default, seed interpretation or `MacroMap` preset.
+- [x] `Heightfield.fromSampler` evaluates the game function once into a `Float32Array`;
+      `heightAt(x,z)` and `normalAt(x,z)` read the *same* storage the geometry was built from —
+      **one owner, never two evaluations of "the same" function.**
+- [x] `toColliderHeights()` returns a protected copy transposed into the exact matrix convention
       `CollisionShape3D.heightfield` expects. This is the drift surface; it gets its own test.
-- [ ] No `Material`, `Color`, texture or light constructed anywhere in `packages/world/`.
+- [x] No appearance object or value is constructed in `packages/core/src/world.ts`.
 
 **Wiring:**
-- [ ] Caller edited: `TerrainProbe.ts` constructs `Heightfield` and feeds both the geometry and
+- [x] Caller edited: `TerrainProbe.ts` constructs `Heightfield` and feeds both the geometry and
       `CollisionShape3D.heightfield` from it.
-- [ ] Old path: the inline `Math.sin`/`Math.cos` height expression is **deleted**, not wrapped.
-- [ ] Ledger rows filled: #1, #2, #3.
+- [x] Old path: the incumbent two-term sinusoid is **deleted**, not wrapped. The replacement
+      multi-octave domain-warped sampler is authored game source, not framework source.
+- [x] Ledger rows #1, #2 and #3 name the exact live caller and observed negative control.
 
 | Test | Assertion | Negative control (must be observed red) |
 | --- | --- | --- |
-| `should produce an identical field for an identical seed` | hash equality over all channels, two constructions | seed the synthesis from `Date.now()` → hashes differ, reds |
+| `should produce an identical field for an identical game seed` | hash equality over all samples, two constructions | seed the game sampler from `Date.now()` → hashes differ, reds |
 | `should produce a materially different field for a different seed` | metric distance above threshold, not just `!==` | ignore the seed argument → distance ≈ 0, reds |
 | `should agree between heightAt and the rendered vertex at the same coordinate` | max abs error below stated epsilon over N sampled points | offset the collider heights by one row → error explodes, reds |
 | `should reject a heights buffer whose length is not rows*columns` | throws | remove the check → silently offset collider, test reds |
-| `should construct no THREE.Material anywhere in packages/world` | static grep gate | add one `MeshStandardMaterial` → reds |
+| `should construct no appearance under the world subpath` | static source gate | add one `MeshStandardMaterial` → reds |
 
-**Revert check:** delete `packages/world/` → `TerrainProbe.ts` fails to typecheck and
+**Revert check:** delete `packages/core/src/world.ts` → `TerrainProbe.ts` fails to typecheck and
 `terrain.playtest.json` fails. Not "a new test fails" — a **pre-existing** scenario fails.
 
 **Manual checkpoint:** headed capture of the walked region, inspected. If it looks like noise
 draped on a plane, Phase 2 is the answer and that is recorded, not glossed.
 
+**Exit gate: PASSED.** The non-square unit mutation failed with 12.302858 maximum render/collider
+error, then all seven focused tests passed after the matrix transpose. The real browser traversal
+crossed 452.249064 m with zero diagnostics. A detached game freshly installed from the packed core
+tarball crossed 66.309951 m, traversed 8.311573 m of relief, remained grounded and changed from
+`playing` to `won`; its constant-field mutation exited 1. The inspected capture shows two rolling
+ridges, the player and goal. Full repository gates and the 49.1%-smaller two-consumer LOC proof are
+recorded in [`docs/verification/PRD-251-phase1.md`](../../../verification/PRD-251-phase1.md).
+
 ### Phase 2 — erosion and flow, judged as topology, not as a screenshot
 
 **Files (5):**
 
-- `packages/world/src/passes/height-synthesis.ts` — NEW: the synthesis dispatch, tuning taken from the game.
-- `packages/world/src/passes/erosion.ts` — NEW: hydraulic erosion ping-pong, gated on §11.2.
-- `packages/world/src/passes/flow.ts` — NEW: flow accumulation and drainage routing, gated on §11.2.
-- `packages/world/src/heightfield.ts` — EDIT: GPU path and the `IComputeDriven` lifetime added to Phase 1's CPU owner.
-- `packages/world/__tests__/erosion.spec.ts` — NEW: topology, parity and dispatch-budget tests.
+- `packages/core/src/world-passes.ts` — NEW: synthesis, hydraulic erosion and flow dispatches,
+  with all tuning supplied by the game and erosion gated on §11.2.
+- `packages/core/src/world.ts` — EDIT: GPU path and the `IComputeDriven` lifetime added to Phase
+  1's CPU owner.
+- `packages/core/__tests__/world-erosion.spec.ts` — NEW: topology, parity and dispatch-budget tests.
 
 - [ ] Passes dispatched **in a fixed order** through PRD-242's `IComputeDriven`: synthesis →
       erosion (N iterations) → flow accumulation → derived moisture. Order is physics, not
@@ -606,11 +621,11 @@ draped on a plane, Phase 2 is the answer and that is recorded, not glossed.
 
 **Files (5):**
 
-- `packages/world/src/terrain-tiles.ts` — NEW: residency, LOD selection, stitching, skirts, eviction.
-- `packages/world/src/index.ts` — EDIT: `TerrainTiles` added to the public surface.
+- `packages/core/src/world-tiles.ts` — NEW: residency, LOD selection, stitching, skirts, eviction.
+- `packages/core/src/world.ts` — EDIT: `TerrainTiles` added to the public surface.
 - `examples/abyss-framework/src/scenes/TerrainProbe.ts` — EDIT: `#stream()` deleted, `TerrainTiles` owns residency.
 - `examples/abyss-framework/playtests/terrain.playtest.json` — EDIT: the `terrain-streaming` scenario gets residency and seam assertions, in place.
-- `packages/world/__tests__/terrain-tiles.spec.ts` — NEW: residency cap, seam gap, collider lockstep, LOD pop.
+- `packages/core/__tests__/world-terrain-tiles.spec.ts` — NEW: residency cap, seam gap, collider lockstep, LOD pop.
 
 - [ ] LOD selection per tile, composed over `THREE.LOD` (PRD-098) — not a new LOD system.
 - [ ] Visibility via PRD-238's projection cull — not a new culler.
@@ -635,8 +650,8 @@ draped on a plane, Phase 2 is the answer and that is recorded, not glossed.
 **Files (4):**
 
 - `packages/runtime-native/conformance/registry.json` — EDIT: the world conformance case registered.
-- `packages/world/src/capabilities.ts` — NEW: runtime report of compute availability and active generation path.
-- `packages/world/src/index.ts` — EDIT: `capabilities` exported.
+- `packages/core/src/world-capabilities.ts` — NEW: runtime report of compute availability and active generation path.
+- `packages/core/src/world.ts` — EDIT: `capabilities` exported.
 - `docs/verification/PRD-251-native.md` — NEW: native desktop and device evidence, including any recorded `unsupported`.
 
 - [ ] **The same ordinary game source** builds and runs on headed browser WebGPU *and* native
@@ -682,7 +697,7 @@ and a WebGPU run that does not name its adapter may be SwiftShader — use
       **Not an automated camera flythrough** — the scenario drives `move`, the character body
       moves, the tiles follow.
 - [ ] §10's metric table filled for three subjects: PRD-043 (Phase 0 floor),
-      `@threenative/world` (this build), pinned upstream (Phase 0 reference).
+      `@threenative/core/world` (this build), pinned upstream (Phase 0 reference).
 - [ ] Headed captures of all three, inspected side by side and pasted.
 - [ ] Two `src/render/` materials over the **same** world produce two completely different
       looks with no package file edited — both captures pasted. **The charter test, executed.**
@@ -693,8 +708,8 @@ and a WebGPU run that does not name its adapter may be SwiftShader — use
 
 - `docs/verification/PRD-251-cost.md` — NEW: the three measurement configurations and their numbers.
 - `packages/create-threenative/capabilities.json` — EDIT: regenerated by `pnpm build`, never hand-edited.
-- `packages/world/AGENTS.md` — NEW: the package's own conventions and overrides.
-- `packages/world/CLAUDE.md` — NEW: generated by `pnpm sync:agents`, never hand-written.
+- `packages/core/AGENTS.md` — EDIT: world-subpath conventions and overrides.
+- `packages/core/CLAUDE.md` — regenerated by `pnpm sync:agents`, never hand-written.
 
 - [ ] Measure at three explicit configurations (tile resolution × erosion iterations ×
       resident-tile budget). **These are measurement configurations, not shipped presets.**
@@ -717,10 +732,10 @@ Each control is observed red before its corresponding acceptance gate is reporte
 | Gate | Control | Expected red | Exact command/result |
 |---|---|---|---|
 | NC-1 | Replace generated fields with PRD-043's sinusoidal 9×9 wireframe floor. | The quality table fails erosion, hydrology, terrain-frequency, residency, and visual-complexity floors instead of declaring terrain equivalent. | command: pnpm playtest --project examples/abyss-framework --scenario terrain |
-| NC-2 | Offset the CPU height query by one sample row or disable physics-heightfield refresh. | The input-driven traversal fails the rendered-height versus collision-height epsilon and names the first divergent coordinate. | command: pnpm --filter @threenative/world test |
+| NC-2 | Return render-row-major values directly to Rapier or disable physics-heightfield refresh. | The non-square unit fixture and input-driven traversal fail; the detached player stalls and drifts. | command: pnpm exec vitest run packages/core/__tests__/world-heightfield.spec.ts |
 | NC-3 | Pin every tile resident, disable eviction, or undercount resident bytes. | Peak resident tile/byte assertions fail and the traversal record identifies the over-budget frame. | command: pnpm playtest --project examples/abyss-framework --scenario terrain |
-| NC-4 | Disable erosion/flow or reuse one seed for the different-seed arm. | River/flow topology and seed-distance invariants fail; screenshots alone cannot satisfy the gate. | command: pnpm --filter @threenative/world test |
-| NC-5 | Add a terrain material, biome palette, species preset, or platform branch under `packages/world/src`. | The charter grep or same-source cross-platform check fails and blocks delivery. | command: pnpm quality |
+| NC-4 | Disable erosion/flow or reuse one seed for the different-seed arm. | River/flow topology and seed-distance invariants fail; screenshots alone cannot satisfy the gate. | command: pnpm exec vitest run packages/core/__tests__/world-erosion.spec.ts |
+| NC-5 | Add a terrain material, biome palette, species preset, or platform branch under `packages/core/src/world*`. | The charter grep or same-source cross-platform check fails and blocks delivery. | command: pnpm quality |
 
 ## 15. Acceptance Criteria (consumer-scoped)
 
@@ -752,9 +767,9 @@ Every one is a command whose output is pasted. None may be reported green withou
 - [ ] **The look is the game's, executed:** two `src/render/` materials over the same world →
       two unrecognisably different captures, no package file edited. Diff and both captures
       pasted.
-- [ ] **Grep gate green:** §9's look-ownership `rg` over `packages/world/src` returns nothing.
+- [ ] **Grep gate green:** §9's look-ownership `rg` over `packages/core/src/world*` returns nothing.
 - [ ] **Every export has a non-test consumer:** §9's caller census pasted.
-- [ ] **Revert check:** deleting `packages/world/` breaks the pre-existing `terrain-streaming`
+- [ ] **Revert check:** deleting `packages/core/src/world.ts` breaks the pre-existing `terrain-streaming`
       scenario and `TerrainProbe.ts`'s typecheck — pasted failure.
 - [ ] **Every incumbent path is gone:** `rg -n "Math.sin|wireframe" examples/abyss-framework/src/scenes/TerrainProbe.ts`
       returns nothing.
@@ -767,7 +782,7 @@ Every one is a command whose output is pasted. None may be reported green withou
 - [ ] The manifest answers *"generate a terrain a player can walk across"*, *"ask how high the
       ground is here"* and *"stream terrain without cracks"* — searched via
       `engine_search_capabilities`, results pasted.
-- [ ] `pnpm sync:agents` run; `packages/world/CLAUDE.md` regenerated, not hand-written.
+- [ ] `pnpm sync:agents` run; `packages/core/CLAUDE.md` regenerated, not hand-written.
 
 ---
 

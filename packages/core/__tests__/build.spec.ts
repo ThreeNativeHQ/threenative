@@ -65,4 +65,11 @@ describe("core package build", () => {
       await rm(consumer, { force: true, recursive: true });
     }
   }, 15_000);
+
+  it("should emit the optional world subpath without pulling it into the main entry", async () => {
+    const dist = path.resolve("packages/core/dist");
+    expect(existsSync(path.join(dist, "world.js"))).toBe(true);
+    expect(existsSync(path.join(dist, "world.d.ts"))).toBe(true);
+    expect(await readFile(path.join(dist, "index.js"), "utf8")).not.toContain("Heightfield");
+  });
 });

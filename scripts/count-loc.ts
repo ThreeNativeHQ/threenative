@@ -304,6 +304,47 @@ export function countGeneratedHudLoc(rootDirectory = process.cwd()): {
   };
 }
 
+export interface WorldHeightfieldLoc {
+  readonly framework: number;
+  readonly implementation: number;
+  readonly portableRepeated: number;
+  readonly repetitions: number;
+  readonly wiring: number;
+}
+
+/**
+ * Prices the optional heightfield mechanism against each proven game owning an equivalent copy.
+ * Tests and shared call-site code are excluded from both arms. Package/build lines containing the
+ * independent `world` entry are framework-only wiring; the implementation is otherwise portable
+ * TypeScript and is therefore the honest per-game replacement.
+ */
+export function countWorldHeightfieldLoc(
+  repetitions: number,
+  rootDirectory = process.cwd(),
+): WorldHeightfieldLoc {
+  if (!Number.isInteger(repetitions) || repetitions < 1)
+    throw new Error("World heightfield LOC repetitions must be a positive integer.");
+  const root = resolve(rootDirectory);
+  const implementationPath = join(root, "packages/core/src/world.ts");
+  const implementation = lineCount(
+    normaliseSource(readFileSync(implementationPath, "utf8"), implementationPath, root),
+  );
+  const wiring = ["packages/core/package.json", "packages/core/tsup.config.ts"].reduce(
+    (total, relativePath) => {
+      const source = readFileSync(join(root, relativePath), "utf8");
+      return total + sourceLines(source).filter((line) => /world/iu.test(line)).length;
+    },
+    0,
+  );
+  return {
+    framework: implementation + wiring,
+    implementation,
+    portableRepeated: implementation * repetitions,
+    repetitions,
+    wiring,
+  };
+}
+
 function summary(rows: readonly LocCount[], arm: BenchmarkArm): LocCount {
   const selected = rows.filter((row) => row.arm === arm);
   return {
@@ -429,4 +470,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.stdout.write(`platformer template LOC: ${countPlatformerTemplateLoc(root)}\n`);
   const hud = countGeneratedHudLoc(root);
   process.stdout.write(`generated HUD LOC: ${hud.generated} (geometry HUD ${hud.geometry})\n`);
+  const repetitionsArgument = process.argv.find((argument) =>
+    argument.startsWith("--world-repetitions="),
+  );
+  if (repetitionsArgument !== undefined) {
+    const repetitions = Number(repetitionsArgument.split("=")[1]);
+    const world = countWorldHeightfieldLoc(repetitions, root);
+    const savings = ((1 - world.framework / world.portableRepeated) * 100).toFixed(1);
+    process.stdout.write(
+      `world heightfield LOC: framework ${world.framework} (${world.implementation} implementation + ${world.wiring} wiring), repeated portable ${world.portableRepeated} across ${world.repetitions} proven games, ${savings}% smaller\n`,
+    );
+    if (world.framework >= world.portableRepeated)
+      throw new Error("World heightfield fails the repeated-game LOC kill switch.");
+  }
 }

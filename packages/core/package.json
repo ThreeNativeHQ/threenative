@@ -29,6 +29,10 @@
       "types": "./dist/ui-layer.d.ts",
       "import": "./dist/ui-layer.js"
     },
+    "./world": {
+      "types": "./dist/world.d.ts",
+      "import": "./dist/world.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

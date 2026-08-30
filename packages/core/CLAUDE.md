@@ -9,7 +9,8 @@ Read `/AGENTS.md` first. This file covers only what is different here.
 The wiring every game repeats and no game should write: renderer bootstrap and WebGPU
 fallback, the fixed-step loop, scene lifecycle, plugin wiring, input mapping, asset loading,
 animation playback, hot-reload state preservation, the throttled state store, accelerated
-scene ray queries, and the entity registry that makes a running game inspectable.
+scene ray queries, queryable heightfield storage shared by rendering and physics, and the entity
+registry that makes a running game inspectable.
 
 That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`. Pooled tracer streaks
 (`TracerPool3D`) and sprite pixel-data generation (`softCircleDataTexture`) are admitted under
