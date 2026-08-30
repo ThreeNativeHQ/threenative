@@ -142,4 +142,10 @@ describe("doctor argument parsing", () => {
   it("leaves the device undefined when the flag is absent", () => {
     expect(parseDoctorArgs(["--text"]).device).toBeUndefined();
   });
+
+  it("fails closed on unknown options and dangling value flags", () => {
+    expect(() => parseDoctorArgs(["--devce", "X"])).toThrow(/unknown option '--devce'/u);
+    expect(() => parseDoctorArgs(["--device"])).toThrow(/'--device' requires a value/u);
+    expect(() => parseDoctorArgs(["--url", "--text"])).toThrow(/'--url' requires a value/u);
+  });
 });

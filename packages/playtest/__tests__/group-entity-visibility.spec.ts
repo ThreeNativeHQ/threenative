@@ -1,4 +1,4 @@
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, Vector2 } from "three";
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2 } from "three";
 import { expect, test } from "vitest";
 
 import { ThreePlaytestEntityRegistry } from "../src/three/entities.js";

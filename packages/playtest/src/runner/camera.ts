@@ -1,7 +1,7 @@
-import {
-  type IPlaytestAssertionResult,
-  type IPlaytestObservationSnapshot,
-  type IPlaytestScenario,
+import type {
+  IPlaytestAssertionResult,
+  IPlaytestObservationSnapshot,
+  IPlaytestScenario,
 } from "../index.js";
 import { entityPosition, length, subtract } from "./shared.js";
 

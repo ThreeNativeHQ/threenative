@@ -147,19 +147,30 @@ export function parseDoctorArgs(argv: readonly string[]): IDoctorArgs {
   let device: string | undefined;
   let text = false;
   let url: string | undefined;
+  // Fail closed, like the run and perf paths: doctor is the surface that gates device spend,
+  // and a typo'd or dangling flag used to run machine-only checks and report success-ish.
+  const usage = "Run threenative-playtest doctor --help.";
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--text") text = true;
-    else if (flag === "--device") {
-      device = argv[index + 1];
-      index += 1;
-    } else if (flag === "--url") {
-      url = argv[index + 1];
+    else if (flag === "--device" || flag === "--url") {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new PlaytestCliUsageError(`doctor: '${String(flag)}' requires a value. ${usage}`);
+      }
+      if (flag === "--device") device = value;
+      else url = value;
       index += 1;
     } else if (flag === "--browser-arg") {
+      // A browser argument may itself start with '--', so only a missing value is an error.
       const value = argv[index + 1];
-      if (value !== undefined) browserArgs.push(value);
+      if (value === undefined) {
+        throw new PlaytestCliUsageError(`doctor: '--browser-arg' requires a value. ${usage}`);
+      }
+      browserArgs.push(value);
       index += 1;
+    } else {
+      throw new PlaytestCliUsageError(`doctor: unknown option '${String(flag)}'. ${usage}`);
     }
   }
   return { browserArgs, device, text, url };
