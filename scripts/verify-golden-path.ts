@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import {
@@ -158,11 +158,7 @@ export function goldenPathCorrectiveCommands(
       command: "pnpm",
       cwd: target,
     },
-    test: {
-      args: ["test"],
-      command: "pnpm",
-      cwd: target,
-    },
+    test: goldenPathTestStep(target),
     "build web": {
       args: ["exec", "threenative", "build", "--target", "web"],
       command: "pnpm",
@@ -980,4 +976,44 @@ if (
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
+}
+
+/**
+ * The scaffold's own test command, or the part of it a machine without a GPU can run.
+ *
+ * A generated project's `pnpm test` drives every scenario it ships, and the ones that capture a
+ * frame — screenshots, baselines, a `visual` assertion, a frame-time budget — cannot run where
+ * WebGPU is a CPU rasteriser: Chromium never returns a composited frame and the run dies on
+ * `page.screenshot: Timeout 120000ms exceeded`. On a machine with hardware this stays the full
+ * command, because that is the proof a stranger's machine actually gives them.
+ *
+ * `TN_PLAYTEST_ALLOW_SOFTWARE=1` is the operator saying out loud that this machine has none.
+ */
+function goldenPathTestStep(target: string): { args: string[]; command: string; cwd: string } {
+  if (process.env.TN_PLAYTEST_ALLOW_SOFTWARE !== "1") {
+    return { args: ["test"], command: "pnpm", cwd: target };
+  }
+  const scenarios = execFileSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "non-visual-scenarios.mjs"), target],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return {
+    args: [
+      "exec",
+      "threenative-playtest",
+      ...scenarios.flatMap((scenario) => ["--scenario", scenario]),
+      "--browser-recipe",
+      "webgpu",
+      "--headed",
+      "--no-screenshots",
+      "--server-command",
+      "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+    ],
+    command: "pnpm",
+    cwd: target,
+  };
 }
