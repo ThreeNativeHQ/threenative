@@ -86,6 +86,18 @@ describe("compileAssets", () => {
     expect((await stat(output)).mtimeMs).toBe(before);
   });
 
+  it("should throw TN_ASSETS_OVERLAP when the output nests inside the source", async () => {
+    const root = await makeTempDir("threenative-compile-overlap-");
+    await mkdir(path.join(root, "assets"));
+
+    await expect(compileAssets({ config: { output: "assets/out" }, cwd: root })).rejects.toThrow(
+      "TN_ASSETS_OVERLAP",
+    );
+    await expect(compileAssets({ cwd: root, output: "public", source: "public" })).rejects.toThrow(
+      "TN_ASSETS_OVERLAP",
+    );
+  });
+
   it("should recompile when the texture quality changes instead of re-serving stale bytes", async () => {
     const root = await makeTempDir("threenative-compile-quality-");
     await mkdir(path.join(root, "assets"));
