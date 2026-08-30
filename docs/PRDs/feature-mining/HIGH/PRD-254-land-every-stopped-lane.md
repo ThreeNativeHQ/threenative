@@ -381,7 +381,7 @@ this PRD's job is to stop them rotting silently.
 
 | Worktree | Ahead | Carries | PRD state on `main` |
 |---|---|---|---|
-| `hostgap-instrumentation` (`codex/…`) | 7 | host-gap accounting reconciled with the frame budget; rejected-experiment record | PRD-226 **open** |
+| `hostgap-instrumentation` (`codex/…`) | 7 | **ALREADY LANDED by the newer `73e0baec` + `6502502c` host-side meter; isolated desktop audit passed 2026-08-30.** The stale branch is not replayed | PRD-226 **open** for the remaining ablation ladder, not this meter |
 | `.claude/worktrees/agent-a15fb02a370974a26` | 4 | frame budget names where a presented frame went; playtest budget gate | PRD-214 **open** |
 | `.claude/worktrees/agent-a60b0b3f74d66bb64` | 3 | tombstone/crash-handler proof on the phone; a resume defect it exposed | — |
 | `.claude/worktrees/agent-a5019321d7ca9cf88` | 2 | portable-text spike closed G-only, row 31 on the physical Pixel 8 | PRD-209 **open** |
@@ -402,6 +402,12 @@ The mobile-decoder lane (`a78ac559`) was stale by history, not absent by capabil
 contains the equivalent implementation at `5ebebd95`. A detached packed-tarball sandbox proved
 Android excludes the decoders while desktop retains them, and the mutation turned red. See
 [`docs/verification/prd-254-mobile-decoder-audit-2026-08-30.md`](../../../verification/prd-254-mobile-decoder-audit-2026-08-30.md).
+
+The host-gap lane was also stale by history, not absent by capability. Main's later host-side
+implementation reports more phases and composes with the current frame-budget surface/GPU fields.
+An isolated Linux native build, 300-frame screenshot run, named mutation, and playtest `perf`
+parse passed; the unrelated creation-binding contract remained red. The consolidated performance
+record is [`docs/verification/runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 
 **6C · The 14 dirty files are noise, not work**
 

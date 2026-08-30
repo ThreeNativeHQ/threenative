@@ -1515,6 +1515,33 @@ kept green; their records were evidence, not open work.
 | SurfaceFlinger `--timestats` / `--latency` | device | independent fps + present-interval histogram on the game's `(BLAST)` layer. |
 | `device-preflight.mjs` / `doctor --device` | device | thermal/battery gate (shared battery floor 50 %, hot-start 40 °C). |
 
+### 2026-08-30 — stale host-gap lane adjudication
+
+`codex/hostgap-instrumentation` is not a missing feature. Its seven commits predate and are
+superseded by the broader host meter on `main` (`73e0baec`, extended by `6502502c`). The stale
+lane's `TN_HOST_GAP_V2` owns nine coarse phases through TypeScript lifecycle hooks. The shipping
+`TN_HOST_GAP` meter owns fourteen host-side phases, including the frame drain/replay, present,
+device-poll and diagnostic GPU-drain boundaries, while current `FrameBudget` also reports surface
+state and GPU milliseconds. Replaying the stale branch would replace newer evidence and regress
+that reporting, so no stale code or old verification record was landed.
+
+The current code was rebuilt and executed from the isolated
+`feature-mining-prd254-hostgap-audit-20260830` worktree. Focused tests passed **33/33** (15 frame
+budget, 2 GPU-drain wiring, 16 playtest perf parser). The Linux V8+Dawn host then rendered 300
+frames at 1280×720 with a visibly nonblank screenshot and emitted adjacent real-runtime markers:
+`presented.p50` 28.27 ms, `render.p50` 0.86 ms, `hostGap.p50` 25.19 ms, and host period p50
+28.265 ms. `threenative-playtest perf --file ... --require-windows 1 --text` passed and attributed
+the host-gap p50 chiefly to `present` (24.901 ms), with `frameReplay` 0.085 ms. The named negative
+control changed the shipping `gpuDrain` phase label to `gpuDrainRemoved`: the focused test turned
+red at `/kGpuDrain[\\s\\S]*"gpuDrain"/`, then returned **2/2 green** after restoration.
+
+`SDL_AUDIODRIVER=dummy pnpm native:verify:desktop` passed audio, stability, the 300-frame core
+gate, physics, and every later native contract except the pre-existing
+`threenative-bindings-creation-test` (`proof: creation-refusal`); that unrelated failure also
+appeared in the preceding PRD-254 V8 control run. The detached tarball sandbox protocol does not
+apply: this is internal instrumentation with no public capability or game-authored behavior to
+install. The real native host plus the playtest perf consumer are the observable proof boundary.
+
 **Desktop reading recipe** (render.p50, never fps):
 
 ```sh

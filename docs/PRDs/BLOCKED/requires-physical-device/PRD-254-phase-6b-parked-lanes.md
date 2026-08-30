@@ -1,15 +1,15 @@
-# PRD-254 Phase 6B — five parked lanes remain
+# PRD-254 Phase 6B — four parked lanes remain
 
 **Status:** BLOCKED
 **Filed:** 2026-08-28 by the PRD-254 landing
-**Missing evidence:** a physical Pixel 8 for four remaining lanes, and a dedicated gated
-landing for the desktop-provable host-gap lane.
+**Missing evidence:** a physical Pixel 8 for four remaining lanes.
 
 PRD-254 Phase 6B said these lanes must be landed or filed, and that "still sitting in a
-worktree" is not an acceptable end state. None of them is dead: each has commits absent
-from `main` and an open PRD behind it. None was auto-merged, because Phase 6B says
-landing them is a separate decision per lane and this PRD's scope is explicitly *no new
-engine behaviour*.
+worktree" is not an acceptable end state. Four remain live and need device evidence. Three other
+rows are retained below as adjudication history: one unsafe change was rejected and two stale
+branches were superseded by newer implementations already on `main`. None was auto-merged,
+because Phase 6B says landing them is a separate decision per lane and this PRD's scope is
+explicitly *no new engine behaviour*.
 
 **What was done instead:** every tip is archived under
 `refs/archive/branches-2026-08-28/`, every branch is kept, and every worktree's dirty
@@ -24,7 +24,7 @@ claimed for any of them.
 
 | Lane branch | Tip | Ahead of `main` | Carries | PRD | What unblocks it |
 |---|---|---|---|---|---|
-| `codex/hostgap-instrumentation` | `3712f3db` | 7 | host-gap accounting reconciled with the frame budget, plus a rejected-experiment record; `packages/core` + `packages/runtime-native` | PRD-226 open | Its own gated landing. Desktop-provable — desktop A/Bs read `render.p50`, never fps |
+| `codex/hostgap-instrumentation` | `3712f3db` | 7 | **ALREADY LANDED by the newer `73e0baec` + `6502502c` host-side meter; isolated native audit passed 2026-08-30** | PRD-226 remains open for its ablation ladder | Closed; do not replay the stale implementation. See `runtime-perf-state.md` |
 | `worktree-agent-a15fb02a370974a26` | `0b3f230d` | 4 | a frame budget that names where a presented frame went, and a playtest budget gate; 39 files | PRD-214 open | Its own gated landing; the mobile half needs a device |
 | `worktree-agent-a5310592192d978ec` | `e5d46a9b` | 1 | **REJECTED 2026-08-30:** lifetime-held V8 entry repeatably segfaults the production worker contract; main's same-build control passes | PRD-227 open | Closed; do not retry. See `prd-254-v8-lifetime-rejection-2026-08-30.md` |
 | `worktree-agent-a60b0b3f74d66bb64` | `3fbc926a` | 3 | tombstone/crash-handler proof on the phone, and a resume defect it exposed | — | A physical Pixel 8 |
@@ -33,9 +33,9 @@ claimed for any of them.
 | `worktree-prd-222-resume` | `53101a12` | 3 | config-change axes so mid-play changes stop killing the process | PRD-222 open | A physical Pixel 8; the emulator artifacts are already in the branch |
 
 The eighth Phase 6B lane, `worktree-agent-a5019321d7ca9cf88` (PRD-209 portable text,
-docs only, one file), **was landed** — it carried no code and therefore no gate risk. The V8 and
-mobile-decoder rows above are historical adjudications and are no longer blocked work; five live
-rows remain.
+docs only, one file), **was landed** — it carried no code and therefore no gate risk. The V8,
+mobile-decoder and host-gap rows above are historical adjudications and are no longer blocked work;
+four live rows remain.
 
 ## The Pixel 8 lane's own quirks, for whoever picks these up
 
