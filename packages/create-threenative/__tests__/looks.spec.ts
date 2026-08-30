@@ -90,9 +90,23 @@ describe("starter visual floor", () => {
     expect(shapes).toContain("export function roundedBox");
     expect(shapes).toContain("mergeVertices");
     expect(shapes).toContain("computeVertexNormals");
-    // Deterministic scatter: Math.random makes a screenshot diff meaningless.
-    expect(shapes).toContain("export function makeRandom");
     expect(shapes).not.toContain("Math.random(");
+
+    // Deterministic scatter: `Math.random` makes a screenshot diff meaningless, because you
+    // cannot tell a bug from a reroll. This used to be asserted by requiring `shapes.ts` to
+    // export its own `makeRandom` — a hand-rolled LCG that was a line-for-line copy of the
+    // `createRandom` the framework already exports with a `@supersedes Math.random(` tag, which
+    // taught every cold agent reading the starter to write the copy rather than the import.
+    // The seeded source now comes from the framework and is threaded in from the scene, because
+    // `src/render/` may not import a framework package. Assert the property, not the copy:
+    // the scatter is seeded, and nothing in the chain reaches for `Math.random`.
+    const scenery = await readFile(path.join(starter, "src/render/scenery.ts"), "utf8");
+    expect(scenery).toContain("random: () => number");
+    expect(scenery).not.toContain("Math.random(");
+    const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
+    expect(play).toContain("createRandom");
+    expect(play).toMatch(/createScenery\([^)]*createRandom\(\d[\d_]*\)\)/u);
+    expect(play).not.toContain("Math.random(");
   });
 
   it("should not ship an unused high-poly sculpture helper", async () => {

@@ -10,7 +10,7 @@
 // Delete this file and the game plays identically — which is the point of it living here
 // rather than anywhere a rule could grow around it.
 import { Group, type Material } from "three";
-import { block, makeRandom } from "./shapes.js";
+import { block } from "./shapes.js";
 
 /** Column tops, so each one meets the underside of the thing it is holding up. */
 const COLUMNS = [
@@ -27,7 +27,17 @@ const MIDGROUND = [
   [15, -17, 3],
 ] as const;
 
-export function createScenery(rockMaterial: Material, ridgeMaterial: Material): Group {
+/**
+ * @param random Seeded source for the ridge, handed in by the scene — see `src/scenes/Play.ts`,
+ * which builds it with the framework's `createRandom`. It arrives as an argument rather than as
+ * an import because nothing in this folder may import a framework package: that is what keeps
+ * `src/render/` portable Three.js. The seed is the scene's choice anyway.
+ */
+export function createScenery(
+  rockMaterial: Material,
+  ridgeMaterial: Material,
+  random: () => number,
+): Group {
   const scenery = new Group();
   for (const { depth, top, width, x, z } of COLUMNS) {
     const column = block(width, COLUMN_HEIGHT, depth, rockMaterial, {
@@ -43,8 +53,7 @@ export function createScenery(rockMaterial: Material, ridgeMaterial: Material): 
   // enough to still read at that range. Move them closer and they stop being a horizon and
   // start being props standing behind the level.
   // Seeded, never Math.random: the ridge has to be byte-identical on every reload or a
-  // screenshot diff is comparing two different worlds.
-  const random = makeRandom(20_260_821);
+  // screenshot diff is comparing two different worlds. The source arrives from the scene.
   for (let index = 0; index < 9; index += 1) {
     const height = 12 + random() * 20;
     const width = 12 + random() * 14;

@@ -410,10 +410,11 @@ rim light with soft shadows and `normalBias`, derive fog from the sky, and route
 (`roundedBox`, not raw `BoxGeometry`) and keep something in all three scenery bands — a lit
 floor alone in black reads as a test fixture.
 
-The per-file baseline and three traps that cost real debugging time (`CanvasTexture` sampling
-black under `WebGPURenderer`, `flatShading` fighting `roundedBox`, importing a render module
-without calling it) are in `agent-docs/visual-baseline.md`. Nothing in the toolchain can see
-your game — when you change something visual, actually look at it before reporting it done.
+The per-file baseline and seven traps are in `agent-docs/visual-baseline.md`: `CanvasTexture`
+black, `flatShading` vs `roundedBox`, an uncalled render module, and four TSL post stages that
+silently no-op (`SSRNode.maxDistance`, `reflectNonMetals`, a swizzled normal, a dangling
+branch). Nothing in the toolchain can see your game — when you change something visual,
+actually look at it before reporting it done.
 
 ## UI
 

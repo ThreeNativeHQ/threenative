@@ -351,6 +351,24 @@ import { GroundSnap } from "@threenative/core";
 const snap = new GroundSnap(character, { enabled: true });
 ```
 
+### `InstancedBatch`
+
+`class` — Collapse many copies of one game-authored shape into a single draw, without counting them first. `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a procedural builder ends up walking its layout twice or over-allocating. Place as you go and `build()` once; the shape, the surface and every transform stay the game's, and the built mesh is returned so instances can still be animated by the index `place` and `span` hand back.
+
+```ts
+export class InstancedBatch { … }
+```
+
+- **Use when:** draw hundreds of repeated props without hundreds of draw calls · place repeated props when the count is not known until the layout has been walked · build a chain, railing, cable, or tie rod out of point-to-point segments
+- **Constraints:** geometry and material are required and come from the game; the batch chooses neither · span stretches along +Y, so its geometry must be unit-height and centred on the origin · placing after build() throws, and build() returns undefined when nothing was placed
+- **Overrides:** castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
+
+```ts
+const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });
+curbs.place({ position: [x, 0.08, z], rotation: [0, angle, 0], scale: [length, 0.18, 0.42] });
+curbs.build({ castShadow: true, name: "curbs", parent: ctx.scene });
+```
+
 ### `isMobile`
 
 `function` — Read the host platform without reaching for browser globals.

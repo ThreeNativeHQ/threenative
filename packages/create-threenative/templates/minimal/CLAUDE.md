@@ -359,8 +359,9 @@ this project, not a framework look or a config option. Keep the palette to six n
 with one `accent`; import it from materials and sky. Set tonemapping and exposure deliberately,
 use a rim light with soft shadows and `normalBias`, and route bloom
 through `renderer.setOutputNode()` so midtones remain readable. The per-file baseline and the
-silent-failure traps (`CanvasTexture` sampling black under `WebGPURenderer`; importing a render
-module without calling it) are in `agent-docs/visual-baseline.md`.
+traps are in `agent-docs/visual-baseline.md`: `CanvasTexture` black, an uncalled render module,
+and four TSL post stages that silently no-op (`SSRNode.maxDistance`, `reflectNonMetals`, a
+swizzled normal, a dangling branch).
 
 The sky dome's colour, the sun light's colour and the depth haze all come from one `Atmosphere`
 node built in `src/scenes/Play.ts`, so `sky.ts` sets no fog. You supply every coefficient — there

@@ -109,12 +109,20 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // to carry. A convention missing from the templates' AGENTS.md does not exist, and this one
     // has to name its WebGL fallback and the `output = aerial;` override or a game can neither
     // tell why the sky went flat nor turn the haze off. Measured 3767 against 3683.
-    minimal: 3873,
+    // +8 measured for the TSL silent-no-op traps, on the same clause: four post stages that
+    // install and then do nothing (`SSRNode.maxDistance` defaulting to one world unit,
+    // `reflectNonMetals` defaulting to false, a swizzled normal, a dangling graph branch). Each
+    // has cost real debugging time here and each passes typecheck, lint and a playtest, so a
+    // game that hits one has nothing to read. The detail is in the reference page, which this
+    // budget does not count; only the naming is inline, and it was trimmed to its shortest form
+    // before the limit moved.
+    minimal: 3881,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
     // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
-    starter: 4247,
+    // +4 measured for the TSL silent-no-op traps; see the note on `minimal` for the reasoning.
+    starter: 4251,
   },
 };
 

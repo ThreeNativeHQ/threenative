@@ -162,6 +162,30 @@ export type {
   IGPUSceneBVHOptions,
 } from "./gpu-scene-bvh.js";
 /**
+ * Collapse many copies of one game-authored shape into a single draw, without counting them first.
+ *
+ * `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a
+ * procedural builder ends up walking its layout twice or over-allocating. Place as you go and
+ * `build()` once; the shape, the surface and every transform stay the game's, and the built mesh
+ * is returned so instances can still be animated by the index `place` and `span` hand back.
+ * @situation draw hundreds of repeated props without hundreds of draw calls
+ * @situation place repeated props when the count is not known until the layout has been walked
+ * @situation build a chain, railing, cable, or tie rod out of point-to-point segments
+ * @constraint geometry and material are required and come from the game; the batch chooses neither
+ * @constraint span stretches along +Y, so its geometry must be unit-height and centred on the origin
+ * @constraint placing after build() throws, and build() returns undefined when nothing was placed
+ * @override castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
+ * @example const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });
+ * curbs.place({ position: [x, 0.08, z], rotation: [0, angle, 0], scale: [length, 0.18, 0.42] });
+ * curbs.build({ castShadow: true, name: "curbs", parent: ctx.scene });
+ */
+export { InstancedBatch } from "./instanced-batch.js";
+export type {
+  IInstancedBatchBuildOptions,
+  IInstancedBatchOptions,
+  IInstancedPlacement,
+} from "./instanced-batch.js";
+/**
  * Read where the frame's milliseconds went, per presented frame, on any platform.
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay

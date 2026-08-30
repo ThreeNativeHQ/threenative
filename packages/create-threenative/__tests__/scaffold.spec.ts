@@ -66,13 +66,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // menu-entry steps they had been missing since the menu screen flow landed, so a scaffolded
   // project's own `npm test` can reach the play scene at all. Scenario bytes moved and no source
   // did, so exactly one tree's hash moved.
-  "action-rpg": "0aa79eec8aa59fadc5d9f62c0d49333c642ec4ae7d9cc9bfaacec8bc4933c53d",
-  defense: "3c6cefc6fc4055a196cab27de55fb9f33c30d4028756648496dd8c787db92bfa",
-  minimal: "a1267075c7a3a86bc9b9b47e5963e8681d4cdba314f3eb5e55b032e399b2aa58",
-  platformer: "3ce84c8703d0fef931a7422c1cd6cc653185dd992c3e7a4a8c37bcffcb378156",
-  racing: "61f41186019cab575d5ba7835fd0b7318704175da9bc70cb371c3a13e9d14f37",
-  shooter: "5f362611efb180a9669686cb0af53bdef5f7e9cd81bebda2216dab75010ef274",
-  starter: "f7de15611149a151fba82fef8ee1bf8eb623753b9a92dbe290d340faefcf63f9",
+  // Recomputed 2026-08-30 for InstancedBatch: the capability manifest and the reference generated
+  // from it both gained an entry, and those bytes are embedded in every scaffold, so all seven
+  // trees move. The racing tree moves for a second reason — its track gathers the ten kerb stones
+  // into one batch instead of drawing each on its own.
+  // Recomputed again the same day for the TSL silent-no-op traps, which every scaffold carries in
+  // `agent-docs/visual-baseline.md`, and for the starter dropping its hand-rolled `makeRandom` in
+  // favour of the identical `createRandom` the framework already exports. That swap is
+  // output-identical — same multiplier, same increment, verified over 35,000 draws — so the ridge
+  // does not move; the bytes around it do.
+  "action-rpg": "c9d546da89e91498b037f0a58b2b2cff4f5c65de862060339a12da08717f91e9",
+  defense: "57b90bbec355e59ab1c5bc39cc12c68d3e86c74d1de2666ed75b84eaa53d85ce",
+  minimal: "753f05b64515ba8b84f409c76627963e0794aed55a366497353a3f742970a8f1",
+  platformer: "fe63a06972dddc7286d565043941944de13ed842855659e51b65fce12800b67d",
+  racing: "27431b8257f500ddda9f4934e3d5a4c6c2bed5c34e0aa94decb904306aab0d75",
+  shooter: "5a9ffd3c9f41f8f269aeebfc43393c3205f4a4604aef699cec6a4e69385943d6",
+  starter: "29dc0dedba452904dbd65f99c9495e9176ad760730ffd405f53a7ca1701ceec7",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

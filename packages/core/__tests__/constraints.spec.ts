@@ -53,6 +53,7 @@ describe("core constraints", () => {
           file !== "react-host.ts" &&
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
+          file !== "instanced-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
           file !== "index.ts",
       )
@@ -143,6 +144,20 @@ describe("core constraints", () => {
     expect(tracers).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    // `instanced-batch.ts` is exempted on the same terms as `tracers.ts`: collapsing repeated draws
+    // into one requires naming the surface those draws share. It constructs none — the geometry and
+    // the surface are both required options, held by reference so recolouring the game's own
+    // instance recolours the batch — and it reads no property that describes how anything looks.
+    // The assertions below are what keep that true.
+    const instancedBatch = readFileSync(path.join(sourceDirectory, "instanced-batch.ts"), "utf8");
+    expect(instancedBatch).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(instancedBatch).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
+    );
+    expect(instancedBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `gpu-scene-bvh.ts` is exempted on the same terms as `warmup.ts`: it reads a material's
     // *identity* — an integer index into the game's own surfaces — to pack triangles for the BVH's

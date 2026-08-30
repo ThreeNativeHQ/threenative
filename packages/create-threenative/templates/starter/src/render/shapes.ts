@@ -124,15 +124,12 @@ export function spike(
   return shadowed(new Mesh(geometry, material), options);
 }
 
-/**
- * Deterministic PRNG. Never Math.random: the world has to be byte-identical on
- * every reload or a screenshot diff means nothing and you cannot tell a bug
- * from a reroll.
- */
-export function makeRandom(seed = 1337): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
+// A hand-rolled seeded PRNG used to live here, and it was a line-for-line copy of the
+// `createRandom` the framework already exports — same multiplier, same increment, same
+// sequence. It is gone. Nothing in this folder may import a framework package (that is what
+// keeps `src/render/` portable Three.js), so a scene builds the seeded source and hands it
+// down: see `createScenery` below and its caller in `src/scenes/Play.ts`.
+//
+// Never `Math.random` for anything the world is built from. The world has to be byte-identical
+// on every reload or a screenshot diff cannot tell a bug from a reroll, and `ctx.random` is
+// what a playtest reads to prove the level was seeded at all.

@@ -1,4 +1,4 @@
-import { type ICtx, PathFollow3D } from "@threenative/core";
+import { type ICtx, InstancedBatch, PathFollow3D } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BoxGeometry, Color, Group, Mesh, MeshStandardMaterial, Raycaster, Vector3 } from "three";
 import { Boost } from "../kart/boost.js";
@@ -54,24 +54,24 @@ function roadSegment(
   return road;
 }
 
-function addCurb(
-  ctx: TrackCtx,
-  a: Vector3,
-  b: Vector3,
-  side: number,
-  materials: ReturnType<typeof createMaterials>,
-): void {
+/**
+ * One kerb stone, recorded into a shared batch rather than drawn on its own.
+ *
+ * Every kerb is the same box at a different length and angle, so a unit box scaled per placement
+ * draws exactly what a per-segment `BoxGeometry` drew — as one draw for the whole track instead of
+ * two per sector. Change `materials.curb` and every kerb changes with it; the batch picks nothing.
+ */
+function addCurb(curbs: InstancedBatch, a: Vector3, b: Vector3, side: number): void {
   const direction = b.clone().sub(a).setY(0).normalize();
   const normal = new Vector3(-direction.z, 0, direction.x).multiplyScalar(
     side * (TRACK_WIDTH / 2 + 0.28),
   );
   const midpoint = a.clone().lerp(b, 0.5).add(normal);
-  const length = a.distanceTo(b);
-  const curb = new Mesh(new BoxGeometry(length, 0.18, 0.42), materials.curb);
-  curb.position.set(midpoint.x, 0.08, midpoint.z);
-  curb.rotation.y = Math.atan2(direction.z, direction.x);
-  curb.castShadow = true;
-  ctx.add(curb);
+  curbs.place({
+    position: [midpoint.x, 0.08, midpoint.z],
+    rotation: [0, Math.atan2(direction.z, direction.x), 0],
+    scale: [a.distanceTo(b), 0.18, 0.42],
+  });
 }
 
 function gate(
@@ -200,21 +200,34 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
     type: "fixed",
   });
 
+  // Every kerb is the same box at a different length and angle, so they are gathered into one
+  // batch and drawn once instead of twice per sector. The count is not known before the route has
+  // been walked, which is exactly what `InstancedBatch` is for — `new InstancedMesh` would need it
+  // up front.
+  const curbs = new InstancedBatch({
+    geometry: new BoxGeometry(1, 1, 1),
+    material: materials.curb,
+  });
+
   const roadMeshes: Mesh[] = [];
   for (let index = 0; index < ROUTE_POINTS.length; index += 1) {
     const a = ROUTE_POINTS[index];
     const b = ROUTE_POINTS[(index + 1) % ROUTE_POINTS.length];
     if (a === undefined || b === undefined) continue;
     roadMeshes.push(roadSegment(ctx, a, b, materials));
-    addCurb(ctx, a, b, 1, materials);
-    addCurb(ctx, a, b, -1, materials);
+    addCurb(curbs, a, b, 1);
+    addCurb(curbs, a, b, -1);
   }
+  const curbMesh = curbs.build({ castShadow: true, name: "track-curbs" });
+  if (curbMesh !== undefined) ctx.add(curbMesh);
 
   const gates = [
     gate(ctx, "mid", new Vector3(18, 0, 0), new Vector3(0, 0, 1), TRACK_WIDTH),
     gate(ctx, "finish", new Vector3(10, 0, -18), new Vector3(1, 0, 0), TRACK_WIDTH),
   ];
   const pad = boostPad(ctx, new Vector3(14, 0, -18), materials);
+  // The five corner markers stay ordinary meshes on purpose: a batch is worth its two extra lines
+  // when the count is unknown or large, and five is neither.
   for (const [index, point] of ROUTE_POINTS.entries()) {
     const marker = new Mesh(
       new BoxGeometry(0.2, 1.2, 0.2),

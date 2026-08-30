@@ -326,6 +326,22 @@ decided in the package. `softCircleDataTexture` writes radial-alpha sprite pixel
 owns the trap and the way around it, never where the sprite appears or what it shows. Both clear
 the same veto as every mechanism above.
 
+### Instanced batch assembly is mechanism
+
+A cathedral scene built on this framework wrote the same accumulator its render folder needed
+seventeen times over, and the shell beside it hand-counted its instance totals eight times more.
+`InstancedBatch` owns that assembly: transforms gathered until the layout has been walked, one
+`InstancedMesh` built from them, `instanceMatrix` invalidated and a bounding sphere computed so the
+culler sees the whole batch rather than one un-transformed copy. The reason it cannot be left to the
+game is not size — it is that `new InstancedMesh(geometry, material, count)` demands the count
+before the first placement exists, so every procedural builder pays for it twice.
+
+The geometry and the surface are required options and are held by reference, so recolouring the
+game's own instance recolours every draw; each transform is the game's; `build` hands the mesh back
+so instances stay animatable by the index `place` and `span` returned. Nothing about the appearance
+is decided in the package, and an empty batch returns `undefined` rather than the count-zero mesh
+that satisfies every type check and draws nothing. It clears the same veto as every mechanism above.
+
 ### Queryable heightfield storage is mechanism
 
 `Heightfield` owns one row-major numeric buffer, interpolation, normals, ordinary Three.js geometry,

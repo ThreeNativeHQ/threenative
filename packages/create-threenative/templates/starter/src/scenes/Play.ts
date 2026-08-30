@@ -1,4 +1,4 @@
-import { AudioBus, type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { AudioBus, type ICtx, Scene, type SceneFrame, createRandom } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
   BufferAttribute,
@@ -19,7 +19,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createScenery } from "../render/scenery.js";
-import { ball, block, makeRandom, roundedBox, spike, tube } from "../render/shapes.js";
+import { ball, block, roundedBox, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
@@ -106,14 +106,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
 
     const materials = createMaterials();
-    ctx.add(createScenery(materials.rock, materials.ridge));
+    ctx.add(createScenery(materials.rock, materials.ridge, createRandom(20_260_821)));
     // Keep the initial -99 sentinel until seed.playtest samples it. If this draw is replaced with
     // Math.random, the unchanged seeded state reports an out-of-range value and seed.playtest
     // identifies the bypass instead of silently accepting an unseeded level.
     const randomStateBeforeLevel = ctx.random.state;
     const levelX = ctx.random.range(-1, 1);
     const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX;
-    const pickupX = 1.2 + makeRandom(Math.round((levelX + 1) * 1000))() * 0.8;
+    const pickupX = 1.2 + createRandom(Math.round((levelX + 1) * 1000))() * 0.8;
     const floorMesh = new Mesh(roundedBox(10, 0.2, 4, 0.08), materials.floor);
     floorMesh.position.y = -0.1;
     floorMesh.receiveShadow = true;
