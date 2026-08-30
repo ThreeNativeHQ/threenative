@@ -229,6 +229,15 @@ jobs:
           page.on("pageerror", (error) => errors.push(error.message));
           await page.goto(process.env.SCAFFOLD_URL);
           await page.waitForSelector("canvas");
+          // The starter boots to its main menu, so pressing ArrowRight at it moves nothing. This
+          // smoke read `{"text":"THREE NATIVE\nBEGIN"}` and called it a broken scaffold, when the
+          // scaffold was simply waiting to be started — the same thing that had eighteen of the
+          // template's own scenarios failing. Start the game, then drive it.
+          await page.getByPlaceholder("character name").fill("axo");
+          await page.getByRole("button", { name: "begin" }).click();
+          await page.waitForFunction(() => document.body.innerText.includes("POSITION"), undefined, {
+            timeout: 60_000,
+          });
           await page.keyboard.down("ArrowRight");
           await page.waitForTimeout(3_000);
           await page.keyboard.up("ArrowRight");
