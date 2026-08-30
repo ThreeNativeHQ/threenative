@@ -533,11 +533,6 @@ export async function createProject(
   return { installed, target, template };
 }
 
-function readFlag(argv: readonly string[], name: string): string | undefined {
-  const index = argv.indexOf(name);
-  return index === -1 ? undefined : argv[index + 1];
-}
-
 const PACKAGE_SOURCE_FLAG = /^--([a-z0-9-]+)-package$/u;
 const SCOPED_PACKAGE_FLAG_PREFIX = "threenative-";
 
@@ -559,32 +554,68 @@ function packageNameFromFlag(flag: string): string | undefined {
   return `@threenative/${suffix}`;
 }
 
+const BOOLEAN_FLAGS = new Set(["--no-install", "--help", "-h"]);
+const VALUE_FLAGS = new Set<string>([
+  "--template",
+  "--runtime-package",
+  ...Object.values(PACKAGE_SOURCE_FLAGS),
+]);
+const SCAFFOLD_USAGE = "Usage: pnpm create threenative my-game";
+
 export function parseArgs(argv: readonly string[]): IScaffoldOptions {
-  const target = argv.find(
-    (value, index) => !value.startsWith("-") && (index === 0 || !argv[index - 1]?.startsWith("--")),
-  );
-  if (target === undefined)
-    throw new Error("Missing target directory. Usage: pnpm create threenative my-game");
-  const template = readFlag(argv, "--template") as ScaffoldTemplate | undefined;
+  // A real token walk, not a positional guess: flags may precede the target, and every option
+  // must be either known or a named failure — a silently ignored flag is how `--tempalte`
+  // scaffolds the wrong template without a word of warning.
+  const values = new Map<string, string>();
+  const booleans = new Set<string>();
+  const targets: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index] ?? "";
+    if (!token.startsWith("-")) {
+      targets.push(token);
+      continue;
+    }
+    const equals = token.indexOf("=");
+    const name = equals === -1 ? token : token.slice(0, equals);
+    const inlineValue = equals === -1 ? undefined : token.slice(equals + 1);
+    if (BOOLEAN_FLAGS.has(name)) {
+      if (inlineValue !== undefined)
+        throw new Error(`Option '${name}' takes no value. ${SCAFFOLD_USAGE}`);
+      booleans.add(name);
+      continue;
+    }
+    if (!VALUE_FLAGS.has(name) && !PACKAGE_SOURCE_FLAG.test(name))
+      throw new Error(`Unknown option '${name}'. ${SCAFFOLD_USAGE}`);
+    const next = argv[index + 1];
+    const value = inlineValue ?? next;
+    if (value === undefined || value.length === 0 || value.startsWith("-"))
+      throw new Error(`Option '${name}' requires a value. ${SCAFFOLD_USAGE}`);
+    values.set(name, value);
+    if (inlineValue === undefined) index += 1;
+  }
+  const target = targets[0];
+  if (target === undefined) throw new Error(`Missing target directory. ${SCAFFOLD_USAGE}`);
+  if (targets.length > 1)
+    throw new Error(`Unexpected extra argument '${targets.at(1)}'. ${SCAFFOLD_USAGE}`);
+  const template = values.get("--template") as ScaffoldTemplate | undefined;
   if (template !== undefined) kitManifest(template);
   const packageSources: Record<string, string> = {};
   const knownPackageFlags = new Set<string>(Object.values(PACKAGE_SOURCE_FLAGS));
   for (const [name, flag] of Object.entries(PACKAGE_SOURCE_FLAGS)) {
-    const source = readFlag(argv, flag);
+    const source = values.get(flag);
     if (source !== undefined) packageSources[name] = source;
   }
-  for (const flag of argv) {
+  for (const [flag, source] of values) {
     if (knownPackageFlags.has(flag)) continue;
     const name = packageNameFromFlag(flag);
-    const source = name === undefined ? undefined : readFlag(argv, flag);
-    if (name !== undefined && source !== undefined) packageSources[name] = source;
+    if (name !== undefined) packageSources[name] = source;
   }
-  const shortRuntimeSource = readFlag(argv, "--runtime-package");
+  const shortRuntimeSource = values.get("--runtime-package");
   if (shortRuntimeSource !== undefined) {
     packageSources["@threenative/runtime-native"] = shortRuntimeSource;
   }
   return {
-    install: !argv.includes("--no-install"),
+    install: !booleans.has("--no-install"),
     target,
     ...(Object.keys(packageSources).length === 0 ? {} : { packageSources }),
     ...(template === undefined ? {} : { template }),

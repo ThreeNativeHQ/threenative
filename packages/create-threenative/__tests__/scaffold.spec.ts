@@ -624,6 +624,43 @@ describe("create-threenative", () => {
     });
   });
 
+  it("should parse flags that precede the target directory", () => {
+    expect(parseArgs(["--no-install", "my-game"])).toEqual({
+      install: false,
+      target: "my-game",
+    });
+    expect(parseArgs(["--template", "minimal", "--no-install", "my-game"])).toEqual({
+      install: false,
+      target: "my-game",
+      template: "minimal",
+    });
+  });
+
+  it("should parse equals-form flags", () => {
+    expect(parseArgs(["--template=minimal", "my-game"])).toEqual({
+      install: true,
+      target: "my-game",
+      template: "minimal",
+    });
+    expect(parseArgs(["--no-install", "--cli-package=/tmp/cli.tgz", "my-game"])).toEqual({
+      install: false,
+      packageSources: { "create-threenative": "/tmp/cli.tgz" },
+      target: "my-game",
+    });
+  });
+
+  it("should fail closed on unknown and dangling flags instead of ignoring them", () => {
+    expect(() => parseArgs(["my-game", "--tempalte", "minimal"])).toThrow(
+      "Unknown option '--tempalte'. Usage: pnpm create threenative my-game",
+    );
+    expect(() => parseArgs(["my-game", "--template"])).toThrow(
+      "Option '--template' requires a value. Usage: pnpm create threenative my-game",
+    );
+    expect(() => parseArgs(["my-game", "other-game"])).toThrow(
+      "Unexpected extra argument 'other-game'. Usage: pnpm create threenative my-game",
+    );
+  });
+
   it("should scaffold the platformer template with no catalog protocols", async () => {
     const root = await makeTempDir("threenative-platformer-");
     try {
