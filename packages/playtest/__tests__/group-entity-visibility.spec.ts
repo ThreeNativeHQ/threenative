@@ -75,3 +75,29 @@ test("an empty Group reports no bounds and is not visible", () => {
   expect(observed.bounds).toBeUndefined();
   expect(observed.visible).toBe(false);
 });
+
+test("an observation snapshot retains optional diagnostics and partial render performance", () => {
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 100);
+  const registry = new ThreePlaytestEntityRegistry();
+  const snapshot = sampleThreeObservations(
+    {
+      camera,
+      clockMode: "fixed-step",
+      diagnostics: () => [{ code: "sample" }],
+      registry,
+      renderChain: () => ({ tier: "high" }) as never,
+      renderer: {
+        getDrawingBufferSize: (target: Vector2) => target.set(1600, 900),
+        info: { render: { drawCalls: 3 } },
+      },
+      scene,
+      tick: 1,
+    },
+    { entities: [] },
+  );
+
+  expect(snapshot.diagnostics).toEqual([{ code: "sample" }]);
+  expect(snapshot.performance).toEqual({ drawCalls: 3 });
+  expect(snapshot.renderChain).toEqual({ tier: "high" });
+});

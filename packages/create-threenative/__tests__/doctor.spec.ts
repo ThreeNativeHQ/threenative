@@ -15,8 +15,10 @@ vi.mock("node:child_process", async (importOriginal) => {
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
   type IProjectSnapshot,
+  detectX11Compositor,
   diagnoseProject,
   formatDoctorReport,
+  nativeRuntimeCheck,
   probeAndroidToolchain,
   probeDesktopOverlay,
   readProject,
@@ -779,5 +781,282 @@ describe("threenative doctor command", () => {
     const { cliHelp } = await import("../src/threenative.js");
     expect(cliHelp()).toMatch(/doctor/);
     expect(cliHelp("doctor")).toMatch(/Exits 0 when nothing failed/);
+  });
+});
+
+describe("threenative doctor edge coverage", () => {
+  it("reports every compositor probe outcome, including a missing display and xprop", () => {
+    expect([undefined, false, true]).toContain(detectX11Compositor());
+
+    execFileSyncMock.mockReturnValueOnce("_NET_WM_CM_S0: window id # 0x123");
+    expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(true);
+    execFileSyncMock.mockReturnValueOnce("_NET_WM_CM_S0: absent");
+    expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(false);
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error("xprop missing"), { code: "ENOENT" });
+    });
+    expect(detectX11Compositor({ DISPLAY: ":99" })).toBeUndefined();
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error("xprop failed"), { code: "EPIPE" });
+    });
+    expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(false);
+  });
+
+  it("distinguishes an unprobed, healthy, and unknown desktop overlay", () => {
+    expect(probeDesktopOverlay({})).toMatchObject({ status: "warn" });
+    expect(probeDesktopOverlay({ DISPLAY: ":99" }, () => true)).toMatchObject({ status: "ok" });
+    expect(probeDesktopOverlay({ DISPLAY: ":99" }, () => undefined)).toMatchObject({
+      status: "warn",
+    });
+    expect(probeDesktopOverlay({ XDG_SESSION_TYPE: "wayland" }, () => true)).toMatchObject({
+      status: "fail",
+    });
+  });
+
+  it("handles empty manifests and configured target arrays and strings", () => {
+    const report = diagnoseProject(
+      snapshot({
+        config: {
+          nativeEntry: "src/game.ts",
+          nativeTargets: "ios",
+          targets: ["android", "desktop", 7],
+        },
+        files: new Set(["package.json", "src/game.ts"]),
+        installedVersions: new Map(),
+        packageJson: {
+          scripts: {
+            android: "threenative build --target android",
+            invalid: 7,
+            web: "threenative build --target=web",
+          },
+          dependencies: { three: "0.185.1" },
+        },
+        readRuntimeText: undefined,
+        runtimeRoot: undefined,
+      }),
+    );
+
+    expect(check(report, "dependencies")).toMatchObject({
+      detail: "no @threenative packages declared",
+      status: "ok",
+    });
+    expect(check(report, "versions")).toMatchObject({ detail: "nothing installed to compare" });
+    expect(check(report, "asset pipeline").detail).toMatch(/android.*ios|ios.*android/u);
+  });
+
+  it("rejects unreadable, malformed, and hand-edited MCP configuration", () => {
+    const unreadable = diagnoseProject(
+      snapshot({
+        files: new Set([...HEALTHY.files, ".mcp.json"]),
+        readText: () => undefined,
+      }),
+    );
+    expect(check(unreadable, "capability search")).toMatchObject({ status: "fail" });
+
+    const wrongRoot = diagnoseProject(
+      snapshot({
+        files: new Set([...HEALTHY.files, ".mcp.json"]),
+        readText: () => JSON.stringify({ mcpServers: [] }),
+      }),
+    );
+    expect(check(wrongRoot, "capability search").detail).toMatch(/mcpServers/u);
+
+    const missingServer = diagnoseProject(
+      snapshot({
+        files: new Set([...HEALTHY.files, ".mcp.json"]),
+        readText: () => JSON.stringify({ mcpServers: {} }),
+      }),
+    );
+    expect(check(missingServer, "capability search").status).toBe("fail");
+
+    const edited = diagnoseProject(
+      snapshot({
+        files: new Set([...HEALTHY.files, ".mcp.json"]),
+        readText: () =>
+          JSON.stringify({
+            mcpServers: {
+              "threenative-assets": {
+                args: ["./node_modules/@threenative/core/mcp/assets.mjs"],
+                command: "node",
+              },
+            },
+          }),
+      }),
+    );
+    expect(edited.checks.find(({ name }) => name.includes("threenative-asset-mcp"))).toMatchObject({
+      status: "fail",
+    });
+  });
+
+  it("checks resolved MCP package versions, including missing metadata and mismatches", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-mcp-versions-");
+    const packageNames = [
+      ["threenative-asset-mcp", "0.4.0"],
+      ["threenative-sculpt-mcp", "0.1.0"],
+      ["threenative-engine-mcp", "0.2.0"],
+    ] as const;
+    for (const [name, version] of packageNames) {
+      const directory = path.join(root, "node_modules", name);
+      await mkdir(directory, { recursive: true });
+      await writeFile(path.join(directory, "package.json"), JSON.stringify({ version }));
+    }
+    const resolver = (name: string) => path.join(root, "node_modules", name);
+    const resolved = diagnoseProject(
+      snapshot({
+        projectRoot: undefined,
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+        resolvePackageDirectory: resolver,
+      }),
+    );
+    expect(check(resolved, "capability search")).toMatchObject({ status: "ok" });
+
+    await writeFile(
+      path.join(root, "node_modules", "threenative-engine-mcp", "package.json"),
+      JSON.stringify({}),
+    );
+    const noVersion = diagnoseProject(
+      snapshot({
+        projectRoot: undefined,
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+        resolvePackageDirectory: resolver,
+      }),
+    );
+    expect(
+      noVersion.checks.find(({ name }) => name.includes("threenative-engine-mcp")),
+    ).toMatchObject({
+      status: "fail",
+    });
+
+    await writeFile(
+      path.join(root, "node_modules", "threenative-engine-mcp", "package.json"),
+      JSON.stringify({ version: "9.9.9" }),
+    );
+    const mismatch = diagnoseProject(
+      snapshot({
+        projectRoot: undefined,
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+        resolvePackageDirectory: resolver,
+      }),
+    );
+    expect(
+      mismatch.checks.find(({ name }) => name.includes("threenative-engine-mcp")),
+    ).toMatchObject({
+      status: "warn",
+    });
+  });
+
+  it("covers writable asset directories and a readable mobile toolchain", () => {
+    const report = diagnoseProject(
+      snapshot({
+        config: {
+          assets: { models: "none", textures: "none" },
+          nativeEntry: "src/game.ts",
+          targets: ["android"],
+        },
+        directoryWritable: () => true,
+        packageJson: { scripts: {} },
+      }),
+    );
+    expect(check(report, "asset pipeline")).toMatchObject({ status: "ok" });
+
+    const toolchain = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+        config: { nativeEntry: "src/game.ts", targets: ["android"] },
+      }),
+    );
+    expect(check(toolchain, "target android")).toMatchObject({ status: "ok" });
+    expect(check(toolchain, "target android").fix).toBeUndefined();
+  });
+
+  it("fails closed for every native runtime status boundary", () => {
+    const noInstall = nativeRuntimeCheck(
+      snapshot({
+        runtimeRoot: undefined,
+        readRuntimeText: undefined,
+        installedVersions: new Map(),
+      }),
+    );
+    expect(noInstall).toMatchObject({ status: "warn" });
+
+    const unresolved = nativeRuntimeCheck(
+      snapshot({
+        runtimeRoot: undefined,
+        readRuntimeText: undefined,
+        installedVersions: new Map([["@threenative/runtime-native", "0.4.0"]]),
+      }),
+    );
+    expect(unresolved).toMatchObject({ status: "fail" });
+
+    const status = (value: unknown, overrides: Partial<IProjectSnapshot> = {}) =>
+      nativeRuntimeCheck(
+        snapshot({
+          readRuntimeText: () => JSON.stringify(value),
+          runtimeFileExists: () => true,
+          ...overrides,
+        }),
+      );
+    expect(status("not an object")).toMatchObject({ status: "fail" });
+    expect(status(["not", "an", "object"])).toMatchObject({ status: "fail" });
+    expect(status({ ok: false })).toMatchObject({ status: "fail" });
+    expect(status({ ok: true })).toMatchObject({ status: "fail" });
+    expect(
+      status({
+        key: "other-platform",
+        ok: true,
+        url: HEALTHY.runtimeManifestUrl,
+        version: "0.4.0",
+      }),
+    ).toMatchObject({ status: "fail" });
+    expect(
+      status(
+        {
+          key: `${process.platform}-${process.arch}`,
+          ok: true,
+          url: HEALTHY.runtimeManifestUrl,
+          version: "0.4.0",
+        },
+        { runtimeManifestUrl: undefined },
+      ),
+    ).toMatchObject({ status: "fail" });
+
+    const win32 = withPlatform("win32", () =>
+      status(
+        {
+          key: `win32-${process.arch}`,
+          ok: true,
+          url: HEALTHY.runtimeManifestUrl,
+          version: "0.4.0",
+        },
+        { runtimeFileExists: (relative) => relative.endsWith(".exe") },
+      ),
+    );
+    expect(win32).toMatchObject({ status: "ok" });
+  });
+
+  it("handles Java probe failures and legacy JDK output", async () => {
+    spawnSyncMock.mockReturnValueOnce({ stderr: 'java version "1.8.0_392"', stdout: "" });
+    expect(probeAndroidToolchain({ JAVA_HOME: "  " })).toMatchObject({
+      jdkMajor: 8,
+      jdkVersion: "1.8.0_392",
+    });
+
+    spawnSyncMock.mockReturnValueOnce({ stderr: "not a java version", stdout: "" });
+    expect(probeAndroidToolchain({}).jdkMajor).toBeUndefined();
+
+    spawnSyncMock.mockImplementationOnce(() => {
+      throw new Error("java unavailable");
+    });
+    expect(probeAndroidToolchain({}).jdkMajor).toBeUndefined();
+
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const sdk = await makeTempDir("tn-doctor-sdk-");
+    await mkdir(path.join(sdk, "platforms", "android-35"), { recursive: true });
+    await writeFile(path.join(sdk, "platforms", "android-35", "source.properties"), "Pkg.Name=x\n");
+    spawnSyncMock.mockReturnValueOnce({ stderr: "not a java version", stdout: "" });
+    expect(
+      probeAndroidToolchain({ ANDROID_HOME: sdk, HOME: path.join(sdk, "no-home") }).sdkVersion,
+    ).toBeUndefined();
   });
 });

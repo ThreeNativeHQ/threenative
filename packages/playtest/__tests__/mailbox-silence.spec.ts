@@ -142,4 +142,15 @@ describe("native mailbox silence is named, never silent", () => {
     const other = playtestDiagnostic("TN_PLAYTEST_DEVICE_FAILED", "device unreachable", "check the device");
     expect(deviceTimeoutDiagnostic(other, false, ["ignored"])).toBe(other);
   });
+
+  test("protocol diagnostics preserve a corrective next command", () => {
+    expect(
+      playtestDiagnostic(
+        "TN_PLAYTEST_DEVICE_FAILED",
+        "device unreachable",
+        "check the device",
+        { capability: "native-device", nextCommand: "pnpm doctor", path: "device.status" },
+      ),
+    ).toMatchObject({ capability: "native-device", fix: { nextCommand: "pnpm doctor" }, path: "device.status" });
+  });
 });

@@ -714,7 +714,7 @@ export function validateNestedAssertionKeys(
   if (kind === "world" && isRecord(value.runtime)) {
     rejectUnknownKeys(
       value.runtime,
-      ["agent", "core", "randomState", "rapier", "step"],
+      ["agent", "core", "portable", "randomState", "rapier", "step"],
       scenarioPath,
       `assert.${kind}${suffix}.runtime`,
     );
