@@ -84,13 +84,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-243: every scaffold embeds the capability manifest and reference, which
   // now document SoftBody3D and the optional physics collision adapter. The starter also gains
   // its shipped cloth caller and menu-to-play proof.
+  // Recomputed 2026-08-30 after removing duplicate starter menu-entry blocks introduced by the
+  // realism-effects merge.
   "action-rpg": "cd852375e96b8c0a7a68e3ef37e7195f35780602d9ea9ded572570219005ba12",
   defense: "10eb336c044574078ad62c55bd228bb76c2890e743a6cdce9e6c62be1af7448e",
   minimal: "79d2b6bfb47d6c7476eb20cff0d2c322233b06825755a470473b3ac544814a00",
   platformer: "d281801416b59722e431a95886c34b8007a316a2ae2f8643996900207fe13b74",
   racing: "c39c9afcc7e5c2f02f0c54e18c8ec78ab3a0116a256fb3a1459579a8561c86e7",
   shooter: "fbb50cc35d2d0fe2981d6c21dbdff7d341f3a73a04eb69539e428d38cc1bb6af",
-  starter: "c1d5ff527e8e5bce2829219202b23e4029d65f7082b321f84c47101ccabea25c",
+  starter: "188b24892dffec8a21086ce3f3cfb91f68fa86460c1c8aa1e3c9d533d8d2679e",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

@@ -353,7 +353,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1
+        version: 0.185.1(patch_hash=377535755d6eb886862b7c29cf2a965efa3e16581e0540797b327d66cdacdc70)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
