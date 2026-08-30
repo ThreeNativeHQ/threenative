@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -166,6 +166,11 @@ async function runStarterLookServer(): Promise<void> {
     await waitForUrl(`http://127.0.0.1:${starterLookReadyPort}/`, exposedServer, 120_000);
     await keepServerAlive(exposedServer);
   } catch (error) {
+    // The artifacts directory is removed below, so a CI failure would otherwise destroy the only
+    // copy of the frame it is complaining about. Keep it where the workflow can upload it.
+    await cp(artifacts, path.join(repoRoot, "test-results", "starter-look"), {
+      recursive: true,
+    }).catch(() => undefined);
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n${serverOutput.join("").slice(-4_000)}`,
     );
@@ -269,14 +274,25 @@ async function assertStarterScreenshot(file: string): Promise<void> {
   const luminance =
     pixels.reduce((sum, [red, green, blue]) => sum + pixelLuminance(red, green, blue), 0) /
     pixels.length;
+  // A look failure that names only its own count cannot be diagnosed from a CI log — the frame is
+  // in a temp directory that is gone by the time anyone reads it. Every throw below carries what
+  // the stage actually contained.
+  const stageReport =
+    `stage ${stage.right - stage.left}x${stage.bottom - stage.top} (${pixels.length} px), ` +
+    `luminance ${luminance.toFixed(4)}, warm ${warm.count}, cool ${cool}, ` +
+    `threshold ${Math.ceil(pixels.length * 0.0005)}, top colours ${describeDominantColors(pixels)}`;
   if (luminance < 0.02)
     throw new Error(
-      `Starter look reference failed: stage luminance ${luminance.toFixed(4)} is black.`,
+      `Starter look reference failed: stage luminance ${luminance.toFixed(4)} is black. ${stageReport}`,
     );
   if (warm.count < pixels.length * 0.0005)
-    throw new Error(`Starter look reference failed: warm crate pixels ${warm.count} are missing.`);
+    throw new Error(
+      `Starter look reference failed: warm crate pixels ${warm.count} are missing. ${stageReport}`,
+    );
   if (cool < pixels.length * 0.0005)
-    throw new Error(`Starter look reference failed: cool player pixels ${cool} are missing.`);
+    throw new Error(
+      `Starter look reference failed: cool player pixels ${cool} are missing. ${stageReport}`,
+    );
   if (warm.bounds === undefined)
     throw new Error("Starter look reference failed: crate bounds are unavailable.");
   const contact = contactShadowCoverage(image, warm.bounds);
@@ -284,6 +300,27 @@ async function assertStarterScreenshot(file: string): Promise<void> {
     throw new Error(
       `Starter look reference failed: contact-shadow coverage ${contact.toFixed(4)} is too low.`,
     );
+}
+
+/**
+ * The handful of colours that actually cover the stage, quantised to 32-level buckets. This is
+ * what separates "nothing rendered" from "it rendered and the crate is the wrong colour", which
+ * the counts alone cannot tell apart.
+ */
+function describeDominantColors(pixels: readonly [number, number, number][]): string {
+  const buckets = new Map<string, number>();
+  for (const [red, green, blue] of pixels) {
+    const key = `${red >> 5},${green >> 5},${blue >> 5}`;
+    buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  return [...buckets.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([key, count]) => {
+      const [red, green, blue] = key.split(",").map((part) => Number(part) * 32);
+      return `rgb(${red},${green},${blue})x${((count / pixels.length) * 100).toFixed(1)}%`;
+    })
+    .join(" ");
 }
 
 function stagePixels(

@@ -114,6 +114,15 @@ jobs:
             --parallel "$(nproc)"
       - run: pnpm test
       - run: sh scripts/xvfb.sh pnpm test:browser
+      # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame
+      # it rejected comes back with the failure.
+      - name: Keep the frame a failed look gate rejected
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: starter-look-frame
+          path: test-results/starter-look
+          if-no-files-found: ignore
       - run: pnpm test:playtest:ci
 
   golden-path:
