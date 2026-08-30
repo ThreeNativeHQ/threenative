@@ -43,6 +43,8 @@ const TRANSCODE_TARGETS: Readonly<Record<Exclude<TextureCodec, "none">, readonly
 };
 
 const DEFAULT_ETC1S_QUALITY = 150;
+/** BC1, BC7, ETC2 and ASTC 4x4 all address pixels in 4x4 blocks. */
+const BLOCK_SIZE = 4;
 /** Normal maps are data, not colour: no sRGB transfer function, non-perceptual encode. */
 const NORMAL_MAP_BASENAME = /(?:^|[_-])(?:normal|nrm)$/iu;
 
@@ -88,6 +90,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       const decoded = await decodeImageBytes(input, logicalPath);
       const choice = chooseCodec(logicalPath, rgbaHasAlpha(decoded.data), options);
       if (choice.codec === "none") return input;
+      assertBlockAligned(logicalPath, choice.codec, decoded.width, decoded.height);
       const encoded = await encodeToKTX2(
         new Uint8Array(input.buffer, input.byteOffset, input.byteLength),
         {
@@ -110,6 +113,27 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     },
     name: "ktx2",
   };
+}
+
+/**
+ * Every codec here transcodes to a 4x4 block format, and WebGPU refuses a compressed texture
+ * whose base level is not a whole number of blocks. Basis encodes an unaligned source without
+ * complaint and stamps the odd size into the KTX2 header, so the build reports success and the
+ * game dies at its first draw call with a GPUValidationError. Padding would move every UV the
+ * model was authored against and resampling would silently change the pixels, so neither is the
+ * pipeline's to decide: it names the dimension and the block size, and `codec: "none"` is the
+ * declared way to ship such a source uncompressed.
+ */
+function assertBlockAligned(
+  logicalPath: string,
+  codec: Exclude<TextureCodec, "none">,
+  width: number,
+  height: number,
+): void {
+  if (width % BLOCK_SIZE === 0 && height % BLOCK_SIZE === 0) return;
+  throw new Error(
+    `TN_ASSETS_TEXTURE_BLOCK_SIZE: '${logicalPath}' is ${width}x${height}, which is not a multiple of the ${BLOCK_SIZE}x${BLOCK_SIZE} block the ${codec} codec transcodes to (${TRANSCODE_TARGETS[codec].join(", ")}); WebGPU rejects such a texture at draw time. Resize the source to a multiple of ${BLOCK_SIZE}, or declare a texture override with codec "none" for it.`,
+  );
 }
 
 function rgbaHasAlpha(rgba: Uint8Array): boolean {

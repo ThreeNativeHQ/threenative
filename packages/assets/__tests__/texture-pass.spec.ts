@@ -143,6 +143,47 @@ describe("the ktx2 texture pass", () => {
     expect((await readFile(path.join(root, "public", entry.output))).equals(source)).toBe(true);
   });
 
+  // Every codec this pass emits transcodes to 4x4 block formats (BC1/ETC2 from ETC1S,
+  // ASTC 4x4/BC7 from UASTC), and WebGPU rejects a compressed texture whose base level is
+  // not a whole number of blocks: "the size (Extent3D width:1254, height:1254) ... is not a
+  // multiple of the block width (4) and height (4)". Basis encodes such a source happily and
+  // stamps the odd size into the KTX2 header, so the build went green and the game died at
+  // the first draw call. Fail closed at encode instead, naming the escape hatch.
+  it("should refuse a source whose dimensions are not a multiple of the 4x4 block", async () => {
+    const root = await makeTempDir("threenative-tex-block-size-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "floor.png"),
+      rgbaPng({ blue: (x) => x * 2, height: 66, width: 66 }),
+    );
+
+    await expect(compileAssets({ cwd: root, transcoder: TRANSCODER })).rejects.toThrow(
+      /TN_ASSETS_TEXTURE_BLOCK_SIZE.*floor\.png.*66x66.*4x4/su,
+    );
+  });
+
+  it("should let the none codec carry a source the block formats cannot take", async () => {
+    // The named override is the way out: the source ships verbatim rather than silently
+    // resampled, because resizing a texture moves every UV the model was authored against.
+    const root = await makeTempDir("threenative-tex-block-size-none-");
+    await mkdir(path.join(root, "assets", "ui"), { recursive: true });
+    const source = rgbaPng({ height: 66, width: 66 });
+    await writeFile(path.join(root, "assets", "ui/panel.png"), source);
+
+    await compileAssets({
+      cwd: root,
+      transcoder: TRANSCODER,
+      config: { textures: { overrides: [{ codec: "none", glob: "ui/**" }] } },
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string } | undefined> };
+    const entry = manifest.entries["ui/panel.png"];
+    if (entry === undefined) throw new Error("no manifest entry for 'ui/panel.png'");
+    expect((await readFile(path.join(root, "public", entry.output))).equals(source)).toBe(true);
+  });
+
   it("should reject a source the encoder cannot decode, naming the file", async () => {
     const root = await makeTempDir("threenative-tex-undecodable-");
     await mkdir(path.join(root, "assets"));
