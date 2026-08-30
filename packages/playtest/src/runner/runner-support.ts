@@ -176,8 +176,25 @@ export function buildReport(
     ?? scenario.subject
     ?? movementSample?.entity
     ?? "";
-  const movementBeforeSnapshot = movementSample?.before ?? (isAnonymousMovementScenario(scenario) ? undefined : beforeSnapshot);
-  const movementAfterSnapshot = movementSample?.after ?? (isAnonymousMovementScenario(scenario) ? undefined : afterSnapshot);
+  // A named entity is measured across the whole run, and the run's first snapshot is taken after
+  // warmup — before any step has executed. A scenario that opens on a menu therefore measures a
+  // player who does not exist yet, and the answer used to be a fabricated distance of zero. When
+  // the entity is missing from that window but the per-step samples did see it, measure it where
+  // it existed: its first observation to its last. "The player moved at least this far during the
+  // run" is the assertion, and this is the only window in which that question has an answer.
+  const wholeRunObserved = isAnonymousMovementScenario(scenario)
+    ? false
+    : entityPosition(beforeSnapshot, entity) !== undefined
+      && entityPosition(afterSnapshot, entity) !== undefined;
+  const observedWindow = isAnonymousMovementScenario(scenario) || wholeRunObserved || entity === ""
+    ? undefined
+    : entityObservedWindow(movementSamples, entity);
+  const movementBeforeSnapshot = movementSample?.before
+    ?? observedWindow?.before
+    ?? (isAnonymousMovementScenario(scenario) ? undefined : beforeSnapshot);
+  const movementAfterSnapshot = movementSample?.after
+    ?? observedWindow?.after
+    ?? (isAnonymousMovementScenario(scenario) ? undefined : afterSnapshot);
   const beforePosition = entityPosition(movementBeforeSnapshot, entity);
   const afterPosition = entityPosition(movementAfterSnapshot, entity);
   const beforeRotation = entityRotation(movementBeforeSnapshot, entity);
@@ -320,4 +337,26 @@ export function buildReport(
     trivialityOptOuts,
     url: config.url,
   };
+}
+
+/**
+ * The first and last per-step samples in which `entity` was actually present.
+ *
+ * Returns undefined unless both exist and differ, so a scenario whose subject never appears still
+ * fails as unobserved rather than being handed a window it cannot measure.
+ */
+function entityObservedWindow(
+  samples: readonly IMovementSampleInterval[],
+  entity: string,
+): { after: IPlaytestObservationSnapshot; before: IPlaytestObservationSnapshot } | undefined {
+  const seen: IPlaytestObservationSnapshot[] = [];
+  for (const sample of samples) {
+    for (const snapshot of [sample.before, sample.after]) {
+      if (snapshot !== undefined && entityPosition(snapshot, entity) !== undefined) seen.push(snapshot);
+    }
+  }
+  const before = seen[0];
+  const after = seen[seen.length - 1];
+  if (before === undefined || after === undefined || before === after) return undefined;
+  return { after, before };
 }

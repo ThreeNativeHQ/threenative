@@ -353,6 +353,12 @@ async function runStandalonePlaytestInternal(
     } as const;
     const labeledSamples: ILabeledPlaytestSample[] = [];
     const capturesAnonymousMovement = isAnonymousMovementScenario(scenario);
+    // Per-step samples used to be collected only for anonymous movement scenarios. A named entity
+    // needs them too, but only as a fallback: when the whole-run window cannot see it — a scenario
+    // that opens on a menu has no player at its first snapshot — the report measures the entity
+    // between its first and last observation instead of reporting a distance of zero it never
+    // measured. Collected whenever a movement assertion exists, which is what pays for them.
+    const capturesMovementSamples = capturesAnonymousMovement || scenario.assert?.movement !== undefined;
     const movementSamples: IMovementSampleInterval[] = [];
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
     const needsCapture = scenario.artifacts?.screenshots !== false
@@ -511,11 +517,11 @@ async function runStandalonePlaytestInternal(
         pathEntity,
         pathPositions,
         inputState,
-        capturesAnonymousMovement ? sampleRequest : undefined,
+        capturesMovementSamples ? sampleRequest : undefined,
         index === scenario.steps.length - 1,
         scenario.subject,
       );
-      if (capturesAnonymousMovement && movementCursor !== undefined && stepSamples.afterInput !== undefined) {
+      if (capturesMovementSamples && movementCursor !== undefined && stepSamples.afterInput !== undefined) {
         movementSamples.push({
           after: stepSamples.afterInput,
           before: movementCursor,
@@ -523,14 +529,14 @@ async function runStandalonePlaytestInternal(
         });
       }
       if (
-        capturesAnonymousMovement
+        capturesMovementSamples
         && stepSamples.afterInput !== undefined
         && stepSamples.afterStep !== undefined
         && stepSamples.afterStep !== stepSamples.afterInput
       ) {
         movementSamples.push({ after: stepSamples.afterStep, before: stepSamples.afterInput, inputDriven: false });
       }
-      if (capturesAnonymousMovement && stepSamples.afterStep !== undefined) {
+      if (capturesMovementSamples && stepSamples.afterStep !== undefined) {
         movementCursor = stepSamples.afterStep;
       }
       if (step.label === scenario.assert?.framebufferCoverage?.window.endStep) {

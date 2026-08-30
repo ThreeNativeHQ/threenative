@@ -11,7 +11,7 @@
     {
       "kind": "wait",
       "label": "menu-is-up",
-      "waitTicks": 20,
+      "waitTicks": 120,
       "release": true
     },
     {
@@ -54,7 +54,7 @@
     {
       "kind": "wait",
       "label": "play-scene-loads",
-      "waitTicks": 90,
+      "waitTicks": 240,
       "release": true
     },
     {

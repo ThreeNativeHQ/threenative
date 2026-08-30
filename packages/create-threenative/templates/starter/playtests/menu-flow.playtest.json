@@ -11,26 +11,50 @@
     {
       "kind": "wait",
       "label": "menu-is-up",
-      "waitTicks": 20,
+      "waitTicks": 120,
       "release": true
     },
     {
       "kind": "click",
-      "at": { "x": 640, "y": 365 },
+      "at": {
+        "x": 640,
+        "y": 365
+      },
       "label": "focus-name-field"
     },
-    { "kind": "input", "label": "type-a", "press": "a", "holdTicks": 1, "release": true },
-    { "kind": "input", "label": "type-x", "press": "x", "holdTicks": 1, "release": true },
-    { "kind": "input", "label": "type-o", "press": "o", "holdTicks": 1, "release": true },
+    {
+      "kind": "input",
+      "label": "type-a",
+      "press": "a",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-x",
+      "press": "x",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "type-o",
+      "press": "o",
+      "holdTicks": 1,
+      "release": true
+    },
     {
       "kind": "click",
-      "at": { "x": 640, "y": 428 },
+      "at": {
+        "x": 640,
+        "y": 428
+      },
       "label": "start-game"
     },
     {
       "kind": "wait",
       "label": "play-scene-loads",
-      "waitTicks": 90,
+      "waitTicks": 240,
       "release": true
     }
   ],
@@ -42,8 +66,17 @@
       "runtimeReady": true
     },
     "resources": [
-      { "changed": true, "equals": "playing", "id": "state", "path": "screen" },
-      { "equals": "axo", "id": "state", "path": "characterName" }
+      {
+        "changed": true,
+        "equals": "playing",
+        "id": "state",
+        "path": "screen"
+      },
+      {
+        "equals": "axo",
+        "id": "state",
+        "path": "characterName"
+      }
     ]
   }
 }
