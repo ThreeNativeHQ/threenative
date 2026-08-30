@@ -7,6 +7,7 @@ dependency is not ready.
 
 | Reason | PRDs | What unblocks it |
 |---|---|---|
+| [`requires-runnable-many-soldier-consumer/`](requires-runnable-many-soldier-consumer/) | [PRD-258](requires-runnable-many-soldier-consumer/PRD-258-many-actors-share-one-animation-texture.md) | A committed Bayview consumer whose configured asset manifest exists, boots from exact current-engine tarballs, installs the playtest bridge, and completes the five pre-registered Phase 0 arms |
 | [`requires-parity-rerun/`](requires-parity-rerun/) | [PRD-054](requires-parity-rerun/PRD-054-write-once-run-anywhere.md) | A clean, non-blocked cross-platform parity run |
 | [`requires-v8-source-toolchain/`](requires-v8-source-toolchain/) | [PRD-221](requires-v8-source-toolchain/PRD-221-android-v8-is-16kb-clean.md) | An approved, reproducible Kudo V8 source checkout/toolchain; a 16 KB-aligned rebuild for both shipped 64-bit ABIs; and dialog-dismissed V8 emulator conformance proof |
 | [`requires-touch-evidence/`](requires-touch-evidence/) | [PRD-055](requires-touch-evidence/PRD-055-native-hud-reopened.md) | Android touch-playability evidence |

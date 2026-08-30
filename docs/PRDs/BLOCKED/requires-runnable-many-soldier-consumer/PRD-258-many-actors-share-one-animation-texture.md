@@ -4,12 +4,21 @@ prd_contract: v1
 
 # PRD-258 — Many actors share one animation texture
 
-**Status: PROPOSED, 2026-08-29. Nothing below has been executed.**
+**Status: BLOCKED AT PHASE 0, 2026-08-30. No product code shipped.**
 Repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `e8754ab24e8e227ab472690a3d8d7b6d2cd53550`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
-[feature-mining](../README.md).
+[feature-mining](../../feature-mining/README.md).
+
+**Blocking evidence:** the required real many-soldier consumer is not reproducibly runnable from
+its committed source. A detached `sandbox/fps-framework` at `e2652889` requests
+`public/raw-assets.manifest.json`, but that commit contains only `public/assets.manifest.json`.
+Against exact engine tarballs built from `68b32a65`, the browser receives the Vite HTML fallback,
+reports `Unexpected token '<'`, creates zero canvases, and never installs the playtest bridge. Three
+repair attempts stopped before assertions, as required by the repository's three-fix rule. Phase 0
+therefore cannot measure or decline the candidate. The runnable-consumer repair and all browser,
+desktop, Android and iOS performance rows remain **UNVERIFIED**.
 
 **Outcome if Phase 0 survives:** the existing measured many-skinned-soldier subject bakes one or
 more clip's bone matrices into a shared GPU animation texture at build time, then renders many
@@ -317,14 +326,13 @@ rather than failing a game that still owns ordinary skinned meshes.
 - native cannot run the same source and the PRD tries to claim platform support anyway;
 - LOC comparison says the game-owned plain Three path is smaller for the repeated consumer.
 
-## 12. Validation command for this planning-only filing
-
-This PRD authoring change touches one file only. Validate with:
+## 12. Validation command for the blocked Phase 0 record
 
 ```sh
-git diff --check -- docs/PRDs/feature-mining/PRD-258-many-actors-share-one-animation-texture.md
-git status --short -- docs/PRDs/feature-mining/PRD-258-many-actors-share-one-animation-texture.md docs/PRDs/feature-mining/README.md docs/PRDs/feature-mining/PRD-256-static-light-is-a-standard-baked-asset.md docs/PRDs/feature-mining/PRD-257-character-ground-contact-is-observable.md
+git diff --check
+pnpm check:docs
+pnpm typecheck && pnpm lint && pnpm test
 ```
 
-Expected: diff check prints nothing and exits 0. Status shows this new PRD plus the pre-existing dirty
-README/PRD-256/PRD-257, which this task deliberately does not touch.
+The runtime playtest must remain failed closed until the configured manifest exists in the committed
+consumer; do not convert that missing observation into a green skip.

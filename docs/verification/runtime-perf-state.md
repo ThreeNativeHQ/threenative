@@ -1276,6 +1276,34 @@ byte-identical: SHA-256
 `79a7ca015073d50096e10f0a385215fe627030beaf6e741a3bc5d1336e322a75`; `cmp` exited 0. Native
 execution remains **UNVERIFIED**.
 
+### 1.3.12 PRD-258 Phase 0 stopped at an unavailable real consumer (2026-08-30)
+
+PRD-258 requires the existing five-soldier Bayview subject and forbids substituting a synthetic
+rig. An isolated detached consumer at sandbox commit `e265288930c07c9762ff8002cdfd62984ea0a3d8`
+was installed from local tarballs built from engine `68b32a65`. Its diagnostic source prepared five
+same-camera arms (`control`, `hidden`, `frozen`, `flat`, `shadow-off`), reported actor/skeleton/
+skinned-mesh counts, and added frame-section p50/p95 observations. The consumer typecheck and web
+build both passed.
+
+The runtime measurement did not begin. The committed `threenative.config.ts` requests
+`raw-assets.manifest.json`, while the committed `public/` tree contains `assets.manifest.json` and no
+file at the requested path. Vite therefore returned `<!doctype ...` for the JSON request. Browser
+diagnostics observed HTTP 200, `Unexpected token '<'`, body state `LOADING 9 / 28`, zero canvases,
+and `globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ === undefined`. The playtest failed closed with
+`TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING`; the prescribed doctor independently failed with
+`TN_PLAYTEST_BRIDGE_MISSING`.
+
+Package provisioning first exposed absent ignored tarballs and then stale cache filenames; exact
+local builds fixed that setup, and the consumer install, typecheck and web build became green. Three
+launch/verification rounds still stopped before measurement: the runner first rejected an invalid
+`eq` assertion key, the corrected scenario failed capture provenance, and the prescribed doctor
+confirmed the missing bridge. The doubtful assumption was that committed Bayview `e2652889` was a
+self-contained current-engine consumer, so the run stopped rather than adding a fourth workaround.
+No frame, render, animation, draw, material or shadow timing is claimed;
+browser, desktop, Android and iOS are all **UNVERIFIED**. PRD-258 is blocked, not declined, and no
+product API or package source was added. The isolated consumer remains at
+`/home/joao/projects/threenative/sandbox-runs/prd258-fps-20260830` for a repaired rerun.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1
