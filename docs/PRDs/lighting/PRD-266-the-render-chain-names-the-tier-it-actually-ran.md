@@ -7,6 +7,13 @@ prd_contract: v1
 **Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Batch:
 [docs/PRDs/lighting](./README.md), which carries the repo evaluation this PRD implements.
 
+**Updated 2026-08-30 from a working prototype.** The whole chain was built by hand inside a
+sandbox game (`../sandbox/lumen-hall`, installed from tarballs) to find out what the
+framework version has to handle. Evidence:
+[docs/verification/lighting-chain-2026-08-30.md](../../verification/lighting-chain-2026-08-30.md).
+Two changes fall out of that and are folded in below: the abstraction is named
+`WorldEnvironment`, and four defect classes have been observed rather than predicted.
+
 **Goal: a game asks for global illumination once, gets the best chain the running target can
 execute, and can always read which one it got.** Today it cannot do either half.
 
@@ -50,7 +57,27 @@ SSGI at `sliceCount: 3, stepCount: 16` and SSGI at `sliceCount: 1, stepCount: 12
 one resolution rung, and no game can pull it without hand-writing the ladder that
 `ResolutionScaler` already proved is framework work rather than game work.
 
-### 3. A dropped effect is indistinguishable from a disabled one
+### 3. Four defaults each read as "the stage is on and does nothing"
+
+Observed, not predicted. Every one of these was hit while building the prototype, and every
+one produced a frame that looked plausible rather than an error:
+
+- **`SSRNode.maxDistance` defaults to `1`** — one world unit. On a 63 m interior every
+  reflection ray terminated within a metre of its origin and the floor reflected nothing.
+- **`SSRNode` `reflectNonMetals` defaults to `false`.** Polished stone is not a metal, so
+  even with the ray distance corrected nothing reflected.
+- **`colorNode` and `normalNode` must be texture nodes**, because both are `.sample()`d
+  inside the pass. `@types/three` types `normalNode` as `Node<"vec3">`, which invites a
+  `.xyz` swizzle that typechecks and then dies at shader build. `ssgi()` runs its colour
+  input through `convertToTexture` in its factory; `ssr()` does not.
+- **`toneMappingExposure` does not reach a frame drawn through a `RenderPipeline` output
+  node.** Moving it from 0.85 to 1.45 changed nothing on screen.
+
+A game cannot be expected to know any of these, and each one costs an afternoon to find. The
+`WorldEnvironment` defaults exist to make the correct thing the default: scene-scaled ray
+distance, non-metal reflection on, exposure applied inside the chain.
+
+### 4. A dropped effect is indistinguishable from a disabled one
 
 The charter is explicit: turning a convention off must not turn its measurement off. Right now a
 game whose SSGI never ran — no WebGPU, no `timestamp-query`, a target the node cannot compile on —
@@ -59,11 +86,20 @@ assertion can tell them apart, which means no gate can either.
 
 ## What ships
 
-A new `packages/core/src/render/chain.ts`, exported from `@threenative/core`:
+A new `packages/core/src/render/world-environment.ts`, exported from `@threenative/core`:
 
-- `RenderChain` — composes an ordered node graph from a **request** (which stages, at which
-  quality) and the running target's **capabilities**, installs it through the existing
+- `WorldEnvironment` — composes an ordered node graph from a **request** (which stages, at
+  which quality) and the running target's **capabilities**, installs it through the existing
   `IRendererLike.setOutputNode` seam, and disposes cleanly on tier change.
+
+  **The name is Godot's, and `RenderChain` — this PRD's original invention — is withdrawn.**
+  Charter rule 4 borrows vocabulary and never invents it. Godot's `WorldEnvironment` node is
+  exactly this object: the thing that says which lighting effects a scene runs and how strong
+  they are. Its property names carry across too, so a game writes `ssrEnabled` and
+  `tonemapMode` where Godot writes `ssr_enabled` and `tonemap_mode`, and Three.js's node
+  names win for the stages Godot has no equivalent for (`ssgi`, `gtao`). `Environment` alone
+  was rejected: `scene.environment` in Three.js is a texture, and the collision would cost
+  more than the extra word.
 - A capability probe: renderer `kind`, adapter info, and per-stage compile success. Fail closed —
   a stage that cannot compile is dropped and *named*, never silently skipped.
 - Tier ladder in one pre-registered constant block, in the `RESOLUTION_SCALER` shape: named tiers
@@ -100,7 +136,14 @@ A stage the game did not request is never added.
    reports nothing applied; an unknown stage name or an out-of-range quality throws at
    construction. *Mutation:* accept the unknown stage name and the fail-closed spec goes green.
 
-5. **A playtest can assert the tier.** A scenario asserting `renderChain.tier` against a template
+5. **A composed chain never contains a dangling branch.** Materialising a node for one stage
+   and then composing the *unmaterialised* original into the output builds two copies of the
+   same graph, and the un-rendered copy silently produces the background colour. In the
+   prototype this appeared only with bloom off, godrays on and SSR on, and it rendered a
+   blank frame. *Mutation:* compose a stage's input from the unconverted node while passing a
+   converted one to the pass, and the blank-frame spec goes red.
+
+6. **A playtest can assert the tier.** A scenario asserting `renderChain.tier` against a template
    build fails when the chain reports a lower tier than asserted, and fails — not passes — when the
    marker is absent entirely. *Mutation:* drop the marker emission and the scenario reports
    unobservable rather than green (the PRD-265 rule).
@@ -109,6 +152,16 @@ A stage the game did not request is never added.
 
 Probe volumes (PRD-268), motion vectors (PRD-269), native conformance cases for the new nodes
 (PRD-270), and any decision about which effects a template turns on (PRD-267).
+
+## Known gap the tier ladder has to work around
+
+`SSGINode` has no `resolutionScale`, and resets itself to the full display resolution every
+frame inside `updateBefore`. `SSRNode` has one, and halving it on the prototype recovered
+34.5 to 46 fps. SSGI is the most expensive stage in the chain by a wide margin — 42.9 fps
+with it against 107 without — so the one lever that would help most is the one upstream does
+not expose. The tier ladder therefore has only `sliceCount` and `stepCount` to work with on
+that stage, which is a much coarser control than the resolution knob every other stage has.
+Worth an upstream contribution rather than a fork.
 
 ## Verification
 

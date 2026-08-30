@@ -76,11 +76,25 @@ Charter rule 3 is the line. Anything that *decides how it looks* ships as genera
 The test, from the charter: **can a game change the appearance completely without editing package
 code?** If a knob fails that test it is in the wrong file.
 
+## Prototype, 2026-08-30
+
+The whole chain was then built by hand in a sandbox game — `../sandbox/lumen-hall`, a gothic
+cathedral installed from tarballs with no workspace — to find out what the framework version
+has to handle before writing it. It found four defaults that each read as "the stage is on
+and does nothing", a blank frame caused by a dangling node-graph branch, and the fact that
+volumetric godrays are a whole-frame brightener rather than a shaft renderer unless a floor
+is subtracted first. Measurements and method are in
+[docs/verification/lighting-chain-2026-08-30.md](../../verification/lighting-chain-2026-08-30.md);
+PRD-266 carries the consequences.
+
+One naming change fell out of it: the abstraction is `WorldEnvironment`, Godot's name for
+exactly this object, and the invented `RenderChain` is withdrawn.
+
 ## The PRDs
 
 | PRD | Title | Depends on | Complexity |
 | --- | --- | --- | --- |
-| [PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | the render chain is a seam the game fills, and it names the tier it actually ran | — | MEDIUM |
+| [PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | `WorldEnvironment` is a seam the game fills, and it names the tier it actually ran | — | MEDIUM |
 | [PRD-267](./PRD-267-screen-space-gi-ships-in-the-templates.md) | screen-space GI, reflections and their denoiser ship in the templates | 266 | LOW |
 | [PRD-268](./PRD-268-light-that-comes-from-off-screen.md) | light that comes from off-screen: an irradiance probe volume on WebGPU | 266 | HIGH |
 | [PRD-269](./PRD-269-motion-vectors-or-the-temporal-filters-lie.md) | motion vectors for skinned and instanced geometry, or the temporal filters lie | 266 | MEDIUM |
