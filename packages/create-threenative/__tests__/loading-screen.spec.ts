@@ -173,6 +173,10 @@ describe("template loading screen", () => {
     await cp(path.join(templateRoot, "..", "template-assets"), path.join(root, "template-assets"), {
       recursive: true,
     });
+    await cp(
+      path.join(templateRoot, "..", "capabilities.json"),
+      path.join(root, "capabilities.json"),
+    );
     await cp(path.join(templateRoot, "..", "agent-docs"), path.join(root, "agent-docs"), {
       recursive: true,
     });

@@ -236,7 +236,10 @@ function packageName(target: string): string {
 }
 
 async function isEmpty(directory: string): Promise<boolean> {
-  const entries = await readdir(directory).catch(() => []);
+  const entries = await readdir(directory).catch((error: unknown) =>
+    (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT" ? [] : undefined,
+  );
+  if (entries === undefined) return false;
   return entries.length === 0;
 }
 
@@ -392,7 +395,13 @@ async function copyCapabilityManifest(
   templateRootDirectory: string,
 ): Promise<void> {
   const source = path.join(path.dirname(templateRootDirectory), "capabilities.json");
-  if (!existsSync(source)) return;
+  // Fail closed: a scaffold without the manifest looks fine and every generated project
+  // silently loses the capability search its AGENTS.md tells the user's agent to run.
+  if (!existsSync(source)) {
+    throw new Error(
+      `TN_KIT_CAPABILITIES_MISSING: '${source}' is not in the package; the generated project needs the capability manifest for its agent tooling.`,
+    );
+  }
   await cp(source, path.join(target, "capabilities.json"));
 }
 

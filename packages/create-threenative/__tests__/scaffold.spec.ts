@@ -100,11 +100,20 @@ async function withBrokenTemplateFile<T>(
 ): Promise<T> {
   const root = await makeTempDir("threenative-broken-template-");
   try {
-    await cp(TEMPLATE_ROOT, root, { recursive: true });
-    const file = path.join(root, relativePath);
+    // The package layout the scaffolder reads: templates/ plus the package-level siblings it
+    // reaches up to (capabilities.json, template-assets, agent-docs). The copied tree is the
+    // templates dir; the siblings ride along so a test breaks exactly the file it names.
+    const packageDirectory = path.dirname(TEMPLATE_ROOT);
+    for (const sibling of ["capabilities.json", "template-assets", "agent-docs"]) {
+      await cp(path.join(packageDirectory, sibling), path.join(root, sibling), {
+        recursive: true,
+      });
+    }
+    await cp(TEMPLATE_ROOT, path.join(root, "templates"), { recursive: true });
+    const file = path.join(root, "templates", relativePath);
     if (content === undefined) await rm(file);
     else await writeFile(file, content);
-    return await body(root);
+    return await body(path.join(root, "templates"));
   } finally {
     await rm(root, { force: true, recursive: true });
   }
@@ -622,6 +631,110 @@ describe("create-threenative", () => {
       target: "my-game",
       template: "minimal",
     });
+  });
+
+  it("should fail closed when the capabilities manifest is missing from the package", async () => {
+    const root = await makeTempDir("threenative-capabilities-missing-");
+    try {
+      await cp(TEMPLATE_ROOT, path.join(root, "templates"), { recursive: true });
+      await cp(
+        path.resolve("packages/create-threenative/template-assets"),
+        path.join(root, "template-assets"),
+        { recursive: true },
+      );
+      await cp(
+        path.resolve("packages/create-threenative/agent-docs"),
+        path.join(root, "agent-docs"),
+        { recursive: true },
+      );
+      // capabilities.json deliberately absent: this is the `files` regression the copy
+      // used to paper over, leaving every generated project without capability search.
+      await expect(
+        createProject(
+          { install: false, target: "my-game", template: "starter" },
+          root,
+          path.join(root, "templates"),
+        ),
+      ).rejects.toThrow(/TN_KIT_CAPABILITIES_MISSING/u);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it("should reject an occupied or file target and create nested parents", async () => {
+    const root = await makeTempDir("threenative-target-collisions-");
+    try {
+      await mkdir(path.join(root, "occupied"), { recursive: true });
+      await writeFile(path.join(root, "occupied", "keep.txt"), "x");
+      await expect(createProject({ install: false, target: "occupied" }, root)).rejects.toThrow(
+        /already exists and is not empty/u,
+      );
+
+      await writeFile(path.join(root, "a-file"), "x");
+      await expect(createProject({ install: false, target: "a-file" }, root)).rejects.toThrow(
+        /already exists and is not empty/u,
+      );
+
+      const result = await createProject({ install: false, target: "nested/deep/game" }, root);
+      expect(result.target.endsWith("nested/deep/game")).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("should fail closed on a malformed kit manifest with the exact named codes", async () => {
+    const templates = path.join(await makeTempDir("threenative-kit-manifest-"), "templates");
+    const valid = {
+      blurb: "collect pickups",
+      genre: "arcade",
+      kit: true,
+      name: "pickup",
+      title: "Pickup Run",
+    };
+    const cases: ReadonlyArray<[string, string, RegExp]> = [
+      ["noparse", "not json", /TN_KIT_MANIFEST_INVALID.*JSON could not be parsed/u],
+      ["array", "[]", /root must be an object/u],
+      [
+        "name-mismatch",
+        JSON.stringify({ ...valid, name: "other" }),
+        /name 'other' must match directory 'name-mismatch'/u,
+      ],
+      [
+        "not-kit",
+        JSON.stringify({ ...valid, name: "not-kit", kit: "yes" }),
+        /kit must be a boolean/u,
+      ],
+      [
+        "no-blurb",
+        JSON.stringify({ ...valid, name: "no-blurb", blurb: "" }),
+        /blurb must be a non-empty string/u,
+      ],
+      [
+        "no-genre",
+        JSON.stringify({ ...valid, name: "no-genre", genre: 7 }),
+        /genre must be a non-empty string/u,
+      ],
+      [
+        "no-title",
+        JSON.stringify({ ...valid, name: "no-title", title: "" }),
+        /title must be a non-empty string/u,
+      ],
+    ];
+    try {
+      for (const [name, content, expected] of cases) {
+        const directory = path.join(templates, name);
+        await mkdir(directory, { recursive: true });
+        await writeFile(path.join(directory, "kit.json"), content);
+        try {
+          expect(() => discoverKitManifests(templates)).toThrow(expected);
+        } finally {
+          await rm(directory, { recursive: true, force: true });
+        }
+      }
+      expect(discoverKitManifests(templates)).toEqual([]);
+    } finally {
+      await rm(templates, { recursive: true, force: true });
+    }
   });
 
   it("should parse flags that precede the target directory", () => {
