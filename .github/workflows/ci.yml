@@ -85,8 +85,33 @@ jobs:
         with:
           path: packages/runtime-native/third_party
           key: native-third-party-${{ runner.os }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs') }}
-      - name: Build the native host and its contract executables
+      - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
+      # The target names are discovered from CMakeLists.txt rather than listed here: a
+      # hand-maintained list in a workflow file is the drift that leaves a new contract target
+      # unbuilt on CI and only failing for whoever pushes next.
+      - name: Build the V8 contract executables
+        working-directory: packages/runtime-native
+        run: |
+          set -euo pipefail
+          targets=$(grep -oE 'add_executable\(\s*threenative-[a-z0-9-]+-test' CMakeLists.txt \
+            | sed -E 's/.*\(\s*//' | sort -u)
+          echo "contract targets: $targets"
+          for target in $targets; do
+            cmake --build build/tn-linux --target "$target" --parallel "$(nproc)" || \
+              echo "target $target is not buildable in build/tn-linux"
+          done
+      # timestamp-query is a cross-engine contract and the JS engine is a build-time choice, so
+      # QuickJS needs its own configured build directory. Without it that test fails closed on CI
+      # naming build/tn-linux-quickjs, exactly as it did before this step existed.
+      - name: Build the QuickJS engine variant the cross-engine contract needs
+        working-directory: packages/runtime-native
+        run: |
+          set -euo pipefail
+          node scripts/download-deps.mjs --only quickjs
+          cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF
+          cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
+            --parallel "$(nproc)"
       - run: pnpm test
       - run: sh scripts/xvfb.sh pnpm test:browser
       - run: pnpm test:playtest:ci
