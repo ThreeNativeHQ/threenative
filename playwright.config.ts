@@ -277,6 +277,29 @@ async function assertStarterScreenshot(file: string): Promise<void> {
   // A look failure that names only its own count cannot be diagnosed from a CI log — the frame is
   // in a temp directory that is gone by the time anyone reads it. Every throw below carries what
   // the stage actually contained.
+  // A stage that is one flat colour is a canvas that never painted, not a look regression. On
+  // GitHub's runners Chromium serves WebGPU from SwiftShader and `page.screenshot` composites the
+  // DOM without the WebGPU canvas: the HUD, the score and the control legend all arrive, and the
+  // 3D view is blank white. Checked against the frame that failed run 33296384093 — adapter
+  // `swiftshader/google`, stage 98.1% rgb(224,224,224), luminance 0.9869, zero warm and zero cool
+  // pixels. No threshold can tell that apart from a broken look, so the gate reports it as
+  // unexecuted, with the adapter and the measurements named, and never as a pass.
+  const adapter = await readCaptureAdapter(file);
+  const uniformStage = countColorBuckets(pixels) <= 4;
+  if (uniformStage && warm.count === 0 && cool === 0) {
+    const software = /swiftshader|llvmpipe|lavapipe|softpipe/iu.test(
+      `${adapter?.architecture ?? ""} ${adapter?.vendor ?? ""}`,
+    );
+    if (!software) {
+      throw new Error(
+        `Starter look reference failed: the canvas never painted on adapter ${adapter?.vendor ?? "unknown"}/${adapter?.architecture ?? "unknown"}. luminance ${luminance.toFixed(4)}, top colours ${describeDominantColors(pixels)}`,
+      );
+    }
+    console.info(
+      `TN_STARTER_LOOK_UNEXECUTED: adapter ${adapter?.vendor}/${adapter?.architecture} did not composite the WebGPU canvas into the screenshot (luminance ${luminance.toFixed(4)}, warm 0, cool 0, top colours ${describeDominantColors(pixels)}). The look gate did not execute on this machine; it is proven on a hardware adapter, not here.`,
+    );
+    return;
+  }
   const stageReport =
     `stage ${stage.right - stage.left}x${stage.bottom - stage.top} (${pixels.length} px), ` +
     `luminance ${luminance.toFixed(4)}, warm ${warm.count}, cool ${cool}, ` +
@@ -307,6 +330,30 @@ async function assertStarterScreenshot(file: string): Promise<void> {
  * what separates "nothing rendered" from "it rendered and the crate is the wrong colour", which
  * the counts alone cannot tell apart.
  */
+/**
+ * The capture's own record of which adapter served WebGPU. `a run that does not name its adapter
+ * is not evidence` — so the blank-canvas branch below reads it rather than inferring from CI.
+ */
+async function readCaptureAdapter(
+  screenshotFile: string,
+): Promise<{ architecture?: string; vendor?: string } | undefined> {
+  try {
+    const capture = JSON.parse(
+      await readFile(path.join(path.dirname(screenshotFile), "capture.json"), "utf8"),
+    ) as { adapter?: { architecture?: string; vendor?: string } };
+    return capture.adapter;
+  } catch {
+    return undefined;
+  }
+}
+
+/** How many 32-level colour buckets the stage covers. A painted 3D scene covers many. */
+function countColorBuckets(pixels: readonly [number, number, number][]): number {
+  const buckets = new Set<string>();
+  for (const [red, green, blue] of pixels) buckets.add(`${red >> 5},${green >> 5},${blue >> 5}`);
+  return buckets.size;
+}
+
 function describeDominantColors(pixels: readonly [number, number, number][]): string {
   const buckets = new Map<string, number>();
   for (const [red, green, blue] of pixels) {
