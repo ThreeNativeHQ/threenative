@@ -92,8 +92,12 @@ jobs:
           path: |
             packages/runtime-native/build/tn-linux
             packages/runtime-native/build/tn-linux-quickjs
+          # Exact match only. A cmake build directory carries a CMakeCache.txt pinned to the
+          # configuration that produced it, so a near-miss restore is worse than no cache: the
+          # first run with restore-keys resurrected a tree that had never configured SDL3 and the
+          # build died on `SDL3/SDL.h: No such file or directory` and `ninja: error: unknown
+          # target 'threenative-video-recorder-state-test'`. Miss the key and compile from clean.
           key: native-build-${{ runner.os }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**') }}
-          restore-keys: native-build-${{ runner.os }}-
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       # The target names are discovered from CMakeLists.txt rather than listed here: a

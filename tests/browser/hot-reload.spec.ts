@@ -206,7 +206,11 @@ async function waitForHotReload(
   page: import("@playwright/test").Page,
   expected: number,
 ): Promise<void> {
-  const deadline = Date.now() + 15_000;
+  // Each HMR round trip is vite rebuilding the module, the page re-running it, and the game
+  // rebuilding its scene — then this waits for the player to be grounded again, which needs
+  // rendered frames. Fifteen seconds is a machine with a GPU; CI serves WebGPU from SwiftShader
+  // and does all of that an order of magnitude slower, ten times over.
+  const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     const ready = await page
       .evaluate((reloads) => {
@@ -236,7 +240,9 @@ async function waitForHotReload(
     if (ready) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`HMR reload ${expected} was not observed within 15 seconds.`);
+  throw new Error(
+    `HMR reload ${expected} was not observed within 90 seconds: ${await describePlayerState(page)}`,
+  );
 }
 
 test.afterAll(async () => {
