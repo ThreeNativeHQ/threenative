@@ -656,12 +656,31 @@ export async function runStandalonePlaytests(
     await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     const reports: IStandalonePlaytestReport[] = [];
     for (const [index, scenarioPath] of scenarioPaths.entries()) {
-      reports.push(await runStandalonePlaytestInternal({
+      const report = await runStandalonePlaytestInternal({
         ...activeConfig,
         artifactDirectory: batchArtifactDirectory(activeConfig.artifactDirectory, scenarioPath, index),
         scenarioPath,
         scenarioPaths: undefined,
-      }, { managedServer: server }));
+      }, { managedServer: server });
+      reports.push(report);
+      // A batch prints one JSON document at the end, and a CI log viewer truncates it — a run of
+      // sixteen scenarios reported `"pass": false` with only the first scenario's report readable,
+      // so the failing one could not be named at all. One line per scenario, to stderr, as each
+      // finishes: the verdict survives truncation and arrives while the run is still going.
+      const failedAssertions = (report.assertionResults ?? [])
+        .filter(({ pass }) => pass === false)
+        .map(({ id }) => id);
+      const codes = report.diagnostics.map(({ code }) => code);
+      process.stderr.write(
+        `${JSON.stringify({
+          scenarioSummary: {
+            diagnostics: codes,
+            failed: failedAssertions,
+            pass: report.pass,
+            scenario: report.scenario,
+          },
+        })}\n`,
+      );
     }
     return reports;
   } catch (error) {
