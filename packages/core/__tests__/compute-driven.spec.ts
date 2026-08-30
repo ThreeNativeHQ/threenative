@@ -346,6 +346,80 @@ describe("ComputeDrivenRegistry", () => {
     }
   });
 
+  it("holds a destination compute scene until its kernels are warm", async () => {
+    let advance: ((ticks: number) => number) | undefined;
+    let finishWarmup: (() => void) | undefined;
+    let warmups = 0;
+    let field: ComputeProbe | undefined;
+    class MenuScene extends Scene {
+      static override readonly initialState = {};
+    }
+    class DestinationScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        field = ctx.add(new ComputeProbe("destination", [])) as ComputeProbe;
+      }
+    }
+    const canvas = testCanvas();
+    const warmupGate = new Promise<void>((resolve) => {
+      finishWarmup = resolve;
+    });
+    const raw = {
+      compileAsync: async () => undefined,
+      compute: () => undefined,
+      computeAsync: () => {
+        warmups += 1;
+        return warmupGate;
+      },
+      dispose: () => undefined,
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: () => undefined,
+    };
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
+      renderer: { canvas, webgpuFactory: () => raw },
+      scenes: { destination: DestinationScene, menu: MenuScene },
+      start: "menu",
+      warmUp: true,
+    });
+
+    try {
+      await game.start();
+      if (advance === undefined) throw new Error("Game did not expose its fixed-step control.");
+      const transition = game.goto("destination");
+      await Promise.resolve();
+      if (field === undefined || finishWarmup === undefined || warmups !== 1)
+        throw new Error("Destination compute warm-up did not start.");
+
+      advance(1);
+      expect(field.processed).toBe(0);
+
+      finishWarmup();
+      await transition;
+      advance(1);
+      expect(field.processed).toBe(1);
+    } finally {
+      game.stop();
+      if (navigatorDescriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+  });
+
   it("releases an implementer removed from the scene and clears every remaining object", () => {
     const scene = new Group();
     const order: string[] = [];

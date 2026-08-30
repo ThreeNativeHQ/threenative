@@ -37,7 +37,12 @@ import { type GameStore, createGameStore } from "./state.js";
 import { type IUiBridge, UI_READY_INTENT, connectUiBridge } from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
 import { type IViewportOptions, Viewport } from "./viewport.js";
-import { type IWarmUpOptions, type IWarmUpReport, warmUpScene } from "./warmup.js";
+import {
+  type IWarmUpOptions,
+  type IWarmUpReport,
+  warmUpComputeNodes,
+  warmUpScene,
+} from "./warmup.js";
 
 export type PluginCleanup = () => void;
 
@@ -574,21 +579,55 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#sceneName = name;
     const loaded = scene.load(ctx);
     if (loaded === undefined) {
-      this.#enterScene(scene, ctx);
-      return Promise.resolve();
+      return this.#enterTransitionScene(scene, ctx);
     }
-    return Promise.resolve(loaded).then(() => this.#enterScene(scene, ctx));
+    return Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
   }
 
-  #enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): void {
+  #enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): boolean {
     const frame = scene.enter(ctx);
     if (frame !== undefined && typeof frame !== "function") {
       throw new Error("Scene.enter() must return a frame function or undefined.");
     }
     // A boot scene may navigate synchronously; do not replace the frame installed by #goto().
-    if (this.#scene !== scene) return;
+    if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    return true;
+  }
+
+  async #enterTransitionScene(
+    scene: Scene<TState, TPhysics>,
+    ctx: ICtx<TState, TPhysics>,
+  ): Promise<void> {
+    if (!this.#enterScene(scene, ctx)) return;
+    const renderer = this.#renderer;
+    const nodes = this.#computeDriven.warmupNodes;
+    if (renderer === undefined || nodes.length === 0) return;
+    this.#sceneEntered = false;
+    let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
+    let failure: string | undefined;
+    try {
+      const configured = this.#config.warmUp;
+      const options =
+        configured === undefined || configured === false || configured === true ? {} : configured;
+      report = await warmUpComputeNodes(renderer, nodes, options);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+    console.log(
+      `TN_TRANSITION_COMPUTE_WARMUP:${JSON.stringify(
+        report === undefined
+          ? { failed: failure ?? "unknown" }
+          : {
+              compiled: report.compiled,
+              abandoned: report.abandoned,
+              unsupported: report.unsupported,
+              timedOut: report.timedOut,
+            },
+      )}`,
+    );
+    if (!this.#aborted && this.#scene === scene) this.#sceneEntered = true;
   }
 
   start(): Promise<void> {
@@ -887,7 +926,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         // Render-cadence compute is first-use work too. Keep it behind an opaque startup layer
         // until readiness settles, or a particle process dispatch can compile in the loader frame.
-        if (this.#renderer !== undefined && (!canvasLayer.opaque || startupReadiness.ready))
+        if (
+          this.#renderer !== undefined &&
+          this.#sceneEntered &&
+          (!canvasLayer.opaque || startupReadiness.ready)
+        )
           this.#computeDriven.processRender(this.#renderer);
         const waitingForFirstUse =
           firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
@@ -964,7 +1007,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           !worldRendered &&
           canvasLayer.opaque &&
           (this.#config.warmUp === undefined || this.#config.warmUp === false);
-        if (this.#renderer !== undefined && !computeBlockedByStartup)
+        if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
           this.#computeDriven.process(this.#renderer);
       },
       onFrame: (frameMs) => startupReadiness.observe(frameMs),

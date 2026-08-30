@@ -130,7 +130,7 @@ const DEFAULT_SLICE_SIZE = 24;
 const DEFAULT_COMPILE_TIMEOUT_MS = 2000;
 const DEFAULT_BUDGET_MS = 15000;
 
-interface IComputeWarmUpReport {
+export interface IComputeWarmUpReport {
   readonly compiled: number;
   readonly abandoned: number;
   readonly unsupported: boolean;
@@ -172,7 +172,7 @@ async function within(work: Promise<unknown>, limitMs: number): Promise<boolean>
   }
 }
 
-async function warmUpComputeNodes(
+async function runComputeWarmUp(
   renderer: IWarmUpRenderer,
   nodes: readonly unknown[],
   compileTimeoutMs: number,
@@ -207,6 +207,28 @@ async function warmUpComputeNodes(
     }
   }
   return { compiled, abandoned, unsupported: false, timedOut };
+}
+
+/** @internal Compile compute kernels without also compiling a scene's render pipelines. */
+export async function warmUpComputeNodes(
+  renderer: IWarmUpRenderer,
+  nodes: readonly unknown[],
+  options: Pick<IWarmUpOptions, "budgetMs" | "compileTimeoutMs"> = {},
+): Promise<IComputeWarmUpReport> {
+  const compileTimeoutMs = options.compileTimeoutMs ?? DEFAULT_COMPILE_TIMEOUT_MS;
+  const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+  for (const [name, value] of [
+    ["compileTimeoutMs", compileTimeoutMs],
+    ["budgetMs", budgetMs],
+  ] as const) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(
+        `TN_WARMUP_TIMEOUT_INVALID: ${name} must be a positive number of milliseconds, received ${String(value)}.`,
+      );
+    }
+  }
+  const now = (): number => globalThis.performance?.now() ?? Date.now();
+  return runComputeWarmUp(renderer, nodes, compileTimeoutMs, now() + budgetMs, now);
 }
 
 function withComputeReport(report: IWarmUpReport, compute: IComputeWarmUpReport): IWarmUpReport {
@@ -359,13 +381,7 @@ export async function warmUpScene(
   const compute =
     computeNodes.length === 0
       ? undefined
-      : await warmUpComputeNodes(
-          renderer,
-          computeNodes,
-          compileTimeoutMs,
-          startedAt + budgetMs,
-          now,
-        );
+      : await runComputeWarmUp(renderer, computeNodes, compileTimeoutMs, startedAt + budgetMs, now);
 
   if (typeof renderer.compileAsync !== "function") {
     const report: IWarmUpReport = {
