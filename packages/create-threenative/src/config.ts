@@ -91,6 +91,35 @@ export interface IThreeNativeModelsConfig {
     /** UV precision in bits, default 12. */
     readonly uvBits?: number;
   };
+  /**
+   * Embedded-texture compression for images carried inside a `.glb`.
+   *
+   * On by default in the compile step; `"none"` ships every embedded image exactly as
+   * authored. `maxSize` caps the longest edge, preserving aspect and snapping to whole 4x4
+   * blocks, and never upscales.
+   */
+  readonly textures?:
+    | "none"
+    | {
+        readonly maxSize?: number;
+        readonly quality?: number;
+        readonly overrides?: readonly {
+          readonly slot: string;
+          readonly codec: "etc1s" | "none" | "uastc";
+        }[];
+      };
+  /**
+   * Mesh simplification. Absent means none at all, which is the default.
+   *
+   * `ratio` is the fraction of triangles to keep. `error` is a quality guard rather than a
+   * target — the largest a vertex may move as a fraction of the mesh's extent — so a loose
+   * ratio with a tight error stops short, and the compile step reports the ratio it actually
+   * achieved next to the one that was asked for.
+   */
+  readonly simplify?: {
+    readonly ratio: number;
+    readonly error?: number;
+  };
 }
 
 interface IPackageManifest {
@@ -1011,7 +1040,7 @@ function bitDepth(value: unknown, label: string): number {
 function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["models"] {
   if (raw === "none") return "none";
   const models = assertRecord(raw, "assets.models");
-  assertKeys(models, "assets.models", ["lightmap", "passes", "quantize"]);
+  assertKeys(models, "assets.models", ["lightmap", "passes", "quantize", "simplify", "textures"]);
   let lightmap: IThreeNativeModelsConfig["lightmap"];
   if (models.lightmap !== undefined) {
     const rawLightmap = assertRecord(models.lightmap, "assets.models.lightmap");
@@ -1061,10 +1090,21 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
       } as IThreeNativeModelsConfig["quantize"];
     }
   }
+  // Embedded-texture compression and simplification are validated by the asset pipeline
+  // itself, which owns their shapes and reports TN_ASSETS_CONFIG_* for anything malformed.
+  // Both are passed through rather than re-parsed here, because a second hand-written parser
+  // for the same keys is exactly how the two `IThreeNativeModelsConfig` declarations in this
+  // repo drifted apart in the first place: the pipeline grew `textures` and `simplify`, and
+  // neither this validator nor its type knew, so a project literally could not declare a
+  // feature the compile step already supported.
+  const simplify = models.simplify as IThreeNativeModelsConfig["simplify"];
+  const textures = models.textures as IThreeNativeModelsConfig["textures"];
   return {
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(passes === undefined || Object.keys(passes).length === 0 ? {} : { passes }),
     ...(quantize === undefined || Object.keys(quantize).length === 0 ? {} : { quantize }),
+    ...(simplify === undefined ? {} : { simplify }),
+    ...(textures === undefined ? {} : { textures }),
   };
 }
 

@@ -62,6 +62,35 @@ export interface IThreeNativeModelsConfig {
     readonly positionBits?: number;
     readonly uvBits?: number;
   };
+  /**
+   * Embedded-texture compression for images carried inside a `.glb`.
+   *
+   * On by default in the compile step; `"none"` ships every embedded image exactly as
+   * authored. `maxSize` caps the longest edge, preserving aspect and snapping to whole 4x4
+   * blocks, and never upscales.
+   */
+  readonly textures?:
+    | "none"
+    | {
+        readonly maxSize?: number;
+        readonly quality?: number;
+        readonly overrides?: readonly {
+          readonly slot: string;
+          readonly codec: "etc1s" | "none" | "uastc";
+        }[];
+      };
+  /**
+   * Mesh simplification. Absent means none at all, which is the default.
+   *
+   * `ratio` is the fraction of triangles to keep. `error` is a quality guard rather than a
+   * target — the largest a vertex may move as a fraction of the mesh's extent — so a loose
+   * ratio with a tight error stops short, and the compile step reports the ratio it actually
+   * achieved next to the one that was asked for.
+   */
+  readonly simplify?: {
+    readonly ratio: number;
+    readonly error?: number;
+  };
 }
 
 export interface IThreeNativeConfig {
