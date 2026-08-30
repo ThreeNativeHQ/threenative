@@ -31,7 +31,12 @@ async function fixtureRoot(manifest: unknown): Promise<string> {
   return root;
 }
 
-describe("native shim contract", () => {
+// Every case here builds a fixture tree on disk and runs the checker over it, so these are I/O
+// bound rather than compute bound. vitest's 5s default is a quiet machine: on a two-core CI runner
+// with the rest of the suite running beside it, one case timed out at 5000ms while the same file
+// takes about 11s in total locally. The checker's behaviour is what these assert; how fast the
+// runner's filesystem is on a given day is not.
+describe("native shim contract", { timeout: 60_000 }, () => {
   it("names an unregistered browser global and the required remedy", async () => {
     const findings = await checkNativeShims(
       await fixtureRoot({ version: 1, shims: [], allowlist: [] }),
