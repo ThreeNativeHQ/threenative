@@ -22,6 +22,12 @@ export interface IStandalonePlaytestConfig {
   /** @see IAndroidDriverOptions.touchRotation */
   touchRotation?: number;
   artifactDirectory: string;
+  /**
+   * Capture the run's `before.png`/`after.png` artifact frames. Default true. A scenario that
+   * asserts on a frame still captures one — this only drops the convenience captures every run
+   * takes whether or not anything reads them.
+   */
+  captureArtifactScreenshots?: boolean;
   browserArgs?: readonly string[];
   device?: string;
   desktop?: { executable: string };
@@ -60,6 +66,7 @@ export const PLAYTEST_FLAGS = {
   "--activity": { default: ".MystralActivity", summary: "Android launch activity", takesValue: true },
   "--app": { default: "required for iOS", summary: "built iOS .app bundle", takesValue: true },
   "--artifacts": { default: "artifacts/playtest", summary: "artifact output directory", takesValue: true },
+  "--no-screenshots": { default: "false", summary: "skip the before/after artifact frames; scenarios that assert on a frame still capture one", takesValue: false },
   "--browser-arg": { allowDashValue: true, default: "none (repeatable)", repeatable: true, summary: "one additional Chromium argument", takesValue: true },
   "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu)", takesValue: true },
   "--bundle-id": { default: "dev.threenative.runtime", summary: "iOS application bundle identifier", takesValue: true },
@@ -212,6 +219,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
       packageName: flags.get("--package")?.[0] ?? "com.mystral.engine",
     },
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
+    captureArtifactScreenshots: !argv.includes("--no-screenshots"),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
     ...(device === undefined ? {} : { device }),
     ...(executable === undefined ? {} : { desktop: { executable: resolve(projectPath, executable) } }),

@@ -97,7 +97,7 @@ jobs:
           # first run with restore-keys resurrected a tree that had never configured SDL3 and the
           # build died on `SDL3/SDL.h: No such file or directory` and `ninja: error: unknown
           # target 'threenative-video-recorder-state-test'`. Miss the key and compile from clean.
-          key: native-build-${{ runner.os }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**') }}
+          key: native-build-v2-${{ runner.os }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**') }}
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       # The target names are discovered from CMakeLists.txt rather than listed here: a
@@ -227,7 +227,7 @@ jobs:
           scenario_args=()
           for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
-            --browser-recipe webgpu --headed \
+            --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
           server_pid=$!
@@ -278,7 +278,7 @@ jobs:
           scenario_args=()
           for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
           sh scripts/xvfb.sh pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
-            --browser-recipe webgpu --headed \
+            --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm verify:golden-path

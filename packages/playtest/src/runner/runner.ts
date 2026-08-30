@@ -480,7 +480,11 @@ async function runStandalonePlaytestInternal(
     const inputState: StepInputState = { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() };
     const hudAssertions = scenario.assert?.hud ?? [];
     const beforeHud = await sampleHud(page, hudAssertions);
-    const beforeScreenshot = scenario.artifacts?.screenshots === "before-after" || wantsVisual
+    // `--no-screenshots` drops the convenience frames a run takes whether or not anything reads
+    // them. A scenario that asserts on a frame keeps `wantsVisual` true and still captures one, so
+    // this can never turn a visual assertion into a silent pass.
+    const artifactFrames = activeConfig.captureArtifactScreenshots !== false;
+    const beforeScreenshot = (scenario.artifacts?.screenshots === "before-after" && artifactFrames) || wantsVisual
       ? wantsVisual
         ? await captureVisualPage(
             "before.png",
@@ -549,7 +553,7 @@ async function runStandalonePlaytestInternal(
       if (position !== undefined) pathPositions.push(position);
     }
     const afterHud = await sampleHud(page, hudAssertions);
-    const afterScreenshot = scenario.artifacts?.screenshots !== false || wantsVisual
+    const afterScreenshot = (scenario.artifacts?.screenshots !== false && artifactFrames) || wantsVisual
       ? wantsVisual
         ? await captureVisualPage(
             "after.png",
