@@ -4,12 +4,24 @@ prd_contract: v1
 
 # PRD-259 — Fewer pixels must still look like the same game
 
-**Status: PROPOSED, 2026-08-29. Nothing below has been executed.**
+**Status: DECLINED AT PHASE 0, 2026-08-30. No product code shipped.**
 Repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `e8754ab24e8e227ab472690a3d8d7b6d2cd53550`. Binding charter:
-[`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
-[feature-mining](../README.md).
+[`docs/architecture/CHARTER.md`](../../architecture/CHARTER.md). Parent batch:
+[feature-mining](../feature-mining/README.md).
+
+Phase 0 closed on the first mandatory gate. On current main `fbfb3693`, both the 0.44-scale
+bilinear control and catalog Three 0.185.1 `TAAUNode` passed the same browser WebGPU Bayview
+playtest, but the TAAU capture was visibly softer across shutters, awnings, cables, distant
+facades and the moving soldier. The earlier provenance-locked Android emulator comparison agreed:
+TAAU added about 2.7–3.3 ms of render p50 over control, exceeding the rung's 2.35 ms saved-pixel
+budget, while the challenger ghosted moving geometry and then stopped rendering on a repeated
+`createView` error. The measured record is
+[`docs/verification/prd-259-temporal-upscaling-phase-0-2026-08-30.md`](../../verification/prd-259-temporal-upscaling-phase-0-2026-08-30.md).
+
+The kill condition fired before physical-device work. No renderer option, compatibility adapter,
+generated render source or framework API survives this spike.
 
 **Outcome if Phase 0 survives:** a real adaptive-resolution consumer renders below display
 resolution and reconstructs a materially clearer output through ordinary upstream Three.js code,

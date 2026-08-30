@@ -1,6 +1,6 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Thirteen are archived in
+**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Fifteen are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -25,7 +25,11 @@ with WebGPU culling and consumer conformance, native unverified; and
 evidence, Pixel 8 unverified; and
 [252](../done/PRD-252-imported-meshes-cook-portable-compound-colliders.md), declined at its Phase 1
 gate after fixed-seed CoACD 1.0.11 produced three different canonical part sets for the same real
-CC0 fort asset.
+CC0 fort asset; [256](../done/PRD-256-static-light-is-a-standard-baked-asset.md), complete with
+packed web and Linux desktop-native proof; and
+[259](../done/PRD-259-fewer-pixels-must-still-look-like-the-same-game.md), declined at Phase 0 after
+catalog TAAU made the real Bayview route softer and cost more than the saved-pixel budget while the
+challenger ghosted and failed native rendering.
 
 254 is PARTIAL, so it stays. Everything else here is unbuilt: **no
 grass, ocean, soft body, surfel GI, procedural terrain or portable text exists in any
@@ -93,19 +97,15 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [256](../done/PRD-256-static-light-is-a-standard-baked-asset.md) | **COMPLETE.** The existing asset compiler generates deterministic `TEXCOORD_1`/UV2 plus a compressed KTX2 static lightmap, and stock Three.js `material.lightMap` consumes the same compiled artifact on web and Linux desktop native. No runtime baker, scene format or copied unlicensed source. | [`repalash/xatlas-three`](https://github.com/repalash/xatlas-three) + `Ibrahim-3d/three-lightmap-baker`, MIT; unlicensed Lucas source is technique-only | 9 → HIGH |
 | [257](../done/PRD-257-character-ground-contact-is-observable.md) **DONE (web + Linux desktop)** | `CharacterBody3D` now exposes stable `groundNormal`, logical `groundBody` and derived `slopeAngle` through the existing bulk web/native state seam. The native-smoke consumer and clean-install slope game use all three. | [`pmndrs/ecctrl`](https://github.com/pmndrs/ecctrl), MIT; observation semantics only | 7 → HIGH |
 | [258](./HIGH/PRD-258-many-actors-share-one-animation-texture.md) | Consumer-gated GPU-instanced skeletal animation: bake shared clip bone matrices once, then let ordinary Three/WebGPU draw independently timed actors from one payload. No motion matching, state graph, ragdoll, VAT, WebGL shader patch or look ownership. | upstream Three WebGPU instanced-skinning examples, MIT; `mbarbier/threejs-gpu-skinning`, ISC, as historical technique only | 8 → HIGH |
-| [259](./HIGH/PRD-259-fewer-pixels-must-still-look-like-the-same-game.md) | Consumer-gated temporal reconstruction after PRD-228 lowers the drawing buffer: compare current presentation, catalog Three `TAAUNode` and `pmndrs/upscaler` without adding a renderer option or claiming the upscaler fixes Bayview's CPU term. Emulator closes compatibility/visual gates; physical Pixel closes performance. | upstream Three 0.185.1 `TAAUNode`, MIT; `pmndrs/upscaler`, MIT + AMD FSR notice | 8 → HIGH |
+| [259](../done/PRD-259-fewer-pixels-must-still-look-like-the-same-game.md) **DECLINED** | Current-main browser proof and the provenance-locked Android emulator comparison both rejected temporal reconstruction: TAAU softened Bayview and exceeded the 2.35 ms saved-pixel budget; the challenger ghosted moving geometry and then failed on `createView`. No product API or render source shipped. | upstream Three 0.185.1 `TAAUNode`, MIT; `pmndrs/upscaler`, MIT + AMD FSR notice | 8 → HIGH |
 | [260](../done/PRD-260-standard-navigation-reaches-native-without-webassembly.md) **DECLINED** | The opening consumer gate found no native navmesh caller; PRD-052's 31-line portable steering remains the measured Android answer. No navcat dependency, second backend/API, or synthetic benchmark was added. | [`isaac-mason/navcat`](https://github.com/isaac-mason/navcat) `bc9d3c3f372a`, MIT | 8 → HIGH |
 
-**Order to attack:** 259 Phase 0 → 257 Phase 0 → 256 Phase 0 → 258 Phase 0 → 260 Phase 0 → 250 → 253 → 251 → 252 → 237 → 239 → 247 → 242 → 244 → 238 → 241 → 248 → 243 → 246 → 240 → 245 → 249.
-259, 257, 256, 258 and 260 begin with bounded refusal gates, so run those cheap decisions before feature work. If any
-survives, return it to the queue by measured value; none jumps ahead merely because it is new. 250
-remains the first implementation because the repository already calls the main-thread `Worker` polyfill
-an owed correctness gate, while the other items are product capabilities. 237, 239 and 247 change what
-a game author writes on day one and are small. 242 gates 243–246.
-245 is the largest and the most likely to be refused on device cost, by design. 249 is last
-because §11.1's more-than-twice clause is not yet satisfied for it, and the PRD says so.
-260 stopped before comparison because no named native navmesh consumer exists; its Phase 0 place was
-permission to decide, not evidence that a second backend was wanted.
+**Order to attack:** 258 Phase 0 → 253 → 251 → 243 → 246 → 240 → 245.
+258 begins with a bounded refusal gate, so run that cheap decision before feature work. If it
+survives, return it to the queue by measured value. 253 precedes 251 because procedural terrain
+consumes the one generic residency scheduler. 243 and 246 remain behind the already-shipped compute
+lifetime substrate; 245 is last because it is the largest and most likely to be refused on device
+cost. Completed and declined PRDs no longer occupy the active queue.
 
 ## Third survey — the broad engine-stack proposal
 
