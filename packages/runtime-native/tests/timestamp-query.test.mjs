@@ -27,6 +27,14 @@ const root = fileURLToPath(new URL("../", import.meta.url));
  * is Linux. Naming it is the point; a criterion that quietly covers two of three engines and
  * reports green is the failure mode this file exists to prevent.
  */
+/**
+ * Adapters that are not a GPU. `Null backend` is Dawn's fallback when no Vulkan driver loads at
+ * all; llvmpipe, lavapipe, softpipe and SwiftShader are CPU rasterisers. GitHub's runners have no
+ * GPU, so this list is what separates "this machine cannot run the contract" from "the bindings
+ * broke it".
+ */
+const SOFTWARE_ADAPTER = /Headless adapter: (.*(?:llvmpipe|lavapipe|softpipe|swiftshader|Null backend).*)/iu;
+
 const ENGINE_BUILDS = [
   { engine: "V8", directory: "build/tn-linux" },
   { engine: "QuickJS", directory: "build/tn-linux-quickjs" },
@@ -42,7 +50,36 @@ test.each(ENGINE_BUILDS)(
       `${executable} is not built. Run: cmake --build ${directory} --target threenative-timestamp-query-test`,
     );
   }
-  const output = execFileSync(executable, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  // The executable exits non-zero when the contract fails, and its output is the only evidence of
+  // why. Capturing it on both paths is what lets a GPU-less runner be reported as unexecuted
+  // instead of arriving as an opaque "Command failed".
+  let output;
+  try {
+    output = execFileSync(executable, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (error) {
+    output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    const adapter = SOFTWARE_ADAPTER.exec(output);
+    if (adapter) {
+      // A CPU rasteriser answers `yes` to the timestamp-query feature probe and then cannot
+      // deliver one: llvmpipe fails the readback map outright, and the null backend leaves every
+      // query slot unwritten. Neither is these bindings refusing the feature, and neither is a
+      // pass. It is recorded here as unexecuted, with the adapter named, exactly as JSC is —
+      // a criterion that quietly reports green on a machine with no GPU is the failure this file
+      // exists to prevent.
+      assert.doesNotMatch(
+        output,
+        /TN_TIMESTAMP_QUERY:\{"supported":true/u,
+        "a software adapter reported a successful GPU timing; that result cannot be trusted",
+      );
+      console.info(
+        `TN_TIMESTAMP_QUERY_UNEXECUTED: ${engine} on ${adapter[1].trim()} — no GPU timestamp support on this adapter, so the contract did not execute.`,
+      );
+      return;
+    }
+    assert.fail(
+      `${executable} failed on a hardware adapter, which is a real refusal:\n${output.slice(-2000)}`,
+    );
+  }
   assert.match(
     output,
     engine === "V8" ? /Creating V8 engine/u : /Creating QuickJS engine/u,

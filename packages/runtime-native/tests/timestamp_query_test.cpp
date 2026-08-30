@@ -99,7 +99,12 @@ constexpr const char* kRead = R"JS((() => {
   if (!globalThis.__tnTs.supported) return;
   const readback = globalThis.__tnTs.readback;
   readback.mapAsync(0x0001).then(() => {
-    const stamps = new BigUint64Array(readback.getMappedRange().slice(0));
+    // A rasteriser that advertises timestamp-query and then fails the map leaves getMappedRange
+    // undefined. Without this the contract reported "Cannot read properties of undefined (reading
+    // 'slice')", which names the JS line and not the thing that actually failed.
+    const mapped = readback.getMappedRange();
+    if (!mapped) throw new Error("readback buffer reported mapped but getMappedRange gave nothing");
+    const stamps = new BigUint64Array(mapped.slice(0));
     readback.unmap();
     if (stamps.length !== 4) throw new Error("expected four timestamps, got " + stamps.length);
     for (let index = 0; index < 4; index += 1) {
