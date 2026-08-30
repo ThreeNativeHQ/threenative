@@ -114,7 +114,7 @@ async function main(): Promise<void> {
       "--format=esm",
       "--platform=browser",
       `--outfile=${bundle}`,
-      "--define:import.meta.env={\"BASE_URL\":\"/\",\"DEV\":false,\"MODE\":\"production\",\"PROD\":true,\"SSR\":false}",
+      '--define:import.meta.env={"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}',
     ],
     { cwd: REPO_ROOT, maxBuffer: 32 * 1024 * 1024 },
   );
@@ -147,7 +147,9 @@ async function main(): Promise<void> {
   try {
     for (const exposure of [...EXPOSURES, EXPOSURES[0]]) {
       const page = await browser.newPage({ viewport: DIMENSIONS });
-      page.on("console", (message) => console.error(`[console:${message.type()}] ${message.text()}`));
+      page.on("console", (message) =>
+        console.error(`[console:${message.type()}] ${message.text()}`),
+      );
       page.on("pageerror", (error) => console.error(`[pageerror] ${error.message}`));
       try {
         await page.addInitScript((value: number) => {
@@ -166,7 +168,9 @@ async function main(): Promise<void> {
         const software = softwareAdapterName(adapter);
         if (software !== undefined) throw new Error(`TN_EXPOSURE_AB_SOFTWARE_ADAPTER:${software}`);
         await page.waitForFunction(
-          () => (globalThis as { __TN_EXPOSURE_AB_READY__?: boolean }).__TN_EXPOSURE_AB_READY__ === true,
+          () =>
+            (globalThis as { __TN_EXPOSURE_AB_READY__?: boolean }).__TN_EXPOSURE_AB_READY__ ===
+            true,
           undefined,
           { timeout: 60_000 },
         );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyExposureAb, EXPOSURE_AB_THRESHOLDS } from "../exposure-ab.js";
+import { EXPOSURE_AB_THRESHOLDS, classifyExposureAb } from "../exposure-ab.js";
 
 // PRD-278 §5 / AC7. The mined WorldEnvironment claimed `toneMappingExposure` never reaches
 // the frame once an output node is installed; the measured settlement
@@ -11,7 +11,12 @@ import { classifyExposureAb, EXPOSURE_AB_THRESHOLDS } from "../exposure-ab.js";
 describe("classifyExposureAb", () => {
   it("calls the pair changed when every pixel differs and the control is clean", () => {
     // The measured settlement: 100% pixel mismatch, delta-E 5.81, control at exactly zero.
-    expect(classifyExposureAb({ pixelMismatchRatio: 1, perceptualDeltaE: 5.81 }, { pixelMismatchRatio: 0, perceptualDeltaE: 0 })).toBe("changed");
+    expect(
+      classifyExposureAb(
+        { pixelMismatchRatio: 1, perceptualDeltaE: 5.81 },
+        { pixelMismatchRatio: 0, perceptualDeltaE: 0 },
+      ),
+    ).toBe("changed");
   });
 
   it("refuses to judge when the same-exposure control pair differs", () => {
@@ -24,7 +29,12 @@ describe("classifyExposureAb", () => {
   });
 
   it("calls the pair unchanged when the frames match on a clean control", () => {
-    expect(classifyExposureAb({ pixelMismatchRatio: 0, perceptualDeltaE: 0 }, { pixelMismatchRatio: 0, perceptualDeltaE: 0 })).toBe("unchanged");
+    expect(
+      classifyExposureAb(
+        { pixelMismatchRatio: 0, perceptualDeltaE: 0 },
+        { pixelMismatchRatio: 0, perceptualDeltaE: 0 },
+      ),
+    ).toBe("unchanged");
   });
 
   it("treats sub-floor differences on either metric as no change", () => {
@@ -49,7 +59,9 @@ describe("classifyExposureAb", () => {
   });
 
   it("fails closed when a metric is absent", () => {
-    expect(classifyExposureAb({}, { pixelMismatchRatio: 0, perceptualDeltaE: 0 })).toBe("unchanged");
+    expect(classifyExposureAb({}, { pixelMismatchRatio: 0, perceptualDeltaE: 0 })).toBe(
+      "unchanged",
+    );
     expect(classifyExposureAb({ perceptualDeltaE: 9 }, {})).toBe("changed");
   });
 });

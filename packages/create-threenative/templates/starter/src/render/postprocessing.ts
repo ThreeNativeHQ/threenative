@@ -9,7 +9,7 @@
 // starter's small outdoor scene does not need at mobile frame budgets, so they ship off
 // there; on desktop they are on. Every stage's cost and the one-line enable for the rest
 // (godrays, contact AO, vignette) is `agent-docs/visual-baseline.md`.
-import { type Camera, type DirectionalLight, type Scene } from "three";
+import type { Camera, DirectionalLight, Scene } from "three";
 import { WorldEnvironment } from "./worldEnvironment.js";
 import type { OutputRenderer } from "./worldEnvironment.js";
 

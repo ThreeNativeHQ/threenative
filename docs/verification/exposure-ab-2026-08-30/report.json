@@ -1,10 +1,6 @@
 {
   "adapter": {},
-  "exposures": [
-    0.85,
-    1.45,
-    0.85
-  ],
+  "exposures": [0.85, 1.45, 0.85],
   "lowToHigh": {
     "pixelMismatchRatio": 1,
     "perceptualDeltaE": 5.810195690308847,
