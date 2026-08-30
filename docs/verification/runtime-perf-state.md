@@ -42,7 +42,11 @@ Window 1 discarded; median and range over the remaining steady windows of two 40
 | minus ssr | 10.6 | 9.2–16.7 | 77.0 | 34 |
 | minus godrays | 14.7 | 13.8–16.7 | 57.1 | 46 |
 | minus bloom | 10.1 | 9.1–23.1 | 72.4 | 24 |
+| minus denoise only | 12.8 | 12.0–14.3 | 60.3 | 48 |
 | all stages off | 2.2 | 2.1–12.0 | 333.3 | 6 |
+
+`minus denoise only` splits the largest stage: the two full-resolution denoise passes over the AO
+and GI terms are ~1.9 ms and the SSGI gather itself is ~7.3 ms, at `medium` (2 slices x 8 steps).
 
 Scene, shadow map and overlay together cost **2.2 ms** of GPU. The post chain costs **12.5 ms** —
 SSGI+denoise ~9.2, bloom ~4.6, SSR ~4.1, godrays **~0.0** (the individual costs oversum because
@@ -81,6 +85,15 @@ Red/green: `packages/core/__tests__/resolution-scaler-outlier.spec.ts`. Deleting
 `if (this.#stalled(window))` guard from `observe()` fails two of its five cases (`expected 0.72 to
 be undefined`, `expected 0.44 to be 0.61`); the other three, which prove a genuinely slow game and
 a vsync-capped panel still step down, pass either way and are the mutation's control.
+
+### Tried and not worth it: freezing the shadow map
+
+The sun and the building are both static, so `sun.shadow.autoUpdate = false` should remove a
+4096x4096 depth pass per frame. Three 30 s reps each of the baseline and the frozen variant yielded
+only one and two steady windows respectively under concurrent GPU load — `gpuMs` 14.62 against
+15.29–18.26, which is noise, not a win. It is not worth re-measuring: the entire scene, shadow and
+overlay pass is 2.2 ms of a 14.7 ms GPU frame, so no shadow-map change can win more than 15% of the
+frame even in principle, and the post chain holds the other 85%.
 
 ### Open, not fixed
 
