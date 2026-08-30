@@ -40,9 +40,16 @@ test("the conformance registry binds the composed render-chain scenario to deskt
     join(workspaceRoot, "packages/create-threenative/templates/starter/src/render/postprocessing.ts"),
     "utf8",
   );
-  assert.match(postprocessing, /stages: \["sharpen", "bloom"\]/u);
-  assert.match(postprocessing, /name: "sharpen"/u);
-  assert.match(postprocessing, /name: "bloom"/u);
+  assert.match(postprocessing, /new WorldEnvironment/u);
+  assert.match(postprocessing, /world\.apply\(renderer, scene, camera/u);
+
+  const worldEnvironment = readFileSync(
+    join(workspaceRoot, "packages/create-threenative/templates/starter/src/render/worldEnvironment.ts"),
+    "utf8",
+  );
+  assert.match(worldEnvironment, /renderer\.createRenderChain/u);
+  assert.match(worldEnvironment, /name: "sharpen"/u);
+  assert.match(worldEnvironment, /name: "bloom"/u);
 });
 
 test("negative control: removing the composed-chain registry proof is rejected", () => {

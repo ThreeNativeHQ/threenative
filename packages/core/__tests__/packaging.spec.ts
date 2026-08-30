@@ -96,4 +96,5 @@ test("should ship the Three.js batched velocity patch with core", async () => {
   const patch = await readFile(new URL("../patches/three@0.185.1.patch", import.meta.url), "utf8");
   expect(patch).toContain("this.object.userData?.useVelocity === true");
   expect(patch).toContain("_previousMatricesTexture ?? matricesTexture");
+  expect(patch).toContain("this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null");
 });

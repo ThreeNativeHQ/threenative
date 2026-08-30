@@ -22,13 +22,13 @@ import {
   type PerspectiveCamera,
   type Scene,
 } from "three";
-import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { godrays } from "three/addons/tsl/display/GodraysNode.js";
-import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
+import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import {
   color,
   convertToTexture,
@@ -182,14 +182,7 @@ type ChainContext = {
   readonly tier: "high" | "medium" | "low" | "off";
 };
 type ChainStage = {
-  readonly name:
-    | "ambientOcclusion"
-    | "ssgi"
-    | "godRays"
-    | "ssr"
-    | "sharpen"
-    | "bloom"
-    | "vignette";
+  readonly name: "ambientOcclusion" | "ssgi" | "godRays" | "ssr" | "sharpen" | "bloom" | "vignette";
   readonly available?: (context: ChainContext) => boolean | string;
   readonly build: (input: unknown, context: ChainContext) => unknown;
 };
@@ -200,7 +193,9 @@ export type OutputRenderer = {
     input?: unknown;
     request?: { stages?: readonly string[]; tier?: ChainContext["tier"] };
     stages?: readonly ChainStage[];
-  }) => { applied: { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] } };
+  }) => {
+    applied: { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] };
+  };
 };
 
 /**
@@ -412,8 +407,13 @@ export class WorldEnvironment {
           // whole TextureNode; a swizzle produces a plain vec3 and the pass dies at shader
           // build. `@types/three` declares the parameter as `Node<"vec3">`, which is what
           // makes the swizzle look correct — the types are wrong here and the runtime is
-          // right.
-          const reflections = ssr(input as ChainNode, depth, normal as unknown as Parameters<typeof ssr>[2], {
+          // right. Both `colorNode` and `normalNode` are `.sample()`d inside the pass, so
+          // the composed input must be materialised ONCE and that texture reused on both
+          // sides of the add: passing the unmaterialised node to the pass while adding the
+          // reflections onto a second copy builds two parallel graphs, and the frame comes
+          // out as the bare background colour.
+          const base = convertToTexture(input);
+          const reflections = ssr(base, depth, normal as unknown as Parameters<typeof ssr>[2], {
             camera: view,
             metalnessNode: (metal as unknown as { r: ChainNode }).r,
             roughnessNode: (rough as unknown as { g: ChainNode }).g,
@@ -421,7 +421,7 @@ export class WorldEnvironment {
           });
           reflections.maxDistance.value = options.ssrMaxDistance;
           reflections.resolutionScale = options.ssrResolutionScale;
-          return (input as ChainNode).add(reflections as ChainNode);
+          return (base as ChainNode).add(reflections as ChainNode);
         },
       },
       {
@@ -438,9 +438,7 @@ export class WorldEnvironment {
       {
         name: "bloom",
         build: (input) =>
-          (input as ChainNode).add(
-            bloom(convertToTexture(input), options.bloomStrength, 0.5, 0.2),
-          ),
+          (input as ChainNode).add(bloom(convertToTexture(input), options.bloomStrength, 0.5, 0.2)),
       },
       {
         name: "vignette",

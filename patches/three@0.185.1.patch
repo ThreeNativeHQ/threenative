@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..e1948901ab99dc3d39ce732fa4929c9fc8f4a66f 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c47c1f9d78cacebf2f976ad390636dd757e6bd7a 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18599,6 +18599,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
@@ -64,6 +64,32 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..e1948901ab99dc3d39ce732fa4929c9f
 +		return ( mrt && mrt.has( 'velocity' ) ) || getDataFromObject( this.object ).useVelocity === true || this.object.userData?.useVelocity === true;
  
  	}
+ 
+@@ -83814,6 +83828,14 @@ class WebGPUBackend extends Backend {
+ 		 */
+ 		this.compatibilityMode = null;
+ 
++		/**
++		 * A reference to the WebGPU instance that creates adapters.
++		 *
++		 * @type {?GPU}
++		 * @default null
++		 */
++		this.gpu = null;
++
+ 		/**
+ 		 * A reference to the device.
+ 		 *
+@@ -83926,7 +83948,9 @@ class WebGPUBackend extends Backend {
+ 				xrCompatible: renderer.xr.enabled
+ 			};
+ 
+-			const adapter = ( typeof navigator !== 'undefined' ) ? await navigator.gpu.requestAdapter( adapterOptions ) : null;
++			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
++
++			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
+ 
+ 			if ( adapter === null ) {
  
 diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
 index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b243694ef 100644
@@ -137,3 +163,33 @@ index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820c
  	/**
  	 * Constructs a new batched mesh.
  	 *
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..37b5e0be09967e8acbd38e570b71eb201fc9bad7 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -102,6 +102,14 @@ class WebGPUBackend extends Backend {
+ 		 */
+ 		this.compatibilityMode = null;
+ 
++		/**
++		 * A reference to the WebGPU instance that creates adapters.
++		 *
++		 * @type {?GPU}
++		 * @default null
++		 */
++		this.gpu = null;
++
+ 		/**
+ 		 * A reference to the device.
+ 		 *
+@@ -214,7 +222,9 @@ class WebGPUBackend extends Backend {
+ 				xrCompatible: renderer.xr.enabled
+ 			};
+ 
+-			const adapter = ( typeof navigator !== 'undefined' ) ? await navigator.gpu.requestAdapter( adapterOptions ) : null;
++			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
++
++			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
+ 
+ 			if ( adapter === null ) {
+ 

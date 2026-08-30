@@ -86,13 +86,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // its shipped cloth caller and menu-to-play proof.
   // Recomputed 2026-08-30 after removing duplicate starter menu-entry blocks introduced by the
   // realism-effects merge.
-  "action-rpg": "cd852375e96b8c0a7a68e3ef37e7195f35780602d9ea9ded572570219005ba12",
-  defense: "10eb336c044574078ad62c55bd228bb76c2890e743a6cdce9e6c62be1af7448e",
-  minimal: "79d2b6bfb47d6c7476eb20cff0d2c322233b06825755a470473b3ac544814a00",
-  platformer: "d281801416b59722e431a95886c34b8007a316a2ae2f8643996900207fe13b74",
-  racing: "c39c9afcc7e5c2f02f0c54e18c8ec78ab3a0116a256fb3a1459579a8561c86e7",
-  shooter: "fbb50cc35d2d0fe2981d6c21dbdff7d341f3a73a04eb69539e428d38cc1bb6af",
-  starter: "188b24892dffec8a21086ce3f3cfb91f68fa86460c1c8aa1e3c9d533d8d2679e",
+  // Recomputed after retaining the WebGPU instance in Three's distributed patch; the starter
+  // also materialises its SSR input once so the reflection graph presents instead of going blank.
+  "action-rpg": "4af014998f3f31a2045c01caa3fa1a35b204e4b5cb121e0d684e9fb8900a244c",
+  defense: "6deff6328de63b794098063622db1d4c15408f1aaa25907bd5d3bd2108f6ba8d",
+  minimal: "911d1d2fee23de2f166c8060c8f538bfc3e7308436956977862c4a527b161b54",
+  platformer: "4753f84b696536f65b7096077ab09f2cb477b2d502dfe9dfffaacd3f6f650045",
+  racing: "383ae4d0d760ee59b6960919a4e241cc9b8272058bdbe740d4788961e13a83b9",
+  shooter: "3b0ba7e4349c323c2ba6fd0c406898cc5f8047db8300588a742daad2d8d137d2",
+  starter: "85349ccb7955e45362e91b03e755cf92b337ec430f332ce7a36eb6779bcd7721",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -367,14 +369,16 @@ describe("create-threenative", () => {
   it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
     try {
+      const actual: Record<string, string> = {};
       for (const template of ALL_TEMPLATES) {
         const { target } = await createProject(
           { install: false, target: template, template },
           root,
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
-        expect(await scaffoldTreeHash(target)).toBe(PRD_201_PARENT_SCAFFOLD_HASHES[template]);
+        actual[template] = await scaffoldTreeHash(target);
       }
+      expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
