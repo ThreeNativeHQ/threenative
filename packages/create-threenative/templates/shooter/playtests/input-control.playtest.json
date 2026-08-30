@@ -4,7 +4,7 @@
   "schemaVersion": 1,
   "parity": { "targets": ["web", "desktop"] },
   "viewport": { "width": 1280, "height": 720 },
-  "warmupFrames": 10,
+  "warmupFrames": 60,
   "subject": "player",
   "steps": [
     { "kind": "wait", "label": "no-input-control", "waitTicks": 5, "release": true },

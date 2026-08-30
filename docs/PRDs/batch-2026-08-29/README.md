@@ -32,12 +32,15 @@ The three rows still short of green are exactly the three owner actions: **A1** 
 chain (Lanes C and D, gated on the push), **A5** needs the phone (Lane E), **A6** needs a stranger
 (Lane F).
 
-**One suite red stands between this tree and a release, and it is not on the bar.** `pnpm test` is
-2584/2585 on `07dfaf63`; `packages/playtest/__tests__/generated-shooter-input.spec.ts` fails on
-`TN_CAPTURE_BLANK` (bright-pixel ratio `0.04470`, floor `0.05`) with `signal.aim-engaged`,
-`signal.aim-released` and the two `aimedShots`/`aiming` resource assertions red. It reproduces
-isolated and with all of this batch's changes stashed, so it is a standing capture-lane red on
-`main` rather than a lane's damage. It is named here because Lane D publishes off this tree.
+**The one suite red that stood between this tree and a release is closed.**
+`packages/playtest/__tests__/generated-shooter-input.spec.ts` failed on `TN_CAPTURE_BLANK`
+(bright-pixel ratio `0.04470`, floor `0.05`) and had been carried as a standing capture-lane fact.
+It was not one: the scenario's `warmupFrames` was `10`, so it walked its input steps against a game
+still on its loading screen and photographed that. The failing capture holds 1112 colours and the
+template's progress bar; the same run's final frame holds 58573 and a rendered arena. Raising the
+scenario to `60` — what every other screenshot-taking template scenario already uses — makes the
+capture `0.8116`, sixteen times the floor, and the spec 3/3 green. Recorded in
+[shooter-capture-blank-2026-08-29](../../verification/shooter-capture-blank-2026-08-29.md).
 
 ## What was true when this batch was filed
 
