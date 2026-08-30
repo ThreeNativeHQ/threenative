@@ -687,6 +687,22 @@ import { attachToBone } from "@threenative/core";
 attachToBone(character, "RightHand", rifle);
 ```
 
+### `SoftBody3D`
+
+`class` — Simulate an ordinary game-authored triangle mesh as cloth on the existing fixed-step GPU lane. The mesh supplies every visible choice. This class welds exporter duplicates, owns spring and position buffers, and replaces only the cloned material's position node. It adds no material, colour, texture, wind, stiffness, damping, or pinning default.
+
+```ts
+export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IComputeDriven { … }
+```
+
+- **Use when:** make a flag, cape, or curtain move as cloth · simulate a deforming surface while keeping one edge pinned
+- **Constraints:** the mesh must use one Three.js node material and contain complete triangles · pinned, stiffness, damping, gravity, and wind are required game-owned inputs
+- **Overrides:** timeStep follows the engine 1/60-second convention unless the game overrides it · readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it
+
+```ts
+const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });
+```
+
 ### `softCircleDataTexture`
 
 `function` — Build a soft round sprite as pixel data instead of painting a canvas.
@@ -1187,6 +1203,21 @@ export class RigidBody3D { … }
 
 ```ts
 const crate = new RigidBody3D({ context, object, mode: "dynamic" });
+```
+
+### `softBodyCollision`
+
+`function` — Feed existing rigid-body boxes into `SoftBody3D` without inventing a second collider API.
+
+```ts
+export function softBodyCollision(...bodies: readonly RigidBody3D[]): ISoftBodyCollision { … }
+```
+
+- **Use when:** stop a cloth flag, cape, or curtain at an existing physics wall · collide SoftBody3D with fixed box bodies
+- **Constraints:** every body must use CollisionShape3D.box and retain its Three.js object transform · rotated boxes become conservative cloth-local axis-aligned bounds
+
+```ts
+const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });
 ```
 
 ## `@threenative/physics/navigation`

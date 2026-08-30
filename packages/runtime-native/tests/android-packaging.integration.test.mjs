@@ -147,7 +147,9 @@ public final class PackageManager {
     'android/content/Intent.java': `package android.content;
 
 public final class Intent {
-  public String getStringExtra(String key) { return null; }
+  private final java.util.Map<String, String> extras = new java.util.HashMap<>();
+  public String getStringExtra(String key) { return extras.get(key); }
+  public Intent putExtra(String key, String value) { extras.put(key, value); return this; }
 }
 `,
     'android/view/WindowManager.java': `package android.view;
@@ -286,7 +288,14 @@ public class SDLActivity {
   public String getPackageName() { return "com.example.game"; }
   public Intent getIntent() { return intent; }
   public Window getWindow() { return window; }
-  public File getExternalFilesDir(String type) { return null; }
+  private int externalFilesDirCalls;
+  public File getExternalFilesDir(String type) {
+    externalFilesDirCalls += 1;
+    File directory = new File(System.getProperty("java.io.tmpdir"), "tn-external-files");
+    directory.mkdirs();
+    return directory;
+  }
+  public int externalFilesDirCallCount() { return externalFilesDirCalls; }
   public File getFilesDir() { return new File(System.getProperty("java.io.tmpdir")); }
   public int requestedOrientation = Integer.MIN_VALUE;
   public void setRequestedOrientation(int orientation) { requestedOrientation = orientation; }
@@ -346,6 +355,9 @@ public final class MetadataProbe {
     ProbeActivity activity = new ProbeActivity();
     activity.configureMetadata(metadata);
     activity.create();
+    java.io.File mailbox = new java.io.File(
+      System.getProperty("java.io.tmpdir"), "tn-mailbox-" + System.nanoTime());
+    activity.getIntent().putExtra("TN_PLAYTEST_MAILBOX_ROOT", mailbox.getAbsolutePath());
     String[] arguments = activity.arguments();
 
     require((activity.getPackageManager().lastFlags & PackageManager.GET_META_DATA) != 0,
@@ -356,6 +368,11 @@ public final class MetadataProbe {
       "window title metadata was not retrieved");
     require("false".equals(arguments[4]), "fullscreen metadata was not retrieved");
     require("120".equals(arguments[6]), "max-fps metadata was not forwarded to native");
+    require(mailbox.isDirectory(), "an explicit playtest mailbox must exist before native startup");
+    require(mailbox.getAbsolutePath().equals(arguments[2]),
+      "the created playtest mailbox must be forwarded to native");
+    require(activity.externalFilesDirCallCount() == 1,
+      "Android must initialize app external storage even when the runner supplies a mailbox path");
     require(activity.requestedFrameRate() == 120.0f,
       "max-fps metadata was not requested from the Android surface");
     int requestsBeforeResume = activity.frameRateRequestCount();

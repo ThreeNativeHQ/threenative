@@ -81,13 +81,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and its migrated browser fixtures; the shooter hash also moved with its fixture corrections.
   // Recomputed 2026-08-30 for the distributed Three.js batched-velocity patch, its generated
   // project pnpm declaration, and the completed-frame render-chain measurement field.
-  "action-rpg": "96f78bd8efe6236cbcfccd69d112ca8cfbe011126dd326f44e5eb12285a26af0",
-  defense: "d5f708aedc0a477b75c068bbd0330ebccde3c5b6e5f6b9065ed68f8dfdc5f2ae",
-  minimal: "5b42357061f0aeef19733b3cc998f1f2d711aa2ea9dccbffa247d70942094bf1",
-  platformer: "82cffc8d36afcd40e43892f818f6da562da1cd2333798d75094d12a3cdfafdea",
-  racing: "69e248b55379a960f6eb52691a2f682bfac9f3f63ec802a47f658493f8d860cd",
-  shooter: "08e2b489d1618a9525cd701888040ed9610dcd481413d9e875bf14c2886a4bb1",
-  starter: "fb9338e4db8b1f013cecbd5c2c1e674071ccc17a431bb14904f9c7cf33c04bf0",
+  // Recomputed for PRD-243: every scaffold embeds the capability manifest and reference, which
+  // now document SoftBody3D and the optional physics collision adapter. The starter also gains
+  // its shipped cloth caller and menu-to-play proof.
+  "action-rpg": "cd852375e96b8c0a7a68e3ef37e7195f35780602d9ea9ded572570219005ba12",
+  defense: "10eb336c044574078ad62c55bd228bb76c2890e743a6cdce9e6c62be1af7448e",
+  minimal: "79d2b6bfb47d6c7476eb20cff0d2c322233b06825755a470473b3ac544814a00",
+  platformer: "d281801416b59722e431a95886c34b8007a316a2ae2f8643996900207fe13b74",
+  racing: "c39c9afcc7e5c2f02f0c54e18c8ec78ab3a0116a256fb3a1459579a8561c86e7",
+  shooter: "fbb50cc35d2d0fe2981d6c21dbdff7d341f3a73a04eb69539e428d38cc1bb6af",
+  starter: "0e17e1a594e62d16bc37e172dc43e1afa598e68173298ce0f076b130c4227377",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -194,6 +197,7 @@ const STARTER_PATHS = [
   "src/render/easing.ts",
   "src/render/sky.ts",
   "src/render/scenery.ts",
+  "src/render/pennant.ts",
   "src/render/loading.ts",
   "src/entities/Crate.ts",
   "src/entities/Goal.ts",
@@ -219,6 +223,7 @@ const STARTER_PATHS = [
   "playtests/gameover.playtest.json",
   "playtests/seed.playtest.json",
   "playtests/menu-flow.playtest.json",
+  "playtests/cloth.playtest.json",
   "assets/native-proof.glb",
   "assets/native-proof.png",
   "public/icon.png",

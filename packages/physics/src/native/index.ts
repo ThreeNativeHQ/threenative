@@ -15,6 +15,7 @@ export type {
   PhysicsJointBody,
 } from "../Joint3D.js";
 export { PhysicsDirectSpaceState3D } from "../PhysicsDirectSpaceState3D.js";
+export { softBodyCollision } from "../softbody-collision.js";
 export type {
   IIntersectPointOptions,
   IIntersectRayOptions,

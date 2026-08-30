@@ -515,6 +515,41 @@ test("texture and pipeline wrapper factories propagate table-install failure", (
   assert.throws(() => assertEveryTableInstallIsChecked(ignoredFailure), /propagate failure/u);
 });
 
+function assertSurfaceViewLifetime(state, factories, presentation, frameStream, commands) {
+  assert.match(state, /std::unordered_map<uint64_t, WGPUTextureView> currentSurfaceTextureViews/u);
+  assert.match(factories, /trackCurrentSurfaceTextureView\(state, viewId, view\)/u);
+  assert.match(factories, /untrackCurrentSurfaceTextureView\(state, viewId\)/u);
+  assert.ok(
+    (presentation.match(/releaseCurrentSurfaceTextureViews\(state\)/gu) ?? []).length >= 3,
+    "present, resize, and detach must release every view of the current surface texture",
+  );
+  assert.match(frameStream, /isCurrentSurfaceTextureView\(state, c\.view\)/u);
+  assert.match(frameStream, /isCurrentSurfaceTextureView\(state, c\.resolveTarget\)/u);
+  assert.match(commands, /isCurrentSurfaceTextureView\(state, view\)/u);
+  assert.match(commands, /isCurrentSurfaceTextureView\([\s\S]*colorAttachment\.resolveTarget/u);
+  assert.doesNotMatch(frameStream, /c\.view == state->presentation\.currentTextureView/u);
+}
+
+test("all views created from one surface texture share the host-frame lifetime", () => {
+  const inputs = [
+    read("src/webgpu/bindings_state.h"),
+    read("src/webgpu/wrapper_factories.cpp"),
+    read("src/webgpu/bindings_presentation.cpp"),
+    read("src/webgpu/bindings_frame_stream.cpp"),
+    read("src/webgpu/bindings_commands.cpp"),
+  ];
+  assertSurfaceViewLifetime(...inputs);
+
+  const latestViewOnly = inputs[3].replace(
+    "isCurrentSurfaceTextureView(state, c.view)",
+    "c.view == state->presentation.currentTextureView",
+  );
+  assert.throws(
+    () => assertSurfaceViewLifetime(inputs[0], inputs[1], inputs[2], latestViewOnly, inputs[4]),
+    /currentTextureView/u,
+  );
+});
+
 test("backend and canvas contexts do not use process-global ownership", () => {
   const context = read("src/webgpu/context.cpp");
   assert.doesNotMatch(read("src/js/v8_engine.cpp"), /g_protectedHandles/u);

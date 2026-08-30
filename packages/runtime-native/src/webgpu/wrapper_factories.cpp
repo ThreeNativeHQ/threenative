@@ -5,6 +5,7 @@
 #include <webgpu/webgpu.h>
 
 #include "bindings_state.h"
+#include "bindings_presentation.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/registration_table.h"
 
@@ -35,15 +36,16 @@ js::JSValueHandle createTextureViewBinding(
     viewDesc.arrayLayerCount = 1;
     viewDesc.aspect = WGPUTextureAspect_All;
     WGPUTextureView view = wgpuTextureCreateView(it->second.texture, &viewDesc);
-    state->presentation.currentTextureView = view;
-    state->presentation.currentViewSourceTexture = it->second.texture;
-
     auto jsView = createNativeWrapper(state, "GPUTextureView", view);
     const uint64_t viewId = state->registries.nextTextureViewId++;
     state->registries.textureViewRegistry[viewId] = view;
+    const bool isSurfaceView = textureId == state->presentation.currentSurfaceTextureId &&
+                               it->second.texture == state->presentation.currentTexture;
+    if (isSurfaceView) trackCurrentSurfaceTextureView(state, viewId, view);
     state->engine->setProperty(jsView, "_textureViewId", state->engine->newNumber(viewId));
     state->engine->setProperty(jsView, "_type", state->engine->newString("textureView"));
-    state->engine->registerRelease(jsView, [state, view, viewId]() {
+    state->engine->registerRelease(jsView, [state, view, viewId, isSurfaceView]() {
+        if (isSurfaceView) untrackCurrentSurfaceTextureView(state, viewId);
         if (state->registries.textureViewRegistry.erase(viewId) != 0)
             wgpuTextureViewRelease(view);
     });

@@ -1,0 +1,53 @@
+{
+  "name": "starter-cloth-flag",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 30,
+  "subject": "goal",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "menu-is-up", "waitTicks": 20, "release": true },
+    { "kind": "click", "at": { "x": 640, "y": 365 }, "label": "focus-name-field" },
+    { "kind": "input", "label": "type-a", "press": "a", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "type-x", "press": "x", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "type-o", "press": "o", "holdTicks": 1, "release": true },
+    { "kind": "click", "at": { "x": 640, "y": 428 }, "label": "start-game" },
+    { "kind": "wait", "label": "play-scene-loads", "waitTicks": 90, "release": true },
+    { "kind": "input", "label": "gust", "press": "KeyG", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "flag-settles", "waitTicks": 30, "release": true },
+    {
+      "kind": "click",
+      "at": { "x": 0, "y": 0 },
+      "label": "gpu-readback-settle",
+      "release": true,
+      "waitFrames": 60
+    },
+    { "kind": "wait", "label": "request-post-gust-readback", "waitTicks": 1, "release": true },
+    {
+      "kind": "click",
+      "at": { "x": 0, "y": 0 },
+      "label": "post-gust-readback-settle",
+      "release": true,
+      "waitFrames": 60
+    },
+    { "kind": "wait", "label": "observe-readback", "waitTicks": 1, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "state", "path": "flagGusts", "equals": 1, "changed": true },
+      { "id": "state", "path": "flagDisplacement", "gte": 0.05, "changed": true },
+      { "id": "state", "path": "flagReadbacks", "gte": 1, "changed": true },
+      { "id": "state", "path": "flagSteps", "gte": 30, "changed": true }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The finish flag is authored in frame from the first tick; deformation and compute progress are asserted through state.",
+        "entity": "goal",
+        "minProjectedPixels": 20
+      }
+    ],
+    "visual": [{ "frameDiff": { "minChangedPixelRatio": 0.0001 } }]
+  }
+}

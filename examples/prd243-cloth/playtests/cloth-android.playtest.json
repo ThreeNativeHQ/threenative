@@ -1,0 +1,45 @@
+{
+  "name": "cloth-gust-android",
+  "schemaVersion": 1,
+  "subject": "a player-triggered gust must deform the GPU cloth enough to win on Android",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 30,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "hanging", "waitTicks": 30, "release": true },
+    { "kind": "input", "label": "gust", "press": "Space", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "gust-half", "waitTicks": 15, "release": true },
+    { "kind": "wait", "label": "unfurled", "waitTicks": 15, "release": true },
+    {
+      "at": { "x": 0, "y": 0 },
+      "kind": "click",
+      "label": "gpu-readback-settle",
+      "release": true,
+      "waitFrames": 60
+    },
+    { "kind": "wait", "label": "request-post-gust-readback", "waitTicks": 1, "release": true },
+    {
+      "at": { "x": 0, "y": 0 },
+      "kind": "click",
+      "label": "post-gust-readback-settle",
+      "release": true,
+      "waitFrames": 60
+    },
+    { "kind": "wait", "label": "observe-readback", "waitTicks": 1, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "gusts", "equals": 1, "changed": true },
+      { "id": "state", "path": "collisionHeld", "equals": 1, "changed": true },
+      { "id": "state", "path": "gustDisplacement", "gte": 0.34, "changed": true },
+      { "id": "state", "path": "outcome", "equals": "won", "changed": true },
+      { "id": "state", "path": "softBodySteps", "changed": true }
+    ]
+  }
+}

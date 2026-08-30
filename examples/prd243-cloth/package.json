@@ -1,0 +1,22 @@
+{
+  "name": "prd243-cloth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "@threenative/playtest": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

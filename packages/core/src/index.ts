@@ -147,6 +147,8 @@ export type {
  */
 export { ComputeDrivenRegistry } from "./compute-driven.js";
 export type { IComputeDriven } from "./compute-driven.js";
+export { SoftBody3D } from "./softbody.js";
+export type { ISoftBody3DOptions, ISoftBodyCollision } from "./softbody.js";
 /**
  * Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
  * @situation trace thousands of scene rays inside a TSL kernel

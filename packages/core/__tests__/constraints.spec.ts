@@ -51,6 +51,7 @@ describe("core constraints", () => {
           file !== "renderProjection.ts" &&
           file !== "renderer.ts" &&
           file !== "react-host.ts" &&
+          file !== "softbody.ts" &&
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
           file !== "instanced-batch.ts" &&
@@ -99,6 +100,15 @@ describe("core constraints", () => {
     expect(particles).not.toMatch(
       /new\s+\w*Material|new\s+Color|light|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    // `softbody.ts` clones the game-owned node material so its position node can read the cloth
+    // buffer without mutating a surface another mesh may share. It may never originate or tune a
+    // visible property; the solver accepts every response value from the game.
+    const softbody = readFileSync(path.join(sourceDirectory, "softbody.ts"), "utf8");
+    expect(softbody).not.toMatch(
+      /new\s+\w*Material|new\s+Color|light|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(softbody).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
 
     // `renderProjection.ts` is exempted on exactly the same terms, and needs the exemption for a
     // sharper reason than particles did: it maintains a private mirror of the game's scene, so

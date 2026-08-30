@@ -239,6 +239,9 @@ struct PresentationState {
     bool contextConfigured = false;
     WGPUTexture currentTexture = nullptr;
     WGPUTextureView currentTextureView = nullptr;
+    // A renderer may create multiple views of one canvas texture in a frame (for example an
+    // MSAA resolve target plus a later overlay). They all retain the acquired surface output.
+    std::unordered_map<uint64_t, WGPUTextureView> currentSurfaceTextureViews;
     uint64_t currentSurfaceTextureId = 0;
     WGPUTexture currentViewSourceTexture = nullptr;
     bool surfaceRenderPassEnded = false;

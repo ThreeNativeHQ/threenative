@@ -2,6 +2,10 @@ export type GameState = {
   characterName: string;
   coyoteJumps: number;
   entityCount: number;
+  flagDisplacement: number;
+  flagGusts: number;
+  flagReadbacks: number;
+  flagSteps: number;
   jumps: number;
   levelX: number;
   lives: number;

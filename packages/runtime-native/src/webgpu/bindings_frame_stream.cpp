@@ -3,6 +3,7 @@
 #include "bindings_frame_stream.h"
 
 #include "bindings_commands.h"
+#include "bindings_presentation.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu_compat.h"
 
@@ -153,9 +154,10 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                 std::vector<WGPURenderPassColorAttachment> colors(count);
                 for (auto& c : colors) {
                     c.view = viewFor(r.u32());
-                    touchesSurface = touchesSurface || c.view == state->presentation.currentTextureView;
+                    touchesSurface = touchesSurface || isCurrentSurfaceTextureView(state, c.view);
                     const uint32_t resolve = r.u32();
                     c.resolveTarget = resolve ? viewFor(resolve) : nullptr;
+                    touchesSurface = touchesSurface || isCurrentSurfaceTextureView(state, c.resolveTarget);
                     c.loadOp = r.u32() ? WGPULoadOp_Load : WGPULoadOp_Clear;
                     c.storeOp = r.u32() ? WGPUStoreOp_Discard : WGPUStoreOp_Store;
                     c.clearValue = {r.f64(), r.f64(), r.f64(), r.f64()};

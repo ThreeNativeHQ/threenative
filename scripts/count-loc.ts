@@ -312,6 +312,57 @@ export interface WorldHeightfieldLoc {
   readonly wiring: number;
 }
 
+export interface SoftBodyFeatureLoc {
+  readonly consumers: readonly ["flag", "cape", "curtain"];
+  readonly framework: number;
+  readonly frameworkCallers: number;
+  readonly handwritten: number;
+  readonly handwrittenCallers: number;
+  readonly portableImplementation: number;
+  readonly solverImplementation: number;
+  readonly topologyImplementation: number;
+}
+
+/**
+ * Prices three identical cloth consumers against owning the production solver in game source.
+ * The hand-written arm reuses one generic solver across flag, cape, and curtain; it does not pay
+ * three implementation copies. The production implementation is the least speculative source for
+ * "the same cloth": it includes welding, spring topology, GPU passes, lifecycle, and readback.
+ */
+export function countSoftBodyFeatureLoc(rootDirectory = process.cwd()): SoftBodyFeatureLoc {
+  const root = resolve(rootDirectory);
+  const countSource = (relativePath: string, source: string): number => {
+    const path = join(root, relativePath);
+    return lineCount(normaliseSource(source, path, root));
+  };
+  const count = (relativePath: string): number =>
+    countSource(relativePath, readFileSync(join(root, relativePath), "utf8"));
+  const frameworkCallers = count("scripts/fixtures/softbody-loc/framework.ts");
+  const handwrittenCallers = count("scripts/fixtures/softbody-loc/handwritten.ts");
+  const solverImplementation = count("packages/core/src/softbody.ts");
+  const topologyPath = "packages/core/src/softbody-topology.ts";
+  const topologySource = readFileSync(join(root, topologyPath), "utf8");
+  const referenceOracle = topologySource.indexOf("\nfunction referenceStep(");
+  if (referenceOracle < 0)
+    throw new Error("SoftBody3D topology source is missing the reference-oracle boundary.");
+  // A game needs welding and adjacency, but not the scalar test oracle below this boundary.
+  const topologyImplementation = countSource(
+    topologyPath,
+    topologySource.slice(0, referenceOracle),
+  );
+  const portableImplementation = solverImplementation + topologyImplementation;
+  return {
+    consumers: ["flag", "cape", "curtain"],
+    framework: frameworkCallers,
+    frameworkCallers,
+    handwritten: portableImplementation + handwrittenCallers,
+    handwrittenCallers,
+    portableImplementation,
+    solverImplementation,
+    topologyImplementation,
+  };
+}
+
 /**
  * Prices the optional heightfield mechanism against each proven game owning an equivalent copy.
  * Tests and shared call-site code are excluded from both arms. Package/build lines containing the
@@ -470,6 +521,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.stdout.write(`platformer template LOC: ${countPlatformerTemplateLoc(root)}\n`);
   const hud = countGeneratedHudLoc(root);
   process.stdout.write(`generated HUD LOC: ${hud.generated} (geometry HUD ${hud.geometry})\n`);
+  const cloth = countSoftBodyFeatureLoc(root);
+  const clothSavings = ((1 - cloth.framework / cloth.handwritten) * 100).toFixed(1);
+  process.stdout.write(
+    `cloth feature LOC: framework ${cloth.framework}, hand-written ${cloth.handwritten} (${cloth.portableImplementation} implementation + ${cloth.handwrittenCallers} callers), ${clothSavings}% smaller across ${cloth.consumers.join(", ")}\n`,
+  );
+  if (cloth.handwritten <= cloth.framework * 2)
+    throw new Error("SoftBody3D fails the flag/cape/curtain LOC kill switch.");
   const repetitionsArgument = process.argv.find((argument) =>
     argument.startsWith("--world-repetitions="),
   );

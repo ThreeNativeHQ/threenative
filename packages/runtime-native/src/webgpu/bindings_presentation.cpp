@@ -164,10 +164,7 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
     // reconfigure it always had.
     if (state->presentation.currentTexture != nullptr && !state->presentation.requiresSrgbPresentationBridge) {
         state->presentation.framePresentPending = false;
-        if (state->presentation.currentTextureView != nullptr) {
-            wgpuTextureViewRelease(state->presentation.currentTextureView);
-            state->presentation.currentTextureView = nullptr;
-        }
+        releaseCurrentSurfaceTextureViews(state);
         if (state->presentation.currentSurfaceTextureId != 0) {
             state->registries.textureRegistry.erase(state->presentation.currentSurfaceTextureId);
             state->presentation.currentSurfaceTextureId = 0;
@@ -194,6 +191,46 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
         std::cout << "[WebGPU] Surface resized from canvas: " << width << "x" << height << std::endl;
     }
     return true;
+}
+
+void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view) {
+    if (!state || !view) return;
+    state->presentation.currentSurfaceTextureViews[viewId] = view;
+    state->presentation.currentTextureView = view;
+    state->presentation.currentViewSourceTexture = state->presentation.currentTexture;
+}
+
+void untrackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId) {
+    if (!state) return;
+    const auto found = state->presentation.currentSurfaceTextureViews.find(viewId);
+    if (found == state->presentation.currentSurfaceTextureViews.end()) return;
+    const WGPUTextureView removed = found->second;
+    state->presentation.currentSurfaceTextureViews.erase(found);
+    if (state->presentation.currentTextureView == removed) {
+        state->presentation.currentTextureView = state->presentation.currentSurfaceTextureViews.empty()
+                                                     ? nullptr
+                                                     : state->presentation.currentSurfaceTextureViews.begin()->second;
+    }
+}
+
+bool isCurrentSurfaceTextureView(const BindingsState* state, WGPUTextureView view) {
+    if (!state || !view) return false;
+    for (const auto& [id, tracked] : state->presentation.currentSurfaceTextureViews) {
+        (void)id;
+        if (tracked == view) return true;
+    }
+    return false;
+}
+
+void releaseCurrentSurfaceTextureViews(BindingsState* state) {
+    if (!state) return;
+    for (const auto& [viewId, view] : state->presentation.currentSurfaceTextureViews) {
+        if (state->registries.textureViewRegistry.erase(viewId) != 0 && view)
+            wgpuTextureViewRelease(view);
+    }
+    state->presentation.currentSurfaceTextureViews.clear();
+    state->presentation.currentTextureView = nullptr;
+    state->presentation.currentViewSourceTexture = nullptr;
 }
 
 static WGPUTexture createLinearPresentationTexture(BindingsState* state) {
@@ -473,10 +510,7 @@ void detachSurfaceForRebuild(BindingsState* state) {
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
     if (!state) return;
     state->presentation.framePresentPending = false;
-    if (state->presentation.currentTextureView != nullptr) {
-        wgpuTextureViewRelease(state->presentation.currentTextureView);
-        state->presentation.currentTextureView = nullptr;
-    }
+    releaseCurrentSurfaceTextureViews(state);
     if (state->presentation.currentSurfaceTextureId != 0) {
         state->registries.textureRegistry.erase(state->presentation.currentSurfaceTextureId);
         state->presentation.currentSurfaceTextureId = 0;
@@ -594,17 +628,7 @@ void presentPendingSurface(BindingsState* state) {
     state->presentation.surfaceRenderPassEnded = false;
     state->screenshot.screenshotCapturedThisFrame = false;
 
-    if (state->presentation.currentTextureView) {
-        for (auto it = state->registries.textureViewRegistry.begin(); it != state->registries.textureViewRegistry.end();
-             ++it) {
-            if (it->second == state->presentation.currentTextureView) {
-                state->registries.textureViewRegistry.erase(it);
-                break;
-            }
-        }
-        wgpuTextureViewRelease(state->presentation.currentTextureView);
-        state->presentation.currentTextureView = nullptr;
-    }
+    releaseCurrentSurfaceTextureViews(state);
 
     // Drop every alias so screenshot capture cannot dereference the just-presented surface
     // texture or the consumed linear bridge texture.

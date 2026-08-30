@@ -11,6 +11,7 @@ import {
   countGeneratedHudLoc,
   countLines,
   countPlatformerTemplateLoc,
+  countSoftBodyFeatureLoc,
   countWorldHeightfieldLoc,
   normaliseSource,
   renderLocTable,
@@ -112,5 +113,16 @@ describe("count-loc", () => {
     expect(comparison.framework).toBe(comparison.implementation + comparison.wiring);
     expect(comparison.framework).toBeLessThan(comparison.portableRepeated);
     expect(() => countWorldHeightfieldLoc(0)).toThrow("positive integer");
+  });
+
+  it("prices cloth across flag, cape, and curtain consumers", () => {
+    const comparison = countSoftBodyFeatureLoc();
+
+    expect(comparison.consumers).toEqual(["flag", "cape", "curtain"]);
+    expect(comparison.framework).toBe(comparison.frameworkCallers);
+    expect(comparison.handwritten).toBe(
+      comparison.portableImplementation + comparison.handwrittenCallers,
+    );
+    expect(comparison.handwritten).toBeGreaterThan(comparison.framework * 2);
   });
 });

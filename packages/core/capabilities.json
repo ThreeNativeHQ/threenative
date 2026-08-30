@@ -795,6 +795,28 @@
     },
     {
       "constraints": [
+        "the mesh must use one Three.js node material and contain complete triangles",
+        "pinned, stiffness, damping, gravity, and wind are required game-owned inputs"
+      ],
+      "example": "const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "timeStep follows the engine 1/60-second convention unless the game overrides it",
+        "readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IComputeDriven { … }",
+      "situations": [
+        "make a flag, cape, or curtain move as cloth",
+        "simulate a deforming surface while keeping one edge pinned"
+      ],
+      "summary": "Simulate an ordinary game-authored triangle mesh as cloth on the existing fixed-step GPU lane. The mesh supplies every visible choice. This class welds exporter duplicates, owns spring and position buffers, and replaces only the cloned material's position node. It adds no material, colour, texture, wind, stiffness, damping, or pinning default.",
+      "supersedes": [],
+      "symbol": "SoftBody3D"
+    },
+    {
+      "constraints": [
         "canvas-painted images sample black under WebGPURenderer; write sprites as pixel data there"
       ],
       "example": "const puff = softCircleDataTexture(64, 0.25);",
@@ -1335,6 +1357,25 @@
       "summary": "Simulate a dynamic or static rigid body.",
       "supersedes": [],
       "symbol": "RigidBody3D"
+    },
+    {
+      "constraints": [
+        "every body must use CollisionShape3D.box and retain its Three.js object transform",
+        "rotated boxes become conservative cloth-local axis-aligned bounds"
+      ],
+      "example": "const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });",
+      "importPath": "@threenative/physics",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export function softBodyCollision(...bodies: readonly RigidBody3D[]): ISoftBodyCollision { … }",
+      "situations": [
+        "stop a cloth flag, cape, or curtain at an existing physics wall",
+        "collide SoftBody3D with fixed box bodies"
+      ],
+      "summary": "Feed existing rigid-body boxes into `SoftBody3D` without inventing a second collider API.",
+      "supersedes": [],
+      "symbol": "softBodyCollision"
     },
     {
       "constraints": [

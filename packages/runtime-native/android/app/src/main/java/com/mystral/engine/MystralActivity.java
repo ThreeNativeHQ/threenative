@@ -239,9 +239,18 @@ public class MystralActivity extends SDLActivity {
         // that carries no metadata runs one mode while the host reports the other.
         String backgroundMode = metadata == null ? "pause" : metadata.getString("TN_BACKGROUND_MODE", "pause");
         int maxFps = metadata == null ? 60 : metadata.getInt("TN_MAX_FPS", 60);
+        // Ask Android to provision the app-owned external directory before honoring a runner-
+        // supplied path beneath it. Creating /sdcard/Android/data/<package> directly is rejected
+        // by scoped storage on a clean install, even though a later app-owned child is writable.
+        java.io.File externalFiles = getExternalFilesDir(null);
         if (mailboxRoot == null) {
-            java.io.File externalFiles = getExternalFilesDir(null);
             mailboxRoot = externalFiles == null ? getFilesDir().getAbsolutePath() : externalFiles.getAbsolutePath();
+        }
+        java.io.File mailboxDirectory = new java.io.File(mailboxRoot);
+        if (!mailboxDirectory.isDirectory() && !mailboxDirectory.mkdirs()) {
+            throw new IllegalStateException(
+                "TN_PLAYTEST_MAILBOX_UNAVAILABLE: cannot create " + mailboxRoot
+            );
         }
         return new String[] {
             "asset://scripts/main.js",

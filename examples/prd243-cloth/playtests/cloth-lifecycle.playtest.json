@@ -1,0 +1,34 @@
+{
+  "name": "cloth-lifecycle",
+  "schemaVersion": 1,
+  "subject": "cloth buffers release and rebuild across a scene reload",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 30,
+  "artifacts": { "screenshots": false },
+  "steps": [
+    { "kind": "input", "label": "reload", "press": "KeyR", "holdTicks": 2, "release": true },
+    {
+      "at": { "x": 0, "y": 0 },
+      "kind": "click",
+      "label": "reload-settle",
+      "release": true,
+      "waitFrames": 30
+    },
+    { "kind": "wait", "label": "rebuilt", "waitTicks": 4, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "reloads", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "attachments", "gte": 2, "changed": true },
+      { "id": "GameState", "path": "releases", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "softBodySteps", "changed": true }
+    ]
+  }
+}

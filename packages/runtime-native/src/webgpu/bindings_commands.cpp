@@ -2,6 +2,7 @@
 
 #include "bindings_commands.h"
 #include "bindings_handler_helpers.h"
+#include "bindings_presentation.h"
 #include "bindings_resources.h"
 #include "bindings_state.h"
 #include "mystral/webgpu/checked_handle.h"
@@ -1038,6 +1039,7 @@ static js::JSValueHandle handleGpuCommandEncoderBeginRenderPass(BindingsState* s
                                     int numAttachments = state->engine->isUndefined(attachmentsLengthProp) ? 0 : (int)state->engine->toNumber(attachmentsLengthProp);
                                     std::vector<WGPURenderPassColorAttachment> colorAttachmentList;
                                     colorAttachmentList.reserve(numAttachments);
+                                    bool touchesSurface = false;
                                     double firstR = 0, firstG = 0, firstB = 0, firstA = 1;
                                     for (int i = 0; i < numAttachments; i++) {
                                         auto attachment = state->engine->getPropertyIndex(colorAttachments, i);
@@ -1054,13 +1056,8 @@ static js::JSValueHandle handleGpuCommandEncoderBeginRenderPass(BindingsState* s
                                                     << (view == state->presentation.currentTextureView ? "YES" : "NO")
                                                     << std::endl;
                                             }
-                                            // Track if this render pass uses the surface texture
-                                            if (view == state->presentation.currentTextureView &&
-                                                state->presentation.currentTextureView != nullptr) {
-                                                state->presentation.surfaceRenderEncoder = encoderToUse;
-                                                state->presentation.surfaceRenderPassEnded = false;
-                                            }
                                         }
+                                        touchesSurface = touchesSurface || isCurrentSurfaceTextureView(state, view);
                                         // Debug: Log GBuffer pass attachments
                                         if (numAttachments >= 5 && i == 0) {
                                             if (state->verboseLogging) std::cout << "[WebGPU] GBuffer pass - 5 attachments, view[0]=" << (void*)view << std::endl;
@@ -1106,11 +1103,24 @@ static js::JSValueHandle handleGpuCommandEncoderBeginRenderPass(BindingsState* s
                                         }
                                         WGPURenderPassColorAttachment colorAttachment = {};
                                         colorAttachment.view = view;
+                                        auto resolveTargetHandle = state->engine->getProperty(attachment, "resolveTarget");
+                                        if (!state->engine->isUndefined(resolveTargetHandle) &&
+                                            !state->engine->isNull(resolveTargetHandle)) {
+                                            colorAttachment.resolveTarget = static_cast<WGPUTextureView>(
+                                                state->engine->getPrivateData(resolveTargetHandle));
+                                            touchesSurface = touchesSurface ||
+                                                             isCurrentSurfaceTextureView(
+                                                                 state, colorAttachment.resolveTarget);
+                                        }
                                         colorAttachment.loadOp = loadOp;
                                         colorAttachment.storeOp = storeOp;
                                         colorAttachment.clearValue = {r, g, b, a};
                                         colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
                                         colorAttachmentList.push_back(colorAttachment);
+                                    }
+                                    if (touchesSurface) {
+                                        state->presentation.surfaceRenderEncoder = encoderToUse;
+                                        state->presentation.surfaceRenderPassEnded = false;
                                     }
                                     WGPURenderPassDescriptor renderPassDesc = {};
                                     renderPassDesc.colorAttachmentCount = colorAttachmentList.size();

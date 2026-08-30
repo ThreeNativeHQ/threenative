@@ -32,6 +32,7 @@ export class RigidBody3D {
   readonly collider: IPhysicsColliderHandle;
   /** The supplied transform; position-only fixed bodies have no runtime object. */
   readonly object: Object3D | undefined;
+  readonly shape: CollisionShape3D;
   readonly type: RigidBodyType;
   readonly #simulation: IPhysicsSimulation;
   readonly #physics: IPhysicsContext | undefined;
@@ -50,6 +51,7 @@ export class RigidBody3D {
     this.#simulation = requirePhysicsSimulation(options.physics, options.world);
     this.#physics = options.physics;
     this.object = options.object;
+    this.shape = options.shape;
     this.#object = options.object;
     this.type = type;
     const shape = options.shape.descriptor;

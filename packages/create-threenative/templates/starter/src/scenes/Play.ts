@@ -1,14 +1,6 @@
 import { AudioBus, type ICtx, Scene, type SceneFrame, createRandom } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import {
-  BufferAttribute,
-  DoubleSide,
-  Group,
-  Mesh,
-  MeshBasicMaterial,
-  NearestFilter,
-  type PerspectiveCamera,
-} from "three";
+import { BufferAttribute, Group, Mesh, NearestFilter, type PerspectiveCamera } from "three";
 import { Crate } from "../entities/Crate.js";
 import { Goal } from "../entities/Goal.js";
 import { Player } from "../entities/Player.js";
@@ -16,7 +8,7 @@ import { createSpringArm } from "../render/camera.js";
 import { pickupRiseEase } from "../render/easing.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { createMaterials } from "../render/materials.js";
+import { createMaterials, createPennantMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createScenery } from "../render/scenery.js";
 import { ball, block, roundedBox, spike, tube } from "../render/shapes.js";
@@ -29,12 +21,16 @@ const KILL_PLANE = -4;
 const STARTING_LIVES = 3;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
-  #assetProof: Group | undefined;
+  #assetProof: Mesh | undefined;
 
   static override readonly initialState: GameState = {
     characterName: "",
     coyoteJumps: 0,
     entityCount: 0,
+    flagDisplacement: 0,
+    flagGusts: 0,
+    flagReadbacks: 0,
+    flagSteps: 0,
     jumps: 0,
     levelX: -99,
     lives: STARTING_LIVES,
@@ -57,9 +53,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // A 16-pixel check filtered smoothly is a grey smear at flag size; nearest keeps the
     // squares square, which is the whole reason the finish flag is legible from the ledge.
     texture.magFilter = NearestFilter;
+    let pennant: Mesh | undefined;
     model.scene.traverse((object) => {
       if (object instanceof Mesh) {
-        object.material = new MeshBasicMaterial({ map: texture, side: DoubleSide });
+        if (pennant !== undefined) throw new Error("Starter proof glTF must contain one mesh.");
+        object.material = createPennantMaterial(texture);
         // The packaged proof carries positions and indices only. Without UVs the sampler
         // reads one corner texel for every fragment and the flag renders as flat white —
         // a loaded texture that proves nothing you can see. Plane-project the triangle.
@@ -85,10 +83,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           uv[index * 2 + 1] = (position.getY(index) - minY) / spanY;
         }
         object.geometry.setAttribute("uv", new BufferAttribute(uv, 2));
+        pennant = object;
       }
     });
+    if (pennant === undefined) throw new Error("Starter proof glTF did not contain a mesh.");
     model.scene.name = "native-proof-assets";
-    this.#assetProof = model.scene;
+    this.#assetProof = pennant;
     console.info("TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb");
   }
 
@@ -206,6 +206,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // A finished run stops simulating the character and keeps drawing the world behind
       // the banner. R, or the restart button, rebuilds the scene from `initialState`.
       if (previous.status !== "playing") return;
+      if (frameCtx.input.justPressed("flagGust")) {
+        goal.pennant.wind.set(0, 0.4, 4.5);
+        frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
+      }
       player.update(frameCtx, dt);
       let respawned = false;
       let lives = previous.lives;
@@ -225,6 +229,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameCtx.state.flush();
       }
       frameState.coyoteJumps = player.coyoteJumps;
+      frameState.flagDisplacement = Math.max(previous.flagDisplacement, goal.flagDisplacement());
+      frameState.flagReadbacks = goal.readbackLands();
+      frameState.flagSteps = goal.pennant.steps;
       frameState.jumps = player.jumps;
       frameState.lives = lives;
       frameState.odometer = player.odometer;
@@ -234,6 +241,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const current = frameCtx.state.getState();
       const changed =
         frameState.coyoteJumps !== current.coyoteJumps ||
+        frameState.flagDisplacement !== current.flagDisplacement ||
+        frameState.flagReadbacks !== current.flagReadbacks ||
+        frameState.flagSteps !== current.flagSteps ||
         frameState.jumps !== current.jumps ||
         frameState.lives !== current.lives ||
         frameState.odometer !== current.odometer ||

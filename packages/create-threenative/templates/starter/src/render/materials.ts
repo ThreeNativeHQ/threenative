@@ -1,6 +1,7 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
-import { Color, MeshBasicMaterial, MeshStandardMaterial } from "three";
+import { Color, DoubleSide, MeshBasicMaterial, MeshStandardMaterial, type Texture } from "three";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { palette } from "./palette.js";
 
 export function createMaterials() {
@@ -19,4 +20,9 @@ export function createMaterials() {
     // fog still fades it with distance.
     ridge: new MeshBasicMaterial({ color: new Color(palette.skyHigh).multiplyScalar(0.9) }),
   };
+}
+
+/** The finish flag owns its sampled, double-sided look; SoftBody3D only drives its positions. */
+export function createPennantMaterial(texture: Texture): MeshBasicNodeMaterial {
+  return new MeshBasicNodeMaterial({ map: texture, side: DoubleSide });
 }

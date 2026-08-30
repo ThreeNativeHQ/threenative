@@ -19,6 +19,7 @@ const game = defineGame<GameState, IPhysicsContext>({
       up: ["ArrowUp", "KeyW"],
     },
     jump: { buttons: [0], keys: ["Space"] },
+    flagGust: { keys: ["KeyG"] },
     restart: { keys: ["KeyR"] },
     // Wheel, pinch and the right stick share one portable camera intent. Negative DOM deltaY
     // (toward-user) is positive scroll intent on browser and native; the scene owns the framing.

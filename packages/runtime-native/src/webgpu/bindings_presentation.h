@@ -12,6 +12,10 @@ bool isSrgbSurfaceFormat(WGPUTextureFormat format);
 WGPUTextureFormat linearSurfaceFormat(WGPUTextureFormat format);
 bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas);
 WGPUTexture getCurrentSwapchainTexture(BindingsState* state);
+void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view);
+void untrackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId);
+bool isCurrentSurfaceTextureView(const BindingsState* state, WGPUTextureView view);
+void releaseCurrentSurfaceTextureViews(BindingsState* state);
 void presentPendingSurface(BindingsState* state);
 void reportPresentTick(BindingsState* state, uint64_t frames);
 js::JSValueHandle handleWebGpuPresentationCap(

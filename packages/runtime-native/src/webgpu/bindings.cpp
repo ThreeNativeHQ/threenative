@@ -27,6 +27,7 @@
 #include "mystral/stall_budget.h"
 #include "runtime_scripts.h"
 #include "mystral/webgpu/checked_handle.h"
+#include "bindings_presentation.h"
 #include <ctime>
 #include <iostream>
 #include <vector>
@@ -399,6 +400,7 @@ void destroyBindingsState(BindingsState*& state) {
             if (bindGroup) wgpuBindGroupRelease(bindGroup);
         }
         state->registries.bindGroupRegistry.clear();
+        releaseCurrentSurfaceTextureViews(state);
         for (const auto& [id, textureView] : state->registries.textureViewRegistry) {
             (void)id;
             if (textureView) wgpuTextureViewRelease(textureView);
@@ -457,8 +459,6 @@ void destroyBindingsState(BindingsState*& state) {
             wgpuBufferDestroy(state->screenshot.screenshotBuffer);
             wgpuBufferRelease(state->screenshot.screenshotBuffer);
         }
-        if (state->presentation.currentTextureView)
-            wgpuTextureViewRelease(state->presentation.currentTextureView);
         if (state->presentation.currentTexture && state->surface) {
             wgpuTextureRelease(state->presentation.currentTexture);
         }

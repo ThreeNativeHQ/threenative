@@ -48,6 +48,15 @@ export type {
  * @example const space = new PhysicsDirectSpaceState3D(context);
  */
 export { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
+/**
+ * Feed existing rigid-body boxes into `SoftBody3D` without inventing a second collider API.
+ * @situation stop a cloth flag, cape, or curtain at an existing physics wall
+ * @situation collide SoftBody3D with fixed box bodies
+ * @constraint every body must use CollisionShape3D.box and retain its Three.js object transform
+ * @constraint rotated boxes become conservative cloth-local axis-aligned bounds
+ * @example const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });
+ */
+export { softBodyCollision } from "./softbody-collision.js";
 export type {
   IIntersectPointOptions,
   IIntersectRayOptions,
