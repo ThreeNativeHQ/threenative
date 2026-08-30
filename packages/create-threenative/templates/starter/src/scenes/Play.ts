@@ -1,4 +1,11 @@
-import { AudioBus, type ICtx, Scene, type SceneFrame, createRandom } from "@threenative/core";
+import {
+  AudioBus,
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  createRandom,
+  isMobile,
+} from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BufferAttribute, Group, Mesh, NearestFilter, type PerspectiveCamera } from "three";
 import { Crate } from "../entities/Crate.js";
@@ -98,8 +105,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
     setupSky(ctx.scene);
-    setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    // isMobile() arrives as an argument because src/render/ imports no framework package:
+    // the platform decision is made here, in portable game code, exactly like createRandom.
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      godraysLight: sun,
+      mobile: isMobile(),
+    });
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
     // Offset, lead and damping all live in render/camera.ts — framing is a look decision.

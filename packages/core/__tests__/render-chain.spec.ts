@@ -80,6 +80,27 @@ describe("RenderChain", () => {
     expect(current.installed).toHaveLength(1);
   });
 
+  it("places godRays between ssgi and ssr, and vignette after bloom, whatever was requested", () => {
+    // GodRays add scattered light after the GI/contact terms and before reflections;
+    // vignette is a camera-lens darkening applied to the lit frame before the other
+    // camera stages. The caller cannot get the order wrong because the order is not
+    // theirs to choose.
+    const order: string[] = [];
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [
+        stage("vignette", order),
+        stage("bloom", order),
+        stage("godRays", order),
+        stage("ssr", order),
+        stage("ssgi", order),
+      ],
+      request: { stages: ["vignette", "bloom", "godRays", "ssr", "ssgi"], tier: "high" },
+    });
+
+    expect(order).toEqual(["ssgi", "godRays", "ssr", "bloom", "vignette"]);
+    expect(chain.applied.stages).toEqual(["ssgi", "godRays", "ssr", "bloom", "vignette"]);
+  });
+
   it("drops a temporal stage when no velocity source is provisioned", () => {
     const chain = new RenderChain(renderer("webgpu"), {
       stages: [stage("traa", [])],

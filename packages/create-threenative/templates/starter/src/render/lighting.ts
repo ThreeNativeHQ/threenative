@@ -16,7 +16,10 @@ import { palette } from "./palette.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
+// Returns the key light: `WorldEnvironment`'s godrays stage raymarches against a shadow
+// map, so the scene hands the sun to `setupPost` and a shadowless light is refused by name
+// instead of rendering a black pass.
+export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
@@ -52,4 +55,6 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): void {
   scene.add(rim);
 
   scene.add(new AmbientLight(palette.skyLow, 0.28));
+
+  return key;
 }

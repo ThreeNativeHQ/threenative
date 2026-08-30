@@ -1,0 +1,21 @@
+{
+  "adapter": {},
+  "exposures": [
+    0.85,
+    1.45,
+    0.85
+  ],
+  "lowToHigh": {
+    "pixelMismatchRatio": 1,
+    "perceptualDeltaE": 5.810195690308847,
+    "width": 640,
+    "height": 360
+  },
+  "control": {
+    "pixelMismatchRatio": 0,
+    "perceptualDeltaE": 0,
+    "width": 640,
+    "height": 360
+  },
+  "verdict": "toneMappingExposure reaches the frame"
+}

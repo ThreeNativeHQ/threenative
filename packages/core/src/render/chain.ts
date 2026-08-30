@@ -8,6 +8,7 @@ export const RENDER_CHAIN_MARKER = "TN_RENDER_CHAIN";
 export const RENDER_CHAIN_STAGE_ORDER = [
   "ambientOcclusion",
   "ssgi",
+  "godRays",
   "ssr",
   "denoise",
   "temporalReproject",
@@ -16,6 +17,7 @@ export const RENDER_CHAIN_STAGE_ORDER = [
   "motionBlur",
   "sharpen",
   "bloom",
+  "vignette",
   "lensDistortion",
   "sparkle",
   "gradualBackground",
