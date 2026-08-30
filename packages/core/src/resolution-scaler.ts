@@ -42,6 +42,29 @@ export const RESOLUTION_SCALER = {
    * 1.05x the budget, comfortably inside this.
    */
   upTailFraction: 1.15,
+  /**
+   * A window whose presented p99 is at least this many times its p50 is measuring a **stall**, not
+   * a frame rate, and the controller defers on it rather than acting.
+   *
+   * Amended 2026-08-30 from a browser arm, and this is the second time the fps signal has needed
+   * correcting for the same underlying reason: `fps` is `1000 / mean`, and a mean is not robust.
+   * `sandbox/lumen-hall` on an NVIDIA Turing at 1600x900 spent its second window building WebGPU
+   * pipelines for a five-stage TSL chain. Four of that window's 300 frames took about two seconds
+   * each — under `hitchMs`, so they stayed in the window and were averaged. The window reported
+   * **22.6 fps** with a **p50 of 9.8 ms**, which is 102 fps. The controller read a 2.6x deficit,
+   * took its maximum four-rung jump to 0.52, and the game held 145 fps at 832x468 for the next
+   * forty seconds — a third of its pixels surrendered to fix a frame rate that was never missed.
+   * The window's own record carried the contradiction the whole time and nothing read it.
+   *
+   * A down-step is also the wrong medicine specifically here: the resize reallocates every render
+   * target, which rebuilds pipelines, which is what stalled in the first place.
+   *
+   * Ten is chosen to separate the two regimes rather than to tune a result, and the numbers are
+   * not close. A vsync-capped panel dropping frames — the case `fps`-from-mean exists to catch —
+   * has a p99 of one extra panel period, so a ratio near 2; a game that is simply slow has a ratio
+   * near 1. The lumen-hall window's ratio was 200. Nothing real sits between.
+   */
+  stallP99Multiple: 10,
   /** React to a deficit immediately; climb only on sustained evidence. Asymmetric by design. */
   downWindows: 1,
   upWindows: 4,
@@ -93,7 +116,12 @@ export interface IResolutionScalerOptions {
 export interface IScalerWindow {
   /** Frames per second this window achieved, from the mean presented interval. */
   readonly fps: number;
-  readonly presented: { readonly p95: number };
+  /**
+   * `p50` says what an ordinary frame of this window cost and `p99` says what its worst ones cost.
+   * The controller needs both to tell a slow game from a stalled one: `fps` alone cannot, because
+   * a mean cannot.
+   */
+  readonly presented: { readonly p50: number; readonly p95: number; readonly p99: number };
 }
 
 export class ResolutionScaler {
@@ -165,6 +193,13 @@ export class ResolutionScaler {
       this.#cooldown -= 1;
       return undefined;
     }
+    // A stalled window is not a measurement of the frame rate, in either direction: acting on the
+    // mean would cut resolution the game did not need, and counting it clean would climb on a
+    // window that was mostly spent stopped. Defer, and read the next one.
+    if (this.#stalled(window)) {
+      this.#cleanWindows = 0;
+      return undefined;
+    }
     if (window.fps < this.targetFps) {
       this.#cleanWindows = 0;
       if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
@@ -183,6 +218,16 @@ export class ResolutionScaler {
     this.#cleanWindows = 0;
     if (this.#index === 0) return undefined;
     return this.#step(-1);
+  }
+
+  /**
+   * True when this window's tail is an order of magnitude past its middle, which is a stall rather
+   * than a frame rate. A window with no p50 to compare against says nothing either way.
+   */
+  #stalled(window: IScalerWindow): boolean {
+    const { p50, p99 } = window.presented;
+    if (!(p50 > 0) || !Number.isFinite(p99)) return false;
+    return p99 >= p50 * RESOLUTION_SCALER.stallP99Multiple;
   }
 
   /**

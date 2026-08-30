@@ -6,8 +6,19 @@ import { RESOLUTION_SCALER, ResolutionScaler } from "../src/resolution-scaler.js
  * is read from one constant block — a controller tuned until it looked right in a playtest is a
  * controller nobody can argue with afterwards.
  */
-/** One window as the controller sees it: the fps it achieved and the tail it achieved it with. */
-const budget = (fps: number, p95 = 17.5) => ({ fps, presented: { p95 } });
+/**
+ * One window as the controller sees it: the fps it achieved and the tail it achieved it with.
+ *
+ * The middle of the distribution is derived from the fps rather than passed in, so every window
+ * here is one whose frames all cost about the same — the controller's stall guard reads the
+ * distance between `p99` and `p50`, and a window built with an arbitrary middle would be declaring
+ * a stall these cases are not about. The cases that *are* about it live in
+ * `resolution-scaler-outlier.spec.ts`, where the window comes out of a real `FrameBudget`.
+ */
+const budget = (fps: number, p95 = 17.5, p99 = p95) => ({
+  fps,
+  presented: { p50: 1_000 / fps, p95, p99 },
+});
 
 /** A window that is comfortably meeting a 60 fps target on a vsync-capped 60 Hz panel. */
 const AT_TARGET = 60;

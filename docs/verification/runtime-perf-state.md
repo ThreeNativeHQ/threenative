@@ -12,6 +12,91 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
+## Browser WebGPU: a TSL post chain, and the scaler's fps signal — 2026-08-30
+
+Lane: browser/WebGPU, `sandbox/lumen-hall` (gothic cathedral, five-stage TSL chain: SSGI +
+denoise, godrays, SSR, bloom, AgX). Machine: Linux `7.1.4-1-cachyos`, NVIDIA RTX 2080 (Turing),
+Chromium via Playwright with the repo's `webgpu` recipe plus `--disable-gpu-vsync
+--disable-frame-rate-limit`, private Xvfb 1920x1080x24, viewport 1600x900. Adapter named in every
+run: `nvidia` / `turing`.
+
+**Fixture rule this round paid for.** The scene was measured against a `pnpm dev` server that three
+other agents were editing at the same time; vite HMR reloaded the page mid-capture and the reload's
+pipeline rebuild landed inside the window as a 174-texture, 117-pipeline burst. Every number below
+comes instead from a static `vite build` of a source snapshot, served by a private
+`python3 -m http.server`, with `renderer.resolutionScale` pinned to 1 in the snapshot's config so
+the adaptive scaler cannot move the surface between arms. **A dev server that another agent can
+edit is not an A/B fixture.**
+
+### Per-stage attribution, by GPU time
+
+`gpuMs` (three's `timestamp-query`, reported in every `TN_FRAME_BUDGET` window) is the honest
+meter here and `render.p50` is not: the CPU render phase is ~5.5 ms while the GPU frame is
+~14.7 ms, so the GPU is the limiter by 3x and the CPU only discovers it when `queue.submit` blocks.
+Window 1 discarded; median and range over the remaining steady windows of two 40 s runs each.
+
+| config | gpuMs median | gpuMs range | fps median | `queue.submit`/frame |
+| --- | --- | --- | --- | --- |
+| all stages | 14.7 | 13.4–17.5 | 56.8 | 48 |
+| minus ssgi+denoise | 5.5 | 2.3–12.7 | 126.3 | 46 |
+| minus ssr | 10.6 | 9.2–16.7 | 77.0 | 34 |
+| minus godrays | 14.7 | 13.8–16.7 | 57.1 | 46 |
+| minus bloom | 10.1 | 9.1–23.1 | 72.4 | 24 |
+| all stages off | 2.2 | 2.1–12.0 | 333.3 | 6 |
+
+Scene, shadow map and overlay together cost **2.2 ms** of GPU. The post chain costs **12.5 ms** —
+SSGI+denoise ~9.2, bloom ~4.6, SSR ~4.1, godrays **~0.0** (the individual costs oversum because
+removing SSGI also removes the denoise passes the later stages sample). Draw calls peak at 561 and
+are not a factor. Two other agents were capturing on the same GPU throughout, which is what the
+ranges are for; `submit`-per-frame and `writeBuffer`-per-frame were bit-identical across reps and
+are the structural numbers to quote.
+
+### The p99 tail is GPU back-pressure, not recompiles or reallocation
+
+Per-frame instrumentation of `GPUDevice`/`GPUQueue` (injected before app boot) shows **zero**
+pipeline, shader, texture, buffer or bind-group creation per frame at steady state. The tail is
+48 `queue.submit` and 142 `queue.writeBuffer` calls a frame against a 14.7 ms GPU frame: the CPU
+runs ahead, then one frame in ~71 blocks for 650–870 ms **inside `queue.submit`** (measured
+`submitMs` 1300–1670 ms on those frames against 1.19 ms on ordinary ones) while the queue drains.
+The stall period tracks `writeBuffer` volume — ~10,200 calls between stalls in both the all-stages
+arm (71 frames x 142) and the all-off arm (147 frames x 70) — not frame count or submit count.
+Separately, the first two windows carry 700–2800 ms stalls that *are* pipeline builds.
+
+### The adaptive scaler over-corrected on a startup window — fixed
+
+The second 300-frame window is where three finishes building pipelines for the chain. Four of its
+300 frames took ~1.94 s each: **under the 2 s `hitchMs`**, so each stayed in the window and went
+into the mean. The window reported **22.6 fps** beside a **presented p50 of 9.8 ms** (102 fps).
+`ResolutionScaler` reads `fps`, which is `1000 / presented.mean`, computed a 2.6x deficit, took its
+maximum four-rung jump, and the game then held 145 fps at **832x468** for the next forty seconds —
+and climbs back at four windows a rung. The down-step is also the wrong medicine for this cause:
+the resize reallocates every render target, which rebuilds pipelines.
+
+Fix: `RESOLUTION_SCALER.stallP99Multiple = 10`. A window whose presented p99 is ten or more times
+its p50 is measuring a stall, not a frame rate; the controller defers on it in both directions
+rather than stepping or counting it clean. The regimes are far apart — a vsync-capped panel
+dropping frames sits near 2, a simply-slow game near 1, this window at 200. Reported `fps` is
+unchanged; only what the controller acts on changed.
+Red/green: `packages/core/__tests__/resolution-scaler-outlier.spec.ts`. Deleting the
+`if (this.#stalled(window))` guard from `observe()` fails two of its five cases (`expected 0.72 to
+be undefined`, `expected 0.44 to be 0.61`); the other three, which prove a genuinely slow game and
+a vsync-capped panel still step down, pass either way and are the mutation's control.
+
+### Open, not fixed
+
+- **`display.maxFps` caps nothing on web.** It is read only by `ResolutionScaler`
+  (`packages/core/src/game.ts:800`); the loop renders every rAF. Native has a present cap
+  (`capHz`), web has none, so a game declaring 60 runs at whatever the compositor allows and the
+  GPU never idles. Design question, not filed.
+- **`trackTimestamp` overruns three's query pool.** `renderer.resolveGpuFrame()` is called once per
+  300-frame window (`game.ts:817`) while `trackTimestamp: true` (`renderer.ts:374`) writes two
+  queries per pass every frame. With 48 passes the 2048-query pool fills in ~21 frames, three warns
+  `Maximum number of queries exceeded`, and the reported `gpuMs` is one early frame of the window
+  rather than a window statistic. The number is usable — it matched the ablation — but it is not
+  what the field's doc comment says it is.
+
+---
+
 ## PRD-230 pre-move desktop baseline — 2026-08-29
 
 This is the comparison baseline for splitting `src/webgpu/bindings.cpp`, captured before the first
