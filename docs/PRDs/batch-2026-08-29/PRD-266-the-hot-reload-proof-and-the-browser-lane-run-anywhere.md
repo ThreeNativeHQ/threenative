@@ -99,10 +99,22 @@ AFTER  {"reloads":1,"entities":4,"sceneObjects":38,"physics":4}
 ```
 
 Nothing was reloaded because nothing was delivered: the spec writes the file, and vite never
-reports an update. **`CHOKIDAR_USEPOLLING` does not fix it** — tried, measured, reverted. This
-workspace is on vite 8 (rolldown), whose watcher may not read that variable at all; setting
-`server.watch.usePolling` in the served project's own config has not been tried, and is the next
-thing to try rather than the answer.
+reports an update.
+
+**Two attempts, both measured, both reverted.** `CHOKIDAR_USEPOLLING` changes nothing — and
+`startStarterServer` in `playwright.config.ts` has been setting it all along, so this was never the
+untried idea it looked like. This workspace is on vite 8, whose watcher does not read that
+variable. Generating a `--config` override that sets `server.watch.usePolling` did not help either,
+and it made the *local* run worse: the spec's page came back empty
+(`canvases: 0, physics: null`) where it had previously been a healthy game, which reads as vite
+full-reloading the page rather than hot-updating it. Reverted rather than landed on a hunch.
+
+**The next lead, unattempted:** a standalone probe against the same scaffolded project, driving the
+same edit with `pnpm dev` and no playwright harness, *does* hot-update — `[vite] hmr update
+/src/style.css, /src/main.ts`, counter 0 → 1, all four entities preserved. The probe and the spec
+disagree on the same project and the same edit, so the difference is in how the harness serves or
+drives the page, not in vite or the framework. Find what the harness does that the probe does not
+before changing any watcher setting again.
 
 Two things this is not, both established by measurement: not the scene defect in §1 (fixed, and the
 game now survives with all four entities), and not the deadline (15s, 90s and a 20s probe end in
