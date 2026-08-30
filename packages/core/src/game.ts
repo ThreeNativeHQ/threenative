@@ -284,11 +284,15 @@ export interface IGame<
 > {
   readonly ctx: ICtx<TState, TPhysics> | undefined;
   readonly scene: Scene<TState, TPhysics> | undefined;
+  /** The name of the entered scene, or undefined before `start()`. */
+  readonly sceneName: string | undefined;
   readonly state: GameStore<TState>;
   /** The seam between the game and its UI layer, on every target. @see IGameUi */
   readonly ui: IGameUi;
   /** Rebuilds the requested scene from its initial state, then merges an optional carry patch. */
   goto(name: string, options?: IGotoOptions<TState>): Promise<void>;
+  /** Boot into `name` instead of `config.start` on the next `start()`. Hot reload's restore path. */
+  resumeScene(name: string): void;
   start(): Promise<void>;
   pause(): void;
   resume(): void;
@@ -413,6 +417,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #config: IGameConfig<TState, TPhysics>;
   #ctx: ICtx<TState, TPhysics> | undefined;
   #scene: Scene<TState, TPhysics> | undefined;
+  /** The name of the scene currently entered. Carried across a hot update so a reload resumes
+   * where the session was, instead of restoring the game's state into its start scene. */
+  #sceneName: string | undefined;
+  #resumeScene: string | undefined;
   #sceneFrame: SceneFrame<TState, TPhysics> | undefined;
   #renderer: IRendererLike | undefined;
   #viewport: Viewport | undefined;
@@ -468,6 +476,26 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   get scene(): Scene<TState, TPhysics> | undefined {
     return this.#scene;
+  }
+
+  /** The name of the entered scene, or undefined before `start()`. */
+  get sceneName(): string | undefined {
+    return this.#sceneName;
+  }
+
+  /**
+   * Boot into `name` instead of `config.start` on the next `start()`.
+   *
+   * Hot reload's restore path is the only caller. `acceptHotUpdate` carries the state store across
+   * a module update and hands it back before the game runs — and without this the game rebuilt
+   * itself at `config.start`, so a session that was playing came back holding its own state on the
+   * main menu, with every entity and its physics world gone. Calling `goto()` instead is not
+   * available here: it throws before `start()`, and it resets state to the destination's
+   * `initialState`, which would discard the very state being restored.
+   */
+  resumeScene(name: string): void {
+    if (this.#config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
+    this.#resumeScene = name;
   }
 
   get state(): GameStore<TState> {
@@ -543,6 +571,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     clearScene(ctx.scene, this.#computeDriven);
     const scene = new SceneType();
     this.#scene = scene;
+    this.#sceneName = name;
     const loaded = scene.load(ctx);
     if (loaded === undefined) {
       this.#enterScene(scene, ctx);
@@ -580,8 +609,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   }
 
   async #boot(): Promise<void> {
-    const SceneType = this.#config.scenes[this.#config.start];
-    if (SceneType === undefined) throw new Error(`Unknown start scene '${this.#config.start}'.`);
+    const bootSceneName = this.#resumeScene ?? this.#config.start;
+    this.#resumeScene = undefined;
+    const SceneType = this.#config.scenes[bootSceneName];
+    if (SceneType === undefined) throw new Error(`Unknown start scene '${bootSceneName}'.`);
 
     const renderer = await createRenderer({
       ...this.#config.renderer,
@@ -793,6 +824,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         : platform.devToolsHost;
     this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
     this.#scene = new SceneType();
+    this.#sceneName = bootSceneName;
     // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
     // which is what makes "pinned" a guarantee rather than a preference the loop may overrule.
     const scaler =

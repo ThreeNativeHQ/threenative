@@ -10,7 +10,12 @@ export interface IHotDiagnostics {
   readonly audio: ReturnType<typeof audioRuntimeSnapshot>;
   readonly physics: number | null;
 }
-type HotData = { readonly state: Record<string, unknown>; readonly reloads: number };
+type HotData = {
+  readonly state: Record<string, unknown>;
+  readonly reloads: number;
+  /** The scene the session was in. Absent for data written before scene resume existed. */
+  readonly sceneName?: string | undefined;
+};
 const isDev =
   (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
 /**
@@ -39,6 +44,18 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   const carried = hot.data.threenative as HotData | undefined;
   const reloads = carried?.reloads ?? 0;
   if (carried !== undefined) restoreState(game, carried.state);
+  // State alone was never enough. The update re-runs the game's entry module, which rebuilds the
+  // game and boots it at `config.start` — so a session that was playing came back holding its own
+  // state on the main menu, with every entity and its physics world gone, and the store insisting
+  // the screen was still "playing". Resuming the scene is what makes the restored state true.
+  if (carried?.sceneName !== undefined) {
+    try {
+      game.resumeScene(carried.sceneName);
+    } catch {
+      // A scene that no longer exists in the updated module is not a reason to lose the reload;
+      // the game boots at its start scene, which is what it would have done anyway.
+    }
+  }
   if (isDev && typeof window !== "undefined") {
     const host = window as unknown as Record<string, unknown> &
       Partial<Record<"__THREENATIVE__", Record<string, unknown> & { hot?: () => IHotDiagnostics }>>;
@@ -56,7 +73,7 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
       game.state.flush();
       const state = game.state.getState();
       assertPortableState(state);
-      data.threenative = { reloads: reloads + 1, state };
+      data.threenative = { reloads: reloads + 1, sceneName: game.sceneName, state };
     } catch (error) {
       data.threenative = undefined;
       hot.invalidate(error instanceof Error ? error.message : String(error));

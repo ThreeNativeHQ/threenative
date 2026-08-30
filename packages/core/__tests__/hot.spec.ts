@@ -34,12 +34,59 @@ function game<TState extends State>(initialState: TState) {
   return defineGame<TState>({ initialState, scenes: { test: TestScene }, start: "test" });
 }
 
+/** A game with somewhere else to be, so a resume has something to resume to. */
+function twoSceneGame<TState extends State>(initialState: TState) {
+  class MenuScene extends Scene<TState> {}
+  class PlayScene extends Scene<TState> {}
+  return defineGame<TState>({
+    initialState,
+    scenes: { menu: MenuScene, play: PlayScene },
+    start: "menu",
+  });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("acceptHotUpdate", () => {
+  it("should resume the scene the session was in, not the start scene", () => {
+    // Measured on a real starter before this existed: one hot update took a playing session to
+    // `entities: 0, physics: 0, sceneObjects: 11` — the menu — while the restored state still
+    // said the screen was "playing". State alone was never enough to make a reload transparent.
+    const hot = hotContext();
+    const current = twoSceneGame({ screen: "playing" });
+    // `sceneName` is a getter on the prototype; an own property shadows it, which is how a
+    // running session's scene is simulated without booting a renderer.
+    Object.defineProperty(current, "sceneName", { get: () => "play" });
+    acceptHotUpdate(current, hot);
+    hot.triggerDispose();
+
+    const rebuilt = twoSceneGame({ screen: "menu" });
+    const resumed: string[] = [];
+    rebuilt.resumeScene = (name: string) => resumed.push(name);
+    acceptHotUpdate(rebuilt, hot);
+
+    expect(resumed).toEqual(["play"]);
+    expect(rebuilt.state.getState().screen).toBe("playing");
+  });
+
+  it("should still restore state when the carried scene is gone from the updated module", () => {
+    const hot = hotContext();
+    const current = twoSceneGame({ screen: "playing" });
+    // `sceneName` is a getter on the prototype; an own property shadows it, which is how a
+    // running session's scene is simulated without booting a renderer.
+    Object.defineProperty(current, "sceneName", { get: () => "play" });
+    acceptHotUpdate(current, hot);
+    hot.triggerDispose();
+
+    // The updated module no longer declares `play`. Losing the scene must not lose the reload.
+    const rebuilt = game({ screen: "menu" });
+    expect(() => acceptHotUpdate(rebuilt, hot)).not.toThrow();
+    expect(rebuilt.state.getState().screen).toBe("playing");
+  });
+
   it("should do nothing when import.meta.hot is undefined", () => {
     const hot = hotContext();
     const current = game({ score: 0 });

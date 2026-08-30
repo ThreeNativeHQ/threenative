@@ -62,5 +62,35 @@ a framework concern (`acceptHotUpdate` in core), a template concern (`main.ts` r
 menu), or both, and this record deliberately stops at the measurement. See
 [PRD-266](../PRDs/batch-2026-08-29/PRD-266-the-hot-reload-proof-and-the-browser-lane-run-anywhere.md).
 
-**Revert check:** none is offered, because nothing is fixed here. This is the red, measured and
-attributed.
+## The fix, and the same measurement afterwards
+
+`Game` now records the entered scene's name and can be asked to boot into it instead of
+`config.start`; `acceptHotUpdate` carries that name beside the state and asks for it on the way
+back. `goto()` was not usable here — it throws before `start()`, and it resets state to the
+destination's `initialState`, which would discard the state being restored.
+
+The identical probe, on the same machine, with the rebuilt core installed into the scaffold:
+
+```console
+BEFORE {"reloads":0,"entities":4,"sceneObjects":38,"canvases":1,"physics":4}
+AFTER  {"reloads":1,"entities":4,"sceneObjects":38,"canvases":1,"physics":4}
+```
+
+Four entities before and after, thirty-eight scene objects before and after, a four-body physics
+world before and after, and the reload counted. The session stays where it was.
+
+A scene resumed this way runs its constructor again and rebuilds its objects; what is preserved is
+the game's state and the scene it is in, not the identity of the objects inside it. That is the
+decision, and it is what "preserves starter state" now means.
+
+**Revert check:** delete the `resumeScene` call from `acceptHotUpdate` →
+`packages/core/__tests__/hot.spec.ts > should resume the scene the session was in, not the start
+scene` fails:
+
+```console
+× should resume the scene the session was in, not the start scene
+Tests  1 failed | 10 passed (11)
+```
+
+and restoring it returns 11 passed. A scene missing from the updated module is covered too: the
+resume is skipped, the state still restores, and the game boots where it would have anyway.
