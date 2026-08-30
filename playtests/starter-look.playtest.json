@@ -10,9 +10,9 @@
     },
     "resources": [
       {
-        "equals": "playing",
+        "changed": true,
         "id": "state",
-        "path": "screen"
+        "path": "flagSteps"
       }
     ]
   },
@@ -20,49 +20,6 @@
   "name": "starter-look",
   "schemaVersion": 1,
   "steps": [
-    {
-      "kind": "wait",
-      "label": "menu-is-up",
-      "release": true,
-      "waitTicks": 20
-    },
-    {
-      "at": {
-        "x": 640,
-        "y": 365
-      },
-      "kind": "click",
-      "label": "focus-name-field"
-    },
-    {
-      "holdTicks": 1,
-      "kind": "input",
-      "label": "type-a",
-      "press": "a",
-      "release": true
-    },
-    {
-      "holdTicks": 1,
-      "kind": "input",
-      "label": "type-x",
-      "press": "x",
-      "release": true
-    },
-    {
-      "holdTicks": 1,
-      "kind": "input",
-      "label": "type-o",
-      "press": "o",
-      "release": true
-    },
-    {
-      "at": {
-        "x": 640,
-        "y": 428
-      },
-      "kind": "click",
-      "label": "start-game"
-    },
     {
       "kind": "wait",
       "label": "play-scene-loads",

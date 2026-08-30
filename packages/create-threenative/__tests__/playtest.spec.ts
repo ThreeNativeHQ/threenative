@@ -110,17 +110,14 @@ describe("starter playtest proof", () => {
       path.resolve("packages/create-threenative/templates/starter/src/entities/Player.ts"),
       "utf8",
     );
-    // The starter boots to its menu, so a scenario that drives the player has to start the game
-    // before it can drive anything. This used to pin step 0 as the ArrowRight press, which is what
-    // let eighteen scenarios keep pressing keys at a player that did not exist yet once the menu
-    // landed. Pin the order instead: enter play, then move.
+    // The starter boots straight into Play, so a scenario drives the player from its first step.
+    // The menu-entry steps this used to require are gone with the menu screen: a scenario that
+    // still clicks at a form that no longer exists is clicking at nothing, so assert their
+    // absence rather than their order.
     const startGame = parsed.steps.findIndex((step) => step.label === "start-game");
     const moveRight = parsed.steps.findIndex((step) => step.press === "ArrowRight");
-    expect(
-      startGame,
-      "the scenario must leave the menu before it drives the player",
-    ).toBeGreaterThanOrEqual(0);
-    expect(moveRight, "the scenario must still drive the player right").toBeGreaterThan(startGame);
+    expect(startGame, "the starter has no menu to leave").toBe(-1);
+    expect(moveRight, "the scenario must still drive the player right").toBeGreaterThanOrEqual(0);
     expect(parsed.assert.diagnostics).toEqual({
       noConsoleErrors: true,
       noNetworkErrors: true,
@@ -393,26 +390,27 @@ describe("starter playtest proof", () => {
     ).rejects.toThrow();
   });
 
-  it("should start in the menu scene before entering Play", async () => {
+  it("should boot straight into the Play scene with no menu screen", async () => {
     const game = await readFile(
       path.resolve("packages/create-threenative/templates/starter/src/game.ts"),
       "utf8",
     );
-    expect(game).toContain("scenes: { menu: MainMenu, play: Play }");
-    expect(game).toContain('start: "menu"');
-    expect(game).toContain('game.goto("play", { carry: { characterName: name } })');
-    await expect(
-      readFile(
-        path.resolve("packages/create-threenative/templates/starter/src/scenes/MainMenu.ts"),
-        "utf8",
-      ),
-    ).resolves.toContain('screen: "menu"');
-    await expect(
-      readFile(
-        path.resolve("packages/create-threenative/templates/starter/src/scenes/Boot.ts"),
-        "utf8",
-      ),
-    ).rejects.toThrow();
+    expect(game).toContain("scenes: { play: Play }");
+    expect(game).toContain('start: "play"');
+    expect(game).not.toContain("MainMenu");
+    expect(game).not.toContain("start-game");
+    expect(game).not.toContain("back-to-menu");
+    for (const removed of [
+      "src/scenes/MainMenu.ts",
+      "src/scenes/Boot.ts",
+      "src/ui/MainMenuUi.tsx",
+      "playtests/menu-flow.playtest.json",
+    ]) {
+      await expect(
+        readFile(path.resolve("packages/create-threenative/templates/starter", removed), "utf8"),
+        `${removed} must not ship with the starter`,
+      ).rejects.toThrow();
+    }
   });
 
   it("should drive the generated shooter through one committed input-control scenario", async () => {

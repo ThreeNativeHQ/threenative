@@ -31,7 +31,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Mesh | undefined;
 
   static override readonly initialState: GameState = {
-    characterName: "",
     coyoteJumps: 0,
     entityCount: 0,
     flagDisplacement: 0,
@@ -47,7 +46,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     playerX: -2,
     respawns: 0,
     score: 0,
-    screen: "playing",
     status: "playing",
     uiReady: false,
   };

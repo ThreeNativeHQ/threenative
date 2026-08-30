@@ -209,11 +209,11 @@ registration file — the tree is small enough to read.
 mobile orientation and display flags, desktop window, renderer preference, native entry.
 `package.json` may retain only `threenative.nativeEntry` as a compatibility fallback.
 
-`src/ui/MainMenuUi.tsx` is the starter's form screen, and `src/ui/Hud.tsx` is its gameplay HUD;
-keep gameplay decisions in the portable scenes and let the published `state.screen` choose which
-chrome is visible.
-The complete menu-to-settings-to-play recipe is `agent-docs/menu-screens.md`; the starter's
-`playtests/menu-flow.playtest.json` shows the menu-to-play proof.
+`src/ui/Hud.tsx` is the gameplay HUD and `src/ui/Menu.tsx` the in-game pause bar. The game boots
+straight into `Play`; there is no start screen and no `screen` field, because a game that ships
+one scene should not make the player dismiss a menu to reach it. If this game needs screens, the
+complete menu-to-settings-to-play recipe is `agent-docs/menu-screens.md` — add the scene, the
+state field the UI switches on, and the scenario that drives it in the same change.
 Touch controls are not generated yet: add the small pointer-action mapping after the core
 multitouch surface from PRD-053 lands.
 
@@ -429,8 +429,7 @@ guessing from pixels.
 
 ## Playtests
 
-`playtests/menu-flow.playtest.json` is the screen-flow proof — click the menu form, carry a name
-into play, and assert it through `resources`. `playtests/survives.playtest.json` is the durable smoke proof — boot, diagnostics, a nonblank
+`playtests/survives.playtest.json` is the durable smoke proof — boot, diagnostics, a nonblank
 frame, player movement — and stays green however far you replace the starter gameplay.
 `playtests/goal.playtest.json` and `playtests/gameover.playtest.json` prove the win and fail
 outcomes; rewrite that pair when you replace the win and fail conditions, keeping the pairing:

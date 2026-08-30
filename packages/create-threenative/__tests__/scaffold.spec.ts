@@ -96,13 +96,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // project-scoped Codex MCP config required to expose the installed engine server.
   // Recomputed after the authoring tools gained explicit request-versus-mechanic search scope.
   // Recomputed after MCP server packages became automatic core payloads rather than scaffold pins.
+  // Recomputed 2026-08-30 for the starter only: the branded "THREE NATIVE" start screen and its
+  // mandatory character-name form are deleted, so the tree loses MainMenu.ts, MainMenuUi.tsx and
+  // menu-flow.playtest.json, and every remaining scenario loses its menu-entry steps. One tree
+  // moved because only the starter shipped a menu.
+  // The cloth and two zoom scenarios also move: with the play scene running from tick 0 their
+  // baseline is sampled inside the simulation, so a "gte" that was zero at the menu is now
+  // already satisfied. They assert the transition instead.
   "action-rpg": "35f9d3f6eb495a2be88b998369da4ce53b506408b4f853d110f40ca470e2e824",
   defense: "a49b2a7b50556bba3998fb57e922cad4a60e84ee350341e14250df9b00c8f190",
   minimal: "07d47b36694c09bb3e556424ca614b050737ee838d9ccf368b34e2e95e368393",
   platformer: "bb3ed3881c1aaa533f11f7ac3bdbc072f74f968572a9457361117549787ac3fc",
   racing: "07fba6abc9ca4ce5627d568cf8d85c1afab51cc23ce85a227f9d3b8e59ed52d3",
   shooter: "4d0866bde94a106d32af55b57312ee4cebb5b4e51fda159e0b34cdf59d72e511",
-  starter: "302e7c2de5ff326fd150d95ef57f8c96517711a7c7c62fb582554fce9ad42c64",
+  starter: "e7a071a89445303b8765265dde8460df8a14d6ef886dc8c7e45c97e1f695ad1c",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -200,7 +207,6 @@ const STARTER_PATHS = [
   "src/game.ts",
   "src/main.ts",
   "src/scenes/Play.ts",
-  "src/scenes/MainMenu.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
@@ -217,7 +223,6 @@ const STARTER_PATHS = [
   "src/entities/Goal.ts",
   "src/entities/Player.ts",
   "src/ui/Hud.tsx",
-  "src/ui/MainMenuUi.tsx",
   "src/ui/Menu.tsx",
   "src/ui/GameUi.tsx",
   "src/ui/main.tsx",
@@ -236,7 +241,6 @@ const STARTER_PATHS = [
   "playtests/goal.playtest.json",
   "playtests/gameover.playtest.json",
   "playtests/seed.playtest.json",
-  "playtests/menu-flow.playtest.json",
   "playtests/cloth.playtest.json",
   "assets/native-proof.glb",
   "assets/native-proof.png",
