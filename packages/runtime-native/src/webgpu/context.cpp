@@ -828,7 +828,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // This feature allows instance_index in shaders to include firstInstance offset
     // Compression features are likewise requested when supported so JS-side consumers
     // (three's KTX2Loader.detectSupport among them) see what this GPU can upload.
-    WGPUFeatureName requiredFeaturesDawn[6];
+    WGPUFeatureName requiredFeaturesDawn[8];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -847,12 +847,20 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
             std::cout << "[WebGPU] Requesting texture compression feature " << compression << std::endl;
         }
     }
+    // `rg11b10ufloat-renderable`, the feature behind three's SSGI target format. Its absence
+    // costs the stage a device loss the first time a game enables GI, so it is requested like
+    // every other optional feature above.
+    if (featureCount < 7
+        && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_RG11B10UfloatRenderable)) {
+        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_RG11B10UfloatRenderable;
+        std::cout << "[WebGPU] Requesting rg11b10ufloat-renderable feature (supported)" << std::endl;
+    }
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
     // `core-features-and-limits` is the single feature three.js reads to decide whether it is
     // talking to a WebGPU *compatibility* device. Absent, it sets `renderer._samples = 0` — MSAA
     // off outright — and switches the depth-texture, MRT-blending and shader texture paths.
     // Dawn reports only features that were *requested*, so asking the adapter is not enough.
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
+    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
     }
 #endif
@@ -861,10 +869,10 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // compatibility device. Dawn reports only features that were *requested*, so every
     // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < 6)
+    if (hasTimestampQuery_ && featureCount < 8)
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
+    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
 #endif
     deviceDesc.requiredFeatureCount = featureCount;
@@ -1110,7 +1118,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // consumers (three's KTX2Loader.detectSupport among them) see the formats this
     // GPU can actually upload; a format the hardware lacks stays unrequested and
     // therefore truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesDawn[6];
+    WGPUFeatureName requiredFeaturesDawn[8];
     size_t featureCount = 0;
     if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
@@ -1124,12 +1132,19 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
             requiredFeaturesDawn[featureCount++] = compression;
         }
     }
+    // `rg11b10ufloat-renderable`, the feature behind three's SSGI target format. Every
+    // device-creation path has to ask; one that forgets loses the stage to a device loss the
+    // first time a game enables GI.
+    if (featureCount < 7
+        && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_RG11B10UfloatRenderable)) {
+        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_RG11B10UfloatRenderable;
+    }
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
     // `core-features-and-limits` is the single feature three.js reads to decide whether it is
     // talking to a WebGPU *compatibility* device. Absent, it sets `renderer._samples = 0` — MSAA
     // off outright — and switches the depth-texture, MRT-blending and shader texture paths.
     // Dawn reports only features that were *requested*, so asking the adapter is not enough.
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
+    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
     }
 #endif
@@ -1138,10 +1153,10 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // compatibility device. Dawn reports only features that were *requested*, so every
     // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < 6)
+    if (hasTimestampQuery_ && featureCount < 8)
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
+    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
         requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
 #endif
     deviceDesc.requiredFeatureCount = featureCount;
