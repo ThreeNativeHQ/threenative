@@ -1,0 +1,4 @@
+Dress the environment around the play area: the ground surface, the two side walls, and one
+background prop.
+
+Do not change the crate, its material, or its sound.
