@@ -15,55 +15,6 @@
     { "kind": "click", "at": { "x": 640, "y": 428 }, "label": "start-game" },
     { "kind": "wait", "label": "play-scene-loads", "waitTicks": 600, "release": true },
     {
-      "kind": "wait",
-      "label": "menu-is-up",
-      "waitTicks": 120,
-      "release": true
-    },
-    {
-      "kind": "click",
-      "at": {
-        "x": 640,
-        "y": 365
-      },
-      "label": "focus-name-field"
-    },
-    {
-      "kind": "input",
-      "label": "type-a",
-      "press": "a",
-      "holdTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "type-x",
-      "press": "x",
-      "holdTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "type-o",
-      "press": "o",
-      "holdTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "click",
-      "at": {
-        "x": 640,
-        "y": 428
-      },
-      "label": "start-game"
-    },
-    {
-      "kind": "wait",
-      "label": "play-scene-loads",
-      "waitTicks": 240,
-      "release": true
-    },
-    {
       "kind": "input",
       "label": "walk-off-three-times",
       "press": "ArrowDown",
