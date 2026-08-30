@@ -1542,6 +1542,34 @@ appeared in the preceding PRD-254 V8 control run. The detached tarball sandbox p
 apply: this is internal instrumentation with no public capability or game-authored behavior to
 install. The real native host plus the playtest perf consumer are the observable proof boundary.
 
+### 2026-08-30 — stale frame-budget lane adjudication
+
+`worktree-agent-a15fb02a370974a26` is not missing work. Its four-commit tree and main's squash
+`31cba321` differ only in a later two-line correction to `native-runtime-census-2026-08-16.md`;
+the frame budget, public capability, generated instructions, scenario, and fail-closed playtest
+performance gate are identical. Replaying the stale history would add no behavior. PRD-214 stays
+PARTIAL because its optimization phases 1–2 remain open, not because this Phase 0 instrument is
+absent.
+
+The isolated repo audit passed **81/81** focused assertions: 72 core frame-budget/game/playtest
+tests and 9 playtest performance-gate tests. The template suite passed 29 unrelated contracts, then
+its minimal-scaffold typecheck passed after the fresh worktree's physics package was built; no
+product assertion failed. Three attempts to run the in-repo scenario through a managed package
+script stopped before assertions because Vite did not receive the runner's host/port flags. That
+path was stopped after the third setup failure rather than treated as evidence.
+
+The detached packed-tarball sandbox at
+`/home/joao/projects/threenative/sandbox-runs/prd254-frame-budget-20260830/prd254-frame-budget`
+contained zero readable framework-source lines. Its typecheck passed, then a real NVIDIA Turing
+WebGPU run observed 180 frames, clean diagnostics, a nonblank 1280×720 capture, and populated
+`hostGap/update/render/overlay/residual` phase samples; the latest budget windows reported
+`render.p95` 2.8 and 6.6 ms. The game-owned scenario required `render` p95 ≤33 ms, frame p95
+≤66 ms, and fps ≥15 and passed. Its named mutation changed only the `render` ceiling to 0 ms;
+the same run failed `TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED` with observed 3.7 ms, then returned
+green after restoration. The generated `pnpm test` then passed all four sandbox scenarios together.
+The sandbox README maps the feature to PRD-214 and this proof. Mobile was not re-executed in this
+audit; PRD-214 retains its original physical-Pixel evidence and its open optimization phases.
+
 **Desktop reading recipe** (render.p50, never fps):
 
 ```sh
