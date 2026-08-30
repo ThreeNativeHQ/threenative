@@ -4,13 +4,30 @@ prd_contract: v1
 
 # PRD-253 — Content arrives because the camera needs it, and leaves because it does not
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: BLOCKED AT PHASE 0, 2026-08-30. No product code shipped.**
 Locked repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `b37bf30fb51527ac086a484893ad813ee0a2df0b`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md).
 
-Parent batch: [feature-mining](../README.md).
+Parent batch: [feature-mining](../../feature-mining/README.md).
+
+**Blocking evidence:** the real Niagara Bistro load-all consumer proved a large browser bound, but
+the mandatory native-desktop half did not execute. The pinned scene's 343 DDS textures were decoded
+to the PNG paths its glTF declares in a detached consumer. On a named NVIDIA/Turing WebGPU adapter,
+the green run measured 1,266,447,212 delivered bytes, 2,339,481,722 decoded CPU bytes,
+3,087,422,245 estimated GPU bytes, 4,371,768 visible triangles, 745 steady draws, frame p50 14.0 ms,
+frame p95 34.4 ms and an 822.2 ms hitch. The same adapter's Abyss control measured 183,855
+triangles, 22 draws and render p95 2.7 ms. The subject is therefore genuinely bound; Kill A does
+not fire.
+
+Native desktop remains **UNVERIFIED**. Three repair attempts reached a built V8+Dawn host but the
+consumer's root-relative `/bistro/bistro.gltf` URL resolved against filesystem root and failed with
+`TN_NATIVE_START_FAILED`. The doubtful assumption is that a browser root-relative asset URL is
+portable to the native file loader. Phase 0 also discovered that the required existing
+`scripts/asset-cost-census.ts` no longer exists, so the PRD's instruction to extend it is stale.
+The full record and exact upstream pins are in
+[`docs/verification/prd-253-residency-census-2026-08-30.md`](../../../verification/prd-253-residency-census-2026-08-30.md).
 
 **Complexity:** +3 touches 10+ files, +2 new subsystem from scratch, +2 residency state carried
 across frames with cancellation and eviction, +2 multi-package (`assets`, `core`, `playtest`,
@@ -66,7 +83,7 @@ recorded in the borrow map (§9) as *unverified at proposal time*.
 each, and only then may any line-level or symbol-level claim be written into this PRD.** A phase
 that cites an upstream symbol without a pinned SHA in `docs/verification/` is incomplete. The
 repository has been burned by exactly this before; see the equivalent note in
-[PRD-251](./PRD-251-procedural-world-fields-and-terrain-residency.md).
+[PRD-251](../../feature-mining/HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md).
 
 ---
 
@@ -271,7 +288,7 @@ declares a budget. Both are named, both are measured against in §8.
 | [PRD-238](../../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | Complementary and **independent**. Residency decides what is in memory; 238 decides what is submitted. If 238 lands first, Phase 4's A/B must hold its setting constant across both arms and say so. | No — but the A/B is invalid if 238's setting differs between arms |
 | [PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md) | Shares the "one lifetime" discipline for GPU resources; its dispose ordering must not fight the refcount. | Check at Phase 1 |
 | [PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md) | If native workers become real, decode moves off the main thread and the native hitch numbers change. Phase 5 must record which state of 250 was live. | No — record only |
-| [PRD-251](./PRD-251-procedural-world-fields-and-terrain-residency.md) | **Consumes this.** 251 must not build a second residency system. | This PRD's Phase 6 blocks 251's residency half |
+| [PRD-251](../../feature-mining/HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md) | **Consumes this.** 251 must not build a second residency system. | This PRD's Phase 6 blocks 251's residency half |
 
 **Order:** 0 → 1 → 2 → 3 → 4 → 5 → 6 → (7 only if its stop gate opens).
 
@@ -377,12 +394,17 @@ but the refcount and the abort — that outcome is recorded, not avoided.
 
 **This phase can end the PRD.** It is not preparation; it is the gate.
 
+**2026-08-30 checkpoint: BLOCKED.** The browser subject and control ran, the capture was inspected,
+and the `visibleTriangles` telemetry mutation made the scenario fail while direct renderer
+observations still saw 4,371,768 triangles. Native desktop did not reach the playtest bridge, so
+the cross-platform measurement matrix is incomplete and neither PROCEED nor DECLINE is honest.
+
 **Files (4):**
 
 - `scripts/asset-cost-census.ts` — EDIT: extend the PRD-098 lineage with resident-bytes,
   hitch-max and load-time columns. Reuse the existing measurement; do not build a second instrument.
 - `docs/verification/residency-census-<date>.md` — NEW: Phase 0 measurements and verdict.
-- `docs/PRDs/feature-mining/PRD-253-content-residency-and-screen-space-hlod.md` — EDIT: record the
+- `docs/PRDs/BLOCKED/requires-portable-native-residency-consumer/PRD-253-content-residency-and-screen-space-hlod.md` — EDIT: record the
   verdict, the pinned upstream SHAs, and any decline
 - `examples/abyss-framework/playtests/frame-budget.playtest.json` — EDIT: the load-all baseline run
 
@@ -988,11 +1010,11 @@ incumbent; reverting it restores `#stream` from git and nothing else is entangle
   block, one diagnostics record, and it deletes a hand-written streaming loop.
 - **Linchpin contract validator: NOT RUN — recorded as unverified, not as passing.** The invocation
   is known from [PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md) and
-  [PRD-251](./PRD-251-procedural-world-fields-and-terrain-residency.md):
+  [PRD-251](../../feature-mining/HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md):
 
   ```sh
   sh ${LINCHPIN_PLUGIN_ROOT}/scripts/linchpin.sh contract \
-    docs/PRDs/feature-mining/PRD-253-content-residency-and-screen-space-hlod.md
+    docs/PRDs/BLOCKED/requires-portable-native-residency-consumer/PRD-253-content-residency-and-screen-space-hlod.md
   # expected: CONFORMING
   ```
 

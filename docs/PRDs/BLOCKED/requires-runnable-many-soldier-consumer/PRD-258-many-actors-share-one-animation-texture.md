@@ -66,7 +66,7 @@ source or a separately proven material mechanism; it is not a pretext to build G
 | `docs/PRDs/done/PRD-039-animation-state-machine.md` | State machines, blends, one-shots and root-motion policy stay game-owned unless measured rigged-asset evidence reopens them. |
 | `docs/PRDs/done/PRD-144-ragdoll.md` | Ragdolls were withdrawn by the kill switch; do not smuggle death physics into this work. |
 | `docs/PRDs/done/PRD-228-the-pixel-budget-is-the-engines.md` | Pixel budget / resolution scale is engine-owned mechanism, but Bayview's look remains game-owned and platform claims require device evidence. |
-| `docs/PRDs/feature-mining/PRD-253-content-residency-and-screen-space-hlod.md` | Residency/LOD owns content arrival and measured byte budgets; this PRD must not invent a second LOD or residency scheduler. |
+| `docs/PRDs/BLOCKED/requires-portable-native-residency-consumer/PRD-253-content-residency-and-screen-space-hlod.md` | Residency/LOD owns content arrival and measured byte budgets; this PRD must not invent a second LOD or residency scheduler. |
 | `packages/core/src/animation.ts` | `AnimationPlayer` already owns clip playback, fades, once clips, stride sync and reports; this PRD must not replace it with a graph. |
 | `packages/core/src/projection-plan.ts` | Skinned meshes currently go to the exact lane (`isSkinnedMesh` reason), and `LOD` subtrees are mirrored as exact containers. |
 | `packages/core/src/projection-apply.ts` | Exact-lane `SkinnedMesh` stand-ins copy the game's `skeleton`, bind matrices, geometry, material, morph data and LOD levels by reference. |

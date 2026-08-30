@@ -1304,6 +1304,28 @@ browser, desktop, Android and iOS are all **UNVERIFIED**. PRD-258 is blocked, no
 product API or package source was added. The isolated consumer remains at
 `/home/joao/projects/threenative/sandbox-runs/prd258-fps-20260830` for a repaired rerun.
 
+### 1.3.13 PRD-253 browser load-all is bound; native checkpoint is blocked (2026-08-30)
+
+A detached Niagara Bistro consumer pinned `zeux/niagara_bistro` at `2bdb6a4` and loaded the
+authored graph through ordinary Three.js. On headed 1280×720 WebGPU with a named NVIDIA/Turing
+adapter, the green run measured 1,266,447,212 delivered bytes, 2,339,481,722 decoded resident CPU
+bytes, 3,087,422,245 estimated GPU bytes, 4,371,768 visible triangles and 745 steady draws. Its
+settled timestamps reported frame p50 14.0 ms, p95 34.4 ms and hitch max 822.2 ms. The existing
+Abyss control on the same adapter passed at 183,855 triangles, 22 draws and render p95 2.7 ms.
+
+The screenshot was inspected and the semantic channel was mutation-tested: forcing only
+`visibleTriangles` to zero made `resource.state.visibleTriangles` fail while the direct renderer
+series continued to observe 4,371,768 triangles. Kill A is therefore false; there is a real
+residency/triangle/hitch problem.
+
+Native desktop is **UNVERIFIED**. `pnpm native:build` produced a V8+Dawn host, but the consumer's
+root-relative `/bistro/bistro.gltf` URL resolved against filesystem root and emitted
+`TN_NATIVE_START_FAILED` before the playtest bridge. Three repair attempts stopped under the
+repository rule. The required incumbent `scripts/asset-cost-census.ts` is also absent at the
+baseline despite the PRD instructing Phase 0 to extend it. PRD-253 is blocked with no product code;
+the full source pins, methods, caveats and unblock list are in
+`docs/verification/prd-253-residency-census-2026-08-30.md`.
+
 ### 1.4 Secondary engine defects, after draw collapse
 
 - **Native CSS-pixel parity:** native still exposes physical window dimensions with DPR 1
