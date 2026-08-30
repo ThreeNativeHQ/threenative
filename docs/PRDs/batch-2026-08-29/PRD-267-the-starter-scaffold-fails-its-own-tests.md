@@ -81,18 +81,29 @@ What is measured, on a scaffolded platformer:
 - **It is not the level failing to load.** `tags.patrol` was *evaluated* and disagreed, which means
   patrol entities existed to be counted. A level that never arrived would have failed differently.
 
-So the level loads, the player runs, and the stomp does not land — only on the rasteriser. The
-scenario holds `ArrowRight`+`Space` for 42 ticks and settles for 45, and ticks are meant to be
-deterministic regardless of frame rate, which is what makes this worth understanding rather than
-padding: **if a fixed-step scenario can change outcome with frame rate, that is a harness or
-engine property worth knowing about, not a slow machine.**
+**It is not the frame rate, and the tick counts prove it.** The per-scenario summary carries the
+first tick, the last tick and the frame count, so the three runs can be laid side by side:
 
-Reproducing it locally needs a GPU-less Chromium under a display; running headless locally reaches
-SwiftShader but drowns in backend console noise instead, so it is not the same condition. The next
-step is to run this one scenario on CI with the frame budget and substep counts printed, and see
-whether the physics stepped the same number of times as it does on hardware.
+| Run | firstTick | lastTick | span | frames | result |
+| --- | --- | --- | --- | --- | --- |
+| Hardware (RTX 2080) | 27 | 144 | **117** | **115** | pass |
+| CI, run 33317257682 | 48 | 165 | **117** | **115** | **pass** |
+| CI, run on `3672e04e` | 63 | 180 | **117** | **115** | **fail** |
 
-Do not fix it by lengthening the waits until that is known.
+The fixed-step loop ran the same number of ticks over the same number of frames every time. The
+only thing that moved is the starting offset — how many ticks were consumed before the first step,
+which is boot time and nothing else.
+
+So **the same 117 ticks land the stomp or miss it, run to run, on the same machine.** That is not a
+slow rasteriser and it is not a timing budget. It is a fixed-step scenario producing different
+physics outcomes from an identical number of steps, which means something in the path is not
+deterministic — a starting position, a patrol phase seeded off wall-clock, or a physics substep
+that reads real time. `platformer-stomp-rise` fails the same way in the same run.
+
+That is the thing to find, and it is worth more than this scenario: a playtest harness whose
+fixed-step runs are not reproducible cannot prove a regression from a green run. Look for the
+non-determinism, not for a longer wait — padding a flaky scenario hides exactly the property that
+makes the harness trustworthy.
 
 ## Why it was invisible
 
