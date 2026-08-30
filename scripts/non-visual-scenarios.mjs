@@ -26,6 +26,11 @@ const visual = (source) => {
   if (scenario.artifacts?.screenshots !== undefined && scenario.artifacts.screenshots !== false)
     return true;
   if (JSON.stringify(scenario.assert ?? {}).includes("baseline")) return true;
+  // A frame-time budget needs a GPU as surely as a pixel does — more, in fact: the starter's
+  // `play` asserts maxFrameMsP95 33 at 1920x1080, which a CPU rasteriser cannot meet however
+  // correct the game is. It belongs to the lanes that have hardware, not to the proof that a
+  // stranger can scaffold and play.
+  if (scenario.assert?.performance !== undefined) return true;
   return (scenario.steps ?? []).some((step) => step.screenshot !== undefined);
 };
 
@@ -37,7 +42,7 @@ for (const name of entries.sort()) {
 }
 // Never a silent narrowing: what this drops is printed where the job's log will carry it.
 process.stderr.write(
-  `non-visual scenarios: ${kept.length} kept, ${skipped.length} left to the pixel lanes (${skipped.join(", ")})\n`,
+  `non-visual scenarios: ${kept.length} kept, ${skipped.length} left to the lanes with hardware (${skipped.join(", ")})\n`,
 );
 if (kept.length === 0) {
   process.stderr.write("every scenario is visual; nothing would run\n");
