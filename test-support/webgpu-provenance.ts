@@ -165,7 +165,18 @@ export async function verifyWebGpuProjects(
   if (projects.length === 0)
     throw new Error(`WebGPU provenance has no base URL in the ${lane} lane.`);
   const { chromium } = await import("@playwright/test");
-  const browser = await chromium.launch({ args: [...browserArgs] });
+  // Headless Chromium serves WebGPU from SwiftShader whatever the flags say, so a sweep that
+  // launches headless can only ever observe a software adapter — and then this lane rejects it
+  // off CI, where software is not tolerated. That made `pnpm test:browser` fail for every
+  // developer on their own machine, including one with an RTX 2080 and a real display, which is
+  // how a browser spec that had never worked went unnoticed. Launch headed wherever there is a
+  // display to launch into; the playtest runner already treats a display as the thing that
+  // separates a real adapter from a rasteriser.
+  const hasDisplay =
+    process.platform !== "linux" ||
+    process.env.DISPLAY !== undefined ||
+    process.env.WAYLAND_DISPLAY !== undefined;
+  const browser = await chromium.launch({ args: [...browserArgs], headless: !hasDisplay });
   try {
     for (const project of projects) {
       const page = await browser.newPage();

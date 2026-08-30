@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,10 +32,19 @@ const hotReloadProjectFile = path.join(
   tmpdir(),
   `threenative-hot-reload-${path.basename(repoRoot)}.path`,
 );
-const sharedProject = (await readFile(hotReloadProjectFile, "utf8").catch(() => "")).trim();
-const project =
-  process.env.THREENATIVE_HOT_RELOAD_PROJECT ??
-  (sharedProject.length > 0 ? sharedProject : undefined);
+/**
+ * The project the server is actually serving, read when the test runs rather than when this module
+ * is imported. The config creates a fresh scaffold whenever the recorded one is missing or its
+ * installed packages have moved, and writes the new path — so a value captured at import time can
+ * name a previous run's directory. Editing a file in a project nobody is serving produces exactly
+ * this spec's failure: a healthy game that hot-reloads zero times.
+ */
+async function resolveServedProject(): Promise<string | undefined> {
+  const fromEnvironment = process.env.THREENATIVE_HOT_RELOAD_PROJECT;
+  if (fromEnvironment !== undefined) return fromEnvironment;
+  const shared = (await readFile(hotReloadProjectFile, "utf8").catch(() => "")).trim();
+  return shared.length > 0 ? shared : undefined;
+}
 
 async function runtimeSnapshot(page: import("@playwright/test").Page): Promise<RuntimeSnapshot> {
   return page.evaluate(() => {
@@ -250,7 +260,16 @@ test.afterAll(async () => {
 });
 
 test("preserves starter state and stays flat across ten real HMR updates", async ({ page }) => {
+  const project = await resolveServedProject();
   if (project === undefined) throw new Error("THREENATIVE_HOT_RELOAD_PROJECT was not exported.");
+  // An edit only reaches the running game if this is the directory the dev server is serving. A
+  // missing entry point here means the recorded path is another run's, and that is worth failing
+  // on by name rather than discovering as a reload that never arrives.
+  const entryPoint = path.join(project, "src/entities/Player.ts");
+  if (!existsSync(entryPoint))
+    throw new Error(
+      `the recorded hot-reload project has no ${entryPoint}; it is not the served one.`,
+    );
   const errors: string[] = [];
   const expectedWebGpuBackendErrors = [
     "Instance dropped in popErrorScope",
