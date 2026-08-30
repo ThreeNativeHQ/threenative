@@ -199,7 +199,14 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   return {
     ...(flags.get("--adb")?.[0] === undefined ? {} : { adbPath: flags.get("--adb")![0] }),
     ...(touchRotation === undefined ? {} : { touchRotation }),
-    allowSoftwareAdapter: argv.includes("--allow-software"),
+    // A scaffolded project's own `test` script is what a user runs, and it deliberately refuses a
+    // software adapter — nothing about that should change to suit a runner. But CI has no GPU and
+    // still needs to prove the scaffold installs, builds and plays, so the same acceptance the
+    // flag expresses is available as an environment variable a workflow can set around an
+    // unmodified project. It is not a silent default: the run still reports the adapter it got,
+    // and TN_PLAYTEST_SOFTWARE_ADAPTER is suppressed only because someone said so out loud.
+    allowSoftwareAdapter:
+      argv.includes("--allow-software") || process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1",
     android: {
       activity: flags.get("--activity")?.[0] ?? ".MystralActivity",
       packageName: flags.get("--package")?.[0] ?? "com.mystral.engine",

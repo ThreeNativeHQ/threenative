@@ -171,6 +171,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # This job proves a stranger can scaffold a project, install it, build it and have its own
+      # playtests run. The scaffold's `test` script refuses a software adapter, which is right for
+      # the developer machine it was written for and impossible on a runner with no GPU — so the
+      # acceptance is stated here, out loud, around an unmodified project. The runs still report
+      # the adapter they got; what is proven here is the golden path, not the pixels.
+      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
