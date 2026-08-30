@@ -134,6 +134,11 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # These lanes used to sit behind `pnpm test`, whose build phase left every package's dist/
+      # on disk. Split out, they resolve @threenative/* through export maps that point at dist,
+      # so they build it themselves — otherwise the run dies on a missing assets/dist/index.js.
+      - name: Build workspace packages consumed through export maps
+        run: pnpm tsx scripts/workspace-packages.ts build
       - uses: ./.github/actions/playwright-chromium
       - run: sh scripts/xvfb.sh pnpm test:browser
       # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame
@@ -157,6 +162,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build workspace packages consumed through export maps
+        run: pnpm tsx scripts/workspace-packages.ts build
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
 
