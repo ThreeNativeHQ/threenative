@@ -39,7 +39,7 @@ cluster when its own error is under the threshold and its parent group's error i
 watertight cut for **every** threshold and **every** camera. If it does not hold, the runtime shows
 holes and no amount of runtime work can close them.
 
-## 2. The open question: partitioning is not in the dependency
+## 2. The gap: partitioning is not in the dependency
 
 `meshoptimizer` 1.1.1 is already installed (`packages/assets/package.json:43`) and its JavaScript
 build ships meshlet construction and bounds — `buildMeshlets`, `buildMeshletsFlex`,
@@ -49,8 +49,10 @@ a `vertex_lock` array and a `LockBorder` flag, which is exactly what step D need
 **It does not ship a cluster partitioner.** There is no `partitionClusters` in
 `meshopt_clusterizer.js`, and the upstream README's clusterizer section documents building,
 extracting and bounding only. `clusterlod.h` is a C++ demo header and is not reachable from the JS
-package. Step C therefore has to come from somewhere, and the order of preference is fixed here so
-the decision is not made under deadline pressure later:
+package. Step C therefore has to come from somewhere.
+
+**The call, made now: it is ported to TypeScript.** The other two stay written down as the escape
+route, in this order, so the decision is not retaken under pressure when the port turns out fiddly:
 
 1. **Port the partition to TypeScript.** Group adjacent clusters by shared boundary edges, balanced
    to a target group size. It is a graph partition on a few thousand nodes, at bake time, once per

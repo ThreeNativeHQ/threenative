@@ -103,6 +103,9 @@ Per arm, per target, over the route's frames after a warmup:
 
 - `render.p50` and `render.p95`, frame p50/p95, draw calls, triangles submitted. On desktop these
   are read from `packages/core/src/frame-budget.ts` through the playtest CLI's `perf` reader.
+- **The route's frames are captured in every arm.** `dense` is the visual reference for every later
+  phase — the batch's real claim is *this detail, cheaper*, not *cheaper*, and without reference
+  frames captured now there is nothing to hold a later arm against.
 - **`render.p50` is the verdict on desktop, never fps** — the desktop lane's presentation is
   throttled and its fps is not a measurement of the frame. On a physical Android device, fps *is*
   the verdict.
@@ -114,6 +117,10 @@ Per arm, per target, over the route's frames after a warmup:
 > Open the batch only if `dense` costs at least **2.0 ms more `render.p50` than `decimated`** at
 > 1080p on browser WebGPU on real hardware, **and** the same ordering reproduces on packed Linux
 > desktop native. Otherwise the batch declines here, and the number is what it leaves behind.
+
+2.0 ms is not arbitrary and is fixed now rather than after the fact: a 60 fps frame is 16.7 ms, so
+it is 12% of the budget. A subsystem of this size that cannot find 12% of a frame on a scene built
+to flatter it will not find it in a game that was not.
 
 And one qualitative result matters as much as the number: **where the time went.** If the `dense`
 arm is bound at submission rather than on vertex work, the honest next PRD is about submission — a
@@ -133,11 +140,14 @@ different, cheaper project — and this batch still declines.
 - [ ] **AC5 — the control surface does not move between arms.** A visual A/B of a floor-only camera
       pose reports no pixel change between `dense` and `decimated`; a difference means the arms
       differ by more than the thing being measured.
-- [ ] **AC6 — nothing binary is committed.** The example's generated `assets/` is ignored, and a
+- [ ] **AC6 — the reference frames exist.** The route's frames are captured in the `dense` arm and
+      kept as the visual reference every later phase is scored against. Without them, a later arm can
+      only be measured on time, and this batch's claim is *this detail, cheaper*.
+- [ ] **AC7 — nothing binary is committed.** The example's generated `assets/` is ignored, and a
       spec asserts no `.glb` under `examples/quarry` is tracked.
-- [ ] **AC7 — a person can walk it.** `free` mode, documented in the example's README, with the
+- [ ] **AC8 — a person can walk it.** `free` mode, documented in the example's README, with the
       controls stated. This is the crack detector for every later phase.
-- [ ] **AC8 — the gate is evaluated in writing.** The verification file states *open* or *decline*
+- [ ] **AC9 — the gate is evaluated in writing.** The verification file states *open* or *decline*
       against §4's threshold, and where the time went. A decline closes the batch and is not a
       failure of this PRD.
 

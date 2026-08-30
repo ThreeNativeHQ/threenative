@@ -42,8 +42,9 @@ invented.
 
 The loader returns a `ClusteredMesh` when the primitive carries `TN_virtual_geometry`, and an
 ordinary `Mesh` when it does not. A game that does nothing gets the plain mesh; a game that turned
-the pipeline pass on gets the clustered one with no code change. That is the whole user-facing
-surface.
+the pipeline pass on gets the clustered one with no code change. **There is no runtime flag** — the
+bake is minutes long and cannot happen at run time, so a switch that pretends otherwise is a second
+way to say the same thing and a second thing to get wrong. That is the whole user-facing surface.
 
 ## 3. Submission, and the constraint that shapes it
 
@@ -78,11 +79,13 @@ that just became eligible does not oscillate on a camera that is standing still 
       submitting a zero-count indirect draw that draws nothing and warns nothing — the exact failure
       `packages/core/src/projection-apply.ts:146` records for `InstancedMesh`. Removing the guard
       fails a test that asserts the draw was skipped.
-- [ ] **AC6 — the kill switch, measured.** On the quarry: `render.p50`, draw calls and triangles for
-      `virtual` against `decimated` and `dense`. **`virtual` must beat `decimated`.** Beating only
-      `dense` is not a pass — the same rule `projection-plan.ts` already applies to the projection,
-      which exists because a projection that could not beat doing nothing once turned a working
-      scene black.
+- [ ] **AC6 — the kill switch, measured, at equal quality.** On the quarry: `render.p50`, draw calls
+      and triangles for `virtual` against `decimated` and `dense`. **`virtual` must beat `decimated`
+      on frame time, and be closer to `dense` in image difference on the same route frames than
+      `decimated` is. Both, or it fails.** Decimating to 5% is cheaper precisely because it looks
+      worse, so a frame-time race against it alone is rigged, and beating only `dense` is not a pass
+      either — that is the rule `projection-plan.ts` already applies to the projection, which exists
+      because a projection that could not beat doing nothing once turned a working scene black.
 - [ ] **AC7 — a playtest, not a unit test, is the proof of the frame.** The quarry's route scenario
       runs the `virtual` arm and asserts the frame result on browser WebGPU with its adapter named.
 - [ ] **AC8 — the capability is discoverable.** `capabilities.json` regenerated and the entry

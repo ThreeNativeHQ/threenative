@@ -43,7 +43,7 @@ Verified against `HEAD`, so the size of this is known before the phase starts:
   (`bindings_frame_stream.cpp:107`). three.js does use `dispatchWorkgroupsIndirect` internally
   (`three.webgpu.js:85352`).
 
-Two ways out, and the cheap one is tried first: **keep the dispatch count CPU-side** — the number of
+**The call, made now: no binding is added.** Keep the dispatch count CPU-side — the number of
 clusters is known at load, so the dispatch is a fixed size over the cluster table and only the
 *draw* count comes from the GPU. If a later phase genuinely needs an indirect dispatch, the binding
 is added on both native paths together with the five registrations a new native surface needs, and
@@ -65,8 +65,11 @@ A JS-surface contract is provable with a bindings test executable and needs no d
 - [ ] **AC4 — native runs it.** A packed Linux desktop `--target desktop` playtest of the quarry's
       `virtual` arm in the same commit, with the numbers recorded. Android and iOS may be
       `UNVERIFIED` and must say so in the Status line.
-- [ ] **AC5 — warmup is honest.** The kernel is compiled before the world is shown, through the
+- [ ] **AC5 — one cold-agent build.** The `virtual` arm is built once from packed tarballs in a
+      sandbox outside this repository, the way a user's machine gets it, before this phase closes.
+      An in-repo example proves the frame; it does not prove the install.
+- [ ] **AC6 — warmup is honest.** The kernel is compiled before the world is shown, through the
       registry's warmup, and a test asserts no shader compile happens on the first rendered frame.
-- [ ] **AC6 — read-back does not starve the frame.** The parity harness reads back on a throttle;
+- [ ] **AC7 — read-back does not starve the frame.** The parity harness reads back on a throttle;
       a long single hold is split into short steps plus a settle tail, because one long hold lands
       almost none of its copies.

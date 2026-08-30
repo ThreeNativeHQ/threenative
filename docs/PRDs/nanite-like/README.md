@@ -7,8 +7,8 @@ itself.
 
 **What it is.** A game imports a mesh far denser than the screen can resolve, and the frame submits
 only the clusters that resolve — on web and on native, from the same source, **with the game's own
-material still doing the shading**. The user-facing surface is one flag on geometry the asset
-pipeline already compiles.
+material still doing the shading**. The user-facing surface is one key in the asset config, set once
+at bake time.
 
 **What it is not.** Not a second renderer, not a scene format, not a preset, and not a visibility
 buffer. The last one is the load-bearing decision and it is argued in full in
@@ -44,6 +44,48 @@ flowchart TD
   P283 --> P284[PRD-284 occlusion]
   P283 --> P285[PRD-285 streaming]
 ```
+
+## Decisions taken, so they are not re-argued
+
+Each of these was a real fork. They are settled here; a PRD that wants to reopen one says so in its
+Status and gives the measurement that changed the answer.
+
+1. **No visibility buffer, in any phase.** Every source this batch mines resolves materials in a
+   full-screen pass, which is the shading path. Taking it would mean the framework decides how a
+   virtualized mesh is lit, and it may not. This costs most of the published speedups and buys the
+   only thing that makes the feature admissible. Argued in full in PRD-279.
+2. **The bake is a config key. There is no runtime flag.** Clustering is turned on under
+   `assets.models` in `threenative.config.ts`, the pipeline writes the extension, and the loader
+   returns a clustered mesh when it finds one. A game does not ask for this at run time, because a
+   minutes-long bake cannot happen at run time and a second way to say the same thing is a second
+   thing to get wrong.
+3. **The partitioner is ported to TypeScript.** A WASM build of `meshoptimizer` exporting its own
+   partitioner is the documented escape if simplification quality measurably suffers, and METIS is
+   not on the table for one function. A worse partition costs quality, which is measured; it does
+   not cost correctness, which is not negotiable.
+4. **Native gets no indirect-dispatch binding.** The dispatch is a fixed size over the cluster table
+   and only the *draw* count comes from the GPU. Adding `dispatchWorkgroupsIndirect` means one
+   binding on two native paths, the five registrations a new native surface needs, and a census run
+   — to save nothing measurable at this scale.
+5. **Shadows use one coarse cut, fixed at load.** Selecting a cut per shadow camera doubles the
+   selection cost for detail nobody resolves in a shadow, and telling the game to keep its own proxy
+   pushes back exactly the work this batch promised to take. It is a known quality limit and the
+   visual comparison measures it rather than assuming it away.
+6. **The comparison is at equal quality, or it is not a comparison.** Decimating to 5% is cheaper
+   *because* it looks worse, so a frame-time race against it is rigged. `dense` is the visual
+   reference: `virtual` must beat `decimated` on `render.p50` **and** be closer to `dense` than
+   `decimated` is, on the same route frames. Both, or the phase fails.
+7. **The instrument is an in-repo example, cross-checked once in a sandbox.** CI and other agents
+   have to be able to re-run the number, which a sandbox game outside this repository cannot give.
+   But the framework's customer is a cold agent installing tarballs on a clean machine, so the
+   `virtual` arm is built once that way before Phase 3 closes.
+8. **The opening threshold is 2.0 ms of `render.p50` at 1080p, and it is a floor on the batch, not
+   on the phase.** A 60 fps frame is 16.7 ms; 2 ms is 12% of it. A subsystem this size that cannot
+   find 12% of a frame on a scene built to flatter it will not find it in a real game.
+
+Left open on purpose, because the answer is not knowable yet: how much of three.js's render pipeline
+a depth pyramid can reach without a fork (PRD-284), and whether any game here will ever hold an
+asset that does not fit in memory (PRD-285).
 
 ## The rules this batch is held to
 

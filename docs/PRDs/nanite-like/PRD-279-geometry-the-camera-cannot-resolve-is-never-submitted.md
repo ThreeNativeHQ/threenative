@@ -11,8 +11,8 @@ answer whether the rest is worth opening.
 
 **Goal: a game imports a mesh far denser than the screen can resolve, and the frame submits only
 the clusters that resolve — on web and on native, from the same source, with the game's own
-material still doing the shading.** The user-facing surface is one flag on geometry the pipeline
-already compiles, not a second renderer and not a second way to author a scene.
+material still doing the shading.** The user-facing surface is one key in the asset config, set once
+at bake time — not a second renderer, not a runtime switch, and not a second way to author a scene.
 
 **Complexity:** +2 a new subsystem that spans the offline pipeline and the per-frame hot path,
 +2 a new on-disk payload, +2 GPU-driven submission inside a frame this repository has already
@@ -158,8 +158,10 @@ That invariant is testable offline, in `vitest`, with no GPU, and it is the firs
 
 **Out of v1, explicitly:** software rasterization of sub-pixel triangles, the visibility buffer and
 its material resolve, impostors, skinned and morphed geometry, alpha-tested foliage, streaming
-(Phase 5 at the earliest), and shadow passes driven by their own cut — v1 shadows draw the
-coarsest cut resident, or the game keeps its existing shadow proxy.
+(Phase 5 at the earliest), and shadow passes driven by their own cut. **Shadows draw one coarse cut,
+fixed at load** — a cut per shadow camera doubles the selection cost for detail nobody resolves in a
+shadow, and handing the game a proxy to maintain pushes back the work this batch promised to take.
+It is a stated quality limit, and the visual comparison measures it instead of assuming it away.
 
 ## 6. The phases, and the PRD that owns each
 
