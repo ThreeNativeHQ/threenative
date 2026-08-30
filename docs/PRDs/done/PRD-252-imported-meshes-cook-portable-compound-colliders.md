@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-252 — Imported meshes cook portable compound colliders
 
-**Status:** PROPOSED
+**Status:** DECLINED 2026-08-29 at the Phase 1 provenance/reproducibility gate. CoACD 1.0.11
+produced three semantically different convex-part sets from the same real CC0 fort asset and fixed
+seed (32/2,001 vertices; 31/1,938; 32/2,020). The PRD's own kill condition says a
+non-reproducible cooked artifact cannot carry an identity. Nothing was built; the existing shooter
+collision path remains. Evidence: [`docs/verification/collider-cook.md`](../../verification/collider-cook.md).
 **Complexity:** 8 → HIGH mode (10+ files `+3`, new pipeline pass `+2`, multi-package `+2`, external tool
 acquisition `+1`)
 **Selected from:** the collision-aware decomposition portion of the broad engine-stack survey
@@ -121,7 +125,13 @@ Current behaviour:
 - The native physics backend is one Rust file, `native/physics/src/lib.rs`, reached through the bulk ABI.
   Per `packages/physics/AGENTS.md`, a shape the ABI cannot honour must throw during construction.
 
-## Upstream provenance — UNVERIFIED in this session
+## Upstream provenance — VERIFIED ON LINUX, 2026-08-29
+
+Phase 1's provenance gate was executed against upstream `coacd` 1.0.11. The installed executable's
+real flags, wheel identity, licence, host, and the CLI/Python real-metric mismatch are recorded in
+[`docs/verification/collider-cook.md`](../../verification/collider-cook.md). Determinism on the
+real arena subject and macOS/Windows execution remain **UNVERIFIED**; this heading does not advance
+the implementation phases.
 
 The task brief states that the candidate decomposer supports Linux/Windows/macOS C++, deterministic seed
 control, non-manifold preprocessing, hull-count and per-hull vertex limits, and real-metric thresholds, under
@@ -253,7 +263,8 @@ ragdoll (PRD-144), none of which this PRD modifies.
 | The asset pipeline already owns compile + manifest + health | `packages/assets/src/index.ts:13-37`, `compile.ts:110-127`, `health.ts` | verified, read |
 | `inspect` already reports glTF facts | `packages/create-threenative/src/index.ts:596-601`, `src/inspect.ts` | verified, read |
 | Native physics is one Rust `Simulation` | `packages/runtime-native/native/physics/src/lib.rs` | verified, listed |
-| Upstream licence, flags, determinism, platforms | none — `WebFetch`/`WebSearch` denied this session | **UNVERIFIED**, gated in Phase 1 |
+| Upstream licence and flags | `docs/verification/collider-cook.md`, executed from the 1.0.11 wheel | verified on Linux |
+| Upstream determinism and other tool hosts | fixed-seed surface verified; real-subject output and macOS/Windows not executed | **UNVERIFIED**, still gated in Phase 1 |
 | Cook time, output size, runtime cost | none yet | **UNMEASURED**, produced in Phase 5 |
 
 ## Solution
@@ -835,4 +846,3 @@ from another platform is `UNVERIFIED` and blocks phase completion.
 - Linchpin contract validation: **not executed** — the validator was not invoked in this session. Run
   `sh ${LINCHPIN_PLUGIN_ROOT}/scripts/linchpin.sh contract docs/PRDs/feature-mining/PRD-252-imported-meshes-cook-portable-compound-colliders.md`
   and record the result before implementation begins.
-

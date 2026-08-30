@@ -1,6 +1,6 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
-**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Twelve are archived in
+**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Thirteen are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -22,7 +22,10 @@ boxes unaudited and was closed on 2026-08-29 after every negative control it nam
 (`docs/verification/prd-241-easing-closure-2026-08-29.md`); [238](../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md)
 with WebGPU culling and consumer conformance, native unverified; and
 [249](../done/PRD-249-a-fluid-field-is-data-the-game-draws.md) with web and desktop-native field
-evidence, Pixel 8 unverified.
+evidence, Pixel 8 unverified; and
+[252](../done/PRD-252-imported-meshes-cook-portable-compound-colliders.md), declined at its Phase 1
+gate after fixed-seed CoACD 1.0.11 produced three different canonical part sets for the same real
+CC0 fort asset.
 
 254 is PARTIAL, so it stays. Everything else here is unbuilt: **no
 grass, ocean, soft body, surfel GI, procedural terrain or portable text exists in any
@@ -84,7 +87,7 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [249](../done/PRD-249-a-fluid-field-is-data-the-game-draws.md) **DONE (web + desktop; Pixel 8 unverified)** | `FluidField2D` — the seven-pass incompressible solver, unfused from the material upstream welds it to. The game samples `field.dye` and decides whether it is smoke or fire. **Last in the batch: zero in-repo callers today.** | [`threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation) `src/FluidMaterialGPU.ts:53-325`, MIT | 6 → MEDIUM |
 | [250](../done/PRD-250-native-workers-are-actually-workers.md) **DONE (web + Linux desktop)** | The standard classic Blob `Worker` runs in a native V8 isolate/thread; staged, external and module sources fail by stable name. Clean-install web and packed Linux desktop proofs keep rendering while work is pending. | Web Worker semantics + the existing native worker subsystem | 8 → HIGH |
 | [251](./HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md) | Production procedural-world fields: deterministic height/flow/moisture/biome data, erosion/hydrology, CPU/GPU query parity and crack-free terrain consumption. The game still owns every material, biome look, species, water and sky decision. | [`threejs-world`](https://github.com/imsarah/threejs-world), mined as mechanism rather than public API | 10 → HIGH |
-| [252](./HIGH/PRD-252-imported-meshes-cook-portable-compound-colliders.md) | Opt-in offline decomposition of a real imported concave mesh into a deterministic bounded convex-part set, consumed as one logical Rapier body on web and native. No runtime cooker and no CoACD vocabulary in game code. | [`CoACD`](https://github.com/SarahWeiii/CoACD) tool-time candidate + Rapier compound semantics | 8 → HIGH |
+| [252](../done/PRD-252-imported-meshes-cook-portable-compound-colliders.md) **DECLINED** | Fixed-seed CoACD 1.0.11 produced three different canonical convex-part sets for the same real CC0 fort asset. The reproducible-identity kill gate fired; nothing was built. | [`CoACD`](https://github.com/SarahWeiii/CoACD) tool-time candidate + Rapier compound semantics | 8 → HIGH |
 | [253](./HIGH/PRD-253-content-residency-and-screen-space-hlod.md) | Generic authored/generated content residency: measured-error LOD/HLOD, screen-space refinement, cancellation, refcount-safe eviction and hard resident-byte budgets. PRD-251 consumes this scheduler instead of creating a second one. | [`3DTilesRendererJS`](https://github.com/NASA-AMMOS/3DTilesRendererJS) mechanisms + existing `meshoptimizer` tooling | 10 → HIGH |
 | [255](../done/PRD-255-a-million-grass-candidates-are-game-source.md) **DONE, web only; the generic extraction was DECLINED** | A 1,048,576-candidate GPU field proven as game source: reset, game-supplied candidate kernel, atomic survivor compaction and an indirect draw over the existing `IComputeDriven`. The generic `GPUInstanceField` extraction is conditional and may end declined. | [`momentchan/false-earth`](https://github.com/momentchan/false-earth), MIT | 8 → HIGH |
 | [256](./HIGH/PRD-256-static-light-is-a-standard-baked-asset.md) | The existing asset compiler generates deterministic `TEXCOORD_1`/UV2 plus a compressed KTX2 static lightmap, and stock Three.js `material.lightMap` consumes the same compiled artifact on web and native. No runtime baker, scene format or copied unlicensed source. | [`repalash/xatlas-three`](https://github.com/repalash/xatlas-three) + `Ibrahim-3d/three-lightmap-baker`, MIT; unlicensed Lucas source is technique-only | 9 → HIGH |
@@ -122,7 +125,7 @@ was wrong because it treated PRD-043's terrain fixture and declined PRD-098 as s
 | `three-mesh-bvh`, GPU scene queries | **Already shipped/in flight:** CPU picking and ray queries ship; 244 owns the GPU reach. |
 | Koota, bitecs, Miniplex and mandatory ECS | **Refused by charter.** Games keep real `THREE.Object3D`; a game may install an ECS without a ThreeNative wrapper. |
 | Glyph, UIKit, screen/spatial UI | **Already owned:** 240 owns portable text. The shipped `src/ui/` composition path remains the screen-UI owner; a second UI framework is not admitted by this survey. |
-| Jolt, Rapier, PhysX, `lo-th/phy`, CoACD | **Keep Rapier; select CoACD's separate tool-time outcome.** A second solver is maintenance debt. PRD-252 uses CoACD only to cook an explicit imported concave asset into a backend-neutral convex-part set, replacing the shooter's hand-fed arena colliders and preserving one Rapier body on web/native. |
+| Jolt, Rapier, PhysX, `lo-th/phy`, CoACD | **Keep Rapier; decline the CoACD tool-time outcome.** A second solver is maintenance debt, and PRD-252's fixed-seed reproducibility gate failed on a real fort asset. |
 | Cloth, soft bodies, fluids, destruction and CSG | **243 and 249 own the admitted simulation primitives.** `three-pinata`, `three-bvh-csg` and Manifold remain ordinary game dependencies/research until a repeated portable engine seam appears; no speculative framework wrapper is filed. |
 | three-vrm, closed-chain IK, Yuka, character/AI frameworks | **The old “covered” claim was false, but no PRD now.** `AnimationPlayer`, bone attachment and `CharacterBody3D` do not provide foot placement, aim/two-hand IK or retargeting. A low-level game-supplied-target IK mechanism is the next credible candidate; wholesale VRM policy, Yuka behaviour and humanoid presets remain optional game dependencies. File when a character consumer supplies the real uneven-ground/weapon-grip proof. |
 | procedural worlds, SeedThree, Poseidon, SebH sky, GI/AO, Quarks/Nebula, splats | **Procedural world data is selected in 251; appearances stay game-owned.** PRDs 242–249 keep the admitted compute/environment mechanisms. SeedThree species/presets, N8AO/post looks, Quarks/Nebula effect vocabularies and Spark's splat format remain optional until a real asset/consumer needs their distinct mechanism. |
