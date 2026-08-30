@@ -4,39 +4,50 @@ prd_contract: v1
 
 # PRD-266 — the hot-reload proof and the browser lane run somewhere
 
-**Status:** PROPOSED — filed 2026-08-30 from CI's first working browser lane.
+**Status:** PROPOSED — filed 2026-08-30 from CI's first working browser lane. §1's cause is
+measured and named; §2 is fixed in `fe1f84dc` and stays here until the lane is green.
 
 **Goal: `pnpm test:browser` can pass, and the hot-reload proof proves something.**
 Two defects found by making CI run a lane it had never executed. Neither is CI plumbing; both are
 the framework's own, and both were invisible for the same reason.
 
-## 1. The hot-reload proof never observes a reload
+## 1. Hot reload throws the game back to its main menu
 
-`tests/browser/hot-reload.spec.ts` edits `src/entities/Player.ts` in the served starter project and
-waits for `__THREENATIVE__.hot().reloads` to reach 1. It never does:
+Measured on hardware, not inferred —
+[hot-reload-drops-the-scene-2026-08-30](../../verification/hot-reload-drops-the-scene-2026-08-30.md).
+One `JUMP_SPEED` edit to the served starter, read through the game's own diagnostics:
 
-```text
-Error: HMR reload 1 was not observed within 90 seconds:
-{"diagnostics":{"reloads":0,"entities":3,"sceneObjects":38,"canvases":1,
- "audio":{"pooled":0,"queued":0,"voices":0},"physics":4},"entities":[...]}
+```console
+BEFORE {"reloads":0,"entities":4,"sceneObjects":38,"canvases":1,"physics":4}
+AFTER  {"reloads":1,"entities":0,"sceneObjects":11,"canvases":1,"physics":0}
 ```
 
-Everything else is healthy — three entities, a physics world with four bodies, one canvas. The game
-is running and has hot-reloaded zero times.
+vite fired the update and the client applied it (`hmr update /src/style.css, /src/main.ts`), the
+counter moved 0 → 1, and the game lost every entity and its whole physics world.
+`entities: 0, physics: 0, sceneObjects: 11` is the **menu** scene.
 
-**It is not the environment.** The same failure reproduces on an ordinary Linux filesystem with
-`CI=true`, so it is not a container's inotify. It is not the deadline either: 15s and 90s fail
-identically. The template does wire the path — `import.meta.hot?.accept()` and
-`acceptHotUpdate(game, import.meta.hot)` in `templates/starter/src/main.ts` — and the spec writes to
-the project the server is actually serving, through the same shared path file the config writes.
+**The mechanism.** `acceptHotUpdate` in `packages/core/src/hot.ts` carries `game.state` across the
+update and restores it — and that is all it carries. Applying the update re-runs `src/main.ts`,
+which builds the game again and boots it at `start: "menu"` from `game.ts`. The state store comes
+back saying `screen: "playing"`; the game is standing on its title screen. The two disagree, and
+the shipped claim — a game hot-reloads while preserving its state — is false as written.
 
-The likely shape, unproven: the edit invalidates a module with no accepting parent, so vite full-
-reloads the page instead of hot-updating it. A full reload restarts the game and leaves `reloads` at
-zero, which is exactly what the counter shows. **Confirm that before fixing anything** — `reloads: 0`
-is also what a broken counter looks like, and this PRD must not repair the wrong one of the two.
+**Why it is not a two-line fix**, which is why this is a PRD and not a patch:
 
-Whatever the cause, the shipped claim is that a game hot-reloads while preserving its state. Today
-nothing proves it.
+- `Game` tracks the active `Scene` instance (`get scene()`) but never its **name**, so there is
+  nothing to carry. `#goto` would have to record it.
+- `goto(name, options)` resets state to the destination's `initialState` merged with `carry`, so
+  re-entering the scene after `restoreState` would undo the restore unless the carried state is
+  passed as the carry.
+- `goto` throws before `start()`, and `acceptHotUpdate` runs at module scope while the game is
+  still being constructed. Re-entering has to be deferred until the game is running.
+- A scene re-entered this way runs its constructor again. Whether that is "preserved state" or a
+  fresh scene wearing old state is a design decision this PRD has to make, not assume.
+
+**What is already ruled out, with evidence:** a broken counter (it increments), HMR not firing
+(vite reports and the client acknowledges), the CPU rasteriser (this is an RTX 2080 on a real
+display), a stale project path (the guard added in `fe1f84dc` does not fire), and the deadline
+(15s, 90s and a 20s probe all end in the same state).
 
 ## 2. `pnpm test:browser` cannot pass on a developer machine
 
@@ -72,8 +83,10 @@ Recorded in [ci-has-never-been-green-2026-08-29](../../verification/ci-has-never
 
 - [ ] `pnpm test:browser` passes on a developer machine with a GPU, with the adapter it used named
       in the output.
-- [ ] The hot-reload proof observes ten reloads, or the claim it tests is withdrawn from the docs
-      that make it. A proof that cannot pass is deleted or repaired, never left red.
-- [ ] Whichever of the two causes in §1 is real is stated with its evidence, and the other is ruled
-      out in the same record.
+- [ ] After a hot update the game is in the scene it was in, with its entities and physics world,
+      or the claim that hot reload preserves state is withdrawn from every doc that makes it. A
+      proof that cannot pass is repaired or deleted, never left red.
+- [ ] The decision in §1's last bullet — whether a re-entered scene is preserved state or a fresh
+      scene wearing old state — is written down before the fix, and the templates' AGENTS.md says
+      which one a game author gets.
 - [ ] `test-browser` green on CI, and the run names the adapter it had.
