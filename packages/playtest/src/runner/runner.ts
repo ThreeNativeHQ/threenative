@@ -676,6 +676,13 @@ export async function runStandalonePlaytests(
           scenarioSummary: {
             diagnostics: codes,
             failed: failedAssertions,
+            // A fixed-step scenario should reach the same tick on any machine, so a run that
+            // disagrees with a developer's is saying the loop did not step the same way — which is
+            // a harness or engine property rather than a slow computer. Carried here because the
+            // full report is what a CI log truncates, and this line is what survives.
+            firstTick: report.before?.tick,
+            frames: report.frames,
+            lastTick: report.after?.tick,
             pass: report.pass,
             scenario: report.scenario,
           },
