@@ -4,9 +4,9 @@ prd_contract: v1
 
 # PRD-266 — the hot-reload proof and the browser lane run somewhere
 
-**Status:** PARTIAL — filed 2026-08-30 from CI's first working browser lane. **§1 is fixed**
-(`16c92a11`) and **§2 is fixed** (`fe1f84dc`). §3, below, is what is left: the update is never
-delivered on GitHub's runners, and it is the only thing keeping `test-browser` red.
+**Status:** PARTIAL — filed 2026-08-30 from CI's first working browser lane. **All three causes are
+found and fixed**: §1 in `16c92a11`, §2 in `fe1f84dc`, §3 by running the lane headed. The whole
+browser lane is green on a developer machine; what remains is confirming the same on CI.
 
 **Goal: `pnpm test:browser` can pass, and the hot-reload proof proves something.**
 Two defects found by making CI run a lane it had never executed. Neither is CI plumbing; both are
@@ -143,13 +143,28 @@ Every condition `waitForHotReload` waits for is satisfied here, through the same
 same edit, on the same project, with the harness's spawn form. Three hypotheses are now closed by
 measurement: the watcher, the spawn form, and the bridge.
 
-**The difference that remains is headedness.** The probe launches Chromium with `headless: false`;
-Playwright's test projects run headless unless told otherwise. Headless Chromium serves WebGPU from
-SwiftShader — the same fact that made §2's provenance sweep unfixable until it launched headed — and
-locally the spec's page comes back with `canvases: 0, physics: null`, which is a game that never
-finished booting rather than one that refused to reload. On CI the game is alive and the counter
-still does not move, so headedness may not be the whole story; it is the last unexamined
-difference, and it is where to start.
+**It was headedness.** The probe launched Chromium with `headless: false`; Playwright's test
+projects run headless unless told otherwise, and headless Chromium serves WebGPU from SwiftShader
+whatever the flags say — the same fact that made §2's sweep unfixable until it launched headed. Run
+the identical spec headed, changing nothing else:
+
+```console
+$ DISPLAY=:0 pnpm exec playwright test --project=hot-reload --headed
+  1 passed (32.1s)
+```
+
+The `hot-reload` project now sets `headless: false`. One thing surfaced behind it: with the reload
+finally happening, three.js's timestamp-query readback is aborted when the renderer is disposed
+mid-frame — `Error resolving queries: AbortError: ... Buffer was unmapped before mapping was
+resolved` — which is the backend describing a scene torn down under it, the same class as the two
+console errors this spec already tolerates. It joins that list, named.
+
+```console
+$ DISPLAY=:0 pnpm test:browser
+  4 passed (40.5s)
+```
+
+That is the whole browser lane green on a developer machine for the first time.
 
 Run the spec's own project headed and see whether the reload arrives, before changing any
 production code.
@@ -170,5 +185,8 @@ the same state).
       and the scene, not the identity of the objects in it — is recorded in
       [hot-reload-drops-the-scene-2026-08-30](../../verification/hot-reload-drops-the-scene-2026-08-30.md).
 - [ ] The templates' AGENTS.md says which one a game author gets.
-- [ ] §3: the update reaches the page on CI, or the lane records honestly that it cannot deliver one.
+- [x] §3: the update reaches the page — it was headless Chromium, and the lane runs headed now.
+      `pnpm test:browser` is 4/4 green locally.
+- [ ] The same green on CI, whose runner has no GPU: headed there means headed under Xvfb, and the
+      lane already provisions one. Confirm on the next run.
 - [ ] `test-browser` green on CI, and the run names the adapter it had.

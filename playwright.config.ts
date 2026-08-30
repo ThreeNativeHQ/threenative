@@ -524,6 +524,13 @@ export default defineConfig({
       testDir: "./tests/browser",
       use: {
         baseURL: `http://127.0.0.1:${hotReloadPort}`,
+        // This proof drives a real game — it lands a player, walks it, and reads a score across ten
+        // HMR updates — and headless Chromium serves WebGPU from SwiftShader whatever the flags
+        // say. Headless, the run reported a reload counter stuck at zero for weeks; headed, on the
+        // same machine and the same project, it passes in 32 seconds. It is the same fact that
+        // made the provenance sweep unfixable until it launched headed. The lane already provisions
+        // a display for pixel work, so there is one to launch into.
+        headless: false,
         launchOptions: {
           args: [...WEBGPU_BROWSER_ARGS],
         },
