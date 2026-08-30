@@ -31,6 +31,10 @@ const visual = (source) => {
   // correct the game is. It belongs to the lanes that have hardware, not to the proof that a
   // stranger can scaffold and play.
   if (scenario.assert?.performance !== undefined) return true;
+  // A `visual` assertion forces the runner to capture a frame no matter what the artifacts say —
+  // `wantsVisual` overrides `--no-screenshots`, correctly, because the assertion needs the pixels.
+  // Missing this let a scenario through as non-visual and straight into the screenshot hang.
+  if (scenario.assert?.visual !== undefined) return true;
   return (scenario.steps ?? []).some((step) => step.screenshot !== undefined);
 };
 
