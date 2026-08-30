@@ -8,6 +8,13 @@ prd_contract: v1
 [PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md). Batch:
 [docs/PRDs/lighting](./README.md).
 
+**Updated 2026-08-30.** The abstraction PRD-266 ships is named `WorldEnvironment`, after
+Godot's node of the same name; the invented `RenderChain` is withdrawn. A working prototype
+of the whole chain now exists in `../sandbox/lumen-hall` — evidence in
+[docs/verification/lighting-chain-2026-08-30.md](../../verification/lighting-chain-2026-08-30.md)
+— and the per-template numbers below should start from what it measured rather than from
+upstream's generic presets.
+
 **Goal: a scaffolded game looks lit by bounced light on the first run, from source the game owns
 and can delete.** This is the adopt-upstream half of the batch evaluation: no code is vendored,
 nothing new is installed, and every appearance decision lands in generated user source.
@@ -42,7 +49,7 @@ degrade it — which is PRD-266, and why this PRD depends on it.
 ## What ships
 
 `templates/*/src/render/postprocessing.ts` in each of the seven templates, rewritten to build a
-`RenderChain` **request** rather than a hand-composed node expression, keeping the existing
+`WorldEnvironment` **request** rather than a hand-composed node expression, keeping the existing
 file-header contract (*"Generated for you: ordinary Three.js; ThreeNative does not read this
 file."*) and its comment density — these files teach as much as they configure.
 
@@ -66,7 +73,7 @@ Every knob lives in these files. `packages/core` gains nothing in this PRD.
 ## Acceptance criteria
 
 1. **A scaffolded template renders bounced light on the browser lane.** For each of the seven
-   templates, a playtest scenario asserts `renderChain.tier` is not `off` and the SSGI stage is in
+   templates, a playtest scenario asserts `worldEnvironment.tier` is not `off` and the SSGI stage is in
    `chain.applied`. *Mutation:* remove the SSGI request from the template's `postprocessing.ts` and
    the scenario fails naming the missing stage — not a screenshot diff, which colour drift alone
    could satisfy.

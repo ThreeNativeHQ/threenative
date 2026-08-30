@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-266 — the render chain is a seam the game fills, and it names the tier it actually ran
+# PRD-266 — `WorldEnvironment` is a seam the game fills, and it names the tier it actually ran
 
 **Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Batch:
 [docs/PRDs/lighting](./README.md), which carries the repo evaluation this PRD implements.
@@ -105,30 +105,30 @@ A new `packages/core/src/render/world-environment.ts`, exported from `@threenati
 - Tier ladder in one pre-registered constant block, in the `RESOLUTION_SCALER` shape: named tiers
   (`high`/`medium`/`low`/`off`) mapping to the SSGI/SSR/denoise parameters that upstream's own
   docblocks recommend, selected from the `FrameBudget` `render` phase against `display.maxFps`.
-- `chain.applied` — the tier that actually ran, the stages that ran, and for each stage that did
-  not, the reason. Emitted under a `TN_RENDER_CHAIN` marker on the same path `TN_FRAME_BUDGET`
+- `environment.applied` — the tier that actually ran, the stages that ran, and for each stage that did
+  not, the reason. Emitted under a `TN_WORLD_ENVIRONMENT` marker on the same path `TN_FRAME_BUDGET`
   uses, so the playtest bridge and `doctor --url` can both read it.
 
-**The chain owns ordering, availability and degradation. It owns no appearance.** Every colour,
+**`WorldEnvironment` owns ordering, availability and degradation. It owns no appearance.** Every colour,
 strength, exposure and tonemap stays in `templates/*/src/render/`, which is what PRD-267 fills in.
 A stage the game did not request is never added.
 
 ## Acceptance criteria
 
-1. **A requested stage that cannot run is reported, not skipped.** A chain requesting SSGI against
-   a non-WebGPU renderer produces `chain.applied` with SSGI absent and a reason naming the
-   renderer kind, and emits `TN_RENDER_CHAIN`. *Mutation:* restore the bare
+1. **A requested stage that cannot run is reported, not skipped.** A `WorldEnvironment` requesting SSGI against
+   a non-WebGPU renderer produces `environment.applied` with SSGI absent and a reason naming
+   the renderer kind, and emits `TN_WORLD_ENVIRONMENT`. *Mutation:* restore the bare
    `if (kind !== "webgpu") return;` early-return and the new negative-control spec goes green with
    an empty report it could not have earned.
 
-2. **Order is fixed by the chain, not by the caller.** Requesting the stages in scrambled order
+2. **Order is fixed by `WorldEnvironment`, not by the caller.** Requesting the stages in scrambled order
    produces the same installed graph as requesting them in canonical order, asserted on the node
    graph, not on a screenshot. *Mutation:* replace the canonical sort with the caller's array order
    and the scrambled-input spec diverges from the canonical-input spec.
 
 3. **The tier moves on measured frame cost and says so.** With a synthetic `FrameBudget` window
-   whose `render` phase exceeds the `display.maxFps` budget for the configured dwell, the chain
-   steps down one tier and `chain.applied.source` reports `"auto"`; pinned configuration reports
+   whose `render` phase exceeds the `display.maxFps` budget for the configured dwell, the environment
+   steps down one tier and `environment.applied.source` reports `"auto"`; pinned configuration reports
    `"pinned"` and never moves. *Mutation:* freeze the tier selector at the requested tier and the
    step-down spec fails on both the tier and the source field.
 
@@ -143,7 +143,7 @@ A stage the game did not request is never added.
    blank frame. *Mutation:* compose a stage's input from the unconverted node while passing a
    converted one to the pass, and the blank-frame spec goes red.
 
-6. **A playtest can assert the tier.** A scenario asserting `renderChain.tier` against a template
+6. **A playtest can assert the tier.** A scenario asserting `worldEnvironment.tier` against a template
    build fails when the chain reports a lower tier than asserted, and fails — not passes — when the
    marker is absent entirely. *Mutation:* drop the marker emission and the scenario reports
    unobservable rather than green (the PRD-265 rule).
@@ -166,7 +166,7 @@ Worth an upstream contribution rather than a fork.
 ## Verification
 
 `pnpm typecheck && pnpm lint && pnpm test`, plus a playtest scenario driving the starter template
-that asserts a non-`off` tier on the browser lane and pastes `TN_RENDER_CHAIN`. Record in
+that asserts a non-`off` tier on the browser lane and pastes `TN_WORLD_ENVIRONMENT`. Record in
 `docs/verification/` as one file for the run. `pnpm build` must regenerate
-`packages/create-threenative/capabilities.json` with the new `RenderChain` entry in the same
+`packages/create-threenative/capabilities.json` with the new `WorldEnvironment` entry in the same
 commit — a capability absent from the manifest does not exist to the agents that build with it.
