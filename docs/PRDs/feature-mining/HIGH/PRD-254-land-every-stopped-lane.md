@@ -449,19 +449,21 @@ regenerate on `main` with `pnpm sync:agents` instead.
 
 ---
 
-### Phase 6B — Decide: android-high-refresh (do not auto-merge)
+### Phase 6B — android-high-refresh (superseded branch, shipped contract)
 
-Two branches, neither in convergence, both clean, both predating today's lanes:
+Two branches predate the shipped implementation:
 - `linchpin/android-high-refresh-not-selected-2026-08-27` — `97fba16f`, 2 commits
 - `linchpin/android-high-refresh-not-selected-2026-08-28` — `8f689d70`, 4 commits:
   `c4ccc3ca` expose Android display refresh preference → `f745c7c8` resolve the frame-rate API
   dynamically → `cbe51dcf` execute presentation cap handoff → `8f689d70` refresh census
 
-`git log 97fba16f..8f689d70` — if 08-28 supersedes 08-27, merge only 08-28 and delete 08-27.
-These need a real device to prove (see `packages/runtime-native/AGENTS.md`); the Pixel 8 lane trips
-thermal LIGHT between first-proof launch and preflight, so cool to ≤31.5 °C and retry. **Do not
-claim an Android result you did not run on the phone.** If you cannot run it, file under
-`docs/PRDs/BLOCKED/` naming the missing evidence — and try the blocked reason once before believing it.
+**Do not replay either branch.** Current `main` contains the newer consolidated implementation at
+`98a963f0`: public `display.maxFps`, native package metadata, Android `Surface.setFrameRate()` across
+surface creation and resume, and the native presentation ceiling. Its physical Pixel 8 evidence is
+already accepted in `docs/verification/runtime-perf-state.md`: physical 120 Hz selected, 11 steady
+windows at 63.45–72.52 fps, zero hitches, and thermal status 0 before and after. The isolated
+current-HEAD audit, detached tarball consumer, emulator result and two observed-red controls are in
+[`prd-254-high-refresh-audit-2026-08-30.md`](../../../verification/prd-254-high-refresh-audit-2026-08-30.md).
 
 ---
 
@@ -509,7 +511,8 @@ Consumer-scoped. Each is only satisfiable by code that runs.
 - [ ] `pnpm budgets` green; `pnpm census` refreshed in the same commit as every runtime-native change.
 - [ ] `main` contains every lane listed in §1 or the omission is stated with a reason.
 - [ ] Every worktree in Phase 6A is removed and its tip archived under `refs/archive/branches-2026-08-28/`.
-- [ ] Every Phase 6B lane is landed, or filed under `docs/PRDs/BLOCKED/` naming the missing evidence.
+- [x] Every Phase 6B lane is landed, rejected with evidence, superseded by a landed implementation,
+      or filed under `docs/PRDs/BLOCKED/` naming the missing evidence.
       "Still sitting in a worktree" is not an acceptable end state.
 - [ ] `git worktree list` is short enough to read, and every surviving entry has a named owner.
 
