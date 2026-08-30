@@ -73,6 +73,9 @@ import {
   type IRemoteBrowserSession,
 } from "./browserSession.js";
 
+/** How long a single screenshot may take before the runner calls it a failure. */
+const SCREENSHOT_TIMEOUT_MS = 120_000;
+
 export { preflightDisplay, buildReport } from './runner-support.js';
 export { captureVisualSurface } from './steps.js';
 export { advanceFixedStep, playtestStepDrivesMovement } from './steps.js';
@@ -387,8 +390,15 @@ async function runStandalonePlaytestInternal(
     };
     const capturePage = async (
       label: string,
-      options: Parameters<Page["screenshot"]>[0],
+      requested: Parameters<Page["screenshot"]>[0],
     ): Promise<Buffer | undefined> => {
+      // Playwright's 30s default is sized for a machine with a GPU. A CPU rasteriser — SwiftShader
+      // on a CI runner, llvmpipe on a headless box — composites the same frame one to two orders
+      // of magnitude slower, and the shot times out with `page.screenshot: Timeout 30000ms
+      // exceeded` after reporting `fonts loaded`, which reads as a broken game rather than a slow
+      // one. The scenario's own timeout still bounds the run; this only stops a slow machine from
+      // being reported as a failed capture.
+      const options = { timeout: SCREENSHOT_TIMEOUT_MS, ...requested };
       let png: Buffer;
       try {
         png = await activePage.screenshot(options);
