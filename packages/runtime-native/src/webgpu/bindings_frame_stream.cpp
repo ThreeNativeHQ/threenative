@@ -416,6 +416,24 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     return true;
 }
 
+bool flushRecordedFrameOps(BindingsState* state) {
+    if (!state || !state->engine || !state->profiling.frameOpStreamDrain.ptr) return true;
+    if (state->profiling.frameOpStreamFlushing) return true;
+    state->profiling.frameOpStreamFlushing = true;
+    const auto frame = state->engine->call(state->profiling.frameOpStreamDrain,
+                                           state->engine->newUndefined(),
+                                           {state->engine->newNumber(1)});
+    bool replayed = true;
+    if (!state->engine->isNull(frame) && !state->engine->isUndefined(frame)) {
+        state->profiling.frameOpStreamReplayCrossings += 1;
+        replayed = replayPackedFrameOpStream(state, frame);
+        if (!replayed && !state->engine->hasException())
+            state->engine->throwException("frame op stream: replay failed");
+    }
+    state->profiling.frameOpStreamFlushing = false;
+    return replayed;
+}
+
 #endif
 
 }  // namespace mystral::webgpu

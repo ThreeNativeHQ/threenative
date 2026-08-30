@@ -1,5 +1,6 @@
 /** WebGPU buffer, texture, view, and sampler resources. */
 
+#include "bindings_frame_stream.h"
 #include "bindings_handler_helpers.h"
 #include "bindings_resources.h"
 #include "bindings_state.h"
@@ -971,6 +972,15 @@ static js::JSValueHandle handleGpuBufferGetMappedRange(BindingsState* state, uin
 }
 
 static js::JSValueHandle handleGpuBufferMapAsync(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
+    // A map is a synchronization point with the queue: WebGPU completes it only after the work
+    // already submitted. `queue.submit` is recorded rather than executed, so the copy a readback
+    // just submitted is still sitting in the frame recorder — the map would report success over
+    // bytes the GPU never wrote, and the deferred submit would then land on a mapped buffer
+    // ("used in submit while mapped"). Flush before looking the buffer up: the replay can retire
+    // a deferred `buffer.destroy()` and invalidate the registry iterator.
+    if (!flushRecordedFrameOps(state))
+        return state->engine->evalWithResult(
+            "Promise.reject(new Error('Buffer map failed'))", "mapAsync-flush-failed");
     auto it = state->registries.bufferRegistry.find(bufferId);
     if (it == state->registries.bufferRegistry.end()) {
         std::cerr << "[WebGPU] mapAsync: Buffer " << bufferId << " not found" << std::endl;

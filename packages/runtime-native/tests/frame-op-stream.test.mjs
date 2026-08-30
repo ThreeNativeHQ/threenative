@@ -99,6 +99,43 @@ describe("packed frame op stream", () => {
     expect(drain()).toBeNull();
   });
 
+  // `buffer.mapAsync` drains partially, mid-frame: WebGPU completes a map only after the work
+  // already submitted, and a recorded `queue.submit` has not reached the GPU yet.
+  it("drains everything already submitted when the host asks for a partial frame", () => {
+    const { device, queue, drain } = harness();
+    queue.writeBuffer({ _bufferId: 1 }, 0, new Uint32Array(1));
+    const encoder = device.createCommandEncoder();
+    encoder.clearBuffer({ _bufferId: 2 }, 0, 4);
+    queue.submit([encoder.finish()]);
+
+    const flushed = drain(1);
+    expect(records(flushed).result.map(({ opcode }) => opcode)).toEqual([1, 2, 27, 28, 29]);
+    expect(drain(1)).toBeNull();
+    expect(drain()).toBeNull();
+  });
+
+  // The cut has to land before a half-recorded encoder: replaying a stream whose encoder is never
+  // finished fails closed on the native side with "frame ended with unfinished GPU objects".
+  it("leaves a half-recorded encoder behind and drains it whole at the frame boundary", () => {
+    const { device, queue, drain } = harness();
+    const first = device.createCommandEncoder();
+    first.clearBuffer({ _bufferId: 2 }, 0, 4);
+    queue.submit([first.finish()]);
+    const second = device.createCommandEncoder();
+    const pass = second.beginRenderPass({ colorAttachments: [] });
+
+    const flushed = drain(1);
+    expect(records(flushed).result.map(({ opcode }) => opcode)).toEqual([2, 27, 28, 29]);
+    expect(drain(1)).toBeNull();
+
+    pass.end();
+    queue.submit([second.finish()]);
+    const tail = drain();
+    expect(tail).not.toBe(flushed);
+    expect(records(tail).result.map(({ opcode }) => opcode)).toEqual([2, 3, 17, 28, 29]);
+    expect(drain()).toBeNull();
+  });
+
   it("keeps render and compute pass methods on shared receiver-aware prototypes", () => {
     const { device, drain } = harness();
     const encoderA = device.createCommandEncoder();

@@ -11,6 +11,14 @@
   let opCount = 0;
   let nextId = 1;
   let retained = [];
+  // The stream can only be cut where nothing is half-written: no command encoder or pass open,
+  // no finished command buffer still unsubmitted. `openObjects` counts exactly those, and
+  // `safeCursor`/`safeOpCount` remember the last byte where it was zero. `buffer.mapAsync` cuts
+  // there, so work the game already handed to `queue.submit` reaches the GPU before the map
+  // reports it done.
+  let openObjects = 0;
+  let safeCursor = 16;
+  let safeOpCount = 0;
   const ensure = (n) => {
     if (cursor + n <= storage.byteLength) return;
     let size = storage.byteLength * 2;
@@ -36,7 +44,7 @@
     cursor += v.byteLength;
     while (cursor & 7) view.setUint8(cursor++, 0);
   };
-  const emit = (code, write) => {
+  const emit = (code, write, openDelta) => {
     const start = cursor;
     const retainedStart = retained.length;
     ensure(8);
@@ -55,6 +63,11 @@
     }
     view.setUint32(start + 4, cursor - start, true);
     opCount++;
+    if (openDelta) openObjects += openDelta;
+    if (openObjects === 0) {
+      safeCursor = cursor;
+      safeOpCount = opCount;
+    }
   };
   const resourceId = (v, n, label) => {
     if (!Number.isSafeInteger(n) || n <= 0)
@@ -290,7 +303,7 @@
     },
     end() {
       const passId = receiverId(this, renderPassIdKey, "render pass");
-      emit(17, () => u32(passId));
+      emit(17, () => u32(passId), -1);
     },
   };
   const computePassPrototype = {
@@ -321,7 +334,7 @@
     },
     end() {
       const passId = receiverId(this, computePassIdKey, "compute pass");
-      emit(22, () => u32(passId));
+      emit(22, () => u32(passId), -1);
     },
   };
   const renderPass = (encoderId, descriptor) => {
@@ -364,7 +377,7 @@
         u32(opt(d.stencilReadOnly, false));
       }
       timestampWrites(descriptor.timestampWrites);
-    });
+    }, 1);
     const pass = Object.create(renderPassPrototype);
     pass[renderPassIdKey] = passId;
     return pass;
@@ -375,7 +388,7 @@
       u32(encoderId);
       u32(passId);
       timestampWrites(descriptor?.timestampWrites);
-    });
+    }, 1);
     const pass = Object.create(computePassPrototype);
     pass[computePassIdKey] = passId;
     return pass;
@@ -460,7 +473,7 @@
   };
   device.createCommandEncoder = () => {
     const encoderId = nextId++;
-    emit(2, () => u32(encoderId));
+    emit(2, () => u32(encoderId), 1);
     const encoder = Object.create(commandEncoderPrototype);
     encoder[encoderIdKey] = encoderId;
     return encoder;
@@ -528,20 +541,42 @@
     });
   };
   queue.submit = (a) =>
-    emit(29, () => {
-      u32(a.length);
-      for (const b of a) u32(commandBufferId(b));
-    });
-  return () => {
-    if (!opCount) return null;
+    emit(29,
+      () => {
+        u32(a.length);
+        for (const b of a) u32(commandBufferId(b));
+      },
+      -a.length);
+  // `partial` drains only up to the last clean cut, leaving a half-recorded encoder to keep
+  // recording; the host passes it from `buffer.mapAsync`. The frame boundary passes nothing and
+  // drains everything, exactly as before.
+  return (partial) => {
+    const end = partial ? safeCursor : cursor;
+    const ops = partial ? safeOpCount : opCount;
+    if (!ops) return null;
     view.setUint32(0, magic, true);
     view.setUint32(4, version, true);
-    view.setUint32(8, cursor, true);
-    view.setUint32(12, opCount, true);
+    view.setUint32(8, end, true);
+    view.setUint32(12, ops, true);
     const frame = storage;
-    cursor = 16;
-    opCount = 0;
-    retained = [];
+    if (end < cursor) {
+      // The host reads `frame` after this returns, so the bytes it was handed must not move:
+      // the still-recording tail continues in a buffer of its own.
+      const tail = new Uint8Array(storage, end, cursor - end);
+      const next = new ArrayBuffer(storage.byteLength);
+      new Uint8Array(next, 16, tail.byteLength).set(tail);
+      storage = next;
+      view = new DataView(storage);
+      cursor = 16 + tail.byteLength;
+      opCount -= ops;
+    } else {
+      cursor = 16;
+      opCount = 0;
+      openObjects = 0;
+      retained = [];
+    }
+    safeCursor = 16;
+    safeOpCount = 0;
     return frame;
   };
 };

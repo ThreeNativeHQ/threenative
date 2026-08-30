@@ -45,6 +45,7 @@ void runContract(bool disableStreamControl) {
         R"JS((async () => {
           const adapter = await navigator.gpu.requestAdapter();
           const device = await adapter.requestDevice();
+          globalThis.__tnDevice = device; // reused by the same-frame readback contract below.
           const src = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
           const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
           globalThis.__tnUploadDst = dst;
@@ -52,6 +53,7 @@ void runContract(bool disableStreamControl) {
             size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT,
           });
           const renderView = renderTarget.createView();
+          globalThis.__tnRenderView = renderView;
           requestAnimationFrame(() => {
             const upload = new Uint32Array([1, 2, 3, 4]);
             device.queue.writeBuffer(src, 0, upload);
@@ -128,6 +130,102 @@ void runContract(bool disableStreamControl) {
     expect(engine->toBoolean(engine->evalScriptWithResult(
         "JSON.stringify(__tnUploadReadback) === '[1,2,3,4]'", "tn-upload-readback-check.js")),
         "writeBuffer payload was copied eagerly before source mutation");
+
+    // Same-frame readback. `queue.submit` is recorded, not executed, so the copy a game hands the
+    // queue only reaches the GPU when the frame drains. `buffer.mapAsync` is the one call that
+    // lets JavaScript observe the queue before that: WebGPU says a map completes after the work
+    // already submitted, so the map has to force the recorded stream out first. three.js's
+    // `readRenderTargetPixelsAsync` is exactly this shape — copy, submit, map, read, destroy, all
+    // inside one frame — and read zeros while the deferred submit later tripped
+    // "used in submit while mapped".
+    const uint64_t crossingsBeforeSameFrame = state->profiling.frameOpStreamReplayCrossings;
+    expect(engine->evalScript(
+        R"JS((() => {
+          const device = globalThis.__tnDevice;
+          const src = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+          const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+          requestAnimationFrame(() => {
+            device.queue.writeBuffer(src, 0, new Uint32Array([5, 6, 7, 8]));
+            const encoder = device.createCommandEncoder();
+            encoder.copyBufferToBuffer(src, 0, dst, 0, 16);
+            device.queue.submit([encoder.finish()]);
+            // The host maps synchronously and hands back an already-resolved promise, so the read
+            // below is the same instant three.js reaches after its `await`.
+            dst.mapAsync(GPUMapMode.READ, 0, 16);
+            globalThis.__tnSameFrameReadback = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
+            dst.destroy(); // three.js destroys instead of unmapping: the buffer stays mapped.
+            globalThis.__tnSameFrameRan = true;
+          });
+        })())JS",
+        "tn-same-frame-readback.js"),
+        "same-frame readback script evaluated");
+    runtime->pollEvents();
+    expect(engine->toBoolean(engine->getGlobalProperty("__tnSameFrameRan")),
+           "same-frame readback ran inside a requestAnimationFrame callback");
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+        "JSON.stringify(__tnSameFrameReadback) === '[5,6,7,8]'", "tn-same-frame-check.js")),
+        std::string("mapAsync sees work submitted earlier in the same frame: ") +
+            engine->toString(engine->evalScriptWithResult(
+                "JSON.stringify(__tnSameFrameReadback)", "tn-same-frame-report.js")));
+    expect(state->profiling.frameOpStreamReplayCrossings - crossingsBeforeSameFrame == 2,
+           "mapAsync drains the recorded stream in its own crossing, ahead of the frame's");
+    const std::vector<std::string> expectedSameFrameOrder = {"buffer.destroy"};
+    if (state->profiling.frameOpStreamLastOrder != expectedSameFrameOrder) {
+        std::cerr << "observed same-frame tail order:";
+        for (const auto& op : state->profiling.frameOpStreamLastOrder)
+            std::cerr << " " << op;
+        std::cerr << std::endl;
+    }
+    expect(state->profiling.frameOpStreamLastOrder == expectedSameFrameOrder,
+           "the copy and its submit left at mapAsync, leaving only the deferred destroy");
+
+    // The same map, with a command encoder left half-recorded across it. The cut has to land
+    // before that encoder was created — replaying a stream whose encoder is never finished is a
+    // hard "frame ended with unfinished GPU objects" — so the tail keeps recording and drains at
+    // the frame boundary, intact and in order.
+    expect(engine->evalScript(
+        R"JS((() => {
+          const device = globalThis.__tnDevice;
+          const src = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+          const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+          requestAnimationFrame(() => {
+            device.queue.writeBuffer(src, 0, new Uint32Array([9, 10, 11, 12]));
+            const first = device.createCommandEncoder();
+            first.copyBufferToBuffer(src, 0, dst, 0, 16);
+            device.queue.submit([first.finish()]);
+            const second = device.createCommandEncoder();
+            const pass = second.beginRenderPass({colorAttachments: [{
+              view: globalThis.__tnRenderView, loadOp: "clear", storeOp: "store",
+              clearValue: [0, 0, 0, 1],
+            }]});
+            dst.mapAsync(GPUMapMode.READ, 0, 16);
+            globalThis.__tnSplitReadback = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
+            dst.unmap();
+            pass.end();
+            device.queue.submit([second.finish()]);
+            globalThis.__tnSplitRan = true;
+          });
+        })())JS",
+        "tn-split-flush.js"),
+        "split-flush script evaluated");
+    runtime->pollEvents();
+    expect(engine->toBoolean(engine->getGlobalProperty("__tnSplitRan")),
+           "split-flush readback ran inside a requestAnimationFrame callback");
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+        "JSON.stringify(__tnSplitReadback) === '[9,10,11,12]'", "tn-split-check.js")),
+        std::string("mapAsync flushes the submitted copy while an encoder is still open: ") +
+            engine->toString(engine->evalScriptWithResult(
+                "JSON.stringify(__tnSplitReadback)", "tn-split-report.js")));
+    const std::vector<std::string> expectedSplitTailOrder = {
+        "createCommandEncoder", "beginRenderPass", "render.end", "finish", "submit"};
+    if (state->profiling.frameOpStreamLastOrder != expectedSplitTailOrder) {
+        std::cerr << "observed split tail order:";
+        for (const auto& op : state->profiling.frameOpStreamLastOrder)
+            std::cerr << " " << op;
+        std::cerr << std::endl;
+    }
+    expect(state->profiling.frameOpStreamLastOrder == expectedSplitTailOrder,
+           "the half-recorded encoder stayed behind and drained whole at the frame boundary");
 
     expectMalformed(state, "() => new ArrayBuffer(8)", "truncated header",
                     "native parser rejects a truncated header");

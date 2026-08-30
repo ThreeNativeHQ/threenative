@@ -280,6 +280,8 @@ struct FrameProfiling {
     // Production frame recorder drain, installed when requestDevice creates the device wrapper.
     // The host invokes it once after all rAF callbacks and replays the returned operations here.
     js::JSValueHandle frameOpStreamDrain{};
+    // Set while a mid-frame flush is replaying, so a nested flush cannot re-enter the drain.
+    bool frameOpStreamFlushing = false;
     uint64_t frameOpStreamReplayCrossings = 0;
     uint64_t frameOpStreamDirectCommandCalls = 0;
     uint64_t frameOpStreamLastOpCount = 0;
