@@ -93,6 +93,8 @@ export function createProjectRegistry(baseRegistry, scene, project) {
         tolerance: { pixelMismatchRatio: 0.03, perceptualDeltaE: 6 },
       },
     ],
-    exclusions: baseRegistry.exclusions,
+    exclusions: baseRegistry.exclusions.filter(
+      (exclusion) => exclusion?.row === undefined || exclusion.row === id,
+    ),
   };
 }

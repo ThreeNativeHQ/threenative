@@ -481,6 +481,44 @@ test("registry exclusion expiry is validated and surfaced as blocked evidence", 
   assert.match(validateRegistry(malformed).join("\n"), /expires must be an ISO date/u);
 });
 
+test("an exclusion row must name a registry test id or it binds to nothing", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  assert.deepEqual(validateRegistry(registry), []);
+
+  const malformed = structuredClone(registry);
+  malformed.exclusions.find(({ id }) => id === "desktop-multitouch-input").row =
+    "90-multitouch-inpu";
+  assert.match(
+    validateRegistry(malformed).join("\n"),
+    /desktop-multitouch-input: row must name a registry test id/u,
+  );
+
+  const rowless = structuredClone(registry);
+  const target = rowless.exclusions.find(({ id }) => id === "desktop-multitouch-input");
+  delete target.row;
+  assert.deepEqual(validateRegistry(rowless), []);
+});
+
+test("generatedPlaytestProofs fail closed on unknown ids and missing proof files", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  assert.deepEqual(validateRegistry(registry), []);
+
+  const typo = structuredClone(registry);
+  typo.generatedPlaytestProofs[0].proof = "packages/runtime-native/does-not-exist.json";
+  assert.match(
+    validateRegistry(typo).join("\n"),
+    /generated-shooter-input-control: proof must reference an existing file/u,
+  );
+
+  const duplicateId = structuredClone(registry);
+  duplicateId.generatedPlaytestProofs[1].id = registry.tests[0].id;
+  assert.match(
+    validateRegistry(duplicateId).join("\n"),
+    /duplicate id/u,
+  );
+});
+
+
 test("help exits without starting any parity lane", () => {
   const proc = run(["--help"]);
   assert.equal(proc.status, 0, proc.stderr || proc.stdout);

@@ -204,11 +204,13 @@ export function validateRegistry(registry) {
     );
   }
   const ids = new Set();
+  const testIds = new Set();
   for (const [index, entry] of registry.tests.entries()) {
     const label = entry?.id || `row ${index}`;
     if (!entry?.id || !/^[a-z0-9][a-z0-9-]*$/u.test(entry.id)) errors.push(`${label}: invalid id`);
     if (ids.has(entry?.id)) errors.push(`${label}: duplicate id`);
     ids.add(entry?.id);
+    if (entry?.id !== undefined) testIds.add(entry.id);
     if (!["implemented", "planned"].includes(entry?.status)) {
       errors.push(`${label}: status must be implemented or planned`);
     }
@@ -243,6 +245,40 @@ export function validateRegistry(registry) {
       }
       if (entry?.expires !== undefined && !isValidExclusionExpiry(entry.expires)) {
         errors.push(`${label}: expires must be an ISO date (YYYY-MM-DD)`);
+      }
+      if (entry?.row !== undefined) {
+        if (typeof entry.row !== "string" || !testIds.has(entry.row)) {
+          errors.push(`${label}: row must name a registry test id`);
+        }
+      }
+    }
+  }
+  if (registry.generatedPlaytestProofs !== undefined) {
+    if (!Array.isArray(registry.generatedPlaytestProofs)) {
+      errors.push("registry.generatedPlaytestProofs must be an array");
+    } else {
+      for (const [index, entry] of registry.generatedPlaytestProofs.entries()) {
+        const label = entry?.id || `generatedPlaytestProofs ${index}`;
+        if (!entry?.id || !/^[a-z0-9][a-z0-9-]*$/u.test(entry.id)) {
+          errors.push(`${label}: invalid id`);
+        }
+        if (ids.has(entry?.id)) errors.push(`${label}: duplicate id`);
+        ids.add(entry?.id);
+        for (const field of ["category", "runner", "status", "title"]) {
+          if (typeof entry?.[field] !== "string" || entry[field].trim() === "") {
+            errors.push(`${label}: ${field} must be a non-empty string`);
+          }
+        }
+        for (const field of ["proof", "scenario"]) {
+          const relative = entry?.[field];
+          if (relative === undefined && field === "scenario") continue;
+          if (
+            typeof relative !== "string" ||
+            (!existsSync(join(runtimeRoot, relative)) && !existsSync(join(workspaceRoot, relative)))
+          ) {
+            errors.push(`${label}: ${field} must reference an existing file`);
+          }
+        }
       }
     }
   }
