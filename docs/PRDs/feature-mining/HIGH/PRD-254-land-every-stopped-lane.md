@@ -387,7 +387,7 @@ this PRD's job is to stop them rotting silently.
 | `.claude/worktrees/agent-a5019321d7ca9cf88` | 2 | portable-text spike closed G-only, row 31 on the physical Pixel 8 | PRD-209 **open** |
 | `.claude/worktrees/agent-a5310592192d978ec` | 1 | **REJECTED 2026-08-30:** lifetime-held V8 entry repeatably segfaults the production worker contract; main's per-call entry passes the same binary | PRD-227 **open**; do not retry this lane |
 | `.claude/worktrees/agent-a78ac559a62314fcf` | 1 | **ALREADY LANDED at `5ebebd95`; detached tarball audit passed 2026-08-30.** The stale commit is not replayed | — |
-| `.claude/worktrees/agent-a868a44e113b83123` | 1 | PRD-213 Pixel 8 GPU-memory attribution (docs only) | PRD-213 open in `mobile/` |
+| `.claude/worktrees/agent-a868a44e113b83123` | 1 | **ALREADY LANDED at `b378e67f`; detached tarball audit passed 2026-08-30.** The stale docs commit is not replayed | PRD-213 remains **PARTIAL** for the queued Phase 2 device before/after, not this guidance |
 | `.claude/worktrees/prd-222-resume` | 3 | config-change axes so mid-play changes stop killing the process | PRD-222 **open** |
 
 For each: rebase onto `main`, run the gates, land it — or file it under `docs/PRDs/BLOCKED/` naming
@@ -420,6 +420,15 @@ Its physical-Pixel proof is already in main, and the black-resume defect it expo
 fixed. Current policy/lifecycle contracts passed; the audit also tightened the Android branch test
 after a wrong-return mutation incorrectly stayed green. See
 [`docs/verification/prd-254-crash-resume-audit-2026-08-30.md`](../../../verification/prd-254-crash-resume-audit-2026-08-30.md).
+
+The GPU-memory lane (`a868a44`) is already present at `b378e67f`. Every lane file except the
+shared instruction-budget record is byte-identical there; main's record additionally preserves
+the concurrent PRD-209 and PRD-214 measurements, so replaying the stale commit would erase evidence.
+A detached tarball scaffold shipped the Pixel 8 pointer and full memory recipe, typechecked, and
+passed all three generated WebGPU scenarios with a visibly nonblank capture. The named recipe-link
+mutation turned the generated instruction contract red. PRD-213 stays PARTIAL only for its queued
+Phase 2 physical-device before/after; the consolidated audit is in
+[`docs/verification/runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 
 **6C · The 14 dirty files are noise, not work**
 

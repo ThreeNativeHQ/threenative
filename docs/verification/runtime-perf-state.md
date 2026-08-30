@@ -1570,6 +1570,34 @@ green after restoration. The generated `pnpm test` then passed all four sandbox 
 The sandbox README maps the feature to PRD-214 and this proof. Mobile was not re-executed in this
 audit; PRD-214 retains its original physical-Pixel evidence and its open optimization phases.
 
+### 2026-08-30 — stale GPU-memory guidance lane adjudication
+
+`worktree-agent-a868a44e113b83123` is not missing work. Its PRD-213 Pixel 8 attribution, generated
+memory recipe, template pointer and instruction-budget allowance are already on main at
+`b378e67f`. Every lane path is byte-identical at that commit except
+`instruction-budgets-2026-08-23.md`, where main also preserves the concurrently integrated PRD-209
+and PRD-214 measurements. Replaying the stale commit would erase those measurements and add no
+product behavior. PRD-213 remains PARTIAL for its queued Phase 2 physical-device before/after, not
+for this already-shipped Phase 1/3 guidance.
+
+The isolated contract baseline passed the bounded-reference scaffold assertion and generated
+instruction audit. A named mutation changed `agent-docs/mobile-memory-budget.md` to the nonexistent
+`agent-docs/mobile-memory-budget-removed.md` in the performance fragment; the instruction contract
+turned red with `MIRROR_DRIFT`, then returned green after exact restoration. The fresh-worktree
+minimal-scaffold typecheck was stopped after three dependency-build attempts still failed; the
+doubtful assumption was that only missing workspace build outputs caused that unrelated fixture
+failure.
+
+The detached packed-tarball sandbox at
+`/home/joao/projects/threenative/sandbox-runs/prd254-gpu-memory-20260830/prd254-gpu-memory`
+contained zero readable framework-source lines. Its generated `AGENTS.md` names the measured
+`~500MiB` Pixel 8 driver floor and `48MiB` dual-use equirect cost, resolves the shipped
+`agent-docs/mobile-memory-budget.md` recipe, and mirrors the pointer in `CLAUDE.md`. The project
+typechecked, then all three generated headed WebGPU scenarios passed on a named NVIDIA Turing
+adapter with clean diagnostics. The inspected 1280x720 atmosphere capture visibly contained the
+HUD, player, platform and lighting. This audit made no new Android measurement or physical-device
+claim; it accepts the recorded Pixel 8 evidence already on main.
+
 **Desktop reading recipe** (render.p50, never fps):
 
 ```sh
