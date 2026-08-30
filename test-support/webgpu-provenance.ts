@@ -180,6 +180,33 @@ export async function verifyWebGpuProjects(
           );
         }
         await waitForWebGpuProjectReady(page);
+        // A CPU rasteriser can fail to bring the renderer up at all. On GitHub's runners
+        // SwiftShader rejects a 720-byte `mappedAtCreation` buffer that Three's WebGPURenderer
+        // creates — "createBuffer failed, size (720) is too large for the implementation" — so the
+        // canvas never gets a WebGPU context and the provenance check reports `observed none`.
+        // That is the machine, not the framework: the same lane brings the renderer up on this
+        // repository's RTX 2080. Where software adapters are already tolerated, record the project
+        // as unexecuted with the adapter named. Never a pass, never silent, and never on hardware.
+        const preflight = await readWebGpuAdapterInfo(page);
+        if (preflight?.rendererKind !== "webgpu" && options.allowSoftwareAdapter === true) {
+          const identity = Object.fromEntries(
+            Object.entries(preflight?.adapter ?? {}).flatMap(([key, value]) =>
+              typeof value === "string" ? [[key, value]] : [],
+            ),
+          );
+          const adapterName = softwareAdapterName(identity);
+          if (adapterName !== undefined) {
+            process.stdout.write(
+              `[webgpu-provenance] TN_WEBGPU_PROVENANCE_UNEXECUTED ${JSON.stringify({
+                adapter: identity,
+                observedRendererKind: preflight?.rendererKind ?? "none",
+                reason: `the ${adapterName} rasteriser never brought the WebGPU renderer up, so this project did not execute here`,
+                target: `${lane}/${project.name}`,
+              })}\n`,
+            );
+            continue;
+          }
+        }
         const provenance = await assertWebGpuCaptureProvenance(
           page,
           browserArgs,
