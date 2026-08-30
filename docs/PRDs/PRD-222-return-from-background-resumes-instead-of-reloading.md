@@ -4,10 +4,12 @@ prd_contract: v1
 
 # PRD-222 — returning from the background resumes play instead of reloading the game
 
-**Status:** PROPOSED — 2026-08-25. Exploration only; nothing implemented. Two player-visible
-complaints, one root system: (a) backgrounding a game and coming back replays the whole loading
-sequence; (b) the loading screen shows a static "PREPARING" for seconds before anything moves,
-and the ask is whether results can be cached so loads stop repeating.
+**Status:** PARTIAL — Phase 0 attributed K2 on a physical Pixel 8 and emulator; Phase 1's
+13-axis manifest fix is implemented and emulator-proven. Physical green confirmation, K1/K3,
+10-minute survival, trim headroom and cache investigations remain open. Two player-visible
+complaints share one root system: (a) backgrounding a game and coming back replays the whole
+loading sequence; (b) the loading screen shows a static "PREPARING" for seconds before anything
+moves, and the ask is whether results can be cached so loads stop repeating.
 
 **Complexity:** +3 for 10+ files across runtime-native/core/templates, +2 for complex state logic
 (lifecycle and memory policy), +2 multi-package = **7 → HIGH mode**, checkpoint after every phase.

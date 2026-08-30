@@ -1,0 +1,20 @@
+ACTIVITY MANAGER PROCESS EXIT INFO (dumpsys activity exit-info)
+Last Timestamp of Persistence Into Persistent Storage: 2026-08-25 14:43:38.281
+  package: com.threenative.bayview
+    Historical Process Exit for uid=10704
+        ApplicationExitInfo #0:
+          timestamp=2026-08-25 14:53:59.245 pid=12654 realUid=99072 packageUid=10704 definingUid=10151 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=1 (EXIT_SELF) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 description=isolated not needed state=empty trace=null
+        ApplicationExitInfo #1:
+          timestamp=2026-08-25 14:53:58.834 pid=12616 realUid=10704 packageUid=10704 definingUid=10704 user=0
+          process=com.threenative.bayview reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=0.00 description=stop com.threenative.bayview due to installPackageLI state=empty trace=null
+        ApplicationExitInfo #2:
+          timestamp=2026-08-25 14:38:41.265 pid=12277 realUid=10704 packageUid=10704 definingUid=10704 user=0
+          process=com.threenative.bayview reason=1 (EXIT_SELF) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=639MB description=null state=empty trace=null
+        ApplicationExitInfo #3:
+          timestamp=2026-08-25 14:38:41.264 pid=12304 realUid=99071 packageUid=10704 definingUid=10151 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=13 (OTHER KILLS BY SYSTEM) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=132MB description=isolated not needed state=empty trace=null

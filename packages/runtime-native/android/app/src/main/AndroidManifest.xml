@@ -28,9 +28,15 @@
         <!-- package-android.mjs writes the project adaptive launcher icon here. -->
 
         <!-- Main SDL Activity -->
+        <!-- configChanges must cover every axis a mid-play environment change can hit. An
+             uncovered axis recreates the activity in-process, and SDL then exits the whole
+             process (nativeAllowRecreateActivity defaults false and is deliberately left
+             unhinted — PRD-222 Phase 1), so the player's return from split-screen or a
+             font-scale change replays the entire loading sequence. smallestScreenSize covers
+             split-screen/freeform entry; the rest cover user-facing display settings. -->
         <activity
             android:name="com.threenative.runtime.MystralActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|navigation|uiMode|density"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode"
             android:exported="true"
             android:hardwareAccelerated="true">
             <intent-filter>

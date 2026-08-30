@@ -1,12 +1,12 @@
-# PRD-254 Phase 6B — one parked lane remains
+# PRD-254 Phase 6B — every parked lane adjudicated
 
-**Status:** BLOCKED
+**Status:** DONE — final PRD-222 branch integrated after isolated audit 2026-08-30
 **Filed:** 2026-08-28 by the PRD-254 landing
-**Missing evidence:** a physical Pixel 8 for the remaining PRD-222 lane.
+**Missing evidence:** none for Phase 6B. PRD-222 remains PARTIAL under its own acceptance criteria.
 
 PRD-254 Phase 6B said these lanes must be landed or filed, and that "still sitting in a
-worktree" is not an acceptable end state. One remains live and needs device evidence. Six other
-rows are retained below as adjudication history: one unsafe change was rejected and five stale
+worktree" is not an acceptable end state. No lane remains live. Six rows are retained below as
+adjudication history: one unsafe change was rejected and five stale
 branches were superseded by newer implementations already on `main`. None was auto-merged,
 because Phase 6B says landing them is a separate decision per lane and this PRD's scope is
 explicitly *no new engine behaviour*.
@@ -17,7 +17,7 @@ state was snapshotted to `/home/joao/threenative-worktree-archive-2026-08-28/` b
 worktrees were removed. The work is recoverable by branch name; only the checkouts are
 gone.
 
-**The blocked reason was tried before it was believed.** `adb devices -l` runs from
+**The blocked reason was tried before it was believed on 2026-08-28.** `adb devices -l` ran from
 `/home/joao/Android/Sdk/platform-tools/adb` and reports `List of devices attached` with
 no device. The device lanes below cannot be proven right now, and no Android result is
 claimed for any of them.
@@ -30,12 +30,12 @@ claimed for any of them.
 | `worktree-agent-a60b0b3f74d66bb64` | `3fbc926a` | 3 | **ALREADY LANDED exactly at `c3ae3b26`; the exposed resume defect was fixed at `91e93d29`; isolated contract audit passed 2026-08-30** | — | Closed; do not replay. See `prd-254-crash-resume-audit-2026-08-30.md` |
 | `worktree-agent-a78ac559a62314fcf` | `ec31e840` | 1 | **ALREADY LANDED:** equivalent implementation is on main at `5ebebd95`; detached packed-tarball audit passed 2026-08-30 | — | Closed; do not replay the stale commit. See `prd-254-mobile-decoder-audit-2026-08-30.md` |
 | `worktree-agent-a868a44e113b83123` | `2f6b2fc0` | 1 | **ALREADY LANDED at `b378e67f`; detached tarball audit passed 2026-08-30** | PRD-213 remains PARTIAL for its queued Phase 2 device comparison | Closed; do not replay the stale docs commit. See `runtime-perf-state.md` |
-| `worktree-prd-222-resume` | `53101a12` | 3 | config-change axes so mid-play changes stop killing the process | PRD-222 open | A physical Pixel 8; the emulator artifacts are already in the branch |
+| `worktree-prd-222-resume` | `53101a12` | 3 | **LANDED after isolated audit 2026-08-30:** 13 config-change axes stop the measured activity-recreate death | PRD-222 remains PARTIAL for K1/K3 and physical green confirmation | Closed as a stopped lane; remaining criteria stay in PRD-222 |
 
 The eighth Phase 6B lane, `worktree-agent-a5019321d7ca9cf88` (PRD-209 portable text,
 docs only, one file), **was landed** — it carried no code and therefore no gate risk. The V8,
 mobile-decoder, host-gap, frame-budget, crash-handler and GPU-memory rows above are historical
-adjudications and are no longer blocked work; one live row remains.
+adjudications and are no longer blocked work; no live row remains.
 
 ## The Pixel 8 lane's own quirks, for whoever picks these up
 

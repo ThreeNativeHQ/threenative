@@ -1,0 +1,100 @@
+ACTIVITY MANAGER PROCESS EXIT INFO (dumpsys activity exit-info)
+Last Timestamp of Persistence Into Persistent Storage: 2026-08-25 13:27:48.897
+  package: com.threenative.bayview
+    Historical Process Exit for uid=10368
+        ApplicationExitInfo #0:
+          timestamp=2026-08-25 14:13:32.852 pid=4899 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=1 (EXIT_SELF) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=null
+          anrInfo=null
+        ApplicationExitInfo #1:
+          timestamp=2026-08-25 14:13:32.847 pid=4972 realUid=99025 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=1 (EXIT_SELF) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 state=empty trace=null
+          description=isolated not needed
+          anrInfo=null
+        ApplicationExitInfo #2:
+          timestamp=2026-08-25 14:05:09.963 pid=3025 realUid=99024 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=10 (USER REQUESTED) subreason=22 (REMOVE TASK) status=0
+          importance=400 pss=0.00 rss=0.00 state=empty trace=null
+          description=remove task
+          anrInfo=null
+        ApplicationExitInfo #3:
+          timestamp=2026-08-25 14:05:09.955 pid=2823 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=10 (USER REQUESTED) subreason=22 (REMOVE TASK) status=0
+          importance=400 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=remove task
+          anrInfo=null
+        ApplicationExitInfo #4:
+          timestamp=2026-08-25 13:53:17.558 pid=31745 realUid=99021 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=13 (OTHER KILLS BY SYSTEM) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 state=empty trace=null
+          description=isolated not needed
+          anrInfo=null
+        ApplicationExitInfo #5:
+          timestamp=2026-08-25 13:53:17.523 pid=31703 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=stop com.threenative.bayview due to from pid 32079
+          anrInfo=null
+        ApplicationExitInfo #6:
+          timestamp=2026-08-25 13:50:35.744 pid=30836 realUid=99020 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=13 (OTHER KILLS BY SYSTEM) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 state=empty trace=null
+          description=isolated not needed
+          anrInfo=null
+        ApplicationExitInfo #7:
+          timestamp=2026-08-25 13:50:35.717 pid=30801 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=stop com.threenative.bayview due to from pid 31583
+          anrInfo=null
+        ApplicationExitInfo #8:
+          timestamp=2026-08-25 13:20:46.192 pid=26239 realUid=99019 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=13 (OTHER KILLS BY SYSTEM) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 state=empty trace=null
+          description=isolated not needed
+          anrInfo=null
+        ApplicationExitInfo #9:
+          timestamp=2026-08-25 13:20:46.159 pid=26177 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=stop com.threenative.bayview due to from pid 26628
+          anrInfo=null
+        ApplicationExitInfo #10:
+          timestamp=2026-08-25 13:18:09.674 pid=25596 realUid=99018 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=13 (OTHER KILLS BY SYSTEM) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 state=empty trace=null
+          description=isolated not needed
+          anrInfo=null
+        ApplicationExitInfo #11:
+          timestamp=2026-08-25 13:18:09.629 pid=25562 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=stop com.threenative.bayview due to from pid 26002
+          anrInfo=null
+        ApplicationExitInfo #12:
+          timestamp=2026-08-25 13:08:51.224 pid=23797 realUid=99017 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=13 (OTHER KILLS BY SYSTEM) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 state=empty trace=null
+          description=isolated not needed
+          anrInfo=null
+        ApplicationExitInfo #13:
+          timestamp=2026-08-25 13:08:51.176 pid=23730 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=stop com.threenative.bayview due to from pid 24362
+          anrInfo=null
+        ApplicationExitInfo #14:
+          timestamp=2026-08-25 13:03:45.617 pid=23158 realUid=99016 packageUid=10368 definingUid=10177 user=0
+          process=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=13 (OTHER KILLS BY SYSTEM) subreason=17 (ISOLATED NOT NEEDED) status=0
+          importance=300 pss=0.00 rss=0.00 state=empty trace=null
+          description=isolated not needed
+          anrInfo=null
+        ApplicationExitInfo #15:
+          timestamp=2026-08-25 13:03:45.573 pid=23110 realUid=10368 packageUid=10368 definingUid=10368 user=0
+          process=com.threenative.bayview reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 state=71 bytes trace=null
+          description=stop com.threenative.bayview due to from pid 23363
+          anrInfo=null

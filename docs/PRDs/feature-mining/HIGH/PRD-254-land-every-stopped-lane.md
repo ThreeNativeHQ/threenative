@@ -388,7 +388,7 @@ this PRD's job is to stop them rotting silently.
 | `.claude/worktrees/agent-a5310592192d978ec` | 1 | **REJECTED 2026-08-30:** lifetime-held V8 entry repeatably segfaults the production worker contract; main's per-call entry passes the same binary | PRD-227 **open**; do not retry this lane |
 | `.claude/worktrees/agent-a78ac559a62314fcf` | 1 | **ALREADY LANDED at `5ebebd95`; detached tarball audit passed 2026-08-30.** The stale commit is not replayed | — |
 | `.claude/worktrees/agent-a868a44e113b83123` | 1 | **ALREADY LANDED at `b378e67f`; detached tarball audit passed 2026-08-30.** The stale docs commit is not replayed | PRD-213 remains **PARTIAL** for the queued Phase 2 device before/after, not this guidance |
-| `.claude/worktrees/prd-222-resume` | 3 | config-change axes so mid-play changes stop killing the process | PRD-222 **open** |
+| `.claude/worktrees/prd-222-resume` | 3 | **LANDED after isolated audit 2026-08-30:** 13 config-change axes stop font-scale/split-screen activity recreation; the stale history was integrated and verified | PRD-222 remains **PARTIAL** for K1/K3 and physical green confirmation |
 
 For each: rebase onto `main`, run the gates, land it — or file it under `docs/PRDs/BLOCKED/` naming
 the missing evidence. Several need a physical Pixel 8; `docs/PRDs/AGENTS.md` says to try a blocked
@@ -429,6 +429,16 @@ passed all three generated WebGPU scenarios with a visibly nonblank capture. The
 mutation turned the generated instruction contract red. PRD-213 stays PARTIAL only for its queued
 Phase 2 physical-device before/after; the consolidated audit is in
 [`docs/verification/runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
+
+The PRD-222 resume lane was the final live Phase 6B branch and contained real missing work. Its
+physical-Pixel and emulator reds both attribute an uncovered font-scale change to SDL's
+`EXIT_SELF` path; its emulator green keeps the PID stable and the match visible after the same
+change. The 13-axis manifest contract and probe were integrated, their named mutation failed, and
+the focused manifest/packaging contracts passed. A fresh emulator APK rebuild stopped after three
+setup attempts exposed the V8 16 KB-alignment gate and an incomplete Android dependency set, so no
+new device claim was made. PRD-222 stays PARTIAL for the explicitly open K1/K3 and physical-green
+rungs. See
+[`docs/verification/prd-254-prd-222-audit-2026-08-30.md`](../../../verification/prd-254-prd-222-audit-2026-08-30.md).
 
 **6C · The 14 dirty files are noise, not work**
 
