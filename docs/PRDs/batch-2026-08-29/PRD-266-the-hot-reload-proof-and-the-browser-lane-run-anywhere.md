@@ -109,12 +109,35 @@ and it made the *local* run worse: the spec's page came back empty
 (`canvases: 0, physics: null`) where it had previously been a healthy game, which reads as vite
 full-reloading the page rather than hot-updating it. Reverted rather than landed on a hunch.
 
-**The next lead, unattempted:** a standalone probe against the same scaffolded project, driving the
-same edit with `pnpm dev` and no playwright harness, *does* hot-update — `[vite] hmr update
-/src/style.css, /src/main.ts`, counter 0 → 1, all four entities preserved. The probe and the spec
-disagree on the same project and the same edit, so the difference is in how the harness serves or
-drives the page, not in vite or the framework. Find what the harness does that the probe does not
-before changing any watcher setting again.
+**A standalone probe hot-updates the same project.** Driving the same edit against the same
+scaffold with no playwright harness: `[vite] hmr update /src/style.css, /src/main.ts`, counter
+0 → 1, all four entities preserved. So the probe and the spec disagree on the same project and the
+same edit.
+
+**Eliminated: the spawn form.** `playwright.config.ts` starts the server as `pnpm --dir <target>
+dev` from the repository root, where the probe runs `pnpm dev` from inside the project. Running the
+probe with the harness's exact spawn — `--dir` from the repo root, same environment — still
+hot-updates:
+
+```console
+spawn mode: harness (--dir from repoRoot)
+BEFORE {"reloads":0,"entities":4,"sceneObjects":38,"physics":4}
+AFTER  {"reloads":1,"entities":4,"sceneObjects":38,"physics":4}
+```
+
+So it is not how vite is launched. What remains is how the page is **driven**.
+
+**The specific hypothesis to test next.** The spec does something the probe does not: it steps the
+game through the playtest bridge, `__THREENATIVE_PLAYTEST_BRIDGE__.advance(150)`, rather than
+letting it run on its own clock. `waitForHotReload` then requires `reloads === expected` **and**
+`player.grounded === true`. A hot update rebuilds the scene, so the player must fall and land
+again — under a bridge that may not have been re-attached to the new game instance, and therefore
+may never advance it. That would leave a game that cannot ground no matter how long the wait, and
+it fits the local shape of the failure, where the page comes back reporting a game with nothing in
+it at all.
+
+Test it directly: after the edit, read `__THREENATIVE_PLAYTEST_BRIDGE__` and whether `advance`
+still steps the rebuilt game, before touching anything else.
 
 Two things this is not, both established by measurement: not the scene defect in §1 (fixed, and the
 game now survives with all four entities), and not the deadline (15s, 90s and a 20s probe end in
