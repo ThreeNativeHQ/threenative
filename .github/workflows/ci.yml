@@ -57,8 +57,8 @@ jobs:
 
   test:
     needs: lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -68,6 +68,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      # The runtime-native contract tests execute real binaries and refuse to skip when one is
+      # missing — an unbuilt executable is unexecuted, and a silent skip would read as a pass. CI
+      # never built them, so `pnpm test` had four permanently failing tests and this workflow had
+      # never once gone green. The build is what makes the native half of the suite real here.
+      - name: Install Linux desktop build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
+          libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      - name: Cache the native third-party sources
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs') }}
+      - name: Build the native host and its contract executables
+        run: pnpm --filter @threenative/runtime-native native:build
       - run: pnpm test
       - run: sh scripts/xvfb.sh pnpm test:browser
       - run: pnpm test:playtest:ci
