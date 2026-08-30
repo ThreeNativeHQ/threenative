@@ -80,9 +80,62 @@ function run(command: string, args: string[], cwd: string): void {
   execFileSync(command, args, { cwd, stdio: "inherit" });
 }
 
-export function assertPackedManifestResolved(file: string): void {
+function packedManifest(file: string): Record<string, unknown> {
   const raw = execFileSync("tar", ["-xOzf", file, "package/package.json"], { encoding: "utf8" });
-  const manifest = JSON.parse(raw) as Record<string, unknown>;
+  return JSON.parse(raw) as Record<string, unknown>;
+}
+
+/** Every path a manifest names under a `types` condition, as a tarball-relative path. */
+function declaredTypesPaths(manifest: Record<string, unknown>): readonly string[] {
+  const declared = new Set<string>();
+  const add = (value: unknown): void => {
+    if (typeof value === "string") declared.add(value.replace(/^\.\//u, ""));
+  };
+  add(manifest.types);
+  add(manifest.typings);
+  const walk = (node: unknown): void => {
+    if (typeof node !== "object" || node === null) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    for (const [condition, value] of Object.entries(node)) {
+      if (condition === "types") add(value);
+      else walk(value);
+    }
+  };
+  walk(manifest.exports);
+  return [...declared].sort();
+}
+
+/**
+ * Fail closed when a tarball does not carry the declarations its own manifest promises.
+ *
+ * `pnpm pack` copies whatever `dist` holds at the moment it runs, and `files: ["dist"]` is an
+ * allowlist that cannot notice a file is absent. A tsup rebuild in another lane clears that
+ * directory and writes the bundles about eleven seconds before the declarations, so a pack
+ * landing inside that window ships every `.js`, no `.d.ts`, and no error at all. The sandbox
+ * then installs a package whose `types` entry resolves to nothing: `@threenative/physics`
+ * shipped exactly that tarball, and every game importing it typechecked as implicit `any`.
+ */
+export function assertPackedTypesShipped(file: string): void {
+  const declared = declaredTypesPaths(packedManifest(file));
+  if (declared.length === 0) return;
+  const packed = new Set(
+    execFileSync("tar", ["-tzf", file], { encoding: "utf8" })
+      .split("\n")
+      .flatMap((entry) => (entry.startsWith("package/") ? [entry.slice("package/".length)] : [])),
+  );
+  const missing = declared.filter((entry) => !packed.has(entry));
+  if (missing.length > 0) {
+    throw new Error(
+      `${file} declares types it does not ship: ${missing.join(", ")}. Rebuild the package and pack again; nothing else may be writing its dist while pnpm pack runs.`,
+    );
+  }
+}
+
+export function assertPackedManifestResolved(file: string): void {
+  const manifest = packedManifest(file);
   for (const field of [
     "dependencies",
     "devDependencies",
@@ -510,6 +563,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
       if (key !== undefined) {
         const tarball = path.join(staging, file);
         assertPackedManifestResolved(tarball);
+        assertPackedTypesShipped(tarball);
         tarballs[key] = stampTarball(tarball);
       }
     }

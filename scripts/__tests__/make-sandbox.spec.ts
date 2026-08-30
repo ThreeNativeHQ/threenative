@@ -8,6 +8,7 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   PACKAGES,
   assertPackedManifestResolved,
+  assertPackedTypesShipped,
   assertTemplateSourcesCovered,
   isArchived,
   makeSandbox,
@@ -48,6 +49,75 @@ describe("genre sandbox", () => {
     execFileSync("tar", ["-czf", archive, "-C", root, "package"]);
 
     expect(() => assertPackedManifestResolved(archive)).toThrow(/catalog:/u);
+  });
+
+  // `pnpm pack` copies whatever `dist` holds at the moment it runs. A tsup rebuild in another
+  // lane clears that directory and writes the bundles ~11s before the declarations, so a pack
+  // landing inside that window ships every `.js`, no `.d.ts`, and no error. The sandbox then
+  // installs a package whose `types` entry resolves to nothing and every game importing it
+  // typechecks as implicit `any`. @threenative/physics shipped exactly that tarball.
+  async function packFixture(root: string, manifest: unknown, files: readonly string[]) {
+    const packageRoot = path.join(root, "package");
+    await mkdir(path.join(packageRoot, "dist"), { recursive: true });
+    await writeFile(path.join(packageRoot, "package.json"), JSON.stringify(manifest));
+    for (const file of files) await writeFile(path.join(packageRoot, file), "");
+    const archive = path.join(root, "package.tgz");
+    execFileSync("tar", ["-czf", archive, "-C", root, "package"]);
+    return archive;
+  }
+
+  const typedManifest = {
+    exports: {
+      ".": { import: "./dist/index.js", types: "./dist/index.d.ts" },
+      "./navigation": {
+        import: "./dist/navigation/index.js",
+        types: "./dist/navigation/index.d.ts",
+      },
+    },
+    files: ["dist"],
+    name: "fixture",
+    types: "./dist/index.d.ts",
+    version: "0.1.0",
+  };
+
+  it("fails closed when a packed tarball omits the declarations its manifest promises", async () => {
+    const root = await temporaryRoot("threenative-packed-types-");
+    const archive = await packFixture(root, typedManifest, ["dist/index.js"]);
+
+    expect(() => assertPackedTypesShipped(archive)).toThrow(/dist\/index\.d\.ts/u);
+  });
+
+  it("fails closed when only a subpath's declarations are missing", async () => {
+    const root = await temporaryRoot("threenative-packed-subpath-types-");
+    await mkdir(path.join(root, "package", "dist", "navigation"), { recursive: true });
+    const archive = await packFixture(root, typedManifest, [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/navigation/index.js",
+    ]);
+
+    expect(() => assertPackedTypesShipped(archive)).toThrow(/dist\/navigation\/index\.d\.ts/u);
+  });
+
+  it("accepts a tarball that ships every declaration it declares, and one that declares none", async () => {
+    const complete = await temporaryRoot("threenative-packed-complete-");
+    await mkdir(path.join(complete, "package", "dist", "navigation"), { recursive: true });
+    const shipped = await packFixture(complete, typedManifest, [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/navigation/index.js",
+      "dist/navigation/index.d.ts",
+    ]);
+    expect(() => assertPackedTypesShipped(shipped)).not.toThrow();
+
+    // The native runtime publishes scripts and Gradle sources and declares no types at all.
+    const untyped = await temporaryRoot("threenative-packed-untyped-");
+    const scripts = await packFixture(
+      untyped,
+      { files: ["scripts"], name: "fixture-native", version: "0.1.0" },
+      ["dist/bundle.mjs"],
+    );
+    expect(() => assertPackedTypesShipped(scripts)).not.toThrow();
   });
 
   it("packs the native runtime and capability server with the user-facing packages", () => {
