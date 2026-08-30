@@ -49,6 +49,8 @@ export interface IModelQuantizeOptions {
 
 export interface IModelPassOptions {
   readonly passes?: IModelPassesOptions;
+  /** Preserve generated TEXCOORD_1 data that is consumed by a runtime-attached lightmap. */
+  readonly preserveLightmapUv?: boolean;
   readonly quantize?: IModelQuantizeOptions;
 }
 
@@ -524,7 +526,8 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
 
       // Fixed order: dedup → prune → reorder → quantize → meshopt. None is reorderable.
       if (enabled.dedup) await dedup()(document);
-      if (enabled.prune) await prune()(document);
+      if (enabled.prune)
+        await prune({ keepAttributes: options.preserveLightmapUv === true })(document);
       if (enabled.reorder || enabled.meshopt) await MeshoptEncoder.ready;
       if (enabled.reorder) await reorder({ encoder: MeshoptEncoder })(document);
       if (enabled.quantize) {

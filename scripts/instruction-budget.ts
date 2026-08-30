@@ -91,16 +91,17 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // fragment is shared — `racing` absorbed 33 of it in headroom and `action-rpg` all of it.
   // Measured per template on 2026-08-28: action-rpg 2933, defense 3012, minimal 3849, platformer
   // 3389, racing 2979, shooter 3077, starter 4223 — every cap moves by exactly +82.
-  defaultMaxWords: 3012,
+  // PRD-256 adds the shared 24-word static-lightmap setup, rollback, and platform warning.
+  defaultMaxWords: 3036,
   // The same measured +26 rides every override below — +27 on `platformer` and `shooter`, whose
   // own wrapping splits one more word — because the stride-sync line is in the shared fragment, so all seven
   // templates carry it and none of them absorbed it in headroom.
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
-    platformer: 3389,
+    platformer: 3413,
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
-    shooter: 3077,
+    shooter: 3101,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
     // PRD-248 adds +84 measured rendered words, `minimal` only, because only this template ships
     // the atmosphere: its sky dome, sun colour and depth haze now come from one `Atmosphere` node
@@ -108,12 +109,12 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // to carry. A convention missing from the templates' AGENTS.md does not exist, and this one
     // has to name its WebGL fallback and the `output = aerial;` override or a game can neither
     // tell why the sky went flat nor turn the haze off. Measured 3767 against 3683.
-    minimal: 3849,
+    minimal: 3873,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
     // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
-    starter: 4223,
+    starter: 4247,
   },
 };
 

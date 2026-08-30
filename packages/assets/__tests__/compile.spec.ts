@@ -1,5 +1,8 @@
 import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { NodeIO } from "@gltf-transform/core";
+import { ALL_EXTENSIONS, KHRLightsPunctual } from "@gltf-transform/extensions";
+import { read as readKtx2 } from "ktx-parse";
 import { describe, expect, it, vi } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
@@ -64,6 +67,41 @@ describe("compileAssets", () => {
         ],
       }),
     ).rejects.toThrow(/rock\.png/u);
+  });
+
+  it("should content-address an auxiliary output and record its manifest path", async () => {
+    const root = await makeTempDir("threenative-compile-auxiliary-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "level.glb"), Buffer.from(await buildFixtureGlb()));
+
+    await compileAssets({
+      cwd: root,
+      passes: [
+        {
+          name: "lightmap-fixture",
+          apply: (input) => ({
+            auxiliaryOutputs: [
+              {
+                buffer: Buffer.from("ktx2"),
+                extension: ".ktx2",
+                manifestField: "lightmaps",
+                metadata: { texCoord: 1 },
+                role: "lightmap",
+              },
+            ],
+            buffer: input,
+          }),
+        },
+      ],
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    );
+    const lightmap = manifest.entries["level.glb"].lightmaps[0];
+    expect(lightmap).toMatchObject({ bytes: 4, texCoord: 1 });
+    expect(lightmap.output).toMatch(/^level\.lightmap\.[0-9a-f]{8}\.ktx2$/u);
+    expect(await readFile(path.join(root, "public", lightmap.output), "utf8")).toBe("ktx2");
   });
 
   it("should not rewrite an output whose hash is unchanged", async () => {
@@ -331,6 +369,53 @@ describe("compileAssets", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("should run the configured lightmap UV pass through the built-in registry", async () => {
+    const root = await makeTempDir("threenative-compile-lightmap-");
+    await mkdir(path.join(root, "assets"));
+    const source = await readFile(
+      new URL(
+        "../../create-threenative/templates/starter/assets/native-proof.glb",
+        import.meta.url,
+      ),
+    );
+    const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+    const document = await io.readBinary(source);
+    const extension = document.createExtension(KHRLightsPunctual);
+    const light = extension.createLight("bake-light").setType("point").setIntensity(1);
+    document
+      .getRoot()
+      .listScenes()[0]
+      ?.addChild(
+        document
+          .createNode("bake-light")
+          .setTranslation([0, 3, 0])
+          .setExtension("KHR_lights_punctual", light),
+      );
+    await writeFile(path.join(root, "assets", "room.glb"), await io.writeBinary(document));
+
+    await compileAssets({
+      config: { models: { lightmap: { atlasSize: 128, padding: 2 } } },
+      cwd: root,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    );
+    const entry = manifest.entries["room.glb"];
+    expect(entry.passes).toEqual(["ktx2", "lightmap-uv2", "model"]);
+    expect(entry.lightmapAtlas).toMatchObject({ padding: 2, skippedMeshes: [] });
+    expect(entry.lightmapAtlas.chartCount).toBeGreaterThan(0);
+    expect(entry.lightmapAtlas.width).toBeGreaterThan(0);
+    expect(entry.lightmapAtlas.height).toBeGreaterThan(0);
+    expect(entry.lightmaps).toHaveLength(1);
+    expect(entry.lightmaps[0]).toMatchObject({ format: "etc1s", texCoord: 1 });
+    const lightmap = await readFile(path.join(root, "public", entry.lightmaps[0].output));
+    expect(readKtx2(lightmap).levelCount).toBeGreaterThan(1);
+    const compiled = await readFile(path.join(root, "public", entry.output));
+    const json = JSON.parse(compiled.subarray(20, 20 + compiled.readUInt32LE(12)).toString("utf8"));
+    expect(json.meshes[0].primitives[0].attributes.TEXCOORD_1).toEqual(expect.any(Number));
   });
 
   it("should ship a model byte-identical when assets.models is none", async () => {

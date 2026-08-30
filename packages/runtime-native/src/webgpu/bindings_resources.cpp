@@ -405,6 +405,23 @@ WGPUTextureFormat stringToFormat(const std::string& format) {
     if (format == "rg32float") return WGPUTextureFormat_RG32Float;
     if (format == "rgba16float") return WGPUTextureFormat_RGBA16Float;
     if (format == "rgba32float") return WGPUTextureFormat_RGBA32Float;
+    // Three's KTX2Loader selects these when the device advertises texture-compression-bc. The
+    // device feature was already requested, but falling through here silently created BGRA8
+    // textures and then uploaded block-compressed bytes with invalid row geometry.
+    if (format == "bc1-rgba-unorm") return WGPUTextureFormat_BC1RGBAUnorm;
+    if (format == "bc1-rgba-unorm-srgb") return WGPUTextureFormat_BC1RGBAUnormSrgb;
+    if (format == "bc2-rgba-unorm") return WGPUTextureFormat_BC2RGBAUnorm;
+    if (format == "bc2-rgba-unorm-srgb") return WGPUTextureFormat_BC2RGBAUnormSrgb;
+    if (format == "bc3-rgba-unorm") return WGPUTextureFormat_BC3RGBAUnorm;
+    if (format == "bc3-rgba-unorm-srgb") return WGPUTextureFormat_BC3RGBAUnormSrgb;
+    if (format == "bc4-r-unorm") return WGPUTextureFormat_BC4RUnorm;
+    if (format == "bc4-r-snorm") return WGPUTextureFormat_BC4RSnorm;
+    if (format == "bc5-rg-unorm") return WGPUTextureFormat_BC5RGUnorm;
+    if (format == "bc5-rg-snorm") return WGPUTextureFormat_BC5RGSnorm;
+    if (format == "bc6h-rgb-ufloat") return WGPUTextureFormat_BC6HRGBUfloat;
+    if (format == "bc6h-rgb-float") return WGPUTextureFormat_BC6HRGBFloat;
+    if (format == "bc7-rgba-unorm") return WGPUTextureFormat_BC7RGBAUnorm;
+    if (format == "bc7-rgba-unorm-srgb") return WGPUTextureFormat_BC7RGBAUnormSrgb;
     // Integer formats, the absence of which is not a missing feature but a wrong picture. An
     // unrecognized name fell through to the BGRA8Unorm default below, so a texture three.js asked
     // to sample as `uint` came back as a float colour format, every bind group built against it

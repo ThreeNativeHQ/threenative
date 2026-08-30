@@ -1,6 +1,6 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
-export default {
+const config: IThreeNativeConfig = {
   app: {
     id: "com.threenative.__PROJECT_ID__",
     name: "__PROJECT_NAME__",
@@ -32,4 +32,6 @@ export default {
     // to pin it — the loop stops and the reporting does not. CSS, UI and camera framing never move.
     resolutionScale: "auto",
   },
-} satisfies IThreeNativeConfig;
+};
+
+export default config;

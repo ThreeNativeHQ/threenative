@@ -13,6 +13,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import { lightmapPass } from "./passes/lightmap.js";
+import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
 import type {
   IModelPassOptions,
@@ -39,6 +41,7 @@ export interface IAssetTargets {
  * the input it transformed (the KTX2 pass records `format` and `transcodeTargets`).
  */
 export interface IAssetPassOutput {
+  readonly auxiliaryOutputs?: readonly IAssetAuxiliaryOutput[];
   readonly buffer: Buffer;
   /** Extra manifest fields merged into the entry for the input this output came from. */
   readonly entry?: Readonly<Record<string, unknown>>;
@@ -46,7 +49,19 @@ export interface IAssetPassOutput {
   readonly outputExtension?: string;
 }
 
+export interface IAssetAuxiliaryOutput {
+  readonly buffer: Buffer;
+  readonly extension: string;
+  /** Manifest array receiving this output, for example `lightmaps`. */
+  readonly manifestField: string;
+  readonly metadata?: Readonly<Record<string, unknown>>;
+  /** Stable filename segment, for example `lightmap`. */
+  readonly role: string;
+}
+
 export interface IAssetPass {
+  /** Deterministic settings that change output bytes; omitted for identity/default passes. */
+  readonly cacheKey?: string;
   readonly name: string;
   /**
    * JSON-serializable snapshot of every option that changes this pass's output. Part of the
@@ -78,6 +93,8 @@ export interface IAssetSourceConfig {
 }
 
 export interface IModelsConfig {
+  /** Generate standard TEXCOORD_1 lightmap UVs. Absent means no lightmap pass. */
+  readonly lightmap?: ILightmapPassOptions;
   readonly passes?: IModelPassesOptions;
   readonly quantize?: IModelQuantizeOptions;
 }
@@ -122,6 +139,8 @@ interface IAssetManifestEntry {
   readonly extensions?: readonly string[];
   readonly format?: string;
   readonly kind: AssetKind;
+  readonly lightmapAtlas?: Readonly<Record<string, unknown>>;
+  readonly lightmaps?: readonly Readonly<Record<string, unknown>>[];
   readonly output: string;
   readonly passes: string[];
   /** Triangle count of the compiled output (model pass). */
@@ -160,7 +179,7 @@ const BASIS_DIRECTORY = "basis";
  * v2: textures encode to KTX2 instead of passing through byte-identical.
  * v3: models run dedup/prune/reorder/quantize/meshopt instead of passing through byte-identical.
  */
-const PIPELINE_VERSION = 3;
+const PIPELINE_VERSION = 6;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
   glb: "model",
@@ -296,7 +315,7 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = ["passes", "quantize"];
+  const allowed = ["lightmap", "passes", "quantize"];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
@@ -306,10 +325,36 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   // vocabulary; a malformed value surfaces as TN_ASSETS_CONFIG_* when the registry is built.
   const passes = raw.passes === undefined ? {} : parseModelPasses(raw.passes);
   const quantize = raw.quantize === undefined ? {} : parseModelQuantize(raw.quantize);
+  const lightmap = raw.lightmap === undefined ? undefined : parseLightmap(raw.lightmap);
   return {
+    ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
   };
+}
+
+function parseLightmap(raw: unknown): ILightmapPassOptions {
+  if (!isRecord(raw)) {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.lightmap must be an object.");
+  }
+  for (const key of Object.keys(raw)) {
+    if (key !== "atlasSize" && key !== "padding") {
+      throw new Error(
+        `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.lightmap.${key} is not recognised.`,
+      );
+    }
+  }
+  if (!Number.isSafeInteger(raw.atlasSize) || (raw.atlasSize as number) <= 0) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.atlasSize must be a positive integer.",
+    );
+  }
+  if (!Number.isSafeInteger(raw.padding) || (raw.padding as number) <= 0) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.padding must be a positive integer.",
+    );
+  }
+  return { atlasSize: raw.atlasSize as number, padding: raw.padding as number };
 }
 
 const MODEL_PASS_KEYS: readonly string[] = ["dedup", "meshopt", "prune", "quantize", "reorder"];
@@ -390,13 +435,18 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   }
   const textures = parseTexturesConfig(config.textures);
   const models = parseModelsConfig(config.models);
+  const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
+    ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
   // built-in pass drops out individually through its `"none"` shorthand.
   const builtinPasses =
     options.passes === undefined
       ? [
           ...(textures !== undefined ? [texturePass(textures)] : []),
-          ...(models !== undefined ? [modelPass(models)] : []),
+          ...(lightmap !== undefined ? [lightmapPass(lightmap)] : []),
+          ...(models !== undefined
+            ? [modelPass({ ...models, preserveLightmapUv: lightmap !== undefined })]
+            : []),
         ]
       : [];
   return {
@@ -486,6 +536,8 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
   return (
     existing.output === entry.output &&
     existing.kind === entry.kind &&
+    JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
+    JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     existing.bytes === entry.bytes &&
     existing.bytesBefore === entry.bytesBefore &&
     existing.bytesAfter === entry.bytesAfter &&
@@ -497,6 +549,51 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     existing.passes.length === entry.passes.length &&
     existing.passes.every((name, index) => name === entry.passes[index])
   );
+}
+
+interface IResolvedAuxiliaryOutput {
+  readonly buffer: Buffer;
+  readonly manifestField: string;
+  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly output: string;
+}
+
+function resolveAuxiliaryOutputs(
+  logical: string,
+  outputs: readonly IAssetAuxiliaryOutput[],
+): IResolvedAuxiliaryOutput[] {
+  const sourceExtension = path.extname(logical);
+  const stem = logical.slice(0, -sourceExtension.length);
+  return outputs.map((auxiliary) => {
+    const digest = createHash("sha256").update(auxiliary.buffer).digest("hex").slice(0, 8);
+    const output = outputNameFor(
+      `${stem}.${auxiliary.role}${auxiliary.extension}`,
+      digest,
+      auxiliary.extension,
+    );
+    return {
+      buffer: auxiliary.buffer,
+      manifestField: auxiliary.manifestField,
+      metadata: {
+        ...(auxiliary.metadata ?? {}),
+        bytes: auxiliary.buffer.length,
+        output,
+      },
+      output,
+    };
+  });
+}
+
+function auxiliaryManifestFields(
+  outputs: readonly IResolvedAuxiliaryOutput[],
+): Record<string, readonly Readonly<Record<string, unknown>>[]> {
+  const fields: Record<string, Readonly<Record<string, unknown>>[]> = {};
+  for (const output of outputs) {
+    const field = fields[output.manifestField] ?? [];
+    field.push(output.metadata);
+    fields[output.manifestField] = field;
+  }
+  return fields;
 }
 
 async function readExistingManifest(
@@ -561,6 +658,7 @@ async function readInput(sourceRoot: string, logical: string): Promise<Buffer> {
 }
 
 interface IAppliedPasses {
+  readonly auxiliaryOutputs: readonly IAssetAuxiliaryOutput[];
   readonly buffer: Buffer;
   readonly entry: Record<string, unknown> | undefined;
   readonly extension: string | undefined;
@@ -572,6 +670,7 @@ async function applyPasses(
   logical: string,
 ): Promise<IAppliedPasses> {
   let buffer = input;
+  const auxiliaryOutputs: IAssetAuxiliaryOutput[] = [];
   let entry: Record<string, unknown> | undefined;
   let extension: string | undefined;
   for (const pass of passes) {
@@ -588,10 +687,11 @@ async function applyPasses(
       continue;
     }
     buffer = result.buffer;
+    if (result.auxiliaryOutputs !== undefined) auxiliaryOutputs.push(...result.auxiliaryOutputs);
     if (result.entry !== undefined) entry = { ...(entry ?? {}), ...result.entry };
     if (result.outputExtension !== undefined) extension = result.outputExtension;
   }
-  return { buffer, entry, extension };
+  return { auxiliaryOutputs, buffer, entry, extension };
 }
 
 async function writeOutput(
@@ -664,7 +764,9 @@ export async function compileAssets(
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
   const passNames = layout.passes.map((pass) => pass.name);
+  const passCacheKeys = layout.passes.map((pass) => pass.cacheKey ?? null);
   const passConfiguration = JSON.stringify({
+    ...(passCacheKeys.some((key) => key !== null) ? { passCacheKeys } : {}),
     pipelineVersion: PIPELINE_VERSION,
     passes: passNames,
     options: layout.passes.map((pass) => pass.configuration ?? null),
@@ -693,6 +795,8 @@ export async function compileAssets(
   for (const logical of logicals) {
     const input = await readInput(layout.sourceRoot, logical);
     const applied = await applyPasses(layout.passes, input, logical);
+    const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
+    const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
     const digest = createHash("sha256")
       .update(input)
       .update(passConfiguration, "utf8")
@@ -702,6 +806,7 @@ export async function compileAssets(
       kind: classify(logical),
       output: outputNameFor(logical, digest.slice(0, 8), applied.extension),
       passes: [...passNames],
+      ...auxiliaryFields,
       ...(applied.entry === undefined
         ? {}
         : {
@@ -711,6 +816,9 @@ export async function compileAssets(
               ? (applied.entry.extensions as string[])
               : undefined,
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
+            lightmapAtlas: isRecord(applied.entry.lightmapAtlas)
+              ? applied.entry.lightmapAtlas
+              : undefined,
             triangles:
               typeof applied.entry.triangles === "number" ? applied.entry.triangles : undefined,
             transcodeTargets: Array.isArray(applied.entry.transcodeTargets)
@@ -729,11 +837,33 @@ export async function compileAssets(
     healthInputs.push({ data: input, logicalPath: logical });
     if (entry.bytesBefore !== undefined) {
       if (entry.triangles !== undefined) {
+        const lightmapOutput = auxiliaryOutputs.find(
+          (output) => output.manifestField === "lightmaps",
+        );
+        const lightmapMetadata = lightmapOutput?.metadata;
+        const lightmapAtlas = applied.entry?.lightmapAtlas;
+        const lightmap =
+          lightmapOutput !== undefined &&
+          isRecord(lightmapMetadata) &&
+          isRecord(lightmapAtlas) &&
+          typeof applied.entry?.lightmapBakeMs === "number"
+            ? {
+                atlasHeight: Number(lightmapAtlas.height),
+                atlasWidth: Number(lightmapAtlas.width),
+                bakeMs: applied.entry.lightmapBakeMs,
+                bytesAfter: lightmapOutput.buffer.length,
+                bytesBefore: Number(lightmapMetadata.bytesBefore),
+                dilatedTexels: Number(lightmapMetadata.dilatedTexels),
+                occludedTexels: Number(lightmapMetadata.occludedTexels),
+                validTexels: Number(lightmapMetadata.validTexels),
+              }
+            : undefined;
         modelRows.push({
           after: entry.bytes,
           before: entry.bytesBefore,
           extensions: entry.extensions,
           logicalPath: logical,
+          ...(lightmap === undefined ? {} : { lightmap }),
           triangles: entry.triangles,
         });
       } else {
@@ -750,12 +880,23 @@ export async function compileAssets(
     if (
       existing !== undefined &&
       sameEntry(existing, entry) &&
-      (await outputExists(path.join(layout.outputRoot, entry.output)))
+      (await outputExists(path.join(layout.outputRoot, entry.output))) &&
+      (
+        await Promise.all(
+          auxiliaryOutputs.map((output) =>
+            outputExists(path.join(layout.outputRoot, output.output)),
+          ),
+        )
+      ).every(Boolean)
     ) {
       skipped += 1;
       continue;
     }
     await writeOutput(layout.outputRoot, entry, applied.buffer);
+    for (const output of auxiliaryOutputs) {
+      await mkdir(path.dirname(path.join(layout.outputRoot, output.output)), { recursive: true });
+      await writeFile(path.join(layout.outputRoot, output.output), output.buffer);
+    }
     written += 1;
   }
 

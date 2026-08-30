@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { expect, test } from "vitest";
@@ -170,11 +170,7 @@ test("should route a worker error to one error event, not to the message handler
     context,
   );
 
-  expect(observed.map((entry) => entry.kind)).toEqual([
-    "error",
-    "error-listener",
-    "message",
-  ]);
+  expect(observed.map((entry) => entry.kind)).toEqual(["error", "error-listener", "message"]);
   expect(observed[0].message).toBe("TypeError: handler exploded");
 });
 
@@ -227,7 +223,6 @@ test("should reject unsupported worker values without corrupting the running gam
     // JSON drops these entirely: the receiver would get an object missing a field.
     ["({ run: () => 1 })", "function", "message.run"],
     ["({ tag: Symbol('x') })", "symbol", "message.tag"],
-    ["({ missing: undefined })", "undefined", "message.missing"],
     // JSON turns these into null: silent numeric corruption.
     ["({ n: NaN })", "NaN", "message.n"],
     ["({ n: Infinity })", "Infinity", "message.n"],
@@ -237,9 +232,6 @@ test("should reject unsupported worker values without corrupting the running gam
     ["({ re: /x/ })", "RegExp", "message.re"],
     ["({ m: new Map() })", "Map", "message.m"],
     ["({ s: new Set() })", "Set", "message.s"],
-    ["({ buffer: new ArrayBuffer(8) })", "ArrayBuffer", "message.buffer"],
-    ["({ bytes: new Uint8Array(4) })", "Uint8Array", "message.bytes"],
-    ["({ view: new DataView(new ArrayBuffer(8)) })", "DataView", "message.view"],
     // A class instance arrives as a bare record with its prototype gone.
     ["(new (class Handle { constructor() { this.id = 1; } })())", "Handle instance", "message"],
     // Structured clone preserves these; JSON cannot.
@@ -264,37 +256,96 @@ test("should reject unsupported worker values without corrupting the running gam
   expect(harness.posted).toEqual([]);
 
   // And the worker is still usable afterwards — a refusal must not poison the running game.
-  expect(postAndCatch(context, '({ ok: 1 })')).toBeNull();
+  expect(postAndCatch(context, "({ ok: 1 })")).toBeNull();
   expect(harness.posted.map((entry) => entry.payload)).toEqual(['{"ok":1}']);
 });
 
-test("should refuse a transfer list by name rather than silently copying it", () => {
+test("should preserve undefined object fields and array entries", () => {
   const { context, harness } = withProbeWorker();
 
-  const thrown = vm.runInContext(
+  expect(postAndCatch(context, "({ id: undefined, values: [1, undefined, 3] })")).toBeNull();
+  expect(harness.posted[0].payload).toContain("__tnNativeWorkerUndefined");
+
+  const observed = vm.runInContext(
     `(() => {
-       const buffer = new ArrayBuffer(8);
+       let seen = null;
+       globalThis.__probe.onmessage = (event) => {
+         seen = {
+           hasId: Object.hasOwn(event.data, "id"),
+           id: event.data.id,
+           length: event.data.values.length,
+           middle: event.data.values[1],
+         };
+       };
+       __tnNativeWorkerDispatch(globalThis.__probe._id, 0, ${JSON.stringify(
+         JSON.stringify({
+           id: { __tnNativeWorkerUndefined: true },
+           values: [1, { __tnNativeWorkerUndefined: true }, 3],
+         }),
+       )});
+       return seen;
+     })()`,
+    context,
+  );
+  expect(observed.hasId).toBe(true);
+  expect(observed.id).toBeUndefined();
+  expect(observed.length).toBe(3);
+  expect(observed.middle).toBeUndefined();
+});
+
+test("should copy transferable binary values across the native worker wire", () => {
+  const { context, harness } = withProbeWorker();
+
+  const result = vm.runInContext(
+    `(() => {
+       const buffer = new Uint8Array([3, 1, 4, 1]).buffer;
        try {
-         globalThis.__probe.postMessage({ ok: 1 }, [buffer]);
-         return null;
+         globalThis.__probe.postMessage({ buffer, bytes: new Uint8Array([2, 7]) }, [buffer]);
+         return { thrown: null, byteLength: buffer.byteLength };
        } catch (error) {
-         return { name: error.name, message: error.message };
+         return { thrown: { name: error.name, message: error.message } };
        }
      })()`,
     context,
   );
 
-  expect(thrown).not.toBeNull();
-  expect(thrown.name).toBe("DataCloneError");
-  expect(thrown.message).toContain("TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED");
-  expect(harness.posted).toEqual([]);
+  expect(result.thrown).toBeNull();
+  expect(result.byteLength).toBe(4);
+  expect(harness.posted).toHaveLength(1);
+  expect(harness.posted[0].payload).toContain("__tnNativeWorkerBinary");
+
+  const observed = vm.runInContext(
+    `(() => {
+       let seen = null;
+       globalThis.__probe.onmessage = (event) => {
+         seen = {
+           buffer: Array.from(new Uint8Array(event.data.buffer)),
+           bytes: Array.from(event.data.bytes),
+           typed: event.data.bytes instanceof Uint8Array,
+         };
+       };
+       __tnNativeWorkerDispatch(globalThis.__probe._id, 0, ${JSON.stringify(
+         JSON.stringify({
+           buffer: { __tnNativeWorkerBinary: "ArrayBuffer", bytes: [3, 1, 4, 1] },
+           bytes: { __tnNativeWorkerBinary: "Uint8Array", bytes: [2, 7] },
+         }),
+       )});
+       return seen;
+     })()`,
+    context,
+  );
+  expect(Array.from(observed.buffer)).toEqual([3, 1, 4, 1]);
+  expect(Array.from(observed.bytes)).toEqual([2, 7]);
+  expect(observed.typed).toBe(true);
 });
 
 test("should keep the clone matrix identical in the game isolate and the worker isolate", () => {
   // The two copies are separate engines and cannot share a module, so they are kept in step here.
   const markers = [
     "TN_NATIVE_WORKER_CLONE_UNSUPPORTED",
-    "TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED",
+    "__tnNativeWorkerBinary",
+    "__tnNativeWorkerUndefined",
+    "ArrayBuffer.isView",
     "CLONE_MAX_DEPTH",
     "a reference cycle",
     "a second reference to one object",
@@ -308,9 +359,9 @@ test("should keep the clone matrix identical in the game isolate and the worker 
     expect(polyfillJs, `game isolate lost the clone-matrix marker ${marker}`).toContain(marker);
     expect(workerCpp, `worker isolate lost the clone-matrix marker ${marker}`).toContain(marker);
   }
-  // Both must refuse before handing anything to the wire.
-  expect(polyfillJs).toContain("assertCloneable(data)");
-  expect(workerCpp).toContain("assertCloneable(data)");
+  // Both must encode and validate before handing anything to the wire.
+  expect(polyfillJs).toContain("const encoded = encodeClone(data)");
+  expect(workerCpp).toContain("const encoded = encodeClone(data)");
 });
 
 // ---------------------------------------------------------------------------
@@ -471,6 +522,8 @@ test("should prove the registry contract against real worker threads", () => {
   const required = [
     "fifoAcrossHandlerRegistration",
     "cloneMatrixRoundTrip",
+    "binaryCloneAndWorkerEventListener",
+    "wasmPromiseTasksAfterMessage",
     "cloneRefusalNamed",
     "workerSideCloneRefusalReachesError",
     "topLevelThrowReachesError",

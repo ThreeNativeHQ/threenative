@@ -1,3 +1,8 @@
+# Lightmaps
+
+`assets.models.lightmap:{atlasSize,padding}` bakes static GLBs; load via `ctx.assets.model()`.
+Remove it to roll back. Android/iOS reject KTX2; never claim them from web/desktop proof.
+
 ## Performance targets
 
 Refill scratch; pool objects.

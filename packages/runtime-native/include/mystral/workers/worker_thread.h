@@ -29,6 +29,9 @@
 #include <functional>
 
 namespace mystral {
+namespace js {
+class Engine;
+}
 namespace workers {
 
 /**
@@ -136,6 +139,8 @@ private:
     std::queue<WorkerMessage> inQueue_;   // Main -> Worker
     std::queue<WorkerMessage> outQueue_;  // Worker -> Main
     std::condition_variable inCondition_;
+    mutable std::mutex engineMutex_;
+    js::Engine* engine_ = nullptr;
 
     std::atomic<bool> running_{false};
     std::atomic<bool> terminated_{false};

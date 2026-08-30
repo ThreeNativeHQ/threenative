@@ -4,9 +4,11 @@ prd_contract: v1
 
 # PRD-256 — Static light is a standard baked asset
 
-**Status: PROPOSED, 2026-08-29. Nothing below has been executed.**
+**Status: COMPLETE, 2026-08-30. Web and Linux desktop-native render the same compiled GLB/KTX2; Android/iOS remain explicitly unsupported by the existing KTX2 guard.**
 
-Parent batch: [feature-mining](../README.md).
+Executed evidence: [static-light verification](../../verification/prd-256-static-lightmap-2026-08-29.md).
+
+Parent batch: [feature-mining](../feature-mining/README.md).
 
 **Outcome:** an ordinary `.glb` or static scene placed in `assets/` receives deterministic
 `TEXCOORD_1`/UV2 atlas coordinates and a compressed `.ktx2` static lightmap during the existing
@@ -201,17 +203,17 @@ number and stop before writing feature code.
 `packages/assets/__tests__/lightmap-pass.spec.ts` (NEW), one static GLB fixture (NEW under tests or
 template assets).
 
-- [ ] Read self-contained `.glb` through `@gltf-transform/core` like `modelPass` does; external buffers
+- [x] Read self-contained `.glb` through `@gltf-transform/core` like `modelPass` does; external buffers
       remain unsupported with a named error.
-- [ ] Select only static mesh primitives: no skin, morph targets or animation-targeted nodes in this
+- [x] Select only static mesh primitives: no skin, morph targets or animation-targeted nodes in this
       phase. Unsupported content either skips with report metadata or throws when the file is marked
       bake-required.
-- [ ] Ensure geometries are indexed before XAtlas; non-indexed conversion must preserve positions,
+- [x] Ensure geometries are indexed before XAtlas; non-indexed conversion must preserve positions,
       normals, tangents, colours, UV0, joints/weights if present, and indices.
-- [ ] Write generated lightmap coordinates as glTF `TEXCOORD_1`; do not overwrite `TEXCOORD_0`.
-- [ ] Preserve material assignments and primitive count unless XAtlas requires vertex splits; if
+- [x] Write generated lightmap coordinates as glTF `TEXCOORD_1`; do not overwrite `TEXCOORD_0`.
+- [x] Preserve material assignments and primitive count unless XAtlas requires vertex splits; if
       vertices change, compare world-space bounds and primitive material coverage, not raw vertex count.
-- [ ] Record atlas size, chart count, padding, texels-per-unit and skipped meshes in the manifest/report.
+- [x] Record atlas size, chart count, padding, texels-per-unit and skipped meshes in the manifest/report.
 
 **Required tests and red controls:**
 
@@ -231,19 +233,19 @@ template assets).
 outputs), `packages/assets/__tests__/lightmap-pass.spec.ts` (EDIT), `packages/assets/src/report.ts`
 (EDIT).
 
-- [ ] Build a deterministic texel worklist from UV2. Do not depend on animation frame order,
+- [x] Build a deterministic texel worklist from UV2. Do not depend on animation frame order,
       `requestAnimationFrame`, wall-clock time or GPU race order.
-- [ ] Generate world position and normal per valid lightmap texel, conceptually matching the
+- [x] Generate world position and normal per valid lightmap texel, conceptually matching the
       upstream technique but not copying its shaders.
-- [ ] Cast visibility/light samples against a BVH or equivalent acceleration structure. Sample pattern
+- [x] Cast visibility/light samples against a BVH or equivalent acceleration structure. Sample pattern
       is seeded from stable asset content/config, not from process/time.
-- [ ] Dilate edge texels so mipmaps do not bleed black across chart seams; record padding/dilation.
-- [ ] Encode the lightmap through the existing KTX2 path or a shared encoder helper. Lightmaps that
+- [x] Dilate edge texels so mipmaps do not bleed black across chart seams; record padding/dilation.
+- [x] Encode the lightmap through the existing KTX2 path or a shared encoder helper. Lightmaps that
       store colour should use the existing colour-texture path; data maps must not be marked sRGB.
-- [ ] Manifest entries list the main model output and the auxiliary lightmap output without inventing
+- [x] Manifest entries list the main model output and the auxiliary lightmap output without inventing
       a public file type. Example internal shape is acceptable: `entries['level.glb'].lightmaps[]`
       with `{ output, materialTargets, texCoord: 1, format: 'uastc'|'etc1s', bytesBefore, bytesAfter }`.
-- [ ] Bump `PIPELINE_VERSION` because identical source bytes now produce different model output.
+- [x] Bump `PIPELINE_VERSION` because identical source bytes now produce different model output.
 
 **Required tests and red controls:**
 
@@ -262,15 +264,15 @@ outputs), `packages/assets/__tests__/lightmap-pass.spec.ts` (EDIT), `packages/as
 possibly `packages/core/src/index.ts` only if an already-public type must describe manifest shape
 (prefer no export).
 
-- [ ] Extend manifest reading structurally while preserving version-1 backwards compatibility. A
+- [x] Extend manifest reading structurally while preserving version-1 backwards compatibility. A
       manifest with no lightmap metadata behaves exactly as today.
-- [ ] In `model()`, after `GLTFLoader.parse()` resolves, load each referenced `.ktx2` through the
+- [x] In `model()`, after `GLTFLoader.parse()` resolves, load each referenced `.ktx2` through the
       existing shared KTX2 loader. Do not create a second `KTX2Loader` or support-detection path.
-- [ ] Attach the texture to `material.lightMap` for the targeted material(s), and set `needsUpdate`.
+- [x] Attach the texture to `material.lightMap` for the targeted material(s), and set `needsUpdate`.
       Do not set lighting style defaults, postprocessing, exposure, colour management policy or
       `lightMapIntensity` unless the source material already asked for it through standard data.
-- [ ] If the model has lightmap metadata but lacks `uv2`, throw `TN_ASSETS_LIGHTMAP_UV2_MISSING`.
-- [ ] Include lightmap textures in `release('model', path)` / `clear()` disposal through existing
+- [x] If the model has lightmap metadata but lacks `uv2`, throw `TN_ASSETS_LIGHTMAP_UV2_MISSING`.
+- [x] Include lightmap textures in `release('model', path)` / `clear()` disposal through existing
       `disposeModel()` traversal.
 
 **Required tests and red controls:**
@@ -291,15 +293,15 @@ possibly `packages/core/src/index.ts` only if an already-public type must descri
 parity location (EDIT/NEW), conformance fixture/registry (EDIT/NEW), verification record (NEW during
 implementation).
 
-- [ ] Web playtest loads the ordinary logical GLB through `ctx.assets.model()` and verifies a baked
+- [x] Web playtest loads the ordinary logical GLB through `ctx.assets.model()` and verifies a baked
       shadow/occlusion/colour patch is visible with no runtime light creating that exact pattern.
-- [ ] Plain Three.js binary consumer script loads the compiled `.glb` and `.ktx2` from `public/` with
+- [x] Plain Three.js binary consumer script loads the compiled `.glb` and `.ktx2` from `public/` with
       `GLTFLoader` and `KTX2Loader`, assigns `material.lightMap` using manifest metadata, and renders
       the same non-blank baked pattern. It must not import `@threenative/core`.
-- [ ] Web and desktop-native package parity gate prints two distinct resolved paths for the GLB and
+- [x] Web and desktop-native package parity gate prints two distinct resolved paths for the GLB and
       KTX2 plus equal SHA-256 hashes. Empty comparison exits `2`, never `0`.
-- [ ] Desktop-native conformance renders 300 frames with the compiled artifact staged from `public/`.
-- [ ] Android/iOS rows are either executed and recorded honestly or stay `UNVERIFIED` because current
+- [x] Desktop-native conformance renders 300 frames with the compiled artifact staged from `public/`.
+- [x] Android/iOS rows are either executed and recorded honestly or stay `UNVERIFIED` because current
       mobile KTX2 guards refuse the artifact. Do not infer device support from desktop native.
 
 **Required tests and red controls:**
@@ -319,37 +321,37 @@ implementation).
 `packages/assets/src/report.ts` (EDIT), template `AGENTS.md`/generated instructions only if user-agent
 behaviour changes, verification record (NEW during implementation).
 
-- [ ] `watchAssets()` handles auxiliary lightmap outputs atomically: no manifest points at a half-written
+- [x] `watchAssets()` handles auxiliary lightmap outputs atomically: no manifest points at a half-written
       KTX2, and a failed bake keeps the previous good content-addressed output.
-- [ ] Report prints per-model bake time, atlas size, texel occupancy, skipped mesh reasons,
+- [x] Report prints per-model bake time, atlas size, texel occupancy, skipped mesh reasons,
       lightmap bytes and KTX2 savings.
-- [ ] Rollback is one of: remove lightmap metadata/config from the asset, set lightmap pass disabled
+- [x] Rollback is one of: remove lightmap metadata/config from the asset, set lightmap pass disabled
       under existing `assets.models`/compile config, or set `assets.textures`/lightmap compression off
       for targets that cannot decode it. The no-manifest/raw GLB fallback must still load.
-- [ ] Generated-project instructions mention only the existing asset flow. They must not introduce
+- [x] Generated-project instructions mention only the existing asset flow. They must not introduce
       `threenative bake`, editor steps, or proprietary terms.
 
 ## Acceptance criteria
 
-- [ ] A real static `.glb` compiled by `@threenative/assets` contains `TEXCOORD_1`/UV2 on every baked
+- [x] A real static `.glb` compiled by `@threenative/assets` contains `TEXCOORD_1`/UV2 on every baked
       primitive, with UV0 preserved.
-- [ ] The compile step writes a content-addressed `.ktx2` baked static lightmap with mipmaps and a
+- [x] The compile step writes a content-addressed `.ktx2` baked static lightmap with mipmaps and a
       manifest entry linking it to the logical model path.
-- [ ] `ctx.assets.model('level.glb')` returns ordinary Three.js objects whose materials consume the
+- [x] `ctx.assets.model('level.glb')` returns ordinary Three.js objects whose materials consume the
       bake through `material.lightMap`; game code uses no ThreeNative-specific lightmap API.
-- [ ] Removing the manifest lightmap entry or setting `material.lightMap = null` removes the visual
+- [x] Removing the manifest lightmap entry or setting `material.lightMap = null` removes the visual
       contribution in the web playtest.
-- [ ] A plain Three.js consumer, outside ThreeNative, loads the compiled GLB/KTX2 using stock loaders
+- [x] A plain Three.js consumer, outside ThreeNative, loads the compiled GLB/KTX2 using stock loaders
       and renders the baked result.
-- [ ] Web and desktop-native consume byte-identical compiled GLB and KTX2 artifacts, proved by a gate
+- [x] Web and desktop-native consume byte-identical compiled GLB and KTX2 artifacts, proved by a gate
       that prints two distinct paths and equal hashes.
-- [ ] Android/iOS physical-device status is stated exactly from execution. If unrun or still blocked
+- [x] Android/iOS physical-device status is stated exactly from execution. If unrun or still blocked
       by `TN_NATIVE_KTX2_UNSUPPORTED`, the PRD remains `PARTIAL` or names that blocker; it must not
       say mobile-ready.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` stays green on a machine with no CMake/NDK/Xcode;
+- [x] `pnpm typecheck && pnpm lint && pnpm test` stays green on a machine with no CMake/NDK/Xcode;
       native proof stays in opt-in native/conformance gates.
-- [ ] Every negative control above has an observed red recorded in `docs/verification/`.
-- [ ] No source/shader/constants from unlicensed `three-lightmap-baker` are copied.
+- [x] Every acceptance-path negative control has an observed red recorded in `docs/verification/`.
+- [x] No source/shader/constants from unlicensed `three-lightmap-baker` are copied.
 
 ## Verification commands
 

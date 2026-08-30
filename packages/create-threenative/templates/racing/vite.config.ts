@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import { createEngineFreshnessPlugin, createWebBrandPlugin } from "create-threenative";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+import config from "./threenative.config.js";
 
 /**
  * Recompiles assets/ into public/ while the dev server runs, so editing a texture does not
@@ -14,7 +15,7 @@ function assetsWatchPlugin(): Plugin {
     name: "threenative-assets-watch",
     apply: "serve",
     configureServer(server) {
-      const handle = watchAssets({ cwd: server.config.root });
+      const handle = watchAssets({ config: config.assets, cwd: server.config.root });
       server.httpServer?.once("close", () => handle.close());
     },
   };

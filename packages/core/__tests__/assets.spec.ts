@@ -1,9 +1,12 @@
 import {
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   type CompressedTexture,
   Group,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   Texture,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -544,6 +547,158 @@ describe("IAssetLoader compressed textures", () => {
     const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
 
     await expect(assets.model("b.glb")).resolves.toEqual({ url: "loaded.glb" });
+  });
+
+  it("should assign a manifest lightmap through the shared KTX2 loader", async () => {
+    const geometry = new BufferGeometry().setAttribute(
+      "uv1",
+      new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1]), 2),
+    );
+    const material = new MeshStandardMaterial({ name: "stone" });
+    const scene = new Group().add(new Mesh(geometry, material));
+    const lightmap = new Texture();
+    const dispose = vi.spyOn(lightmap, "dispose");
+    vi.spyOn(KTX2Loader.prototype, "load").mockImplementation(
+      (_url: string, onLoad: (data: CompressedTexture) => void) => {
+        onLoad(lightmap as unknown as CompressedTexture);
+        return undefined;
+      },
+    );
+    vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+      this: GLTFLoader,
+      _data: ArrayBuffer,
+      _path: string,
+      onLoad: never,
+    ) {
+      (onLoad as (value: unknown) => void)({ scene });
+      return this;
+    } as never);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | RequestInfo) =>
+        String(url).endsWith(".glb")
+          ? new Response(JSON.stringify({ asset: { version: "2.0" } }))
+          : manifestResponse({
+              version: 1,
+              entries: {
+                "level.glb": {
+                  lightmaps: [
+                    {
+                      materialTargets: ["stone"],
+                      output: "level.lightmap.11111111.ktx2",
+                      texCoord: 1,
+                    },
+                  ],
+                  output: "level.22222222.glb",
+                },
+              },
+            }),
+      ),
+    );
+    const detect = vi.spyOn(KTX2Loader.prototype, "detectSupport");
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer(S3TC) });
+
+    await assets.model("level.glb");
+
+    expect(material.lightMap).toBe(lightmap);
+    expect(lightmap.channel).toBe(1);
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(assets.release("model", "level.glb")).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should fail closed when manifest lightmap geometry has no UV2", async () => {
+    const material = new MeshStandardMaterial({ name: "stone" });
+    const scene = new Group().add(new Mesh(new BufferGeometry(), material));
+    vi.spyOn(KTX2Loader.prototype, "load").mockImplementation(
+      (_url: string, onLoad: (data: CompressedTexture) => void) => {
+        onLoad(new Texture() as unknown as CompressedTexture);
+        return undefined;
+      },
+    );
+    vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+      this: GLTFLoader,
+      _data: ArrayBuffer,
+      _path: string,
+      onLoad: never,
+    ) {
+      (onLoad as (value: unknown) => void)({ scene });
+      return this;
+    } as never);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | RequestInfo) =>
+        String(url).endsWith(".glb")
+          ? new Response(JSON.stringify({ asset: { version: "2.0" } }))
+          : manifestResponse({
+              version: 1,
+              entries: {
+                "level.glb": {
+                  lightmaps: [
+                    {
+                      materialTargets: ["stone"],
+                      output: "level.lightmap.11111111.ktx2",
+                      texCoord: 1,
+                    },
+                  ],
+                  output: "level.22222222.glb",
+                },
+              },
+            }),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer(S3TC) });
+
+    await expect(assets.model("level.glb")).rejects.toThrow("TN_ASSETS_LIGHTMAP_UV2_MISSING");
+    expect(material.lightMap).toBeNull();
+  });
+
+  it("should fail closed when a manifest lightmap output is missing", async () => {
+    const geometry = new BufferGeometry().setAttribute(
+      "uv1",
+      new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1]), 2),
+    );
+    const material = new MeshStandardMaterial({ name: "stone" });
+    const scene = new Group().add(new Mesh(geometry, material));
+    vi.spyOn(KTX2Loader.prototype, "load").mockImplementation(
+      (
+        _url: string,
+        _onLoad: (data: CompressedTexture) => void,
+        _onProgress: ((event: ProgressEvent<EventTarget>) => void) | undefined,
+        onError: ((error: unknown) => void) | undefined,
+      ) => {
+        onError?.(new Error("404"));
+        return undefined;
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "level.glb": {
+              lightmaps: [
+                {
+                  materialTargets: ["stone"],
+                  output: "level.lightmap.missing.ktx2",
+                  texCoord: 1,
+                },
+              ],
+              output: "level.22222222.glb",
+            },
+          },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({
+      basePath: "/assets",
+      model: async () => ({ scene }),
+      renderer: webglRenderer(S3TC),
+    });
+
+    await expect(assets.model("level.glb")).rejects.toThrow("TN_ASSETS_LIGHTMAP_MISSING");
+    expect(material.lightMap).toBeNull();
   });
 });
 

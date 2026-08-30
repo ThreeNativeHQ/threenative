@@ -1,6 +1,6 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
-export default {
+const config: IThreeNativeConfig = {
   app: {
     id: "com.threenative.__PROJECT_ID__",
     name: "__PROJECT_NAME__",
@@ -36,4 +36,6 @@ export default {
   // Switch to "native" for a UI drawn as part of the rendered frame, with no web view and no
   // extra process — and own the appearance difference that comes with it.
   ui: { renderer: "web" },
-} satisfies IThreeNativeConfig;
+};
+
+export default config;

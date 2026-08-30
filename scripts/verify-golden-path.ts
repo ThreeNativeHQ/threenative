@@ -635,7 +635,10 @@ export async function writeScaffoldScript(
   template: string,
   cliSource: string,
   packageArgs: readonly string[],
-  options: { readonly ignoreInstallScripts?: boolean } = {},
+  options: {
+    readonly cliRuntimePackages?: readonly string[];
+    readonly ignoreInstallScripts?: boolean;
+  } = {},
 ): Promise<string> {
   const script = path.join(directory, "scaffold.sh");
   const target = '"${1:-game}"';
@@ -646,6 +649,7 @@ export async function writeScaffoldScript(
     "--silent",
     "--package",
     cliSource,
+    ...(options.cliRuntimePackages ?? []).flatMap((source) => ["--package", source]),
     "create-threenative",
     target,
     "--template",
@@ -680,7 +684,11 @@ export async function scaffold(
   }
   const directory = path.dirname(target);
   const project = path.basename(target);
-  await writeScaffoldScript(directory, template, cliSource, packageArgs, options);
+  const assetSource = sources["@threenative/assets"];
+  await writeScaffoldScript(directory, template, cliSource, packageArgs, {
+    ...options,
+    ...(assetSource === undefined ? {} : { cliRuntimePackages: [assetSource] }),
+  });
   assertTemplateDependencies(template, templateManifest, sources);
   process.stdout.write(`golden-path ${template}: ./scaffold.sh ${project}\n`);
   await runCommand("scaffold", "./scaffold.sh", [project], directory);

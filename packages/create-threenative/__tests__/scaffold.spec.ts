@@ -57,16 +57,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-29 for PRD-246: `GPUReadback` and `SpectralOcean` entered the public
   // surface, so the capability manifest and the capability reference generated from it both grew,
   // and those bytes are copied into every scaffold.
-  // Recomputed 2026-08-29 for the shooter only: its input-control scenario raised warmupFrames
-  // from 10 to 60 so the run stops photographing the template's loading screen. One scenario
-  // file's bytes moved, so exactly one tree's hash moved.
-  "action-rpg": "d4fed9959d55f304978fcb12d5c5be19f625f86f0d9cb030e09c1d21c3d626cb",
-  defense: "e66e1dfa999eaacc43caf04eeb307d6a677390f2f3d22ac34fa510393595b41f",
-  minimal: "ae67d3ae9cadc392eaeb5d2e1b3b3105c864cbf0fe60c95a343e061f1d68d59f",
-  platformer: "cb7b4bd944d7ae1321ab04b1849830c1a7875fa174385538f4f7c66a4db7450a",
-  racing: "e5dedeac3100524dc328cead022cdc2ae1b47c4c93c18f0dcca09b654f786854",
-  shooter: "0884e66da56582a7f945600148c441d5dce602d417dd2c67d1ff09674d060eaa",
-  starter: "323176705902d2635b8e6779a9790be3f18d7db78fd51b8d6ea97eeb7d0d91e4",
+  // Recomputed 2026-08-29 for PRD-256: every scaffold now forwards its asset config to the dev
+  // watcher and carries the bounded static-lightmap setup, rollback, and platform warning. The
+  // shooter hash also includes its 60-frame input-control warmup from current main.
+  "action-rpg": "a7fac25242f0e12b65fe9d372d037fa99e418a938070547ccd46ef30973ddf3a",
+  defense: "c36d4ab3d837a9129434bcd4c1629c7d87aa9e7e757f2f3bb3127c8e0ae6661a",
+  minimal: "8474478529225f00a451c86312839e093d6b1e605790ebf1d942551f76ea735b",
+  platformer: "54b9979919242591403b8eae1b96cb350fda65e234c6a66d5b285cb9af995395",
+  racing: "ef0b66ee8d255bcf38f1653ba5a422e75c1878f5642205fba2b9a9eed88b2a28",
+  shooter: "fbc4f4d76f3b7e0b6a1b82a9a2882ddfed3a803c9bd6eaca333af66d68c6db8b",
+  starter: "99f842448efbe36fb1c926d6c1caa1c4e6955f08a7b8d1b0a55dfa7e6542dbe4",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

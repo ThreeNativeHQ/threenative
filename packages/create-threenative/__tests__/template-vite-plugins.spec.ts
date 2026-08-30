@@ -71,6 +71,20 @@ describe("template vite configs", () => {
     }
     expect(unwired).toEqual([]);
   });
+
+  it("passes the project asset config to every dev asset watcher", async () => {
+    const unconfigured: string[] = [];
+    for (const template of await templates()) {
+      const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
+      if (!source.includes('import config from "./threenative.config.js";')) {
+        unconfigured.push(`${template}: config import`);
+      }
+      if (!source.includes("watchAssets({ config: config.assets,")) {
+        unconfigured.push(`${template}: watch config`);
+      }
+    }
+    expect(unconfigured).toEqual([]);
+  });
 });
 
 describe("template stylesheets", () => {

@@ -167,7 +167,7 @@ if (typeof Worker === "undefined") {
   };
 
   // The declared clone matrix. The wire is JSON, and JSON is lossy in ways structured clone is
-  // not: a function or `undefined` property disappears, NaN and Infinity become null, a typed
+  // not: a function disappears, NaN and Infinity become null, a typed
   // array arrives as a plain record of indices, a Date arrives as a string, and two references to
   // one object arrive as two objects. Every one of those is silent corruption of a game's data, so
   // this walk refuses each of them by name and by path instead. Rows are admitted here only when
@@ -203,19 +203,33 @@ if (typeof Worker === "undefined") {
     return depth;
   };
 
-  const assertCloneable = (root) => {
+  const encodeClone = (root) => {
     const onPath = new Set();
     const visited = new Set();
     const walk = (value, path, depth) => {
-      if (depth > CLONE_MAX_DEPTH) throw refuseClone(`nesting deeper than ${CLONE_MAX_DEPTH}`, path);
-      if (value === null) return;
+      if (depth > CLONE_MAX_DEPTH)
+        throw refuseClone(`nesting deeper than ${CLONE_MAX_DEPTH}`, path);
+      if (value === null) return value;
       const type = typeof value;
-      if (type === "string" || type === "boolean") return;
+      if (type === "undefined") return { __tnNativeWorkerUndefined: true };
+      if (type === "string" || type === "boolean") return value;
       if (type === "number") {
-        if (Number.isFinite(value)) return;
+        if (Number.isFinite(value)) return value;
         throw refuseClone(describeUncloneable(value), path);
       }
       if (type !== "object") throw refuseClone(describeUncloneable(value), path);
+
+      if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+        const view =
+          value instanceof ArrayBuffer
+            ? new Uint8Array(value)
+            : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+        return {
+          __tnNativeWorkerBinary:
+            value instanceof ArrayBuffer ? "ArrayBuffer" : value.constructor.name,
+          bytes: Array.from(view),
+        };
+      }
 
       if (onPath.has(value)) throw refuseClone("a reference cycle", path);
       // Not a cycle, but JSON would duplicate it and the receiver would lose the shared identity
@@ -235,17 +249,47 @@ if (typeof Worker === "undefined") {
 
       onPath.add(value);
       visited.add(value);
+      const clone = isPlainArray ? [] : {};
       if (isPlainArray) {
         for (let index = 0; index < value.length; index += 1) {
-          walk(value[index], `${path}[${index}]`, depth + 1);
+          clone[index] = walk(value[index], `${path}[${index}]`, depth + 1);
         }
       } else {
-        for (const key of Object.keys(value)) walk(value[key], `${path}.${key}`, depth + 1);
+        for (const key of Object.keys(value)) {
+          clone[key] = walk(value[key], `${path}.${key}`, depth + 1);
+        }
       }
       onPath.delete(value);
+      return clone;
     };
     // `postMessage(undefined)` is legal and delivers undefined; it travels as an empty payload.
-    if (root !== undefined) walk(root, "message", 0);
+    return root === undefined ? undefined : walk(root, "message", 0);
+  };
+
+  const decodeClone = (value) => {
+    if (value === null || typeof value !== "object") return value;
+    if (
+      value.__tnNativeWorkerUndefined === true &&
+      Object.keys(value).length === 1
+    ) {
+      return undefined;
+    }
+    if (typeof value.__tnNativeWorkerBinary === "string" && Array.isArray(value.bytes)) {
+      const bytes = Uint8Array.from(value.bytes);
+      if (value.__tnNativeWorkerBinary === "ArrayBuffer") return bytes.buffer;
+      const Constructor = globalThis[value.__tnNativeWorkerBinary];
+      if (typeof Constructor !== "function") {
+        throw new Error(
+          `TN_NATIVE_WORKER_CLONE_FAILED: unknown binary view ${value.__tnNativeWorkerBinary}`,
+        );
+      }
+      return value.__tnNativeWorkerBinary === "DataView"
+        ? new DataView(bytes.buffer)
+        : new Constructor(bytes.buffer);
+    }
+    if (Array.isArray(value)) return value.map(decodeClone);
+    for (const key of Object.keys(value)) value[key] = decodeClone(value[key]);
+    return value;
   };
 
   class Worker {
@@ -313,17 +357,14 @@ if (typeof Worker === "undefined") {
 
     postMessage(data, transfer = []) {
       if (this._terminated) return;
-      if (transfer.length !== 0) {
-        throw namedError(
-          "DataCloneError",
-          "TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED: transfer lists are not supported; the declared clone matrix copies values and admits no transferable",
-        );
+      if (!Array.isArray(transfer) || transfer.some((value) => !(value instanceof ArrayBuffer))) {
+        throw refuseClone("a non-ArrayBuffer transferable", "transfer");
       }
       // Refuse before queueing, so an unsupported value can never reach a worker half-cloned.
-      assertCloneable(data);
       let payload;
       try {
-        payload = data === undefined ? "" : JSON.stringify(data);
+        const encoded = encodeClone(data);
+        payload = encoded === undefined ? "" : JSON.stringify(encoded);
       } catch (error) {
         throw namedError("DataCloneError", `TN_NATIVE_WORKER_CLONE_FAILED: ${error}`);
       }
@@ -334,7 +375,10 @@ if (typeof Worker === "undefined") {
         );
       }
       if (!__tnNativeWorkerPost(this._id, payload)) {
-        throw namedError("InvalidStateError", "TN_NATIVE_WORKER_POST_FAILED: worker is unavailable");
+        throw namedError(
+          "InvalidStateError",
+          "TN_NATIVE_WORKER_POST_FAILED: worker is unavailable",
+        );
       }
     }
 
@@ -371,7 +415,7 @@ if (typeof Worker === "undefined") {
       }
       let data;
       try {
-        data = payload.length === 0 ? undefined : JSON.parse(payload);
+        data = payload.length === 0 ? undefined : decodeClone(JSON.parse(payload));
       } catch (error) {
         const event = new ErrorEvent("error", {
           message: `TN_NATIVE_WORKER_CLONE_FAILED: ${error}`,

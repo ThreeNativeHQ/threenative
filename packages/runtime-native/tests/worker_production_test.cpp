@@ -37,7 +37,6 @@ const record = (name, pass, detail) => __verdicts.push({ name, pass: !!pass, det
   for (const make of [
     () => ({ run: () => 1 }),
     () => { const a = {}; a.self = a; return a; },
-    () => ({ bytes: new Uint8Array(2) }),
     () => ({ n: NaN }),
   ]) {
     try {
@@ -71,12 +70,44 @@ const echo = new Worker(blobUrl(`
 `));
 globalThis.__echoed = null;
 globalThis.__echoSubject = {
-  n: -1.5, s: "text", t: true, z: null,
-  list: [1, "two", false, null, { deep: { deeper: [] } }],
+  n: -1.5, s: "text", t: true, u: undefined, z: null,
+  list: [1, "two", false, undefined, null, { deep: { deeper: [] } }],
   record: { a: 0, b: { c: "d" } },
 };
 echo.onmessage = (event) => { __echoed = event.data; };
 echo.postMessage(__echoSubject);
+
+// --- binaryCloneAndWorkerEventListener ------------------------------------------------------
+// KTX2Loader uses addEventListener and transfers ArrayBuffers in both directions. The native
+// wire copies these values, but must preserve their binary type and bytes.
+const binary = new Worker(blobUrl(`
+  self.addEventListener("message", (event) => {
+    const input = new Uint8Array(event.data.buffer);
+    const output = new Uint8Array([input[3], input[2], input[1], input[0]]);
+    self.postMessage({ buffer: event.data.buffer, output }, [event.data.buffer, output.buffer]);
+  });
+`));
+globalThis.__binaryResult = null;
+binary.onmessage = (event) => {
+  __binaryResult = {
+    input: Array.from(new Uint8Array(event.data.buffer)),
+    output: Array.from(event.data.output),
+    typed: event.data.output instanceof Uint8Array,
+  };
+};
+const binaryInput = new Uint8Array([3, 1, 4, 1]).buffer;
+binary.postMessage({ buffer: binaryInput }, [binaryInput]);
+
+// --- wasmPromiseTasksAfterMessage -----------------------------------------------------------
+const promised = new Worker(blobUrl(`
+  self.addEventListener("message", (event) => {
+    WebAssembly.compile(event.data.module).then(() => postMessage({ compiled: true }));
+  });
+`));
+globalThis.__promiseResult = null;
+promised.onmessage = (event) => { __promiseResult = event.data.compiled; };
+const emptyWasmModule = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]).buffer;
+promised.postMessage({ module: emptyWasmModule }, [emptyWasmModule]);
 
 // --- topLevelThrowReachesError --------------------------------------------------------------
 const boom = new Worker(blobUrl("throw new Error('top level exploded');"));
@@ -142,8 +173,26 @@ globalThis.__settle = () => {
     __fifoSeen[5] && __fifoSeen[5].echo === 99;
   record("fifoAcrossHandlerRegistration", fifoOk, fifoOk ? "" : JSON.stringify(__fifoSeen));
 
-  const echoOk = JSON.stringify(__echoed) === JSON.stringify(__echoSubject);
+  const echoOk =
+    JSON.stringify(__echoed) === JSON.stringify(__echoSubject) &&
+    Object.hasOwn(__echoed, "u") &&
+    __echoed.u === undefined &&
+    __echoed.list.length === 6 &&
+    __echoed.list[3] === undefined;
   record("cloneMatrixRoundTrip", echoOk, echoOk ? "" : JSON.stringify(__echoed));
+
+  const binaryOk =
+    __binaryResult !== null &&
+    JSON.stringify(__binaryResult.input) === "[3,1,4,1]" &&
+    JSON.stringify(__binaryResult.output) === "[1,4,1,3]" &&
+    __binaryResult.typed === true;
+  record("binaryCloneAndWorkerEventListener", binaryOk, binaryOk ? "" : JSON.stringify(__binaryResult));
+
+  record(
+    "wasmPromiseTasksAfterMessage",
+    __promiseResult === true,
+    "value=" + String(__promiseResult)
+  );
 
   const topOk = typeof __topLevelError === "string" && __topLevelError.includes("top level exploded");
   record("topLevelThrowReachesError", topOk, topOk ? "" : String(__topLevelError));
@@ -173,6 +222,8 @@ globalThis.__settle = () => {
 globalThis.__ready = () =>
   __fifoSeen.length === 6 &&
   __echoed !== null &&
+  __binaryResult !== null &&
+  __promiseResult !== null &&
   __topLevelError !== null &&
   __handlerError !== null &&
   __badSenderError !== null &&
@@ -233,7 +284,8 @@ int main() {
         // Report what did land, so a timeout names the missing observation instead of just hanging.
         runtime->evalScript(
             "console.log('WORKER_CONTRACT pumpReachedEveryObservation FAIL ' + JSON.stringify({"
-            "fifo: __fifoSeen.length, echoed: __echoed !== null, topLevel: __topLevelError, "
+            "fifo: __fifoSeen.length, echoed: __echoed !== null, binary: __binaryResult, promise: "
+            "__promiseResult, topLevel: __topLevelError, "
             "handler: __handlerError, badSender: __badSenderError, closed: __finalFromClosed}));",
             "worker-contract-timeout");
         std::cerr << "FAILED: the host loop never delivered every worker observation" << std::endl;

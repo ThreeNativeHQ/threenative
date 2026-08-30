@@ -54,4 +54,28 @@ describe("formatModelSizes", () => {
   it("should print nothing when no model was optimized", () => {
     expect(formatModelSizes([])).toEqual([]);
   });
+
+  it("should report the baked lightmap cost and atlas occupancy", () => {
+    const lines = formatModelSizes([
+      {
+        after: 3_780,
+        before: 2_336,
+        lightmap: {
+          atlasHeight: 68,
+          atlasWidth: 76,
+          bakeMs: 12.34,
+          bytesAfter: 1_402,
+          bytesBefore: 20_672,
+          dilatedTexels: 48,
+          occludedTexels: 12,
+          validTexels: 320,
+        },
+        logicalPath: "static-light.glb",
+      },
+    ]);
+
+    expect(lines[1]).toBe(
+      "lightmap static-light.glb: atlas 76x68, 320 valid + 48 dilated texels, 12 occluded, 20672 -> 1402 bytes (-93.2%), bake 12.3 ms",
+    );
+  });
 });

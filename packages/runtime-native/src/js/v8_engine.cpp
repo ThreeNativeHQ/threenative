@@ -130,6 +130,11 @@ private:
     std::optional<v8::Context::Scope> contextScope_;
 };
 
+class V8WakeTask final : public v8::Task {
+public:
+    void Run() override {}
+};
+
 class V8Engine : public Engine {
 public:
     struct NativeFunctionRef {
@@ -1224,6 +1229,22 @@ public:
         while (v8::platform::PumpMessageLoop(g_platform.get(), isolate_)) {
         }
         isolate_->PerformMicrotaskCheckpoint();
+    }
+
+    bool supportsBlockingTaskWait() const override { return true; }
+
+    void waitForTask() override {
+        V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
+        v8::platform::PumpMessageLoop(
+            g_platform.get(), isolate_, v8::platform::MessageLoopBehavior::kWaitForWork);
+        isolate_->PerformMicrotaskCheckpoint();
+    }
+
+    void wakeTaskWait() override {
+        g_platform->GetForegroundTaskRunner(isolate_)->PostTask(
+            std::make_unique<V8WakeTask>());
     }
 
     void beginFrame() override {

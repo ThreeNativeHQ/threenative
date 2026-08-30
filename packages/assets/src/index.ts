@@ -17,6 +17,8 @@ export type {
   IModelQuantizeOptions,
 } from "./passes/model.js";
 export { modelPass } from "./passes/model.js";
+export type { ILightmapPassOptions } from "./passes/lightmap.js";
+export { lightmapPass } from "./passes/lightmap.js";
 export type { ITextureOverride, ITexturePassOptions, TextureCodec } from "./passes/texture.js";
 export { texturePass } from "./passes/texture.js";
 export type { IModelSizeRow, ITextureSizeRow } from "./report.js";

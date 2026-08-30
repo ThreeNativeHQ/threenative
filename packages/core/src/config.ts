@@ -51,6 +51,11 @@ export interface IThreeNativeModelPassesConfig {
 
 /** Model optimization options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeModelsConfig {
+  /** Standard glTF TEXCOORD_1 atlas generation for offline static-light assets. */
+  readonly lightmap?: {
+    readonly atlasSize: number;
+    readonly padding: number;
+  };
   readonly passes?: IThreeNativeModelPassesConfig;
   readonly quantize?: {
     readonly normalBits?: number;

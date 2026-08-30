@@ -371,6 +371,7 @@ describe("threenative.config.ts", () => {
       `export default {
         assets: {
           models: {
+            lightmap: { atlasSize: 64, padding: 2 },
             passes: { dedup: true, prune: false },
             quantize: { positionBits: 14, normalBits: 10, uvBits: 12 },
           },
@@ -380,6 +381,7 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(configured)).resolves.toMatchObject({
       assets: {
         models: {
+          lightmap: { atlasSize: 64, padding: 2 },
           passes: { dedup: true, prune: false },
           quantize: { normalBits: 10, positionBits: 14, uvBits: 12 },
         },

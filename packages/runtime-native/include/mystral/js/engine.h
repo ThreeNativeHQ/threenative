@@ -405,6 +405,15 @@ public:
      */
     virtual void processMicrotasks() {}
 
+    /** True when the engine owns a foreground task queue that can block without polling. */
+    virtual bool supportsBlockingTaskWait() const { return false; }
+
+    /** Run one foreground task, blocking until engine work or an embedder wake arrives. */
+    virtual void waitForTask() {}
+
+    /** Wake waitForTask() from another thread. Implementations must be thread-safe. */
+    virtual void wakeTaskWait() {}
+
     /**
      * Signal the start of a new animation frame.
      * Enables per-frame allocation tracking (e.g., NativeFunction objects).

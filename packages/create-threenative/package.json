@@ -53,5 +53,8 @@
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@threenative/assets": ">=0.3.0 <0.4.0"
   }
 }

@@ -158,3 +158,18 @@ after a resume reads the republished surface, and nothing else in the host may h
 Desktop is a deliberate no-op — a desktop window survives a minimize — so this changes nothing
 about the desktop gate; it is proven on a physical Pixel 8 in
 [`../../../docs/verification/resume-presents-2026-08-23.md`](../../../docs/verification/resume-presents-2026-08-23.md).
+
+## Packed static-light KTX2 consumer — 2026-08-30 (PRD-256)
+
+A tarball-installed sandbox loaded its ordinary compiled GLB and two ETC1S KTX2 textures through
+Three's `GLTFLoader`/`KTX2Loader` on Linux x64, V8 13.1.201.22, Dawn/Vulkan, and an NVIDIA RTX 2080.
+The native worker wire now copies ArrayBuffers/typed arrays, preserves nested `undefined`, supports
+worker event listeners, and blocks on V8's foreground task queue so asynchronous WebAssembly
+compilation completes without polling. The WebGPU resource binding maps every desktop BC format
+Three may select instead of silently falling back to BGRA8.
+
+The desktop playtest drove 30 ticks, observed `staticLightReady:true` and nontrivial player movement,
+and reported zero console, network, or runtime diagnostics. Its inspected 1280x720 capture showed
+the baked darker receiver patch; SHA-256
+`a7668f6d18591500732c890fc0f9a774b5c1d199fbe0b64c075d9b7039af301c`. Android/iOS are not claimed:
+their existing `TN_NATIVE_KTX2_UNSUPPORTED` build guard remains intact.

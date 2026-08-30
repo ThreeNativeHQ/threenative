@@ -27,6 +27,7 @@
   "devDependencies": {
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
+    "@types/three": "0.185.3",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:"
@@ -40,6 +41,9 @@
     "ktx-parse": "^1.1.0",
     "ktx2-encoder": "0.6.0",
     "meshoptimizer": "1.1.1",
-    "pngjs": "7.0.0"
+    "pngjs": "7.0.0",
+    "three": "catalog:",
+    "three-mesh-bvh": "catalog:",
+    "xatlasjs": "0.2.0"
   }
 }

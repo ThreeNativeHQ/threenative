@@ -1,9 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  // The bundled @threenative/assets pulls in CJS deps (pngjs, jpeg-js) whose `require("util")`
-  // needs a real require inside this ESM bundle; without the banner tsup's interop throws
-  // "Dynamic require of ... is not supported" the moment the CLI loads.
+  // Some CLI inspection dependencies are CJS and need a real require inside this ESM bundle.
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);",
   },
@@ -15,11 +13,11 @@ export default defineConfig({
   clean: true,
   splitting: false,
   treeshake: true,
-  // Codec packages stay external: emscripten loaders resolve their .wasm sidecars against
-  // their own module url, which inlining would rewrite to this bundle's directory — a
-  // scaffolded project then fails its first asset compile with ENOENT. They resolve from
-  // the installed @threenative/* packages instead.
+  // The asset package and codec packages stay external: emscripten loaders resolve their
+  // .wasm sidecars and Node globals against their own module url. Inlining rewrites that
+  // context to this ESM CLI bundle and breaks packed-project asset compilation.
   external: [
+    "@threenative/assets",
     "@gltf-transform/core",
     "@gltf-transform/extensions",
     "@gltf-transform/functions",

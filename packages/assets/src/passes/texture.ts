@@ -46,6 +46,28 @@ const DEFAULT_ETC1S_QUALITY = 150;
 /** Normal maps are data, not colour: no sRGB transfer function, non-perceptual encode. */
 const NORMAL_MAP_BASENAME = /(?:^|[_-])(?:normal|nrm)$/iu;
 
+export async function encodeLinearRgbaKtx2(
+  data: Uint8Array,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  const encoded = await encodeToKTX2(new Uint8Array([0]), {
+    generateMipmap: true,
+    imageDecoder: async () => ({ data, height, width }),
+    isPerceptual: false,
+    isSetKTX2SRGBTransferFunc: false,
+    isUASTC: false,
+    qualityLevel: DEFAULT_ETC1S_QUALITY,
+  });
+  const container = readKTX2(encoded);
+  if (container.levelCount < 2) {
+    throw new Error(
+      `TN_ASSETS_MIP_CHAIN_INCOMPLETE: generated lightmap encoded without a mip chain (${String(container.levelCount)} level(s)).`,
+    );
+  }
+  return Buffer.from(encoded);
+}
+
 export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
   return {
     configuration: {

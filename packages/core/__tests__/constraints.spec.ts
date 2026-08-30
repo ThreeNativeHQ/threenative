@@ -44,6 +44,7 @@ describe("core constraints", () => {
       .filter(
         (file) =>
           file !== "config.ts" &&
+          file !== "assets.ts" &&
           file !== "particles.ts" &&
           file !== "projection-plan.ts" &&
           file !== "projection-apply.ts" &&
@@ -59,6 +60,13 @@ describe("core constraints", () => {
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
+
+    // `assets.ts` assigns compiler-produced textures to game-authored materials. It transports
+    // appearance data but originates none: no material, light, colour, or shader may be created.
+    const assets = readFileSync(path.join(sourceDirectory, "assets.ts"), "utf8");
+    expect(assets).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
 
     // `config.ts` is exempted on the same terms: it declares option NAMES a game types
     // (`assets.targets.maxMaterials`), measures nothing, and originates no visual concern.

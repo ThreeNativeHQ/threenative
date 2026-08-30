@@ -78,6 +78,10 @@ export interface IThreeNativeModelPassesConfig {
 }
 
 export interface IThreeNativeModelsConfig {
+  readonly lightmap?: {
+    readonly atlasSize: number;
+    readonly padding: number;
+  };
   readonly passes?: IThreeNativeModelPassesConfig;
   readonly quantize?: {
     /** Normal precision in bits, default 8. */
@@ -1007,7 +1011,29 @@ function bitDepth(value: unknown, label: string): number {
 function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["models"] {
   if (raw === "none") return "none";
   const models = assertRecord(raw, "assets.models");
-  assertKeys(models, "assets.models", ["passes", "quantize"]);
+  assertKeys(models, "assets.models", ["lightmap", "passes", "quantize"]);
+  let lightmap: IThreeNativeModelsConfig["lightmap"];
+  if (models.lightmap !== undefined) {
+    const rawLightmap = assertRecord(models.lightmap, "assets.models.lightmap");
+    assertKeys(rawLightmap, "assets.models.lightmap", ["atlasSize", "padding"]);
+    if (rawLightmap.atlasSize === undefined || rawLightmap.padding === undefined) {
+      fail("TN_CONFIG_ASSETS_INVALID", "assets.models.lightmap requires atlasSize and padding.");
+    }
+    lightmap = {
+      atlasSize: positiveInteger(
+        rawLightmap.atlasSize,
+        1,
+        "TN_CONFIG_ASSETS_INVALID",
+        "assets.models.lightmap.atlasSize",
+      ),
+      padding: positiveInteger(
+        rawLightmap.padding,
+        1,
+        "TN_CONFIG_ASSETS_INVALID",
+        "assets.models.lightmap.padding",
+      ),
+    };
+  }
   let passes: IThreeNativeModelPassesConfig | undefined;
   if (models.passes !== undefined) {
     const rawPasses = assertRecord(models.passes, "assets.models.passes");
@@ -1036,6 +1062,7 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
     }
   }
   return {
+    ...(lightmap === undefined ? {} : { lightmap }),
     ...(passes === undefined || Object.keys(passes).length === 0 ? {} : { passes }),
     ...(quantize === undefined || Object.keys(quantize).length === 0 ? {} : { quantize }),
   };

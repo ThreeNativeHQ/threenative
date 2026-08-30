@@ -66,7 +66,54 @@ interface IAssetManifest {
   readonly version: number;
 }
 
+interface ICompiledLightmap {
+  readonly materialTargets: readonly string[];
+  readonly output: string;
+  readonly texCoord: number;
+}
+
 const MANIFEST_VERSION = 1;
+
+function entryUsesKtx2(entry: unknown): boolean {
+  if (!isRecord(entry)) return false;
+  if (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) return true;
+  return (
+    Array.isArray(entry.lightmaps) &&
+    entry.lightmaps.some(
+      (lightmap) =>
+        isRecord(lightmap) &&
+        typeof lightmap.output === "string" &&
+        /\.ktx2$/iu.test(lightmap.output),
+    )
+  );
+}
+
+function compiledLightmaps(entry: unknown, logicalPath: string): readonly ICompiledLightmap[] {
+  if (!isRecord(entry) || entry.lightmaps === undefined) return [];
+  if (!Array.isArray(entry.lightmaps)) {
+    throw new Error(
+      `TN_ASSETS_LIGHTMAP_MANIFEST_INVALID: '${logicalPath}' lightmaps must be an array.`,
+    );
+  }
+  return entry.lightmaps.map((lightmap, index) => {
+    if (
+      !isRecord(lightmap) ||
+      typeof lightmap.output !== "string" ||
+      lightmap.texCoord !== 1 ||
+      !Array.isArray(lightmap.materialTargets) ||
+      !lightmap.materialTargets.every((target) => typeof target === "string")
+    ) {
+      throw new Error(
+        `TN_ASSETS_LIGHTMAP_MANIFEST_INVALID: '${logicalPath}' lightmaps[${String(index)}] must name output, texCoord 1, and string materialTargets.`,
+      );
+    }
+    return {
+      materialTargets: lightmap.materialTargets,
+      output: lightmap.output,
+      texCoord: lightmap.texCoord,
+    };
+  });
+}
 
 function isExternalAssetPath(path: string): boolean {
   return /^(?:[a-z]+:)?\/\//iu.test(path) || path.startsWith("data:");
@@ -210,6 +257,40 @@ function platformName(): string {
   return nav?.userAgent ?? "unknown platform";
 }
 
+function attachLightmap(value: unknown, specification: ICompiledLightmap, texture: Texture): void {
+  const targets = new Set(specification.materialTargets);
+  let assignments = 0;
+  for (const root of modelRoots(value)) {
+    root.traverse((object) => {
+      const renderable = object as Object3D & {
+        geometry?: { getAttribute(name: string): unknown };
+        material?: unknown;
+      };
+      const materials = Array.isArray(renderable.material)
+        ? renderable.material
+        : [renderable.material];
+      for (const material of materials) {
+        if (!isRecord(material) || !targets.has(String(material.name ?? ""))) continue;
+        if (
+          renderable.geometry?.getAttribute(`uv${String(specification.texCoord)}`) === undefined
+        ) {
+          throw new Error(
+            `TN_ASSETS_LIGHTMAP_UV2_MISSING: material '${String(material.name ?? "")}' has no TEXCOORD_1 geometry.`,
+          );
+        }
+        material.lightMap = texture;
+        material.needsUpdate = true;
+        assignments += 1;
+      }
+    });
+  }
+  if (assignments === 0) {
+    throw new Error(
+      `TN_ASSETS_LIGHTMAP_TARGET_MISSING: no loaded material matches ${JSON.stringify(specification.materialTargets)}.`,
+    );
+  }
+}
+
 /**
  * Builds the one shared `KTX2Loader`: transcoder served from the compile step's copy under
  * `<basePath>basis/`, support detected against the real renderer exactly once. Resolves
@@ -265,12 +346,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       : (() => {
           const loader = createKtx2Loader({ basePath, renderer: options.renderer });
           const ready = manifestOnce().then(async (manifest) => {
-            const requiresKtx2 = Object.values(manifest?.entries ?? {}).some(
-              (entry) =>
-                isRecord(entry) &&
-                typeof entry.output === "string" &&
-                /\.ktx2$/iu.test(entry.output),
-            );
+            const requiresKtx2 = Object.values(manifest?.entries ?? {}).some(entryUsesKtx2);
             if (requiresKtx2) await loader;
           });
           loader.catch(() => undefined);
@@ -282,6 +358,45 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     geometries: new WeakSet(),
     surfaces: new WeakSet(),
     textures: new WeakSet(),
+  };
+
+  const loadCompiledKtx2 = async (url: string): Promise<Texture> => {
+    if (compressedTextures === undefined) {
+      throw new Error(
+        `TN_ASSETS_KTX2_NO_RENDERER: '${url}' is compiled compressed output; construct the asset loader with { renderer } so KTX2 support can be detected.`,
+      );
+    }
+    const shared = await compressedTextures.loader;
+    if (shared === undefined) {
+      throw new Error(
+        `TN_ASSETS_KTX2_UNPROBED: '${url}' is compiled compressed output but the provided renderer exposes no support-detection surface (neither WebGPU features nor WebGL extensions).`,
+      );
+    }
+    return loadWith(shared, url);
+  };
+
+  const attachCompiledLightmaps = async (logicalPath: string, value: unknown): Promise<void> => {
+    if (isExternalAssetPath(logicalPath)) return;
+    const manifest = await manifestOnce();
+    const lightmaps = compiledLightmaps(manifest?.entries[logicalPath], logicalPath);
+    for (const specification of lightmaps) {
+      const resolved = resolvePath(basePath, specification.output);
+      let texture: Texture;
+      try {
+        texture = await loadCompiledKtx2(resolved);
+      } catch (error) {
+        throw new Error(
+          `TN_ASSETS_LIGHTMAP_MISSING: could not load '${resolved}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      texture.channel = specification.texCoord;
+      try {
+        attachLightmap(value, specification, texture);
+      } catch (error) {
+        texture.dispose();
+        throw error;
+      }
+    }
   };
 
   // Cache keys stay on the logical path so `release` matches whatever was loaded with or
@@ -349,7 +464,11 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     ...(compressedTextures === undefined ? {} : { compressedTextures }),
     model: <T = unknown>(path: string) =>
       cached<T>("model", path, async (url) => {
-        if (options.model !== undefined) return (await options.model(url)) as T;
+        if (options.model !== undefined) {
+          const value = (await options.model(url)) as T;
+          await attachCompiledLightmaps(path, value);
+          return value;
+        }
         // Fetched here rather than through the loader so the declared extensions decide which
         // decoders load: a game never pays for a codec its assets do not use, and no WASM is
         // instantiated on platforms that never load a compressed model. Both the compiled and
@@ -382,9 +501,11 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           dracoLoader.setDecoderPath(resolvePath(basePath, "draco/"));
           loader.setDRACOLoader(dracoLoader);
         }
-        return await new Promise<T>((resolve, reject) =>
+        const value = await new Promise<T>((resolve, reject) =>
           loader.parse(data, resourcePathOf(url), resolve as never, reject),
         );
+        await attachCompiledLightmaps(path, value);
+        return value;
       }),
     release: (kind, path) => {
       const key = `${kind}:${path}`;
@@ -400,18 +521,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // Compiled output carries the content-addressed extension: anything ending in .ktx2
         // goes through the shared KTX2 loader, everything else stays on TextureLoader.
         if (/\.ktx2$/iu.test(url)) {
-          if (compressedTextures === undefined) {
-            throw new Error(
-              `TN_ASSETS_KTX2_NO_RENDERER: '${url}' is compiled compressed output; construct the asset loader with { renderer } so KTX2 support can be detected.`,
-            );
-          }
-          const shared = await compressedTextures.loader;
-          if (shared === undefined) {
-            throw new Error(
-              `TN_ASSETS_KTX2_UNPROBED: '${url}' is compiled compressed output but the provided renderer exposes no support-detection surface (neither WebGPU features nor WebGL extensions).`,
-            );
-          }
-          return loadWith(shared, url);
+          return loadCompiledKtx2(url);
         }
         if (typeof Image === "undefined" && typeof createImageBitmap === "function") {
           const response = await fetch(url);

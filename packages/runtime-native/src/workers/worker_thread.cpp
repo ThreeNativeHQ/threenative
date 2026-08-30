@@ -64,6 +64,10 @@ void WorkerThread::postMessage(std::vector<uint8_t> data,
         inQueue_.push(std::move(msg));
     }
     inCondition_.notify_one();
+    {
+        std::lock_guard<std::mutex> lock(engineMutex_);
+        if (engine_) engine_->wakeTaskWait();
+    }
 }
 
 void WorkerThread::terminate() {
@@ -79,6 +83,10 @@ void WorkerThread::terminate() {
         inQueue_.push(std::move(msg));
     }
     inCondition_.notify_one();
+    {
+        std::lock_guard<std::mutex> lock(engineMutex_);
+        if (engine_) engine_->wakeTaskWait();
+    }
 
     // Wait for thread to finish
     if (thread_ && thread_->joinable()) {
@@ -262,6 +270,8 @@ globalThis.self = globalThis;
 (function() {
     let _onmessage = null;
     let _onerror = null;
+    const _messageListeners = [];
+    const _errorListeners = [];
 
     // onmessage property on globalThis (accessible as self.onmessage)
     Object.defineProperty(globalThis, 'onmessage', {
@@ -278,6 +288,18 @@ globalThis.self = globalThis;
         set: (fn) => { _onerror = fn; },
         configurable: true
     });
+
+    globalThis.addEventListener = function(type, handler) {
+        if (typeof handler !== 'function') return;
+        if (type === 'message') _messageListeners.push(handler);
+        else if (type === 'error') _errorListeners.push(handler);
+    };
+
+    globalThis.removeEventListener = function(type, handler) {
+        const listeners = type === 'message' ? _messageListeners : _errorListeners;
+        const index = listeners.indexOf(handler);
+        if (index >= 0) listeners.splice(index, 1);
+    };
 
     // The declared clone matrix, mirrored from
     // packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js. The wire is JSON and
@@ -320,21 +342,32 @@ globalThis.self = globalThis;
         return depth;
     };
 
-    const assertCloneable = (root) => {
+    const encodeClone = (root) => {
         const onPath = new Set();
         const visited = new Set();
         const walk = (value, path, depth) => {
             if (depth > CLONE_MAX_DEPTH) {
                 throw refuseClone('nesting deeper than ' + CLONE_MAX_DEPTH, path);
             }
-            if (value === null) return;
+            if (value === null) return value;
             const type = typeof value;
-            if (type === 'string' || type === 'boolean') return;
+            if (type === 'undefined') return { __tnNativeWorkerUndefined: true };
+            if (type === 'string' || type === 'boolean') return value;
             if (type === 'number') {
-                if (Number.isFinite(value)) return;
+                if (Number.isFinite(value)) return value;
                 throw refuseClone(describeUncloneable(value), path);
             }
             if (type !== 'object') throw refuseClone(describeUncloneable(value), path);
+
+            if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+                const view = value instanceof ArrayBuffer
+                    ? new Uint8Array(value)
+                    : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+                return {
+                    __tnNativeWorkerBinary: value instanceof ArrayBuffer ? 'ArrayBuffer' : value.constructor.name,
+                    bytes: Array.from(view),
+                };
+            }
 
             if (onPath.has(value)) throw refuseClone('a reference cycle', path);
             if (visited.has(value)) throw refuseClone('a second reference to one object', path);
@@ -350,31 +383,51 @@ globalThis.self = globalThis;
 
             onPath.add(value);
             visited.add(value);
+            const clone = isPlainArray ? [] : {};
             if (isPlainArray) {
                 for (let index = 0; index < value.length; index += 1) {
-                    walk(value[index], path + '[' + index + ']', depth + 1);
+                    clone[index] = walk(value[index], path + '[' + index + ']', depth + 1);
                 }
             } else {
                 for (const key of Object.keys(value)) {
-                    walk(value[key], path + '.' + key, depth + 1);
+                    clone[key] = walk(value[key], path + '.' + key, depth + 1);
                 }
             }
             onPath.delete(value);
+            return clone;
         };
-        if (root !== undefined) walk(root, 'message', 0);
+        return root === undefined ? undefined : walk(root, 'message', 0);
+    };
+
+    const decodeClone = (value) => {
+        if (value === null || typeof value !== 'object') return value;
+        if (value.__tnNativeWorkerUndefined === true && Object.keys(value).length === 1) {
+            return undefined;
+        }
+        if (typeof value.__tnNativeWorkerBinary === 'string' && Array.isArray(value.bytes)) {
+            const bytes = Uint8Array.from(value.bytes);
+            if (value.__tnNativeWorkerBinary === 'ArrayBuffer') return bytes.buffer;
+            const Constructor = globalThis[value.__tnNativeWorkerBinary];
+            if (typeof Constructor !== 'function') {
+                throw new Error('TN_NATIVE_WORKER_CLONE_FAILED: unknown binary view ' + value.__tnNativeWorkerBinary);
+            }
+            return value.__tnNativeWorkerBinary === 'DataView'
+                ? new DataView(bytes.buffer)
+                : new Constructor(bytes.buffer);
+        }
+        if (Array.isArray(value)) return value.map(decodeClone);
+        for (const key of Object.keys(value)) value[key] = decodeClone(value[key]);
+        return value;
     };
 
     // postMessage function
     globalThis.postMessage = function(data, transfer) {
         transfer = transfer || [];
-        if (transfer.length !== 0) {
-            throw namedError(
-                'DataCloneError',
-                'TN_NATIVE_WORKER_TRANSFER_UNSUPPORTED: transfer lists are not supported; the declared clone matrix copies values and admits no transferable',
-            );
+        if (!Array.isArray(transfer) || transfer.some((value) => !(value instanceof ArrayBuffer))) {
+            throw refuseClone('a non-ArrayBuffer transferable', 'transfer');
         }
-        assertCloneable(data);
-        const json = data === undefined ? '' : JSON.stringify(data);
+        const encoded = encodeClone(data);
+        const json = encoded === undefined ? '' : JSON.stringify(encoded);
         __workerPostMessage(json, transfer);
     };
 
@@ -394,10 +447,12 @@ globalThis.self = globalThis;
                 return false;
             }
 
-            if (msg.type === 0 && _onmessage) {  // MESSAGE
+            if (msg.type === 0 && (_onmessage || _messageListeners.length > 0)) {  // MESSAGE
                 try {
-                    const data = msg.data ? JSON.parse(msg.data) : undefined;
-                    _onmessage({ data: data, target: globalThis });
+                    const data = msg.data ? decodeClone(JSON.parse(msg.data)) : undefined;
+                    const event = { data: data, target: globalThis };
+                    if (_onmessage) _onmessage(event);
+                    for (const listener of [..._messageListeners]) listener(event);
                 } catch (e) {
                     // One error event, and it must leave this isolate. Printing it here and
                     // calling the worker's own onerror left the caller on the main thread with
@@ -406,6 +461,9 @@ globalThis.self = globalThis;
                     console.error('[Worker] Error processing message:', message);
                     if (_onerror) {
                         _onerror({ error: e, message: e && e.message });
+                    }
+                    for (const listener of [..._errorListeners]) {
+                        listener({ error: e, message: e && e.message });
                     }
                     __workerPostError(message);
                 }
@@ -445,6 +503,10 @@ void WorkerThread::threadMain() {
     // Set thread-local globals
     g_workerEngine = engine.get();
     g_workerThread = this;
+    {
+        std::lock_guard<std::mutex> lock(engineMutex_);
+        engine_ = engine.get();
+    }
 
     // Add worker log function FIRST (before anything uses console)
     engine->setGlobalProperty("__workerLog",
@@ -532,13 +594,18 @@ globalThis.console = {
             break;  // Worker requested close
         }
 
-        // Block until input, termination, or close. postMessage() and
-        // terminate() push under inMutex_ and notify inCondition_, so the
-        // predicate cannot miss a wake between the empty-queue check above
-        // (inside __processMessages) and this wait: the check and the wait
-        // share the mutex the notifiers hold while queueing.
-        {
-            idleWaits_.fetch_add(1, std::memory_order_relaxed);
+        engine->processMicrotasks();
+
+        idleWaits_.fetch_add(1, std::memory_order_relaxed);
+        if (engine->supportsBlockingTaskWait()) {
+            // V8 asynchronous work, including WebAssembly compilation, posts to its foreground
+            // task queue. postMessage() and terminate() post a no-op task so external input
+            // cannot strand the worker in this blocking, zero-poll wait.
+            engine->waitForTask();
+            idleWakes_.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            // Engines without a foreground task queue block on worker input. The queue check and
+            // wait share the notifier's mutex, so a wake cannot be missed.
             std::unique_lock<std::mutex> lock(inMutex_);
             inCondition_.wait(lock, [this] {
                 return terminated_.load() || !inQueue_.empty();
@@ -548,6 +615,10 @@ globalThis.console = {
     }
 
     // Cleanup
+    {
+        std::lock_guard<std::mutex> lock(engineMutex_);
+        engine_ = nullptr;
+    }
     g_workerEngine = nullptr;
     g_workerThread = nullptr;
     running_ = false;
