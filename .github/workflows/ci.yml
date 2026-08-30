@@ -59,6 +59,13 @@ jobs:
     needs: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
+      # settles. Its 30s default is a quiet-machine number: this job now compiles the native host
+      # too, and on a two-core runner the same gate passed one run and failed the next on a profile
+      # directory that removes itself moments later. The knob exists for exactly this; the gate
+      # still fails when a directory genuinely outlives the wait, and now names what holds it.
+      TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

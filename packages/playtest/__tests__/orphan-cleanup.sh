@@ -150,6 +150,13 @@ fi
 if [[ "$after_temp_directories" -ne "$before_temp_directories" ]]; then
   echo "temporary directory count changed in suite namespace '$suite_temp_root' and did not settle within ${settle_deadline_seconds}s: before $before_temp_directories, after $after_temp_directories" >&2
   find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d -print >&2 2>/dev/null || true
+  # A directory that outlives the deadline is either genuinely orphaned or still owned by a
+  # process this gate's own filter did not match — a browser zygote carries none of the tokens
+  # `list_orphan_processes` looks for. Naming the survivors is what tells those two apart, and
+  # without it the failure reads as a leak in every case.
+  echo "processes still mentioning the suite namespace or a browser profile:" >&2
+  ps -eo pid=,args= | grep -E "$suite_temp_root|chromium|chrome" | grep -v grep >&2 || \
+    echo "  none — no process holds these directories, so this is a real leak" >&2
   exit 1
 fi
 
