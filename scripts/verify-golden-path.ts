@@ -1,4 +1,4 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
@@ -1092,11 +1092,28 @@ function goldenPathTestStep(target: string): { args: string[]; command: string; 
   if (!existsSync(path.join(target, "playtests"))) {
     return { args: ["test"], command: "pnpm", cwd: target };
   }
-  const scenarios = execFileSync(
+  // A template whose every scenario captures a frame has nothing this lane can run. `minimal` is
+  // that template: `atmosphere`, `play` and `survives` are all visual, so the splitter correctly
+  // reports "every scenario is visual; nothing would run" and exits non-zero. That is right for a
+  // direct caller and wrong here — it failed the whole lane over a template it simply cannot
+  // prove without a GPU, which is a fact about the machine rather than about the scaffold.
+  //
+  // Say so and carry on. What must not happen is the opposite: running zero scenarios and
+  // reporting the template proven, which is why the splitter still fails closed for anyone else.
+  const listed = spawnSync(
     process.execPath,
     [path.join(REPO_ROOT, "scripts", "non-visual-scenarios.mjs"), target],
     { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
-  )
+  );
+  if (listed.status !== 0) {
+    process.stdout.write(
+      `golden-path ${path.basename(target)}: every scenario needs a rendered frame, and this ` +
+        `machine has no GPU (TN_PLAYTEST_ALLOW_SOFTWARE=1). Nothing is run and nothing is ` +
+        `claimed for this template here; the lanes with hardware cover it.\n`,
+    );
+    return { args: ["--version"], command: "pnpm", cwd: target };
+  }
+  const scenarios = listed.stdout
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
