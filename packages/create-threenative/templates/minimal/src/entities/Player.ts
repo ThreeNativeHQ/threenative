@@ -3,6 +3,7 @@ import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threen
 import { BoxGeometry, Group, Mesh } from "three";
 import { type IMinimalConventions, preparePlayerConventions } from "../conventions.js";
 import { defaultMaterial } from "../render/materials.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -39,11 +40,12 @@ export class Player {
     });
   }
 
-  update(ctx: GameCtx, dt: number): void {
+  update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     this.#coyoteTime = Math.max(0, this.#coyoteTime - dt);
     this.#jumpBuffer = Math.max(0, this.#jumpBuffer - dt);
     if (this.body.grounded) this.#coyoteTime = COYOTE_TIME;
-    if (ctx.input.justPressed("jump")) this.#jumpBuffer = JUMP_BUFFER;
+    if (ctx.input.justPressed("jump") || touch?.jumpPressed === true)
+      this.#jumpBuffer = JUMP_BUFFER;
     if (this.#jumpBuffer > 0 && this.#coyoteTime > 0) {
       this.body.velocity.y = JUMP_SPEED;
       this.#jumpBuffer = 0;
@@ -52,6 +54,11 @@ export class Player {
       this.#coyoteJumps += 1;
     }
     const move = ctx.input.vector("move");
+    if (touch !== undefined) {
+      move.x += touch.move.x;
+      move.y += touch.move.y;
+      move.clampLength(0, 1);
+    }
     this.body.velocity.x = move.x * MOVE_SPEED;
     this.body.velocity.z = -move.y * MOVE_SPEED;
     this.body.moveAndSlide(dt);

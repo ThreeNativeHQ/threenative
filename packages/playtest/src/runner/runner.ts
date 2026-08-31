@@ -80,6 +80,20 @@ import {
 
 /** How long a single screenshot may take before the runner calls it a failure. */
 const SCREENSHOT_TIMEOUT_MS = 120_000;
+const TOUCH_BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Linux; Android 13; Pixel 8) AppleWebKit/537.36 Chrome/151.0 Mobile Safari/537.36";
+
+function isTouchPrimaryBrowserScenario(scenario: IPlaytestScenario): boolean {
+  if (!scenario.steps.some(({ pointers }) => pointers !== undefined)) return false;
+  // Pointer steps also drive mouse placement and pinch assertions. The authored touch-control
+  // visibility assertion is the scenario's explicit declaration that this is the touch-primary
+  // browser lane, so those existing pointer scenarios keep their desktop platform signal.
+  return (
+    scenario.assert?.visibility?.some(
+      ({ entity, present }) => entity === "touch-controls" && present === true,
+    ) ?? false
+  );
+}
 
 interface IVisualPageCapture {
   elementRegions?: IPlaytestVisualElementRegionObservation[];
@@ -285,9 +299,28 @@ async function runStandalonePlaytestInternal(
     if (options.remoteBrowser === undefined && server !== undefined && options.managedServer === undefined) {
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
+    const touchBrowser = isTouchPrimaryBrowserScenario(scenario);
+    // Explicit touch-control scenarios expose the same mobile signal that core's portable
+    // predicate reads; keyboard and other pointer-only scenarios stay desktop.
     context = options.remoteBrowser === undefined
-      ? await browser.newContext({ viewport: scenario.viewport })
+      ? await browser.newContext({
+          viewport: scenario.viewport,
+          ...(touchBrowser
+            ? { hasTouch: true, userAgent: TOUCH_BROWSER_USER_AGENT }
+            : {}),
+        })
       : await options.remoteBrowser.context(browser);
+    if (touchBrowser && options.remoteBrowser === undefined) {
+      // Chromium keeps desktop `userAgentData.mobile` unless full mobile emulation is enabled.
+      // That emulation breaks the minimal template's WebGPU atmosphere path, so expose the one
+      // platform fact the touch lane is declaring without changing its viewport/render surface.
+      await context.addInitScript(() => {
+        Object.defineProperty(navigator, "userAgentData", {
+          configurable: true,
+          value: { mobile: true, platform: "Android" },
+        });
+      });
+    }
     if (activeConfig.trace) {
       await context.tracing.start({ screenshots: true, snapshots: true });
     }

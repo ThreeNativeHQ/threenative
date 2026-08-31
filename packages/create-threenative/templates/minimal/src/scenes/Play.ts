@@ -4,6 +4,7 @@ import {
   Scene,
   type SceneFrame,
   isMobile,
+  isTouchscreenAvailable,
   solarPosition,
 } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
@@ -17,6 +18,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { defaultMaterial, floorMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -31,7 +33,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
-    const useAtmosphere = ctx.renderer.kind === "webgpu";
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
+    const useAtmosphere = ctx.renderer.kind === "webgpu" && !showTouchControls;
     const atmosphere = useAtmosphere
       ? new Atmosphere({
           rayleigh: [0.005802, 0.013558, 0.0331],
@@ -78,6 +81,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(ctx.camera as PerspectiveCamera))
+      : undefined;
     const hud = ctx.entities.add("hud", createHud(ctx.camera as PerspectiveCamera, "SCORE"));
     const floor = new Mesh(new BoxGeometry(10, 0.2, 4), floorMaterial);
     floor.position.y = -0.1;
@@ -114,7 +120,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const statePatch: Partial<GameState> = {};
     return (frameCtx, dt) => {
       loading.update();
-      player.update(frameCtx, dt);
+      player.update(
+        frameCtx,
+        dt,
+        touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
+      );
       elapsed += dt;
       solarInput.timeOfDay = (6 + elapsed * 2) % 24;
       solarPosition(solarInput, sun);
