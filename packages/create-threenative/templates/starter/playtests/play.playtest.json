@@ -33,9 +33,9 @@
       "runtimeReady": true
     },
     "performance": {
-      "maxDrawCalls": 53,
+      "maxDrawCalls": 160,
       "maxFrameMsP95": 33,
-      "maxTriangles": 4403
+      "maxTriangles": 9800
     },
     "resources": [
       {

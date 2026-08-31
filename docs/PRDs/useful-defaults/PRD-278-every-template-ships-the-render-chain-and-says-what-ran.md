@@ -4,10 +4,19 @@ prd_contract: v1
 
 # PRD-278 — every template ships the render chain, and says which stages actually ran
 
-**Status:** SCOPING — filed 2026-08-30, prepared at `9b97d704`. **Blocked on one thing only:** the
-`look-polish` lane is still rewriting `WorldEnvironment.ts`, `lighting.ts` and `postprocessing.ts`
-in the `lumen-hall` sandbox game. Copying a half-tuned file into seven templates is worse than
-copying nothing, so this PRD is the plan and the integration work; the file arrives last.
+**Status:** DONE on browser, native open — 2026-08-30. All seven templates ship the chain; the
+evidence, the numbers and what was not verified are in
+[docs/verification/prd-278-render-chain-in-every-template-2026-08-30.md](../../verification/prd-278-render-chain-in-every-template-2026-08-30.md).
+AC1–AC8 met on browser WebGPU; **AC9 (native) is open** — no `--target desktop` run was executed,
+so the WebGPU-only refusal has been observed on browser only. AC7's exposure question was settled
+before this landed (`docs/verification/exposure-ab-2026-08-30.md`) and the shipped comment states
+the measured answer.
+
+The port found and fixed an engine bug on the way: `renderChain` assertions could never pass,
+because `dist/playtest.js` is its own `tsup` entry with its own copy of `chain.ts` and the report
+lived in a module-scoped `WeakMap`. Red, fix and green are in the record above (`81f27f74`).
+
+The original blocker below is discharged: the mined file landed in the starter at `b43b3f87`.
 
 **Goal: a scaffolded game's first `pnpm dev` renders through a real chain, and a stage that could
 not run says so by name.** Mined from `lumen-hall`. Sibling of
