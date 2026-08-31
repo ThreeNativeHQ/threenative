@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# Fast drift gates before a push. Skip deliberately with TN_SKIP_PREPUSH=1 — an escape hatch that
+# exists so nobody disables the hook permanently the first time they need to push past it.
+[ "${TN_SKIP_PREPUSH:-}" = "1" ] && { echo "pre-push: skipped (TN_SKIP_PREPUSH=1)"; exit 0; }
+echo "pre-push: pnpm ci:fast  (skip with TN_SKIP_PREPUSH=1; full board is pnpm ci:local)"
+exec bash scripts/ci-fast.sh

@@ -1985,6 +1985,22 @@
       "symbol": "advanceFixedStep"
     },
     {
+      "constraints": ["the bridge must answer the handshake or the run fails"],
+      "example": "const bridge = await connectPlaytestBridge(page);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function advanceTimeoutMs( ticks: number, perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS, ): number { … }",
+      "situations": [
+        "run a browser scenario against a game",
+        "inspect bridge diagnostics from a runner"
+      ],
+      "summary": "Connect a Playwright page to a playtest bridge.",
+      "supersedes": [],
+      "symbol": "advanceTimeoutMs"
+    },
+    {
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",

@@ -1760,6 +1760,21 @@ export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridge
 const report = await runStandalonePlaytest(options);
 ```
 
+### `advanceTimeoutMs`
+
+`function` — Connect a Playwright page to a playtest bridge.
+
+```ts
+export function advanceTimeoutMs( ticks: number, perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS, ): number { … }
+```
+
+- **Use when:** run a browser scenario against a game · inspect bridge diagnostics from a runner
+- **Constraints:** the bridge must answer the handshake or the run fails
+
+```ts
+const bridge = await connectPlaytestBridge(page);
+```
+
 ### `androidMailboxPaths`
 
 `function` — Resolve a native device transport and its mailbox paths.
