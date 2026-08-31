@@ -37,6 +37,8 @@ import {
   androidFocusedWindowOwner,
   androidSystemDialog,
   buildProvenance,
+  hardwareAdapterBlocker,
+  unexpectedBlockedRows,
   expiredExclusions,
   reportExitCode,
   validateRegistry,
@@ -67,6 +69,51 @@ function run(args, env = {}) {
     timeout: 120_000,
   });
 }
+
+test("a software adapter blocks a hardware row instead of failing it", () => {
+  // GitHub-hosted runners expose SwiftShader. Every realism row sets requiresHardwareAdapter, and
+  // reporting them as failures claimed 13 effects were measured and wrong on a machine that never
+  // ran them; the same rows pass on a real adapter.
+  const swiftshader = hardwareAdapterBlocker(
+    'TN_CONFORMANCE_HARDWARE_ADAPTER_REQUIRED:{"architecture":"swiftshader","vendor":"google"}',
+  );
+  assert.match(swiftshader, /Requires a hardware GPU adapter/u);
+  assert.match(swiftshader, /swiftshader/u);
+
+  // A genuine failure must stay a failure.
+  assert.equal(hardwareAdapterBlocker("TN_CONFORMANCE_FROZEN_TEMPORAL_HISTORY:realism-taa"), null);
+  assert.equal(hardwareAdapterBlocker("Error: page crashed"), null);
+  assert.equal(hardwareAdapterBlocker(undefined), null);
+});
+
+test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {
+  // Fixture is the real web report from the Android parity run that failed on 2026-08-31, with the
+  // adapter refusals reclassified the way the runner now reports them.
+  const report = JSON.parse(
+    readFileSync(join(root, "tests/fixtures/web-report-swiftshader.json"), "utf8"),
+  );
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  assert.equal(report.summary.blocked, 15);
+  assert.deepEqual(unexpectedBlockedRows(report, registry), []);
+
+  // A row blocked for any other reason is a lane defect and must not hide inside the allowance.
+  const broken = {
+    ...report,
+    results: [...report.results, { id: "01-basic-cube", status: "blocked", blockedReason: "timed out" }],
+  };
+  assert.deepEqual(unexpectedBlockedRows(broken, registry), [
+    { id: "01-basic-cube", reason: "timed out" },
+  ]);
+
+  // So is a hardware row blocked without the adapter reason.
+  const mislabelled = {
+    ...report,
+    results: [{ id: "realism-ssr", status: "blocked", blockedReason: "bundle failed" }],
+  };
+  assert.deepEqual(unexpectedBlockedRows(mislabelled, registry), [
+    { id: "realism-ssr", reason: "bundle failed" },
+  ]);
+});
 
 test("the workspace test lane stays runtime-free and runs the native contract suite", () => {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

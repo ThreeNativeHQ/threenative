@@ -68,7 +68,12 @@ jobs:
             --target web --out artifacts/conformance/web
           status=$?
           set -e
-          test "$status" -eq 0
+          # 2 means "some row did not run". A hosted runner exposes SwiftShader, so every
+          # requiresHardwareAdapter row refuses to start; the gate below decides whether the
+          # blocked set is only that, and fails on a failure or any other blocked row.
+          test "$status" -eq 0 -o "$status" -eq 2
+          node packages/runtime-native/conformance/check-lane-blocks.mjs \
+            packages/runtime-native/artifacts/conformance/web "web reference"
       - name: Run checksum-locked APKs on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -88,7 +93,15 @@ jobs:
           import { readFile, writeFile } from "node:fs/promises";
 
           const reportPath = "packages/runtime-native/artifacts/conformance/android/report.json";
-          const report = JSON.parse(await readFile(reportPath, "utf8"));
+          // This step runs on always(), so it is reached when an earlier step failed and the
+          // emulator never ran. A bare ENOENT stack buries that cause; name it instead.
+          const report = await readFile(reportPath, "utf8").then(JSON.parse, (error) => {
+            if (error?.code !== "ENOENT") throw error;
+            throw new Error(
+              `TN_PARITY_ANDROID_REPORT_MISSING: ${reportPath} was never written, so the emulator ` +
+                "lane did not run. Read the first failing step in this job, not this one.",
+            );
+          });
           const summary = report.summary;
           for (const key of ["pass", "fail", "blocked"]) {
             if (!Number.isInteger(summary?.[key])) throw new Error(`Missing integer summary.${key}`);
@@ -107,6 +120,8 @@ jobs:
           await writeFile(`${process.env.RUNNER_TEMP}/prd-215-parity-ledger.md`, ledger);
           NODE
           pnpm parity:ledger "$RUNNER_TEMP/prd-215-parity-ledger.md"
+          node packages/runtime-native/conformance/check-lane-blocks.mjs \
+            packages/runtime-native/artifacts/conformance/android "android emulator"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -749,7 +749,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     });
     if (test.requiresHardwareAdapter === true) {
       const adapterText = JSON.stringify(adapterInfo ?? "");
-      if (adapterInfo === null || /cpu|fallback|llvmpipe|software|swiftshader/iu.test(adapterText)) {
+      if (adapterInfo === null || isSoftwareAdapter(adapterText)) {
         throw new Error(`TN_CONFORMANCE_HARDWARE_ADAPTER_REQUIRED:${adapterText}`);
       }
     }
@@ -833,13 +833,19 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     }
     if (pageErrors.length > 0) result.status = "fail";
   } catch (error) {
-    result.status = "fail";
+    const message = error instanceof Error ? error.message : String(error);
+    const adapterBlocker = hardwareAdapterBlocker(message);
+    if (adapterBlocker === null) result.status = "fail";
+    else {
+      result.status = "blocked";
+      result.blockedReason = adapterBlocker;
+    }
     result.browser = {
       completed: false,
       screenshot: null,
       uniform: null,
       url,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
       pageErrors,
       adapterInfo,
     };
@@ -1171,6 +1177,24 @@ function androidPid(adb, serial) {
  * of the app's own filtered log so the recorded failure names where the process was when it
  * went. Bounded: this rides inside an error message.
  */
+const HARDWARE_ADAPTER_PREFIX = "TN_CONFORMANCE_HARDWARE_ADAPTER_REQUIRED:";
+const SOFTWARE_ADAPTER_PATTERN = /cpu|fallback|llvmpipe|software|swiftshader/iu;
+
+export function isSoftwareAdapter(adapterText) {
+  return SOFTWARE_ADAPTER_PATTERN.test(String(adapterText ?? ""));
+}
+
+/**
+ * A row that refused to start because this machine exposes a software adapter was never executed,
+ * so it is blocked like a missing Xvfb or Chromium rather than failed. Reporting it as a failure
+ * claims the effect was measured and came out wrong, which no run on SwiftShader is able to know.
+ * Returns the blocked reason, or null when the error is a genuine failure.
+ */
+export function hardwareAdapterBlocker(message) {
+  if (typeof message !== "string" || !message.startsWith(HARDWARE_ADAPTER_PREFIX)) return null;
+  return `Requires a hardware GPU adapter; this machine reported ${message.slice(HARDWARE_ADAPTER_PREFIX.length)}.`;
+}
+
 export function androidDeathExcerpt(message, appLog) {
   // Prefer the app's own TN_* diagnostic lines: after a native death the filtered log's last
   // lines are Window Manager chatter that merely names the app, and a raw tail slice lets that
@@ -2125,6 +2149,32 @@ function writeReport(report, path) {
  * The one rule that decides a lane's exit code. Exported so a ledger checker recomputes it
  * from a report instead of trusting a number somebody typed into a markdown table.
  */
+
+/**
+ * Which blocked rows a lane is allowed to carry. A GitHub-hosted runner exposes SwiftShader, so
+ * every `requiresHardwareAdapter` row is unrunnable there — those rows pass on a real adapter and
+ * the lane must not claim otherwise in either direction. A row the registry has not implemented is
+ * likewise expected. Anything else blocked is a lane defect and is returned for the caller to fail
+ * on, so a newly-broken row can never hide inside the allowance.
+ */
+export function unexpectedBlockedRows(report, registry) {
+  const byId = new Map(registry.tests.map((test) => [test.id, test]));
+  const unexpected = [];
+  for (const result of report.results) {
+    if (result.status !== "blocked") continue;
+    const test = byId.get(result.id);
+    if (test === undefined) {
+      unexpected.push({ id: result.id, reason: "row is absent from the registry" });
+      continue;
+    }
+    if (test.status !== "implemented") continue;
+    const reason = String(result.blockedReason ?? "");
+    if (test.requiresHardwareAdapter === true && /hardware GPU adapter/u.test(reason)) continue;
+    unexpected.push({ id: result.id, reason: reason || "blocked without a reason" });
+  }
+  return unexpected;
+}
+
 export function reportExitCode(report) {
   if (report.summary.fail > 0) return 1;
   if (report.supplemental?.androidMultitouch?.status === "fail") return 1;
