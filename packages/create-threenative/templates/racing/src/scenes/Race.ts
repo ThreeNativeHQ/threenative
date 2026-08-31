@@ -23,7 +23,10 @@ const SPAWN = new Vector3(2, 0.55, -18);
 const TIME_LIMIT = 90;
 
 function playerRanking(ranked: readonly IRankedRacer[]): IRankedRacer | undefined {
-  for (const racer of ranked) if (racer.id === "player") return racer;
+  for (let index = 0; index < ranked.length; index += 1) {
+    const racer = ranked[index];
+    if (racer?.id === "player") return racer;
+  }
   return undefined;
 }
 

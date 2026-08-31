@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { parsePng } from "@threenative/assets";
 import { PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { auditAllTemplates } from "../../../scripts/instruction-budget.js";
@@ -304,6 +305,18 @@ describe("template contracts", () => {
         ),
         template,
       ).toBe(true);
+    }
+  });
+
+  it("declares a packaged native icon in every template config", async () => {
+    for (const template of brandingTemplates) {
+      const root = path.join(templateRoot, template);
+      const config = await readFile(path.join(root, "threenative.config.ts"), "utf8");
+      expect(config, template).toMatch(/\bicon:\s*["']public\/icon\.png["']/u);
+      const icon = parsePng(await readFile(path.join(root, "public/icon.png")));
+      expect(icon, template).toBeDefined();
+      expect(icon?.width, template).toBe(1024);
+      expect(icon?.height, template).toBe(1024);
     }
   });
 

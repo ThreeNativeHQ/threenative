@@ -12,10 +12,20 @@ import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
 
-const probeState = vi.hoisted(() => ({ vector3Allocations: 0, vector3Clones: 0 }));
+const probeState = vi.hoisted(() => ({
+  vector2Allocations: 0,
+  vector3Allocations: 0,
+  vector3Clones: 0,
+}));
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three")>();
+  class CountingVector2 extends actual.Vector2 {
+    constructor(x?: number, y?: number) {
+      super(x, y);
+      probeState.vector2Allocations += 1;
+    }
+  }
   class CountingVector3 extends actual.Vector3 {
     constructor(x?: number, y?: number, z?: number) {
       super(x, y, z);
@@ -27,7 +37,7 @@ vi.mock("three", async (importOriginal) => {
     probeState.vector3Clones += 1;
     return clone.call(this);
   };
-  return { ...actual, Vector3: CountingVector3 };
+  return { ...actual, Vector2: CountingVector2, Vector3: CountingVector3 };
 });
 
 vi.mock("@threenative/core", () => import("../../core/src/index.js"));
@@ -43,6 +53,7 @@ interface IPhysicsFixture {
 }
 
 function resetAllocationSentinel(): void {
+  probeState.vector2Allocations = 0;
   probeState.vector3Allocations = 0;
   probeState.vector3Clones = 0;
 }
@@ -52,6 +63,13 @@ function measureVectorAllocations(step: () => void): { clones: number; construct
   resetAllocationSentinel();
   for (let frame = 0; frame < MEASURED_FRAMES; frame += 1) step();
   return { clones: probeState.vector3Clones, constructors: probeState.vector3Allocations };
+}
+
+function measureVector2Allocations(step: () => void): number {
+  for (let frame = 0; frame < WARMUP_FRAMES; frame += 1) step();
+  resetAllocationSentinel();
+  for (let frame = 0; frame < MEASURED_FRAMES; frame += 1) step();
+  return probeState.vector2Allocations;
 }
 
 async function physicsFixture(): Promise<IPhysicsFixture> {
@@ -66,12 +84,18 @@ async function physicsFixture(): Promise<IPhysicsFixture> {
   };
 }
 
-function gameContext(physics: IPhysicsFixture["physics"]) {
-  const move = new Vector2(0.35, -0.2);
+function gameContext(
+  physics: IPhysicsFixture["physics"],
+  options: {
+    readonly justPressed?: (action: string) => boolean;
+    readonly move?: Vector2;
+  } = {},
+) {
+  const move = options.move ?? new Vector2(0.35, -0.2);
   return {
     add: () => undefined,
     input: {
-      justPressed: () => false,
+      justPressed: (action: string) => options.justPressed?.(action) ?? false,
       justReleased: () => false,
       pressed: () => false,
       vector: () => move,
@@ -80,7 +104,11 @@ function gameContext(physics: IPhysicsFixture["physics"]) {
   };
 }
 
-function sceneContext(physics: IPhysicsFixture["physics"], initialState: Record<string, unknown>) {
+function sceneContext(
+  physics: IPhysicsFixture["physics"],
+  initialState: Record<string, unknown>,
+  options: { readonly look?: Vector2; readonly move?: Vector2 } = {},
+) {
   const scene = new Scene();
   const camera = new PerspectiveCamera(60, 16 / 9);
   const layerScene = new Scene();
@@ -88,13 +116,15 @@ function sceneContext(physics: IPhysicsFixture["physics"], initialState: Record<
   const entities = new Map<string, unknown>();
   const patchIdentities = new Set<object>();
   const state = { ...initialState };
-  const inputVector = new Vector2();
+  const inputVector = options.move ?? new Vector2();
+  const lookVector = options.look ?? new Vector2();
   return {
     add: (object: { readonly isObject3D?: boolean }) => {
       scene.add(object as never);
       return object;
     },
     after: () => ({ cancel: () => undefined }),
+    every: () => ({ cancel: () => undefined }),
     camera,
     canvasLayer: { camera: layerCamera, opaque: false, scene: layerScene },
     entities: {
@@ -113,7 +143,7 @@ function sceneContext(physics: IPhysicsFixture["physics"], initialState: Record<
       justReleased: () => false,
       pressed: () => false,
       raw: { pointers: new Map() },
-      vector: () => inputVector,
+      vector: (name: string) => (name === "look" ? lookVector : inputVector),
     },
     physics,
     random: createRandom(193),
@@ -166,6 +196,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     const starter = await import("../templates/starter/src/entities/Player.js");
     const platformer = await import("../templates/platformer/src/entities/Character.js");
     const racing = await import("../templates/racing/src/track/Ranking.js");
+    const racingLap = await import("../templates/racing/src/track/Lap.js");
     const racingSector = await import("../templates/racing/src/track/TrackSector.js");
     const shooter = await import("../templates/shooter/src/weapons/Projectile.js");
     const shooterMaterials = await import("../templates/shooter/src/render/materials.js");
@@ -224,15 +255,29 @@ describe("generated template ordinary-frame runtime cost", () => {
       ).toEqual({ clones: 0, constructors: 0 });
       character.dispose();
 
+      const dashCtx = gameContext(physics.physics, {
+        justPressed: (action) => action === "dash",
+        move: new Vector2(),
+      });
+      const dashCharacter = new platformer.Character(dashCtx as never, new Vector3(0, 0.75, 0));
+      expect(
+        measureVectorAllocations(() => dashCharacter.update(dashCtx as never, DT)),
+        "platformer dash fallback vector allocation sentinel",
+      ).toEqual({ clones: 0, constructors: 0 });
+      dashCharacter.dispose();
+
       const touchModule = await import("../templates/platformer/src/render/touch-controls.js");
       const touch = new touchModule.TouchControls(camera);
       const touchSize = { aspect: 16 / 9, height: 900, width: 1600 };
       const touchPointers = new Map();
       const firstTouch = touch.update(touchPointers, touchSize);
-      for (let frame = 0; frame < WARMUP_FRAMES; frame += 1)
-        expect(touch.update(touchPointers, touchSize)).toBe(firstTouch);
-      for (let frame = 0; frame < MEASURED_FRAMES; frame += 1)
-        expect(touch.update(touchPointers, touchSize)).toBe(firstTouch);
+      const touchVector2Allocations = measureVector2Allocations(() => {
+        if (touch.update(touchPointers, touchSize) !== firstTouch)
+          throw new Error("TouchControls returned a new input object during steady state.");
+      });
+      expect(touchVector2Allocations, "platformer touch-controls Vector2 allocation sentinel").toBe(
+        0,
+      );
       touch.dispose();
 
       const route = new core.PathFollow3D({
@@ -265,25 +310,50 @@ describe("generated template ordinary-frame runtime cost", () => {
         tangent: new Vector3(),
       };
       const sampleTarget = { point: new Vector3(), progress: 0, tangent: new Vector3() };
+      const lap = new racingLap.Lap({ body: { id: 42 } as never, forward: new Vector3(1, 0, 0) }, [
+        {
+          area: { on: () => () => undefined },
+          at: new Vector3(0, 0, 0),
+          forward: new Vector3(1, 0, 0),
+        },
+      ] as never);
+      const lapPrevious = new Vector3(0, 0, 1);
+      const lapCurrent = new Vector3(0, 0, 1);
       const sector = new racingSector.TrackSector({
         intersectRay: () => ({ distance: 1 }),
         route: route as never,
       });
       const mapSpy = vi.spyOn(Array.prototype, "map");
+      const entriesSpy = vi.spyOn(Array.prototype, "entries");
       const raceStep = (): void => {
         expect(route.advance(DT, sampleTarget)).toBe(sampleTarget);
         racing.rankRacers(route as never, racers, projectionTarget, rankingBuffer);
+        lap.observe(lapPrevious, lapCurrent);
         sector.update(racePosition, raceHeading, DT);
       };
       const racingAllocations = measureVectorAllocations(raceStep);
       const racingMapCalls = mapSpy.mock.calls.length;
+      const racingEntriesCalls = entriesSpy.mock.calls.length;
       mapSpy.mockRestore();
+      entriesSpy.mockRestore();
       expect(rankingBuffer.length, "racing ranking high-water buffer").toBe(racers.length);
       expect(racingMapCalls, "racing ranking pipeline allocation sentinel").toBe(0);
+      expect(racingEntriesCalls, "racing ranking/lap iterator allocation sentinel").toBe(0);
       expect(racingAllocations, "racing PathFollow result allocation sentinel").toEqual({
         clones: 0,
         constructors: 0,
       });
+      const tiedRanked = racing.rankRacers(
+        route as never,
+        [
+          { id: "zulu", lap: 0, position: racePosition },
+          { id: "alpha", lap: 0, position: racePosition },
+        ],
+        projectionTarget,
+        rankingBuffer,
+      );
+      expect(tiedRanked[0]?.id, "racing deterministic tie order").toBe("alpha");
+      expect(tiedRanked[1]?.id, "racing deterministic tie order").toBe("zulu");
 
       const projectile = new shooter.Projectile(
         ctx as never,
@@ -346,12 +416,15 @@ describe("generated template ordinary-frame runtime cost", () => {
 
   it("executes scene-owned collection and formatted-state paths for 600 frames", async () => {
     const minimal = await import("../templates/minimal/src/scenes/Play.js");
+    const platformer = await import("../templates/platformer/src/scenes/Level.js");
     const shooter = await import("../templates/shooter/src/scenes/Play.js");
     const actionRpg = await import("../templates/action-rpg/src/scenes/Play.js");
     const defense = await import("../templates/defense/src/scenes/Defense.js");
+    const core = await import("../../core/src/index.js");
 
     for (const [name, value] of Object.entries({
       "minimal Play": minimal.Play,
+      "platformer Level": platformer.Level,
       "shooter Play": shooter.Play,
       "action-RPG Play": actionRpg.Play,
       "defense Defense": defense.Defense,
@@ -360,20 +433,48 @@ describe("generated template ordinary-frame runtime cost", () => {
     }
 
     const minimalPhysics = await physicsFixture();
+    const solarPositionSpy = vi.spyOn(core, "solarPosition");
     try {
       const context = sceneContext(minimalPhysics.physics, minimal.Play.initialState);
       const frame = new minimal.Play().enter(context as never);
       runSceneFrames(frame, context);
-      expect(context.patchIdentities.size, "minimal Play frame execution sentinel").toBeGreaterThan(
-        0,
+      expect(solarPositionSpy).toHaveBeenCalledTimes(1 + WARMUP_FRAMES + MEASURED_FRAMES);
+      expect(
+        new Set(solarPositionSpy.mock.calls.slice(-MEASURED_FRAMES).map(([input]) => input)).size,
+        "minimal solar-position input high-water sentinel",
+      ).toBe(1);
+      expect(
+        new Set(solarPositionSpy.mock.results.slice(-MEASURED_FRAMES).map(({ value }) => value))
+          .size,
+        "minimal solar-position output high-water sentinel",
+      ).toBe(1);
+      expect(context.patchIdentities.size, "minimal Play state-patch high-water sentinel").toBe(1);
+    } finally {
+      solarPositionSpy.mockRestore();
+      minimalPhysics.dispose();
+    }
+
+    const platformerPhysics = await physicsFixture();
+    try {
+      const context = sceneContext(platformerPhysics.physics, platformer.Level.initialState);
+      const frame = new platformer.Level().enter(context as never);
+      let patchHighWater = 0;
+      runSceneFrames(frame, context, () => {
+        patchHighWater = context.patchIdentities.size;
+      });
+      expect(patchHighWater, "platformer Level state-patch warm high-water sentinel").toBe(1);
+      expect(context.patchIdentities.size, "platformer Level state-patch high-water sentinel").toBe(
+        patchHighWater,
       );
     } finally {
-      minimalPhysics.dispose();
+      platformerPhysics.dispose();
     }
 
     const shooterPhysics = await physicsFixture();
     try {
-      const context = sceneContext(shooterPhysics.physics, shooter.Play.initialState);
+      const context = sceneContext(shooterPhysics.physics, shooter.Play.initialState, {
+        look: new Vector2(1, 0),
+      });
       const frame = new shooter.Play().enter(context as never);
       const filterSpy = vi.spyOn(Array.prototype, "filter");
       const reduceSpy = vi.spyOn(Array.prototype, "reduce");
@@ -434,6 +535,39 @@ describe("generated template ordinary-frame runtime cost", () => {
       );
     } finally {
       defensePhysics.dispose();
+    }
+  });
+
+  it("executes the racing scene player scan without an iterator", async () => {
+    const { Race } = await import("../templates/racing/src/scenes/Race.js");
+    const racingPhysics = await physicsFixture();
+    try {
+      const context = sceneContext(racingPhysics.physics, Race.initialState);
+      const frame = new Race().enter(context as never);
+      if (typeof frame !== "function")
+        throw new Error("Allocation fixture returned no race frame.");
+      const originalIterator = Array.prototype[Symbol.iterator];
+      const originalDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, Symbol.iterator);
+      if (originalDescriptor === undefined)
+        throw new Error("Allocation fixture could not inspect Array iterator.");
+      let iteratorCalls = 0;
+      Object.defineProperty(Array.prototype, Symbol.iterator, {
+        ...originalDescriptor,
+        value(this: unknown[]) {
+          iteratorCalls += 1;
+          return originalIterator.call(this);
+        },
+      });
+      try {
+        (frame as (ctx: unknown, dt: number) => void)(context, DT);
+      } finally {
+        Object.defineProperty(Array.prototype, Symbol.iterator, originalDescriptor);
+      }
+      expect(iteratorCalls, "racing Race player scan iterator sentinel").toBe(0);
+      expect(context.patchIdentities.size, "racing Race frame execution sentinel").toBe(1);
+      expect(context.state.getState().position, "racing Race player ranking state").toBe("P2");
+    } finally {
+      racingPhysics.dispose();
     }
   });
 });

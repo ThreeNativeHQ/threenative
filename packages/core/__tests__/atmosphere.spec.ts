@@ -179,4 +179,21 @@ describe("solarPosition", () => {
 
     expect(position.elevation).toBeCloseTo(15.4, 1);
   });
+
+  it("writes changing numeric inputs into a retained result target", () => {
+    const input = {
+      dayOfYear: 172,
+      timeOfDay: 6,
+      latitude: 49.28,
+      longitude: -123.12,
+      utcOffset: -8,
+    };
+    const target = { azimuth: 0, elevation: 0 };
+
+    expect(solarPosition(input, target)).toBe(target);
+    const first = { ...target };
+    input.timeOfDay += 1;
+    expect(solarPosition(input, target)).toBe(target);
+    expect(target).not.toEqual(first);
+  });
 });

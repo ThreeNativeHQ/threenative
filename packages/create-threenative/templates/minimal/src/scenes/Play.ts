@@ -46,14 +46,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           },
         })
       : undefined;
-    const initialSun = solarPosition({
+    const solarInput = {
       dayOfYear: 172,
       timeOfDay: 6,
       latitude: 49.28,
       longitude: -123.12,
       utcOffset: -8,
-    });
-    atmosphere?.setSunDirection(initialSun);
+    };
+    const sun = { azimuth: 0, elevation: 0 };
+    solarPosition(solarInput, sun);
+    atmosphere?.setSunDirection(sun);
     if (atmosphere !== undefined) {
       ctx.add(atmosphere);
       // Idempotent with the PRD-242 registry when that contract is present; required by the
@@ -109,17 +111,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
 
     let elapsed = 0;
+    const statePatch: Partial<GameState> = {};
     return (frameCtx, dt) => {
       loading.update();
       player.update(frameCtx, dt);
       elapsed += dt;
-      const sun = solarPosition({
-        dayOfYear: 172,
-        timeOfDay: (6 + elapsed * 2) % 24,
-        latitude: 49.28,
-        longitude: -123.12,
-        utcOffset: -8,
-      });
+      solarInput.timeOfDay = (6 + elapsed * 2) % 24;
+      solarPosition(solarInput, sun);
       if (atmosphere !== undefined) {
         atmosphere.setSunDirection(sun);
         lighting.updateSun(atmosphere.getSunDirection());
@@ -129,19 +127,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         primary: state.score,
         seconds: elapsed,
       });
-      frameCtx.state.set({
-        playerX: player.mesh.position.x,
-        sunAzimuth: sun.azimuth,
-        sunElevation: sun.elevation,
-      });
+      statePatch.playerX = player.mesh.position.x;
+      statePatch.sunAzimuth = sun.azimuth;
+      statePatch.sunElevation = sun.elevation;
       if (atmosphere !== undefined) {
         // The sun's angle is plain arithmetic and keeps moving with the atmosphere deleted, so a
         // scenario asserting only on it proves nothing. This number cannot be produced without
         // the node, which is what makes the atmosphere playtest able to go red.
         const transmittance = atmosphere.sunTransmittance(atmosphere.getSunDirection());
-        if (transmittance instanceof Vector3)
-          frameCtx.state.set({ sunTransmittanceRed: transmittance.x });
+        if (transmittance instanceof Vector3) statePatch.sunTransmittanceRed = transmittance.x;
       }
+      frameCtx.state.set(statePatch);
     };
   }
 }

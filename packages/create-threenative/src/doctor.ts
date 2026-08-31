@@ -41,7 +41,7 @@ export interface IDoctorReport {
 }
 
 export interface IProjectSnapshot {
-  /** Parsed `threenative.config.json`, or the `threenative` block of package.json. */
+  /** Resolved TypeScript config, or the legacy JSON/package fallback when TypeScript is absent. */
   readonly config: unknown;
   readonly files: ReadonlySet<string>;
   readonly installedVersions: ReadonlyMap<string, string>;
@@ -1275,9 +1275,11 @@ async function runtimeReleaseManifestUrl(
 export async function readProject(root: string): Promise<IProjectSnapshot> {
   const projectRoot = path.resolve(root);
   const packageJson = await readJson(path.join(projectRoot, "package.json"));
-  const configFile = await readJson(path.join(projectRoot, "threenative.config.json"));
-  const config =
-    configFile ?? record(packageJson)?.threenative ?? (await readTypeScriptConfig(projectRoot));
+  const typeScriptConfig = path.join(projectRoot, "threenative.config.ts");
+  const config = existsSync(typeScriptConfig)
+    ? await readTypeScriptConfig(projectRoot)
+    : ((await readJson(path.join(projectRoot, "threenative.config.json"))) ??
+      record(packageJson)?.threenative);
   const files = new Set(await collectFiles(projectRoot));
   const installedVersions = new Map<string, string>();
   for (const name of declaredDependencies(packageJson)) {

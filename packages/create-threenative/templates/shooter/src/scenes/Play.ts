@@ -492,6 +492,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const hudPatch: Partial<GameState> = {};
+    const lookPatch: Partial<GameState> = {};
     let lastHealth = -1;
     let lastScanCount = -1;
     let lastTargetsRemaining = -1;
@@ -564,7 +565,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const look = frameCtx.input.vector("look");
       if (look.x === 0) return;
       lookState.yaw += look.x * LOOK_RADIANS_PER_PIXEL;
-      ctx.state.set({ yawDegrees: Math.round((lookState.yaw * 180) / Math.PI) });
+      lookPatch.yawDegrees = Math.round((lookState.yaw * 180) / Math.PI);
+      ctx.state.set(lookPatch);
     };
 
     return (frameCtx, dt) => {

@@ -36,8 +36,8 @@ export interface ISolarPositionInput {
 }
 
 export interface ISolarPosition {
-  readonly elevation: number;
-  readonly azimuth: number;
+  elevation: number;
+  azimuth: number;
 }
 
 const RAYLEIGH_SCALE_HEIGHT_KM = 8;
@@ -196,34 +196,6 @@ export function directionalTransmittance(
   return new Vector3(zenith[0] ** airMass, zenith[1] ** airMass, zenith[2] ** airMass);
 }
 
-function dayAndTime(input: ISolarPositionInput): {
-  dayOfYear: number;
-  timeOfDay: number;
-  utcOffset: number;
-} {
-  if (input.date !== undefined) {
-    const date = input.date instanceof Date ? new Date(input.date.getTime()) : new Date(input.date);
-    if (!Number.isFinite(date.getTime())) throw new Error("solarPosition.date must be valid.");
-    const yearStart = Date.UTC(date.getUTCFullYear(), 0, 0);
-    const dayOfYear = Math.floor((date.getTime() - yearStart) / 86_400_000);
-    const timeOfDay =
-      date.getUTCHours() +
-      date.getUTCMinutes() / 60 +
-      date.getUTCSeconds() / 3600 +
-      date.getUTCMilliseconds() / 3_600_000;
-    return { dayOfYear, timeOfDay, utcOffset: input.utcOffset ?? 0 };
-  }
-  if (input.dayOfYear === undefined || input.timeOfDay === undefined)
-    throw new Error("solarPosition requires date or dayOfYear and timeOfDay.");
-  if (!Number.isFinite(input.dayOfYear) || !Number.isFinite(input.timeOfDay))
-    throw new Error("solarPosition dayOfYear and timeOfDay must be finite.");
-  return {
-    dayOfYear: input.dayOfYear,
-    timeOfDay: input.timeOfDay,
-    utcOffset: input.utcOffset ?? 0,
-  };
-}
-
 function checkedSolarInput(input: ISolarPositionInput): ISolarPositionInput {
   if (!Number.isFinite(input.latitude) || input.latitude < -90 || input.latitude > 90)
     throw new Error("solarPosition.latitude must be between -90 and 90 degrees.");
@@ -237,9 +209,35 @@ function checkedSolarInput(input: ISolarPositionInput): ISolarPositionInput {
   return input;
 }
 
-function calculateSolarPosition(input: ISolarPositionInput): ISolarPosition {
+function calculateSolarPosition(
+  input: ISolarPositionInput,
+  target?: ISolarPosition,
+): ISolarPosition {
   const checked = checkedSolarInput(input);
-  const { dayOfYear, timeOfDay, utcOffset } = dayAndTime(checked);
+  let dayOfYear: number;
+  let timeOfDay: number;
+  let utcOffset: number;
+  if (checked.date !== undefined) {
+    const date =
+      checked.date instanceof Date ? new Date(checked.date.getTime()) : new Date(checked.date);
+    if (!Number.isFinite(date.getTime())) throw new Error("solarPosition.date must be valid.");
+    const yearStart = Date.UTC(date.getUTCFullYear(), 0, 0);
+    dayOfYear = Math.floor((date.getTime() - yearStart) / 86_400_000);
+    timeOfDay =
+      date.getUTCHours() +
+      date.getUTCMinutes() / 60 +
+      date.getUTCSeconds() / 3600 +
+      date.getUTCMilliseconds() / 3_600_000;
+    utcOffset = checked.utcOffset ?? 0;
+  } else {
+    if (checked.dayOfYear === undefined || checked.timeOfDay === undefined)
+      throw new Error("solarPosition requires date or dayOfYear and timeOfDay.");
+    if (!Number.isFinite(checked.dayOfYear) || !Number.isFinite(checked.timeOfDay))
+      throw new Error("solarPosition dayOfYear and timeOfDay must be finite.");
+    dayOfYear = checked.dayOfYear;
+    timeOfDay = checked.timeOfDay;
+    utcOffset = checked.utcOffset ?? 0;
+  }
   const gamma = (TAU / 365) * (dayOfYear - 1 + (timeOfDay - 12) / 24);
   const equationOfTime =
     229.18 *
@@ -273,31 +271,37 @@ function calculateSolarPosition(input: ISolarPositionInput): ISolarPosition {
       180) /
       Math.PI +
     180;
-  return { azimuth: (azimuth + 360) % 360, elevation };
+  const result = target ?? { azimuth: 0, elevation: 0 };
+  result.azimuth = (azimuth + 360) % 360;
+  result.elevation = elevation;
+  return result;
 }
 
 /** Calculate solar elevation and azimuth from time, latitude, and longitude.
  * @situation move a sun across a real day at a game's latitude and longitude
  * @constraint dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed
+ * @constraint pass a mutable { azimuth, elevation } target to reuse the result object in a steady frame loop
  * @example const sun = solarPosition({ date, latitude: 49.28, longitude: -123.12, utcOffset: -8 });
  */
-export function solarPosition(input: ISolarPositionInput): ISolarPosition;
+export function solarPosition(input: ISolarPositionInput, target?: ISolarPosition): ISolarPosition;
 export function solarPosition(
   date: Date | string,
   latitude: number,
   longitude: number,
+  target?: ISolarPosition,
 ): ISolarPosition;
 export function solarPosition(
   inputOrDate: ISolarPositionInput | Date | string,
-  latitude?: number,
+  latitude?: number | ISolarPosition,
   longitude?: number,
+  target?: ISolarPosition,
 ): ISolarPosition {
   if (inputOrDate instanceof Date || typeof inputOrDate === "string") {
-    if (latitude === undefined || longitude === undefined)
+    if (typeof latitude !== "number" || longitude === undefined)
       throw new Error("solarPosition positional form requires date, latitude, and longitude.");
-    return calculateSolarPosition({ date: inputOrDate, latitude, longitude });
+    return calculateSolarPosition({ date: inputOrDate, latitude, longitude }, target);
   }
-  return calculateSolarPosition(inputOrDate);
+  return calculateSolarPosition(inputOrDate, typeof latitude === "object" ? latitude : target);
 }
 
 /** Convert solar elevation and azimuth degrees into a normalized Three.js direction.

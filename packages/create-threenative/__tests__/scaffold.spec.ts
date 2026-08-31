@@ -27,6 +27,15 @@ const ENGINE_MCP = "threenative-engine-mcp";
 // the server packages themselves.
 const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
+const AGENT_ROLE_PATHS = [
+  ".threenative/agents/builder.md",
+  ".threenative/agents/verifier.md",
+  ".claude/agents/threenative-builder.md",
+  ".claude/agents/threenative-verifier.md",
+  ".agents/skills/threenative-builder/SKILL.md",
+  ".agents/skills/threenative-verifier/SKILL.md",
+  "AGENT-ROLES.md",
+] as const;
 
 // Refreshed for the startup-readiness loading gate: each template's `src/render/loading.ts` was
 // reduced to the shared `startup.whenReady()` contract and every template's AGENTS.md carries
@@ -144,13 +153,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // template's maxDrawCalls/maxTriangles is re-measured against the real frame, and `minimal`
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
-  "action-rpg": "58a930c8b808e25eb753305d7c2ad31d68542e2652c6162ea5d72b4fbfc3c85d",
-  defense: "4f7f26c261a87146b54504084b7bff08018e9de520c8cb2000b6d3038129f56b",
-  minimal: "02b00e4783656c9810c1eda3921e9201a126b5ba1458ad1f295dc5ddf836a9ef",
-  platformer: "52b7509534f5de1a13b9b214eebf1776a455a16ec01d15c3bf464d447fa92bad",
-  racing: "fc76f36c41878d18da168f607d9edca0675c0323b22fa9ed3424656c51e9e412",
-  shooter: "bb978ac7a0e53b080a1910821ac82e6f52352dadb44864404fd87729d0f4aadc",
-  starter: "ac5b37cdb65f029810d1eb038ff03e5ef031705d386f06c39b66cf106bea0177",
+  // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
+  "action-rpg": "17285f00aedbb2df2785126eebb4b4d62779d55568d16b04f2bf78a7d93e75aa",
+  defense: "ff0ffafb9ea549347923aa3633d6cbecabaec2204675a1a67906f4004d16761b",
+  minimal: "d28cb27a7ecfcfd9bd7167a3f6de2d0faa97bccec3791dbcb436f4a8ef2234c4",
+  platformer: "2e52ec36e7bcef691652a5637d02f75d37c67cab5c2f0fe4f9e9bad266530bda",
+  racing: "1c6929f9dc9bb26986b63460a1c802e78d5465010f0e6179f4c5db5ad43e0821",
+  shooter: "8ffdc005d1c7db69078ab5b8575c9ea9b681afecbdead07af863cb28de1b65ac",
+  starter: "bfea0428c7848ee8692f5fa144d504dae9a6606f41e3463baec036d5b2b5b620",
+  // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
+  // steady-state allocation-free frame path, and every scaffold carries the updated capability
+  // manifest/reference bytes.
+  // Recomputed 2026-08-30 for PRD-122: every scaffold now carries the shared canonical role
+  // contracts, provider adapters, and AGENT-ROLES.md guide.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
@@ -185,10 +200,10 @@ async function withBrokenTemplateFile<T>(
   const root = await makeTempDir("threenative-broken-template-");
   try {
     // The package layout the scaffolder reads: templates/ plus the package-level siblings it
-    // reaches up to (capabilities.json, template-assets, agent-docs). The copied tree is the
-    // templates dir; the siblings ride along so a test breaks exactly the file it names.
+    // reaches up to (capabilities.json, template-assets, agent-docs, agent-files). The copied tree
+    // is the templates dir; the siblings ride along so a test breaks exactly the file it names.
     const packageDirectory = path.dirname(TEMPLATE_ROOT);
-    for (const sibling of ["capabilities.json", "template-assets", "agent-docs"]) {
+    for (const sibling of ["capabilities.json", "template-assets", "agent-docs", "agent-files"]) {
       await cp(path.join(packageDirectory, sibling), path.join(root, sibling), {
         recursive: true,
       });
@@ -482,6 +497,75 @@ describe("create-threenative", () => {
     }
   });
 
+  it.each(ALL_TEMPLATES)(
+    "should overlay the canonical builder and verifier roles on the %s scaffold",
+    async (template) => {
+      const root = await makeTempDir(`threenative-agent-roles-${template}-`);
+      try {
+        const result = await createProject(
+          { install: false, target: `${template}-game`, template },
+          root,
+        );
+        const contents = await Promise.all(
+          AGENT_ROLE_PATHS.map(async (relativePath) => {
+            const content = await readFile(path.join(result.target, relativePath), "utf8");
+            expect(content, relativePath).not.toContain("__PROJECT_NAME__");
+            expect(content, relativePath).not.toContain("__PROJECT_ID__");
+            return [relativePath, content] as const;
+          }),
+        );
+        const files = new Map(contents);
+        const builder = files.get(".threenative/agents/builder.md") ?? "";
+        const verifier = files.get(".threenative/agents/verifier.md") ?? "";
+        expect(builder).toContain("one bounded player-visible outcome");
+        expect(builder).toContain("engine-owned or game-owned");
+        expect(builder).toContain("production readiness");
+        expect(verifier.toLowerCase()).toContain("read-only");
+        expect(verifier).toContain("must not edit");
+        expect(new Set(verifier.match(/`(?:PASS|REQUEST_CHANGES|NOT_OBSERVED)`/gu))).toEqual(
+          new Set(["`PASS`", "`REQUEST_CHANGES`", "`NOT_OBSERVED`"]),
+        );
+
+        const adapterPaths = [
+          [".claude/agents/threenative-builder.md", ".claude/agents/threenative-verifier.md"],
+          [
+            ".agents/skills/threenative-builder/SKILL.md",
+            ".agents/skills/threenative-verifier/SKILL.md",
+          ],
+        ] as const;
+        for (const [builderPath, verifierPath] of adapterPaths) {
+          const builderAdapter = files.get(builderPath) ?? "";
+          const verifierAdapter = files.get(verifierPath) ?? "";
+          expect(builderAdapter).toContain(".threenative/agents/builder.md");
+          expect(builderAdapter).toContain("AGENTS.md");
+          expect(verifierAdapter).toContain(".threenative/agents/verifier.md");
+          expect(verifierAdapter).toContain("AGENTS.md");
+          expect(builderAdapter.length).toBeLessThan(500);
+          expect(verifierAdapter.length).toBeLessThan(500);
+        }
+
+        const guide = files.get("AGENT-ROLES.md") ?? "";
+        expect(guide).toContain("claude");
+        expect(guide).toContain("codex");
+        expect(guide).toContain(".agents/skills");
+        expect(guide).not.toContain(".codex/skills");
+        expect(guide).toContain("threenative-builder");
+        expect(guide).toContain("threenative-verifier");
+        const packageJson = JSON.parse(
+          await readFile(path.join(result.target, "package.json"), "utf8"),
+        ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+        const dependencyNames = [
+          ...Object.keys(packageJson.dependencies ?? {}),
+          ...Object.keys(packageJson.devDependencies ?? {}),
+        ];
+        expect(dependencyNames).not.toContain("claude");
+        expect(dependencyNames).not.toContain("codex");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("keeps the starter's shipped assets mobile-shippable", async () => {
     // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
     // can ship there. The starter's demo assets are tiny enough that compression only ever grew
@@ -739,6 +823,11 @@ describe("create-threenative", () => {
       await cp(
         path.resolve("packages/create-threenative/agent-docs"),
         path.join(root, "agent-docs"),
+        { recursive: true },
+      );
+      await cp(
+        path.resolve("packages/create-threenative/agent-files"),
+        path.join(root, "agent-files"),
         { recursive: true },
       );
       // capabilities.json deliberately absent: this is the `files` regression the copy

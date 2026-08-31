@@ -6,6 +6,7 @@ const config: IThreeNativeConfig = {
     name: "__PROJECT_NAME__",
     version: "1.0.0",
     build: 1,
+    icon: "public/icon.png",
     icons: { web: { favicon: "public/favicon.svg" } },
   },
   display: {

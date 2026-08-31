@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { PNG } from 'pngjs';
 import { afterEach, test } from 'vitest';
 
 import {
@@ -14,10 +15,8 @@ import {
 import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
 const roots = [];
-const VALID_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXUlEQVR4AaXBQRHEAAgEwclWHGDivIBckIWG3Hf/dD/frz9MdOK2BhedOHEkjsTRG524rcFFJ25rcOJIHImjd2tw0YnbGlx04sSROBJHb3TitgYXnbitwYkjcSSO/o/fGRJxtqYFAAAAAElFTkSuQmCC',
-  'base64',
-);
+const VALID_PNG = PNG.sync.write(new PNG({ height: 1024, width: 1024 }));
+const SMALL_PNG = PNG.sync.write(new PNG({ height: 16, width: 16 }));
 const infoPlist = `<plist><dict>
   <key>UISupportedInterfaceOrientations</key>
   <array>
@@ -227,6 +226,43 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
   );
   assert.equal(report.icon, icon);
   assert.equal(report.iconArtifact, 'Assets.car');
+});
+
+test('iOS icon staging rejects a source that does not match its 1024x1024 metadata', () => {
+  const root = makeTempDirSync('threenative-ios-icon-dimensions-');
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const bundle = join(root, 'game.js');
+  const icon = join(root, 'icon.png');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  writeFileSync(icon, SMALL_PNG);
+
+  assert.throws(
+    () =>
+      stageIosSimulatorApp({
+        bundle,
+        config: {
+          app: {
+            id: 'com.studio.vulpine',
+            name: 'Vulpine',
+            version: '1.2.3',
+            build: 1,
+            icon,
+          },
+        },
+        compileIcon: (_catalog, compiled) => {
+          writeFileSync(join(compiled, 'Assets.car'), 'compiled-app-icon');
+        },
+        output,
+        templateApp,
+      }),
+    /TN_CONFIG_ICON_DIMENSIONS_INVALID.*1024x1024/u,
+  );
 });
 
 test('iOS packaging fails closed off darwin-arm64 and on a corrupt local host', async () => {

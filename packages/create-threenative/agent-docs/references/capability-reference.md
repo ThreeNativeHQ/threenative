@@ -760,11 +760,11 @@ const puff = softCircleDataTexture(64, 0.25);
 `function` — Calculate solar elevation and azimuth from time, latitude, and longitude.
 
 ```ts
-export function solarPosition(input: ISolarPositionInput): ISolarPosition;
+export function solarPosition(input: ISolarPositionInput, target?: ISolarPosition): ISolarPosition;
 ```
 
 - **Use when:** move a sun across a real day at a game's latitude and longitude
-- **Constraints:** dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed
+- **Constraints:** dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed · pass a mutable { azimuth, elevation } target to reuse the result object in a steady frame loop
 
 ```ts
 const sun = solarPosition({ date, latitude: 49.28, longitude: -123.12, utcOffset: -8 });

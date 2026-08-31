@@ -290,6 +290,7 @@ async function renderTemplate(
 /** Long recipes live here in the package and ship as `<target>/agent-docs/*.md`. */
 const REFERENCE_BUNDLE_DIRECTORY = "agent-docs";
 const REFERENCE_FILE_NAME = /^[a-z0-9][a-z0-9-]*\.md$/u;
+const AGENT_FILES_DIRECTORY = "agent-files";
 /** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
 const REFERENCE_TOKEN_PATTERN =
   /`agent-docs\/([a-z0-9][a-z0-9./-]*\.md)`|\[[^\]]*\]\(agent-docs\/([^)#]+\.md)\)/gu;
@@ -324,6 +325,17 @@ async function copyReferenceBundle(
     }
     await writeFile(destinationPath, content);
   }
+}
+
+/** Copies the canonical role contracts and thin provider adapters after the selected template. */
+async function copyAgentFiles(target: string, templateRootDirectory: string): Promise<void> {
+  const source = path.join(path.dirname(templateRootDirectory), AGENT_FILES_DIRECTORY);
+  if (!existsSync(source)) {
+    throw new Error(
+      `TN_AGENT_FILES_MISSING: '${source}' is not in the package; every generated project needs the canonical agent roles.`,
+    );
+  }
+  await cp(source, target, { recursive: true });
 }
 
 /** Fails closed: an instruction that names a recipe the project does not ship strands the
@@ -571,6 +583,7 @@ export async function createProject(
     ["__PROJECT_ID__", projectId],
   ]) as Readonly<Record<string, string>>;
   await stampTemplateLoading(target, source, root);
+  await copyAgentFiles(target, root);
   await renderTemplate(target, replacements);
   await copyReferenceBundle(target, root, replacements);
   await copyCapabilityManifest(target, root);

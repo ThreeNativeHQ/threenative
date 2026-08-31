@@ -15,6 +15,11 @@ This project is an editable Three.js tower-defense starter. The framework owns t
 renderer, physics bindings and playtest bridge; this repository owns the route, attackers,
 towers, economy, waves and look.
 
+`threenative.config.ts` is the one game-owned app-shape file. Set the launcher identity and
+`public/icon.png`, mobile orientation and display flags, desktop window, renderer preference, and
+portable native entry there. `package.json` may retain only `threenative.nativeEntry` as a
+compatibility fallback for older projects.
+
 <!-- shared: framework-blocks-you -->
 ### Before you write a system, ask what already exists
 

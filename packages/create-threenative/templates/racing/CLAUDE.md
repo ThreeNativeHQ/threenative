@@ -15,6 +15,11 @@ This project is an editable Three.js circuit-racing starter. The framework owns 
 input, renderer, physics bindings, and playtest bridge; this repository owns the car feel,
 track, race rules, rescue, HUD, and look.
 
+`threenative.config.ts` is the one game-owned app-shape file. Set the launcher identity and
+`public/icon.png`, mobile orientation and display flags, desktop window, renderer preference, and
+portable native entry there. `package.json` may retain only `threenative.nativeEntry` as a
+compatibility fallback for older projects.
+
 <!-- shared: framework-blocks-you -->
 ### Before you write a system, ask what already exists
 

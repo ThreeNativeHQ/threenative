@@ -158,11 +158,8 @@ export class Character {
   }
 
   #startDash(wants: Vector3): void {
-    this.#dashDirection.copy(
-      wants.lengthSq() > 0.01
-        ? wants
-        : new Vector3(Math.sin(this.#facing), 0, Math.cos(this.#facing)),
-    );
+    if (wants.lengthSq() > 0.01) this.#dashDirection.copy(wants);
+    else this.#dashDirection.set(Math.sin(this.#facing), 0, Math.cos(this.#facing));
     this.#dashTimer = PLATFORMER_FEEL.dashTime;
     this.#dashCooldown = PLATFORMER_FEEL.dashCooldown;
     this.dashes += 1;

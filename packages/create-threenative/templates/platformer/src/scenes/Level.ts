@@ -138,6 +138,7 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     followCamera(spawn, 1);
     let elapsed = 0;
     let terminal: TerminalState = TERMINAL.playing;
+    const statePatch: Partial<GameState> = {};
     const finish = (next: TerminalState): void => {
       if (terminal !== TERMINAL.playing) return;
       terminal = next;
@@ -177,21 +178,20 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       const rise = Math.max(0, character.mesh.position.y - SPAWN.y);
       const speed = Math.hypot(character.body.velocity.x, character.body.velocity.z);
       const previous = frameCtx.state.getState();
-      frameCtx.state.set({
-        checkpoint: checkpoints.currentIndex,
-        coins,
-        coyoteJumps: character.coyoteJumps,
-        defeated,
-        dashes: character.dashes,
-        hearts: checkpoints.hearts,
-        jumps: character.jumps,
-        peakRise: Math.max(previous.peakRise, rise),
-        playerX: character.mesh.position.x,
-        grounded: character.body.grounded,
-        respawns: checkpoints.respawns,
-        terminal,
-        topSpeed: Math.max(previous.topSpeed, speed),
-      } as Partial<GameState>);
+      statePatch.checkpoint = checkpoints.currentIndex;
+      statePatch.coins = coins;
+      statePatch.coyoteJumps = character.coyoteJumps;
+      statePatch.defeated = defeated;
+      statePatch.dashes = character.dashes;
+      statePatch.hearts = checkpoints.hearts;
+      statePatch.jumps = character.jumps;
+      statePatch.peakRise = Math.max(previous.peakRise, rise);
+      statePatch.playerX = character.mesh.position.x;
+      statePatch.grounded = character.body.grounded;
+      statePatch.respawns = checkpoints.respawns;
+      statePatch.terminal = terminal;
+      statePatch.topSpeed = Math.max(previous.topSpeed, speed);
+      frameCtx.state.set(statePatch);
       followCamera(character.mesh.position, dt);
     };
   }

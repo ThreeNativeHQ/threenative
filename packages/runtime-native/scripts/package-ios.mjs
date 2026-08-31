@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { assertNativeAssetsDecodable, deriveIosWebpSupport } from './asset-preflight.mjs';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
+import { PNG } from 'pngjs';
 
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
 export const DEFAULT_IOS_CONFIG = {
@@ -216,6 +217,22 @@ function compileIosIcon(catalog, output) {
   return compileIosAssets(catalog, output, true);
 }
 
+function assertIosIconSource(icon, label) {
+  let image;
+  try {
+    image = PNG.sync.read(readFileSync(icon));
+  } catch (error) {
+    throw new Error(
+      `TN_CONFIG_ICON_INVALID: ${label} is not a valid PNG file: ${icon} (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+  if (image.width !== 1024 || image.height !== 1024) {
+    throw new Error(
+      `TN_CONFIG_ICON_DIMENSIONS_INVALID: ${label} must be 1024x1024 for iOS AppIcon metadata; received ${image.width}x${image.height}: ${icon}`,
+    );
+  }
+}
+
 function colorComponents(value) {
   const hex = /^#([0-9a-f]{6})$/iu.exec(value ?? '')?.[1] ?? '000000';
   return {
@@ -254,6 +271,7 @@ function stageIosIcon(output, icon, compileIcon = compileIosIcon, options = {}) 
   if (!existsSync(icon) || !statSync(icon).isFile()) {
     throw new Error(`TN_CONFIG_ICON_MISSING: app.icon does not exist: ${icon}`);
   }
+  assertIosIconSource(icon, 'app.icon');
   const temporary = mkdtempSync(join(tmpdir(), 'threenative-ios-icon-'));
   try {
     const catalog = join(temporary, 'Assets.xcassets');
@@ -277,6 +295,7 @@ function stageIosIcon(output, icon, compileIcon = compileIosIcon, options = {}) 
       if (!existsSync(source) || !statSync(source).isFile()) {
         throw new Error(`TN_CONFIG_BRAND_IOS_${appearance.toUpperCase()}_MISSING: ${source}`);
       }
+      assertIosIconSource(source, `app.icons.ios.${appearance}`);
       const filename = `AppIcon-1024-${appearance}.png`;
       copyFileSync(source, join(appIcon, filename));
       images.push({

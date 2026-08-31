@@ -36,7 +36,9 @@ export class Lap {
     this.#gates = gates;
     this.totalLaps = totalLaps;
     this.#onLap = onLap;
-    for (const [index, gate] of gates.entries()) {
+    for (let index = 0; index < gates.length; index += 1) {
+      const gate = gates[index];
+      if (gate === undefined) throw new Error("Lap gate is missing.");
       const expected = gate.forward.clone().setY(0).normalize();
       this.#gateNormals.push(expected);
       this.#unsubscribe.push(
@@ -78,7 +80,9 @@ export class Lap {
 
   /** Sweeps a car transform between frames so a fast body cannot skip a thin sensor. */
   observe(previous: Vector3, current: Vector3): void {
-    for (const [index, gate] of this.#gates.entries()) {
+    for (let index = 0; index < this.#gates.length; index += 1) {
+      const gate = this.#gates[index];
+      if (gate === undefined) throw new Error("Lap gate is missing.");
       const normal = this.#gateNormals[index];
       if (normal === undefined) throw new Error("Lap gate normal is missing.");
       const before = this.#before.copy(previous).sub(gate.at).dot(normal);

@@ -13,6 +13,11 @@ This project is a playable ThreeNative arena shooter. The framework owns the loo
 input, physics binding, and React bridge. This generated repository owns the arena, weapons,
 targets, waves, and every visual decision.
 
+`threenative.config.ts` is the one game-owned app-shape file. Set the launcher identity and
+`public/icon.png`, mobile orientation and display flags, desktop window, renderer preference, and
+portable native entry there. `package.json` may retain only `threenative.nativeEntry` as a
+compatibility fallback for older projects.
+
 <!-- shared: framework-blocks-you -->
 ### Before you write a system, ask what already exists
 

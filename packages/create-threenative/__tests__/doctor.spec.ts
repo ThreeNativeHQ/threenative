@@ -772,6 +772,63 @@ describe("threenative doctor command", () => {
     expect(snapshot.desktopOverlay).toBeDefined();
   });
 
+  it("keeps the TypeScript config authoritative over conflicting legacy surfaces", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-config-precedence-");
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src/game.ts"), "export default {};");
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: "doctor-config-precedence",
+        type: "module",
+        threenative: { nativeEntry: "src/package-game.ts" },
+      }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.json"),
+      JSON.stringify({ nativeEntry: "src/legacy-game.ts", ui: { renderer: "native" } }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { ui: { renderer: "web" } };\n',
+    );
+
+    const snapshot = await readProject(root);
+
+    expect(snapshot.config).toMatchObject({
+      nativeEntry: "src/package-game.ts",
+      ui: { renderer: "web" },
+    });
+  });
+
+  it("does not fall back to legacy config when the TypeScript config is invalid", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-config-invalid-");
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src/game.ts"), "export default {};");
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: "doctor-config-invalid",
+        type: "module",
+        threenative: { nativeEntry: "src/package-game.ts" },
+      }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.json"),
+      JSON.stringify({ nativeEntry: "src/legacy-game.ts", ui: { renderer: "native" } }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      "export default { app: { name: 42 } };\n",
+    );
+
+    const snapshot = await readProject(root);
+
+    expect(snapshot.config).toBeUndefined();
+  });
+
   it("reads a real directory and exits 1 when that directory is not a project", async () => {
     const { runDoctorCommand } = await import("../src/threenative.js");
     const { makeTempDir } = await import("../../../test-support/temp-dir.js");

@@ -18,6 +18,11 @@ stats, inventory, persistence, and every visual decision.
 The portable entry is src/game.ts. The web-only React mount is src/main.ts. Keep all
 gameplay and render source portable: native never imports src/ui or the DOM.
 
+`threenative.config.ts` is the one game-owned app-shape file. Set the launcher identity and
+`public/icon.png`, mobile orientation and display flags, desktop window, renderer preference, and
+portable native entry there. `package.json` may retain only `threenative.nativeEntry` as a
+compatibility fallback for older projects.
+
 <!-- shared: framework-blocks-you -->
 ### Before you write a system, ask what already exists
 

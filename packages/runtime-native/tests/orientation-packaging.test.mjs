@@ -36,6 +36,33 @@ test('Android packaging overwrites a hand-edited manifest orientation', () => {
   assert.doesNotMatch(rendered, /android:screenOrientation="landscape"/u);
 });
 
+test('Android packaging overwrites hand-edited identity resource drift', () => {
+  const config = {
+    app: {
+      id: 'com.studio.foxgame',
+      name: 'Fox',
+      version: '1.2.3',
+      build: 7,
+    },
+    window: { title: 'Fox Desktop', width: 1024, height: 576, resizable: false },
+  };
+  const driftedStrings = androidStrings.replace(
+    '<string name="app_name">ThreeNative</string>',
+    '<string name="app_name">Drifted Name</string>',
+  );
+  const strings = renderAndroidStrings(driftedStrings, config);
+  assert.match(strings, /<string name="app_name">Fox<\/string>/u);
+  assert.doesNotMatch(strings, /Drifted Name/u);
+
+  const driftedGradle = androidGradle
+    .replace('applicationId = "com.threenative.game"', 'applicationId = "com.drifted.game"')
+    .replace('versionName = "0.1.0"', 'versionName = "9.9.9"');
+  const gradle = renderAndroidBuildGradle(driftedGradle, config);
+  assert.match(gradle, /applicationId = "com\.studio\.foxgame"/u);
+  assert.match(gradle, /versionName = "1\.2\.3"/u);
+  assert.doesNotMatch(gradle, /com\.drifted\.game|9\.9\.9/u);
+});
+
 test('iOS packaging writes the declared orientation keys', () => {
   const expected = {
     landscape: ['UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
