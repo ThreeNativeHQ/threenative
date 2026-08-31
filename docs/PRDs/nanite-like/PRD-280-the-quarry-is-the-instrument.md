@@ -4,9 +4,18 @@ prd_contract: v1
 
 # PRD-280 — the quarry is the instrument
 
-**Status: NOT STARTED — filed 2026-08-30 against `dcd12642`. Phase 0 of the
-[virtual geometry batch](./README.md). Nothing here has been measured; producing the measurement is
-the whole of this PRD.**
+**Status: DONE — measured 2026-08-30. Phase 0 of the [virtual geometry batch](./README.md).
+The gate is evaluated in
+[docs/verification/prd-280-the-quarry-is-the-instrument-2026-08-30.md](../../verification/prd-280-the-quarry-is-the-instrument-2026-08-30.md)
+and the verdict is OPEN: `dense` costs 13.9 ms more GPU time per frame than `decimated` at 1080p on
+browser WebGPU against a 2.0 ms threshold, and the ordering reproduces on packed Linux desktop
+native. Android and iOS are UNVERIFIED and no device run was executed.**
+
+**§4's meter is corrected, not its threshold.** `render.p50` is the frame budget's CPU render phase,
+and this scene issues ten draws in half a millisecond in *both* arms — it reads a difference of
+0.0 ms between a 104-million-triangle frame and a 20-million-triangle one. `gpuMs`, the GPU
+timestamp query already reported in `TN_FRAME_BUDGET`, is the meter that reads the difference. The
+2.0 ms value is unchanged. §4's own instruction to say *where the time went* is what forced this.
 
 **Goal: a first-person walk through a quarry, dense enough that virtual geometry could pay for
 itself, on a deterministic route, that prints the number the rest of the batch opens or closes on.**
@@ -118,6 +127,12 @@ Per arm, per target, over the route's frames after a warmup:
 > 1080p on browser WebGPU on real hardware, **and** the same ordering reproduces on packed Linux
 > desktop native. Otherwise the batch declines here, and the number is what it leaves behind.
 
+**Measured, 2026-08-30 — read `gpuMs`, for the reason in the Status line.** Browser WebGPU at
+1920×1080 on an nvidia/turing adapter, three full-route runs per arm: `dense` 22.99 ms median,
+`decimated` 9.71 ms median, paired differences 15.89 / 13.85 / 11.29 ms. `render.p50` reads
+0.5–0.6 ms in both arms — a 0.0 ms difference. Packed Linux desktop native at 1280×720: 6.42 ms
+against 1.84 ms, the same ordering.
+
 2.0 ms is not arbitrary and is fixed now rather than after the fact: a 60 fps frame is 16.7 ms, so
 it is 12% of the budget. A subsystem of this size that cannot find 12% of a frame on a scene built
 to flatter it will not find it in a game that was not.
@@ -128,26 +143,26 @@ different, cheaper project — and this batch still declines.
 
 ## 5. Acceptance criteria
 
-- [ ] **AC1 — the geometry is the same everywhere.** The bake is seeded; a spec asserts the
+- [x] **AC1 — the geometry is the same everywhere.** The bake is seeded; a spec asserts the
       `positionHash` of every generated body against a committed constant.
-- [ ] **AC2 — red-green, the seed.** Changing the seed by one fails AC1's spec, and the failure with
+- [x] **AC2 — red-green, the seed.** Changing the seed by one fails AC1's spec, and the failure with
       both hashes is pasted into the PRD.
-- [ ] **AC3 — the route is a function of the frame index.** A playtest asserts the camera pose at
+- [x] **AC3 — the route is a function of the frame index.** A playtest asserts the camera pose at
       three named frames to within a stated epsilon; running the scenario twice gives the same poses.
-- [ ] **AC4 — both arms run on both targets.** Four playtest results — `dense` and `decimated`,
+- [x] **AC4 — both arms run on both targets.** Four playtest results — `dense` and `decimated`,
       browser WebGPU with its adapter named and packed Linux desktop native — recorded in one
       `docs/verification/` file. Android is welcome and may be `UNVERIFIED`.
-- [ ] **AC5 — the control surface does not move between arms.** A visual A/B of a floor-only camera
+- [x] **AC5 — the control surface does not move between arms.** A visual A/B of a floor-only camera
       pose reports no pixel change between `dense` and `decimated`; a difference means the arms
       differ by more than the thing being measured.
-- [ ] **AC6 — the reference frames exist.** The route's frames are captured in the `dense` arm and
+- [x] **AC6 — the reference frames exist.** The route's frames are captured in the `dense` arm and
       kept as the visual reference every later phase is scored against. Without them, a later arm can
       only be measured on time, and this batch's claim is *this detail, cheaper*.
-- [ ] **AC7 — nothing binary is committed.** The example's generated `assets/` is ignored, and a
+- [x] **AC7 — nothing binary is committed.** The example's generated `assets/` is ignored, and a
       spec asserts no `.glb` under `examples/quarry` is tracked.
-- [ ] **AC8 — a person can walk it.** `free` mode, documented in the example's README, with the
+- [x] **AC8 — a person can walk it.** `free` mode, documented in the example's README, with the
       controls stated. This is the crack detector for every later phase.
-- [ ] **AC9 — the gate is evaluated in writing.** The verification file states *open* or *decline*
+- [x] **AC9 — the gate is evaluated in writing.** The verification file states *open* or *decline*
       against §4's threshold, and where the time went. A decline closes the batch and is not a
       failure of this PRD.
 

@@ -4,9 +4,18 @@ prd_contract: v1
 
 # PRD-285 — clusters arrive when the camera asks for them
 
-**Status: NOT STARTED — filed 2026-08-30. Phase 5 of the [virtual geometry batch](./README.md),
-blocked on [PRD-283](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md), **and blocked on a
-game that needs it**. This phase declines alone.
+**Status: DECLINED on its own precondition — 2026-08-30. Phase 5 of the
+[virtual geometry batch](./README.md). This phase declines alone and the batch stays open.**
+
+**The precondition §1 names is measured and not met.** No game in this repository or in the sandbox
+holds an asset that does not fit in memory on a target it must run on. The densest thing the batch
+built is the quarry's `virtual` arm — 3.5 million source triangles, 57,041 clusters, a 53 MB `.glb`
+— and it holds about **46 MB of index buffers over 79 attributes plus 130 MB of vertex data** on an
+8 GB card, with the whole payload resident for the whole route. There is nothing to stream.
+
+Streaming is the most interesting part of every source this batch mines and it is the part with no
+caller. An export with no caller does not ship. The measurement that opens this is a memory number
+from a real game on a real device, and it does not exist yet.
 
 **Goal: geometry the camera has not asked for is not in memory, and the geometry it asks for arrives
 without a hitch.**

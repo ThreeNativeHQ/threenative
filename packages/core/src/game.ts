@@ -8,6 +8,7 @@ import {
 } from "three";
 import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
+import { updateClusteredMeshes } from "./clustered-mesh.js";
 import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
 import type { IThreeNativeConfig } from "./config.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
@@ -954,6 +955,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           const depthCoupledOutput = this.#hasDepthCoupledOutput;
           if (depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           this.#projection?.reconcile();
+          // Virtual geometry ships on by default, so the engine takes the cut rather than waiting
+          // for a game to know it should. It runs here, before the render and after the reconcile,
+          // because an empty cut has to skip its draw rather than submit a zero-count one — and a
+          // scene holding no clustered mesh pays one traversal that finds nothing.
+          updateClusteredMeshes(
+            this.#projection?.root ?? threeScene,
+            camera,
+            renderer.surface().drawingBufferHeight,
+          );
           renderer.render(this.#projection?.root ?? threeScene, camera);
           renderer.observeRenderChainFrame?.();
           frameBudget?.addRender(budgetNow() - renderStart);

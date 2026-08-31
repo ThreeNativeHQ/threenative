@@ -4,10 +4,24 @@ prd_contract: v1
 
 # PRD-279 — geometry the camera cannot resolve is never submitted
 
-**Status: SCOPING — filed 2026-08-30 against `80254bd0`. Nothing in this file has been measured,
-and every claim about an upstream repository is second-hand until Phase 0 closes.** The plan below
-is a sequence of kill gates, not a commitment to ship a Nanite clone. Phases 0 and 1 are cheap and
-answer whether the rest is worth opening.
+**Status: DONE — the design held, 2026-08-30. Filed against `80254bd0`; the batch it opened is
+closed in [its README](./README.md).** Every kill gate below was run rather than argued. The two
+decisions this file exists to make both survived contact:
+
+- **No visibility buffer.** The game's own material draws every cluster, on browser and on native.
+  Nothing in `packages/core/src/clustered-mesh.ts` or `clustered-batch.ts` constructs a material, a
+  light or a colour, and `constraints.spec.ts` holds that. The cost this file predicted is visible
+  in the numbers — the win is 5.4× against `dense` rather than the order of magnitude the published
+  implementations report — and it is what makes the feature admissible here.
+- **One indexed draw per material batch, never one per cluster.** That held, and then the instrument
+  made it cost something: 396 instanced boulders needed one cut per *distance group* rather than one
+  per mesh, so the frame issues 89 draws instead of 10. On browser that is a good trade and on
+  native it is not, which is the batch's open regression.
+
+**One correction §3 earned.** It said multi-draw indirect *"does not exist on this stack"*. The
+measuring machine's adapter reports `chromium-experimental-multi-draw-indirect`. It is a Chromium
+experiment with no counterpart on the owned native runtime, so the design decision is unchanged and
+the row means *not portably available* — which is what it always meant.
 
 **Goal: a game imports a mesh far denser than the screen can resolve, and the frame submits only
 the clusters that resolve — on web and on native, from the same source, with the game's own
@@ -101,7 +115,7 @@ If the design cannot stay inside that constraint, that is itself a decline condi
 | Indirect compute dispatch from three.js | `three.webgpu.js:85352` `dispatchWorkgroupsIndirect` | available |
 | Indirect draw on native | `bindings_commands.cpp:1255-1261` and `:1522-1527`; frame-stream opcodes 10/11 at `bindings_frame_stream.cpp:107,241`; `GPUBufferUsage.INDIRECT` at `bindings.cpp:2635`; usage attribution at `bindings_resources.cpp:122` | **bound on both native paths** |
 | **Indirect compute dispatch on native** | frame-stream opcode table names `compute.setPipeline`, `compute.setBindGroup`, `compute.dispatchWorkgroups`, `compute.end` — and no indirect form (`bindings_frame_stream.cpp:107`) | **missing.** Either a binding to add, or the dispatch count stays CPU-side |
-| Multi-draw indirect | — | **does not exist on this stack.** WebGPU unrolls a batch into one `drawIndexed` per sub-draw (`prd-152…:110`). The design must produce *one* indirect draw per material batch, never one per cluster |
+| Multi-draw indirect | — | **not portably available.** WebGPU unrolls a batch into one `drawIndexed` per sub-draw (`prd-152…:110`). Chromium exposes `chromium-experimental-multi-draw-indirect` on this machine's adapter (observed 2026-08-30 in `artifacts/quarry/dense/capture.json`), but it is a browser experiment with no counterpart on the owned native runtime, so nothing in this batch may depend on it. The design must produce *one* indirect draw per material batch, never one per cluster |
 | A per-frame compute lifecycle to attach to | `ComputeDrivenRegistry`, `packages/core/src/compute-driven.ts` — warmup, `process` at a declared cadence, release | **exists; nothing new is needed in the loop** |
 | Precedent for packing a scene into TSL storage | `packages/core/src/gpu-scene-bvh.ts` | exists |
 | The "must beat doing nothing" discipline | `projection-plan.ts` — `MIN_BATCH_MEMBERS`, the kill-switch ratio, and the black-screen incident it was written for | the same gate applies here |
@@ -197,7 +211,7 @@ of this size that only breaks even is worse than nothing, because every future c
 
 Unchecked, and several are conditional on the phase before them surviving its gate.
 
-- [ ] **AC0 — the problem has a number.** Owned by [PRD-280](./PRD-280-the-quarry-is-the-instrument.md):
+- [x] **AC0 — the problem has a number.** Owned by [PRD-280](./PRD-280-the-quarry-is-the-instrument.md):
       the measurement is in `docs/verification/`, naming both targets, with the decline threshold
       evaluated in writing.
 - [ ] **AC1 — the sources are read, not cited from memory.** §4 carries file-and-line citations

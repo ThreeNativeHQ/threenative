@@ -34,6 +34,17 @@ export interface IEmbeddedTextureRow {
   readonly resized: number;
 }
 
+/** What the cluster-DAG bake produced for one model. */
+export interface IVirtualRow {
+  readonly bakeSeconds: number;
+  readonly clusters: number;
+  readonly levels: number;
+  readonly payloadBytes: number;
+  readonly primitives: number;
+  readonly skipped: number;
+  readonly stopReason: string;
+}
+
 /** What simplification delivered against what the config asked for. */
 export interface ISimplifyRow {
   readonly achievedRatio: number;
@@ -64,6 +75,8 @@ export interface IModelSizeRow {
   };
   /** LOD simplification, when it was configured for this model. */
   readonly simplify?: ISimplifyRow;
+  /** The cluster-DAG bake, when it was configured for this model. */
+  readonly virtual?: IVirtualRow;
   /** Triangle count of the compiled output, recorded in the manifest. */
   readonly triangles?: number;
 }
@@ -88,6 +101,26 @@ function simplifyLine(row: IModelSizeRow): readonly string[] {
   ];
 }
 
+/**
+ * Names what the DAG cost and where it stopped.
+ *
+ * A `cap` stop is called out because it means a DAG ran out of levels rather than finishing, and a
+ * bake that clustered nothing says so rather than leaving the reader to infer it from a zero.
+ */
+function virtualLine(row: IModelSizeRow): readonly string[] {
+  const virtual = row.virtual;
+  if (virtual === undefined) return [];
+  if (virtual.primitives === 0)
+    return [
+      `virtual ${row.logicalPath}: no primitive was dense enough to cluster (${virtual.skipped} skipped)`,
+    ];
+  const warning =
+    virtual.stopReason === "cap" ? " — a DAG hit the level cap and is unfinished" : "";
+  return [
+    `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
+  ];
+}
+
 function extensionLabel(row: IModelSizeRow): string {
   const extensions = row.extensions ?? [];
   return extensions.length === 0 ? "" : ` (${extensions.join(", ")})`;
@@ -107,7 +140,7 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
         : [
             `embedded textures ${row.logicalPath}: ${embedded.count} image(s), ${embedded.bytesBefore} -> ${embedded.bytesAfter} bytes ${deltaLabel(embedded.bytesBefore, embedded.bytesAfter)}, GPU ${embedded.gpuBytesBefore} -> ${embedded.gpuBytesAfter} bytes ${deltaLabel(embedded.gpuBytesBefore, embedded.gpuBytesAfter)}, ${embedded.resized} resized`,
           ];
-    const reduced = simplifyLine(row);
+    const reduced = [...simplifyLine(row), ...virtualLine(row)];
     if (row.lightmap === undefined) return [model, ...reduced, ...images];
     const map = row.lightmap;
     return [

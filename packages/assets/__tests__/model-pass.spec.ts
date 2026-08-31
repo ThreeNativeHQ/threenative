@@ -97,16 +97,19 @@ describe("modelPass", () => {
     const uncompressed = await modelPass({
       passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
       textures: "none",
+      virtual: "none",
     }).apply(Buffer.from(await buildFixtureGlb()), "character.glb");
     expect(Buffer.isBuffer(uncompressed)).toBe(true);
   });
 
   it("should leave the model byte-identical when every sub-pass is switched off", async () => {
     const input = Buffer.from(await buildFixtureGlb());
-    // Embedded-texture compression is its own switch, so a complete opt-out names both.
+    // Embedded-texture compression and the cluster-DAG bake are their own switches and both
+    // default to on, so a complete opt-out names all three.
     const result = await modelPass({
       passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
       textures: "none",
+      virtual: "none",
     }).apply(input, "character.glb");
     expect(Buffer.isBuffer(result)).toBe(true);
     expect((result as Buffer).equals(input)).toBe(true);

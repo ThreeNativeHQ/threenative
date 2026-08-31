@@ -8,6 +8,8 @@ const source = path.resolve(coreRoot, "..", "engine-mcp", "dist", "index.js");
 const target = path.join(coreRoot, "mcp", "engine-server.mjs");
 
 if (!existsSync(source)) {
-  throw new Error(`TN_ENGINE_MCP_BUNDLE: build threenative-engine-mcp before core; missing ${source}`);
+  throw new Error(
+    `TN_ENGINE_MCP_BUNDLE: build threenative-engine-mcp before core; missing ${source}`,
+  );
 }
 copyFileSync(source, target);

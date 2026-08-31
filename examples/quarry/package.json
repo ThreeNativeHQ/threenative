@@ -1,0 +1,30 @@
+{
+  "name": "quarry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bake": "tsx scripts/bake.ts",
+    "build:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/native-dense.ts --target desktop --output dist/quarry-dense-native.js && node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/native-decimated.ts --target desktop --output dist/quarry-decimated-native.js && node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/native-virtual.ts --target desktop --output dist/quarry-virtual-native.js",
+    "build": "vite build",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "measure": "tsx scripts/measure.ts",
+    "compare": "tsx scripts/compare-frames.ts",
+    "pack:native": "tsx scripts/pack-native.ts"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/playtest": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/assets": "workspace:*",
+    "@types/pngjs": "6.0.5",
+    "@types/three": "0.185.3",
+    "pngjs": "7.0.0",
+    "tsx": "4.23.5",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

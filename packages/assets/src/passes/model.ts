@@ -12,6 +12,13 @@ import { dedup, prune, quantize, reorder, simplify } from "@gltf-transform/funct
 import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
 import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
 import {
+  type IModelVirtualOptions,
+  type IModelVirtualSummary,
+  VIRTUAL_BAKE_VERSION,
+  bakeVirtualGeometry,
+} from "../virtual/bake.js";
+import { TNVirtualGeometry } from "../virtual/extension.js";
+import {
   type IEmbeddedTextureSummary,
   type IModelTexturesOptions,
   assertNoTextureDrift,
@@ -93,7 +100,19 @@ export interface IModelPassOptions {
   readonly simplify?: IModelSimplifyOptions;
   /** Embedded-texture compression: options, or `"none"` to ship every image as authored. */
   readonly textures?: IModelTexturesOptions | "none";
+  /**
+   * Cluster-DAG bake for virtual geometry: options, or `"none"` to ship every primitive as
+   * authored. **Absent means the bake runs with defaults**, on the same terms as `textures` — a
+   * game that imports a body too dense for the screen should not have to know this key exists.
+   * Only primitives at or above `minSourceTriangles` are touched, so an ordinary prop is
+   * byte-identical either way. Minutes on a dense body, so the compile cache keys on it — and on
+   * {@link VIRTUAL_BAKE_VERSION}, because a better partition changes the output and a stale entry
+   * would hide that.
+   */
+  readonly virtual?: IModelVirtualOptions | "none";
 }
+
+export type { IModelVirtualOptions, IModelVirtualSummary } from "../virtual/bake.js";
 
 /**
  * What simplification actually delivered. The error tolerance can stop the simplifier well
@@ -115,6 +134,7 @@ export interface IModelPassOutputEntry {
   readonly simplify?: IModelSimplifySummary;
   readonly triangles: number;
   readonly vertices: number;
+  readonly virtual?: IModelVirtualSummary;
 }
 
 const DRACO_EXTENSION = "KHR_draco_mesh_compression";
@@ -169,8 +189,15 @@ function jsonOfGlb(binary: Buffer): GLTF.IGLTF {
 }
 
 async function createIo(): Promise<NodeIO> {
+  // The decoder's WebAssembly module instantiates asynchronously after import, and registering it
+  // before it has does not fail — it fails later, inside the reader, as an unreadable-file error
+  // on a file that is perfectly well formed. A process whose first model reaches this pass in the
+  // same tick loses that race, which is every bake script ever written.
+  await MeshoptDecoder.ready;
   const io = new NodeIO()
-    .registerExtensions(ALL_EXTENSIONS)
+    // TN_virtual_geometry is registered on the reader too: the pass re-reads its own output to
+    // verify it, and an unregistered extension is dropped on read rather than reported.
+    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.decoder": MeshoptDecoder });
   return io;
 }
@@ -207,7 +234,7 @@ async function writeDocument(
 ): Promise<{ buffer: Buffer; extensions: readonly string[] }> {
   await MeshoptEncoder.ready;
   const io = new NodeIO()
-    .registerExtensions(ALL_EXTENSIONS)
+    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   try {
     const buffer = Buffer.from(await io.writeBinary(document));
@@ -609,6 +636,14 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Part of the compile cache key: change the cap or a codec and stale outputs must not
       // be re-served.
       simplify: options.simplify ?? null,
+      // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
+      virtual:
+        options.virtual === "none"
+          ? "none"
+          : {
+              ...(options.virtual === undefined ? {} : options.virtual),
+              bakeVersion: VIRTUAL_BAKE_VERSION,
+            },
       textures:
         options.textures === "none"
           ? "none"
@@ -632,7 +667,12 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Embedded-texture compression and simplification are switched separately from the
       // geometry sub-passes: a model whose geometry is already final still ships images.
       const textureOptions = options.textures === "none" ? undefined : (options.textures ?? {});
-      const geometryActive = Object.values(enabled).some(Boolean) || options.simplify !== undefined;
+      // Absent means on, exactly as `textures` reads it.
+      const virtualOptions = options.virtual === "none" ? undefined : (options.virtual ?? {});
+      const geometryActive =
+        Object.values(enabled).some(Boolean) ||
+        options.simplify !== undefined ||
+        virtualOptions !== undefined;
       if (!geometryActive && textureOptions === undefined) return input;
 
       const document = await readDocument(input, logicalPath);
@@ -664,6 +704,12 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       }
       if (enabled.reorder || enabled.meshopt) await MeshoptEncoder.ready;
       if (enabled.reorder) await reorder({ encoder: MeshoptEncoder })(document);
+      // After `reorder`, which is the last stage that moves a vertex, and before `quantize`, which
+      // changes what a position is but never which vertex it is.
+      const virtual =
+        virtualOptions === undefined
+          ? undefined
+          : await bakeVirtualGeometry(document, virtualOptions);
       if (enabled.quantize) {
         // Depths below the library's 8-bit floor are honoured by pre-rounding the floats
         // onto the coarser grid first; the self-verify then fails the build on the drift.
@@ -740,6 +786,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
             }),
         triangles: output.triangles,
         vertices: output.vertices,
+        ...(virtual === undefined ? {} : { virtual }),
       };
       return { buffer, entry: { ...entry } };
     },

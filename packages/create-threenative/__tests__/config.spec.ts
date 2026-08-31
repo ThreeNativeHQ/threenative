@@ -409,6 +409,49 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.bogus/u);
   });
 
+  it("carries the virtual-geometry bake through to the resolved config", async () => {
+    const root = await project();
+    await config(
+      root,
+      `export default {
+        assets: {
+          models: {
+            virtual: { groupSize: 4, minSourceTriangles: 8192, simplifyRatio: 0.5 },
+          },
+        },
+      };`,
+    );
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      assets: {
+        models: { virtual: { groupSize: 4, minSourceTriangles: 8192, simplifyRatio: 0.5 } },
+      },
+    });
+  });
+
+  it("carries the virtual-geometry opt-out through to the resolved config", async () => {
+    // Virtual geometry bakes by default; `"none"` is how a project that does not want the payload
+    // says so, on the same terms as `textures: "none"`.
+    const root = await project();
+    await config(root, 'export default { assets: { models: { virtual: "none" } } };');
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      assets: { models: { virtual: "none" } },
+    });
+  });
+
+  it("rejects an unknown key under assets.models.virtual with the named code", async () => {
+    const root = await project();
+    await config(root, "export default { assets: { models: { virtual: { ratio: 0.5 } } } };");
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_UNKNOWN_KEY/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.virtual\.ratio/u);
+  });
+
+  it("rejects a simplify ratio outside the open unit interval with the named code", async () => {
+    const root = await project();
+    await config(root, "export default { assets: { models: { virtual: { simplifyRatio: 1 } } } };");
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/between 0 and 1, exclusive/u);
+  });
+
   it("rejects an out-of-range quantize depth with the named code", async () => {
     const root = await project();
     await config(root, "export default { assets: { models: { quantize: { positionBits: 0 } } } };");

@@ -5,6 +5,7 @@
       "**/dist/**",
       "**/dist-native/**",
       "**/.threenative/**",
+      "**/mcp/engine-server.mjs",
       "artifacts/**",
       "build/**",
       ".worktrees/**",

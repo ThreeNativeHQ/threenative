@@ -55,6 +55,8 @@ describe("core constraints", () => {
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
           file !== "instanced-batch.ts" &&
+          file !== "clustered-mesh.ts" &&
+          file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
           file !== "index.ts",
       )
@@ -168,6 +170,31 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
     );
     expect(instancedBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `clustered-mesh.ts` is exempted on the same terms as `instanced-batch.ts`: deciding which
+    // clusters of a mesh to submit requires naming the surface those clusters draw with. It
+    // constructs none — the geometry and the surface are both the game's, held by reference, and
+    // swapping the surface swaps what draws — and it reads no property that describes how anything
+    // looks. The assertions below are what keep that true.
+    const clusteredMesh = readFileSync(path.join(sourceDirectory, "clustered-mesh.ts"), "utf8");
+    expect(clusteredMesh).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(clusteredMesh).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
+    );
+    expect(clusteredMesh.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `clustered-batch.ts` is exempted on the same terms: it names the surface many copies share
+    // and constructs none. Geometry, surface and every transform are the game's.
+    const clusteredBatch = readFileSync(path.join(sourceDirectory, "clustered-batch.ts"), "utf8");
+    expect(clusteredBatch).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(clusteredBatch).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
+    );
+    expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `gpu-scene-bvh.ts` is exempted on the same terms as `warmup.ts`: it reads a material's
     // *identity* — an integer index into the game's own surfaces — to pack triangles for the BVH's

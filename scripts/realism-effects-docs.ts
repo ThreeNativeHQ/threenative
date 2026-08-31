@@ -23,7 +23,19 @@ export function replaceRealismEffectsCoverageTable(markdown: string, file = "REA
 
 export async function updateRealismEffectsDocs(root = REPO_ROOT, check = false): Promise<void> {
   const readmePath = path.join(root, "docs/PRDs/realism-effects/README.md");
-  const current = await readFile(readmePath, "utf8");
+  // The batch this table lives in was archived in `ee63eea9` and the script was left behind, which
+  // took `pnpm build` down with an ENOENT. A generator whose target is gone has nothing to
+  // regenerate; it says so and returns rather than failing every build in the repository.
+  let current: string;
+  try {
+    current = await readFile(readmePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    console.log(
+      `realism-effects coverage: ${path.relative(root, readmePath)} is gone, nothing to update`,
+    );
+    return;
+  }
   const expected = replaceRealismEffectsCoverageTable(current, path.relative(root, readmePath));
   if (current === expected) return;
   if (check) throw new Error(`TN_REALISM_EFFECTS_TABLE_STALE: ${path.relative(root, readmePath)}`);

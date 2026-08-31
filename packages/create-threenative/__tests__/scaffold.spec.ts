@@ -108,13 +108,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // App names the physics its own game defines. Both moves are type-only — the emitted
   // JavaScript is unchanged apart from two forwarding helpers — so two trees move and the
   // pixels do not.
-  "action-rpg": "35f9d3f6eb495a2be88b998369da4ce53b506408b4f853d110f40ca470e2e824",
-  defense: "46e268a429101ec788171d4dccf84e4869c9ec438a8327ea450dc80dbb4aa9f2",
-  minimal: "07d47b36694c09bb3e556424ca614b050737ee838d9ccf368b34e2e95e368393",
-  platformer: "bb3ed3881c1aaa533f11f7ac3bdbc072f74f968572a9457361117549787ac3fc",
-  racing: "07fba6abc9ca4ce5627d568cf8d85c1afab51cc23ce85a227f9d3b8e59ed52d3",
-  shooter: "4d0866bde94a106d32af55b57312ee4cebb5b4e51fda159e0b34cdf59d72e511",
-  starter: "4bf2afddf36357408f9c52654b3a4efbb9595b4c6acce5b8988247cd938a8bab",
+  // Recomputed when virtual geometry added `ClusteredMesh` and `ClusteredBatch` to the
+  // capability manifest and reference, both of which every scaffold copies.
+  // Recomputed again when virtual geometry started shipping on: every template's instructions
+  // gained the convention and its opt-out, and the capability text lost the per-frame call the
+  // engine now makes itself.
+  "action-rpg": "ca737916250b6759600da65c8c5063ab8426e5075c9dc4852a2cc1e8c86b1cf9",
+  defense: "be368c07a2af12e1a7069a22a63f3a4ef86deeb036eb269e579846a2cc3e3b6e",
+  minimal: "033dd80e2f7774dcb5f2e2e02d3d3f2b37702d7d6baf1ce1aa57e7c51fafc067",
+  platformer: "eca192fe212916e992c40889df1ba394e0c20a38ab21e307773a24c0473145b4",
+  racing: "84a538b63813f1263e065a34d2c6f3fd3b48e842cdefdd318a0e4b84a3ae561b",
+  shooter: "bb11bc03793f1dd569c5b69008572b8ddb982f5ca5498bcd98216b5040b55576",
+  starter: "5ddf74af73db1a3537003014d5fea956a77d2fa3f07d349bf0963afa77ac0080",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

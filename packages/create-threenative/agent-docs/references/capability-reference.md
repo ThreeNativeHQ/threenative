@@ -134,6 +134,44 @@ export class CanvasLayer { … }
 const hud = new CanvasLayer({ camera });
 ```
 
+### `ClusteredBatch`
+
+`class` — Draw many copies of one over-detailed body, each at the detail its own distance earns. `InstancedBatch` collapses repeated props into one draw and gives every copy the same triangles. This gives a copy two hundred metres away a coarser cut than one twelve metres away, and still submits one draw per distance group rather than one per copy — which is what makes four hundred scanned boulders affordable. The shape, the surface and every transform stay the game's.
+
+```ts
+export class ClusteredBatch { … }
+```
+
+- **Use when:** draw hundreds of copies of a scanned or sculpted body without hundreds of draw calls · stop distant copies of a dense prop from costing their full triangle count
+- **Constraints:** the body's geometry must carry a cluster table from `assets.models.virtual` · every copy is placed before build(); place() after build() throws
+- **Overrides:** distanceRatio sets how wide one distance group is, default 1.25 · errorPixels sets the screen-space error budget, default 1 pixel
+
+```ts
+const boulders = new ClusteredBatch({ geometry, material, table });
+boulders.place({ position: [x, y, z], rotation: [0, angle, 0] });
+boulders.build({ name: "boulders", parent: ctx.scene });
+// in the scene's update, before the render:
+boulders.update(ctx.camera, ctx.renderer.domElement.height);
+```
+
+### `ClusteredMesh`
+
+`class` — Draw a model too detailed for the screen to resolve, without submitting the part it cannot. **This is on, and a game does not call it.** Any primitive of 65,536 triangles or more bakes to a cluster DAG in the asset pipeline, the loader returns a `ClusteredMesh` for it, and the engine takes the cut every frame before it renders. Each frame the mesh submits one draw holding only the clusters whose error projects to fewer than `errorPixels` screen pixels; a mesh nothing has cut yet draws in full, so the worst case is an ordinary `Mesh`. Geometry, surface and every appearance parameter stay the game's.
+
+```ts
+export class ClusteredMesh extends Mesh { … }
+```
+
+- **Use when:** draw a model too detailed for the screen to resolve · import a scanned or sculpted mesh of millions of triangles and still hold the frame · stop a dense rock face or terrain body from costing its full triangle count up close
+- **Constraints:** the bake happens in the asset pipeline, never at run time — there is no runtime flag · the payload costs about 3-4x a baked primitive's bytes; `assets.models.virtual: "none"` opts out and `minSourceTriangles` moves the 65,536 line · needs a perspective camera; a screen-space error has no meaning without one · one shadow cut is chosen at load and does not follow a shadow camera
+- **Overrides:** errorPixels sets the screen-space error budget, default 1 pixel · recutDistance sets how far the camera moves before the cut is retaken, default a thousandth of the mesh's radius
+
+```ts
+// Nothing to call: the loader returns one of these and the engine cuts it every frame.
+const face = await ctx.assets.model("quarry-face.glb");
+ctx.scene.add(face.scene);
+```
+
 ### `ComputeDrivenRegistry`
 
 `class` — Register game-owned IComputeDriven objects with the shared compute lifetime.
@@ -806,6 +844,20 @@ export function updateAtmosphereParameters( current: IResolvedAtmosphereParamete
 
 ```ts
 atmosphere.setAtmosphere({ rayleigh: [0.008, 0.016, 0.04] });
+```
+
+### `updateClusteredMeshes`
+
+`function` — Take every clustered mesh under a root through this frame's cut, before the render. The engine already does this for the scene it renders; reach for it only to cut a subtree the engine does not render, such as one staged for a camera of your own.
+
+```ts
+export function updateClusteredMeshes( root: { … }
+```
+
+- **Use when:** cut a virtual-geometry subtree the engine does not render itself
+
+```ts
+updateClusteredMeshes(stagedRoot, myCamera, ctx.renderer.domElement.height);
 ```
 
 ### `warmUpScene`

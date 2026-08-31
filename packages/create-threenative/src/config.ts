@@ -120,6 +120,25 @@ export interface IThreeNativeModelsConfig {
     readonly ratio: number;
     readonly error?: number;
   };
+  /**
+   * Cluster-DAG bake for virtual geometry: options, or `"none"` to ship every primitive as
+   * authored. **Absent means the bake runs with defaults**, exactly as `textures` does.
+   *
+   * Only primitives at or above `minSourceTriangles` (65,536 by default) are touched, so ordinary
+   * props compile byte-identically either way; a body dense enough to matter gets a cluster DAG and
+   * the engine draws only what the camera can resolve. The payload costs about 3-4x the primitive's
+   * compiled bytes, which is why the threshold is where it is. There is no runtime switch: a
+   * minutes-long bake cannot happen at run time.
+   */
+  readonly virtual?:
+    | {
+        readonly groupSize?: number;
+        readonly maxTriangles?: number;
+        readonly minSourceTriangles?: number;
+        readonly minTriangles?: number;
+        readonly simplifyRatio?: number;
+      }
+    | "none";
 }
 
 interface IPackageManifest {
@@ -1027,6 +1046,13 @@ function validateTextures(
 
 const MODEL_PASS_KEYS: readonly string[] = ["dedup", "meshopt", "prune", "quantize", "reorder"];
 const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
+const MODEL_VIRTUAL_KEYS: readonly string[] = [
+  "groupSize",
+  "maxTriangles",
+  "minSourceTriangles",
+  "minTriangles",
+  "simplifyRatio",
+];
 
 function bitDepth(value: unknown, label: string): number {
   // Depths low enough to warp a model are accepted, not rejected: the compile step's own
@@ -1040,7 +1066,14 @@ function bitDepth(value: unknown, label: string): number {
 function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["models"] {
   if (raw === "none") return "none";
   const models = assertRecord(raw, "assets.models");
-  assertKeys(models, "assets.models", ["lightmap", "passes", "quantize", "simplify", "textures"]);
+  assertKeys(models, "assets.models", [
+    "lightmap",
+    "passes",
+    "quantize",
+    "simplify",
+    "textures",
+    "virtual",
+  ]);
   let lightmap: IThreeNativeModelsConfig["lightmap"];
   if (models.lightmap !== undefined) {
     const rawLightmap = assertRecord(models.lightmap, "assets.models.lightmap");
@@ -1099,12 +1132,41 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   // feature the compile step already supported.
   const simplify = models.simplify as IThreeNativeModelsConfig["simplify"];
   const textures = models.textures as IThreeNativeModelsConfig["textures"];
+  let virtual: IThreeNativeModelsConfig["virtual"];
+  if (models.virtual === "none") {
+    virtual = "none";
+  } else if (models.virtual !== undefined) {
+    const rawVirtual = assertRecord(models.virtual, "assets.models.virtual");
+    assertKeys(rawVirtual, "assets.models.virtual", MODEL_VIRTUAL_KEYS);
+    const bake: Record<string, number> = {};
+    for (const key of MODEL_VIRTUAL_KEYS) {
+      const value = rawVirtual[key];
+      if (value === undefined) continue;
+      if (key === "simplifyRatio") {
+        if (typeof value !== "number" || !(value > 0) || !(value < 1))
+          fail(
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.models.virtual.simplifyRatio must be a number between 0 and 1, exclusive.",
+          );
+        bake.simplifyRatio = value as number;
+        continue;
+      }
+      bake[key] = positiveInteger(
+        value,
+        1,
+        "TN_CONFIG_ASSETS_INVALID",
+        `assets.models.virtual.${key}`,
+      );
+    }
+    virtual = bake as IThreeNativeModelsConfig["virtual"];
+  }
   return {
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(passes === undefined || Object.keys(passes).length === 0 ? {} : { passes }),
     ...(quantize === undefined || Object.keys(quantize).length === 0 ? {} : { quantize }),
     ...(simplify === undefined ? {} : { simplify }),
     ...(textures === undefined ? {} : { textures }),
+    ...(virtual === undefined ? {} : { virtual }),
   };
 }
 

@@ -1,4 +1,5 @@
 import { type AudioLoader, Object3D, Texture, type TextureLoader } from "three";
+import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 
 export interface IAssetLoaderOptions {
   readonly basePath?: string;
@@ -495,6 +496,12 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // Draco is an input format only: the compile step re-emits Draco assets as Meshopt,
         // so this serves uncompiled Draco files dropped into a web root. The decoder wasm is
         // served from `<basePath>draco/` by convention, like `basis/`.
+        // The cluster DAG the asset pipeline baked in. Registered only when the file declares it,
+        // so a game whose models are ordinary meshes never pays for the plugin — and a game whose
+        // models are not gets a plain `Mesh`, with no runtime switch either way.
+        if (extensions.has(TN_VIRTUAL_GEOMETRY)) {
+          loader.register((parser) => new VirtualGeometryPlugin(parser as never) as never);
+        }
         if (extensions.has(DRACO_EXTENSION)) {
           const { DRACOLoader } = await import("three/addons/loaders/DRACOLoader.js");
           const dracoLoader = new DRACOLoader();

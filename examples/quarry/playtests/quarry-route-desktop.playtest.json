@@ -1,0 +1,136 @@
+{
+  "name": "quarry-route-desktop",
+  "schemaVersion": 1,
+  "subject": "one deterministic walk through the quarry, from the rim to the rock face",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "loaded",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "begin",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "rim",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "rim"
+    },
+    {
+      "kind": "wait",
+      "label": "switchback",
+      "waitTicks": 500,
+      "release": true,
+      "screenshot": "switchback"
+    },
+    {
+      "kind": "wait",
+      "label": "floor",
+      "waitTicks": 500,
+      "release": true,
+      "screenshot": "floor"
+    },
+    {
+      "kind": "wait",
+      "label": "approach",
+      "waitTicks": 378,
+      "release": true,
+      "screenshot": "approach"
+    },
+    {
+      "kind": "wait",
+      "label": "contact",
+      "waitTicks": 240,
+      "release": true,
+      "screenshot": "contact"
+    },
+    {
+      "kind": "wait",
+      "label": "nose",
+      "waitTicks": 90,
+      "release": true,
+      "screenshot": "nose"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "frame",
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "routeComplete",
+        "equals": true
+      },
+      {
+        "id": "GameState",
+        "path": "mark",
+        "equals": "contact",
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "rim",
+            "equals": "rim"
+          },
+          {
+            "label": "switchback",
+            "equals": "switchback"
+          },
+          {
+            "label": "floor",
+            "equals": "floor"
+          },
+          {
+            "label": "approach",
+            "equals": "approach"
+          },
+          {
+            "label": "contact",
+            "equals": "contact"
+          },
+          {
+            "label": "nose",
+            "equals": "contact"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "markX",
+        "gte": 1.44,
+        "lte": 1.51
+      },
+      {
+        "id": "GameState",
+        "path": "markY",
+        "gte": 1.88,
+        "lte": 1.94
+      },
+      {
+        "id": "GameState",
+        "path": "markZ",
+        "gte": -20.25,
+        "lte": -20.18
+      }
+    ]
+  }
+}

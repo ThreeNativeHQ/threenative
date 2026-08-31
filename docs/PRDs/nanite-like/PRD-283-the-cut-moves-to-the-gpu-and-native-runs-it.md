@@ -4,8 +4,19 @@ prd_contract: v1
 
 # PRD-283 — the cut moves to the GPU and native runs it
 
-**Status: NOT STARTED — filed 2026-08-30. Phase 3 of the [virtual geometry batch](./README.md),
-blocked on [PRD-282](./PRD-282-the-cut-is-chosen-on-the-cpu-first.md). Nothing measured.**
+**Status: PARTLY DONE — measured 2026-08-30. Phase 3 of the [virtual geometry batch](./README.md).
+Native runs it: a packed Linux desktop executable of the quarry's `virtual` arm walks the whole
+route and renders it. **The kernel does not ship**, and AC3's negative result is the one this PRD
+pre-authorised — but not for the reason it expected. AC5's cold-agent sandbox build was not done.
+Android and iOS are UNVERIFIED. Numbers in
+[docs/verification/prd-283-native-and-the-kernel-2026-08-30.md](../../verification/prd-283-native-and-the-kernel-2026-08-30.md).**
+
+**The finding that redirects the batch.** Native at 720p inverts the browser result: `virtual` costs
+3.05 ms of GPU time against `decimated`'s 1.64, and its `render.p95` is 649.6 ms because one frame
+builds every distance group at once. The CPU walk is 0.7 ms on browser and about 1.1 ms on native —
+it is not what the native arm loses on, and a kernel that removed all of it would leave both the 89
+draws and the arrival hitch untouched. Submission shape and arrival cost are the next problem, and
+both are cheaper to fix than a compute kernel.
 
 **Goal: the same cut, chosen in a compute kernel and drawn indirectly, producing the same clusters
 as the CPU oracle — and running on the owned native runtime, not only in a browser.** A feature that
@@ -54,22 +65,22 @@ A JS-surface contract is provable with a bindings test executable and needs no d
 
 ## 3. Acceptance criteria
 
-- [ ] **AC1 — parity with the oracle.** For a fixed camera set, the kernel's selected cluster set
+- [ ] **AC1 (moot, there is no kernel) — parity with the oracle.** For a fixed camera set, the kernel's selected cluster set
       equals PRD-282's walk exactly. A single differing cluster fails.
-- [ ] **AC2 — red-green, the cone test.** Removing the normal-cone rejection changes the selected
+- [ ] **AC2 (moot, there is no kernel) — red-green, the cone test.** Removing the normal-cone rejection changes the selected
       set and fails AC1 with the count of clusters that reappear, pasted.
-- [ ] **AC3 — the kernel beats the walk, or it is not kept.** `render.p50` and CPU frame time for
+- [x] **AC3 — the kernel beats the walk, or it is not kept.** *It is not kept.* `render.p50` and CPU frame time for
       `virtual` on the kernel against `virtual` on the CPU, on the quarry route. If the CPU cut was
       already cheap enough, this phase reports that and the kernel does not ship — a negative result
       that saves the batch its most expensive code.
-- [ ] **AC4 — native runs it.** A packed Linux desktop `--target desktop` playtest of the quarry's
+- [x] **AC4 — native runs it.** A packed Linux desktop `--target desktop` playtest of the quarry's
       `virtual` arm in the same commit, with the numbers recorded. Android and iOS may be
       `UNVERIFIED` and must say so in the Status line.
-- [ ] **AC5 — one cold-agent build.** The `virtual` arm is built once from packed tarballs in a
+- [ ] **AC5 (NOT DONE) — one cold-agent build.** The `virtual` arm is built once from packed tarballs in a
       sandbox outside this repository, the way a user's machine gets it, before this phase closes.
       An in-repo example proves the frame; it does not prove the install.
-- [ ] **AC6 — warmup is honest.** The kernel is compiled before the world is shown, through the
+- [ ] **AC6 (moot, there is no kernel) — warmup is honest.** The kernel is compiled before the world is shown, through the
       registry's warmup, and a test asserts no shader compile happens on the first rendered frame.
-- [ ] **AC7 — read-back does not starve the frame.** The parity harness reads back on a throttle;
+- [ ] **AC7 (moot, there is no kernel) — read-back does not starve the frame.** The parity harness reads back on a throttle;
       a long single hold is split into short steps plus a settle tail, because one long hold lands
       almost none of its copies.

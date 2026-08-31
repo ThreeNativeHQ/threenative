@@ -1,0 +1,43 @@
+{
+  "name": "quarry-control-surface",
+  "schemaVersion": 1,
+  "subject": "the quarry floor, which must be the same pixels in every arm",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "floor-only",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "control-surface"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.9
+        }
+      }
+    ]
+  }
+}

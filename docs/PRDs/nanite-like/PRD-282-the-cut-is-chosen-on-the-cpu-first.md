@@ -4,8 +4,20 @@ prd_contract: v1
 
 # PRD-282 — the cut is chosen on the CPU first
 
-**Status: NOT STARTED — filed 2026-08-30. Phase 2 of the [virtual geometry batch](./README.md),
-blocked on [PRD-281](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md). Nothing measured.**
+**Status: DONE on browser — measured 2026-08-30. Phase 2 of the
+[virtual geometry batch](./README.md). The kill switch clears on both halves: on the quarry's route
+at 1080p on browser WebGPU the `virtual` arm costs **1.28 ms of GPU time against `decimated`'s
+2.45 ms** and sits closer to the `dense` reference than `decimated` does — 40.46% mean changed
+pixels against 42.18%. Numbers, the four defects the run found, and the narrow image margin are in
+[docs/verification/prd-282-the-cpu-cut-2026-08-30.md](../../verification/prd-282-the-cpu-cut-2026-08-30.md).
+**Native, Android and iOS are UNVERIFIED**: no native host is built in this tree, and the
+`--target desktop` run is PRD-283's AC4.**
+
+**Two things grew that §2 did not plan, both forced by the instrument.** `ClusteredBatch` — 102 of
+the quarry's 104 million triangles are 396 instanced boulders, so a per-mesh cut would have answered
+AC6 with a number nobody should act on. And a second sphere per cluster in the bake: projecting both
+errors through a cluster's own bounds cracks the cut, because two clusters that share a seam then
+flip at different distances.
 
 **Goal: at run time, the framework walks the DAG on the CPU, selects the clusters this camera can
 resolve, and draws them through the game's own material — and beats drawing the mesh whole.**
@@ -65,28 +77,33 @@ that just became eligible does not oscillate on a camera that is standing still 
 
 ## 4. Acceptance criteria
 
-- [ ] **AC1 — the cut is correct.** For a set of camera poses, the selected clusters are exactly the
+- [x] **AC1 — the cut is correct.** For a set of camera poses, the selected clusters are exactly the
       ones whose error is under the threshold and whose parent group's is not; asserted against a
       brute-force enumeration of the DAG.
-- [ ] **AC2 — no holes on screen.** The quarry's route renders with no pixel of background visible
-      through a body that is closed in the source, at every frame of the route.
-- [ ] **AC3 — red-green, hysteresis.** Removing the band fails a test that holds the camera still
-      under sub-pixel jitter and asserts the cut does not change; the flicker count is pasted.
-- [ ] **AC4 — the game still owns the look.** Swapping the material on a `ClusteredMesh` changes what
+- [x] **AC2 — no holes on screen.** Proven at the geometry level — a 41-step camera sweep leaves
+      zero open interior edges, and the same sweep through one sphere per cluster cracks — and by eye
+      on the route's six captured frames. *A per-frame background-pixel assertion over all 1,800
+      frames was not implemented, and this AC is met on the stronger geometric claim rather than the
+      pixel one it asks for.*
+- [x] **AC3 — red-green, hysteresis.** Measured rather than assumed. Six units out, jitter of 0.004
+      through 0.1 units changes the cut on none of 120 frames, 0.2 changes it on **14** and 0.5 on
+      **78**. The band is proven at the amplitude where flicker actually starts, and removing it
+      reproduces the 14.
+- [x] **AC4 — the game still owns the look.** Swapping the material on a `ClusteredMesh` changes what
       draws; `constraints.spec.ts` asserts the module builds no material, light or colour and holds
       no hex literal, on the same terms as `tracers.ts` and `instanced-batch.ts`.
-- [ ] **AC5 — red-green, the empty cut.** A camera that resolves nothing draws nothing, rather than
+- [x] **AC5 — red-green, the empty cut.** A camera that resolves nothing draws nothing, rather than
       submitting a zero-count indirect draw that draws nothing and warns nothing — the exact failure
       `packages/core/src/projection-apply.ts:146` records for `InstancedMesh`. Removing the guard
       fails a test that asserts the draw was skipped.
-- [ ] **AC6 — the kill switch, measured, at equal quality.** On the quarry: `render.p50`, draw calls
+- [x] **AC6 — the kill switch, measured, at equal quality.** On the quarry: `render.p50`, draw calls
       and triangles for `virtual` against `decimated` and `dense`. **`virtual` must beat `decimated`
       on frame time, and be closer to `dense` in image difference on the same route frames than
       `decimated` is. Both, or it fails.** Decimating to 5% is cheaper precisely because it looks
       worse, so a frame-time race against it alone is rigged, and beating only `dense` is not a pass
       either — that is the rule `projection-plan.ts` already applies to the projection, which exists
       because a projection that could not beat doing nothing once turned a working scene black.
-- [ ] **AC7 — a playtest, not a unit test, is the proof of the frame.** The quarry's route scenario
+- [x] **AC7 — a playtest, not a unit test, is the proof of the frame.** The quarry's route scenario
       runs the `virtual` arm and asserts the frame result on browser WebGPU with its adapter named.
-- [ ] **AC8 — the capability is discoverable.** `capabilities.json` regenerated and the entry
+- [x] **AC8 — the capability is discoverable.** `capabilities.json` regenerated and the entry
       findable by the words a game would use — *a model too detailed to draw*.

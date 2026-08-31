@@ -1,0 +1,28 @@
+{
+  "name": "quarry-boot",
+  "schemaVersion": 1,
+  "subject": "the quarry loads its bodies and starts walking the route",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": true, "console": true },
+  "steps": [
+    { "kind": "wait", "label": "rim", "waitTicks": 140, "release": true, "screenshot": "rim" }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "frame", "changed": true },
+      { "id": "GameState", "path": "triangles", "gte": 1000000 },
+      { "id": "GameState", "path": "mark", "equals": "rim" }
+    ],
+    "visual": [
+      { "region": { "x": 0, "y": 0, "width": 1280, "height": 720, "minNonblankPixelRatio": 0.05 } }
+    ]
+  }
+}

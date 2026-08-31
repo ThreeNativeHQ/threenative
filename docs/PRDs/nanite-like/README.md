@@ -1,9 +1,35 @@
 # Batch — virtual geometry ("nanite-like"), opened 2026-08-30
 
-**Status: SCOPING. Nothing in this batch has been measured, and no code has been written.** The
-batch opens only if [PRD-280](./PRD-280-the-quarry-is-the-instrument.md) produces a number that
-justifies it, and every PRD below names the condition that closes the whole batch rather than just
-itself.
+**Status: SHIPPED and ON BY DEFAULT, on browser, with a named native regression. Phases 0 through 2
+are done and measured; phase 3 is half done; phases 4 and 5 decline on numbers. Closed 2026-08-30.**
+
+**A game does nothing and gets this.** Any primitive of 65,536 triangles or more bakes to a cluster
+DAG, the loader returns a clustered mesh, and the engine cuts it every frame before it renders.
+Ordinary props are untouched and compile byte-identically; `assets.models.virtual: "none"` opts out
+of the payload entirely. The threshold, the four changes a default demanded, and the arrival hitch
+it forced closed are in
+[docs/verification/prd-286-virtual-geometry-ships-on-2026-08-30.md](../../verification/prd-286-virtual-geometry-ships-on-2026-08-30.md).
+Engine-driven on the quarry: **1.92 ms of GPU time against `dense`'s 6.97 and `decimated`'s 2.45**.
+
+The pipeline bakes a cluster DAG into the `.glb`
+it already emits, and the loader returns a mesh that submits only the clusters the camera can
+resolve. On the quarry's route at 1080p on browser WebGPU the `virtual` arm costs **1.28 ms of GPU
+time against `decimated`'s 2.45 and `dense`'s 6.97**, submits **7.1 million triangles against 19.7
+and 104.5**, and sits closer to the `dense` reference than `decimated` does. It runs on the owned
+native runtime from the same source.
+
+**And on native at 720p the ordering inverts**: `virtual` costs 3.05 ms against `decimated`'s 1.64,
+with a 649.6 ms `render.p95` on the frame that builds every distance group at once. That is the
+open regression this batch leaves behind, and its cause is named: 89 draws instead of 10, and an
+arrival that is not spread over frames. Neither is a selection problem, which is why PRD-283's
+compute kernel declined rather than shipped.
+
+| what | where |
+| --- | --- |
+| the instrument, and the price of the problem | [PRD-280's file](../../verification/prd-280-the-quarry-is-the-instrument-2026-08-30.md) |
+| the bake, the invariant, and both mutations | [PRD-281's file](../../verification/prd-281-cluster-dag-bake-2026-08-30.md) |
+| the CPU cut, its numbers, and four defects the run found | [PRD-282's file](../../verification/prd-282-the-cpu-cut-2026-08-30.md) |
+| native, and why the kernel did not ship | [PRD-283's file](../../verification/prd-283-native-and-the-kernel-2026-08-30.md) |
 
 **What it is.** A game imports a mesh far denser than the screen can resolve, and the frame submits
 only the clusters that resolve — on web and on native, from the same source, **with the game's own
@@ -21,13 +47,13 @@ the feature is admissible here.
 
 | # | PRD | Phase | Status |
 | --- | --- | --- | --- |
-| 279 | [geometry the camera cannot resolve is never submitted](./PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md) | the design, the charter argument, the verified state of this repository, the sources | SCOPING |
-| 280 | [the quarry is the instrument](./PRD-280-the-quarry-is-the-instrument.md) | 0 — the game, and the price of the problem | NOT STARTED |
-| 281 | [a dense mesh bakes to a crack-free cluster DAG](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md) | 1 — the baker, offline | NOT STARTED |
-| 282 | [the cut is chosen on the CPU first](./PRD-282-the-cut-is-chosen-on-the-cpu-first.md) | 2 — selection and one indirect draw | NOT STARTED |
-| 283 | [the cut moves to the GPU and native runs it](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | 3 — compute, and both targets | NOT STARTED |
-| 284 | [the frame does not draw what the frame already hid](./PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) | 4 — two-pass occlusion | NOT STARTED |
-| 285 | [clusters arrive when the camera asks for them](./PRD-285-clusters-arrive-when-the-camera-asks-for-them.md) | 5 — streaming | NOT STARTED |
+| 279 | [geometry the camera cannot resolve is never submitted](./PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md) | the design, the charter argument, the verified state of this repository, the sources | **DONE — the design held** |
+| 280 | [the quarry is the instrument](./PRD-280-the-quarry-is-the-instrument.md) | 0 — the game, and the price of the problem | **DONE — open, +13.9 ms** |
+| 281 | [a dense mesh bakes to a crack-free cluster DAG](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md) | 1 — the baker, offline | **DONE — watertight at every threshold** |
+| 282 | [the cut is chosen on the CPU first](./PRD-282-the-cut-is-chosen-on-the-cpu-first.md) | 2 — selection and one indirect draw | **DONE on browser — 1.28 ms against 2.45 ms** |
+| 283 | [the cut moves to the GPU and native runs it](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | 3 — compute, and both targets | **PARTLY DONE — native runs it, the kernel declined** |
+| 284 | [the frame does not draw what the frame already hid](./PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) | 4 — two-pass occlusion | **DECLINED — 1.28 ms is the whole prize** |
+| 285 | [clusters arrive when the camera asks for them](./PRD-285-clusters-arrive-when-the-camera-asks-for-them.md) | 5 — streaming | **DECLINED — no asset that does not fit** |
 
 Read 279 first. It holds the charter argument, the table of what this repository already ships
 (with file and line), the two facts that are actually blocking, and the licence rules for the
@@ -44,6 +70,57 @@ flowchart TD
   P283 --> P284[PRD-284 occlusion]
   P283 --> P285[PRD-285 streaming]
 ```
+
+## What actually shipped
+
+Two classes in `packages/core` and one pass in `packages/assets`, all reachable from one config key:
+
+| | |
+| --- | --- |
+| `assets.models.virtual` | **on by default** above 65,536 triangles a primitive; `"none"` opts out, `minSourceTriangles` moves the line. The compile cache keys on it and on `VIRTUAL_BAKE_VERSION` |
+| `TN_virtual_geometry` | an optional glTF extension inside the `.glb` the pipeline already emits. A reader that has never heard of it gets the source mesh |
+| `ClusteredMesh` | one over-detailed body. `update(camera, viewportHeight)` picks the cut and compacts it into one index range |
+| `ClusteredBatch` | many copies of one over-detailed body, grouped by distance, one instanced draw per group |
+| `updateClusteredMeshes(root, camera, height)` | what the engine calls itself, before every render. A game only needs it for a subtree the engine does not render |
+
+Measured on the quarry, 3.5 million source triangles: the bake produces 57,041 clusters over 16
+levels in 25 seconds, the payload is 2.08× the source index buffer, and the file grows 3.4×.
+
+## What the batch got wrong, and what it cost
+
+Every one of these was found by running the instrument, not by reading the code:
+
+1. **`Uint32BufferAttribute` copies the array it is handed.** Both runtime classes wrote every
+   frame's cut into a buffer the GPU never read. The mesh drew a range of zeros — no error anywhere,
+   and a frame time that looked like a triumph.
+2. **Replacing a geometry's index attribute leaks its GPU buffer**, because three frees
+   `geometry.index` only on dispose. That, plus the copy above, leaked one buffer per geometry per
+   frame until an 8 GB card reported `VK_ERROR_OUT_OF_DEVICE_MEMORY`.
+3. **Disposing a geometry that shares attributes destroys the buffers its siblings draw from.**
+   three's dispose handler deletes the *render object's* attributes.
+4. **A bake run against a stale `dist` wrote two accessors as `undefined`**, which vanished from the
+   glTF JSON and surfaced as a crash inside `GLTFLoader` — 51 MB of file, no canvas, and nothing in
+   the playtest report but "could not identify the page renderer kind". Both sides now fail closed
+   and name the field.
+5. **A screen-space cut needs two spheres per cluster, not one.** Projecting a cluster's own error
+   and its parent's through the same bounds cracks the mesh: two clusters that share a seam flip at
+   different distances. Each side is projected through the sphere of the group it belongs to.
+
+## Where this goes next, if it goes anywhere
+
+In the order the numbers argue for, not the order the batch planned:
+
+1. ~~**Spread group creation over frames.**~~ Done: bands build four per update, copies borrow the
+   nearest built band until theirs arrives, and the batch got the hysteresis the mesh already had —
+   without it the engine cutting every frame cost `render.p50` 0.9 ms → 13.45 ms.
+2. **Get back to one draw.** 89 draws is what costs the native arm its win. One draw for a whole
+   batch needs multi-draw indirect, which is a Chromium experiment with no native counterpart —
+   so this is a native binding question, not a renderer question.
+3. **Weight normals in the bake.** The cut is chosen on positional error and the shading is lit by
+   normals, which is why `virtual` is only barely closer to `dense` than `decimated` is.
+4. **A device.** Every number here is desktop. Android and iOS are UNVERIFIED throughout.
+5. **A cold-agent install.** PRD-283's AC5 was not done: the `virtual` arm has never been built from
+   packed tarballs on a clean machine.
 
 ## Decisions taken, so they are not re-argued
 
