@@ -107,10 +107,16 @@ export function assertAndroid16KbAlignment(libraries, options = {}) {
     const invalid = alignments.filter((alignment) => alignment < ANDROID_16KB_ALIGNMENT);
     if (invalid.length > 0) {
       const observed = alignments.map(alignmentDescription).join(', ');
-      throw new Error(
+      const error = new Error(
         `Android 16 KB alignment check failed for ${libraryPath}: ` +
           `LOAD alignments ${observed}; expected every segment >= 0x4000 (2**14)`,
       );
+      // Distinguish "this library is misaligned" from "the check could not run". They are
+      // different events with different owners, and only the caller knows whether a given
+      // library is one this repository builds or one it pins.
+      error.code = 'ANDROID_16KB_MISALIGNED';
+      error.alignments = alignments;
+      throw error;
     }
     return { libraryPath, alignments };
   });

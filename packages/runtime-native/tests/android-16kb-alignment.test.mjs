@@ -67,3 +67,32 @@ test('every candidate tried is named when none of them works', () => {
   );
   assert.deepEqual(attempted, ['/tmp/libv8android.so']);
 });
+
+// The two failures must stay distinguishable. A misaligned library is a fact about a dependency
+// and has an owner (PRD-221); a check that cannot run is a broken instrument and has none. Reading
+// them as the same event is what let `llvm-objdump` go missing while the lane blamed the download.
+test('a misaligned library is coded, and an unrunnable check is not', () => {
+  const misaligned = [
+    '    LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**12',
+    '    LOAD off 0x1000 vaddr 0x1000 paddr 0x1000 align 2**12',
+  ].join('\n');
+  try {
+    assertAndroid16KbAlignment(['/tmp/libv8android.so'], { runObjdump: () => misaligned });
+    assert.fail('a 4 KB-aligned library must not pass');
+  } catch (error) {
+    assert.equal(error.code, 'ANDROID_16KB_MISALIGNED');
+    assert.match(error.message, /LOAD alignments 0x1000 \(2\*\*12\)/u);
+  }
+
+  try {
+    assertAndroid16KbAlignment(['/tmp/libv8android.so'], {
+      runObjdump: () => {
+        throw new Error('spawnSync llvm-objdump ENOENT');
+      },
+    });
+    assert.fail('an unrunnable check must not pass');
+  } catch (error) {
+    assert.notEqual(error.code, 'ANDROID_16KB_MISALIGNED');
+    assert.match(error.message, /could not inspect/u);
+  }
+});

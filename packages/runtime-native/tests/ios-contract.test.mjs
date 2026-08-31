@@ -185,3 +185,27 @@ test('bundle registration is read from the listapps key, not a substring', () =>
   ].join('\n');
   assert.equal(bundleIsRegistered(mentioned, 'dev.threenative.runtime'), false);
 });
+
+// Three files named the iOS bundle identifier and two of them disagreed: `ios/Info.plist` hardcoded
+// `com.threenative.game` while CMake's XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER and the simulator
+// verifier both said `dev.threenative.runtime`. A literal in the plist wins over the build setting,
+// so the app installed under one identifier and the launch asked for the other — SpringBoard
+// answered NotFound for a bundle that was sitting right there.
+test('the iOS bundle identifier is declared once and read everywhere else', () => {
+  const plist = readFileSync(join(root, 'ios/Info.plist'), 'utf8');
+  const cmake = readFileSync(join(root, 'CMakeLists.txt'), 'utf8');
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+
+  // The plist defers rather than repeating: Xcode substitutes the build setting at build time.
+  assert.match(
+    plist,
+    /<key>CFBundleIdentifier<\/key>[\s\S]*?<string>\$\(PRODUCT_BUNDLE_IDENTIFIER\)<\/string>/u,
+    'ios/Info.plist must take CFBundleIdentifier from $(PRODUCT_BUNDLE_IDENTIFIER)',
+  );
+
+  const declared = /XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER\s+"([^"]+)"/u.exec(cmake)?.[1];
+  assert.ok(declared, 'CMakeLists.txt must declare XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER');
+
+  const launched = /const bundleId = '([^']+)'/u.exec(verifier)?.[1];
+  assert.equal(launched, declared, 'the verifier must launch the identifier CMake builds');
+});

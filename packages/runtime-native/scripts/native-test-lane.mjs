@@ -41,6 +41,18 @@ export function resolveCmake() {
  * Retry on ENOENT rather than appending `.cmd` up front: `node` and `cmake` are real executables
  * whose `.cmd` does not exist, so a blanket rewrite would break the commands that already work.
  */
+/**
+ * Quote one argument for `cmd.exe`, which is what `shell: true` runs on Windows.
+ *
+ * Only what needs quoting is quoted, so an unquoted command line still reads the way it did
+ * before this existed. A path with a space in it — `C:\\Program Files\\…` — is the case that
+ * silently splits into two arguments otherwise.
+ */
+export function quoteForWindowsShell(argument) {
+  if (argument.length > 0 && !/[\s"^&|<>()]/u.test(argument)) return argument;
+  return `"${argument.replace(/"/gu, '\\"')}"`;
+}
+
 export function retryAsWindowsShim(command, platform = process.platform) {
   if (platform !== "win32") return undefined;
   if (/[\\/]/u.test(command) || /\.[a-z0-9]+$/iu.test(command)) return undefined;
@@ -56,9 +68,18 @@ export function run(command, args, options = {}) {
     timeout: options.timeout ?? 120_000,
   };
   let result = spawnSync(command, args, spawnOptions);
-  if (result.error?.code === "ENOENT") {
+  if (result.error?.code === "ENOENT" || result.error?.code === "EINVAL") {
     const shim = retryAsWindowsShim(command);
-    if (shim !== undefined) result = spawnSync(shim, args, spawnOptions);
+    if (shim !== undefined) {
+      // Node has refused to spawn a `.cmd` without a shell since the 2024 command-injection fix,
+      // and reports that refusal as EINVAL. So the shim needs `shell: true` — and under a shell
+      // the arguments are joined into one command line, which means anything carrying a space has
+      // to be quoted or it arrives as two arguments.
+      result = spawnSync(shim, args.map(quoteForWindowsShell), {
+        ...spawnOptions,
+        shell: true,
+      });
+    }
   }
   if (result.error) throw result.error;
   const log = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;

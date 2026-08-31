@@ -9,7 +9,12 @@
   <key>CFBundleExecutable</key>
   <string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key>
-  <string>com.threenative.game</string>
+  <!-- Take the identifier from the build setting rather than repeating it. A literal here wins
+       over XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER, so this plist said com.threenative.game
+       while CMake and the simulator verifier both said dev.threenative.runtime: the app installed
+       under one identifier and the launch asked for the other, and SpringBoard answered NotFound
+       for a bundle that was sitting right there. -->
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
