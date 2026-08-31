@@ -335,10 +335,59 @@ describe("TerrainTiles", () => {
     const a = tiles.getTile("0:0");
     const b = tiles.getTile("1:0");
     if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
+    let observedMaximum = visibleSeamGap(a, b);
     for (let frame = 0; frame < 3; frame += 1) {
       tiles.process();
-      expect(tiles.maxSeamGap).toBeCloseTo(visibleSeamGap(a, b), 6);
+      const current = visibleSeamGap(a, b);
+      observedMaximum = Math.max(observedMaximum, current);
+      expect(Number.isFinite(current)).toBe(true);
+      expect(tiles.maxSeamGap).toBeGreaterThanOrEqual(observedMaximum);
     }
+    tiles.dispose();
+  });
+
+  it("retains the maximum seam diagnostics after a transient transition seam closes", () => {
+    const skirtDepth = 0.000001;
+    const tiles = new TerrainTiles({
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight: (x, z) => Math.sin(x * 0.2) * 10 + Math.cos(z * 0.11),
+      skirtDepth,
+      streamRadius: 1,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    tiles.follow({ x: 2, z: 0 });
+    tiles.follow({ x: 6, z: 0 });
+
+    const a = tiles.getTile("0:0");
+    const b = tiles.getTile("1:0");
+    if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
+    let observedMaximum = visibleSeamGap(a, b);
+    let observedVisualMaximum = Math.max(0, observedMaximum - skirtDepth);
+    for (let frame = 0; frame < 3; frame += 1) {
+      tiles.process();
+      const current = visibleSeamGap(a, b);
+      observedMaximum = Math.max(observedMaximum, current);
+      observedVisualMaximum = Math.max(observedVisualMaximum, current - skirtDepth);
+    }
+
+    expect(observedMaximum).toBeGreaterThan(0);
+    expect(observedVisualMaximum).toBeGreaterThan(0);
+    expect(visibleSeamGap(a, b)).toBeCloseTo(0, 6);
+    expect(tiles.maxSeamGap).toBeCloseTo(observedMaximum, 6);
+    expect(tiles.maxVisualSeamGap).toBeCloseTo(observedVisualMaximum, 6);
+    const maximumBeforeResidencyChange = tiles.maxSeamGap;
+    const visualMaximumBeforeResidencyChange = tiles.maxVisualSeamGap;
+    tiles.follow({ x: 32, z: 0 });
+    expect(Number.isFinite(tiles.maxSeamGap)).toBe(true);
+    expect(Number.isFinite(tiles.maxVisualSeamGap)).toBe(true);
+    expect(tiles.maxSeamGap).toBeGreaterThanOrEqual(maximumBeforeResidencyChange);
+    expect(tiles.maxVisualSeamGap).toBeGreaterThanOrEqual(visualMaximumBeforeResidencyChange);
     tiles.dispose();
   });
 

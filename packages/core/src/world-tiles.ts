@@ -381,13 +381,13 @@ function edgeHeight(level: ILevelGeometry, side: keyof IEdgeSamples, normalized:
   );
 }
 
-function seamGap(a: IResidentTile, b: IResidentTile): number {
+function seamGap(a: IResidentTile, b: IResidentTile): number | undefined {
   // A transition mutates the finer mesh in place. Read its position attribute instead of the
   // retained build-time edge samples so diagnostics describe the geometry the renderer can see.
   const [aSide, bSide] = opposingEdge(a, b);
   const aLevel = renderedLevel(a);
   const bLevel = renderedLevel(b);
-  if (aLevel === undefined || bLevel === undefined) return Number.POSITIVE_INFINITY;
+  if (aLevel === undefined || bLevel === undefined) return undefined;
   const samples = Math.max(aLevel.resolution, bLevel.resolution);
   let maximum = 0;
   for (let index = 0; index < samples; index += 1) {
@@ -697,6 +697,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #lodTransitions = 0;
   #maxLodPop = 0;
   #maxLodTransitionFrames = 0;
+  // These diagnostics are lifetime maxima for this residency owner. Zero is the deliberate
+  // empty/evicted value; each finite live-geometry observation can only increase it.
+  #maxSeamGap = 0;
+  #maxVisualSeamGap = 0;
   #released = false;
   #renderer: IRendererLike | undefined;
 
@@ -746,6 +750,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (this.#topologyBytes > this.residentByteBudget)
       throw new Error("TerrainTiles residentByteBudget cannot fit the topology observation.");
     this.#recordPeaks();
+    this.#recordSeamDiagnostics();
     this.frustumCulled = true;
   }
 
@@ -801,32 +806,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#maxLodTransitionFrames;
   }
 
+  /** Maximum visible edge gap observed across follow/process calls for this residency owner. */
   get maxSeamGap(): number {
-    let maximum = 0;
-    const tiles = [...this.#resident.values()];
-    for (const tile of tiles) {
-      for (const neighbor of tiles) {
-        if (tile.key >= neighbor.key || !areNeighbors(tile, neighbor)) continue;
-        maximum = Math.max(maximum, seamGap(tile, neighbor));
-      }
-    }
-    return maximum;
+    return this.#maxSeamGap;
   }
 
-  /** The remaining visible gap after the skirt depths observed in generated geometry. */
+  /** Maximum remaining visible gap after skirt coverage observed across follow/process calls. */
   get maxVisualSeamGap(): number {
-    let maximum = 0;
-    const tiles = [...this.#resident.values()];
-    for (const tile of tiles) {
-      for (const neighbor of tiles) {
-        if (tile.key >= neighbor.key || !areNeighbors(tile, neighbor)) continue;
-        maximum = Math.max(
-          maximum,
-          Math.max(0, seamGap(tile, neighbor) - seamCoverageDepth(tile, neighbor)),
-        );
-      }
-    }
-    return maximum;
+    return this.#maxVisualSeamGap;
   }
 
   get warmupNodes(): readonly unknown[] {
@@ -897,6 +884,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#recordPeaks();
     }
     this.#recordPeaks();
+    this.#recordSeamDiagnostics();
   }
 
   heightAt(x: number, z: number): number {
@@ -922,12 +910,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   process(renderer = this.#renderer): void {
     if (this.#released) return;
     this.#advanceLodTransitions();
-    if (renderer === undefined) return;
-    this.#topologyField?.process(renderer);
-    for (const tile of this.#resident.values()) {
-      tile.field.attachRenderer(renderer);
-      tile.field.process(renderer);
+    if (renderer !== undefined) {
+      this.#topologyField?.process(renderer);
+      for (const tile of this.#resident.values()) {
+        tile.field.attachRenderer(renderer);
+        tile.field.process(renderer);
+      }
     }
+    this.#recordSeamDiagnostics();
   }
 
   debug(): Record<string, unknown> {
@@ -1192,6 +1182,21 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       throw new Error(
         `TerrainTiles LOD pop threshold ${String(LOD_POP_THRESHOLD)} exceeded by ${String(pop)}.`,
       );
+  }
+
+  #recordSeamDiagnostics(): void {
+    const tiles = [...this.#resident.values()];
+    for (const tile of tiles) {
+      for (const neighbor of tiles) {
+        if (tile.key >= neighbor.key || !areNeighbors(tile, neighbor)) continue;
+        const gap = seamGap(tile, neighbor);
+        if (gap === undefined || !Number.isFinite(gap)) continue;
+        this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
+        const visualGap = Math.max(0, gap - seamCoverageDepth(tile, neighbor));
+        if (Number.isFinite(visualGap))
+          this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
+      }
+    }
   }
 
   #fieldAt(x: number, z: number): Heightfield {
