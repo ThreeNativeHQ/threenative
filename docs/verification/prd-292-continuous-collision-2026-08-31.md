@@ -24,27 +24,39 @@ in the command record and do not change the AC4 proof or the physics performance
 
 ## AC0, AC2, and AC5 — measurement and chosen default
 
-Command:
+Commands:
 
 ```sh
 node packages/runtime-native/scripts/measure-continuous-collision.mjs
+cargo run --quiet --release --manifest-path packages/runtime-native/native/physics/Cargo.toml \
+  --example measure_continuous_collision
 ```
 
-The harness uses one 0.1 m thick fixed wall, a 0.1 m radius projectile, a 1/60 s step, 128
-dynamic bodies for the timing scene, 120 warmup steps, 600 measured steps, and five samples.
-The baseline is the same direct Rapier scene with CCD disabled; the continuous row toggles CCD
-directly and independently of framework wiring, so the comparison is not an assumed zero-cost
-change.
+The JavaScript command measures the web Rapier backend and invokes the second command for the
+native numbers. The native command is a standalone Rust Cargo example on the host target
+`x86_64-unknown-linux-gnu`; it does not run the desktop V8/Dawn/Vulkan host. Both commands use one
+`0.1 m` thick fixed wall, a `0.05 m` radius projectile, a `1/60 s` step, 128 dynamic bodies,
+120 warmup steps, 600 measured steps, and five samples. The timing scene places the wall at
+`x=0` and spreads body starts from `x=-479` to `x=-81`; after warmup the measured path spans
+`x=-1` through `x=1`, crossing the wall's collision range `[-0.1, 0.1]`. The no-wall rows are
+the unobstructed comparison; the wall rows exercise the collision candidate. Both executables
+fail closed when that path no longer crosses the wall, and the JavaScript wrapper rejects native
+geometry metadata that disagrees with its input.
 
-| Backend | Rapier | First baseline tunnel | First continuous tunnel | Baseline step | Continuous step | Delta |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Web | 0.19.3 | 67 units/s | none through 300 units/s | 0.034217995 ms | 0.056193237 ms | +0.021975242 ms |
-| Native | 0.30.0 | 67 units/s | none through 300 units/s | 0.020393 ms | 0.036290 ms | +0.015897 ms |
+| Backend | Rapier | First baseline tunnel | First continuous tunnel |
+| --- | --- | ---: | ---: |
+| Web | 0.19.3 | 67 units/s | none through 300 units/s |
+| Native | 0.30.0 | 67 units/s | none through 300 units/s |
 
-The default is `true`: the first tunnel occurs at 67 units/s on both backends, while the
-absolute measured cost at 128 bodies is below 0.022 ms per step on web and 0.016 ms per step on
-native. The native run was on target `x86_64-unknown-linux-gnu` using the desktop V8/Dawn/Vulkan
-host.
+| Backend | No wall / CCD off | No wall / CCD on | Wall / CCD off | Wall / CCD on | Wall delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Web | 0.039743970 ms | 0.058764705 ms | 0.045586920 ms | 0.079659988 ms | +0.034073068 ms |
+| Native | 0.024278 ms | 0.040716 ms | 0.027419 ms | 0.048556 ms | +0.021137 ms |
+
+The default is `true`: the first tunnel occurs at 67 units/s on both backends, while the measured
+wall-scene CCD delta at 128 bodies is +0.034073068 ms per step on web and +0.021137 ms per step
+on the standalone native Rust runner. The no-wall CCD deltas were +0.019020735 ms and +0.016438
+ms respectively, so the price record does not assume zero overhead.
 
 ## AC1 and AC3 — contract and observability
 
@@ -75,7 +87,7 @@ sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js \
   --scenario playtests/continuous-collision.playtest.json \
   --project examples/native-smoke --url http://127.0.0.1:5184 \
   --server-command "THREENATIVE_CONTINUOUS_COLLISION_PROOF=enabled pnpm exec vite --host 127.0.0.1 --port 5184 --strictPort" \
-  --browser-recipe webgpu --headed
+  --browser-recipe webgpu --headed --no-screenshots
 ```
 
 Result: `pass: true`, runtime `web`, `continuousCollision.effectiveSetting: true`,
@@ -84,31 +96,48 @@ Turing WebGPU adapter, not SwiftShader.
 
 The equivalent desktop command ran the desktop scenario against a compiled `mystral` executable
 from the `x86_64-unknown-linux-gnu` native host. Result: `pass: true`, runtime `native`,
-`continuousCollision.effectiveSetting: true`, `hit: true`, and projectile x
-`-0.05665740743279457`.
+Rapier `0.30.0`, `continuousCollision.effectiveSetting: true`, `hit: true`, and projectile x
+`-0.05665740743279457`. The native host reported V8, NVIDIA GeForce RTX 2080, and Vulkan.
 
 The final desktop proof was built and run with:
 
 ```sh
-native_proof_dir=$(mktemp -d /tmp/tn292-native-proof.XXXXXX)
-cd examples/native-smoke
+# cwd: examples/native-smoke
 THREENATIVE_CONTINUOUS_COLLISION_PROOF=enabled THREENATIVE_NATIVE_BACKEND=enabled \
   THREENATIVE_PLAYTEST_BRIDGE=enabled pnpm exec vite build
-../../packages/runtime-native/build/tn-linux/mystral compile dist/native-smoke.js \
-  --root . --include . --out "$native_proof_dir/continuous-collision"
-cd ../..
+
+# cwd: repository root
+native_proof_dir=$(mktemp -d /tmp/tn292-native-proof.XXXXXX)
+packages/runtime-native/build/tn-linux/mystral compile examples/native-smoke/dist/native-smoke.js \
+  --root examples/native-smoke --include examples/native-smoke \
+  --out "$native_proof_dir/continuous-collision"
 node packages/playtest/dist/runner/cli.js \
   --scenario playtests/continuous-collision-desktop.playtest.json \
   --project examples/native-smoke --executable "$native_proof_dir/continuous-collision" \
   --target desktop --artifacts /tmp/tn292-continuous-collision-desktop --no-screenshots
 ```
 
-Red control: the same browser scenario was run after temporarily changing the default from `true`
-to `false`. It exited 1 with `continuousCollision.hit` changing from `false` to `false` instead
-of the expected `true`; the projectile crossed the wall. The default was restored and the green
-run was repeated. This is the source-equivalent pre-feature control; the worktree already carried
-the PRD implementation when validation began, so this record does not claim a pristine checkout
-of an earlier commit.
+Red first (controlled pre-feature mutation): `packages/physics/src/RigidBody3D.ts` was temporarily
+changed at `DEFAULT_CONTINUOUS_COLLISION` from `true` to `false`, then the package distribution was
+rebuilt so the browser bundle used the mutation:
+
+```sh
+pnpm --filter @threenative/physics build
+sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js \
+  --scenario playtests/continuous-collision.playtest.json \
+  --project examples/native-smoke --url http://127.0.0.1:5184 \
+  --server-command "THREENATIVE_CONTINUOUS_COLLISION_PROOF=enabled pnpm exec vite --host 127.0.0.1 --port 5184 --strictPort" \
+  --browser-recipe webgpu --headed --no-screenshots
+```
+
+The build exited 0; the playtest exited 1 with
+`TN_PLAYTEST_RESOURCE_ASSERTION_FAILED` for the exact assertion
+`GameState.continuousCollision.hit equals true changed true`. The observed state stayed
+`effectiveSetting: false`, `hit: false`, and the projectile reached
+`[3, -0.09605628997087479, 0]`, proving it crossed the wall. The default was restored to `true`
+and the package was rebuilt before the green run. This is the source-equivalent pre-feature
+control; the worktree already carried the PRD implementation when validation began, so this
+record does not claim a pristine checkout of an earlier commit.
 
 The two passthrough/reporting mutation controls were also red:
 
@@ -128,22 +157,38 @@ framework-block instructions, and all eight shipped template `AGENTS.md`/`CLAUDE
 
 ## AC7 — command record
 
+The focused pre-repair geometry/evidence check was red: the original scripts placed the wall at
+`x=10000` and bodies at `x=-1000`, the executable radius was `0.05 m` while the record said
+`0.1 m`, and the record called the standalone Cargo run a desktop V8/Dawn/Vulkan measurement.
+The controlled AC4 red result and its exact command/assertion are recorded in AC4 above.
+
 | Command | Result |
 | --- | --- |
 | `pnpm typecheck` | PASS |
 | `pnpm lint` | PASS; existing complexity diagnostics remain warnings |
 | `pnpm build` | PASS; 210 capability entries |
 | `pnpm sync:agents` | PASS; 17 mirrors, 0 written |
+| `pnpm --filter @threenative/physics build` during the controlled default-off red run, then again after restoring the default | PASS; both package builds completed and the source default is restored to `true` |
 | `pnpm exec vitest run packages/physics/__tests__/continuous-collision.spec.ts packages/physics/__tests__/native-contract.spec.ts` | PASS; 22 tests |
+| `cwd packages/runtime-native: pnpm exec vitest run --config vitest.config.ts tests/continuous-collision-benchmark.test.mjs` | PASS; 2 focused benchmark geometry/report tests |
 | `pnpm exec vitest run packages/physics/__tests__` | PASS; 172 tests |
 | `cargo test --manifest-path packages/runtime-native/native/physics/Cargo.toml --lib` | PASS; 14 tests |
+| `cargo test --manifest-path packages/runtime-native/native/physics/Cargo.toml --test parity` | PASS; 2 tests |
+| `rustfmt --edition 2024 --check packages/runtime-native/native/physics/examples/measure_continuous_collision.rs` | PASS; changed Rust example is formatted |
 | native integration cargo tests (`actuation`, `joints`, `parity`) | PASS; 13 tests |
 | native C++ actuation binding test | PASS; `native physics actuation bindings passed` |
 | `pnpm native:build` | PASS; desktop V8/Dawn/Vulkan host built |
+| `cargo run --quiet --release --manifest-path packages/runtime-native/native/physics/Cargo.toml --example measure_continuous_collision` | PASS; standalone Rust runner emitted `0.05 m` radius, wall-at-`x=0`, crossing-path metadata and the native timing rows above |
 | `node packages/runtime-native/scripts/measure-continuous-collision.mjs` | PASS; measurements above |
+| green WebGPU AC4 playtest command in AC4 | PASS; effective CCD and wall hit were both `true` |
+| `cwd examples/native-smoke: THREENATIVE_CONTINUOUS_COLLISION_PROOF=enabled THREENATIVE_NATIVE_BACKEND=enabled THREENATIVE_PLAYTEST_BRIDGE=enabled pnpm exec vite build` | PASS; native-smoke bundle built |
+| `mystral compile` command in AC4 | PASS; desktop executable compiled |
+| desktop AC4 playtest command in AC4 | PASS; native runtime reported effective CCD and wall hit as `true` |
+| controlled default-off AC4 playtest command in AC4 | RED as required; exit 1 on `GameState.continuousCollision.hit equals true changed true`, with effective CCD and hit both `false`; source default was restored and rebuilt before green runs |
 | `pnpm budgets` | PASS; 40,222 framework LOC and 115,789 native LOC |
 | `pnpm census` | PASS; census updated to 115,789 lines and names PRD-292 on affected rows |
-| `pnpm test` | 304 files / 3027 tests passed; two existing device-smoke failures for unavailable Android/iOS lanes |
+| `pnpm check:docs` | PASS; 1197 links and 848 Markdown files checked |
+| `pnpm test` | 304 files passed / 2 failed out of 306; 3027 tests passed, 1 skipped. The failures were Android and iOS `device-smoke` visibility assertions at `expect(result.pass).toBe(true)` |
 | `pnpm test:playtest` | Existing failure: `movement-axis.playtest.json` reports `TN_PLAYTEST_BRIDGE_MISSING` |
 | `pnpm test:templates` | 7/8 template projects passed; existing defense `defense-survive-ten-waves` failed with 4 leaks. The same filtered defense scenario with the CCD default disabled also failed (1 leak), so the fixture failure is not caused by PRD-292. All production-performance scenarios passed. |
 
