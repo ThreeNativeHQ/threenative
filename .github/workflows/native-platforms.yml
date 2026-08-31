@@ -43,6 +43,8 @@ jobs:
           python-version: "3.12"
       - uses: android-actions/setup-android@v4
       - run: pnpm install --frozen-lockfile
+      - name: Build browser reference workspace imports
+        run: pnpm --filter @threenative/core build
       - name: Install browser and Android build prerequisites
         run: |
           pnpm exec playwright install --with-deps chromium
@@ -244,8 +246,16 @@ jobs:
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
             pnpm --dir "$target" test:native
+      - name: Collect starter evidence
+        if: always()
+        run: |
           mkdir -p packages/runtime-native/artifacts/starter-linux
-          cp "$target/artifacts/native/"* packages/runtime-native/artifacts/starter-linux/
+          source="$RUNNER_TEMP/threenative-starter-native/artifacts/native"
+          if [ -d "$source" ]; then
+            cp -a "$source/." packages/runtime-native/artifacts/starter-linux/
+          else
+            echo "starter verifier produced no artifact directory: $source"
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:

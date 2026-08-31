@@ -722,6 +722,14 @@ test("native workflow runs the complete checksum-locked Android emulator parity 
   assert.doesNotMatch(workflow, /implemented-only/u);
 });
 
+test("Android browser references build workspace imports before conformance bundling", () => {
+  const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
+  const build = workflow.indexOf("pnpm --filter @threenative/core build");
+  const capture = workflow.indexOf("- name: Capture browser references");
+  assert.ok(build >= 0, "Android parity must build @threenative/core before bundling example rows");
+  assert.ok(build < capture, "@threenative/core build must precede browser reference capture");
+});
+
 test("the parity registry binds the simultaneous stick-and-jump proof to Android injection", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const proof = registry.tests.find((entry) => entry.id === "90-multitouch-input");

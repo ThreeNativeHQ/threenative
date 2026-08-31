@@ -46,6 +46,14 @@ test('native workflow verifies a freshly scaffolded starter on Linux', () => {
   assert.match(workflow, /native-starter-linux/);
 });
 
+test('native workflow retains starter evidence when verification fails', () => {
+  const workflow = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
+  const starter = workflow.match(/ {2}starter-linux:\n([\s\S]*?)\n {2}ios-simulator:/u)?.[1];
+  assert.ok(starter);
+  assert.match(starter, /- name: Collect starter evidence\n {8}if: always\(\)/u);
+  assert.match(starter, /threenative-starter-native\/artifacts\/native/u);
+});
+
 test('starter verifier executes through a pnpm-style symlink', () => {
   const directory = makeTempDirSync('starter-desktop-cli-');
   const entrypoint = join(directory, 'verify-starter-desktop.mjs');
