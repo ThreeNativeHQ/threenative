@@ -118,6 +118,29 @@ export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
             suggestion: "Check that the target element renders the expected foreground pixels inside its captured bounds.",
           });
         }
+        if (visual.region.maxDarkPixelRatio !== undefined) {
+          const darkPass = observed?.rendered === true
+            && hasBounds
+            && observed.darkPixelRatio !== undefined
+            && observed.darkPixelRatio <= visual.region.maxDarkPixelRatio;
+          assertions.push({
+            id: `visual.${index}.region.maxDarkPixels`,
+            pass: darkPass,
+            details: {
+              bounds: observed?.bounds,
+              element: visual.region.element,
+              maximumDarkPixelRatio: visual.region.maxDarkPixelRatio,
+              observedDarkPixelRatio: observed?.darkPixelRatio,
+              rendered: observed?.rendered ?? false,
+            },
+          });
+          if (!darkPass) diagnostics.push({
+            code: "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_EXCEEDED",
+            message: `Screenshot bounds for element '${describeVisualElement(visual.region.element)}' contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, above maximum ratio ${visual.region.maxDarkPixelRatio}.`,
+            severity: "error",
+            suggestion: "Check whether unexpected dark foreground geometry occupies the asserted element bounds.",
+          });
+        }
       } else {
         const staticRegion = visual.region;
         const observed = input.report.observations?.visual?.nonblankRegions?.find((region) => region.x === staticRegion.x && region.y === staticRegion.y && region.width === staticRegion.width && region.height === staticRegion.height);
@@ -140,6 +163,23 @@ export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
             message: `Screenshot region at (${staticRegion.x}, ${staticRegion.y}) contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, below required ratio ${staticRegion.minDarkPixelRatio}.`,
             severity: "error",
             suggestion: "Check whether the expected foreground silhouette occupies the asserted raster region.",
+          });
+        }
+        if (staticRegion.maxDarkPixelRatio !== undefined) {
+          const darkPass = observed?.darkPixelRatio !== undefined && observed.darkPixelRatio <= staticRegion.maxDarkPixelRatio;
+          assertions.push({
+            id: `visual.${index}.region.maxDarkPixels`,
+            pass: darkPass,
+            details: {
+              maximumDarkPixelRatio: staticRegion.maxDarkPixelRatio,
+              observedDarkPixelRatio: observed?.darkPixelRatio,
+            },
+          });
+          if (!darkPass) diagnostics.push({
+            code: "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_EXCEEDED",
+            message: `Screenshot region at (${staticRegion.x}, ${staticRegion.y}) contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, above maximum ratio ${staticRegion.maxDarkPixelRatio}.`,
+            severity: "error",
+            suggestion: "Check whether unexpected dark foreground geometry occupies the asserted raster region.",
           });
         }
       }

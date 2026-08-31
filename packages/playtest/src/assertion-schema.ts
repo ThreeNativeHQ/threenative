@@ -100,11 +100,11 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "It requires force telemetry and signed control delivery across samples; no held initial scalar can satisfy the proof.",
   },
   {
-    description: "Proves screenshot change, populated coordinate or DOM element-bound regions, and sustained projected entity visibility.",
+    description: "Proves screenshot change, populated coordinate or DOM element-bound regions, dark-pixel bounds, and sustained projected entity visibility.",
     example: { visual: [{ frameDiff: { baselineImage: "artifacts/baseline.png", minChangedPixelRatio: 0.01 }, entityVisible: { entity: "board.e4", minProjectedPixels: 20, throughoutFrames: true }, region: { element: { id: "error" }, minNonblankPixelRatio: 0.002 } }] },
     fields: [
       { description: "Before/after or baseline-image changed-pixel ratio bounds.", name: "frameDiff", type: "{ baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number }" },
-      { description: "Static pixel bounds, or a DOM element whose bounds are captured beside the screenshot; the latter accepts exactly one id or selector.", name: "region", type: "static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number }" },
+      { description: "Static pixel bounds, or a DOM element whose bounds are captured beside the screenshot; the latter accepts exactly one id or selector.", name: "region", type: "static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxDarkPixelRatio?: number, maxLuminance?: number }" },
       { description: "Entity projected-pixel floor, optionally across all captured samples.", name: "entityVisible", type: "{ entity: string, minProjectedPixels: number, throughoutFrames?: boolean }" },
     ],
     cardinality: "array",

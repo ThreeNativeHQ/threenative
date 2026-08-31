@@ -231,7 +231,7 @@ describe("scenario schema boundaries", () => {
           {
             entityVisible: { entity: "player", minProjectedPixels: 20, throughoutFrames: true },
             frameDiff: { baselineImage: "artifacts/base.png", maxChangedPixelRatio: 0.9, minChangedPixelRatio: 0.1 },
-            region: { height: 10, maxLuminance: 100, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
+            region: { height: 10, maxDarkPixelRatio: 0.8, maxLuminance: 100, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
           },
         ],
         world: {
@@ -470,6 +470,7 @@ describe("scenario schema boundaries", () => {
     expect(() => optionalTargetArray({ targets: "desktop" }, "targets", "invalid.json", "object")).toThrow(/array of targets/u);
 
     expect(() => validateVisualAssertion({ region: { height: "large", width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/height/u);
+    expect(() => validateVisualAssertion({ region: { height: 1, maxDarkPixelRatio: "dark", width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/maxDarkPixelRatio/u);
     expect(() => validateVisualAssertion({ entityVisible: { entity: "player", minProjectedPixels: "many" } }, "invalid.json", "assert.visual[0]")).toThrow(/minProjectedPixels/u);
     expect(() => validateVisualAssertion({ frameDiff: { baselineImage: "/base.png" } }, "invalid.json", "assert.visual[0]")).toThrow(/baselineImage/u);
     expect(() => validateRenderChainAssertion({ tier: "ultra" }, "invalid.json", "assert.renderChain")).toThrow(/tier/u);
