@@ -724,10 +724,10 @@ test("native workflow runs the complete checksum-locked Android emulator parity 
 
 test("Android browser references build workspace imports before conformance bundling", () => {
   const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
-  const build = workflow.indexOf("pnpm --filter @threenative/core build");
+  const build = workflow.indexOf("pnpm tsx scripts/workspace-packages.ts build");
   const capture = workflow.indexOf("- name: Capture browser references");
-  assert.ok(build >= 0, "Android parity must build @threenative/core before bundling example rows");
-  assert.ok(build < capture, "@threenative/core build must precede browser reference capture");
+  assert.ok(build >= 0, "Android parity must build workspace packages before bundling example rows");
+  assert.ok(build < capture, "workspace package builds must precede browser reference capture");
 });
 
 test("the parity registry binds the simultaneous stick-and-jump proof to Android injection", () => {
