@@ -24,6 +24,7 @@ import {
   PlaytestBridgeError,
   type IPlaytestBridgeClient,
 } from "./bridgeClient.js";
+import { waitForStartupReady } from "./startupReady.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { DeviceMetricsRecorder } from "./deviceMetrics.js";
 import {
@@ -214,6 +215,11 @@ async function runDevicePlaytestInternal(
     if (scenario.setup !== undefined) await bridge.applySetup(setupRequest(scenario));
     await throwIfAborted(target);
     if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
+    await throwIfAborted(target);
+    // Same boundary as the browser lane: a fixed-step warmup is a tick count, not the clock the
+    // application's launch runs on, so wait for the device to say its world is safe to observe.
+    const attached = bridge;
+    await waitForStartupReady({ bridge: attached, pump: () => attached.advance(1) });
     await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);

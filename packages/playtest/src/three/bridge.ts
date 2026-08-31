@@ -10,6 +10,7 @@ import {
   type IPlaytestRuntimeDiagnosticsSample,
   type IPlaytestRenderChainObservation,
   type IPlaytestSetupRequest,
+  type IPlaytestStartupObservation,
   type JsonValue,
 } from "../protocol.js";
 import type { Camera, Scene } from "three";
@@ -53,6 +54,8 @@ export interface IThreePlaytestBridgeOptions {
   renderChain?: () => IPlaytestRenderChainObservation | undefined;
   resources?: IThreePlaytestResources;
   scene: Scene;
+  /** First-use startup progress, so a runner can wait for the world instead of the loader. */
+  startup?: () => IPlaytestStartupObservation;
   tick?: () => number;
 }
 
@@ -90,6 +93,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.physics === undefined ? [] : ["runtime.physics"]),
     ...(options.runtimeDiagnosticsSeries === undefined ? [] : ["runtime.performance"]),
     ...(options.renderChain === undefined ? [] : ["runtime.renderChain"]),
+    ...(options.startup === undefined ? [] : ["runtime.startup"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
     ...(options.gameplayChannels?.().includes("runtime.world") === true ? ["runtime.world"] : []),
@@ -129,7 +133,15 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       name: "@threenative/playtest/three",
       protocolVersion: PLAYTEST_PROTOCOL_VERSION,
     }),
-    ready: () => ({ ready: true }),
+    ready: () => {
+      const startup = options.startup?.();
+      if (startup === undefined) return { ready: true };
+      // Reported rather than folded into `ready`: the bridge is ready to answer the moment it
+      // is installed, and a runner that refused to talk to a still-loading game could never
+      // watch it finish loading.
+      assertJsonSafe(startup);
+      return { ready: true, startup };
+    },
     sample: (request) => {
       syncEntities(registry, options.entities);
       const snapshot = sampleThreeObservations({

@@ -9,6 +9,7 @@ import {
   playtestDiagnostic,
   unknownPlaytestCapabilities,
   type IPlaytestBridgeDescription,
+  type IPlaytestBridgeReady,
   type IPlaytestObservationSnapshot,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestSampleRequest,
@@ -55,6 +56,8 @@ export interface IPlaytestBridgeClient {
   close(): Promise<void>;
   drainEvents(limit?: number): Promise<import("../protocol.js").JsonValue[]>;
   description: IPlaytestBridgeDescription;
+  /** Re-reads the bridge's readiness, including startup progress when it reports any. */
+  readiness(): Promise<IPlaytestBridgeReady>;
   sample(request: IPlaytestSampleRequest): Promise<IPlaytestObservationSnapshot>;
 }
 
@@ -125,7 +128,7 @@ export async function connectPlaytestBridgeTransport(
       "Install matching @threenative/playtest and adapter package versions.",
     ));
   }
-  const ready = await transport.call<{ ready: boolean; reason?: string }>("ready");
+  const ready = await transport.call<IPlaytestBridgeReady>("ready");
   if (!ready.ready) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_BRIDGE_NOT_READY",
@@ -170,6 +173,7 @@ export async function connectPlaytestBridgeTransport(
       return events;
     },
     description,
+    readiness: () => transport.call<IPlaytestBridgeReady>("ready"),
     sample: async (request) => {
       assertBoundedPayload(request);
       const snapshot = await transport.call<IPlaytestObservationSnapshot>("sample", request);

@@ -22,6 +22,7 @@ export type PlaytestCapability =
   | "runtime.performance"
   | "runtime.renderChain"
   | "runtime.resources"
+  | "runtime.startup"
   | "runtime.state"
   | "runtime.tags"
   | "runtime.ui"
@@ -57,6 +58,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("runtime.performance", "Samples bounded per-render frame cost and renderer counts."),
   capability("runtime.renderChain", "Reports the render stages, quality tier, and velocity route actually applied."),
   capability("runtime.resources", "Reads and writes registered JSON-safe application state."),
+  capability("runtime.startup", "Reports whether first-use startup work has finished and the world is safe to observe."),
   capability("runtime.state", "Samples application-owned state-machine state."),
   capability("runtime.tags", "Samples bounded application-owned entity tags."),
   capability("runtime.ui", "Samples registered JSON-safe UI and HUD state."),

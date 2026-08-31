@@ -26,9 +26,26 @@ export interface IPlaytestBridgeDescription {
   protocolVersion: typeof PLAYTEST_PROTOCOL_VERSION;
 }
 
+/**
+ * How far the application is through its own first-use startup work.
+ *
+ * A fixed-step runner advances ticks as fast as the machine allows, so a scenario can finish
+ * before a loading screen has closed — and everything a game gates on startup (compute
+ * dispatch, the first world present) then never happens inside the run. Reported so the runner
+ * can wait for the world instead of photographing the loader and asserting against a frozen
+ * simulation.
+ */
+export interface IPlaytestStartupObservation {
+  phase: "observing" | "collapsing" | "ready";
+  /** 0 while first-use work is pending, then 1. */
+  progress: number;
+}
+
 export interface IPlaytestBridgeReady {
   ready: boolean;
   reason?: string;
+  /** Present only when the application advertises `runtime.startup`. */
+  startup?: IPlaytestStartupObservation;
 }
 
 export interface IPlaytestEntityTransform {

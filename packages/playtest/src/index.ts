@@ -95,6 +95,7 @@ export {
 } from "./protocol.js";
 export type {
   IPlaytestBridgeDescription,
+  IPlaytestBridgeReady,
   IPlaytestBridgeV1,
   IPlaytestContactObservation,
   IPlaytestDeviceRequest,
@@ -106,6 +107,7 @@ export type {
   IPlaytestRuntimeDiagnosticsSample,
   IPlaytestSampleRequest,
   IPlaytestSetupRequest,
+  IPlaytestStartupObservation,
   IPlaytestWorldObservation,
   IPlaytestWorldRuntimeObservation,
   JsonValue,

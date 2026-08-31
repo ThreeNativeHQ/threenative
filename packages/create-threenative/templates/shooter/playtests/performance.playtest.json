@@ -6,7 +6,8 @@
       "maxDrawCalls": 96,
       "maxFrameMsP95": 33,
       "maxTriangles": 1053
-    }
+    },
+    "renderChain": { "tier": "high" }
   },
   "name": "production-performance",
   "schemaVersion": 1,
