@@ -26,8 +26,13 @@ const scenario = join(exampleRoot, "playtests", "loading-screen-desktop.playtest
 // in flight, fails with "only 1 frame(s) advanced". Short steps keep frames flowing while the
 // wall clock runs out the startup window. Kept in step with the exported constants by
 // startup-ready-bound.spec.ts.
-const LOADING_SETTLE_STEPS = 12;
-const LOADING_SETTLE_STEP_WAIT_MS = 2_500;
+// Gaps, not just the total, decide whether this lane is honest. The scene's worker proof requires
+// at least two frames to advance while its computation is in flight, and under a fixed-step bridge
+// no frame advances during a wall-clock wait. Twelve 2.5s gaps regressed macOS with "only 1
+// frame(s) advanced": the computation began and ended inside one idle window. Same 30s, gaps ten
+// times shorter, so any computation spans several advances.
+const LOADING_SETTLE_STEPS = 120;
+const LOADING_SETTLE_STEP_WAIT_MS = 250;
 const LOADING_SETTLE_WAIT_MS = LOADING_SETTLE_STEPS * LOADING_SETTLE_STEP_WAIT_MS;
 const FIXED_STEP_WALL_WAITS_MS = [
   0,
