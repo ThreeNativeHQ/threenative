@@ -8,6 +8,7 @@ import {
   type McpRunner,
   assertNoLocalSpecifiers,
   checkLockfile,
+  cleanRoomEnvironment,
   verifyRegistryInstall,
 } from "../verify-registry-install.js";
 
@@ -329,5 +330,38 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
       JSON.stringify({ resolved: "https://registry.npmjs.org/@threenative/core/-/core-0.2.0.tgz" }),
     );
     expect(checkLockfile(root)).toBe("package-lock.json");
+  });
+});
+
+// pnpm exports its own settings as `npm_config_*`. npm reads them as its own config, warns
+// "Unknown env config" about each, and died on `Cannot read properties of null (reading 'matches')`
+// — reporting the freshly published packages as uninstallable while a plain `npm install` of the
+// same project succeeded. A clean room that inherits the caller's package-manager config is not a
+// clean room.
+describe("clean room environment", () => {
+  it("drops the invoking package manager's config and keeps everything else", () => {
+    const cleaned = cleanRoomEnvironment({
+      HOME: "/home/dev",
+      PATH: "/usr/bin",
+      npm_config_catalog: "{}",
+      npm_config_registry: "https://registry.npmjs.org/",
+      npm_config_verify_deps_before_run: "false",
+      NPM_CONFIG_CACHE: "/somewhere/else",
+      npm_package_name: "threenative",
+      npm_lifecycle_event: "release",
+      THREENATIVE_SOMETHING: "kept",
+    });
+
+    // The machine is still the machine.
+    expect(cleaned.HOME).toBe("/home/dev");
+    expect(cleaned.PATH).toBe("/usr/bin");
+    expect(cleaned.THREENATIVE_SOMETHING).toBe("kept");
+
+    // Nothing the caller's package manager said about itself survives.
+    for (const name of Object.keys(cleaned)) {
+      expect(name.toLowerCase().startsWith("npm_config_")).toBe(false);
+      expect(name.toLowerCase().startsWith("npm_package_")).toBe(false);
+      expect(name.toLowerCase().startsWith("npm_lifecycle_")).toBe(false);
+    }
   });
 });

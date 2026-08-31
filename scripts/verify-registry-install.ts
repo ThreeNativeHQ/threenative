@@ -80,6 +80,31 @@ export type McpRunner = (
   env?: Readonly<Record<string, string>>,
 ) => string;
 
+/**
+ * The invoking package manager's configuration, removed.
+ *
+ * This runs under pnpm, and pnpm exports its own settings as `npm_config_*` — `catalog`,
+ * `patched-dependencies`, `verify-deps-before-run`, `_jsr-registry`. npm reads those as its own
+ * config, warns "Unknown env config" about each, and then died on
+ * `Cannot read properties of null (reading 'matches')`, which reported the published packages as
+ * uninstallable when a plain `npm install` of the same project succeeds. A clean room that
+ * inherits the caller's package-manager config is not a clean room.
+ *
+ * Everything else in the environment is kept: PATH, HOME and the rest are what make the run
+ * possible at all.
+ */
+export function cleanRoomEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const cleaned: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(base)) {
+    if (/^npm_config_/iu.test(name)) continue;
+    // `npm_package_*` and `npm_lifecycle_*` describe the script that launched this process, and
+    // npm re-derives them for whatever it runs next.
+    if (/^npm_(package|lifecycle|command)_?/iu.test(name)) continue;
+    cleaned[name] = value;
+  }
+  return cleaned;
+}
+
 export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
   return (command, args, cwd) =>
     execFileSync(command, [...args], {
@@ -352,15 +377,23 @@ export function verifyRegistryInstall(
   fs.mkdirSync(cache, { recursive: true });
   const project = path.join(parent, "my-game");
   const run =
-    options.run ?? realRunner({ ...process.env, NPM_CONFIG_CACHE: cache, npm_config_cache: cache });
+    options.run ?? realRunner({ ...cleanRoomEnvironment(process.env), NPM_CONFIG_CACHE: cache, npm_config_cache: cache });
   const mcp = options.mcp ?? realMcpRunner;
   const steps: IRegistryInstallStep[] = [];
   try {
+    // `--no-install`, so the install step below is the one that installs.
+    //
+    // The scaffolder installs with pnpm when it is not told otherwise, and the next step runs
+    // `npm install` — over pnpm's symlinked `node_modules`, which npm cannot read: it fails with
+    // `Cannot read properties of null (reading 'matches')` and reports the registry path as broken
+    // while a plain `npm install` into an empty project succeeds. Scaffolding without installing
+    // makes the two steps mean what their names say, and makes `install` a real test of installing
+    // these packages from the registry rather than of layering one package manager over another.
     steps.push(
       step("scaffold", () =>
         run(
           "npm",
-          ["create", "threenative@latest", "my-game", "--", "--template", template],
+          ["create", "threenative@latest", "my-game", "--", "--template", template, "--no-install"],
           parent,
         ),
       ),
