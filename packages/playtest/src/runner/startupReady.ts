@@ -44,19 +44,47 @@ export async function waitForStartupReady(
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
     throw new Error(`TN_PLAYTEST_STARTUP_TIMEOUT_INVALID: ${String(options.timeoutMs)}`);
   const deadline = now() + timeoutMs;
-  let observed = await readStartup(bridge);
-  while (observed.phase !== "ready") {
+  let observed = await pollStartup(bridge);
+  while (observed === BUSY || observed.phase !== "ready") {
     if (now() >= deadline) {
       throw new PlaytestBridgeError(playtestDiagnostic(
         "TN_PLAYTEST_STARTUP_NOT_READY",
-        `Application startup stayed '${observed.phase}' for ${timeoutMs}ms; the run would have observed a game that has not finished loading.`,
+        `Application startup stayed '${observed === BUSY ? "unreadable, the bridge kept timing out" : observed.phase}' for ${timeoutMs}ms; the run would have observed a game that has not finished loading.`,
         "Let the application reach startup readiness — check that its loading gate can complete headlessly — or remove the runtime.startup capability if it has no startup phase.",
       ));
     }
     await pump();
-    observed = await readStartup(bridge);
+    observed = await pollStartup(bridge);
   }
   return observed;
+}
+
+/** The bridge was too busy to answer this time round. Distinct from any real phase. */
+const BUSY = Symbol("startup-busy");
+
+/**
+ * One reading, where "the page did not answer in time" means *still starting*.
+ *
+ * `ready` carries the protocol's operation timeout like every other call, and this is the one
+ * caller that makes it during first-use work — precisely when the page's main thread is most
+ * likely to be blocked long enough to trip it. Failing the run there would blame the game for
+ * being slow to compile, which is the opposite of what this wait is for. The overall deadline
+ * still bounds it, so a page that never comes back is still named; only the reason changes.
+ */
+async function pollStartup(
+  bridge: IStartupReadySource,
+): Promise<IPlaytestStartupObservation | typeof BUSY> {
+  try {
+    return await readStartup(bridge);
+  } catch (error) {
+    if (
+      error instanceof PlaytestBridgeError &&
+      error.diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT"
+    ) {
+      return BUSY;
+    }
+    throw error;
+  }
 }
 
 /**

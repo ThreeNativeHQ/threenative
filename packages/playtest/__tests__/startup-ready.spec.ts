@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { installThreePlaytestBridge } from "../src/three/bridge.js";
 import { validatePlaytestScenario } from "../src/scenario/schema-validate.js";
 import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
+import { playtestDiagnostic } from "../src/diagnostics.js";
 import { waitForStartupReady, type IStartupReadySource } from "../src/runner/startupReady.js";
 import type { IPlaytestBridgeReady, IPlaytestStartupObservation } from "../src/protocol.js";
 
@@ -119,3 +120,64 @@ test("a scenario whose subject is the launch can opt out, and the field is valid
   expect(() => validatePlaytestScenario({ ...base, awaitStartup: "no" }, "s.json")).toThrow();
 });
 
+
+test("a bridge too busy to answer is still starting, not broken", async () => {
+  // `ready` carries the protocol operation timeout, and this wait is the one caller that makes
+  // that call while first-use work is compiling — the moment the page's main thread is most
+  // likely to block past it. Observed for real: "Bridge operation 'ready' exceeded 5000ms".
+  const timeout = new PlaytestBridgeError(
+    playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "Bridge operation 'ready' exceeded 5000ms.", "x"),
+  );
+  let call = 0;
+  const bridge: IStartupReadySource = {
+    description: { capabilities: ["runtime.startup"] },
+    readiness: () => {
+      call += 1;
+      if (call <= 2) return Promise.reject(timeout);
+      return Promise.resolve({ ready: true, startup: ready });
+    },
+  };
+  let pumped = 0;
+  await expect(
+    waitForStartupReady({
+      bridge,
+      pump: async () => {
+        pumped += 1;
+      },
+    }),
+  ).resolves.toEqual(ready);
+  expect(pumped).toBe(2);
+});
+
+test("a bridge that only ever times out still fails, by name", async () => {
+  let clock = 0;
+  const timeout = new PlaytestBridgeError(
+    playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "Bridge operation 'ready' exceeded 5000ms.", "x"),
+  );
+  await expect(
+    waitForStartupReady({
+      bridge: {
+        description: { capabilities: ["runtime.startup"] },
+        readiness: () => Promise.reject(timeout),
+      },
+      now: () => clock,
+      pump: async () => {
+        clock += 100;
+      },
+      timeoutMs: 250,
+    }),
+  ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+});
+
+test("an error that is not a timeout is never swallowed", async () => {
+  const boom = new Error("bridge exploded");
+  await expect(
+    waitForStartupReady({
+      bridge: {
+        description: { capabilities: ["runtime.startup"] },
+        readiness: () => Promise.reject(boom),
+      },
+      pump: async () => undefined,
+    }),
+  ).rejects.toBe(boom);
+});
