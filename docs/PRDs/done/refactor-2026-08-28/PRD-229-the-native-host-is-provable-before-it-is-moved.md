@@ -61,7 +61,7 @@ and sleeps through the dangerous ones.
 
 **Baseline C++ line coverage: 39.19%** of instrumented executable lines in the `tn-linux`
 configuration — measured 2026-08-28 in a scouting run, recorded in
-[native-coverage-scouting-2026-08-28](../../verification/native-coverage-scouting-2026-08-28.md).
+[native-coverage-scouting-2026-08-28](../../../verification/native-coverage-scouting-2026-08-28.md).
 Nothing had ever measured it before that run, which was itself the finding.
 
 | Subsystem | Instrumented lines | Line % |
@@ -108,7 +108,7 @@ builds all reproduced the three failures. Bisect identified `fa72e6b3`: the pack
 installed render- and compute-pass methods as per-instance closures. The prerequisite repair moves
 those methods to shared receiver-aware prototypes. The JavaScript contract, clean GCC/Release
 native class-table contract, and frame-op replay contract are green; see
-[native-class-table-baseline-repair-2026-08-28](../../verification/native-class-table-baseline-repair-2026-08-28.md).
+[native-class-table-baseline-repair-2026-08-28](../../../verification/native-class-table-baseline-repair-2026-08-28.md).
 
 ## Solution
 
@@ -419,7 +419,7 @@ Filled during implementation. Nothing here is claimed until it has executed and 
 ### Pre-phase scouting run — 2026-08-28
 - **Executed.** 24 of 25 test executables built and run under clang source-based coverage;
   **39.19%** line coverage of the `tn-linux` configuration.
-  Record: [native-coverage-scouting-2026-08-28](../../verification/native-coverage-scouting-2026-08-28.md).
+  Record: [native-coverage-scouting-2026-08-28](../../../verification/native-coverage-scouting-2026-08-28.md).
 - Negative controls observed: **none.** This run proves the toolchain and the number, not the
   instrument. Phase 1 still owes every control in its table.
 - Findings carried into Phase 1: the render-pass class-table configuration failure, the exit-77
@@ -434,10 +434,10 @@ table requires exists by name.
 
 | Phase | Landed in | Artifacts | Required tests present |
 | --- | --- | --- | --- |
-| 1 — coverage is a number | `d81ed380` | `TN_ENABLE_COVERAGE`, `scripts/measure-native-coverage.mjs`, `native:coverage`, `tests/native-coverage.test.mjs`, [the record](../../verification/native-coverage-2026-08-28.md) | 9, against 4 required |
+| 1 — coverage is a number | `d81ed380` | `TN_ENABLE_COVERAGE`, `scripts/measure-native-coverage.mjs`, `native:coverage`, `tests/native-coverage.test.mjs`, [the record](../../../verification/native-coverage-2026-08-28.md) | 9, against 4 required |
 | 2 — one command runs every test | `84640c6a` (PRD-223, predates this PRD) | `enable_testing()`, `native:test:cpp`, `tests/native-contract-lane.test.mjs` | set-equality assertion present |
-| 3 — ASan + UBSan | `1e530c4a` | `TN_ENABLE_SANITIZERS`, `native:test:asan`, `tests/native-sanitizer-lane.test.mjs`, [the record](../../verification/native-sanitizer-lane-2026-08-28.md) | 2, both required |
-| 4 — close the C++ lint hole | `dabfc35d`, record `70e5ce3f` | `.clang-tidy`, `.clang-format`, `tests/native-lint-config.test.mjs`, [the baseline](../../verification/native-lint-baseline-2026-08-28.md) | 1, the required automated one |
+| 3 — ASan + UBSan | `1e530c4a` | `TN_ENABLE_SANITIZERS`, `native:test:asan`, `tests/native-sanitizer-lane.test.mjs`, [the record](../../../verification/native-sanitizer-lane-2026-08-28.md) | 2, both required |
+| 4 — close the C++ lint hole | `dabfc35d`, record `70e5ce3f` | `.clang-tidy`, `.clang-format`, `tests/native-lint-config.test.mjs`, [the baseline](../../../verification/native-lint-baseline-2026-08-28.md) | 1, the required automated one |
 | 5 — text assertions become behaviour tests | `7402d4df` through `edee7ca9` | definition lookup by symbol plus native behaviour proofs for binding publication, async observation, lifecycle surface state, call traces, canvas listeners and Promise settlement | 15 PRD-230-blocking files converted; exit inventory 0 |
 | 6 — the floors become gates | `c90c390b` | `scripts/check-native-coverage.ts` called from `scripts/check-budgets.ts`, 15 per-subsystem floors including `src/webgpu/` at 33.82% | 5, against 2 required |
 
@@ -448,13 +448,13 @@ Phase 3's `heap-use-after-free` from `prd229-asan-negative.cpp`.
 **Phase 4's control was owed and was run on 2026-08-29.** A `bugprone-use-after-move` is reported
 as `error: 'source' used after it was moved [bugprone-use-after-move,-warnings-as-errors]` with
 `1 warning treated as error`; the same file with the violation removed exits 0. Recorded in
-[native-lint-baseline-2026-08-28](../../verification/native-lint-baseline-2026-08-28.md).
+[native-lint-baseline-2026-08-28](../../../verification/native-lint-baseline-2026-08-28.md).
 
 **Phase 3's lane had a defect of its own, found 2026-08-29 and fixed:** it could not report what it
 caught, because the desktop crash handler `_exit(1)`s on SIGSEGV before AddressSanitizer's handler
 runs. `CrashHandlerPolicy::LeaveToSanitizer` stands it down under sanitizers. The lane then
 immediately named a real shutdown-ownership defect —
-[asan-shutdown-segv-2026-08-29](../../verification/asan-shutdown-segv-2026-08-29.md).
+[asan-shutdown-segv-2026-08-29](../../../verification/asan-shutdown-segv-2026-08-29.md).
 
 **This reconciliation is a documentation repair for phases 2–5; phases 1 and 6 were re-executed.**
 On 2026-08-29 `packages/runtime-native/third_party/` was absent from this checkout, so no C++
@@ -536,4 +536,4 @@ contract red.
 
 The post-conversion coverage run executed 25 native targets, named 2 blocked targets, and exited 0:
 TOTAL **35.70%**, `src/webgpu/` **40.66%**, `src/runtime.cpp` **39.97%**. Record:
-[native-coverage-2026-08-28](../../verification/native-coverage-2026-08-28.md).
+[native-coverage-2026-08-28](../../../verification/native-coverage-2026-08-28.md).

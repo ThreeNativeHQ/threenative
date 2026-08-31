@@ -87,7 +87,7 @@ Neither behaviour changed. Commit `8ff06738` added a third parameter (`bool sani
 to `CrashHandlerPolicy::LeaveToPlatform` — line 51 of the header says so. The tests demand
 `androidPlatform ? CrashHandlerPolicy::LeaveToPlatform` on one line and a two-argument signature.
 
-**This is [PRD-229](../refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md)
+**This is [PRD-229](../done/refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md)
 Phase 5's thesis reproducing itself in the wild**: a suite that reds on a safe reformat and would
 sleep through a real break. So the repair is the conversion, not a wider regex.
 
@@ -133,7 +133,7 @@ Only rows that move the bar. Each names the command that decides it.
 
 | Lane | PRD | Moves | Device | Gate that decides it |
 | --- | --- | --- | --- | --- |
-| A | ~~[PRD-229](../refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5, files 1–2~~ **DONE `73e158c8`** | nothing on the bar; unblocked every other lane | none | `pnpm lint` exit 0; `package-test` 89/89; `unit` 2550/2552, the two remainders being timeouts that pass alone |
+| A | ~~[PRD-229](../done/refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5, files 1–2~~ **DONE `73e158c8`** | nothing on the bar; unblocked every other lane | none | `pnpm lint` exit 0; `package-test` 89/89; `unit` 2550/2552, the two remainders being timeouts that pass alone |
 | B | ~~[PRD-261](../done/PRD-261-the-release-instruments-report-again.md)~~ **DONE `273672e1`** | **A3** pass, **A7** pass, and `round:next` | none | `pnpm round:next` exit 0; `pnpm alpha:bar` A3/A7 pass, A1 and A5 the only reds |
 | C | [PRD-262](./PRD-262-the-runtime-native-prebuilt-release-exists.md) | unblocks A1 | none (CI runners) | `curl -sI .../runtime-native-v0.3.0/prebuilt-lock.json` → 200 |
 | D | [PRD-263](./PRD-263-version-0-3-0-is-installable-by-a-stranger.md) | **A1**, re-proves **A2** | none | `pnpm publish:check` exit 0, then `pnpm release --yes` |
@@ -214,12 +214,12 @@ Two of the six lanes sit in `BLOCKED/` under reasons that may have expired. Per
 Named so they are not silently absorbed:
 
 - **PRD-229 Phase 5's remaining 25 files.** Only the two that are red today are in this batch. The
-  rest belong to the [refactor batch](../refactor-2026-08-28/README.md) and gate PRD-230, not the
+  rest belong to the [refactor batch](../done/refactor-2026-08-28/README.md) and gate PRD-230, not the
   release.
 - **PRD-230 through PRD-235.** No release row depends on them.
 - **The Android 60 FPS work** ([PRD-222](../PRD-222-return-from-background-resumes-instead-of-reloading.md),
   [PRD-224](../PRD-224-webgpu-binding-tables-install-once-per-class.md)) and the
-  [night batch](../night-batch-2026-08-27/README.md) lanes. Performance is not on the alpha bar.
+  night batch (its README was removed in `ee63eea9`) lanes. Performance is not on the alpha bar.
 - **PRD-259 and PRD-260** (filed 2026-08-29 in `feature-mining/`). New capability, not release
   readiness.
 - **The starter-kits batch** ([PRD-087](../starter-kits/PRD-087-genre-borrow-ledger.md),

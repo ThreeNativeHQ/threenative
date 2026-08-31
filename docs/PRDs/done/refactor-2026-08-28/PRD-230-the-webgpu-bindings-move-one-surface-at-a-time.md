@@ -22,7 +22,7 @@ the file the active perf lane edits weekly) = **7 → HIGH mode.**
 ## The problem, measured
 
 At `7b729e2d`, from
-[the refactor analysis](../../reports/runtime-native-refactor-analysis-2026-08-28.md):
+[the refactor analysis](../../../reports/runtime-native-refactor-analysis-2026-08-28.md):
 
 | Metric | Value |
 | --- | ---: |
@@ -35,7 +35,7 @@ At `7b729e2d`, from
 | Functions over 150 lines in the file | 6 |
 
 The 87 numbered names are an artifact of
-[PRD-205](../done/PRD-205-webgpu-bindings-register-from-a-table-and-get-linted.md)'s
+[PRD-205](../PRD-205-webgpu-bindings-register-from-a-table-and-get-linted.md)'s
 lambda-to-static-function extraction and of PRD-222/224's class-table work. The extraction was
 right; the numbering was never a design. An agent grepping `GPUQueue.writeBuffer` in this package
 finds nothing today.
@@ -233,7 +233,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
   produced three 300-frame windows; steady `render.p50` was 1.3 / 1.2 ms and the incremental
   `bindings.cpp` compile plus link was 17.09 s. Exact command, machine state, every required
   `TN_HOST_GAP` sub-phase and its share are in
-  [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 1 — PASS with no attributable regression. The tokenized `git diff -w --word-diff` contained
   87 `tnWebgpuHandlerNN` OLD tokens, 87 descriptive `handle*` NEW tokens, and no other changes.
   Negative control: adding `static_assert(true);` made the purity gate exit 1 with
@@ -250,7 +250,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
   inherited lane failure, not a Phase-1 regression; the ASan acceptance checkbox remains open.
 - Phase 1 performance — PASS. The identical native-smoke command retained steady `render.p50`
   1.3 / 1.2 ms (0% change); the largest required host-gap share shift was 0.052 points. Exact
-  sub-phases are in [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  sub-phases are in [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 1 parity — no attributable regression. The full run recorded web 72 pass / 0 fail / 1
   blocked, desktop 69 pass / 2 fail / 2 blocked, and Android 0 pass / 0 fail / 73 blocked because
   no device lane was available. The two desktop failures were `25-camera-parented-overlay` and
@@ -271,7 +271,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
   `src/webgpu/` 40.68%, while `src/runtime.cpp` held 39.97%.
 - Phase 2 performance — PASS. The identical native-smoke command produced steady `render.p50`
   1.2 / 1.2 ms; the largest required host-gap share shift from the pre-move baseline was 0.078
-  points. Exact sub-phases are in [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  points. Exact sub-phases are in [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 2 census and kill switch — PASS. `pnpm census` regenerated the native record at 109,232
   total lines; `pnpm budgets` passed. `pnpm tsx scripts/count-loc.ts` reported the unchanged
   platformer template at 1,955 lines and generated HUD at 61 lines (geometry HUD 69).
@@ -291,7 +291,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
   compile-time payoff. The first performance sample measured 1.5 / 1.5 ms and was rejected; after
   the parity workload finished, an idle repeat measured steady `render.p50` 1.0 / 1.0 ms and a
   largest required host-gap share shift of 0.217 points, passing the guard. Exact data is in
-  [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 3.1 parity and census — no regression. Full parity matched Phases 1–2 exactly: web 72/0/1,
   desktop 69/2/2 with the same two inherited failures, and Android 0/0/73 because no device lane was
   available. `pnpm census` recorded 109,263 total lines; budgets and the kill switch passed.
@@ -305,7 +305,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
 - Phase 3.2 payoff and performance — PASS. The screenshot TU rebuild plus archive/link measured
   5.04 s versus the 17.09 s monolith baseline. Steady `render.p50` measured 1.0 / 1.0 ms; the
   largest required host-gap share shift was 0.264 points. Exact data is in
-  [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 3.2 parity and census — full parity retained the existing web 72/0/1, desktop 69/2/2 and
   Android 0/0/73 bars. The census recorded 109,300 lines; budgets and the kill switch passed.
 - Phase 3.3 presentation — PASS at the inherited bar. Surface acquire, resize, sRGB bridge,
@@ -317,7 +317,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
 - Phase 3.3 payoff and performance — PASS. The presentation TU rebuild plus archive/link measured
   6.05 s versus the 17.09 s monolith baseline. Steady `render.p50` measured 1.0 / 1.0 ms; the
   largest required host-gap share shift was 0.296 points. Exact data is in
-  [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 3.3 parity and census — full parity retained the existing web 72/0/1, desktop 69/2/2 and
   Android 0/0/73 bars. The census recorded 109,370 lines; budgets and the kill switch passed.
 - Phase 3.4 resources — PASS at the inherited bar. Buffer, texture, texture-view and sampler
@@ -329,7 +329,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
 - Phase 3.4 payoff and performance — PASS. The resource TU rebuild plus archive/link measured 5.83
   s versus the 17.09 s monolith baseline. Steady `render.p50` measured 1.0 / 1.0 ms; the largest
   required host-gap share shift was 0.265 points. Exact data is in
-  [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 3.4 parity and census — full parity retained the existing web 72/0/1, desktop 69/2/2 and
   Android 0/0/73 bars. The census recorded 109,445 lines; budgets and the kill switch passed.
 - Phase 3.5 pipelines — PASS at the inherited bar. Shader modules, pipeline layouts, bind-group
@@ -342,7 +342,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
 - Phase 3.5 payoff and performance — PASS. The pipeline TU rebuild plus archive/link measured 8.13
   s versus the 17.09 s monolith baseline. Steady `render.p50` measured 1.0 / 1.0 ms; the largest
   required host-gap share shift was 0.267 points. Exact data is in
-  [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 3.5 parity and census — full parity retained the existing web 72/0/1, desktop 69/2/2 and
   Android 0/0/73 bars. The census recorded 109,497 lines; budgets and the kill switch passed.
 - Phase 3.6 commands — PASS at the inherited bar. Render-bundle, query-set, command-encoder,
@@ -355,7 +355,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
   measured 19.29 s, 12.9% slower than the 17.09 s monolith baseline, so no compile-time payoff is
   claimed for this surface. Performance passed at steady `render.p50` 0.7 / 0.9 ms; the largest
   required host-gap share shift was 1.106 points, below the two-point rejection threshold. Exact
-  data is in [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  data is in [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 3.6 parity and census — full parity retained the existing web 72/0/1, desktop 69/2/2 and
   Android 0/0/73 bars. The census recorded 109,553 lines; budgets and the kill switch passed.
 - Phase 3.7 frame stream — PASS at the inherited bar. `PackedFrameReader` and the 374-line
@@ -368,7 +368,7 @@ Filled during implementation. Nothing is claimed until it has executed and been 
   8.04 s, 53.0% faster than the 17.09 s monolith baseline. A 1.3 / 1.3 ms sample taken while an
   unrelated SwiftShader process consumed about 850% CPU was rejected. After that workload exited,
   steady `render.p50` measured 1.2 / 1.2 ms and the largest required host-gap share shift was 1.099
-  points. Exact data is in [`runtime-perf-state.md`](../../verification/runtime-perf-state.md).
+  points. Exact data is in [`runtime-perf-state.md`](../../../verification/runtime-perf-state.md).
 - Phase 3.7 parity and census — full parity retained the existing web 72/0/1, desktop 69/2/2 and
   Android 0/0/73 bars. The census recorded 109,605 lines; budgets and the kill switch passed.
 - Phase 3.8 retained surface — PASS. The final `bindings.cpp` intentionally retains state and

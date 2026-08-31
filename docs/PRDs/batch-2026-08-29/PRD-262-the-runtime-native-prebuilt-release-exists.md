@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-262 — the runtime-native prebuilt release exists
 
 **Status:** PROPOSED — filed 2026-08-29. **Hard dependency on Lane A**
-([PRD-229](../refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5,
+([PRD-229](../done/refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5,
 files 1–2): the release workflow's own `gates` job refuses to build without a green CI push run on
 `main` for the release commit, and CI is red on `main` today.
 

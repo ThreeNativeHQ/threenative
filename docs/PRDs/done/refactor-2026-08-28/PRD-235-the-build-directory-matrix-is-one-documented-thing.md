@@ -35,7 +35,7 @@ Two facts already measured make this concrete:
   `TN_ENABLE_NATIVE_PHYSICS=ON` — and today that looks identical to "not run".
 - `threenative-render-pass-class-table-test` **passes in `tn-linux` and fails in an instrumented
   build**, recorded in
-  [native-coverage-scouting-2026-08-28](../../verification/native-coverage-scouting-2026-08-28.md).
+  [native-coverage-scouting-2026-08-28](../../../verification/native-coverage-scouting-2026-08-28.md).
 
 ## Solution
 

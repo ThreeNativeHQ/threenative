@@ -599,13 +599,13 @@ Judge by the named baseline instead:
 - Building a shared abstraction because the work looks repetitive. **PRD-234 died exactly there**:
   690 library lines to carry 60 lines of duplication, every caller keeping its own helper and
   gaining an adapter. See
-  [the kill-switch record](../../verification/native-scripts-adb-kill-switch-2026-08-28.md).
+  [the kill-switch record](../../../verification/native-scripts-adb-kill-switch-2026-08-28.md).
 
 ---
 
 ## 11. The rest of the folder
 
-### 11.1 [PRD-234](../done/PRD-234-the-scripts-tier-has-one-device-library.md) — do not revive it
+### 11.1 [PRD-234](../PRD-234-the-scripts-tier-has-one-device-library.md) — do not revive it
 
 Executed, measured, rejected, reverted. `docs/PRDs/done/`. Read §10's last bullet before proposing
 anything shaped like it.
@@ -634,7 +634,7 @@ SUMMARY: AddressSanitizer: SEGV in dawn::RefCounted::Release()
 
 A Dawn ref-counted object released during teardown after its owner is gone — **a
 shutdown-ownership defect, which is PRD-184's subject.** Full record:
-[asan-shutdown-segv-2026-08-29](../../verification/asan-shutdown-segv-2026-08-29.md).
+[asan-shutdown-segv-2026-08-29](../../../verification/asan-shutdown-segv-2026-08-29.md).
 
 Neither PRD is proven; nobody has run their negative controls. Red-green this defect first, in its
 own fix commit, then attempt them and `git mv` them into this batch **on the strength of a result,

@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-273 — the three effects with no upstream node ship as template source, not as package code
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for the chain
+[PRD-266](../../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for the chain
 seam these attach to. Batch: [docs/PRDs/realism-effects](./README.md).
 
 **Goal: every covered effect `0beqz/realism-effects` exports has a working equivalent here.** Ten
@@ -83,7 +83,7 @@ was read from, MIT, with the original's own upstream citation preserved where it
 (`LensDistortionEffect` cites `marcodiiga.github.io/radial-lens-undistortion-filtering`).
 
 **Which templates get which effect is a look decision made per template**, alongside the choices
-[PRD-267](../lighting/PRD-267-screen-space-gi-ships-in-the-templates.md) makes. Not every template
+[PRD-267](../../lighting/PRD-267-screen-space-gi-ships-in-the-templates.md) makes. Not every template
 gets all three.
 
 ## Acceptance criteria

@@ -123,7 +123,7 @@ naming it belongs to this record, fixing it does not belong to Lane A.
 - **Phase 5 is not finished.** Two files of its scope are converted; the remaining source-text
   assertions in this package are untouched, including two in `crash-handler-policy.test.mjs` that
   read `crash_handlers.cpp` and are currently green. They red on the next reformat and belong to
-  [the refactor batch](../PRDs/refactor-2026-08-28/README.md), not to this one.
+  [the refactor batch](../PRDs/done/refactor-2026-08-28/README.md), not to this one.
 - **The `runtime.cpp` assertions in the converted test were kept**, deliberately: they assert the
   *absence* of `signal(SIGSEGV, ...)` calls, which no executable can observe, and they were not red.
 - No device, no Android build, and no CI run is claimed here.

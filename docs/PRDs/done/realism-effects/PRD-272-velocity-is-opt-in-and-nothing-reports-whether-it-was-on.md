@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-272 — velocity is opt-in through a flag nobody sets, and nothing reports whether it was on
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) — this is the
+[PRD-266](../../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) — this is the
 velocity row of that PRD's honest-tier report. Lands with or before
 [PRD-271](./PRD-271-batchedmesh-reports-its-whole-batching-transform-as-velocity.md), which needs
 the same guard to prove it did not regress. Batch:
@@ -16,7 +16,7 @@ Today the difference between "reprojection is working" and "reprojection is diff
 geometry positions" is invisible from outside the frame.
 
 **Complexity:** one probe, one report field, one negative-control spec = **LOW**. It is small
-because [PRD-266](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) builds
+because [PRD-266](../../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) builds
 the marker it reports through; filed separately because it is the criterion that keeps
 PRD-271's fix from silently rotting.
 
@@ -134,7 +134,7 @@ differently about how it looks.
 Fixing the `BatchedMesh` path — that is
 [PRD-271](./PRD-271-batchedmesh-reports-its-whole-batching-transform-as-velocity.md); this PRD only
 has to make its absence visible. Which temporal stages a template turns on, which is
-[PRD-267](../lighting/PRD-267-screen-space-gi-ships-in-the-templates.md). Deciding the rejection
+[PRD-267](../../lighting/PRD-267-screen-space-gi-ships-in-the-templates.md). Deciding the rejection
 threshold per template, which is a look-adjacent tuning decision and belongs beside the template's
 other render settings.
 
@@ -145,4 +145,4 @@ other render settings.
 the pinned `BatchedMesh` red. `pnpm build` regenerates
 `packages/create-threenative/capabilities.json` in the same commit — a report field absent from the
 manifest does not exist to the agents that would assert on it. Native parity follows
-[PRD-270](../lighting/PRD-270-no-lighting-node-ships-web-only.md).
+[PRD-270](../../lighting/PRD-270-no-lighting-node-ships-web-only.md).
