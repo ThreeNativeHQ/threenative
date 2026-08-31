@@ -39,30 +39,3 @@ body {
   background: rgb(6 16 24 / 80%);
   border: 1px solid #2b728e;
 }
-
-#threenative-launch {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: grid;
-  place-items: center;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
-  background: #061018;
-  color: #7bd6f3;
-  font: 700 0.9rem / 1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.threenative-launch-card {
-  display: grid;
-  gap: 1.25rem;
-  justify-items: center;
-}
-
-.threenative-launch-card img {
-  max-width: min(36vw, 16rem);
-  max-height: 22vh;
-  object-fit: contain;
-}

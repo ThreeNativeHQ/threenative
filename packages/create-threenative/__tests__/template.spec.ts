@@ -280,9 +280,12 @@ describe("template contracts", () => {
         readFile(path.join(root, "vite.config.ts"), "utf8"),
       ]);
       expect(vite, template).toContain("createWebBrandPlugin()");
-      expect(index, template).toContain("data-threenative-launch");
-      expect(main, template).toContain("requestAnimationFrame");
-      expect(main, template).toContain("launch.remove()");
+      // No launch/name card in the DOM. A scaffolded game shows its own in-canvas loading
+      // screen and then the game — never a branded splash with the project's name on it.
+      // The owner asked for this repeatedly; the assertion is inverted so it stays gone.
+      expect(index, template).not.toContain("data-threenative-launch");
+      expect(index, template).not.toContain("threenative-launch-card");
+      expect(main, template).not.toContain("data-threenative-launch");
       expect(config, template).toContain("bootSplash");
       expect(config, template).toContain("icons");
       expect(config, template).not.toMatch(/loading\s*:/u);
