@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
-import { assertIosRuntime, selectIosSimulator } from '../scripts/select-ios-simulator.mjs';
+import {
+  assertIosRuntime,
+  bundleIsRegistered,
+  selectIosSimulator,
+} from '../scripts/select-ios-simulator.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -151,4 +155,33 @@ test('iOS executable verifier builds and exercises native physics fail closed', 
   assert.match(verifier, /rebuildProof\('wrong-gravity', true\)/u);
   assert.match(verifier, /TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED/u);
   assert.match(verifier, /TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED/u);
+});
+
+// The iOS leg failed on a launch, not a build: `simctl install` had put the app on disk and
+// SpringBoard still answered FBSOpenApplicationErrorDomain code 4 ("NotFound"), because
+// LaunchServices had not registered the bundle yet. The verifier now waits for registration, and
+// this is the predicate it waits on.
+test('bundle registration is read from the listapps key, not a substring', () => {
+  const listapps = [
+    '{',
+    '    "dev.threenative.runtime" =     {',
+    '        CFBundleName = "threenative-ios";',
+    '    };',
+    '}',
+  ].join('\n');
+  assert.equal(bundleIsRegistered(listapps, 'dev.threenative.runtime'), true);
+
+  // Not yet registered: install has returned, the app is not in the list.
+  assert.equal(bundleIsRegistered('{\n}', 'dev.threenative.runtime'), false);
+
+  // A different app that merely names ours in its metadata must not read as registered — that
+  // would launch into the same NotFound this check exists to prevent.
+  const mentioned = [
+    '{',
+    '    "com.example.other" =     {',
+    '        CFBundleName = "dev.threenative.runtime";',
+    '    };',
+    '}',
+  ].join('\n');
+  assert.equal(bundleIsRegistered(mentioned, 'dev.threenative.runtime'), false);
 });

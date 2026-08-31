@@ -5,6 +5,7 @@ import {
   ANDROID_16KB_ALIGNMENT,
   assertAndroid16KbAlignment,
   parseLoadSegmentAlignments,
+  resolveObjdumpCandidates,
 } from '../scripts/check-android-16kb-alignment.mjs';
 
 const aligned = [
@@ -37,4 +38,32 @@ test('fails closed when objdump has no LOAD alignment output', () => {
     () => assertAndroid16KbAlignment(['libv8android.so'], { runObjdump: () => 'file format elf64-littleaarch64' }),
     /found no LOAD segments in libv8android\.so/u,
   );
+});
+
+// `llvm-objdump` is not on a GitHub Ubuntu runner's PATH. The check therefore never ran, and the
+// Android lane reported the missing tool as `Failed to download v8-android` — a broken instrument
+// read as a broken dependency.
+test('an NDK toolchain is preferred over PATH, and an explicit override over both', () => {
+  const withoutNdk = resolveObjdumpCandidates({});
+  assert.deepEqual(withoutNdk, ['llvm-objdump', 'objdump']);
+
+  const overridden = resolveObjdumpCandidates({ TN_LLVM_OBJDUMP: '/opt/llvm/bin/llvm-objdump' });
+  assert.equal(overridden[0], '/opt/llvm/bin/llvm-objdump');
+  // PATH stays in the list: an override that does not exist must not remove the fallbacks.
+  assert.ok(overridden.includes('llvm-objdump'));
+});
+
+test('every candidate tried is named when none of them works', () => {
+  const attempted = [];
+  assert.throws(
+    () =>
+      assertAndroid16KbAlignment(['/tmp/libv8android.so'], {
+        runObjdump: (libraryPath) => {
+          attempted.push(libraryPath);
+          throw new Error('spawnSync llvm-objdump ENOENT');
+        },
+      }),
+    /could not inspect \/tmp\/libv8android\.so: spawnSync llvm-objdump ENOENT/u,
+  );
+  assert.deepEqual(attempted, ['/tmp/libv8android.so']);
 });

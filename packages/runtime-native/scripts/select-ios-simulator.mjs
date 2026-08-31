@@ -69,3 +69,19 @@ export function assertIosRuntime(runtime) {
   }
   return runtime;
 }
+
+/**
+ * Has the simulator's LaunchServices registered this bundle yet?
+ *
+ * `simctl install` returns once the bundle is on disk, which is before registration completes.
+ * A launch in that window fails with FBSOpenApplicationErrorDomain code 4, "NotFound", for an app
+ * that is sitting right there — so the installer has to wait for this to become true rather than
+ * for a fixed delay, which would only be a guess about how fast a machine is.
+ *
+ * `simctl listapps` prints a plist keyed by bundle identifier. Match the quoted key, so a bundle
+ * merely mentioned inside another app's metadata cannot pass for a registered one.
+ */
+export function bundleIsRegistered(listappsOutput, identifier) {
+  const quoted = identifier.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  return new RegExp(`"${quoted}"\\s*=`, 'u').test(listappsOutput);
+}

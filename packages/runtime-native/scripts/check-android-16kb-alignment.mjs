@@ -1,6 +1,51 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const ANDROID_16KB_ABIS = Object.freeze(['arm64-v8a', 'x86_64']);
+
+/**
+ * Where to find an objdump that can read an arm64 shared object.
+ *
+ * `llvm-objdump` is not on a GitHub Ubuntu runner's PATH, so the check failed to *start* and the
+ * Android lane reported it as "Failed to download v8-android" — a tool that was missing, read as
+ * a dependency that was broken. The NDK ships one, and any job that reaches this check is
+ * building for Android, so it has an NDK. Look there before PATH.
+ *
+ * Ubuntu's GNU `objdump` prints the same `align 2**N` field this module parses, but its BFD is
+ * usually configured for the host target only and refuses an arm64 object, so it is the last
+ * resort rather than the first.
+ */
+export function resolveObjdumpCandidates(env = process.env) {
+  const candidates = [];
+  if (env.TN_LLVM_OBJDUMP) candidates.push(env.TN_LLVM_OBJDUMP);
+
+  const ndkRoots = [env.ANDROID_NDK_HOME, env.ANDROID_NDK_ROOT, env.ANDROID_NDK].filter(Boolean);
+  const sdkRoot = env.ANDROID_HOME ?? env.ANDROID_SDK_ROOT;
+  if (sdkRoot && existsSync(join(sdkRoot, 'ndk'))) {
+    try {
+      // Newest NDK first: the directory names are versions, and a newer llvm-objdump reads
+      // everything an older one does.
+      for (const version of readdirSync(join(sdkRoot, 'ndk')).sort().reverse())
+        ndkRoots.push(join(sdkRoot, 'ndk', version));
+    } catch {
+      // An unreadable SDK directory is not this check's problem; fall through to PATH.
+    }
+  }
+  for (const ndk of ndkRoots) {
+    const prebuilt = join(ndk, 'toolchains', 'llvm', 'prebuilt');
+    if (!existsSync(prebuilt)) continue;
+    try {
+      for (const host of readdirSync(prebuilt))
+        candidates.push(join(prebuilt, host, 'bin', 'llvm-objdump'));
+    } catch {
+      // Same: an unreadable toolchain directory just means this candidate does not exist.
+    }
+  }
+
+  candidates.push('llvm-objdump', 'objdump');
+  return candidates.filter((candidate, index) => candidates.indexOf(candidate) === index);
+}
 export const ANDROID_16KB_ALIGNMENT = 2 ** 14;
 
 function alignmentDescription(alignment) {
@@ -32,9 +77,20 @@ export function assertAndroid16KbAlignment(libraries, options = {}) {
     throw new Error('Android 16 KB alignment check requires at least one shared library');
   }
 
-  const objdump = options.objdump ?? 'llvm-objdump';
-  const runObjdump = options.runObjdump ?? ((libraryPath) =>
-    execFileSync(objdump, ['-p', libraryPath], { encoding: 'utf8' }));
+  const candidates = options.objdump ? [options.objdump] : resolveObjdumpCandidates();
+  const runObjdump = options.runObjdump ?? ((libraryPath) => {
+    const failures = [];
+    for (const candidate of candidates) {
+      try {
+        return execFileSync(candidate, ['-p', libraryPath], { encoding: 'utf8' });
+      } catch (error) {
+        failures.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    // Name every candidate that was tried. "llvm-objdump ENOENT" alone did not say that three
+    // other places had been looked at, which is the first thing the reader needs.
+    throw new Error(`no usable objdump (tried ${failures.join('; ')})`);
+  });
 
   return libraries.map((libraryPath) => {
     let output;

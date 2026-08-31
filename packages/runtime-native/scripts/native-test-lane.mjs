@@ -33,14 +33,33 @@ export function resolveCmake() {
   return cmake;
 }
 
+/**
+ * Windows installs npm-published CLIs as `.cmd` shims, and `spawnSync` does not apply PATHEXT the
+ * way a shell does — so `pnpm` is ENOENT on a Windows runner while `pnpm.cmd` runs fine. That is
+ * what stopped the Windows desktop leg once its earlier failure was cleared.
+ *
+ * Retry on ENOENT rather than appending `.cmd` up front: `node` and `cmake` are real executables
+ * whose `.cmd` does not exist, so a blanket rewrite would break the commands that already work.
+ */
+export function retryAsWindowsShim(command, platform = process.platform) {
+  if (platform !== "win32") return undefined;
+  if (/[\\/]/u.test(command) || /\.[a-z0-9]+$/iu.test(command)) return undefined;
+  return `${command}.cmd`;
+}
+
 export function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const spawnOptions = {
     cwd: options.cwd ?? runtimeRoot,
     encoding: "utf8",
     env: options.env ?? process.env,
     maxBuffer: 64 * 1024 * 1024,
     timeout: options.timeout ?? 120_000,
-  });
+  };
+  let result = spawnSync(command, args, spawnOptions);
+  if (result.error?.code === "ENOENT") {
+    const shim = retryAsWindowsShim(command);
+    if (shim !== undefined) result = spawnSync(shim, args, spawnOptions);
+  }
   if (result.error) throw result.error;
   const log = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
   if (result.status !== 0) throw new Error(`${command} exited ${result.status}:\n${log}`);

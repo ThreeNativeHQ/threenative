@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
-import { assertIosRuntime, selectIosSimulator } from './select-ios-simulator.mjs';
+import { assertIosRuntime, bundleIsRegistered, selectIosSimulator } from './select-ios-simulator.mjs';
 // The same two assertions the desktop and Android gates run, from one source. A third copy would
 // drift, and the copy that drifts is always the lane nobody runs by hand.
 import { analyzePresentTicks, inspectOverlayBuffer } from './verify-desktop-core.mjs';
@@ -116,6 +116,22 @@ function chooseSimulator() {
   return selected;
 }
 
+function awaitBundleRegistration(device, identifier, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastReason = 'never listed';
+  for (;;) {
+    const result = spawnSync('xcrun', ['simctl', 'listapps', device], { encoding: 'utf8' });
+    if (result.status === 0 && bundleIsRegistered(result.stdout ?? '', identifier)) return;
+    lastReason = (result.stderr ?? '').trim() || `${identifier} not listed`;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `simctl never registered ${identifier} on ${device} within ${timeoutMs}ms: ${lastReason}`,
+      );
+    }
+    sleep(1_000);
+  }
+}
+
 function sleep(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
@@ -215,6 +231,12 @@ if (!existsSync(join(app, 'native-smoke.js'))) throw new Error('Built iOS app om
 mkdirSync(artifactRoot, { recursive: true });
 const simulator = chooseSimulator();
 run('xcrun', ['simctl', 'install', simulator.udid, app]);
+// `simctl install` returns once the bundle is on disk, which is before LaunchServices has
+// registered it. Launching inside that window fails with FBSOpenApplicationErrorDomain code 4,
+// "NotFound" — SpringBoard reporting that its application info provider returned nil for a bundle
+// that is sitting right there. Wait for the registration itself rather than for a fixed delay,
+// which would be a guess about a machine's speed.
+awaitBundleRegistration(simulator.udid, bundleId);
 const startedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 let launch;
 try {
