@@ -140,10 +140,15 @@ function sceneContext(
   // One mesh with a position attribute, so a scene's load() can project UVs the way the
   // real packaged proof carries them; scene.load() must be awaited before enter().
   const proofScene = new Group();
-  proofScene.add(new Mesh(new BufferGeometry().setAttribute(
-    "position",
-    new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
-  ), new MeshBasicMaterial()));
+  proofScene.add(
+    new Mesh(
+      new BufferGeometry().setAttribute(
+        "position",
+        new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
+      ),
+      new MeshBasicMaterial(),
+    ),
+  );
   const assets = {
     audio: (name: string) => Promise.resolve({ name }),
     model: async <T>(): Promise<T> => ({ scene: proofScene }) as T,
@@ -522,10 +527,9 @@ describe("generated template ordinary-frame runtime cost", () => {
         starterPhysics.step(DT);
         update(context, DT);
       }
-      expect(
-        context.patchIdentities.size,
-        "starter Play state-patch high-water sentinel",
-      ).toBe(patchWarmHighWater);
+      expect(context.patchIdentities.size, "starter Play state-patch high-water sentinel").toBe(
+        patchWarmHighWater,
+      );
     } finally {
       starterPhysics.dispose();
     }
