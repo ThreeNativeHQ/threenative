@@ -464,6 +464,12 @@ async function keepServerAlive(server: ChildProcess): Promise<void> {
   });
 }
 
+/**
+ * How long Playwright waits for each dev server to answer before giving up. A cold vite server
+ * compiles the module graph on the first request, and a CI runner is slower than a workstation.
+ */
+const WEB_SERVER_BOOT_TIMEOUT_MS = 300_000;
+
 export default defineConfig({
   globalSetup: "./test-support/root-playwright-setup.ts",
   testDir: "./examples/abyss-vanilla/__tests__",
@@ -480,17 +486,22 @@ export default defineConfig({
       args: [...WEBGPU_BROWSER_ARGS],
     },
   },
+  // Cold vite dev servers on a CI runner compile the whole module graph on the first request,
+  // and the starter's render chain made that graph considerably heavier. 120 s was enough until
+  // it was not: CI run 33350164891 died on "Timed out waiting 120000ms from config.webServer"
+  // while every one of these servers starts in seconds on a warm developer machine. The wait is
+  // a ceiling on patience, not a performance assertion — nothing here measures boot time.
   webServer: [
     {
       command: "pnpm --filter abyss-vanilla dev --host 127.0.0.1 --port 4173 --strictPort",
       url: "http://127.0.0.1:4173",
-      timeout: 120_000,
+      timeout: WEB_SERVER_BOOT_TIMEOUT_MS,
       reuseExistingServer: false,
     },
     {
       command: "node --import tsx playwright.config.ts --starter-look-server",
       url: "http://127.0.0.1:4175",
-      timeout: 120_000,
+      timeout: WEB_SERVER_BOOT_TIMEOUT_MS,
       reuseExistingServer: false,
     },
     ...(hotReloadProject === undefined
@@ -503,14 +514,14 @@ export default defineConfig({
               CHOKIDAR_USEPOLLING: process.env.CHOKIDAR_USEPOLLING ?? "true",
             },
             url: `http://127.0.0.1:${hotReloadPort}`,
-            timeout: 120_000,
+            timeout: WEB_SERVER_BOOT_TIMEOUT_MS,
             reuseExistingServer: false,
           },
         ]),
     {
       command: "pnpm --filter abyss-framework dev --host 127.0.0.1 --port 4178 --strictPort",
       url: `http://127.0.0.1:${replayPort}`,
-      timeout: 120_000,
+      timeout: WEB_SERVER_BOOT_TIMEOUT_MS,
       reuseExistingServer: false,
     },
   ],
