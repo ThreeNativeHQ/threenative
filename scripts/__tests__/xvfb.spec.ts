@@ -60,3 +60,34 @@ describe("scripts/xvfb.sh", () => {
     expect(result.stderr).toMatch(/Xvfb/);
   });
 });
+
+/**
+ * Every root script that opens a window must run on a display the operator does not own. The
+ * playtest runner provisions its own private Xvfb since the capture-environment change, but these
+ * scripts drive Playwright, the visual gate and the conformance runner directly, so the wrapper is
+ * what keeps their windows off `:0`. A sweep once painted 63 scenarios onto a working desktop.
+ */
+describe("root scripts that open windows", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+
+  // Anything that drives a browser, the visual gate, the conformance runner or a native host.
+  const OPENS_A_WINDOW =
+    /\bplaywright test\b|visual-gate|visual-ab|template-baseline|realism-effects-visual|sweep-capture|run-conformance|verify-template-playtests|verify-golden-path|runner\/cli\.js/u;
+
+  it("runs them under scripts/xvfb.sh", () => {
+    const unwrapped = Object.entries(manifest.scripts)
+      .filter(([, command]) => OPENS_A_WINDOW.test(command))
+      .filter(([, command]) => !command.includes("scripts/xvfb.sh"))
+      .map(([name]) => name);
+    expect(unwrapped).toEqual([]);
+  });
+
+  it("never reaches for xvfb-run, whose exit status is its own failing cleanup kill", () => {
+    const offenders = Object.entries(manifest.scripts)
+      .filter(([, command]) => /\bxvfb-run\b/u.test(command))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
+  });
+});
