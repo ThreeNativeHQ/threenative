@@ -1,4 +1,13 @@
 const WORKER_ITERATIONS = 120_000_000;
+/**
+ * Frames the worker gets to deliver before the proof calls it dead.
+ *
+ * This is a liveness backstop, not the assertion: what the proof actually checks is that the
+ * computation did not block the frame loop. The bound must therefore outlast the slowest host that
+ * can still run the scene, and a frame count is a poor unit for CPU work — 240 frames is about four
+ * seconds at 60fps, which a virtualised simulator running 120M iterations does not meet.
+ */
+const WORKER_DELIVERY_FRAME_BOUND = 240;
 const WORKER_SEED = 0x12345678;
 
 export const WORKER_INPUT_CHECKSUM = (WORKER_ITERATIONS ^ WORKER_SEED) >>> 0;
@@ -128,7 +137,11 @@ export function startWorkerProof(
       currentFrame = frame;
       if (published) return;
       if (result === undefined) {
-        if (frame - initialFrame >= 240) {
+        if (frame - initialFrame >= WORKER_DELIVERY_FRAME_BOUND) {
+          // Latch before failing. `fail` throws, the frame loop swallows it, and observeFrame is
+          // called again next frame — an iOS run logged this same failure 441,582 times and left a
+          // 76MB artifact, which buries the one line that mattered.
+          published = true;
           fail(worker, "worker result was not delivered before the frame bound");
         }
         return;
