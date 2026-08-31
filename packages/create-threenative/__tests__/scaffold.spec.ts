@@ -43,10 +43,16 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // The chain now exposes the pass and tone-maps it, so the same radiance was applied twice and
 // exposed again — median frame luminance 203 of 255 against 22 for the template's last good
 // baseline. Both multipliers are 1.5, calibrated on a scaffolded render rather than chosen.
+// Recomputed again for the chasers' measured routes: they now step only once startup
+// reports ready, so a slow lane cannot spend part of the route before anything observes it.
 // Recomputed 2026-08-30 for `platformer` only: c2ba91d9 re-measured that template's performance
 // budgets against the running frame — the previous 70 draws / 3350 triangles were counted behind
 // the loading layer, on a frame the player never sees — and moved the scenario to 200 / 7700
 // against a measured 160 / 6127. The frame-time ceiling deliberately did not move.
+// Recomputed 2026-08-30 for all seven: `pnpm build` regenerated `capabilities.json` and the
+// capability reference derived from it, and every scaffold embeds both, so exporting one public
+// symbol moves every template's bytes. Six of the seven moved for that reason alone; platformer
+// also carries its chasers' route change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -138,13 +144,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // template's maxDrawCalls/maxTriangles is re-measured against the real frame, and `minimal`
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
-  "action-rpg": "2765a505f099f6508017534b941fbbf457ec2f8ade2a80344606767afe768933",
-  defense: "aa46098c90ccb691aab0fa159a68bb45914a970a4ebb7205a964925484577a59",
-  minimal: "7939dc3d650d49d8fbd149abadaf85ee0f74b4cd690e34489dd68ba10ce50713",
-  platformer: "16a4961342b6b11737fb6b90401cb503f6add62c69412a9ba05eacccb11d9a42",
-  racing: "62c96e39e4da58f36387ac1bc95fefb51ba0d0fcc49b946674e2acf24dfb00c5",
-  shooter: "195526ea7b58c9873e681290f344460d56825128668f8b40d1e9f27c609b5f14",
-  starter: "c6e237b57f99cf6bb551471ac457bdaeadf8b1ab7de8ae53843627e42f9e88ce",
+  "action-rpg": "58a930c8b808e25eb753305d7c2ad31d68542e2652c6162ea5d72b4fbfc3c85d",
+  defense: "4f7f26c261a87146b54504084b7bff08018e9de520c8cb2000b6d3038129f56b",
+  minimal: "02b00e4783656c9810c1eda3921e9201a126b5ba1458ad1f295dc5ddf836a9ef",
+  platformer: "52b7509534f5de1a13b9b214eebf1776a455a16ec01d15c3bf464d447fa92bad",
+  racing: "fc76f36c41878d18da168f607d9edca0675c0323b22fa9ed3424656c51e9e412",
+  shooter: "bb978ac7a0e53b080a1910821ac82e6f52352dadb44864404fd87729d0f4aadc",
+  starter: "ac5b37cdb65f029810d1eb038ff03e5ef031705d386f06c39b66cf106bea0177",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
