@@ -7,8 +7,8 @@ prd_contract: v1
 **Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Depends on
 [PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) and
 [PRD-267](./PRD-267-screen-space-gi-ships-in-the-templates.md); gates
-[PRD-268](./PRD-268-light-that-comes-from-off-screen.md) and
-[PRD-269](./PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
+[PRD-268](../lighting/PRD-268-light-that-comes-from-off-screen.md) and
+[PRD-269](../lighting/PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
 [docs/PRDs/lighting](./README.md).
 
 **Goal: every lighting stage this batch turns on is proved to execute on native in the commit that

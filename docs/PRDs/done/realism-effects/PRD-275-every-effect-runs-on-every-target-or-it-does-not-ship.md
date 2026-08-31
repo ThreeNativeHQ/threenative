@@ -9,7 +9,7 @@ prd_contract: v1
 [PRD-272](./PRD-272-velocity-is-opt-in-and-nothing-reports-whether-it-was-on.md),
 [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md),
 [PRD-274](./PRD-274-every-export-has-a-named-tested-equivalent.md); gates all four.
-**Extends [PRD-270](../../lighting/PRD-270-no-lighting-node-ships-web-only.md) rather than repeating
+**Extends [PRD-270](../../useful-defaults/PRD-270-no-lighting-node-ships-web-only.md) rather than repeating
 it** — PRD-270 owns the lighting stages, this owns everything else in the coverage table. Batch:
 [docs/PRDs/realism-effects](./README.md).
 
@@ -36,7 +36,7 @@ the velocity output, `Loop` bodies in the denoiser, the history texture ping-pon
 are the constructs that diverge between Dawn on desktop and wgpu-native on Android, and the seam
 case sees none of them.
 
-[PRD-270](../../lighting/PRD-270-no-lighting-node-ships-web-only.md) makes this argument for the
+[PRD-270](../../useful-defaults/PRD-270-no-lighting-node-ships-web-only.md) makes this argument for the
 lighting stages and stops there. `TRAANode`, `TemporalReprojectNode`, velocity provisioning,
 `MotionBlur`, `SharpenNode` and the three template effects from
 [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md) are outside

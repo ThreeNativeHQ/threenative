@@ -81,7 +81,7 @@ Judged by the same rules and refused, so the next survey does not re-propose the
 - **Merge-with-per-part-tint** (`part`/`weld`, 45 + 12 sites) — passes the same rules as this PRD
   and has the largest raw saving in the survey. Deferred only because no example or template in this
   repository authors merged geometry today, and an export with no caller does not ship. Filed
-  separately as [PRD-277](./PRD-277-merged-geometry-keeps-its-per-part-tint.md).
+  separately as [PRD-277](./useful-defaults/PRD-277-merged-geometry-keeps-its-per-part-tint.md).
 
 ## The kill switch
 

@@ -1,5 +1,10 @@
 # docs/PRDs/lighting — how close to Lumen this stack can get, and what it costs
 
+> **PRD-266, PRD-267 and PRD-270 now live in [`useful-defaults/`](../useful-defaults/README.md)**
+> — re-homed 2026-08-30 because each one pays out to a game that asked for nothing. The rows below
+> keep their sequencing argument; the links point at the new location.
+
+
 **Batch filed 2026-08-29, measured at `7e5a9fe1`.** Read `docs/PRDs/AGENTS.md` for filing rules.
 This file is the evaluation; the PRDs are the work.
 
@@ -94,11 +99,11 @@ exactly this object, and the invented `RenderChain` is withdrawn.
 
 | PRD | Title | Depends on | Complexity |
 | --- | --- | --- | --- |
-| [PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | `WorldEnvironment` is a seam the game fills, and it names the tier it actually ran | — | MEDIUM |
-| [PRD-267](./PRD-267-screen-space-gi-ships-in-the-templates.md) | screen-space GI, reflections and their denoiser ship in the templates | 266 | LOW |
+| [PRD-266](../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | `WorldEnvironment` is a seam the game fills, and it names the tier it actually ran | — | MEDIUM |
+| [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) | screen-space GI, reflections and their denoiser ship in the templates | 266 | LOW |
 | [PRD-268](./PRD-268-light-that-comes-from-off-screen.md) | light that comes from off-screen: an irradiance probe volume on WebGPU | 266 | HIGH |
 | [PRD-269](./PRD-269-motion-vectors-or-the-temporal-filters-lie.md) | motion vectors for skinned and instanced geometry, or the temporal filters lie | 266 | MEDIUM |
-| [PRD-270](./PRD-270-no-lighting-node-ships-web-only.md) | no lighting node ships web-only | 266, 267 | MEDIUM |
+| [PRD-270](../useful-defaults/PRD-270-no-lighting-node-ships-web-only.md) | no lighting node ships web-only | 266, 267 | MEDIUM |
 
 **Order:** 266 first — nothing else can land safely without the seam and the honest tier report.
 Then 267 (visible in a day, and it is what makes the gap in 268 legible on screen). 269 before 268,

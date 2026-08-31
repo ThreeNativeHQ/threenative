@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-271 — a `BatchedMesh` reports its whole batching transform as velocity, every frame, standing still
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for the chain
+[PRD-266](../../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for the chain
 seam only; the defect and its fix are independent of it. **Supersedes the `BatchedMesh` half of
 [PRD-269](../../lighting/PRD-269-motion-vectors-or-the-temporal-filters-lie.md)** — see
 [the batch README](./README.md) for why the rest of PRD-269 no longer has a problem to solve.
@@ -152,7 +152,7 @@ reimplementation here.
 
 `pnpm typecheck && pnpm lint && pnpm test`; the ghosting playtest with the before/after rejection
 fraction pasted; `pnpm visuals:ab` on a template whose scene uses the batching lane. Native parity
-follows [PRD-270](../../lighting/PRD-270-no-lighting-node-ships-web-only.md) — a velocity path proven
+follows [PRD-270](../../useful-defaults/PRD-270-no-lighting-node-ships-web-only.md) — a velocity path proven
 only in the browser is a web-only feature and the charter calls that unfinished.
 `pnpm tsx scripts/count-loc.ts` runs against this one: the defence against the kill switch is that
 the per-sub-draw bookkeeping is not something a game can write portably at all, counted across

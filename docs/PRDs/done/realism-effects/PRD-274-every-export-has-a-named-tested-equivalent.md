@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-274 — every `realism-effects` export has a named, tested equivalent, and the mapping is a gate
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md),
+[PRD-266](../../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md),
 [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md). Batch:
 [docs/PRDs/realism-effects](./README.md).
 
@@ -104,7 +104,7 @@ So a covered row must also be a *findable* row, searchable by plain-words situat
 ## Out of scope
 
 Porting the ten upstream-covered effects — they are already installed and
-[PRD-267](../../lighting/PRD-267-screen-space-gi-ships-in-the-templates.md) wires them into templates.
+[PRD-267](../../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) wires them into templates.
 Native execution, which is
 [PRD-275](./PRD-275-every-effect-runs-on-every-target-or-it-does-not-ship.md) — this PRD proves the
 equivalent *exists*, that one proves it *runs everywhere*. Coverage of any library other than

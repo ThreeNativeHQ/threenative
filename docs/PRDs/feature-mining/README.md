@@ -1,5 +1,9 @@
 # Batch — feature mining from the Three.js ecosystem, 2026-08-28
 
+> **PRD-240 now lives in [`useful-defaults/`](../useful-defaults/README.md)** — re-homed
+> 2026-08-30. It stays in the mining table below because that is where it was found.
+
+
 **Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Fifteen are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
@@ -79,7 +83,7 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [237](../done/PRD-237-objects-answer-their-own-pointer-events.md) **DONE (web)** | `ctx.pointer.on(door, "tapped", …)` — hover, press, tap, drag on any `Object3D`, from `InputMap` + `ScenePicker`, no DOM. The `defense` template's blind tap-to-place gets hover feedback. | [`three.ez`](https://github.com/agargaro/three.ez) `src/events/` (1 258 lines), MIT | 5 → MEDIUM |
 | [238](../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) **DONE (web; native unverified)** | The render projection stops submitting instances the camera cannot see. Prices the existing "per-instance culling is O(n)" decision instead of assuming it. | [`instanced-mesh`](https://github.com/agargaro/instanced-mesh) `src/core/feature/FrustumCulling.ts:172-196`, MIT | 6 → MEDIUM |
 | [239](../done/PRD-239-camera-intent-is-one-portable-gesture-stream.md) **DONE (web)** | The zoom axis that does not exist: `InputMap` has no wheel and the native host installs no `WheelEvent`. Orbit/dolly/pan intent, same on mouse, pinch and stick. | [`camera-controls`](https://github.com/yomotsu/camera-controls) gesture table `src/CameraControls.ts:314-342`, MIT | 5 → MEDIUM |
-| [240](./HIGH/PRD-240-text-is-not-uppercase-only.md) | Text beyond 5×7 uppercase ASCII, HUD and world, on every target — via an offline bake, because the upstream runtime shaper is WASM and iOS JSC has none. | [`glyph`](https://github.com/pmndrs/glyph) bake CLI + `src/shaper.ts:89-92`, MIT | 8 → HIGH |
+| [240](../useful-defaults/PRD-240-text-is-not-uppercase-only.md) | Text beyond 5×7 uppercase ASCII, HUD and world, on every target — via an offline bake, because the upstream runtime shaper is WASM and iOS JSC has none. | [`glyph`](https://github.com/pmndrs/glyph) bake CLI + `src/shaper.ts:89-92`, MIT | 8 → HIGH |
 | [241](../done/PRD-241-a-sequence-is-one-cancellable-object.md) **DONE** | `ctx.tween` takes a curve from the game. Sequencing, cancellation and vector targets turned out to be solved already; the PRD records why. | [`three.ez`](https://github.com/agargaro/three.ez) `src/tweening/`, [`timeline`](https://github.com/pmndrs/timeline) — MIT | 3 → LOW |
 | [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) **DONE** | Compute lifetime stops being hardcoded to `GPUParticles3D` (`game.ts:708`, `:805`, `:353`, `:424`); kernel warmup joins the startup window, which `warmup.ts` has never covered. **Enabler for 243–246.** | all five GPU-sim repos; `softbodies/src/FEMPhysics/FEMPhysics.js:341` hand-rolls the warmup this repo already owns | 6 → MEDIUM |
 | [243](../done/PRD-243-softbody3d-cloth-first.md) | `SoftBody3D` — flag, cape, curtain. Mesh and material from the game. FEM tetrahedra was refused because no caller exists. **Done.** | [`three-simplecloth`](https://github.com/bandinopla/three-simplecloth) (1 073), [`softbodies`](https://github.com/holtsetio/softbodies) (2 067) — MIT | 7 → HIGH |

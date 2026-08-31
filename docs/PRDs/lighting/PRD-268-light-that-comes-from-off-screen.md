@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-268 — light that comes from off-screen: an irradiance probe volume on WebGPU
 
 **Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Depends on
-[PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md); judged after
+[PRD-266](../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md); judged after
 [PRD-269](./PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
 [docs/PRDs/lighting](./README.md).
 
