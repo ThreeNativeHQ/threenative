@@ -23,6 +23,13 @@ export const PLAYTEST_FROZEN_MARKER = "__threenativeFrozen";
  */
 export const PLAYTEST_ADVANCE_TICK_BUDGET_MS = 250;
 
+/**
+ * Core's own bound on first-use compilation, restated here because `playtest` must not depend on
+ * `core`. Kept equal to `STARTUP_COMPILE_BUDGET_MS` in `packages/core/src/startup-readiness.ts`;
+ * an advance that can overlap that work has to allow for it.
+ */
+export const PLAYTEST_STARTUP_COMPILE_BUDGET_MS = 15_000;
+
 export const PLAYTEST_PROTOCOL_LIMITS = {
   maxEntitiesPerSample: 100,
   maxEventsPerDrain: 1_000,

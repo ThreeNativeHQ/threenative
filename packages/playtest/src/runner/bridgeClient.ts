@@ -3,6 +3,7 @@ import {
   PLAYTEST_ASSERTION_REGISTRY,
   PLAYTEST_ADVANCE_TICK_BUDGET_MS,
   PLAYTEST_PROTOCOL_LIMITS,
+  PLAYTEST_STARTUP_COMPILE_BUDGET_MS,
   PLAYTEST_PROTOCOL_VERSION,
   assertJsonSafe,
   jsonByteLength,
@@ -58,7 +59,17 @@ export function advanceTimeoutMs(
   perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS,
 ): number {
   const requested = Number.isFinite(ticks) && ticks > 0 ? ticks : 0;
-  return PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs + requested * perTickMs;
+  // The base covers first-use compilation, not just a round trip. `warmupFrames` advances before
+  // the startup wait, so the shortest advance in a scenario is also the one most likely to be the
+  // call during which the game compiles its shaders and pipelines — 10 ticks exceeded 7500ms on a
+  // two-core runner, which is ~750ms a tick against the ~100ms a tick that steady state costs.
+  // STARTUP_COMPILE_BUDGET_MS is the framework's own bound on that work, so an advance that can
+  // overlap it has to allow for it rather than assume steady state.
+  return (
+    PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs +
+    PLAYTEST_STARTUP_COMPILE_BUDGET_MS +
+    requested * perTickMs
+  );
 }
 
 export class PlaytestBridgeError extends Error {

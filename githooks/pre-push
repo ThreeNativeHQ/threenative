@@ -3,4 +3,5 @@
 # exists so nobody disables the hook permanently the first time they need to push past it.
 [ "${TN_SKIP_PREPUSH:-}" = "1" ] && { echo "pre-push: skipped (TN_SKIP_PREPUSH=1)"; exit 0; }
 echo "pre-push: pnpm ci:fast  (skip with TN_SKIP_PREPUSH=1; full board is pnpm ci:local)"
+echo "         if a generated artifact is stale, run pnpm regen and commit what it moves"
 exec bash scripts/ci-fast.sh
