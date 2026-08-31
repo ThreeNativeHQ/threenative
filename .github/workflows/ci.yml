@@ -199,6 +199,9 @@ jobs:
           node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
             "${package_args[@]}"
           pnpm --dir "$target" install
+          # The template advertises this script, so a stranger runs it on day one. `vite build`
+          # does not typecheck, so nothing else in this job would notice it going red.
+          pnpm --dir "$target" run typecheck
           # MCP surface validation is centralized in verify-golden-path.ts below.
           pnpm exec playwright install --with-deps chromium
           # This job proves the golden path, not the pixels: a runner with no GPU cannot serve the
@@ -263,6 +266,9 @@ jobs:
           node packages/create-threenative/dist/index.js "$target" --template platformer --no-install \
             "${package_args[@]}"
           pnpm --dir "$target" install
+          # The template advertises this script, so a stranger runs it on day one. `vite build`
+          # does not typecheck, so nothing else in this job would notice it going red.
+          pnpm --dir "$target" run typecheck
           pnpm exec playwright install chromium
           mapfile -t scenarios < <(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           scenario_args=()

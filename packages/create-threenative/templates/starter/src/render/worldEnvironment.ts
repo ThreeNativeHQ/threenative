@@ -43,6 +43,7 @@ import {
   smoothstep,
   vec2,
 } from "three/tsl";
+import type { Node } from "three/webgpu";
 
 /** Godot's `Environment.tonemap_mode`, with the modes Three.js actually ships. */
 export type TonemapMode = "aces" | "agx" | "neutral";
@@ -177,15 +178,51 @@ export interface IWorldEnvironmentTarget {
   readonly godraysLight?: DirectionalLight;
 }
 
-type ChainNode = Parameters<typeof bloom>[0];
+/**
+ * What travels down the chain: the composed colour, as TSL's proxied vec4 node — the thing
+ * that carries `.mul`, `.add`, `.rgb` and `.r`. Every stage takes one and returns one, so the
+ * compiler checks the composition instead of taking a cast's word for it.
+ */
+type ChainNode = Node<"vec4">;
 type ChainContext = {
   readonly tier: "high" | "medium" | "low" | "off";
 };
 type ChainStage = {
   readonly name: "ambientOcclusion" | "ssgi" | "godRays" | "ssr" | "sharpen" | "bloom" | "vignette";
   readonly available?: (context: ChainContext) => boolean | string;
+  /** The chain plumbing is stage-agnostic, so it names the node it carries `unknown`. */
   readonly build: (input: unknown, context: ChainContext) => unknown;
 };
+
+/**
+ * The one seam between the chain's `unknown` and this file's node algebra.
+ *
+ * What the chain hands a stage is the colour composed so far — the previous stage's return, or
+ * the exposed scene pass for the first one — and that is always a `ChainNode`. Saying so once,
+ * here, is what lets every stage below be written and *checked* as vec4-in, vec4-out instead of
+ * asserting its way through each expression. The wrapper adds no node to the graph.
+ */
+function stage(definition: {
+  readonly name: ChainStage["name"];
+  readonly available?: (context: ChainContext) => boolean | string;
+  readonly build: (input: ChainNode, context: ChainContext) => ChainNode;
+}): ChainStage {
+  return {
+    ...definition,
+    build: (input, context) => definition.build(input as ChainNode, context),
+  };
+}
+
+/**
+ * `three/addons` declares each TSL stage as its raw node class, and `DenoiseNode` is the only
+ * one in this chain whose declaration omits the element API (`.mul`, `.rgb`, `.r`) that the
+ * proxied node object it actually hands back at runtime carries — every other stage here is a
+ * `ChainNode` on its own, checked by the compiler. This is an assertion and nothing else: no
+ * conversion runs, no node is added to the graph, so it cannot move a pixel.
+ */
+function denoised(node: ReturnType<typeof denoise>): ChainNode {
+  return node as unknown as ChainNode;
+}
 export type OutputRenderer = {
   kind: string;
   raw: unknown;
@@ -314,13 +351,13 @@ export class WorldEnvironment {
 
     const exposed = convertToTexture(scenePass.getTextureNode("output")).mul(options.exposure);
     const giDenoise = (node: ChainNode): ChainNode =>
-      options.denoiseEnabled ? (denoise(node, depth, normal, view) as ChainNode) : node;
+      options.denoiseEnabled ? denoised(denoise(node, depth, normal, view)) : node;
 
     const stages: ChainStage[] = [
-      {
+      stage({
         name: "ssgi",
         build: (input) => {
-          const gi = ssgi(input as ChainNode, depth, normal, view);
+          const gi = ssgi(input, depth, normal, view);
           const tier = SSGI_QUALITY[options.ssgiQuality];
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
@@ -336,14 +373,12 @@ export class WorldEnvironment {
           // lands on. That is the standard approximation, and it is why a red wall tints a
           // white floor at all. `ssgiIntensity` is the game's dial on that second term —
           // gathered light is unbounded, and a small white room at 1.0 blows out.
-          const occlusion = giDenoise(gi.getAONode() as ChainNode) as { r: ChainNode };
-          const indirect = giDenoise(gi.getGINode() as ChainNode) as { rgb: ChainNode };
-          return (input as ChainNode)
-            .mul(occlusion.r)
-            .add((input as ChainNode).mul(indirect.rgb).mul(options.ssgiIntensity));
+          const occlusion = giDenoise(gi.getAONode());
+          const indirect = giDenoise(gi.getGINode());
+          return input.mul(occlusion.r).add(input.mul(indirect.rgb).mul(options.ssgiIntensity));
         },
-      },
-      {
+      }),
+      stage({
         name: "ambientOcclusion",
         build: (input) => {
           const contact = ao(depth, normal, view);
@@ -356,10 +391,10 @@ export class WorldEnvironment {
           // Applied before SSGI by the chain's canonical order; composing it after the GI
           // combine instead darkens crevices the gather re-lit — that is a look choice, and
           // this file is where you make it.
-          return (input as ChainNode).mul((contact as unknown as { r: ChainNode }).r);
+          return input.mul(contact.r);
         },
-      },
-      {
+      }),
+      stage({
         name: "godRays",
         available: () => {
           // Godrays are raymarched against the light's shadow map: the shaft is the volume
@@ -383,19 +418,16 @@ export class WorldEnvironment {
           // depth-coherent — and the shaft edges survive because they sit on geometry
           // silhouettes the depth term owns. Denoise before the floor: the floor's
           // subtraction amplifies relative noise on near-floor values.
-          let shaft: ChainNode = convertToTexture(shafts) as ChainNode;
-          if (options.denoiseEnabled) shaft = denoise(shaft, depth, normal, view) as ChainNode;
+          let shaft: ChainNode = convertToTexture(shafts);
+          if (options.denoiseEnabled) shaft = denoised(denoise(shaft, depth, normal, view));
           // Floor, then scale, then tint. The floor is what turns this from a whole-frame
           // brightener into a shaft renderer; the tint by the light's own colour is what
           // stops a warm sun throwing a white beam.
-          const cleaned = (shaft as { rgb: ChainNode }).rgb
-            .sub(options.godraysFloor)
-            .max(0)
-            .mul(options.godraysIntensity);
-          return (input as ChainNode).add(cleaned.mul(color(light.color)));
+          const cleaned = shaft.rgb.sub(options.godraysFloor).max(0).mul(options.godraysIntensity);
+          return input.add(cleaned.mul(color(light.color)));
         },
-      },
-      {
+      }),
+      stage({
         name: "ssr",
         build: (input) => {
           // Three defaults that together make SSR silently do nothing on a real scene, all
@@ -415,16 +447,16 @@ export class WorldEnvironment {
           const base = convertToTexture(input);
           const reflections = ssr(base, depth, normal as unknown as Parameters<typeof ssr>[2], {
             camera: view,
-            metalnessNode: (metal as unknown as { r: ChainNode }).r,
-            roughnessNode: (rough as unknown as { g: ChainNode }).g,
+            metalnessNode: metal.r,
+            roughnessNode: rough.g,
             reflectNonMetals: true,
           });
           reflections.maxDistance.value = options.ssrMaxDistance;
           reflections.resolutionScale = options.ssrResolutionScale;
-          return (base as ChainNode).add(reflections as ChainNode);
+          return base.add(reflections);
         },
-      },
-      {
+      }),
+      stage({
         name: "sharpen",
         build: (input) => {
           // Last of the image stages but one, because RCAS is defined on the finished
@@ -432,15 +464,15 @@ export class WorldEnvironment {
           // it, so running it before bloom would sharpen edges that bloom then spreads
           // back out. The third argument keeps the node from materialising its own render
           // target; the chain's graph is fused instead.
-          return sharpen(convertToTexture(input), options.sharpenStrength, false) as ChainNode;
+          return sharpen(convertToTexture(input), options.sharpenStrength, false);
         },
-      },
-      {
+      }),
+      stage({
         name: "bloom",
         build: (input) =>
-          (input as ChainNode).add(bloom(convertToTexture(input), options.bloomStrength, 0.5, 0.2)),
-      },
-      {
+          input.add(bloom(convertToTexture(input), options.bloomStrength, 0.5, 0.2)),
+      }),
+      stage({
         name: "vignette",
         build: (input) => {
           // Radius measured from the centre in screen-diagonal units, so the corner is 1
@@ -449,9 +481,9 @@ export class WorldEnvironment {
           // spotlight.
           const radius = screenUV.sub(vec2(0.5, 0.5)).mul(vec2(1.78, 1)).length().mul(1.04);
           const fall = smoothstep(float(0.55), float(1.02), radius).mul(options.vignetteAmount);
-          return (input as ChainNode).mul(fall.oneMinus());
+          return input.mul(fall.oneMinus());
         },
-      },
+      }),
     ];
 
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");

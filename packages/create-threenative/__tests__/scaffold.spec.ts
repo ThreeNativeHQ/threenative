@@ -103,13 +103,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // The cloth and two zoom scenarios also move: with the play scene running from tick 0 their
   // baseline is sampled inside the simulation, so a "gte" that was zero at the menu is now
   // already satisfied. They assert the transition instead.
+  // Recomputed 2026-08-30 for the template typecheck repair: the starter's render chain and
+  // its three optional effects now name the node types they actually take, and the defense
+  // App names the physics its own game defines. Both moves are type-only — the emitted
+  // JavaScript is unchanged apart from two forwarding helpers — so two trees move and the
+  // pixels do not.
   "action-rpg": "35f9d3f6eb495a2be88b998369da4ce53b506408b4f853d110f40ca470e2e824",
-  defense: "a49b2a7b50556bba3998fb57e922cad4a60e84ee350341e14250df9b00c8f190",
+  defense: "46e268a429101ec788171d4dccf84e4869c9ec438a8327ea450dc80dbb4aa9f2",
   minimal: "07d47b36694c09bb3e556424ca614b050737ee838d9ccf368b34e2e95e368393",
   platformer: "bb3ed3881c1aaa533f11f7ac3bdbc072f74f968572a9457361117549787ac3fc",
   racing: "07fba6abc9ca4ce5627d568cf8d85c1afab51cc23ce85a227f9d3b8e59ed52d3",
   shooter: "4d0866bde94a106d32af55b57312ee4cebb5b4e51fda159e0b34cdf59d72e511",
-  starter: "e7a071a89445303b8765265dde8460df8a14d6ef886dc8c7e45c97e1f695ad1c",
+  starter: "4bf2afddf36357408f9c52654b3a4efbb9595b4c6acce5b8988247cd938a8bab",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

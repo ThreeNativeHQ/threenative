@@ -2,7 +2,7 @@
 // Algorithm translated from 0beqz/realism-effects/src/lens-distortion/LensDistortionEffect.js.
 // Source project: MIT. Radial model reference: https://marcodiiga.github.io/radial-lens-undistortion-filtering
 import { Fn, float, uv, vec2, vec4 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 
 // Appearance choices belong to this generated game source.
 export const LENS_DISTORTION_K1 = -0.18;
@@ -15,9 +15,14 @@ export interface ILensDistortionOptions {
   readonly k2?: number;
 }
 
-/** Apply radial undistortion with a small per-channel chromatic offset. */
+/**
+ * Apply radial undistortion with a small per-channel chromatic offset.
+ *
+ * `inputNode` is a **texture** node, not any vec4 node: this effect calls `.sample()` on it,
+ * and only a materialised texture answers that. Pass `convertToTexture(previousStage)`.
+ */
 export function lensDistortion(
-  inputNode: Node<"vec4">,
+  inputNode: TextureNode,
   options: ILensDistortionOptions = {},
 ): Node<"vec4"> {
   const k1 = options.k1 ?? LENS_DISTORTION_K1;

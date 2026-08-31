@@ -2,7 +2,7 @@
 // Algorithm translated from 0beqz/realism-effects/src/gradual-background/GradualBackgroundEffect.js.
 // Source project: MIT.
 import { Fn, linearDepth, mix, smoothstep, uv, vec3, vec4, viewportLinearDepth } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 
 // Appearance choices belong to this generated game source.
 export const GRADUAL_BACKGROUND_START = 0.18;
@@ -21,9 +21,14 @@ export interface IGradualBackgroundOptions {
   readonly top?: readonly [number, number, number];
 }
 
-/** Grade a background by screen height and scene distance toward the upper sky. */
+/**
+ * Grade a background by screen height and scene distance toward the upper sky.
+ *
+ * `inputNode` is a **texture** node, not any vec4 node: this effect calls `.sample()` on it,
+ * and only a materialised texture answers that. Pass `convertToTexture(previousStage)`.
+ */
 export function gradualBackground(
-  inputNode: Node<"vec4">,
+  inputNode: TextureNode,
   options: IGradualBackgroundOptions = {},
 ): Node<"vec4"> {
   const start = options.start ?? GRADUAL_BACKGROUND_START;

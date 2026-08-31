@@ -19,7 +19,22 @@ const brandingTemplates = [
   "shooter",
   "starter",
 ] as const;
-const typecheckTemplates = ["starter", "minimal", "platformer"] as const;
+/**
+ * Every template that advertises a `typecheck` script, read from the shipped manifests rather
+ * than listed here — a template added tomorrow is covered the day it ships, and one that stops
+ * advertising the script is a manifest change, not a silent hole.
+ */
+async function typecheckTemplates(): Promise<string[]> {
+  const names: string[] = [];
+  for (const template of await templateNames()) {
+    const packageJson = JSON.parse(
+      await readFile(path.join(templateRoot, template, "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+    if (packageJson.scripts?.typecheck !== undefined) names.push(template);
+  }
+  if (names.length === 0) throw new Error("No template advertises a typecheck script.");
+  return names;
+}
 // Only `minimal` still ships a camera-attached geometry HUD, because it is the one template with
 // no React and therefore no other way to draw one. Round 10 removed it from platformer, shooter,
 // racing and defense, where it rendered *on top of* their React HUD: four templates drew the same
@@ -176,6 +191,8 @@ async function linkScaffoldBuildDependencies(target: string): Promise<void> {
   await linkScaffoldDependencies(target);
   for (const name of [
     "@tailwindcss/vite",
+    "@types/react",
+    "@types/react-dom",
     "@vitejs/plugin-react",
     "react",
     "react-dom",
@@ -808,11 +825,10 @@ describe("template contracts", () => {
   });
 
   it("should list @types/three in every template that runs tsc", async () => {
-    for (const template of typecheckTemplates) {
+    for (const template of await typecheckTemplates()) {
       const packageJson = JSON.parse(
         await readFile(path.join(templateRoot, template, "package.json"), "utf8"),
-      ) as { devDependencies?: Record<string, string>; scripts?: Record<string, string> };
-      if (packageJson.scripts?.typecheck === undefined) continue;
+      ) as { devDependencies?: Record<string, string> };
       expect(packageJson.devDependencies?.["@types/three"], template).toBeDefined();
     }
   });
@@ -827,19 +843,33 @@ describe("template contracts", () => {
     expect(platform).not.toContain("new Mesh(");
   });
 
-  it("should typecheck a minimal scaffold without manual installs", async () => {
-    const root = await makeTempDir("threenative-minimal-typecheck-");
-    try {
-      const result = await createProject(
-        { install: false, target: "minimal", template: "minimal" },
-        root,
-      );
-      await linkScaffoldDependencies(result.target);
-      await execFileAsync("pnpm", ["typecheck"], { cwd: result.target });
-    } finally {
-      await rm(root, { force: true, recursive: true });
+  // `vite build` does not typecheck, so a template can ship a red `npm run typecheck` and still
+  // pass every other gate here — which is exactly what happened: the starter's render chain
+  // shipped 16 errors on a scaffold nobody had edited. This runs the script the template itself
+  // advertises, on a scaffold nobody has edited, against the same `three` and `@types/three` a
+  // user installs. It is the only gate that reads a template the way `tsc` does.
+  it("should typecheck a pristine scaffold of every template that advertises the script", async () => {
+    // Every template is checked before anything is reported: stopping at the first red would
+    // leave the templates after it untested, which is how a hole this size stays open.
+    const failures: string[] = [];
+    for (const template of await typecheckTemplates()) {
+      const root = await makeTempDir(`threenative-${template}-typecheck-`);
+      try {
+        const result = await createProject({ install: false, target: template, template }, root);
+        await linkScaffoldBuildDependencies(result.target);
+        await execFileAsync("pnpm", ["typecheck"], { cwd: result.target });
+      } catch (error) {
+        // `tsc` names the file and line on stdout; without it the failure says only that a
+        // command exited non-zero, which is not a report anyone can act on.
+        const details = error as { stdout?: string; stderr?: string };
+        const output = `${details.stdout ?? ""}${details.stderr ?? ""}`.trim();
+        failures.push(`${template}:\n${output === "" ? String(error) : output}`);
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
     }
-  }, 15_000);
+    expect(failures.join("\n\n")).toBe("");
+  }, 180_000);
 
   it("should build a scaffold after deleting its optional realism effects", async () => {
     const root = await makeTempDir("threenative-optional-effects-");

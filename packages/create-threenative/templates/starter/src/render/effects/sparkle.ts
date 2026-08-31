@@ -2,7 +2,7 @@
 // Algorithm translated from 0beqz/realism-effects/src/sparkle/SparkleEffect.js.
 // Source project: MIT.
 import { Fn, float, sin, smoothstep, uv, vec3, vec4 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 
 // Appearance choices belong to this generated game source.
 export const SPARKLE_THRESHOLD = 0.55;
@@ -17,8 +17,13 @@ export interface ISparkleOptions {
   readonly threshold?: number;
 }
 
-/** Add deterministic highlight glints without a texture or a framework-owned material. */
-export function sparkle(inputNode: Node<"vec4">, options: ISparkleOptions = {}): Node<"vec4"> {
+/**
+ * Add deterministic highlight glints without a texture or a framework-owned material.
+ *
+ * `inputNode` is a **texture** node, not any vec4 node: this effect calls `.sample()` on it,
+ * and only a materialised texture answers that. Pass `convertToTexture(previousStage)`.
+ */
+export function sparkle(inputNode: TextureNode, options: ISparkleOptions = {}): Node<"vec4"> {
   const threshold = options.threshold ?? SPARKLE_THRESHOLD;
   const count = options.count ?? SPARKLE_COUNT;
   const length = options.length ?? SPARKLE_LENGTH;
