@@ -4,10 +4,10 @@ prd_contract: v1
 
 # PRD-267 — the starter scaffold fails its own tests
 
-**Status:** PARTIAL — filed 2026-08-30 from `golden-path`, the last red job in CI. **Mostly fixed**
-in `6e327a7f`: eighteen scenarios gained the menu-entry steps they had been missing, and the run
-went from **40 failures across seven kinds to one scenario's movement assertion**. What remains is
-§2, below — a harness limitation the menu exposed.
+**Status:** CLOSED WITH LOCAL EVIDENCE, 2026-08-31.** The audit now covers both shipped playtest
+roots and all eight scaffolded template matrices pass locally. Golden-path CI and A2 release
+evidence were not reproduced in this run; the executed scope and remaining evidence boundary are
+recorded in [`starter-kit Linchpin evidence`](../../../verification/starter-kits-linchpin-resume-2026-08-31.md).
 
 **Goal: a stranger who scaffolds a project and runs `npm test` sees it pass.**
 Today they see a wall of failures, and they see it on the default template.

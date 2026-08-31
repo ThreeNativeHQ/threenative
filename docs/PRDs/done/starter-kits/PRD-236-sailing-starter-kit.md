@@ -4,7 +4,10 @@ prd_contract: v1
 
 # PRD-236 — The wave field is the engine's; the ocean is the kit's
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
+**Status: CLOSED, 2026-08-31.** `WaveField`, `Buoyancy3D`, the `sailing` template, numeric TSL
+proof, and the enumeration sweep are delivered. Browser template playtests and desktop native
+conformance passed; Android/iOS device lanes were not run. See the
+[`starter-kit Linchpin evidence`](../../../verification/starter-kits-linchpin-resume-2026-08-31.md).
 
 Source of the borrowed material: [`VictorZakharov/beautiful-water`](https://github.com/VictorZakharov/beautiful-water),
 MIT, cloned at depth 1 on 2026-08-28. Every claim in "What the source actually contains" was read

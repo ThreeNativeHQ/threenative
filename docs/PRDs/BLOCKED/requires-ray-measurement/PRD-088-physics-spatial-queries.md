@@ -7,7 +7,7 @@ prd_contract: v1
 **Status: BLOCKED — the Phase 0 ABI-selection criterion is unmet, 2026-08-12.** The web and
 Linux desktop implementation is present, but the required pre-implementation ray measurement
 was not recorded. Android and iOS execution were not performed on this operator machine.
-**Parent:** [PRD-087](../../starter-kits/PRD-087-genre-borrow-ledger.md), which scored this **91/100** — the
+**Parent:** [PRD-087](../../done/starter-kits/PRD-087-genre-borrow-ledger.md), which scored this **91/100** — the
 only surveyed candidate above the Tier-1 bar.
 **Blocks:** [PRD-089](../../done/PRD-089-shooter-starter-kit.md) (hitscan, radius damage, target
 acquisition), [PRD-090](../../done/PRD-090-racing-starter-kit.md) (on-road probe),
