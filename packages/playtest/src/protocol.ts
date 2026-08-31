@@ -8,6 +8,21 @@ export const PLAYTEST_PROTOCOL_VERSION = 1 as const;
  */
 export const PLAYTEST_FROZEN_MARKER = "__threenativeFrozen";
 
+/**
+ * How much wall clock one advanced tick may take before the runner calls the page hung.
+ *
+ * `operationTimeoutMs` bounds a request/response round trip, which is the right shape for every
+ * bridge call except one: `advance` is bulk work whose duration scales with the ticks asked for,
+ * so a fixed budget is wrong for it by construction. A scenario advancing 600 ticks in a single
+ * call exceeded 5 s on a two-core CI runner and was reported as a timed-out operation — the page
+ * was not hung, it was doing exactly what it was told, slowly.
+ *
+ * 250 ms is about 2.5x the ~100 ms per tick measured on the slowest lane this repository runs
+ * (SwiftShader on a two-core runner). It is a hang detector, not a schedule: no measurement
+ * anywhere reads it, and a run that needs it is already reporting its own tick counts.
+ */
+export const PLAYTEST_ADVANCE_TICK_BUDGET_MS = 250;
+
 export const PLAYTEST_PROTOCOL_LIMITS = {
   maxEntitiesPerSample: 100,
   maxEventsPerDrain: 1_000,

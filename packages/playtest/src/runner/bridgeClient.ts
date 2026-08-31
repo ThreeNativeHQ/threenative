@@ -1,6 +1,7 @@
 import {
   PLAYTEST_BRIDGE_GLOBAL,
   PLAYTEST_ASSERTION_REGISTRY,
+  PLAYTEST_ADVANCE_TICK_BUDGET_MS,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   assertJsonSafe,
@@ -39,9 +40,25 @@ const BROWSER_CAPABILITIES = [
 /** The only seam between assertion orchestration and an application bridge. */
 export interface IBridgeTransport {
   readonly capabilities: readonly string[];
-  call<T>(method: string, argument?: unknown): Promise<T>;
+  call<T>(method: string, argument?: unknown, timeoutMs?: number): Promise<T>;
   close(): Promise<void>;
   waitForBridge(timeoutMs: number): Promise<boolean>;
+}
+
+/**
+ * The budget for one `advance` call: the round-trip allowance plus time for the ticks themselves.
+ *
+ * Every other bridge method is a request and a reply, so `operationTimeoutMs` fits. `advance` runs
+ * the game loop N times before replying, so its honest bound grows with N. Fixed at 5 s it failed
+ * `starter-game-over` — 600 ticks in one call — on a two-core runner, and reported it as
+ * `TN_PLAYTEST_OPERATION_TIMEOUT`, which reads as a hung page rather than a slow one.
+ */
+export function advanceTimeoutMs(
+  ticks: number,
+  perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS,
+): number {
+  const requested = Number.isFinite(ticks) && ticks > 0 ? ticks : 0;
+  return PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs + requested * perTickMs;
 }
 
 export class PlaytestBridgeError extends Error {
@@ -69,8 +86,8 @@ export class PlaywrightTransport implements IBridgeTransport {
     private readonly operationTimeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
   ) {}
 
-  async call<T>(method: string, argument?: unknown): Promise<T> {
-    return bridgeCall<T>(this.page, method, argument, this.operationTimeoutMs);
+  async call<T>(method: string, argument?: unknown, timeoutMs?: number): Promise<T> {
+    return bridgeCall<T>(this.page, method, argument, timeoutMs ?? this.operationTimeoutMs);
   }
 
   async close(): Promise<void> {}
@@ -159,7 +176,8 @@ export async function connectPlaytestBridgeTransport(
   }
   return {
     advance: async (ticks) => {
-      await transport.call("advance", ticks);
+      // Scaled by the work requested, not fixed. See PLAYTEST_ADVANCE_TICK_BUDGET_MS.
+      await transport.call("advance", ticks, advanceTimeoutMs(ticks));
     },
     applySetup: async (request) => {
       assertBoundedPayload(request);
