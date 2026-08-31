@@ -150,8 +150,16 @@ export class Level extends Scene<GameState, IPhysicsContext> {
         dt,
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
-      chaser.update(dt);
-      avoidanceChaser.update(dt);
+      // The chasers walk a measured route, and `pathLength` assertions read how much of it was
+      // walked while a runner was watching. Stepping them before the world reports startup ready
+      // spends part of the route where nothing can observe it, so the measurement becomes a
+      // function of how long startup took — it passed on a workstation and failed in CI at
+      // `4.43 of a required 6`, with `routeComplete` already true before the scenario began.
+      // Everything else in this frame keeps running: only the measured routes wait.
+      if (frameCtx.startup.phase === "ready") {
+        chaser.update(dt);
+        avoidanceChaser.update(dt);
+      }
       patrol.update(dt);
       checkpoints.pass(character.mesh.position);
       checkpoints.update(dt, character);
