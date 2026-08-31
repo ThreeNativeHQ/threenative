@@ -353,6 +353,7 @@ describe("starter playtest proof", () => {
     ) as {
       assert: {
         resources: Array<{
+          allowTrivial?: string;
           changed?: boolean;
           equals?: unknown;
           gte?: number;
@@ -370,13 +371,24 @@ describe("starter playtest proof", () => {
       "utf8",
     );
 
-    expect(level).toEqual({ changed: true, gte: -1, id: "state", lte: 1, path: "levelX" });
+    // The row asserts the range and nothing else. `changed: true` used to be here and was the
+    // defect: `levelX` was set at `ctx.after(0.25, ...)` so the transition could only be observed
+    // if the runner's first sample landed inside 0.25 s of boot. Same commit, two machines —
+    // firstTick 6 here and 47 in CI — so the row passed on a workstation and failed closed as
+    // TN_PLAYTEST_ASSERTION_TRIVIAL on the runner. The range is the real assertion and both
+    // sentinels fall outside it: -99 means the level never built, 2 means the seeded draw did not
+    // advance `ctx.random`.
+    expect(level).toMatchObject({ gte: -1, id: "state", lte: 1, path: "levelX" });
+    expect(level).not.toHaveProperty("changed");
     expect(level).not.toHaveProperty("equals");
+    expect(level?.allowTrivial).toMatch(/race with boot time/u);
     expect(play).toContain("const randomStateBeforeLevel = ctx.random.state");
     expect(play).toContain(
       "const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX",
     );
-    expect(play).toContain("ctx.after(0.25, () => ctx.state.set({ levelX: seededLevelX }))");
+    // Set with the level, not on a timer the observer has to win a race against.
+    expect(play).toContain("ctx.state.set({ levelX: seededLevelX });");
+    expect(play).not.toContain("ctx.after(0.25,");
   });
 
   it("should load the packaged texture and GLB through the starter scene", async () => {
