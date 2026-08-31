@@ -413,9 +413,16 @@ describe("ProbeVolume", () => {
   });
 
   it("isolates the previous atlas while pass zero removes lighting during a re-bake", async () => {
+    // A fixed clock, for the same reason the budget tests inject one: `process` fails closed when
+    // a single work item outruns `bakeBudgetMs`, and with the real clock that verdict depends on
+    // how loaded the machine is. This test is about which atlas the sampler reads during a
+    // re-bake, and it was failing in CI on `work item cost 22.667ms exceeds bakeBudgetMs 16ms` —
+    // a wall-clock measurement taken by a test that measures nothing about time. The guard itself
+    // stays exercised, deterministically, by the two tests that advance this clock on purpose.
     const subject = volume({
       bakeBudgetMs: 16,
       maxWorkItemsPerFrame: 3,
+      now: () => 0,
       report: () => undefined,
     });
     subject.setProbeCoefficients(0, 0, 0, coefficient(1, 0, 0));

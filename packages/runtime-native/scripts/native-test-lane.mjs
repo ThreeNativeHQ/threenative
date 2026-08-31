@@ -95,6 +95,34 @@ export function nativeTestExecutable(buildDirectory, target) {
   return join(buildDirectory, process.platform === "win32" ? `${target}.exe` : target);
 }
 
+/**
+ * Package resolution the shipping build already did, carried into a verification build.
+ *
+ * These builds reuse the shipping build's compilers because a fresh configure cannot rediscover
+ * them. The same turns out to be true of anything a toolchain resolved: on Windows the shipping
+ * build finds CURL through vcpkg, and a verification configure that did not carry that forward
+ * died on "Could NOT find CURL" for a library that is installed and had already been located once.
+ *
+ * Only entries the shipping cache actually resolved are forwarded. A `-NOTFOUND` value is a
+ * record that the search failed, and passing it on would pin the failure instead of retrying it.
+ */
+export function inheritedCacheArguments(cache) {
+  const inherited = [
+    "CMAKE_TOOLCHAIN_FILE",
+    "CMAKE_PREFIX_PATH",
+    "VCPKG_TARGET_TRIPLET",
+    "CURL_LIBRARY",
+    "CURL_INCLUDE_DIR",
+  ];
+  const args = [];
+  for (const name of inherited) {
+    const value = new RegExp(`^${name}:[^=]*=(.*)$`, "mu").exec(cache)?.[1];
+    if (value === undefined || value === "" || value.endsWith("-NOTFOUND")) continue;
+    args.push(`-D${name}=${value}`);
+  }
+  return args;
+}
+
 function configureVerificationBuild(cmake, suffix, cacheVariables) {
   const buildDirectory = desktopBuildDirectory(suffix);
   const shippingCache = join(desktopBuildDirectory(), "CMakeCache.txt");
@@ -128,6 +156,7 @@ function configureVerificationBuild(cmake, suffix, cacheVariables) {
       `-DCMAKE_MAKE_PROGRAM=${ninja}`,
       `-DCMAKE_C_COMPILER=${cached("CMAKE_C_COMPILER")}`,
       `-DCMAKE_CXX_COMPILER=${cached("CMAKE_CXX_COMPILER")}`,
+      ...inheritedCacheArguments(cache),
       ...cacheVariables.map(([name, value]) => `-D${name}=${value}`),
     ],
     { timeout: 900_000 },

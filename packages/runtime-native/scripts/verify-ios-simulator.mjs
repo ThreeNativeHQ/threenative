@@ -238,28 +238,40 @@ run('xcrun', ['simctl', 'install', simulator.udid, app]);
 // which would be a guess about a machine's speed.
 awaitBundleRegistration(simulator.udid, bundleId);
 const startedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
-let launch;
-try {
-  launch = run('xcrun', ['simctl', 'launch', '--terminate-running-process', simulator.udid, bundleId]);
-} catch (error) {
-  const diagnostics = launchDiagnostics(simulator.udid, startedAt);
-  writeFileSync(join(artifactRoot, 'simulator-launch-failure.log'), diagnostics);
-  throw new Error(`${error instanceof Error ? error.message : String(error)}\n\niOS launch diagnostics:\n${diagnostics}`);
-}
-if (!/:\s*\d+\b/u.test(launch)) throw new Error(`simctl launch did not report a pid: ${launch}`);
 
 const requiredMarkers = [
   'TN_NATIVE_SMOKE_READY:webgpu',
   'TN_NATIVE_SMOKE_FIRST_FRAME',
   'TN_NATIVE_SMOKE_300_FRAMES:300',
 ];
-let logs = '';
-const deadline = Date.now() + 90_000;
-while (Date.now() < deadline) {
-  sleep(2_000);
-  logs = unifiedLog(simulator.udid, startedAt);
-  if (requiredMarkers.every((marker) => logs.includes(marker))) break;
+
+// Read the app's stdout, not the unified log.
+//
+// The runtime writes these markers with `std::cout`. `log show` carries os_log records, and a
+// simulator app's stdout is not one — so polling it for 90s was reading a stream the markers were
+// never in, and reported "missed markers" for an app that was running correctly. The broader log
+// showed the app becoming active, creating its SDL view controller, and then going silent, with no
+// `[Mystral]` line anywhere: not a hang, an instrument pointed at the wrong place.
+//
+// `--console-pipe` attaches stdout and stderr to this process and returns when the app exits. The
+// smoke app renders its 300 frames and exits, so the timeout is a backstop; whatever it printed
+// before being killed is still captured and still answers the question.
+const launched = spawnSync(
+  'xcrun',
+  ['simctl', 'launch', '--terminate-running-process', '--console-pipe', simulator.udid, bundleId],
+  { cwd: workspaceRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 180_000 },
+);
+if (launched.error) {
+  const diagnostics = launchDiagnostics(simulator.udid, startedAt);
+  writeFileSync(join(artifactRoot, 'simulator-launch-failure.log'), diagnostics);
+  throw new Error(`${launched.error.message}\n\niOS launch diagnostics:\n${diagnostics}`);
 }
+const consoleOutput = `${launched.stdout ?? ''}${launched.stderr ?? ''}`;
+writeFileSync(join(artifactRoot, 'simulator-console.log'), consoleOutput);
+
+// The unified log stays as the second source: it holds the crash reports and the system-side
+// refusals that stdout cannot show.
+const logs = `${consoleOutput}\n${unifiedLog(simulator.udid, startedAt)}`;
 const missingMarkers = requiredMarkers.filter((marker) => !logs.includes(marker));
 if (missingMarkers.length > 0) {
   // The app launched and reported a pid, so "markers missing" alone says nothing about why: it
@@ -280,7 +292,8 @@ if (missingMarkers.length > 0) {
   const tail = broadLog.split('\n').slice(-60).join('\n');
   throw new Error(
     `iOS proof missed markers: ${missingMarkers.join(', ')}\n` +
-      `Process-filtered log was ${logs.length} bytes; the broader log tail follows.\n${tail}`,
+      `App console was ${consoleOutput.length} bytes and exited ${launched.status}; ` +
+      `the broader system log tail follows.\n${tail}`,
   );
 }
 if (/GPUValidationError|Validation Error|TN_IOS_PROOF_FAILED|TypeError|ReferenceError|FATAL/u.test(logs)) {

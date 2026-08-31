@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
-import { quoteForWindowsShell, retryAsWindowsShim } from '../scripts/native-test-lane.mjs';
+import {
+  inheritedCacheArguments,
+  quoteForWindowsShell,
+  retryAsWindowsShim,
+} from '../scripts/native-test-lane.mjs';
 
 // Windows installs npm-published CLIs as `.cmd` shims, and `spawnSync` does not apply PATHEXT the
 // way a shell does. The Windows desktop leg died on `spawnSync pnpm ENOENT` inside
@@ -36,4 +40,29 @@ test('only arguments that need quoting are quoted', () => {
   assert.equal(quoteForWindowsShell('a&b'), '"a&b"');
   assert.equal(quoteForWindowsShell('say "hi"'), '"say \\"hi\\""');
   assert.equal(quoteForWindowsShell(''), '""');
+});
+
+// A verification build reuses the shipping build's compilers because a fresh configure cannot
+// rediscover them. On Windows the same is true of CURL, which the shipping build finds through
+// vcpkg — without carrying that forward, the physics contract configure died on "Could NOT find
+// CURL" for a library that was installed and had already been located once.
+test('only resolved cache entries are carried into a verification build', () => {
+  const cache = [
+    'CMAKE_TOOLCHAIN_FILE:FILEPATH=C:/vcpkg/scripts/buildsystems/vcpkg.cmake',
+    'CURL_INCLUDE_DIR:PATH=C:/vcpkg/installed/x64-windows/include',
+    'CURL_LIBRARY:FILEPATH=C:/vcpkg/installed/x64-windows/lib/libcurl.lib',
+    'LibUSB_LIBRARY:FILEPATH=LibUSB_LIBRARY-NOTFOUND',
+    'CMAKE_PREFIX_PATH:PATH=',
+  ].join('\n');
+
+  assert.deepEqual(inheritedCacheArguments(cache), [
+    '-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake',
+    '-DCURL_LIBRARY=C:/vcpkg/installed/x64-windows/lib/libcurl.lib',
+    '-DCURL_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include',
+  ]);
+
+  // A `-NOTFOUND` is a record that the search failed. Forwarding it would pin the failure into the
+  // new build instead of letting it search again.
+  assert.deepEqual(inheritedCacheArguments('CURL_LIBRARY:FILEPATH=CURL_LIBRARY-NOTFOUND'), []);
+  assert.deepEqual(inheritedCacheArguments(''), []);
 });
