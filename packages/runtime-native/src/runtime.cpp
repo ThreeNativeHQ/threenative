@@ -1437,6 +1437,16 @@ public:
         return webgpu::presentCount(bindingsState_);
     }
 
+    bool isStartupReady() const override {
+        if (!jsEngine_) return false;
+        auto ready = jsEngine_->getGlobalProperty("__TN_STARTUP_READY__");
+        return jsEngine_->isBoolean(ready) && jsEngine_->toBoolean(ready);
+    }
+
+    bool hasCapturedFrame() const override {
+        return webgpu::isScreenshotReady(bindingsState_);
+    }
+
     void* getWebGPUBindingsState() const override {
         return bindingsState_;
     }

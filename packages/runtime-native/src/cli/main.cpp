@@ -1140,6 +1140,39 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
         // saveScreenshot() owns the GPU readback fence, so no fixed delay is needed here.
     }
 
+    // The requested frames are done; the world may still not be on screen. StartupReadiness
+    // resolves on five consecutive in-budget frames or, for a host that never produces one — every
+    // software rasteriser — only when its bounded window expires. A 300-frame run on llvmpipe
+    // finished in 3.0s against that 10s window and captured five distinct colours, while a slower
+    // run of the same build took 16.8s, crossed it, and captured 17,163. Keep presenting until the
+    // gate opens so the capture holds the world rather than the loading state.
+    //
+    // Bounded by the gate's own worst case plus margin: a game that never becomes ready must still
+    // produce a frame and a report rather than hanging the lane.
+    constexpr auto kStartupCaptureBudget = std::chrono::seconds(30);
+    const auto readyDeadline = std::chrono::steady_clock::now() + kStartupCaptureBudget;
+    // Both conditions matter and they are not the same. Readiness says the world is on screen;
+    // a captured frame says there is anything at all to save. A CI run whose 300 frames all elapsed
+    // during asset load had neither, and `saveScreenshot` refused with "No rendered frame available
+    // yet" — no frame count printed, exit 1.
+    bool sawReady = runtime.isStartupReady();
+    bool sawFrame = runtime.hasCapturedFrame();
+    while ((!sawReady || !sawFrame) && std::chrono::steady_clock::now() < readyDeadline) {
+        runtime.requestFrameScreenshot();
+        if (!runtime.pollEvents()) break;
+        sawReady = runtime.isStartupReady();
+        sawFrame = runtime.hasCapturedFrame();
+    }
+    if (!opts.quiet) {
+        if (sawReady && sawFrame) {
+            std::cout << "TN_STARTUP_CAPTURE_READY:1" << std::endl;
+        } else {
+            std::cerr << "Warning: startup gate never opened within "
+                      << kStartupCaptureBudget.count() << "s; capturing anyway." << std::endl;
+            std::cout << "TN_STARTUP_CAPTURE_READY:0" << std::endl;
+        }
+    }
+
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     bool success = runtime.saveScreenshot(opts.screenshotPath);

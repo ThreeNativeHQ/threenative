@@ -43,6 +43,42 @@ function starterFrame({ cyanPixels }) {
   return png;
 }
 
+test('a capture taken before the startup gate opened is not evidence', () => {
+  // The bimodal starter red: 300 llvmpipe frames finished in 3.0s against a 10s readiness window
+  // and captured five distinct colours, while a slower run of the same build took 16.8s, crossed
+  // it, and captured 17,163. The host now holds the capture until the gate opens and reports which
+  // happened; a 0 must fail the lane rather than reach the pixel checks.
+  const base = [
+    'TN_NATIVE_SMOKE_READY:webgpu',
+    'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb',
+    'TN_NATIVE_SMOKE_300_FRAMES:300',
+    'Rendered 300 frames in 3001ms',
+  ].join('\n');
+  assert.deepEqual(analyzeStarterLog(`${base}\nTN_STARTUP_CAPTURE_READY:1`), []);
+  assert.deepEqual(analyzeStarterLog(`${base}\nTN_STARTUP_CAPTURE_READY:0`), [
+    'startup gate never opened before capture (TN_STARTUP_CAPTURE_READY:0)',
+  ]);
+});
+
+test('the unrendered-frame floor does not judge small synthetic fixtures', () => {
+  // distribution.test.mjs feeds inspectStarterScreenshot a 16x16 frame of two colours to prove the
+  // installed verifier resolves packaged display support. That frame is exactly what it claims to
+  // be, and a diversity floor written for a 1280x720 capture must not reject it.
+  const directory = makeTempDirSync('starter-fixture-test-');
+  const path = join(directory, 'frame.png');
+  const png = new PNG({ height: 16, width: 16 });
+  for (let index = 0; index < 256; index += 1) {
+    const offset = index * 4;
+    png.data[offset] = 20;
+    png.data[offset + 1] = 220;
+    png.data[offset + 2] = 240;
+    png.data[offset + 3] = 255;
+  }
+  png.data[0] = 21;
+  writeFileSync(path, PNG.sync.write(png));
+  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 256);
+});
+
 test('starter desktop screenshot requires the rendered cyan proof asset', () => {
   const directory = makeTempDirSync('starter-desktop-test-');
   const path = join(directory, 'frame.png');
@@ -62,8 +98,10 @@ test('a frame that was never drawn is named as the capture, not a missing asset'
   // message pointed the reader at a texture that had loaded correctly.
   const directory = makeTempDirSync('starter-unrendered-test-');
   const path = join(directory, 'frame.png');
-  const png = new PNG({ height: 16, width: 16 });
-  for (let index = 0; index < 256; index += 1) {
+  // Capture-sized on purpose: the floor is deliberately not applied to small fixtures, because a
+  // 16x16 synthetic frame is legitimately a handful of colours.
+  const png = new PNG({ height: 128, width: 128 });
+  for (let index = 0; index < 128 * 128; index += 1) {
     const offset = index * 4;
     const flat = index % 5;
     png.data[offset] = flat;

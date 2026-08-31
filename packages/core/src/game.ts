@@ -163,6 +163,11 @@ export type GamePlugin<
 
 /** The `display.maxFps` a game gets when its config does not name one. */
 const DEFAULT_TARGET_FPS = 60;
+/**
+ * The global a native host reads to know the world is on screen. Named here rather than written
+ * inline so the host and the framework agree on one spelling.
+ */
+const STARTUP_READY_GLOBAL = "__TN_STARTUP_READY__";
 
 export interface IGameConfig<
   TState extends Record<string, unknown> = Record<string, unknown>,
@@ -774,6 +779,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     void startupReadiness.whenReady().then(() => {
       projectionSettled = true;
       markProjectionSettled();
+      // A host capturing a frame has no other way to know the world is on screen. Counting frames
+      // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
+      // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
+      // and captures the loading state. The native screenshot path waits on this flag.
+      (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
     });
     const startupCompile: StartupCompile = async (): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
