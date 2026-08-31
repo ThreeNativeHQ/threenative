@@ -16,6 +16,117 @@ function loader(release: ReturnType<typeof vi.fn>) {
 }
 
 describe("TerrainTiles", () => {
+  it("counts retained topology storage against the hard byte cap", () => {
+    expect(
+      () =>
+        new TerrainTiles({
+          surface: new MeshBasicMaterial(),
+          residentByteBudget: 100_000,
+          residentTileBudget: 1,
+          sampleHeight,
+          streamRadius: 0,
+          tileResolution: 9,
+          tileSize: 16,
+          topologyObservation: {
+            columns: 129,
+            depth: 256,
+            origin: { x: 0, z: 0 },
+            rows: 129,
+            width: 256,
+          },
+        }),
+    ).toThrow(/residentByteBudget/u);
+  });
+
+  it("uses the topology field's stored samples for resident tile rendering and collision", () => {
+    let calls = 0;
+    let colliderHeights: Float32Array | undefined;
+    const tiles = new TerrainTiles({
+      createCollider: ({ field }) => {
+        colliderHeights = field.toColliderHeights();
+        return { dispose: () => undefined };
+      },
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight: () => calls++,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+      topologyObservation: {
+        columns: 17,
+        depth: 16,
+        origin: { x: 0, z: 0 },
+        rows: 9,
+        width: 32,
+      },
+      worldPasses: {
+        dispatchBudget: 1,
+        erosion: {
+          depositionRate: 0.35,
+          erosionRate: 0.22,
+          evaporation: 0.04,
+          iterations: 0,
+          rainfall: 0.08,
+          sedimentCapacity: 0.7,
+          timeStep: 0.05,
+        },
+        gpu: false,
+      },
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+
+    const topology = tiles.debug().topology as {
+      flow: readonly number[];
+      heights: readonly number[];
+    };
+    const tile = tiles.getTile("0:0");
+    if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+    expect(colliderHeights).toBeDefined();
+    for (let row = 0; row < 9; row += 1) {
+      for (let column = 0; column < 9; column += 1) {
+        const topologyIndex = row * 17 + column + 4;
+        const x = -8 + column * 2;
+        const z = -8 + row * 2;
+        expect(tile.field.heightAt(x, z)).toBe(topology.heights[topologyIndex]);
+        expect(tile.field.sample("flow", x, z)).toBe(topology.flow[topologyIndex]);
+        expect(colliderHeights?.[column * 9 + row]).toBe(topology.heights[topologyIndex]);
+      }
+    }
+    tiles.dispose();
+  });
+
+  it("keeps both LOD surfaces visible for a measurable multi-frame transition", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+    const renderer = {} as never;
+
+    tiles.follow({ x: 0, z: 0 });
+    tiles.follow({ x: 12, z: 0 });
+
+    const tile = tiles.getTile("0:0");
+    if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+    const visible = (): number => tile.lod.children.filter((child) => child.visible).length;
+    expect(visible()).toBe(2);
+    tiles.process(renderer);
+    expect(visible()).toBe(2);
+    tiles.process(renderer);
+    expect(visible()).toBe(2);
+    tiles.process(renderer);
+    expect(visible()).toBe(1);
+    expect(tiles.maxLodTransitionFrames).toBeGreaterThanOrEqual(3);
+    tiles.dispose();
+  });
+
   it("keeps resident tile count and bytes under caps while evicting complete units", () => {
     const release = vi.fn(() => true);
     const disposed: string[] = [];
@@ -94,6 +205,7 @@ describe("TerrainTiles", () => {
 
     const tile = tiles.getTile("0:0");
     if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+    for (let frame = 0; frame < 3; frame += 1) tiles.process();
     const visible = tile.lod.children.filter((child) => child.visible);
     expect(tile.lod.autoUpdate).toBe(false);
     expect(tile.lod.getCurrentLevel()).toBe(tile.lodLevel);
@@ -155,7 +267,7 @@ describe("TerrainTiles", () => {
   it("publishes a bounded metric summary for the rendered measurement grid", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
-      residentByteBudget: 200_000,
+      residentByteBudget: 20_000_000,
       residentTileBudget: 1,
       sampleHeight,
       tileResolution: 17,

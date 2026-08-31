@@ -6,6 +6,7 @@ import { summarizeWorldTopology } from "./world-topology.js";
 import {
   Heightfield,
   type IHeightfieldOrigin,
+  type IHeightfieldRegionOptions,
   type IHeightfieldSamplerOptions,
   type IHeightfieldWorldPassOptions,
 } from "./world.js";
@@ -97,12 +98,21 @@ interface IEdgeSamples {
 interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly assetKey?: string;
   readonly levels: readonly ILevelGeometry[];
+  lodTransition?: ILodTransition;
   lodLevel: number;
   readonly origin: IHeightfieldOrigin;
   readonly skirts: number;
 }
 
+interface ILodTransition {
+  readonly from: number;
+  readonly to: number;
+  elapsedFrames: number;
+  remainingFrames: number;
+}
+
 const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
+const LOD_TRANSITION_FRAMES = 3;
 
 class EmptyCollider implements IWorldTileCollider {
   #disposed = false;
@@ -214,6 +224,29 @@ function validateTopologyObservation(
     throw new Error(
       `TerrainTiles topologyObservation rows must match the rendered tile grid (expected ${String(expectedRows)}, received ${String(observation.rows)}).`,
     );
+}
+
+function fieldCoversRegion(
+  field: Heightfield,
+  origin: IHeightfieldOrigin,
+  width: number,
+  depth: number,
+): boolean {
+  const epsilon = 1e-6;
+  const minimumX = origin.x - width / 2;
+  const maximumX = origin.x + width / 2;
+  const minimumZ = origin.z - depth / 2;
+  const maximumZ = origin.z + depth / 2;
+  const fieldMinimumX = field.origin.x - field.width / 2;
+  const fieldMaximumX = field.origin.x + field.width / 2;
+  const fieldMinimumZ = field.origin.z - field.depth / 2;
+  const fieldMaximumZ = field.origin.z + field.depth / 2;
+  return (
+    minimumX >= fieldMinimumX - epsilon &&
+    maximumX <= fieldMaximumX + epsilon &&
+    minimumZ >= fieldMinimumZ - epsilon &&
+    maximumZ <= fieldMaximumZ + epsilon
+  );
 }
 
 function edgeSamplesFor(values: readonly number[], resolution: number): IEdgeSamples {
@@ -461,7 +494,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #surface: MeshSurface;
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
+  /** Canonical topology samples; resident tiles copy aligned regions from this field. */
   readonly #topologyField: Heightfield | undefined;
+  readonly #topologyBytes: number;
   readonly #worldPasses: IHeightfieldWorldPassOptions | undefined;
   readonly #resident = new Map<string, IResidentTile>();
   #topologyMetrics: ReturnType<typeof summarizeWorldTopology> | undefined;
@@ -470,6 +505,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #peakTiles = 0;
   #lodTransitions = 0;
   #maxLodPop = 0;
+  #maxLodTransitionFrames = 0;
   #released = false;
   #renderer: IRendererLike | undefined;
 
@@ -515,6 +551,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
             sampleHeight: this.#sampleHeight,
             ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
           });
+    this.#topologyBytes = this.#topologyField?.memoryBytes ?? 0;
+    if (this.#topologyBytes > this.residentByteBudget)
+      throw new Error("TerrainTiles residentByteBudget cannot fit the topology observation.");
+    this.#recordPeaks();
     this.frustumCulled = true;
   }
 
@@ -527,7 +567,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   get residentBytes(): number {
-    return [...this.#resident.values()].reduce((total, tile) => total + tile.bytes, 0);
+    return (
+      this.#topologyBytes +
+      [...this.#resident.values()].reduce((total, tile) => total + tile.bytes, 0)
+    );
   }
 
   get peakResidentTileCount(): number {
@@ -560,6 +603,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Maximum measured height difference between the rendered LOD surfaces when switching levels. */
   get maxLodPop(): number {
     return this.#maxLodPop;
+  }
+
+  /** Maximum number of rendered frames during which an LOD transition remained observable. */
+  get maxLodTransitionFrames(): number {
+    return this.#maxLodTransitionFrames;
   }
 
   get maxSeamGap(): number {
@@ -681,7 +729,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   process(renderer = this.#renderer): void {
-    if (this.#released || renderer === undefined) return;
+    if (this.#released) return;
+    this.#advanceLodTransitions();
+    if (renderer === undefined) return;
     this.#topologyField?.process(renderer);
     for (const tile of this.#resident.values()) {
       tile.field.attachRenderer(renderer);
@@ -728,11 +778,15 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return {
       maxSeamGap: this.maxSeamGap,
       maxVisualSeamGap: this.maxVisualSeamGap,
+      maxLodTransitionFrames: this.#maxLodTransitionFrames,
       peakResidentBytes: this.#peakBytes,
       peakResidentTiles: this.#peakTiles,
       residentBytes: this.residentBytes,
+      residentByteBudget: this.residentByteBudget,
       residentKeys: this.residentKeys,
       residentTiles: this.residentTileCount,
+      residentTileBudget: this.residentTileBudget,
+      topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
       maxLodPop: this.#maxLodPop,
       skirtVertexCount: [...this.#resident.values()].reduce(
@@ -758,6 +812,27 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.removeFromParent();
   }
 
+  #createField(origin: IHeightfieldOrigin): Heightfield {
+    const region: IHeightfieldRegionOptions = {
+      columns: this.tileResolution,
+      depth: this.tileSize,
+      origin,
+      rows: this.tileResolution,
+      width: this.tileSize,
+    };
+    const topologyField = this.#topologyField;
+    if (
+      topologyField !== undefined &&
+      fieldCoversRegion(topologyField, origin, this.tileSize, this.tileSize)
+    )
+      return Heightfield.fromStoredRegion(topologyField, region);
+    return Heightfield.fromSampler({
+      ...region,
+      sampleHeight: this.#sampleHeight,
+      ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
+    });
+  }
+
   #createTile(tileX: number, tileZ: number, distance: number): IResidentTile {
     const origin = { x: tileX * this.tileSize, z: tileZ * this.tileSize };
     const assetKey =
@@ -768,16 +843,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           : this.#assetKey;
     if (assetKey !== undefined && (typeof assetKey !== "string" || assetKey.trim().length === 0))
       throw new Error("TerrainTiles assetKey must resolve to a non-empty string.");
-    const sampler: IHeightfieldSamplerOptions = {
-      columns: this.tileResolution,
-      depth: this.tileSize,
-      origin,
-      rows: this.tileResolution,
-      sampleHeight: this.#sampleHeight,
-      width: this.tileSize,
-      ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
-    };
-    const field = Heightfield.fromSampler(sampler);
+    const field = this.#createField(origin);
     const levels: ILevelGeometry[] = [];
     let lod: LOD | undefined;
     let collider: IWorldTileCollider | undefined;
@@ -804,7 +870,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         new EmptyCollider();
       const bytes =
         levels.reduce((total, level) => total + estimatedLevelBytes(level.resolution), 0) +
-        estimatedFieldBytes(this.tileResolution, this.#worldPasses);
+        field.memoryBytes;
       const tile: IResidentTile = {
         ...(assetKey === undefined ? {} : { assetKey }),
         bytes,
@@ -842,16 +908,58 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       setManualLodLevel(tile.lod, level);
       return;
     }
-    const previous = tile.levels[tile.lodLevel];
+    if (tile.lodTransition !== undefined) this.#finishLodTransition(tile);
+    const previousLevel = tile.lodLevel;
+    const previous = tile.levels[previousLevel];
     const next = tile.levels[level];
     if (previous !== undefined && next !== undefined)
       this.#maxLodPop = Math.max(this.#maxLodPop, lodApproximationError(previous, next));
     tile.lodLevel = level;
-    if (countTransition) this.#lodTransitions += 1;
+    if (!countTransition) {
+      setManualLodLevel(tile.lod, level);
+      this.#setLodVisibility(tile);
+      return;
+    }
+    this.#lodTransitions += 1;
+    tile.lodTransition = {
+      elapsedFrames: 0,
+      from: previousLevel,
+      remainingFrames: LOD_TRANSITION_FRAMES,
+      to: level,
+    };
     setManualLodLevel(tile.lod, level);
+    this.#setLodVisibility(tile, [tile.lodTransition.from, tile.lodTransition.to]);
+  }
+
+  #setLodVisibility(tile: IResidentTile, visibleLevels = [tile.lodLevel]): void {
+    const visible = new Set(visibleLevels);
     tile.levels.forEach(({ mesh }, index) => {
-      mesh.visible = index === level;
+      mesh.visible = visible.has(index);
     });
+  }
+
+  #advanceLodTransitions(): void {
+    for (const tile of this.#resident.values()) {
+      const transition = tile.lodTransition;
+      if (transition === undefined) continue;
+      transition.elapsedFrames += 1;
+      transition.remainingFrames -= 1;
+      if (transition.remainingFrames > 0) continue;
+      this.#maxLodTransitionFrames = Math.max(
+        this.#maxLodTransitionFrames,
+        transition.elapsedFrames,
+      );
+      tile.lodTransition = undefined;
+      this.#setLodVisibility(tile);
+    }
+  }
+
+  #finishLodTransition(tile: IResidentTile): void {
+    const transition = tile.lodTransition;
+    if (transition === undefined) return;
+    this.#maxLodTransitionFrames = Math.max(this.#maxLodTransitionFrames, transition.elapsedFrames);
+    tile.lodTransition = undefined;
+    this.#setLodVisibility(tile);
   }
 
   #fieldAt(x: number, z: number): Heightfield {

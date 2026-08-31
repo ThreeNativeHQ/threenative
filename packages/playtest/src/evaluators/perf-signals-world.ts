@@ -119,21 +119,39 @@ function emitTerrainResidency(
   const residentBytes = valueAfter("residentBytes");
   const peakResidentTiles = valueAfter("peakResidentTiles");
   const peakResidentBytes = valueAfter("peakResidentBytes");
-  const finiteNumbers = [residentTiles, residentBytes, peakResidentTiles, peakResidentBytes].every(
-    (value) => typeof value === "number" && Number.isFinite(value),
-  );
+  const residentTileBudget = valueAfter("residentTileBudget");
+  const residentByteBudget = valueAfter("residentByteBudget");
+  const finiteNumbers = [
+    residentTiles,
+    residentBytes,
+    peakResidentTiles,
+    peakResidentBytes,
+    residentTileBudget,
+    residentByteBudget,
+  ].every((value) => typeof value === "number" && Number.isFinite(value));
   const pass = finiteNumbers
     && (residentTiles as number) <= (peakResidentTiles as number)
-    && (residentBytes as number) <= (peakResidentBytes as number);
+    && (residentBytes as number) <= (peakResidentBytes as number)
+    && (residentTiles as number) <= (residentTileBudget as number)
+    && (residentBytes as number) <= (residentByteBudget as number)
+    && (peakResidentTiles as number) <= (residentTileBudget as number)
+    && (peakResidentBytes as number) <= (residentByteBudget as number);
   assertions.push({
-    details: { peakResidentBytes, peakResidentTiles, residentBytes, residentTiles },
+    details: {
+      peakResidentBytes,
+      peakResidentTiles,
+      residentByteBudget,
+      residentBytes,
+      residentTileBudget,
+      residentTiles,
+    },
     id: "world.residency",
     pass,
   });
   if (!pass)
     diagnostics.push({
       code: "TN_PLAYTEST_WORLD_RESIDENCY_ASSERTION_FAILED",
-      message: "Terrain residency did not report finite resident and peak tile/byte measurements.",
+      message: "Terrain residency did not report finite measurements within its declared tile and byte caps.",
       observedRuntimePath: "observations.json/components/terrain",
       severity: "error",
       suggestion: "Expose TerrainTiles.debug() through the terrain entity and inspect the residency counters.",

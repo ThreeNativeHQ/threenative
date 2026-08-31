@@ -26,7 +26,7 @@
         "allowTrivial": "TerrainTiles reports its hard byte cap from the first observation.",
         "component": "residentBytes",
         "entity": "terrain",
-        "lte": 8000000
+        "lte": 20000000
       },
       {
         "allowTrivial": "TerrainTiles records a nonzero peak resident tile count at startup.",
@@ -59,10 +59,9 @@
         "gte": 1
       },
       {
-        "allowTrivial": "TerrainTiles keeps the measured LOD height pop under the declared world-unit threshold.",
-        "component": "maxLodPop",
+        "component": "maxLodTransitionFrames",
         "entity": "terrain",
-        "lte": 512
+        "gte": 3
       },
       {
         "changed": true,

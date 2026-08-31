@@ -62,9 +62,10 @@ returned exit `1` (a match). The source was restored and the enforceable grep is
 rg -ni "material|light|tonemapping|postprocessing|\.wgsl" packages/core/src/world*.ts
 look_gate_exit=1
 ```
-The repair-round headed browser run used `--no-screenshots` to avoid claiming an inspected visual
-capture. The required three side-by-side subject captures and the two-material same-world A/B
-charter test are unverified.
+The repair-round headed browser run used `--no-screenshots`, which skipped the requested
+before/after artifact frames. The runtime report still recorded one assertion-required frame
+(`captureMethod: page.screenshot`). No visual inspection was performed. The required three
+side-by-side subject captures and the two-material same-world A/B charter test are unverified.
 
 ## Integration ledger caller census
 
@@ -98,7 +99,8 @@ scenario was added. `terrain-streaming` was edited in place.
 - Exact baseline SHA: `2293138591c04797aea53661cd295d590ab0a276`
 - Seeded reds: NC-1 field substitution and NC-5 direct look grep; the literal NC-1 root command
   was a setup failure, and `pnpm quality` did not enforce the forbidden-token mutation.
-- Headed evidence class: one inspected browser frame; no side-by-side set or A/B set.
+- Headed evidence class: one browser execution with a runtime report and one assertion-required
+  frame; no before/after artifact pair or visual inspection was performed.
 - Gate status: metric comparison recorded, current build quality gate red on three metrics.
 
 Changed files for this phase:

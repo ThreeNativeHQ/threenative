@@ -38,6 +38,19 @@ export interface IHeightfieldSamplerOptions extends Omit<IHeightfieldOptions, "h
   readonly sampleHeight: (x: number, z: number) => number;
 }
 
+export interface IHeightfieldRegionOptions {
+  readonly columns: number;
+  readonly depth: number;
+  readonly origin: IHeightfieldOrigin;
+  readonly rows: number;
+  readonly width: number;
+}
+
+interface IStoredHeightfieldChannels {
+  readonly flow?: Float32Array;
+  readonly moisture?: Float32Array;
+}
+
 function finite(value: number, name: string): number {
   if (!Number.isFinite(value)) throw new Error(`Heightfield ${name} must be finite.`);
   return value;
@@ -53,6 +66,14 @@ function count(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 2)
     throw new Error(`Heightfield ${name} must be an integer of at least 2.`);
   return value;
+}
+
+function alignedIndex(value: number, name: string): number {
+  finite(value, name);
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) > 1e-6)
+    throw new Error(`Heightfield ${name} must align to the source field grid.`);
+  return rounded;
 }
 
 function shouldBuildGpuPasses(options: IHeightfieldWorldPassOptions | undefined): boolean {
@@ -110,7 +131,7 @@ export class Heightfield extends Group implements IComputeDriven {
   #gpuCompletionObserved = false;
   #released = false;
 
-  constructor(options: IHeightfieldOptions) {
+  constructor(options: IHeightfieldOptions & IStoredHeightfieldChannels) {
     super();
     this.columns = count(options.columns, "columns");
     this.rows = count(options.rows, "rows");
@@ -125,8 +146,20 @@ export class Heightfield extends Group implements IComputeDriven {
       throw new Error(
         `Heightfield expected ${expected} heights, received ${options.heights.length}.`,
       );
+    if (options.flow !== undefined && options.flow.length !== expected)
+      throw new Error(
+        `Heightfield expected ${expected} flow samples, received ${options.flow.length}.`,
+      );
+    if (options.moisture !== undefined && options.moisture.length !== expected)
+      throw new Error(
+        `Heightfield expected ${expected} moisture samples, received ${options.moisture.length}.`,
+      );
     for (const height of options.heights) finite(height, "height sample");
+    for (const value of options.flow ?? []) finite(value, "flow sample");
+    for (const value of options.moisture ?? []) finite(value, "moisture sample");
     const baseHeights = options.heights.slice();
+    const storedFlow = options.flow?.slice();
+    const storedMoisture = options.moisture?.slice();
     const passOptions = options.worldPasses;
     if (passOptions !== undefined) validateWorldPassBudget(passOptions);
     if (passOptions?.gpu === true)
@@ -145,8 +178,8 @@ export class Heightfield extends Group implements IComputeDriven {
             rows: this.rows,
           });
     this.#heights = cpu?.heights ?? baseHeights;
-    this.#flow = cpu?.flow;
-    this.#moisture = cpu?.moisture;
+    this.#flow = cpu?.flow ?? storedFlow;
+    this.#moisture = cpu?.moisture ?? storedMoisture;
     // The explicit GPU request is rejected above; omitted and CPU-fallback paths never create GPU
     // state and cannot accidentally expose a CPU-canonical field as GPU-generated.
     this.#gpu =
@@ -215,6 +248,67 @@ export class Heightfield extends Group implements IComputeDriven {
       rows,
       width,
       ...(options.worldPasses === undefined ? {} : { worldPasses: options.worldPasses }),
+    });
+  }
+
+  /** Copy a grid-aligned tile from one canonical field without re-running its sampler or passes. */
+  static fromStoredRegion(source: Heightfield, options: IHeightfieldRegionOptions): Heightfield {
+    const columns = count(options.columns, "columns");
+    const rows = count(options.rows, "rows");
+    const width = positive(options.width, "width");
+    const depth = positive(options.depth, "depth");
+    const originX = finite(options.origin.x, "origin.x");
+    const originZ = finite(options.origin.z, "origin.z");
+    const minimumX = originX - width / 2;
+    const minimumZ = originZ - depth / 2;
+    const startColumn = alignedIndex(
+      (minimumX - source.#minimumX) / source.#cellWidth,
+      "region minimum x",
+    );
+    const startRow = alignedIndex(
+      (minimumZ - source.#minimumZ) / source.#cellDepth,
+      "region minimum z",
+    );
+    const columnStep = alignedIndex(width / (columns - 1) / source.#cellWidth, "region x spacing");
+    const rowStep = alignedIndex(depth / (rows - 1) / source.#cellDepth, "region z spacing");
+    const endColumn = startColumn + (columns - 1) * columnStep;
+    const endRow = startRow + (rows - 1) * rowStep;
+    if (
+      startColumn < 0 ||
+      startRow < 0 ||
+      endColumn >= source.columns ||
+      endRow >= source.rows ||
+      columnStep < 1 ||
+      rowStep < 1
+    )
+      throw new Error(
+        "Heightfield stored region must be grid-aligned and inside its source field.",
+      );
+
+    const expected = rows * columns;
+    const heights = new Float32Array(expected);
+    const flow = source.#flow === undefined ? undefined : new Float32Array(expected);
+    const moisture = source.#moisture === undefined ? undefined : new Float32Array(expected);
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const sourceIndex =
+          (startRow + row * rowStep) * source.columns + startColumn + column * columnStep;
+        const targetIndex = row * columns + column;
+        heights[targetIndex] = source.#height(sourceIndex);
+        if (flow !== undefined) flow[targetIndex] = source.#flow?.[sourceIndex] as number;
+        if (moisture !== undefined)
+          moisture[targetIndex] = source.#moisture?.[sourceIndex] as number;
+      }
+    }
+    return new Heightfield({
+      columns,
+      depth,
+      heights,
+      origin: { x: originX, z: originZ },
+      rows,
+      width,
+      ...(flow === undefined ? {} : { flow }),
+      ...(moisture === undefined ? {} : { moisture }),
     });
   }
 
@@ -303,6 +397,16 @@ export class Heightfield extends Group implements IComputeDriven {
   /** A copy of the normalized routed-flow channel, when world passes were requested. */
   get flow(): Float32Array | undefined {
     return this.#flow?.slice();
+  }
+
+  /** Bytes retained by this field's CPU channels and its conservative GPU allowance. */
+  get memoryBytes(): number {
+    const sampleBytes = this.rows * this.columns * Float32Array.BYTES_PER_ELEMENT;
+    const cpuBytes =
+      sampleBytes * 2 +
+      (this.#flow === undefined ? 0 : sampleBytes) +
+      (this.#moisture === undefined ? 0 : sampleBytes);
+    return this.#gpu === undefined ? cpuBytes : Math.max(cpuBytes, sampleBytes * 24);
   }
 
   heightAt(x: number, z: number): number {

@@ -23,7 +23,10 @@ function scenario(assert: IPlaytestScenario["assert"] = {}): IPlaytestScenario {
   } as IPlaytestScenario;
 }
 
-function report(debug: unknown): IPlaytestReport {
+function report(
+  debug: unknown,
+  residency: Record<string, { after?: unknown }> = {},
+): IPlaytestReport {
   const fields = debug as Record<string, unknown>;
   return {
     diagnostics: [],
@@ -34,7 +37,13 @@ function report(debug: unknown): IPlaytestReport {
     observations: {
       components: {
         terrain: {
+          peakResidentBytes: { after: 1 },
+          peakResidentTiles: { after: 1 },
+          residentByteBudget: { after: 1 },
+          residentBytes: { after: 1 },
+          residentTileBudget: { after: 1 },
           residentTiles: { after: 1 },
+          ...residency,
           ...(Object.hasOwn(fields, "topology")
             ? { topology: { after: fields.topology } }
             : {}),
@@ -91,6 +100,23 @@ test("uses routed flow when measuring drainage hierarchy", () => {
 
   expect(routed.maxHortonStrahlerOrder).toBeGreaterThan(disabled.maxHortonStrahlerOrder);
   expect(disabled.maxHortonStrahlerOrder).toBe(0);
+});
+
+test("fails residency when retained bytes exceed the declared cap", () => {
+  const result = evaluateRichPlaytestAssertions({
+    report: report({}, {
+      peakResidentBytes: { after: 200 },
+      residentByteBudget: { after: 100 },
+      residentBytes: { after: 200 },
+    }),
+    scenario: scenario(),
+  });
+  expect(result.assertions).toContainEqual(
+    expect.objectContaining({ id: "world.residency", pass: false }),
+  );
+  expect(result.diagnostics).toContainEqual(
+    expect.objectContaining({ code: "TN_PLAYTEST_WORLD_RESIDENCY_ASSERTION_FAILED" }),
+  );
 });
 
 test("evaluates a compact metric observation produced from the exact field", () => {
@@ -165,5 +191,5 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
   expect(lod).not.toHaveProperty("gte");
   expect(component("maxVisualSeamGap")).toMatchObject({ lte: 0 });
   expect(component("skirtVertexCount")).toMatchObject({ gte: 1 });
-  expect(component("maxLodPop")).toMatchObject({ lte: 512 });
+  expect(component("maxLodTransitionFrames")).toMatchObject({ gte: 3 });
 });

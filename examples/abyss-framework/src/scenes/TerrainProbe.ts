@@ -116,7 +116,7 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
           entity: `terrain.${key}.${String(tileX)}.${String(tileZ)}`,
         }),
       surface: terrainMaterial(),
-      residentByteBudget: 8_000_000,
+      residentByteBudget: 20_000_000,
       residentTileBudget: 9,
       sampleHeight: terrainHeight,
       streamRadius: 1,
