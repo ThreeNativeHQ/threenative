@@ -74,16 +74,39 @@ points at the step that actually failed.
 **Still unproven.** The emulator step has never once executed in CI — every run skipped it because
 the capture step failed first. This removes that blocker; it does not prove the lane green.
 
-### Windows desktop core — NOT EXECUTED HERE
+### Windows desktop core — diagnosed by reading, NOT EXECUTED HERE
 
-`TN_PLAYTEST_RESOURCE_TRANSITION_ASSERTION_FAILED`, twice, after `desktop physics playtest proof
-passed: 14 assertions`. Needs a Windows runner. No claim made.
+`loading-screen-desktop.playtest.json` failed both of its transitions: `GameState.loadingVisible`
+never went `true → true → false` and `startupReady` never went `false → false → true`. All three
+labelled samples read `loadingVisible: true, startupReady: false`.
+
+The decisive evidence is in the console artifact, not the assertion:
+
+```
+TN_LOADING_PROOF_OVERLAY_VISIBLE   1
+TN_LOADING_PROOF_DISMISSED         0
+```
+
+`game.ts` sets `{loadingVisible: false, startupReady: true}` inside `startup.whenReady().then(...)`,
+so the promise never resolved. **More ticks would not fix this** — the obvious patch, widening the
+scenario's three `waitTicks: 1` steps, treats a stuck promise as a slow one and would be the wrong
+change.
+
+Mechanism, from reading `startup-readiness.ts`: readiness needs `STARTUP_STABLE_FRAMES = 5`
+consecutive frames each inside `STARTUP_FRAME_BUDGET_MS = 50`. The run logged `frames: 12` by the
+first label, so frames were being produced — they were not landing under 50 ms often enough in a row
+on a cold Windows runner, and the stable window kept resetting. macOS passes the same scenario.
+
+Unverified: the 50 ms budget is the hypothesis a Windows runner would confirm or kill. Nothing here
+was executed on Windows, so it stays a hypothesis, and the real question it raises is whether
+`startupReady` should be gated on a wall-clock frame budget in CI at all.
 
 ### iOS simulator — NOT EXECUTED HERE
 
 `iOS proof missed markers: TN_NATIVE_SMOKE_READY:webgpu, TN_NATIVE_SMOKE_FIRST_FRAME,
-TN_NATIVE_SMOKE_300_FRAMES:300` — the app built and never rendered. Needs macOS and Xcode. No claim
-made.
+TN_NATIVE_SMOKE_300_FRAMES:300` — SDL3 and the runtime compiled, and the app then emitted none of
+the three markers, so it never reached a first frame. Failed again on the following run. Needs macOS
+and Xcode; this machine is Linux. No claim made.
 
 ### macOS desktop core, Scaffolded starter desktop artifact
 
