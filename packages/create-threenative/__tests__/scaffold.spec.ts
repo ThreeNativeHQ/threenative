@@ -165,13 +165,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "b1526f252cd37086058749af1a0c087413199b3768435ff5a5b470f49f3b77b2",
-  defense: "fad4fa70748c67486ef3dce00568f353e4576832ef3e535dc578e0266b752761",
-  minimal: "8ae12cc4472880be0863c3fabe4a0c640531201793287d7004b44371130ff3f8",
-  platformer: "cecc1ae8a441b038ea787ea78e6a1a90471947de578f6efb6ae9ab909ff10f85",
-  racing: "098ed6e6b987f689bf6fc87f972c2ec103716797721e14a38b3a3618b4f481e0",
-  shooter: "e4b27093f5b28b8a9f3d208a29b08d7c69a6ffe3b34ccf4270a5ba5f1c1d3d93",
-  starter: "69b026a7b199fdfbf019e3569644ce7ca6687b41059bca2b0d52369c0ede9823",
+  "action-rpg": "b60b822eac13e95b50aeebea45265641d56c1399cb1cc1228fda67a98c351fea",
+  defense: "e0811116666db2945673f2b35b7dcb478726ea1a3eb0d7679eb457cd47c6a510",
+  minimal: "5bf99d1a8e484ce91e2fc8eb5a066c17e3ea382771b147050bb606fec9182a9a",
+  platformer: "62263f1793a5283aa9b5192ec11d760b990e98336a9150dfe2f7dc8e60cbc63d",
+  racing: "56fe1cd73d64041788411957d77e94557192300cd582a4db78b6c82c0a0677ab",
+  shooter: "6d3e6a402ae872b39bd34e8ed4d37e17399252770676a10d72324a246cc1b1eb",
+  starter: "588778e62867dd2960dde5c67a8eb6a3b4ea8d51934df30517a089b6697d5c5c",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -182,7 +182,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "c01bc61b2a7d81673535eefba56f2480d904771438d509ae5b84869dc8ef7a76",
+  sailing: "22088ddaa4093cbcf92853b77a8896c163169e637d7d78af5717759127a06408",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
