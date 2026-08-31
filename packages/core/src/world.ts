@@ -59,6 +59,15 @@ function shouldBuildGpuPasses(options: IHeightfieldWorldPassOptions | undefined)
   return options?.gpu === true;
 }
 
+function validateWorldPassBudget(options: IHeightfieldWorldPassOptions): void {
+  if (!Number.isInteger(options.dispatchBudget) || options.dispatchBudget <= 0)
+    throw new Error("Heightfield world passes dispatchBudget must be a positive integer.");
+  if (options.gpu === true) return;
+  if (!Number.isInteger(options.erosion.iterations) || options.erosion.iterations < 0) return;
+  if (options.erosion.iterations > options.dispatchBudget)
+    throw new Error("Heightfield dispatchBudget cannot cover synchronous CPU erosion iterations.");
+}
+
 /**
  * One height buffer shared by world queries, rendered geometry, and a physics heightfield.
  *
@@ -119,6 +128,7 @@ export class Heightfield extends Group implements IComputeDriven {
     for (const height of options.heights) finite(height, "height sample");
     const baseHeights = options.heights.slice();
     const passOptions = options.worldPasses;
+    if (passOptions !== undefined) validateWorldPassBudget(passOptions);
     if (passOptions?.gpu === true)
       throw new Error(
         "Heightfield GPU generation cannot be canonical; use gpu: false until GPU readback owns the field.",

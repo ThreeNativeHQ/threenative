@@ -170,6 +170,32 @@ describe("Heightfield", () => {
     expect(value.debug()).toMatchObject({ complete: true, dispatched: 0 });
   });
 
+  it("should reject synchronous CPU erosion that exceeds its dispatch budget", () => {
+    expect(() =>
+      Heightfield.fromSampler({
+        columns: 3,
+        depth: 2,
+        origin: { x: 0, z: 0 },
+        rows: 3,
+        sampleHeight: (x, z) => x - z,
+        width: 2,
+        worldPasses: {
+          dispatchBudget: 1,
+          erosion: {
+            depositionRate: 0.35,
+            erosionRate: 0.22,
+            evaporation: 0.04,
+            iterations: 2,
+            rainfall: 0.08,
+            sedimentCapacity: 0.7,
+            timeStep: 0.05,
+          },
+          gpu: false,
+        },
+      }),
+    ).toThrow(/dispatchBudget.*CPU/u);
+  });
+
   it("should construct no appearance under the world subpath", () => {
     const source = readFileSync(path.resolve("packages/core/src/world.ts"), "utf8");
     expect(source).not.toMatch(

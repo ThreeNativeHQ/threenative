@@ -79,13 +79,14 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
     this.#player = new TerrainPlayer(ctx);
     this.#capabilities = getWorldCapabilities({
       cpuFallbackIterations: 4,
+      gpuAvailable: ctx.renderer.kind === "webgpu",
       limits: rendererLimits(ctx),
     });
     const worldPasses =
       this.#capabilities.generation === "unsupported"
         ? undefined
         : {
-            dispatchBudget: 2,
+            dispatchBudget: 4,
             erosion: {
               depositionRate: 0.35,
               erosionRate: 0.22,
@@ -123,10 +124,10 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
       tileSize: TILE_SIZE,
       lodDistances: [48, 96],
       topologyObservation: {
-        columns: TILE_RESOLUTION,
+        columns: 1025,
         depth: 1024,
         origin: { x: 0, z: 0 },
-        rows: TILE_RESOLUTION,
+        rows: 1025,
         width: 1024,
       },
       ...(worldPasses === undefined ? {} : { worldPasses }),

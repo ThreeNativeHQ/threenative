@@ -139,7 +139,8 @@ export function emitWorldGameplay(ctx: IEvaluationContext): void {
 export interface IWorldTopologyField {
   readonly columns: number;
   readonly depth: number;
-  readonly heights: ArrayLike<number>;
+  readonly heights?: ArrayLike<number>;
+  readonly metrics?: IWorldTopologyMetrics;
   readonly rows: number;
   readonly width: number;
   readonly flow?: ArrayLike<number>;
@@ -205,6 +206,16 @@ function topologyNumber(value: unknown, name: string, minimum = 0): number {
   return value;
 }
 
+function rawHeights(field: IWorldTopologyField): ArrayLike<number> {
+  if (field.heights === undefined) throw new Error("World topology raw heights are missing.");
+  return field.heights;
+}
+
+function rawFlow(field: IWorldTopologyField): ArrayLike<number> {
+  if (field.flow === undefined) throw new Error("World topology raw flow is missing.");
+  return field.flow;
+}
+
 function topologyField(field: IWorldTopologyField): void {
   if (field === null || typeof field !== "object")
     throw new Error("World topology field must be an object.");
@@ -212,17 +223,24 @@ function topologyField(field: IWorldTopologyField): void {
   const columns = topologyNumber(field.columns, "columns", 2);
   if (!Number.isInteger(rows) || !Number.isInteger(columns))
     throw new Error("World topology rows and columns must be integers.");
-  if (field.heights === undefined || typeof field.heights.length !== "number")
-    throw new Error("World topology heights must be an array-like channel.");
-  const expected = rows * columns;
-  if (field.heights.length !== expected)
-    throw new Error("World topology heights must contain rows times columns samples.");
   const width = topologyNumber(field.width, "width", Number.EPSILON);
   const depth = topologyNumber(field.depth, "depth", Number.EPSILON);
   if (width !== WORLD_TOPOLOGY_MEASUREMENT_SIZE || depth !== WORLD_TOPOLOGY_MEASUREMENT_SIZE)
     throw new Error(
       `World topology must cover the declared ${String(WORLD_TOPOLOGY_MEASUREMENT_SIZE)}m by ${String(WORLD_TOPOLOGY_MEASUREMENT_SIZE)}m measurement region.`,
     );
+  if (field.metrics !== undefined) {
+    if (field.heights !== undefined || field.flow !== undefined)
+      throw new Error("World topology metrics cannot be combined with raw channels.");
+    for (const name of Object.keys(WORLD_TOPOLOGY_METRIC_FAILURES) as Array<keyof IWorldTopologyMetrics>)
+      topologyNumber(field.metrics[name], `metrics.${name}`, Number.NEGATIVE_INFINITY);
+    return;
+  }
+  if (field.heights === undefined || typeof field.heights.length !== "number")
+    throw new Error("World topology heights must be an array-like channel.");
+  const expected = rows * columns;
+  if (field.heights.length !== expected)
+    throw new Error("World topology heights must contain rows times columns samples.");
   for (let index = 0; index < field.heights.length; index += 1)
     topologyNumber(field.heights[index], "height", Number.NEGATIVE_INFINITY);
   if (field.flow === undefined || typeof field.flow.length !== "number")
@@ -238,7 +256,7 @@ function topologyField(field: IWorldTopologyField): void {
 function topologyHeight(field: IWorldTopologyField, row: number, column: number): number {
   const clampedRow = Math.max(0, Math.min(field.rows - 1, row));
   const clampedColumn = Math.max(0, Math.min(field.columns - 1, column));
-  const value = field.heights[clampedRow * field.columns + clampedColumn];
+  const value = rawHeights(field)[clampedRow * field.columns + clampedColumn];
   if (value === undefined) throw new Error("World topology height sample is missing.");
   return value;
 }
@@ -338,8 +356,9 @@ function reliefFieldEdge(field: IWorldTopologyField): number {
 function median64mRelief(field: IWorldTopologyField): number {
   let minimum = Number.POSITIVE_INFINITY;
   let maximum = Number.NEGATIVE_INFINITY;
-  for (let index = 0; index < field.heights.length; index += 1) {
-    const value = field.heights[index] as number;
+  const heights = rawHeights(field);
+  for (let index = 0; index < heights.length; index += 1) {
+    const value = heights[index] as number;
     minimum = Math.min(minimum, value);
     maximum = Math.max(maximum, value);
   }
@@ -458,8 +477,7 @@ function downhill(field: IWorldTopologyField, index: number): number {
 
 function streamOrder(field: IWorldTopologyField): number {
   const count = field.rows * field.columns;
-  const flow = field.flow;
-  if (flow === undefined) throw new Error("World topology flow is required for stream order.");
+  const flow = rawFlow(field);
   const accumulation = new Float64Array(count);
   const targets = new Int32Array(count);
   targets.fill(-1);
@@ -524,6 +542,7 @@ function curvatureExcessKurtosis(field: IWorldTopologyField): number {
 /** Compute the eight source-independent quality metrics used by the terrain gate. */
 export function measureWorldTopology(field: IWorldTopologyField): IWorldTopologyMetrics {
   topologyField(field);
+  if (field.metrics !== undefined) return { ...field.metrics } as IWorldTopologyMetrics;
   let steep = 0;
   for (let row = 0; row < field.rows; row += 1) {
     for (let column = 0; column < field.columns; column += 1) {

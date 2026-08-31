@@ -198,25 +198,35 @@ export function simulateWorldPassesCpu(options: IWorldPassCpuOptions): IWorldPas
 }
 
 function accumulateFlow(heights: Float32Array, rows: number, columns: number): Float32Array {
-  const accumulated = new Uint32Array(heights.length);
+  // Strictly downhill routing is acyclic. Accumulate each source once in descending-height order
+  // instead of walking every source all the way to its sink; the latter turns a 1,025x1,025
+  // quality observation into billions of repeated neighbour visits.
+  const targets = new Int32Array(heights.length);
+  targets.fill(-1);
+  const order = Array.from({ length: heights.length }, (_, index) => index).sort(
+    (a, b) => (heights[b] as number) - (heights[a] as number) || a - b,
+  );
   for (let source = 0; source < heights.length; source += 1) {
-    let current = source;
-    for (let step = 0; step < rows + columns; step += 1) {
-      accumulated[current] = (accumulated[current] as number) + 1;
-      let destination = current;
-      let lowest = heights[current] as number;
-      for (let direction = 0; direction < CARDINAL.length; direction += 1) {
-        const neighbour = neighbourIndex(current, direction, rows, columns);
-        if (neighbour === undefined) continue;
-        const candidate = heights[neighbour] as number;
-        if (candidate < lowest) {
-          lowest = candidate;
-          destination = neighbour;
-        }
+    let destination = source;
+    let lowest = heights[source] as number;
+    for (let direction = 0; direction < CARDINAL.length; direction += 1) {
+      const neighbour = neighbourIndex(source, direction, rows, columns);
+      if (neighbour === undefined) continue;
+      const candidate = heights[neighbour] as number;
+      if (candidate < lowest) {
+        lowest = candidate;
+        destination = neighbour;
       }
-      if (destination === current) break;
-      current = destination;
     }
+    if (destination !== source) targets[source] = destination;
+  }
+  const accumulated = new Float64Array(heights.length);
+  accumulated.fill(1);
+  for (const source of order) {
+    const destination = targets[source] as number;
+    if (destination >= 0)
+      accumulated[destination] =
+        (accumulated[destination] as number) + (accumulated[source] as number);
   }
   const scale = Math.log1p(heights.length);
   return Float32Array.from(accumulated, (value) => Math.log1p(value) / scale);

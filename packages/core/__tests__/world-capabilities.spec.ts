@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { getWorldCapabilities } from "../src/world-capabilities.js";
 
@@ -25,10 +27,20 @@ describe("world capabilities", () => {
   });
 
   it("does not infer an active GPU path from limits without adapter availability", () => {
-    expect(getWorldCapabilities({ cpuFallbackIterations: 4, limits: gpuLimits })).toMatchObject({
+    expect(
+      getWorldCapabilities({ cpuFallbackIterations: 4, gpuAvailable: false, limits: gpuLimits }),
+    ).toMatchObject({
       generation: "cpu-fallback",
       gpu: false,
     });
+  });
+
+  it("passes the actual WebGPU adapter observation from the terrain consumer", () => {
+    const source = readFileSync(
+      path.resolve("examples/abyss-framework/src/scenes/TerrainProbe.ts"),
+      "utf8",
+    );
+    expect(source).toContain('gpuAvailable: ctx.renderer.kind === "webgpu"');
   });
 
   it("reports reduced CPU fallback for limits below the GPU requirement", () => {

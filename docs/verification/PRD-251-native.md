@@ -16,7 +16,7 @@ Command:
 ```sh
 pnpm exec vitest run packages/core/__tests__/world-capabilities.spec.ts
 ```
-Exit code: `0`: `1` file and `4` tests passed. Complete explicit limits with an available adapter
+Exit code: `0`: `1` file and `5` tests passed. Complete explicit limits with an available adapter
 remain `cpu-fallback` because canonical GPU world-field readback is unsupported; low limits also
 select the declared reduced CPU fallback, and missing compute with no fallback selects
 `unsupported`. No test selects `gpu`.
@@ -35,10 +35,13 @@ pnpm native:build
 Not run in this repair lane. No native desktop build or world execution is claimed.
 
 ```sh
-pnpm --filter @threenative/runtime-native test
+pnpm -r --workspace-concurrency=1 --if-present run test
 ```
 
-Not run in this repair lane. No native runtime unit result is carried forward as world evidence.
+This broad command exited `1` in `packages/runtime-native`: 91 runtime test files were collected,
+87 passed, and 6 tests failed because the required CMake executables were not built in the Linux
+and QuickJS build directories. This is an unbuilt native setup result, not native world evidence;
+no native runtime unit result is carried forward as a world pass.
 
 ```sh
 pnpm native:verify:desktop

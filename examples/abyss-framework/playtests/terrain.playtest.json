@@ -47,6 +47,24 @@
         "lte": 64
       },
       {
+        "allowTrivial": "TerrainTiles reports no consumer-visible seam after generated skirt coverage.",
+        "component": "maxVisualSeamGap",
+        "entity": "terrain",
+        "lte": 0
+      },
+      {
+        "allowTrivial": "TerrainTiles reports the skirt vertices observed in its rendered geometry.",
+        "component": "skirtVertexCount",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "TerrainTiles keeps the measured LOD height pop under the declared world-unit threshold.",
+        "component": "maxLodPop",
+        "entity": "terrain",
+        "lte": 512
+      },
+      {
         "changed": true,
         "component": "lodTransitions",
         "entity": "terrain"

@@ -93,6 +93,43 @@ test("uses routed flow when measuring drainage hierarchy", () => {
   expect(disabled.maxHortonStrahlerOrder).toBe(0);
 });
 
+test("evaluates a compact metric observation produced from the exact field", () => {
+  const rows = 65;
+  const columns = 65;
+  const heights = Float32Array.from({ length: rows * columns }, (_, index) => {
+    const x = index % columns;
+    const z = Math.floor(index / columns);
+    return Math.sin(x * 0.17) * 2 + Math.cos(z * 0.13) * 1.5;
+  });
+  const flow = new Float32Array(heights.length).fill(0.5);
+  const field: IWorldTopologyField = {
+    columns,
+    depth: 1024,
+    flow,
+    heights,
+    rows,
+    width: 1024,
+  };
+  const metrics = measureWorldTopology(field);
+  const result = evaluateRichPlaytestAssertions({
+    report: report({ topology: { columns, depth: 1024, metrics, rows, width: 1024 } }),
+    scenario: scenario(),
+  });
+  const observed = result.assertions
+    .filter(({ id }) => id.startsWith("world.topology."))
+    .map(({ details }) => (details as { metric?: number }).metric);
+  expect(observed).toEqual([
+    metrics.directionalAnisotropy,
+    metrics.powerSpectrumSlope,
+    metrics.reliefFieldEdge,
+    metrics.median64mRelief,
+    metrics.maxHortonStrahlerOrder,
+    metrics.profileCurvatureExcessKurtosis,
+    metrics.effectiveVertexDensityPerKm2,
+    metrics.slopeTailAbove30Degrees,
+  ]);
+});
+
 test("rejects a resident-tile topology that is smaller than the declared measurement region", () => {
   const result = evaluateRichPlaytestAssertions({
     report: report({
@@ -120,8 +157,13 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
   const scenario = JSON.parse(
     readFileSync(path.resolve("examples/abyss-framework/playtests/terrain.playtest.json"), "utf8"),
   ) as { assert: { components: Array<Record<string, unknown>> } };
+  const component = (name: string): Record<string, unknown> | undefined =>
+    scenario.assert.components.find((assertion) => assertion.component === name);
   const lod = scenario.assert.components.find((assertion) => assertion.component === "lodTransitions");
   expect(lod).toMatchObject({ changed: true });
   expect(lod).not.toHaveProperty("allowTrivial");
   expect(lod).not.toHaveProperty("gte");
+  expect(component("maxVisualSeamGap")).toMatchObject({ lte: 0 });
+  expect(component("skirtVertexCount")).toMatchObject({ gte: 1 });
+  expect(component("maxLodPop")).toMatchObject({ lte: 512 });
 });

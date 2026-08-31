@@ -63,6 +63,7 @@ describe("TerrainTiles", () => {
     });
 
     tiles.follow({ x: 0, z: 0 });
+    expect(tiles.lodTransitions).toBe(0);
     tiles.follow({ x: 12, z: 0 });
 
     expect(tiles.lodLevelCount).toBeGreaterThanOrEqual(3);
@@ -76,6 +77,33 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("keeps the manually selected LOD visible when a renderer inspects the LOD", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    tiles.follow({ x: 12, z: 0 });
+
+    const tile = tiles.getTile("0:0");
+    if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+    const visible = tile.lod.children.filter((child) => child.visible);
+    expect(tile.lod.autoUpdate).toBe(false);
+    expect(tile.lod.getCurrentLevel()).toBe(tile.lodLevel);
+    expect(tiles.lodTransitions).toBeGreaterThan(0);
+    expect(visible).toHaveLength(1);
+    expect(visible[0]).toBe(tile.lod.levels[tile.lodLevel]?.object);
+    expect(tiles.maxVisualSeamGap).toBeLessThanOrEqual(tiles.maxSeamGap);
+    tiles.dispose();
+  });
+
   it("publishes the resident field and routed flow for topology evaluation", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
@@ -84,7 +112,7 @@ describe("TerrainTiles", () => {
       sampleHeight,
       streamRadius: 0,
       tileResolution: 9,
-      tileSize: 16,
+      tileSize: 128,
       topologyObservation: {
         columns: 65,
         depth: 1024,
@@ -122,6 +150,69 @@ describe("TerrainTiles", () => {
     expect(topology.flow).toHaveLength(4225);
     expect(topology.flow.every(Number.isFinite)).toBe(true);
     tiles.dispose();
+  });
+
+  it("publishes a bounded metric summary for the rendered measurement grid", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      tileResolution: 17,
+      tileSize: 16,
+      topologyObservation: {
+        columns: 1025,
+        depth: 1024,
+        origin: { x: 0, z: 0 },
+        rows: 1025,
+        width: 1024,
+      },
+      worldPasses: {
+        dispatchBudget: 1,
+        erosion: {
+          depositionRate: 0.35,
+          erosionRate: 0.22,
+          evaporation: 0.04,
+          iterations: 0,
+          rainfall: 0.08,
+          sedimentCapacity: 0.7,
+          timeStep: 0.05,
+        },
+        gpu: false,
+      },
+    });
+
+    const topology = tiles.debug().topology as Record<string, unknown>;
+    const metrics = topology.metrics as Record<string, unknown>;
+    expect(topology).toMatchObject({ columns: 1025, depth: 1024, rows: 1025, width: 1024 });
+    expect(topology).not.toHaveProperty("heights");
+    expect(topology).not.toHaveProperty("flow");
+    expect(Object.keys(metrics)).toHaveLength(8);
+    expect(new TextEncoder().encode(JSON.stringify(tiles.debug())).byteLength).toBeLessThan(
+      1_000_000,
+    );
+    tiles.dispose();
+  }, 10_000);
+
+  it("rejects a quality field whose sample grid does not match rendered tile geometry", () => {
+    expect(
+      () =>
+        new TerrainTiles({
+          surface: new MeshBasicMaterial(),
+          residentByteBudget: 200_000,
+          residentTileBudget: 1,
+          sampleHeight,
+          tileResolution: 9,
+          tileSize: 16,
+          topologyObservation: {
+            columns: 65,
+            depth: 1024,
+            origin: { x: 0, z: 0 },
+            rows: 65,
+            width: 1024,
+          },
+        }),
+    ).toThrow(/columns.*513/u);
   });
 
   it("reports the actual edge discontinuity before skirt coverage", () => {

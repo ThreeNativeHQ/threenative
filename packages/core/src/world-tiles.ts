@@ -2,6 +2,7 @@ import { BufferAttribute, BufferGeometry, LOD, Mesh, Object3D, Vector3 } from "t
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import type { IRendererLike } from "./renderer.js";
+import { summarizeWorldTopology } from "./world-topology.js";
 import {
   Heightfield,
   type IHeightfieldOrigin,
@@ -101,6 +102,8 @@ interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly skirts: number;
 }
 
+const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
+
 class EmptyCollider implements IWorldTileCollider {
   #disposed = false;
 
@@ -170,6 +173,47 @@ function estimatedTileBytes(
     (total, factor) => total + estimatedLevelBytes(resolutionFor(tileResolution, factor)),
     estimatedFieldBytes(tileResolution, worldPasses),
   );
+}
+
+function tiledObservationResolution(
+  extent: number,
+  tileSize: number,
+  tileResolution: number,
+  axis: string,
+): number {
+  const tileCount = extent / tileSize;
+  if (!Number.isInteger(tileCount) || tileCount < 1)
+    throw new Error(
+      `TerrainTiles topologyObservation ${axis} must cover a positive whole number of rendered tiles.`,
+    );
+  return tileCount * (tileResolution - 1) + 1;
+}
+
+function validateTopologyObservation(
+  observation: IWorldTilesTopologyObservation,
+  tileSize: number,
+  tileResolution: number,
+): void {
+  const expectedColumns = tiledObservationResolution(
+    observation.width,
+    tileSize,
+    tileResolution,
+    "width",
+  );
+  const expectedRows = tiledObservationResolution(
+    observation.depth,
+    tileSize,
+    tileResolution,
+    "depth",
+  );
+  if (observation.columns !== expectedColumns)
+    throw new Error(
+      `TerrainTiles topologyObservation columns must match the rendered tile grid (expected ${String(expectedColumns)}, received ${String(observation.columns)}).`,
+    );
+  if (observation.rows !== expectedRows)
+    throw new Error(
+      `TerrainTiles topologyObservation rows must match the rendered tile grid (expected ${String(expectedRows)}, received ${String(observation.rows)}).`,
+    );
 }
 
 function edgeSamplesFor(values: readonly number[], resolution: number): IEdgeSamples {
@@ -330,6 +374,48 @@ function seamGap(a: IResidentTile, b: IResidentTile): number {
   return maximum;
 }
 
+function levelHeight(level: ILevelGeometry, row: number, column: number): number {
+  const position = level.geometry.getAttribute("position");
+  const value = position.getY(row * level.resolution + column);
+  if (!Number.isFinite(value)) throw new Error("TerrainTiles LOD geometry has an invalid height.");
+  return value;
+}
+
+function interpolatedLevelHeight(level: ILevelGeometry, x: number, z: number): number {
+  const column = Math.max(0, Math.min(1, x)) * (level.resolution - 1);
+  const row = Math.max(0, Math.min(1, z)) * (level.resolution - 1);
+  const column0 = Math.floor(column);
+  const row0 = Math.floor(row);
+  const column1 = Math.min(level.resolution - 1, column0 + 1);
+  const row1 = Math.min(level.resolution - 1, row0 + 1);
+  const columnMix = column - column0;
+  const rowMix = row - row0;
+  const upperLeft = levelHeight(level, row0, column0);
+  const upperRight = levelHeight(level, row0, column1);
+  const lowerLeft = levelHeight(level, row1, column0);
+  const lowerRight = levelHeight(level, row1, column1);
+  const upper = upperLeft + (upperRight - upperLeft) * columnMix;
+  const lower = lowerLeft + (lowerRight - lowerLeft) * columnMix;
+  return upper + (lower - upper) * rowMix;
+}
+
+function lodApproximationError(a: ILevelGeometry, b: ILevelGeometry): number {
+  const finer = a.resolution >= b.resolution ? a : b;
+  const coarser = finer === a ? b : a;
+  let maximum = 0;
+  for (let row = 0; row < finer.resolution; row += 1) {
+    for (let column = 0; column < finer.resolution; column += 1) {
+      const x = column / (finer.resolution - 1);
+      const z = row / (finer.resolution - 1);
+      maximum = Math.max(
+        maximum,
+        Math.abs(levelHeight(finer, row, column) - interpolatedLevelHeight(coarser, x, z)),
+      );
+    }
+  }
+  return maximum;
+}
+
 function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
   const aLevel = a.levels[a.lodLevel];
   const bLevel = b.levels[b.lodLevel];
@@ -339,6 +425,12 @@ function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
 
 function areNeighbors(a: IResidentTile, b: IResidentTile): boolean {
   return Math.abs(a.tileX - b.tileX) + Math.abs(a.tileZ - b.tileZ) === 1;
+}
+
+function setManualLodLevel(lod: LOD, level: number): void {
+  // Three's renderer reads `autoUpdate`, and its update method owns this private-ish marker. Keep
+  // that marker aligned with the visible child for callers that inspect the composed LOD.
+  (lod as LOD & { _currentLevel: number })._currentLevel = level;
 }
 
 /**
@@ -372,10 +464,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #topologyField: Heightfield | undefined;
   readonly #worldPasses: IHeightfieldWorldPassOptions | undefined;
   readonly #resident = new Map<string, IResidentTile>();
+  #topologyMetrics: ReturnType<typeof summarizeWorldTopology> | undefined;
   #focus: IWorldTilesFollowPosition | undefined;
   #peakBytes = 0;
   #peakTiles = 0;
   #lodTransitions = 0;
+  #maxLodPop = 0;
   #released = false;
   #renderer: IRendererLike | undefined;
 
@@ -411,6 +505,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#assetKey = options.assetKey;
     this.#createCollider = options.createCollider;
     this.#worldPasses = options.worldPasses;
+    if (options.topologyObservation !== undefined)
+      validateTopologyObservation(options.topologyObservation, this.tileSize, this.tileResolution);
     this.#topologyField =
       options.topologyObservation === undefined
         ? undefined
@@ -459,6 +555,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   get lodTransitions(): number {
     return this.#lodTransitions;
+  }
+
+  /** Maximum measured height difference between the rendered LOD surfaces when switching levels. */
+  get maxLodPop(): number {
+    return this.#maxLodPop;
   }
 
   get maxSeamGap(): number {
@@ -589,20 +690,41 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   debug(): Record<string, unknown> {
+    const topologyField = this.#topologyField;
     const topology =
-      this.#topologyField === undefined
+      topologyField === undefined
         ? undefined
-        : {
-            columns: this.#topologyField.columns,
-            depth: this.#topologyField.depth,
-            heights: Array.from(this.#topologyField.heights),
-            origin: this.#topologyField.origin,
-            rows: this.#topologyField.rows,
-            width: this.#topologyField.width,
-            ...(this.#topologyField.flow === undefined
-              ? {}
-              : { flow: Array.from(this.#topologyField.flow) }),
-          };
+        : (() => {
+            const heights = topologyField.heights;
+            const flow = topologyField.flow;
+            const description = {
+              columns: topologyField.columns,
+              depth: topologyField.depth,
+              origin: topologyField.origin,
+              rows: topologyField.rows,
+              width: topologyField.width,
+            };
+            if (heights.length <= MAX_RAW_TOPOLOGY_SAMPLES)
+              return {
+                ...description,
+                heights: Array.from(heights),
+                ...(flow === undefined ? {} : { flow: Array.from(flow) }),
+              };
+            if (flow === undefined) return description;
+            if (this.#topologyMetrics === undefined)
+              this.#topologyMetrics = summarizeWorldTopology({
+                columns: topologyField.columns,
+                depth: topologyField.depth,
+                flow,
+                heights,
+                rows: topologyField.rows,
+                width: topologyField.width,
+              });
+            return {
+              ...description,
+              metrics: this.#topologyMetrics,
+            };
+          })();
     return {
       maxSeamGap: this.maxSeamGap,
       maxVisualSeamGap: this.maxVisualSeamGap,
@@ -612,6 +734,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       residentKeys: this.residentKeys,
       residentTiles: this.residentTileCount,
       lodTransitions: this.#lodTransitions,
+      maxLodPop: this.#maxLodPop,
       skirtVertexCount: [...this.#resident.values()].reduce(
         (total, tile) => total + tile.skirtVertexCount,
         0,
@@ -669,6 +792,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           ),
         );
       lod = new LOD();
+      lod.autoUpdate = false;
       lod.position.set(origin.x, 0, origin.z);
       levels.forEach(({ mesh }, index) => {
         mesh.visible = index === 0;
@@ -697,7 +821,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tileX,
         tileZ,
       };
-      this.#selectLod(tile, distance);
+      this.#selectLod(tile, distance, false);
       return tile;
     } catch (error) {
       collider?.dispose();
@@ -708,15 +832,23 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
   }
 
-  #selectLod(tile: IResidentTile, distance: number): void {
+  #selectLod(tile: IResidentTile, distance: number, countTransition = true): void {
     let level = 0;
     for (const threshold of this.#lodDistances) {
       if (distance < threshold) break;
       level += 1;
     }
-    if (level === tile.lodLevel) return;
+    if (level === tile.lodLevel) {
+      setManualLodLevel(tile.lod, level);
+      return;
+    }
+    const previous = tile.levels[tile.lodLevel];
+    const next = tile.levels[level];
+    if (previous !== undefined && next !== undefined)
+      this.#maxLodPop = Math.max(this.#maxLodPop, lodApproximationError(previous, next));
     tile.lodLevel = level;
-    this.#lodTransitions += 1;
+    if (countTransition) this.#lodTransitions += 1;
+    setManualLodLevel(tile.lod, level);
     tile.levels.forEach(({ mesh }, index) => {
       mesh.visible = index === level;
     });
