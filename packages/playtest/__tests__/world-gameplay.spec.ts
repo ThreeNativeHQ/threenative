@@ -191,5 +191,10 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
   expect(lod).not.toHaveProperty("gte");
   expect(component("maxVisualSeamGap")).toMatchObject({ lte: 0 });
   expect(component("skirtVertexCount")).toMatchObject({ gte: 1 });
+  expect(component("maxLodPop")).toMatchObject({
+    allowTrivial: "TerrainTiles keeps the measured LOD mismatch below its declared transition bound from startup.",
+    changed: true,
+    lte: 16,
+  });
   expect(component("maxLodTransitionFrames")).toMatchObject({ gte: 3 });
 });

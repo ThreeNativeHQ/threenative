@@ -1,4 +1,4 @@
-import { MeshBasicMaterial } from "three";
+import { Mesh, MeshBasicMaterial } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
@@ -13,6 +13,14 @@ function loader(release: ReturnType<typeof vi.fn>) {
     release,
     texture: vi.fn(),
   } as never;
+}
+
+function renderedHeight(tiles: TerrainTiles, key: string, index: number): number {
+  const tile = tiles.getTile(key);
+  if (tile === undefined) throw new Error(`Missing resident tile '${key}'.`);
+  const level = tile.lod.levels[0]?.object;
+  if (!(level instanceof Mesh)) throw new Error(`Missing rendered LOD for tile '${key}'.`);
+  return level.geometry.getAttribute("position").getY(index);
 }
 
 describe("TerrainTiles", () => {
@@ -38,66 +46,122 @@ describe("TerrainTiles", () => {
     ).toThrow(/residentByteBudget/u);
   });
 
-  it("uses the topology field's stored samples for resident tile rendering and collision", () => {
-    let calls = 0;
-    let colliderHeights: Float32Array | undefined;
+  it("counts retained edge samples in each tile and its admission estimate", () => {
     const tiles = new TerrainTiles({
-      createCollider: ({ field }) => {
-        colliderHeights = field.toColliderHeights();
-        return { dispose: () => undefined };
-      },
       surface: new MeshBasicMaterial(),
-      residentByteBudget: 200_000,
+      residentByteBudget: 9_000,
       residentTileBudget: 1,
-      sampleHeight: () => calls++,
+      sampleHeight,
       streamRadius: 0,
       tileResolution: 9,
       tileSize: 16,
-      topologyObservation: {
-        columns: 17,
-        depth: 16,
-        origin: { x: 0, z: 0 },
-        rows: 9,
-        width: 32,
-      },
-      worldPasses: {
-        dispatchBudget: 1,
-        erosion: {
-          depositionRate: 0.35,
-          erosionRate: 0.22,
-          evaporation: 0.04,
-          iterations: 0,
-          rainfall: 0.08,
-          sedimentCapacity: 0.7,
-          timeStep: 0.05,
-        },
-        gpu: false,
-      },
     });
 
     tiles.follow({ x: 0, z: 0 });
 
-    const topology = tiles.debug().topology as {
-      flow: readonly number[];
-      heights: readonly number[];
-    };
     const tile = tiles.getTile("0:0");
     if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
-    expect(colliderHeights).toBeDefined();
-    for (let row = 0; row < 9; row += 1) {
-      for (let column = 0; column < 9; column += 1) {
-        const topologyIndex = row * 17 + column + 4;
-        const x = -8 + column * 2;
-        const z = -8 + row * 2;
-        expect(tile.field.heightAt(x, z)).toBe(topology.heights[topologyIndex]);
-        expect(tile.field.sample("flow", x, z)).toBe(topology.flow[topologyIndex]);
-        expect(colliderHeights?.[column * 9 + row]).toBe(topology.heights[topologyIndex]);
-      }
-    }
+    expect(tile.bytes).toBe(8_672);
+    expect(tiles.residentBytes).toBe(8_672);
     tiles.dispose();
   });
 
-  it("keeps both LOD surfaces visible for a measurable multi-frame transition", () => {
+  it("rejects a tile when retained edge samples make it exceed the byte cap", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 8_400,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    expect(() => tiles.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
+    tiles.dispose();
+  });
+
+  it("keeps resident render, query, normal, and collider data independent of topology coverage", () => {
+    const worldPasses = {
+      dispatchBudget: 4,
+      erosion: {
+        depositionRate: 1,
+        erosionRate: 1,
+        evaporation: 0,
+        iterations: 4,
+        rainfall: 1,
+        sedimentCapacity: 10,
+        timeStep: 1,
+      },
+      gpu: false,
+    } as const;
+    const topologyObservation = {
+      columns: 17,
+      depth: 16,
+      origin: { x: 0, z: 0 },
+      rows: 9,
+      width: 32,
+    } as const;
+    const createTiles = (withObservation: boolean) => {
+      const colliderHeights = new Map<string, Float32Array>();
+      const tiles = new TerrainTiles({
+        createCollider: ({ field, key }) => {
+          colliderHeights.set(key, field.toColliderHeights());
+          return { dispose: () => undefined };
+        },
+        surface: new MeshBasicMaterial(),
+        residentByteBudget: 200_000,
+        residentTileBudget: 9,
+        sampleHeight,
+        streamRadius: 1,
+        tileResolution: 9,
+        tileSize: 16,
+        ...(withObservation ? { topologyObservation } : {}),
+        worldPasses,
+      });
+      tiles.follow({ x: 0, z: 0 });
+      return { colliderHeights, tiles };
+    };
+    const withoutObservation = createTiles(false);
+    const withObservation = createTiles(true);
+
+    for (const [x, z] of [
+      [-4, -4],
+      [4, 4],
+      [7.9, 0],
+      [8.1, 0],
+      [12, 0],
+    ] as const) {
+      expect(withObservation.tiles.heightAt(x, z)).toBeCloseTo(
+        withoutObservation.tiles.heightAt(x, z),
+        6,
+      );
+      const observedNormal = withObservation.tiles.normalAt(x, z);
+      const expectedNormal = withoutObservation.tiles.normalAt(x, z);
+      expect(observedNormal.x).toBeCloseTo(expectedNormal.x, 6);
+      expect(observedNormal.y).toBeCloseTo(expectedNormal.y, 6);
+      expect(observedNormal.z).toBeCloseTo(expectedNormal.z, 6);
+    }
+
+    expect(renderedHeight(withObservation.tiles, "0:0", 4 * 9 + 4)).toBeCloseTo(
+      renderedHeight(withoutObservation.tiles, "0:0", 4 * 9 + 4),
+      6,
+    );
+    for (const key of ["0:0", "1:0"]) {
+      const observedCollider = withObservation.colliderHeights.get(key);
+      const expectedCollider = withoutObservation.colliderHeights.get(key);
+      expect(observedCollider).toBeDefined();
+      expect(expectedCollider).toBeDefined();
+      expect(observedCollider).toHaveLength(expectedCollider?.length ?? 0);
+      for (let index = 0; index < (expectedCollider?.length ?? 0); index += 1)
+        expect(observedCollider?.[index]).toBeCloseTo(expectedCollider?.[index] as number, 6);
+    }
+    expect(withObservation.tiles.debug()).toHaveProperty("topology");
+    withObservation.tiles.dispose();
+    withoutObservation.tiles.dispose();
+  });
+
+  it("morphs one LOD surface within the measured pop bound for three frames", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
@@ -115,15 +179,40 @@ describe("TerrainTiles", () => {
 
     const tile = tiles.getTile("0:0");
     if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+    const fine = tile.lod.levels[0]?.object;
+    if (!(fine instanceof Mesh)) throw new Error("Expected the finest LOD to be a mesh.");
+    const position = fine.geometry.getAttribute("position");
+    const trackedIndex = 4 * 17 + 5;
+    const startHeight = position.getY(trackedIndex);
     const visible = (): number => tile.lod.children.filter((child) => child.visible).length;
-    expect(visible()).toBe(2);
+    expect(visible()).toBe(1);
     tiles.process(renderer);
-    expect(visible()).toBe(2);
+    expect(visible()).toBe(1);
+    expect(position.getY(trackedIndex)).not.toBe(startHeight);
     tiles.process(renderer);
-    expect(visible()).toBe(2);
+    expect(visible()).toBe(1);
     tiles.process(renderer);
     expect(visible()).toBe(1);
     expect(tiles.maxLodTransitionFrames).toBeGreaterThanOrEqual(3);
+    expect(tiles.maxLodPop).toBeGreaterThan(0);
+    expect(tiles.maxLodPop).toBeLessThanOrEqual(16);
+    tiles.dispose();
+  });
+
+  it("rejects an LOD transition whose measured mismatch exceeds the pop bound", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 9,
+      sampleHeight: (x) => Math.sin(x * (Math.PI / 2)) * 100,
+      streamRadius: 0,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [4, 8],
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    expect(() => tiles.follow({ x: 6, z: 0 })).toThrow(/LOD pop threshold/u);
     tiles.dispose();
   });
 

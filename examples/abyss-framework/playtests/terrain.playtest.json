@@ -59,6 +59,13 @@
         "gte": 1
       },
       {
+        "allowTrivial": "TerrainTiles keeps the measured LOD mismatch below its declared transition bound from startup.",
+        "changed": true,
+        "component": "maxLodPop",
+        "entity": "terrain",
+        "lte": 16
+      },
+      {
         "component": "maxLodTransitionFrames",
         "entity": "terrain",
         "gte": 3

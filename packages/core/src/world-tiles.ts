@@ -6,7 +6,6 @@ import { summarizeWorldTopology } from "./world-topology.js";
 import {
   Heightfield,
   type IHeightfieldOrigin,
-  type IHeightfieldRegionOptions,
   type IHeightfieldSamplerOptions,
   type IHeightfieldWorldPassOptions,
 } from "./world.js";
@@ -112,6 +111,7 @@ interface ILodTransition {
 }
 
 const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
+const LOD_POP_THRESHOLD = 16;
 const LOD_TRANSITION_FRAMES = 3;
 
 class EmptyCollider implements IWorldTileCollider {
@@ -157,9 +157,11 @@ function resolutionFor(tileResolution: number, factor: number): number {
 function estimatedLevelBytes(resolution: number): number {
   const vertices = resolution * resolution + resolution * 4;
   const triangles = (resolution - 1) * (resolution - 1) + (resolution - 1) * 4;
+  const edgeSampleBytes = resolution * 4 * Float32Array.BYTES_PER_ELEMENT;
   return (
     vertices * 3 * Float32Array.BYTES_PER_ELEMENT * 2 +
-    triangles * 6 * Uint32Array.BYTES_PER_ELEMENT
+    triangles * 6 * Uint32Array.BYTES_PER_ELEMENT +
+    edgeSampleBytes
   );
 }
 
@@ -224,29 +226,6 @@ function validateTopologyObservation(
     throw new Error(
       `TerrainTiles topologyObservation rows must match the rendered tile grid (expected ${String(expectedRows)}, received ${String(observation.rows)}).`,
     );
-}
-
-function fieldCoversRegion(
-  field: Heightfield,
-  origin: IHeightfieldOrigin,
-  width: number,
-  depth: number,
-): boolean {
-  const epsilon = 1e-6;
-  const minimumX = origin.x - width / 2;
-  const maximumX = origin.x + width / 2;
-  const minimumZ = origin.z - depth / 2;
-  const maximumZ = origin.z + depth / 2;
-  const fieldMinimumX = field.origin.x - field.width / 2;
-  const fieldMaximumX = field.origin.x + field.width / 2;
-  const fieldMinimumZ = field.origin.z - field.depth / 2;
-  const fieldMaximumZ = field.origin.z + field.depth / 2;
-  return (
-    minimumX >= fieldMinimumX - epsilon &&
-    maximumX <= fieldMaximumX + epsilon &&
-    minimumZ >= fieldMinimumZ - epsilon &&
-    maximumZ <= fieldMaximumZ + epsilon
-  );
 }
 
 function edgeSamplesFor(values: readonly number[], resolution: number): IEdgeSamples {
@@ -432,6 +411,160 @@ function interpolatedLevelHeight(level: ILevelGeometry, x: number, z: number): n
   return upper + (lower - upper) * rowMix;
 }
 
+function interpolatedLevelNormal(
+  level: ILevelGeometry,
+  x: number,
+  z: number,
+  target: Vector3,
+): Vector3 {
+  const column = Math.max(0, Math.min(1, x)) * (level.resolution - 1);
+  const row = Math.max(0, Math.min(1, z)) * (level.resolution - 1);
+  const column0 = Math.floor(column);
+  const row0 = Math.floor(row);
+  const column1 = Math.min(level.resolution - 1, column0 + 1);
+  const row1 = Math.min(level.resolution - 1, row0 + 1);
+  const columnMix = column - column0;
+  const rowMix = row - row0;
+  const normal = level.geometry.getAttribute("normal");
+  const upperLeft = row0 * level.resolution + column0;
+  const upperRight = row0 * level.resolution + column1;
+  const lowerLeft = row1 * level.resolution + column0;
+  const lowerRight = row1 * level.resolution + column1;
+  const blend = (upper: number, lower: number): number => upper + (lower - upper) * rowMix;
+  const interpolate = (
+    topLeft: number,
+    topRight: number,
+    bottomLeft: number,
+    bottomRight: number,
+  ) =>
+    blend(
+      topLeft + (topRight - topLeft) * columnMix,
+      bottomLeft + (bottomRight - bottomLeft) * columnMix,
+    );
+  return target
+    .set(
+      interpolate(
+        normal.getX(upperLeft),
+        normal.getX(upperRight),
+        normal.getX(lowerLeft),
+        normal.getX(lowerRight),
+      ),
+      interpolate(
+        normal.getY(upperLeft),
+        normal.getY(upperRight),
+        normal.getY(lowerLeft),
+        normal.getY(lowerRight),
+      ),
+      interpolate(
+        normal.getZ(upperLeft),
+        normal.getZ(upperRight),
+        normal.getZ(lowerLeft),
+        normal.getZ(lowerRight),
+      ),
+    )
+    .normalize();
+}
+
+function updateLevelSkirts(level: ILevelGeometry): void {
+  const position = level.geometry.getAttribute("position");
+  const normal = level.geometry.getAttribute("normal");
+  const surfaceVertexCount = level.resolution * level.resolution;
+  const edges = [
+    (index: number) => index,
+    (index: number) => (level.resolution - 1) * level.resolution + index,
+    (index: number) => index * level.resolution,
+    (index: number) => index * level.resolution + level.resolution - 1,
+  ];
+  for (const [edgeIndex, edge] of edges.entries()) {
+    for (let index = 0; index < level.resolution; index += 1) {
+      const top = edge(index);
+      const bottom = surfaceVertexCount + edgeIndex * level.resolution + index;
+      position.setY(bottom, position.getY(top) - level.skirtDepth);
+      normal.setXYZ(bottom, 0, 1, 0);
+    }
+  }
+}
+
+function restoreLevelSurface(field: Heightfield, level: ILevelGeometry): void {
+  const position = level.geometry.getAttribute("position");
+  const normalAttribute = level.geometry.getAttribute("normal");
+  const minimumX = field.origin.x - field.width / 2;
+  const minimumZ = field.origin.z - field.depth / 2;
+  const cellWidth = field.width / (level.resolution - 1);
+  const cellDepth = field.depth / (level.resolution - 1);
+  const normal = new Vector3();
+  for (let row = 0; row < level.resolution; row += 1) {
+    const z = minimumZ + row * cellDepth;
+    for (let column = 0; column < level.resolution; column += 1) {
+      const x = minimumX + column * cellWidth;
+      const index = row * level.resolution + column;
+      position.setY(index, field.heightAt(x, z));
+      field.normalAt(x, z, normal);
+      normalAttribute.setXYZ(index, normal.x, normal.y, normal.z);
+    }
+  }
+  updateLevelSkirts(level);
+  position.needsUpdate = true;
+  normalAttribute.needsUpdate = true;
+  level.geometry.computeBoundingBox();
+  level.geometry.computeBoundingSphere();
+}
+
+function updateLodTransitionGeometry(
+  tile: IResidentTile,
+  transition: ILodTransition,
+  progress: number,
+): void {
+  const from = tile.levels[transition.from];
+  const to = tile.levels[transition.to];
+  if (from === undefined || to === undefined)
+    throw new Error("TerrainTiles LOD transition references a missing level.");
+  const finer = from.resolution >= to.resolution ? from : to;
+  const coarser = finer === from ? to : from;
+  const fromIsFiner = finer === from;
+  const position = finer.geometry.getAttribute("position");
+  const normalAttribute = finer.geometry.getAttribute("normal");
+  const minimumX = tile.field.origin.x - tile.field.width / 2;
+  const minimumZ = tile.field.origin.z - tile.field.depth / 2;
+  const cellWidth = tile.field.width / (finer.resolution - 1);
+  const cellDepth = tile.field.depth / (finer.resolution - 1);
+  const fineNormal = new Vector3();
+  const coarseNormal = new Vector3();
+  const blendedNormal = new Vector3();
+  for (let row = 0; row < finer.resolution; row += 1) {
+    const z = minimumZ + row * cellDepth;
+    const normalizedZ = row / (finer.resolution - 1);
+    for (let column = 0; column < finer.resolution; column += 1) {
+      const x = minimumX + column * cellWidth;
+      const normalizedX = column / (finer.resolution - 1);
+      const index = row * finer.resolution + column;
+      const fineHeight = tile.field.heightAt(x, z);
+      const coarseHeight = interpolatedLevelHeight(coarser, normalizedX, normalizedZ);
+      const startHeight = fromIsFiner ? fineHeight : coarseHeight;
+      const endHeight = fromIsFiner ? coarseHeight : fineHeight;
+      position.setY(index, startHeight + (endHeight - startHeight) * progress);
+
+      tile.field.normalAt(x, z, fineNormal);
+      interpolatedLevelNormal(coarser, normalizedX, normalizedZ, coarseNormal);
+      const startNormal = fromIsFiner ? fineNormal : coarseNormal;
+      const endNormal = fromIsFiner ? coarseNormal : fineNormal;
+      blendedNormal
+        .set(
+          startNormal.x + (endNormal.x - startNormal.x) * progress,
+          startNormal.y + (endNormal.y - startNormal.y) * progress,
+          startNormal.z + (endNormal.z - startNormal.z) * progress,
+        )
+        .normalize();
+      normalAttribute.setXYZ(index, blendedNormal.x, blendedNormal.y, blendedNormal.z);
+    }
+  }
+  updateLevelSkirts(finer);
+  position.needsUpdate = true;
+  normalAttribute.needsUpdate = true;
+  finer.geometry.computeBoundingBox();
+  finer.geometry.computeBoundingSphere();
+}
+
 function lodApproximationError(a: ILevelGeometry, b: ILevelGeometry): number {
   const finer = a.resolution >= b.resolution ? a : b;
   const coarser = finer === a ? b : a;
@@ -494,7 +627,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #surface: MeshSurface;
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
-  /** Canonical topology samples; resident tiles copy aligned regions from this field. */
+  /** Canonical topology samples retained only for the declared diagnostics region. */
   readonly #topologyField: Heightfield | undefined;
   readonly #topologyBytes: number;
   readonly #worldPasses: IHeightfieldWorldPassOptions | undefined;
@@ -813,24 +946,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #createField(origin: IHeightfieldOrigin): Heightfield {
-    const region: IHeightfieldRegionOptions = {
+    const sampler: IHeightfieldSamplerOptions = {
       columns: this.tileResolution,
       depth: this.tileSize,
       origin,
       rows: this.tileResolution,
-      width: this.tileSize,
-    };
-    const topologyField = this.#topologyField;
-    if (
-      topologyField !== undefined &&
-      fieldCoversRegion(topologyField, origin, this.tileSize, this.tileSize)
-    )
-      return Heightfield.fromStoredRegion(topologyField, region);
-    return Heightfield.fromSampler({
-      ...region,
       sampleHeight: this.#sampleHeight,
+      width: this.tileSize,
       ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
-    });
+    };
+    return Heightfield.fromSampler(sampler);
   }
 
   #createTile(tileX: number, tileZ: number, distance: number): IResidentTile {
@@ -912,8 +1037,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const previousLevel = tile.lodLevel;
     const previous = tile.levels[previousLevel];
     const next = tile.levels[level];
-    if (previous !== undefined && next !== undefined)
-      this.#maxLodPop = Math.max(this.#maxLodPop, lodApproximationError(previous, next));
+    if (previous === undefined || next === undefined)
+      throw new Error("TerrainTiles LOD transition references a missing level.");
+    const pop = lodApproximationError(previous, next);
+    this.#maxLodPop = Math.max(this.#maxLodPop, pop);
+    if (pop > LOD_POP_THRESHOLD)
+      throw new Error(
+        `TerrainTiles LOD pop threshold ${String(LOD_POP_THRESHOLD)} exceeded by ${String(pop)}.`,
+      );
     tile.lodLevel = level;
     if (!countTransition) {
       setManualLodLevel(tile.lod, level);
@@ -927,8 +1058,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       remainingFrames: LOD_TRANSITION_FRAMES,
       to: level,
     };
-    setManualLodLevel(tile.lod, level);
-    this.#setLodVisibility(tile, [tile.lodTransition.from, tile.lodTransition.to]);
+    const finerLevel = previous.resolution >= next.resolution ? previousLevel : level;
+    setManualLodLevel(tile.lod, finerLevel);
+    updateLodTransitionGeometry(tile, tile.lodTransition, 0);
+    this.#setLodVisibility(tile, [finerLevel]);
   }
 
   #setLodVisibility(tile: IResidentTile, visibleLevels = [tile.lodLevel]): void {
@@ -944,12 +1077,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (transition === undefined) continue;
       transition.elapsedFrames += 1;
       transition.remainingFrames -= 1;
+      updateLodTransitionGeometry(
+        tile,
+        transition,
+        Math.min(1, transition.elapsedFrames / LOD_TRANSITION_FRAMES),
+      );
       if (transition.remainingFrames > 0) continue;
       this.#maxLodTransitionFrames = Math.max(
         this.#maxLodTransitionFrames,
         transition.elapsedFrames,
       );
+      this.#restoreLodTransition(tile, transition);
       tile.lodTransition = undefined;
+      setManualLodLevel(tile.lod, transition.to);
       this.#setLodVisibility(tile);
     }
   }
@@ -958,8 +1098,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const transition = tile.lodTransition;
     if (transition === undefined) return;
     this.#maxLodTransitionFrames = Math.max(this.#maxLodTransitionFrames, transition.elapsedFrames);
+    this.#restoreLodTransition(tile, transition);
     tile.lodTransition = undefined;
+    setManualLodLevel(tile.lod, transition.to);
     this.#setLodVisibility(tile);
+  }
+
+  #restoreLodTransition(tile: IResidentTile, transition: ILodTransition): void {
+    const from = tile.levels[transition.from];
+    const to = tile.levels[transition.to];
+    if (from === undefined || to === undefined) return;
+    restoreLevelSurface(tile.field, from.resolution >= to.resolution ? from : to);
   }
 
   #fieldAt(x: number, z: number): Heightfield {
