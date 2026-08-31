@@ -332,7 +332,8 @@ async function runStandalonePlaytestInternal(
     // `warmupFrames` is a fixed count, so whether it covers the application's launch depends on
     // the machine. Where the application reports its own startup, wait for that instead: the
     // baseline below must be read from a game that is running, not from one still loading.
-    if (bridge !== undefined) await waitForStartupReady({ bridge, pump: () => waitFrames(activePage, 1) });
+    if (bridge !== undefined && scenario.awaitStartup !== false)
+      await waitForStartupReady({ bridge, pump: () => waitFrames(activePage, 1) });
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,
     ).catch(() => false);

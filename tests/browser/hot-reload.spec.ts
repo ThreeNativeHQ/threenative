@@ -305,13 +305,11 @@ test("preserves starter state and stays flat across ten real HMR updates", async
     }
   });
 
-  // The starter boots to its main menu (`start: "menu"` in game.ts), and the menu scene has no
-  // player — the diagnostics on a failed run read `entities: 0` with a canvas and 11 scene
-  // objects, which is a game sitting on its title screen, not a game whose player will not land.
-  // The menu takes a character name and a `begin` submit, so entering play is typing and
-  // submitting it. Nothing here waits on a renderer, which is why it works on a CPU rasteriser.
-  await page.getByPlaceholder("character name").fill("axo");
-  await page.getByRole("button", { name: "begin" }).click();
+  // The starter boots straight into play (`start: "play"` in game.ts, since 739f2436), so there
+  // is no name to type and no `begin` to click — this waited 120 s for a placeholder that the
+  // menu deletion removed. Wait for the play scene's entities instead, which is what the menu
+  // steps were really establishing. Nothing here waits on a renderer, which is why it works on
+  // a CPU rasteriser.
   await page.waitForFunction(() => {
     const tools = (window as Window & { __THREENATIVE__?: { hot?: () => { entities: number } } })
       .__THREENATIVE__;

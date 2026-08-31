@@ -7,6 +7,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
   "assert",
+  "awaitStartup",
   "inputDelivery",
   "name",
   "parity",
@@ -34,6 +35,9 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (name === undefined || !/^[A-Za-z0-9._-]+$/.test(name)) {
     throw invalidScenario(scenarioPath, "Scenario name must be a stable file-safe identifier.");
   }
+  if (value.awaitStartup !== undefined && typeof value.awaitStartup !== "boolean") {
+    throw invalidScenario(scenarioPath, "Scenario awaitStartup must be a boolean when present.");
+  }
   const target = value.target === undefined ? "web" : value.target;
   if (target !== "web" && target !== "desktop" && target !== "bevy") {
     throw invalidScenario(scenarioPath, "Scenario target must be one of: web, desktop, bevy.");
@@ -59,6 +63,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     ...(typeof value.acceptanceId === "string" ? { acceptanceId: value.acceptanceId } : {}),
     ...(isRecord(value.artifacts) ? { artifacts: validateArtifacts(value.artifacts, scenarioPath) } : {}),
     ...(assertions === undefined ? {} : { assert: assertions }),
+    ...(typeof value.awaitStartup === "boolean" ? { awaitStartup: value.awaitStartup } : {}),
     inputDelivery,
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),

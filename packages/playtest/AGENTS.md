@@ -177,6 +177,25 @@ treated as ticks when the bridge exposes `runtime.fixedStep`; `warmupFrames` rem
 requestAnimationFrame warmup. Never introduce a wall-clock sleep or a millisecond-based step
 into scenario semantics.
 
+**Ticks are not the clock a launch runs on.** A run advances ticks as fast as the machine allows,
+so a whole scenario can complete during a launch that has not finished — and everything the
+application gates on startup (compute dispatch, the first world present) then never happens inside
+the run. `starter-look` read `flagSteps` 0 before and 0 after because the cloth had never been
+dispatched; twelve starter scenarios photographed the loading screen and reported
+`TN_CAPTURE_BLANK`. Both depended only on how long boot took.
+
+So after `warmupFrames` and before the baseline observation, the runner waits for the application
+to say its world is safe to observe: a bridge that advertises **`runtime.startup`** reports
+`{ phase, progress }` from `ready()` (core's `playtest()` plugin publishes `ctx.startup`), and the
+runner holds — pumping frames on browser, ticks on device — until `phase` is `"ready"`. Bounded by
+`PLAYTEST_STARTUP_READY_TIMEOUT_MS`; a game that never gets there fails
+`TN_PLAYTEST_STARTUP_NOT_READY` rather than being observed mid-load. An application that reports no
+startup at all — a plain Three.js page — is never waited on, and advertising the capability without
+reporting it is malformed and throws.
+
+Never fix a boot race by lengthening a wait. Padding changes which runs get lucky; the tick counts
+were already identical in the runs that disagreed.
+
 ## This is salvaged code
 
 Lifted from `threejs-to-bevy` and deliberately standalone: it runs against **plain Three.js

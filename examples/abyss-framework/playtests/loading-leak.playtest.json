@@ -1,4 +1,5 @@
 {
+  "awaitStartup": false,
   "assert": {
     "diagnostics": {
       "noConsoleErrors": true,

@@ -219,7 +219,8 @@ async function runDevicePlaytestInternal(
     // Same boundary as the browser lane: a fixed-step warmup is a tick count, not the clock the
     // application's launch runs on, so wait for the device to say its world is safe to observe.
     const attached = bridge;
-    await waitForStartupReady({ bridge: attached, pump: () => attached.advance(1) });
+    if (scenario.awaitStartup !== false)
+      await waitForStartupReady({ bridge: attached, pump: () => attached.advance(1) });
     await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);

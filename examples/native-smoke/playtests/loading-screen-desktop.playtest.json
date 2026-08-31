@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "name": "native-loading-screen-spans-first-use-stall",
   "target": "desktop",
+  "awaitStartup": false,
   "subject": "cube",
   "viewport": { "width": 640, "height": 360 },
   "warmupFrames": 0,

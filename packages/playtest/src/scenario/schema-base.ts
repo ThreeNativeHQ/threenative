@@ -429,6 +429,13 @@ export interface IPlaytestScenario {
   acceptanceId?: string;
   artifacts?: IPlaytestArtifactRequest;
   assert?: IPlaytestScenarioAssertions;
+  /**
+   * Wait for the application to finish its own startup before the first observation. Default
+   * true, because a fixed-step run otherwise observes a game that has not finished loading.
+   * Set false only when the launch *is* the subject — a loading-screen scenario has to be
+   * allowed to look at the loading screen.
+   */
+  awaitStartup?: boolean;
   inputDelivery?: PlaytestInputDelivery;
   name: string;
   parity?: IPlaytestParityConfig;
