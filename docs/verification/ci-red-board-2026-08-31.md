@@ -128,34 +128,45 @@ uploaded `playtest-pass/` artifact holds only a 2-entry `console.json` and no re
 message in the log is cut off mid-`observations`, so whether `pass` is false or merely absent from
 the captured output cannot be decided from here. Needs macOS.
 
-### Scaffolded starter desktop artifact — intermittent lost capture, newly named
+### Scaffolded starter desktop artifact — root cause found, not fixed
 
-Alternates red/green across runs (fail, pass, fail) with `TN_NATIVE_STARTER_ASSET_NOT_VISIBLE:
-found 0 cyan proof pixels`, while its own uploaded log carries every marker:
+Failed with `TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found 0 cyan proof pixels` while its own uploaded
+log carried every marker: `TN_NATIVE_SMOKE_READY`, `TN_NATIVE_STARTER_ASSETS_LOADED`, and
+`Rendered 300 frames`.
+
+The captures said what the message could not:
+
+| run | frames | wall time | `TN_PRESENTS` | distinct colours | cyan |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `33438020754` pass | 300 | 16,838 ms | 97 | 17,163 | 120 |
+| `33440190473` fail | 300 | 3,001 ms | 73 | 5 | 0 |
+| `33441929823` fail | 300 | — | — | 5 | 0 |
+
+Both on `llvmpipe`. Three hundred software-rendered frames cannot complete in 3 seconds, and the
+failing captures hold exactly five colours twice over — this is bimodal, not a race on a fine
+timescale.
+
+`STARTUP_STABLE_WINDOW_MS` is 10,000. A host that never produces five consecutive frames inside the
+50 ms budget — which is every llvmpipe runner — reaches ready only when that window expires. The
+passing run spent 16.8s and crossed it. The failing runs spent 3.0s and did not, so
+`runScreenshotMode` saved a frame from before the world was shown.
+
+This is the same shape as the Windows loading failure: a proof that counts frames while the thing it
+waits for is measured in wall clock. `--frames 300` cannot express "after startup", and the native
+CLI has no `--await-startup`.
+
+**Not fixed.** A correct fix holds the capture until startup readiness resolves, which is C++ in
+`runScreenshotMode` and could not be built or verified on this machine. Raising the frame count
+would only move the threshold, and a retry would hide it.
+
+**What is fixed** is the diagnosis. Below 64 distinct colours the gate now reports
+`TN_NATIVE_STARTER_FRAME_NOT_RENDERED` and says the capture is at fault, not the scene. It fired on
+its first real failure, on this PR:
 
 ```
-TN_NATIVE_SMOKE_READY            1
-TN_NATIVE_STARTER_ASSETS_LOADED  1
-Rendered 300 frames              1
+TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only 5 distinct colours in 1280x720.
+The run log may still show every marker: this is the capture, not the scene.
 ```
-
-Comparing the two runs' uploaded captures settles what the message could not:
-
-| | distinct colours | cyan pixels | max blue |
-| --- | ---: | ---: | ---: |
-| passing run `33438020754` | 17,163 | 120 | 238 |
-| failing run `33440190473` | **5** | 0 | 155 |
-
-Five colours in 1280x720 — flat background, two flat shapes, thirteen pixels of the GLB. The frame
-was never drawn. The asset loaded exactly as its marker said, so the old message sent the reader
-hunting a texture that was fine, and the `colors.size < 2` blank guard was too weak to catch a
-five-colour frame.
-
-**Not fixed** — the capture race lives in the native screenshot path and did not reproduce here.
-What is fixed is the diagnosis: `TN_NATIVE_STARTER_FRAME_NOT_RENDERED` now fires below 64 distinct
-colours and says the capture is at fault, not the scene, and the asset message carries the colour
-count. Verified against both real CI captures: the passing one still reports
-`{colors: 17163, cyanAssetPixels: 120}`, the failing one now names the capture.
 
 ### macOS desktop core
 
