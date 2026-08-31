@@ -131,10 +131,53 @@ Deliberately **not** in this list: F6 ECS and F7's editor (closed with evidence)
 packages (look, so they ship as template source), F9 (waiting on its recorded rigged-asset trigger),
 and F8 and F6's crowd path (blocked on consumers, not on algorithms — find the consumer first).
 
+## 4b. The effort numbers, re-estimated
+
+The research's effort column is a 0–10 abstraction assigned without seeing this tree, and its
+priority score is `impact` discounted by that number. Both are wrong wherever the starting line
+moved. Below, effort is restated in **agent-days at this repository's measured cadence** — the
+virtual geometry batch (PRD-279…285: bake, cluster DAG, CPU cut, GPU cut, two declines on measured
+headroom) was filed and closed inside 2026-08-30 — which is a unit someone can plan against, unlike
+`7/10`.
+
+"Remaining" means *from `6adb26d4`*, and it counts only the work the charter will actually accept:
+look ships as template source and is priced per template; a mechanism blocked on a consumer is
+priced as blocked, because no amount of engineering unblocks it.
+
+| F | Feature | Research effort | Remaining | Why it moved |
+|---|---|---:|---|---|
+| F17 | Nanite-like | 8–9/10 | **shipped**, +2–3 d | Landed on by default. Residual is the GPU cut on native (PRD-283); occlusion and streaming were declined on measured headroom |
+| F4 | Water | 4/10 | **0.5 d** | Shipped. The whole remaining cost is one native conformance case, which PRD-246 names and did not add |
+| F7 | Sequencer | 4/10 | **shipped**, editor closed | PRD-241's cancellable sequence is the runtime half. The timeline editor is closed with evidence |
+| F1 | Post-processing | 3/10 | **1 d** | The chain ships. Remaining is porting `worldEnvironment.ts` into the six templates that lack it (PRD-278 tranche 2), as generated source |
+| F20 | Path tracer | 9–10/10 | **3–5 d** | Not a renderer. 5,476 lines of DXR/Vulkan/Metal RT are written; the cost is one buffer-to-texture copy-out interop seam plus the contract that ungates it |
+| F2 | Volumetrics | 5/10 | **2 d** | `godRays` is already a chain stage and `Atmosphere`/`AtmosphereLuts` are in core. Remaining is a volumetric fog stage and its native proof |
+| F12 | Temporal upscaling | 6–7/10 | **2 d + 3 d** | PRD-269 (motion vectors for skinned/instanced) is 2 d and is a correctness fix owed to five already-shipped temporal stages. The upscaler on top is 3 d |
+| F5 | PCG | 5/10 | **3–5 d** | PRD-251 Phase 1 is complete and terrain shipped in PRD-043; phases 2–6 remain. A node-graph authoring UI is an editor and is not costed |
+| F13 | Layered materials | 6–7/10 | **0.5 d / template** | As a package: rejected, at any size. As template `materials.ts` source: half a day each |
+| F16 | Lumen-like GI | 9–10/10 | **4–6 d** | The nodes exist in starter source, the chain stages exist, baked static light shipped (PRD-256). Remaining is executing the five filed PRDs — and PRD-269 gates the temporal half of it |
+| F11 | Control Rig / IK | 6/10 | **3–5 d** | Greenfield, but `attachToBone`, `skeletonBones` and the `GroundSnap` convention already exist as the seam |
+| F19 | Physics suite | 9/10 | **6–10 d** | Rapier is adopted, cloth shipped 2026-08-30 clearing the kill switch by 16×. Remaining is destruction and vehicles only |
+| F10 | Procedural audio | 5/10 | **4–6 d** | `AudioBus` and the native audio parity lane exist; the DSP graph does not |
+| F14 | Virtual Shadow Maps | 7/10 | **6–10 d** | Still the largest true greenfield, and the estimate barely moves — but it inherits page-table and dirty-tracking machinery from F17 |
+| F15 | Virtual Texturing | 8/10 | **6–8 d** | KTX2/Basis transcoding shipped (PRD-095). The runtime page table, feedback buffer and residency cache are greenfield |
+| F18 | MegaLights | 7–8/10 | **5–8 d** | Greenfield, and PRD-270's rule forces a two-tier design from the start: hardware RT on native, clustered on web |
+| F9 | Motion Matching | 6/10 | **5–8 d, gated** | Greenfield and gated on the rigged-asset triggers PRD-039 recorded. Do not file before they fire |
+| F8 | World Partition | 6/10 | **blocked** | PRD-253 is BLOCKED at Phase 0 on a portable native residency consumer. Effort is not the constraint |
+| F6 | Mass / ECS crowds | 4/10 | **closed + blocked** | The ECS is closed with evidence. The crowd render path (PRD-258) is blocked at Phase 0 on a runnable many-soldier consumer |
+| F3 | Niagara-like VFX | 6/10 | **3–4 d** | `GPUParticles3D`, `TracerPool3D`, `FluidField2D`, `Billboard3D` and `SpriteAnimator3D` ship. Remaining is a module layer that must not own appearance |
+
+**What the re-estimate changes about the ranking.** The research's band A — F1, F2, F12, F14, F3 —
+is not wrong so much as already half-spent: three of its five are hours of template work or a
+correctness fix, not programs. Its band D contains the single cheapest high-leverage item in the
+whole document, F20, because it costed a path tracer instead of the interop seam that is actually
+missing. And two band-C items, F8 and F6, cannot be bought with engineering at any price until
+somebody writes the consumer that unblocks them.
+
 ## 5. What to do with this folder
 
-1. Delete `threenative-ue5-feature-checklists-and-repo-scan.md`; keep the reuse-map, which is a
-   superset with license triage.
+1. **Done 2026-08-30** — `threenative-ue5-feature-checklists-and-repo-scan.md` is deleted. The
+   reuse-map is kept: it is a superset carrying the license triage.
 2. Keep `threenative-repository-borrowing-catalog.md` as filed. It is the most directly useful of
    the three, and its license posture column is the part this repo cannot regenerate cheaply. Two
    entries are already settled in-tree and should be marked so: `dimforge/rapier` is adopted, and
