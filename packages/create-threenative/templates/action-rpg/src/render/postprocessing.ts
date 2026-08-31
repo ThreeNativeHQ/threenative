@@ -1,55 +1,71 @@
-import { ACESFilmicToneMapping, type Camera, type Scene } from "three";
-import { bloom } from "three/addons/tsl/display/BloomNode.js";
-import { pass } from "three/tsl";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// `WorldEnvironment`, in this folder, builds the lighting chain: which stages run, in what
+// order, and an honest report of what happened. It prints `TN_WORLD_ENVIRONMENT` naming every
+// stage as applied or refused **with a reason**, so a stage that silently no-op'd is never
+// mistaken for one you turned off. It decides no colour and no strength — every value below is
+// an argument, and they are yours.
+//
+// SSGI and SSR are the expensive pair, so they ship on for desktop and off for mobile. That
+// split is the shipped default, not a ceiling: turn either on for mobile by adding it to
+// `mobilePreset` and read the frame cost back out of `TN_FRAME_BUDGET`. What each stage costs,
+// and the one-line enable for the ones that ship off everywhere (godrays, contact AO,
+// vignette), is in `agent-docs/visual-baseline.md`.
+import type { Camera, DirectionalLight, Scene } from "three";
+import type { OutputRenderer } from "./worldEnvironment.js";
+import { WorldEnvironment } from "./worldEnvironment.js";
 
-type OutputRenderer = {
-  readonly kind: "webgpu" | "webgl2";
-  readonly raw: unknown;
-  createRenderChain?: (options: RenderChainOptions) => unknown;
-};
+// Scene-referred exposure: multiplied into the pass before the tone curve, so the gather, the
+// reflections and the bloom threshold all see the same exposed image.
+const exposure = 1.08;
 
-type RenderChainTier = "high" | "medium" | "low" | "off" | "auto";
+// Unchanged from this template's previous chain — strength, radius and threshold are a look
+// decision that was already tuned to this scene's palette.
+const glow = {
+  bloomEnabled: true,
+  bloomRadius: 0.42,
+  bloomStrength: 0.72,
+  bloomThreshold: 0.18,
+} as const;
 
-type RenderChainStageContext = {
-  readonly tier: Exclude<RenderChainTier, "auto">;
-  readonly velocity: {
-    readonly provisioned: boolean;
-    readonly required: boolean;
-    readonly source: "mrt" | "per-object" | null;
-    readonly measurementFrame?: number;
-    readonly rejectionFraction?: number;
-  };
-  readonly quality: {
-    readonly denoiseIterations: number;
-    readonly sliceCount: number;
-    readonly stepCount: number;
-  };
-};
+const desktopPreset = {
+  ...glow,
+  denoiseEnabled: true,
+  exposure,
+  ssgiEnabled: true,
+  // Room scale, not contact scale: about two thirds of the 24-unit shadow extent
+  // `lighting.ts` lights — an overhead arena whose walls and floor are the only things GI has to bounce between.
+  ssgiRadius: 16,
+  ssgiQuality: "medium",
+  ssrEnabled: true,
+  // `SSRNode` defaults this to **1 world unit**, which on a scene this size reads as
+  // "reflections are on and do nothing" — the ray dies a metre from where it started.
+  ssrMaxDistance: 40,
+  // A reflection carries almost no high-frequency detail, so half resolution costs a quarter
+  // of the rays and is very hard to see in the result.
+  ssrResolutionScale: 0.5,
+  // RCAS puts back the micro-detail the half-resolution reflection and the denoiser take out.
+  // The same cause everywhere, so the same value everywhere: **0 is maximum sharpening and 2
+  // is none** — it is a radius, not a gain.
+  sharpenEnabled: true,
+  sharpenStrength: 0.3,
+  tonemapMode: "aces",
+} as const;
 
-type RenderChainOptions = {
-  input?: unknown;
-  request?: { stages?: readonly string[]; tier?: RenderChainTier };
-  stages?: readonly {
-    name: "bloom";
-    build: (input: unknown, context: RenderChainStageContext) => unknown;
-  }[];
-};
+// No SSGI, no SSR, and therefore nothing for the sharpener to put back.
+const mobilePreset = {
+  ...glow,
+  exposure,
+  tonemapMode: "aces",
+} as const;
 
-export function setupPost(renderer: OutputRenderer, scene: Scene, camera: Camera): void {
-  const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
-  raw.toneMapping = ACESFilmicToneMapping;
-  raw.toneMappingExposure = 1.08;
-  const colour = pass(scene, camera).getTextureNode();
-  if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
-  renderer.createRenderChain({
-    input: colour,
-    request: { stages: ["bloom"], tier: "high" },
-    stages: [
-      {
-        build: (input) =>
-          (input as typeof colour).add(bloom(input as typeof colour, 0.72, 0.42, 0.18)),
-        name: "bloom",
-      },
-    ],
-  });
+export function setupPost(
+  renderer: OutputRenderer,
+  scene: Scene,
+  camera: Camera,
+  environment: { godraysLight?: DirectionalLight; mobile?: boolean } = {},
+): void {
+  const world = new WorldEnvironment(environment.mobile === true ? mobilePreset : desktopPreset);
+  world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
 }

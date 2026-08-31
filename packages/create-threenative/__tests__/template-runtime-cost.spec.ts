@@ -121,7 +121,9 @@ function sceneContext(physics: IPhysicsFixture["physics"], initialState: Record<
       compileAsync: async () => undefined,
       kind: "webgl",
       raw: { shadowMap: { enabled: false, type: 0 } },
-      createRenderChain: () => undefined,
+      // The real chain returns what it installed; a template reads that report back to print
+      // TN_WORLD_ENVIRONMENT, so the double has to honour the contract rather than return void.
+      createRenderChain: () => ({ applied: { dropped: [], stages: ["bloom"] } }),
       setOutputNode: () => undefined,
     },
     scene,

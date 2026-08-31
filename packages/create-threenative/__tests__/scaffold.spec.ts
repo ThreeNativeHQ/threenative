@@ -116,13 +116,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-30 for the platformer only: `348463f5` pinned the patrol in the damage
   // scenario and `cf5520c8` guarded the stomp scenarios' frozen placement. Scenario bytes moved
   // and no other tree did, so exactly one hash moves.
-  "action-rpg": "ca737916250b6759600da65c8c5063ab8426e5075c9dc4852a2cc1e8c86b1cf9",
-  defense: "be368c07a2af12e1a7069a22a63f3a4ef86deeb036eb269e579846a2cc3e3b6e",
-  minimal: "033dd80e2f7774dcb5f2e2e02d3d3f2b37702d7d6baf1ce1aa57e7c51fafc067",
-  platformer: "2cbe7a485fa220dabc9dfe3a34f92382ecff475a2fdedf014db17b92e79b0dca",
-  racing: "84a538b63813f1263e065a34d2c6f3fd3b48e842cdefdd318a0e4b84a3ae561b",
-  shooter: "bb11bc03793f1dd569c5b69008572b8ddb982f5ca5498bcd98216b5040b55576",
-  starter: "5ddf74af73db1a3537003014d5fea956a77d2fa3f07d349bf0963afa77ac0080",
+  // Recomputed 2026-08-30 for PRD-278: all seven trees. The six templates that had a 14-45 line
+  // `postprocessing.ts` now ship `worldEnvironment.ts` and a desktop/mobile preset pair beside
+  // it, every `setupLighting` returns its key light so godrays can refuse a shadowless one by
+  // name, every scene passes `isMobile()` in, and each template's AGENTS.md gained the
+  // `TN_WORLD_ENVIRONMENT` paragraph. The starter moves too: the shared file gained the
+  // `baseColour` seam `minimal`'s aerial perspective needs, bloom radius and threshold as
+  // arguments, and the report that prints even when every stage is off.
+  "action-rpg": "d758a51421e164e49cac7ec9d767a212d2cd6130e31e45e6093bd6a88ccf1069",
+  defense: "01e8a46af7fdf6644af7b6ccce995ed494a32e218e36e708ec4f26df77ad7139",
+  minimal: "9b8099053945baedd323b44dc42db750c6882badc8095522c3023409f04e3eac",
+  platformer: "94ab4b80286cff27f7592d07cbf5f67460f029b8b0d0711786ed17fcaddf0045",
+  racing: "43219f3a4dc0a59cace09fcb64cc48c3ce7c80371a4f98fbcdc9761bcc4e9e96",
+  shooter: "9c758b6ec29f503063211ea901e1d50b356fc6ade8f314381d57c7f8ebe510fb",
+  starter: "bf9361c3a101a1424b3e9282c4f99dcad9a31dae3413b736ba7c614e6f4bbca7",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

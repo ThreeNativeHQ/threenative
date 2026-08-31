@@ -49,8 +49,10 @@ export class Level extends Scene<GameState, IPhysicsContext> {
   };
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
-    setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    // isMobile() arrives as an argument because src/render/ imports no framework package: the
+    // platform decision is made here, in portable game code, exactly like createRandom.
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
     const loading = createLoadingScreen(ctx);

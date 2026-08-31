@@ -135,6 +135,13 @@ deferred `moveAndSlide(dt)` step-timing rule is in `agent-docs/gameplay-recipes.
 Interior lighting is intentional: sky.ts provides a dark ambient/fog envelope while the
 key, rim, and fill lights illuminate the dungeon. It is not a visible skybox.
 
+`postprocessing.ts` builds a `WorldEnvironment`: which stages run, in what order, and an honest
+report of what ran. It decides no colour and no strength — those are arguments in that file,
+yours. `TN_WORLD_ENVIRONMENT` names every stage applied or refused **with a reason**, and an
+unknown quality tier throws rather than becoming the default. SSGI and SSR ship desktop-on,
+mobile-off; their cost and the one-line enable for godrays, contact AO and vignette are in
+`agent-docs/visual-baseline.md`.
+
 <!-- shared: asset-mcp-loop -->
 ## Finding assets — you have an MCP server for this
 

@@ -102,6 +102,13 @@ the React one, showing every number twice. A native build has no HUD until you a
 HUD reads `GameState`; it never reaches into an attacker or tower. Register gameplay
 entities with `ctx.entities` so playtests can observe them and the framework can dispose them.
 
+`postprocessing.ts` builds a `WorldEnvironment`: which stages run, in what order, and an honest
+report of what ran. It decides no colour and no strength — those are arguments in that file,
+yours. `TN_WORLD_ENVIRONMENT` names every stage applied or refused **with a reason**, and an
+unknown quality tier throws rather than becoming the default. SSGI and SSR ship desktop-on,
+mobile-off; their cost and the one-line enable for godrays, contact AO and vignette are in
+`agent-docs/visual-baseline.md`.
+
 `B` places a tower in the next safe build slot for deterministic playtesting; real games place
 with the primary pointer on the board. `X` attempts the route test slot and `O` repeats the last
 safe slot, making the two placement negative controls reproducible.

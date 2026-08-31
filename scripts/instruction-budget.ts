@@ -107,7 +107,7 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // the atmosphere: its sky dome, sun colour and depth haze now come from one `Atmosphere` node
     // and `sky.ts` therefore sets no fog, which contradicts the fog instruction the section used
     // to carry. A convention missing from the templates' AGENTS.md does not exist, and this one
-    // has to name its WebGL fallback and the `output = aerial;` override or a game can neither
+    // has to name its WebGL fallback and the `baseColour` override or a game can neither
     // tell why the sky went flat nor turn the haze off. Measured 3767 against 3683.
     // +8 measured for the TSL silent-no-op traps, on the same clause: four post stages that
     // install and then do nothing (`SSRNode.maxDistance` defaulting to one world unit,

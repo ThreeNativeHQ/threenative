@@ -112,6 +112,13 @@ Godot-named nodes keeps that correct without thinking about it.
 - `src/render/` is ordinary Three.js source. It has no framework imports. Its baseline
   concerns include palette, camera, sky, lighting, materials, postprocessing, and the
   camera-parented geometry HUD in `hud.ts`.
+
+`postprocessing.ts` builds a `WorldEnvironment`: which stages run, in what order, and an honest
+report of what ran. It decides no colour and no strength — those are arguments in that file,
+yours. `TN_WORLD_ENVIRONMENT` names every stage applied or refused **with a reason**, and an
+unknown quality tier throws rather than becoming the default. SSGI and SSR ship desktop-on,
+mobile-off; their cost and the one-line enable for godrays, contact AO and vignette are in
+`agent-docs/visual-baseline.md`.
 - `src/scenes/Level.ts` is the live caller that wires the pieces together.
 - `playtests/survives.playtest.json` is the durable smoke proof: keep it when replacing the
   platformer gameplay. The other root `playtests/` scenarios prove movement, collection,

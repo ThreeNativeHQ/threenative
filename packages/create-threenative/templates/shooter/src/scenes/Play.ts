@@ -5,6 +5,7 @@ import {
   Scene,
   type SceneFrame,
   SpriteAnimator3D,
+  isMobile,
 } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { Mesh, MeshBasicMaterial, type PerspectiveCamera, Quaternion, Vector3 } from "three";
@@ -107,8 +108,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     const materials = createMaterials();
     setupSky(ctx.scene);
-    setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, camera);
+    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    // isMobile() arrives as an argument because src/render/ imports no framework package: the
+    // platform decision is made here, in portable game code, exactly like createRandom.
+    setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: sun, mobile: isMobile() });
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
     const shake = new CameraShake(createArenaShakeOptions());

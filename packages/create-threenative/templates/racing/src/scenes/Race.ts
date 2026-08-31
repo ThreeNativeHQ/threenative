@@ -1,4 +1,4 @@
-import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { type PerspectiveCamera, Vector3 } from "three";
 import { RACING_FEEL, RacingCar } from "../entities/RacingCar.js";
@@ -60,8 +60,10 @@ export class Race extends Scene<GameState, IPhysicsContext> {
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
-    setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    // isMobile() arrives as an argument because src/render/ imports no framework package: the
+    // platform decision is made here, in portable game code, exactly like createRandom.
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);

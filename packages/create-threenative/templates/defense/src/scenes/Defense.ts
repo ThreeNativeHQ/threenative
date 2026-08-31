@@ -1,4 +1,4 @@
-import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
 import { type Object3D, type PerspectiveCamera, Vector3 } from "three";
 import { Attacker } from "../attackers/Attacker.js";
 import { ROUTE_TEST_SLOT, RouteBoard, SAFE_BUILD_SLOTS } from "../board/Route.js";
@@ -26,8 +26,10 @@ export class Defense extends Scene<GameState, DefensePhysics> {
 
   override enter(ctx: GameCtx): SceneFrame<GameState, DefensePhysics> {
     setupSky(ctx.scene);
-    setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera);
+    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    // isMobile() arrives as an argument because src/render/ imports no framework package: the
+    // platform decision is made here, in portable game code, exactly like createRandom.
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);

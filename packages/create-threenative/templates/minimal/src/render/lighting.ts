@@ -24,7 +24,7 @@ export function setupLighting(
   scene: Scene,
   renderer: ShadowRenderer,
   atmosphere?: AtmosphereLike,
-): { updateSun(direction: Vector3): void } {
+): { key: DirectionalLight; updateSun(direction: Vector3): void } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
@@ -60,5 +60,8 @@ export function setupLighting(
   scene.add(rim);
 
   scene.add(new AmbientLight(palette.shadow, 0.28));
-  return { updateSun };
+  // The key light travels with the sun updater: `WorldEnvironment`'s godrays stage raymarches
+  // against its shadow map, so `setupPost` needs the light itself and refuses a shadowless one
+  // by name instead of rendering a black pass.
+  return { key, updateSun };
 }

@@ -90,6 +90,13 @@ The portable entry is `src/game.ts`; `src/main.ts` is the web-only React mount. 
 bundle does not run React, access the DOM, or load WASM. Keep gameplay in `src/`, and keep
 the look in `src/render/`.
 
+`postprocessing.ts` builds a `WorldEnvironment`: which stages run, in what order, and an honest
+report of what ran. It decides no colour and no strength — those are arguments in that file,
+yours. `TN_WORLD_ENVIRONMENT` names every stage applied or refused **with a reason**, and an
+unknown quality tier throws rather than becoming the default. SSGI and SSR ship desktop-on,
+mobile-off; their cost and the one-line enable for godrays, contact AO and vignette are in
+`agent-docs/visual-baseline.md`.
+
 ## Game contract
 
 - Clear five waves to win.

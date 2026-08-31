@@ -1,4 +1,11 @@
-import { Atmosphere, type ICtx, Scene, type SceneFrame, solarPosition } from "@threenative/core";
+import {
+  Atmosphere,
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  isMobile,
+  solarPosition,
+} from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -59,7 +66,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       atmosphere,
     );
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, atmosphere);
+    // isMobile() arrives as an argument because src/render/ imports no framework package: the
+    // platform decision is made here, in portable game code, exactly like createRandom.
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      atmosphere,
+      godraysLight: lighting.key,
+      mobile: isMobile(),
+    });
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);

@@ -96,6 +96,13 @@ road transform, and `Ranking.ts` ranks by route progress rather than world dista
 `src/render/` owns the palette, lighting, camera, materials, sky and postprocessing. The HUD is
 `src/ui/Hud.tsx` and there is only one of it: this template used to draw a geometry HUD on top of
 the React one, showing every number twice. A native build has no HUD until you add one.
+
+`postprocessing.ts` builds a `WorldEnvironment`: which stages run, in what order, and an honest
+report of what ran. It decides no colour and no strength — those are arguments in that file,
+yours. `TN_WORLD_ENVIRONMENT` names every stage applied or refused **with a reason**, and an
+unknown quality tier throws rather than becoming the default. SSGI and SSR ship desktop-on,
+mobile-off; their cost and the one-line enable for godrays, contact AO and vignette are in
+`agent-docs/visual-baseline.md`.
 There is no track format, racing-line solver, or `VehicleBody3D` abstraction. `Track.ts` uses
 the generic `PathFollow3D` route follower directly. Change the circuit in `src/track/Track.ts`
 and tune car constants in `src/entities/RacingCar.ts`.
