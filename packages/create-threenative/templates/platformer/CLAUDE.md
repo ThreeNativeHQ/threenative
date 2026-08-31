@@ -310,6 +310,11 @@ user to look, saying what to check.
 **headless Chromium usually cannot render WebGPU** — if a screenshot comes back black or empty,
 suspect the capture before you rewrite the scene.
 
+**Matching a reference is a lighting problem first.** Bounce light, contact occlusion,
+reflections and light shafts are already wired in `src/render/postprocessing.ts`; search
+`engine_search_capabilities` before building one by hand, and read `TN_RENDER_CHAIN`, which names
+each stage applied or refused with a reason. Dials: `agent-docs/visual-baseline.md`.
+
 The capture recipes, virtual-display setup, and the silhouette checklist are
 `agent-docs/capture-the-frame.md`. When you think you are done: *would a player screenshot
 this?* If no, you are not finished.

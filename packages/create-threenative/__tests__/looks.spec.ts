@@ -83,6 +83,30 @@ describe("starter visual floor", () => {
     }
   });
 
+  it("should refuse godrays by name when the shadow map is not allocated yet", async () => {
+    // `castShadow` is a request, not a result: three allocates the shadow map on the first render
+    // that needs it, and GodraysNode reads `shadow.map.depthTexture` while the graph is built.
+    // Reading it too early throws inside TSL, which fails the whole chain build — so SSGI, SSR,
+    // bloom and the tonemap all vanish with it and the frame comes back ungraded. That reads as a
+    // broken scene rather than a missing shadow map, and it cost a day of the cave scene.
+    //
+    // The stage list's contract is that an unavailable stage is refused **by name, with a
+    // reason**, leaving the rest of the chain intact. Guarding the map is what keeps that promise.
+    const templateRoot = path.join(starter, "..");
+    const templates = (await readdir(templateRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    expect(templates.length).toBeGreaterThan(0);
+    for (const template of templates) {
+      const source = await readFile(
+        path.join(templateRoot, template, "src/render/worldEnvironment.ts"),
+        "utf8",
+      );
+      const guard = source.slice(source.indexOf('name: "godRays"'));
+      expect(guard.slice(0, guard.indexOf("build:")), template).toContain("shadow?.map == null");
+    }
+  });
+
   it("should ship a rounded-geometry floor rather than raw boxes", async () => {
     // A sharp BoxGeometry reads as Minecraft; the same box with a corner
     // radius reads as a toy. Shipping this is most of the difference between

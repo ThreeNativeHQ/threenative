@@ -435,6 +435,14 @@ export class WorldEnvironment {
           if (light === undefined) return "godraysEnabled is true but no godraysLight was passed";
           if (light.castShadow !== true)
             return `light '${light.name || "sun"}' does not cast shadows`;
+          // `castShadow` is a request, not a result: three allocates the shadow map on the first
+          // render that needs it, and `GodraysNode` reads `shadow.map.depthTexture` while the
+          // graph is built. Without this check that read throws inside TSL, the chain build
+          // fails, and *every* stage is lost — the frame comes back ungraded with no SSGI, no
+          // SSR and no tonemap, which looks like a scene problem rather than a missing map.
+          // Refusing by name keeps the rest of the chain, which is this stage list's contract.
+          if (light.shadow?.map == null)
+            return `light '${light.name || "sun"}' has no shadow map yet: set renderer.shadowMap.enabled on the raw renderer (ctx.renderer.raw), and build the chain after the first frame has rendered`;
           return true;
         },
         build: (input) => {

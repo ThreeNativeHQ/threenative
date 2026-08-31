@@ -70,6 +70,9 @@ const AGENT_ROLE_PATHS = [
 // re-running locally could converge them. If this table needs updating again, take the values
 // from a CI failure's `Received` block, or compute them from a clean checkout of HEAD — never
 // from a dirty tree in a checkout more than one lane is working in.
+// Recomputed 2026-08-31 again: the godrays stage now refuses by name when the shadow map is not
+// allocated yet instead of throwing and taking the whole chain with it, and the shared
+// look fragment points at the lighting docs. Both are embedded in every scaffold.
 // Recomputed 2026-08-31 for PRD-295: every template's AGENTS.md now carries the Fab import route
 // (fab_search_assets -> fab_list_owned -> fab_import_asset) in the shared asset-mcp-loop fragment,
 // and that fragment is embedded in all seven scaffolds.
@@ -165,13 +168,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "b60b822eac13e95b50aeebea45265641d56c1399cb1cc1228fda67a98c351fea",
-  defense: "e0811116666db2945673f2b35b7dcb478726ea1a3eb0d7679eb457cd47c6a510",
-  minimal: "5bf99d1a8e484ce91e2fc8eb5a066c17e3ea382771b147050bb606fec9182a9a",
-  platformer: "62263f1793a5283aa9b5192ec11d760b990e98336a9150dfe2f7dc8e60cbc63d",
-  racing: "56fe1cd73d64041788411957d77e94557192300cd582a4db78b6c82c0a0677ab",
-  shooter: "6d3e6a402ae872b39bd34e8ed4d37e17399252770676a10d72324a246cc1b1eb",
-  starter: "588778e62867dd2960dde5c67a8eb6a3b4ea8d51934df30517a089b6697d5c5c",
+  "action-rpg": "0c0f1b152fba3cd16ce936339a13fd5824095a4583e1af38ba3ceab0651ec396",
+  defense: "437939e91656d44c7fbc14312c3ceb2dc9334df8d83735d08addb4ac85db0217",
+  minimal: "02a4078a8fcc3db233340ac4c66e78bf86a7f54ed6c4fdb0d9a8a6c738a8a88c",
+  platformer: "35d620d7633f3a20293785ed0789019e96520e97008cac79e6d28a1a14478e9d",
+  racing: "e196de18dafdb0c0c0c09d86fb2db59d588a1f4d80feb869e607be9c39ed98cd",
+  shooter: "237c10bd369dd71e985cc5f2ca8af20c033f8241d2c69a8f35f8f5d6a254aeec",
+  starter: "457e182b6b1a00e0f8a96367b3a707e39cc18f3ea8f17ef81be4a526b0c355a3",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -182,7 +185,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "22088ddaa4093cbcf92853b77a8896c163169e637d7d78af5717759127a06408",
+  sailing: "a7e6b702bd1236a8784d4a37715a7441dc384c8ef107217baea0a3f88a315dfd",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.

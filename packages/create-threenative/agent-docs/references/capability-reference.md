@@ -3045,6 +3045,40 @@ export function useUiState<TState extends object>(): TState | undefined;
 const score = useUiState((state) => state.score);
 ```
 
+## `src/render/worldEnvironment.ts`
+
+### `WorldEnvironment`
+
+`class` — The generated file that composes every lighting stage and prints TN_RENDER_CHAIN naming each one as applied or refused with a reason. It is the game's source, not the framework's — edit it.
+
+```ts
+class WorldEnvironment
+```
+
+- **Use when:** turn a lighting or post-processing effect on or off · find out why an effect you enabled is not visible · change how the scene is lit, graded, or tonemapped · match a reference image's lighting
+- **Constraints:** Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped. · A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it. · Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.
+
+```ts
+src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
+```
+
+## `three/addons/tsl/display/BloomNode.js`
+
+### `BloomNode`
+
+`class` — Glow around bright pixels. Already wired as the `bloom` stage.
+
+```ts
+class BloomNode
+```
+
+- **Use when:** make a bright opening or a lamp glow · bloom, glare, light spill
+- **Constraints:** Strength above ~0.3 on an interior washes the mid-tones; the reference-matching band is lower than it looks.
+
+```ts
+src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
+```
+
 ## `three/addons/tsl/display/DenoiseNode.js`
 
 ### `DenoiseNode`
@@ -3060,6 +3094,40 @@ class DenoiseNode
 
 ```ts
 DenoiseNode(...)
+```
+
+## `three/addons/tsl/display/GodraysNode.js`
+
+### `GodraysNode`
+
+`class` — Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.
+
+```ts
+class GodraysNode
+```
+
+- **Use when:** draw a visible shaft of light through a window or a hole in a roof · god rays, sun shafts, light beams, crepuscular rays · make sunlight visible in dusty or misty air indoors · light a cave or a hall through an opening above · volumetric lighting without adding cone geometry
+- **Constraints:** Needs a shadow-casting DirectionalLight passed as `godraysLight`, and `renderer.shadowMap.enabled = true` — without the shadow map the stage refuses and the whole chain reports it dropped. · `godraysFloor` is what separates beams from fog: it subtracts out-of-beam scatter before `godraysIntensity` multiplies. Raising intensity with a floor near zero brightens the haze over the whole room instead of the beams. · Do not author cone geometry for beams. A hand-built additive cone draws its own silhouette and reads as a plastic tube; this stage is the supported route. · Measured band on an interior scene: density 0.7, floor 0.08, intensity 3.0, maxDensity 0.6. Above ~0.8 density the haze stops being confined to the beams and the room fogs.
+
+```ts
+src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
+```
+
+## `three/addons/tsl/display/GTAONode.js`
+
+### `GTAONode`
+
+`class` — Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.
+
+```ts
+class GTAONode
+```
+
+- **Use when:** darken the contact where an object meets the floor · stop props looking like they float · ambient occlusion, contact shadows, crevice darkening
+- **Constraints:** Radius is in metres; a radius sized for a room reads as a smudge on a prop.
+
+```ts
+src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 ```
 
 ## `three/addons/tsl/display/MotionBlur.js`

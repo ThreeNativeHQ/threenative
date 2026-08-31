@@ -131,3 +131,44 @@ reason** — `godraysEnabled is false`, `light 'sun' does not cast shadows`, `re
 stage you turned on that is not in that line as `applied: true` did not run, and the reason says
 why. An unknown `ssgiQuality` or `tonemapMode` throws at construction rather than quietly
 becoming the default.
+
+## Shafts of light — the one recipe that is easy to get wrong
+
+You want the beam a cathedral window or a hole in a cave roof throws. **Do not build cone
+geometry for it.** A hand-authored additive cone draws its own silhouette, stacks two layers where
+you see through both walls, and reads as a plastic tube; the `godRays` stage is the supported
+route and it is already wired.
+
+Four things have to be true, and three of them fail silently:
+
+1. **`renderer.shadowMap.enabled = true`.** The stage raymarches the sun's shadow map, and three
+   does not allocate one until something asks for it. With no shadow map the stage refuses — and
+   because it refuses at build time it takes the *whole chain* with it, so SSGI, SSR and your
+   tonemap all quietly stop too. The symptom is a flat, ungraded frame, not a missing beam.
+   `ctx.renderer` is the framework's wrapper; `ctx.renderer.raw` is the three renderer that has
+   `shadowMap`. Setting it on the wrong one throws `Cannot set properties of undefined`.
+2. **The light casts shadows and reaches the room.** `castShadow = true`, and a shadow-camera
+   frustum wide enough to contain the space — the default 10 m ortho extent shadows nothing in a
+   50 m hall, and a shaft is only visible where the map says the air is lit.
+3. **The beam has to pass through the opening.** Position the light so the line from it through
+   the hole lands where you want the pool of light; a sun placed for a pleasing angle usually
+   misses the hole entirely and lights the far wall instead.
+4. **`godraysFloor` is the dial that separates beams from fog.** This is the one people miss. The
+   pass adds haze to every pixel, not only to the beams. `godraysFloor` subtracts that out-of-beam
+   scatter *before* `godraysIntensity` multiplies, so with the floor near zero, raising intensity
+   scales the veil over the whole room and the frame just gets milkier. Raise the floor first,
+   then the intensity.
+
+Measured band on an interior (lumen-hall, across many captures):
+
+```ts
+godraysDensity: 0.7,      // above ~0.8 the haze stops being confined to the beams
+godraysFloor: 0.08,       // subtracts the veil; raise this before raising intensity
+godraysIntensity: 3.0,    // only scales what survives the floor
+godraysMaxDensity: 0.6,   // clamp; a no-op at this density, louder at higher ones
+godraysSteps: 56,         // below ~24 leaves visible slabs at each step boundary
+```
+
+A useful check that costs nothing: if turning godrays off moves the **median** brightness of the
+frame by more than a few points, the stage is fogging the room rather than drawing shafts. Beams
+change the bright end of the histogram, not the middle.

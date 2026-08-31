@@ -8,6 +8,7 @@ import {
   REALISM_EFFECTS_MANIFEST_ENTRIES,
   validateRealismEffectsCoverage,
 } from "./realism-effects-coverage.js";
+import { RENDER_CHAIN_MANIFEST_ENTRIES } from "./render-chain-capabilities.js";
 
 export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/capabilities.json";
 // `@threenative/core` ships the same manifest so the capability MCP server still answers in a
@@ -488,6 +489,7 @@ export function buildCapabilityManifest(
       symbol: candidate.symbol,
     }))
     .concat(REALISM_EFFECTS_MANIFEST_ENTRIES)
+    .concat(RENDER_CHAIN_MANIFEST_ENTRIES)
     .sort((left, right) =>
       `${left.importPath}:${left.symbol}`.localeCompare(`${right.importPath}:${right.symbol}`),
     );
