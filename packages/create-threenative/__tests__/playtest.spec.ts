@@ -287,6 +287,9 @@ describe("starter playtest proof", () => {
 
   it("should ship numeric and signal assertions for both terminal outcomes", async () => {
     const root = path.resolve("packages/create-threenative/templates/platformer");
+    const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
     const win = JSON.parse(
       await readFile(path.join(root, "playtests/terminal-loop-win.playtest.json"), "utf8"),
     ) as { assert: { resources: unknown[]; signals: unknown[] } };
@@ -294,6 +297,10 @@ describe("starter playtest proof", () => {
       await readFile(path.join(root, "playtests/terminal-loop-fail.playtest.json"), "utf8"),
     ) as { assert: { resources: unknown[]; signals: unknown[] } };
 
+    expect(packageJson.scripts?.["pretest:terminal-loop"]).toBe("playwright install chromium");
+    const terminalLoop = packageJson.scripts?.["test:terminal-loop"] ?? "";
+    expect(terminalLoop).toContain("terminal-loop-win.playtest.json");
+    expect(terminalLoop).toContain("terminal-loop-fail.playtest.json");
     expect(win.assert.resources).toContainEqual({
       changed: true,
       equals: 1,
