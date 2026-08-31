@@ -41,7 +41,8 @@ export interface IDoctorReport {
 }
 
 export interface IProjectSnapshot {
-  /** Resolved TypeScript config, or the legacy JSON/package fallback when TypeScript is absent. */
+  /** Resolved TypeScript config, or the single sanctioned package.json `nativeEntry`
+   *  fallback when TypeScript is absent — the same surfaces the build path reads. */
   readonly config: unknown;
   readonly files: ReadonlySet<string>;
   readonly installedVersions: ReadonlyMap<string, string>;
@@ -206,6 +207,13 @@ function nativeEntryFrom(config: unknown): string {
 
 function usesDesktopOverlay(config: unknown): boolean {
   return record(record(config)?.ui)?.renderer === "web";
+}
+
+/** Builds resolve only the TypeScript config plus the single sanctioned package.json
+ *  `nativeEntry` fallback, so doctor reports no other legacy surface as the config. */
+function nativeEntryCompat(value: unknown): { nativeEntry: string } | undefined {
+  const entry = record(value)?.nativeEntry;
+  return typeof entry === "string" && entry.length > 0 ? { nativeEntry: entry } : undefined;
 }
 
 function resolvePackageDirectoryFrom(start: string, name: string): string | undefined {
@@ -1278,8 +1286,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
   const typeScriptConfig = path.join(projectRoot, "threenative.config.ts");
   const config = existsSync(typeScriptConfig)
     ? await readTypeScriptConfig(projectRoot)
-    : ((await readJson(path.join(projectRoot, "threenative.config.json"))) ??
-      record(packageJson)?.threenative);
+    : nativeEntryCompat(record(packageJson)?.threenative);
   const files = new Set(await collectFiles(projectRoot));
   const installedVersions = new Map<string, string>();
   for (const name of declaredDependencies(packageJson)) {

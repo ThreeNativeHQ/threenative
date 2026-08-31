@@ -829,6 +829,44 @@ describe("threenative doctor command", () => {
     expect(snapshot.config).toBeUndefined();
   });
 
+  it("does not report a threenative.config.json surface that builds ignore", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-config-json-only-");
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src/game.ts"), "export default {};");
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "doctor-config-json-only", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.json"),
+      JSON.stringify({ nativeEntry: "src/legacy-game.ts", ui: { renderer: "native" } }),
+    );
+
+    const snapshot = await readProject(root);
+
+    expect(snapshot.config).toBeUndefined();
+  });
+
+  it("keeps the sanctioned package.json nativeEntry fallback when no TypeScript config exists", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-config-package-entry-");
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src/game.ts"), "export default {};");
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: "doctor-config-package-entry",
+        type: "module",
+        threenative: { nativeEntry: "src/package-game.ts" },
+      }),
+    );
+
+    const snapshot = await readProject(root);
+
+    expect(snapshot.config).toEqual({ nativeEntry: "src/package-game.ts" });
+  });
+
   it("reads a real directory and exits 1 when that directory is not a project", async () => {
     const { runDoctorCommand } = await import("../src/threenative.js");
     const { makeTempDir } = await import("../../../test-support/temp-dir.js");
