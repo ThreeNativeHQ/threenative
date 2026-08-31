@@ -55,6 +55,10 @@ C wall probe, H damage, X lethal hit, WASD/arrows move, R restarts. Use
 `src/scenes/Play.ts` wires it, `src/ui/Hud.tsx` is the only HUD, and `state.ts` publishes lives/wave.
 Keep `playtests/survives.playtest.json` as smoke proof; rewrite the other combat/outcome examples.
 
+
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick,
+a right aim stick and a fire button. Keyboard input remains the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.

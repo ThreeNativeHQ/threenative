@@ -31,6 +31,13 @@
       }
     ],
     "movement": { "entity": "player", "minDistance": 0.5 },
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": false,
+        "allowTrivial": "Desktop keyboard lanes intentionally omit touch controls while movement proves the scene is active."
+      }
+    ],
     "visual": [
       {
         "region": {

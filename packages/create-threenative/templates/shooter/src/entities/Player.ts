@@ -3,6 +3,7 @@ import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threen
 import { Group, Vector3 } from "three";
 import { type IShooterConventions, preparePlayerConventions } from "../conventions.js";
 import { createPlayerVisual } from "../render/shapes.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
 export const WORLD_LAYER = 1;
@@ -52,9 +53,14 @@ export class Player {
     });
   }
 
-  update(ctx: GameCtx, dt: number): void {
+  update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     if (this.dead) return;
     const move = ctx.input.vector("move");
+    if (touch !== undefined) {
+      move.x += touch.move.x;
+      move.y += touch.move.y;
+      move.clampLength(0, 1);
+    }
     this.body.velocity.x = move.x * MOVE_SPEED;
     this.body.velocity.z = -move.y * MOVE_SPEED;
     this.body.moveAndSlide(dt);

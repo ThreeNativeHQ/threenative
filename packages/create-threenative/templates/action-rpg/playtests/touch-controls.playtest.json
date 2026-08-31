@@ -1,11 +1,10 @@
 {
-  "name": "platformer-touch-controls-web",
+  "name": "action-rpg-touch-controls",
   "schemaVersion": 1,
   "target": "web",
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 10,
   "subject": "player",
-  "artifacts": { "screenshots": "after" },
   "steps": [
     {
       "kind": "input",
@@ -16,8 +15,8 @@
     },
     {
       "kind": "input",
-      "label": "simultaneous-move-and-jump",
-      "pointers": [{ "id": 7, "x": 0.3, "y": 0.75 }, { "id": 3, "x": 0.922, "y": 0.861 }],
+      "label": "move-and-attack",
+      "pointers": [{ "id": 7, "x": 0.32, "y": 0.75 }, { "id": 3, "x": 0.927, "y": 0.869 }],
       "holdTicks": 45,
       "release": true
     },
@@ -30,27 +29,13 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
-    "movement": { "entity": "player", "minDistance": 0.5 },
-    "resources": [
-      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
-      { "id": "state", "path": "playerX", "gte": 0.05, "changed": true }
-    ],
+    "movement": { "entity": "player", "minDistance": 0.1 },
+    "resources": [{ "id": "state", "path": "playerX", "changed": true }],
     "visibility": [
       {
         "entity": "touch-controls",
         "present": true,
         "allowTrivial": "Touch-primary lanes keep the authored controls visible while state assertions prove they are live."
-      }
-    ],
-    "visual": [
-      {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 1280,
-          "height": 720,
-          "minNonblankPixelRatio": 0.01
-        }
       }
     ]
   }

@@ -225,7 +225,7 @@ describe("starter playtest proof", () => {
     },
   );
 
-  it("should keep touch controls absent in the normal web platformer run", async () => {
+  it("should drive platformer movement and jumping with browser touch", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
@@ -238,7 +238,7 @@ describe("starter playtest proof", () => {
         diagnostics: { noConsoleErrors: boolean; noNetworkErrors: boolean; runtimeReady: boolean };
         visibility: Array<{ entity: string; present: boolean }>;
       };
-      steps: Array<{ press?: string }>;
+      steps: Array<{ pointers?: Array<{ id: number }> }>;
       target: string;
     };
     const level = await readFile(
@@ -247,24 +247,20 @@ describe("starter playtest proof", () => {
     );
 
     expect(scenario.target).toBe("web");
-    expect(scenario.steps).toContainEqual(expect.objectContaining({ press: "ArrowUp" }));
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
     expect(scenario.assert.diagnostics).toEqual({
       noConsoleErrors: true,
       noNetworkErrors: true,
       noRuntimeDiagnostics: true,
       runtimeReady: true,
     });
-    expect(scenario.assert.visibility).toEqual([
-      {
-        allowTrivial:
-          "Web targets intentionally omit the native touch-controls entity; keyboard movement proves the web path while this absence remains held.",
-        entity: "touch-controls",
-        present: false,
-      },
-    ]);
-    expect(level).toContain(
-      "const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();",
-    );
+    expect(
+      scenario.assert.visibility.some(
+        (entry) => entry.entity === "touch-controls" && entry.present === true,
+      ),
+    ).toBe(true);
+    expect(level).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(level).not.toContain("isNative() && isMobile()");
   });
 
   it("should form the same native touch scenario for Android and iOS targets", async () => {

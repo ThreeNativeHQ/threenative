@@ -6,6 +6,7 @@ import {
   type SceneFrame,
   SpriteAnimator3D,
   isMobile,
+  isTouchscreenAvailable,
 } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { Mesh, MeshBasicMaterial, type PerspectiveCamera, Quaternion, Vector3 } from "three";
@@ -35,6 +36,8 @@ import {
   createWallVisual,
 } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 import { WaveDirector } from "../waves.js";
 import { Hitscan } from "../weapons/Hitscan.js";
@@ -114,6 +117,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: sun, mobile: isMobile() });
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(camera))
+      : undefined;
     const shake = new CameraShake(createArenaShakeOptions());
     const rig = createArenaCamera(camera, shake);
     const billboards: Billboard3D[] = [];
@@ -466,9 +473,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
     };
 
-    const handleInput = (frameCtx: GameCtx): void => {
+    const handleInput = (frameCtx: GameCtx, touch?: ITouchInput): void => {
       handleAimEdges(frameCtx);
-      if (frameCtx.input.justPressed("fire")) fireHitscan(frameCtx.input.pressed("aim"));
+      if (frameCtx.input.justPressed("fire") || touch?.firePressed === true)
+        fireHitscan(frameCtx.input.pressed("aim"));
       if (frameCtx.input.justPressed("projectile")) fireProjectile();
       if (frameCtx.input.justPressed("blast")) fireRadius();
       if (frameCtx.input.justPressed("probe")) probeWall();
@@ -561,10 +569,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     // Relative mouse pixels accumulate here once per frame; the same yaw drives both the
     // camera orbit and the aim direction, and the total is published for playtests.
-    const applyLook = (frameCtx: GameCtx): void => {
+    const applyLook = (frameCtx: GameCtx, touch?: ITouchInput): void => {
       const look = frameCtx.input.vector("look");
-      if (look.x === 0) return;
-      lookState.yaw += look.x * LOOK_RADIANS_PER_PIXEL;
+      const touchLook = touch?.aim.x ?? 0;
+      if (look.x === 0 && touchLook === 0) return;
+      lookState.yaw += (look.x + touchLook * 12) * LOOK_RADIANS_PER_PIXEL;
       lookPatch.yawDegrees = Math.round((lookState.yaw * 180) / Math.PI);
       ctx.state.set(lookPatch);
     };
@@ -573,10 +582,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       loading.update();
       elapsed.value += dt;
       if (restart(frameCtx)) return;
-      handleInput(frameCtx);
-      applyLook(frameCtx);
+      const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
+      handleInput(frameCtx, touch);
+      applyLook(frameCtx, touch);
 
-      player.update(frameCtx, dt);
+      player.update(frameCtx, dt, touch);
       hitscan.update(dt);
       updateProjectiles(frameCtx, dt);
       for (const target of targets.values()) target.update(dt);

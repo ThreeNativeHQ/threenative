@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { Vector2 } from "three";
 import { describe, expect, it } from "vitest";
 import {
@@ -90,5 +92,29 @@ describe("platformer thumbstick", () => {
         expect(point.y).toBeLessThan(size.height);
       }
     }
+  });
+});
+
+const TOUCH_TEMPLATES = [
+  "action-rpg",
+  "minimal",
+  "platformer",
+  "racing",
+  "shooter",
+  "starter",
+] as const;
+
+describe("template touch controls", () => {
+  it.each(TOUCH_TEMPLATES)("keeps %s controls in its own render source", async (template) => {
+    const source = await readFile(
+      path.resolve(
+        `packages/create-threenative/templates/${template}/src/render/touch-controls.ts`,
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain("class TouchControls");
+    expect(source).toContain("readonly object");
+    expect(source).not.toMatch(/@threenative\/(?:core|ui)/u);
   });
 });

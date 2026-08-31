@@ -53,6 +53,9 @@ tests inventory; T defeats the visible enemy; C/R checkpoints; H/X damage or def
 lead to a boss win or zero-health loss. `StatBlock.ts` and `Inventory.ts` are game-owned; use
 `intersectShape` for range and `intersectRay` for line of sight, not distance scans or navmesh.
 
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick,
+an attack button and an Arcane Surge button. Keyboard controls remain available on desktop.
+
 `src/scenes/Play.ts` wires the loop; `src/entities/` owns gameplay; `src/render/` owns the look;
 `src/ui/` owns React; `state.ts` publishes JSON-safe health, room, and inventory. Keep
 `playtests/survives.playtest.json` as the smoke proof and update the other scenarios with gameplay.
