@@ -602,6 +602,11 @@ public:
         LOGI("JS engine created: %s", jsEngine_->getName());
         std::cout << "[Mystral] Using JS engine: " << jsEngine_->getName() << std::endl;
 
+        // Optional game-owned memory-pressure hook. The lifecycle watch queues notifications while
+        // Android may have parked this thread; the callback is installed before the game bundle
+        // runs and is delivered later by drainMemoryTrimCallbacks() on this thread.
+        jsEngine_->setGlobalProperty("__tnOnTrimMemory", jsEngine_->newUndefined());
+
         // Set up requestAnimationFrame
         setupAnimationFrame();
 
@@ -1092,6 +1097,14 @@ public:
             return true;
         }
 
+        if (platform::surfaceRevalidationForcedFailure()) {
+            std::cerr << "[Mystral] TN_CONTROL_FORCE_SURFACE_REVALIDATE_FAILURE: refusing the "
+                         "resume surface probe for the bounded-retry harness"
+                      << std::endl;
+            LOGE("TN_CONTROL_FORCE_SURFACE_REVALIDATE_FAILURE: resume probe forced to fail");
+            return false;
+        }
+
 #if defined(__ANDROID__)
         if (!webgpu_) return false;
 
@@ -1101,12 +1114,13 @@ public:
             return false;
         }
 
-        // Bounded, like startup's wait. Android hands the new window over a moment after the
-        // foreground event, and an unbounded wait here is a hang rather than a failure.
+        // The five-second resume window is owned by pollEvents(), which can retry this probe and
+        // name every attempt. Keeping this helper to one probe means a failed first lookup does not
+        // spend the whole window before the retry policy gets a chance to run.
         void* nativeWindow = nullptr;
         int32_t windowWidth = 0;
         int32_t windowHeight = 0;
-        const int maxWaitAttempts = 50;  // 5 seconds
+        const int maxWaitAttempts = 1;
         for (int attempt = 0; attempt < maxWaitAttempts; attempt += 1) {
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
@@ -1123,7 +1137,6 @@ public:
                     break;
                 }
             }
-            SDL_Delay(100);
         }
 
         if (!nativeWindow) {
@@ -1231,8 +1244,50 @@ public:
         // the ANativeWindow while the app was away and handed back a new one, so the surface every
         // present writes to points at nothing until it is rebuilt. Ahead of any frame work,
         // because a frame drawn to the dead surface is the black screen this fixes.
+        const int kResumeRevalidationMaxAttempts = 5;
+        const auto kResumeRevalidationWindow = std::chrono::seconds(5);
         if (!config_.noSdl && platform::takeSurfaceRevalidationRequest()) {
-            if (!revalidateSurfaceAfterResume()) {
+            const auto retryStarted = std::chrono::steady_clock::now();
+            const auto retryDeadline = retryStarted + kResumeRevalidationWindow;
+            const auto retryDelay = std::chrono::milliseconds(1000);
+            bool revalidated = false;
+            int attempts = 0;
+            for (int attempt = 1; attempt <= kResumeRevalidationMaxAttempts; ++attempt) {
+                attempts = attempt;
+                const bool attemptSucceeded = revalidateSurfaceAfterResume();
+                revalidated = attemptSucceeded;
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - retryStarted);
+                std::ostringstream retryMarker;
+                retryMarker << "TN_LIFECYCLE_SURFACE_RETRY:{\"event\":\"attempt\",\"attempt\":"
+                             << attempt << ",\"maxAttempts\":" << kResumeRevalidationMaxAttempts
+                             << ",\"elapsedMs\":" << elapsed.count() << ",\"result\":\""
+                             << (attemptSucceeded ? "success" : "failed") << "\"}";
+                std::cout << retryMarker.str() << std::endl;
+                LOGI("%s", retryMarker.str().c_str());
+                if (revalidated) break;
+
+                const auto remaining = retryDeadline - std::chrono::steady_clock::now();
+                if (attempt == kResumeRevalidationMaxAttempts ||
+                    remaining <= std::chrono::steady_clock::duration::zero())
+                    break;
+                const auto sleepFor = std::min(
+                    retryDelay,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(remaining));
+                if (sleepFor.count() > 0) SDL_Delay(static_cast<Uint32>(sleepFor.count()));
+            }
+            if (!revalidated) {
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - retryStarted);
+                std::ostringstream exhaustedMarker;
+                exhaustedMarker << "TN_LIFECYCLE_SURFACE_RETRY:{\"event\":\"exhausted\",\"attempts\":"
+                                 << attempts << ",\"windowMs\":"
+                                 << std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        kResumeRevalidationWindow)
+                                        .count()
+                                 << ",\"elapsedMs\":" << elapsed.count() << "}";
+                std::cout << exhaustedMarker.str() << std::endl;
+                LOGE("%s", exhaustedMarker.str().c_str());
                 // Fail closed. A host that cannot get a surface back cannot present, and a loop
                 // that keeps running without presenting is the defect wearing a different hat:
                 // frames at 600/s, presents frozen, a black screen and nothing in the log.
@@ -1242,6 +1297,11 @@ public:
                 return false;
             }
         }
+
+        // Memory-pressure notifications are queued by the lifecycle watch while this thread may
+        // be parked in Android's lifecycle wait. Deliver them only after the pause gate and on the
+        // JavaScript-owning thread, so a backgrounded loop still runs no JavaScript.
+        drainMemoryTrimCallbacks();
 
         // Poll libuv event loop - process any ready I/O callbacks (non-blocking)
         // This handles async HTTP requests, file I/O, and libuv-based timers
@@ -2473,6 +2533,43 @@ private:
             countedPausedTimers_.clear();
             std::cout << "TN_LIFECYCLE:{\"event\":\"catchUp\",\"skippedTimerFirings\":" << skipped
                       << "}" << std::endl;
+        }
+    }
+
+    /**
+     * Delivers queued trim levels after the pause gate and before the next frame's I/O work.
+     *
+     * Android invokes the lifecycle bridge on its UI thread, while JavaScript belongs to the
+     * runtime thread. The queue preserves that ownership boundary and also means a backgrounded
+     * app does not execute JavaScript just because the OS asked it to release memory.
+     */
+    void drainMemoryTrimCallbacks() {
+        if (!jsEngine_) return;
+        int level = 0;
+        while (platform::takeMemoryTrimRequest(level)) {
+            const auto callback = jsEngine_->getGlobalProperty("__tnOnTrimMemory");
+            const bool callbackInstalled = jsEngine_->isFunction(callback);
+            if (callbackInstalled) {
+                jsEngine_->call(callback, jsEngine_->getGlobal(), {
+                    jsEngine_->newNumber(level),
+                });
+                if (jsEngine_->hasException()) {
+                    std::cerr << "[Mystral] __tnOnTrimMemory threw: " << jsEngine_->getException()
+                              << std::endl;
+                }
+            }
+
+            // The runtime owns the JS heap, so collect after the game had a chance to release its
+            // own references in the optional callback. This is deliberately on the runtime thread;
+            // V8/QuickJS/JSC are not entered from Android's UI callback.
+            jsEngine_->gc();
+
+            std::ostringstream marker;
+            marker << "TN_LIFECYCLE_MEMORY_TRIM_CALLBACK:{\"level\":" << level
+                   << ",\"callback\":" << (callbackInstalled ? "true" : "false")
+                   << ",\"gc\":\"requested\"}";
+            std::cout << marker.str() << std::endl;
+            LOGI("%s", marker.str().c_str());
         }
     }
 
