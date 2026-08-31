@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -21,6 +23,25 @@ import {
 } from "../verify-golden-path.js";
 
 describe("golden path matrix", () => {
+  it("builds corrective commands before the project exists, without reading it", () => {
+    // The map is built before `scaffold` runs, so on the first pass the project directory is not
+    // there yet. Listing scenarios then threw ENOENT and failed the whole lane while printing an
+    // error about a directory the lane was about to create (CI run 33352399789):
+    //   Error: ENOENT: no such file or directory, scandir '/tmp/.../action-rpg/playtests'
+    // A corrective command is a message; it must never be the thing that fails.
+    const previous = process.env.TN_PLAYTEST_ALLOW_SOFTWARE;
+    process.env.TN_PLAYTEST_ALLOW_SOFTWARE = "1";
+    try {
+      const missing = path.join(os.tmpdir(), "tn-golden-path-absent", "action-rpg");
+      expect(existsSync(missing)).toBe(false);
+      const commands = goldenPathCorrectiveCommands(missing);
+      expect(commands.test).toEqual({ args: ["test"], command: "pnpm", cwd: missing });
+    } finally {
+      if (previous === undefined) delete process.env.TN_PLAYTEST_ALLOW_SOFTWARE;
+      else process.env.TN_PLAYTEST_ALLOW_SOFTWARE = previous;
+    }
+  });
+
   it("asserts the actual ordered steps and fails when one is omitted", () => {
     expect(() => assertGoldenPathSteps(GOLDEN_PATH_STEPS.slice(0, -1))).toThrow(
       /missing assert artifact/u,

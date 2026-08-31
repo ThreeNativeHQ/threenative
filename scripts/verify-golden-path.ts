@@ -1,6 +1,7 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
 import {
   chmod,
   cp,
@@ -1068,6 +1069,14 @@ if (
  */
 function goldenPathTestStep(target: string): { args: string[]; command: string; cwd: string } {
   if (process.env.TN_PLAYTEST_ALLOW_SOFTWARE !== "1") {
+    return { args: ["test"], command: "pnpm", cwd: target };
+  }
+  // This map is built before the run starts, which is before `scaffold` has created the project,
+  // so on the first pass there is no `playtests/` to read. Listing scenarios then is not merely
+  // premature — it threw ENOENT and failed the whole lane while printing an error about a
+  // directory the lane was about to create. A corrective command is a message; it must never be
+  // the thing that fails. Without scenarios the honest suggestion is the project's own test script.
+  if (!existsSync(path.join(target, "playtests"))) {
     return { args: ["test"], command: "pnpm", cwd: target };
   }
   const scenarios = execFileSync(
