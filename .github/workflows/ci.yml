@@ -171,6 +171,12 @@ jobs:
       # acceptance is stated here, out loud, around an unmodified project. The runs still report
       # the adapter they got; what is proven here is the golden path, not the pixels.
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+      # One template, not all of them. This lane proves that a stranger can scaffold, install,
+      # build and play — one template proves that chain, and driving all of them re-proves it N
+      # times while running every template's scenario suite on a runner with no GPU. That is where
+      # this lane spent hours failing on scenario facts rather than golden-path facts. Per-template
+      # scenarios keep their gate in `pnpm test:templates`, which has hardware.
+      TN_GOLDEN_PATH_TEMPLATES: starter
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

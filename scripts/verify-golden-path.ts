@@ -127,12 +127,39 @@ export function assertGoldenPathSteps(steps: readonly string[]): void {
   }
 }
 
+/**
+ * Which templates this lane drives.
+ *
+ * The lane's subject is one sentence: *a stranger can scaffold a project, install it, build it and
+ * play it.* One template proves that chain end to end. Running all of them re-proves the same
+ * chain N times and, incidentally, runs every template's whole scenario suite on a machine with no
+ * GPU — which is where this lane spent three hours failing on things that were true of a scenario
+ * rather than of the golden path: a coyote window shorter than the wait that tested it, a template
+ * whose every scenario needs pixels, an exact health at a labelled step.
+ *
+ * `TN_GOLDEN_PATH_TEMPLATES` narrows it. CI sets it to the default template, because the default
+ * is what a stranger actually gets; the rest keep their proof in `pnpm test:templates`, which is
+ * the gate that exists for per-template scenarios and has hardware.
+ *
+ * Unset, it still drives every template — a developer running this by hand gets the full sweep.
+ */
 export function discoverGoldenPathTemplates(root = templateRoot()): readonly string[] {
   const templates = discoverKitManifests(root).map(({ name }) => name);
   if (templates.length === 0) {
     throw new Error("TN_GOLDEN_PATH_TEMPLATES_EMPTY: no templates found.");
   }
-  return templates;
+  const requested = (process.env.TN_GOLDEN_PATH_TEMPLATES ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  if (requested.length === 0) return templates;
+  const unknown = requested.filter((name) => !templates.includes(name));
+  if (unknown.length > 0) {
+    throw new Error(
+      `TN_GOLDEN_PATH_TEMPLATE_UNKNOWN: ${unknown.join(", ")}. Known: ${templates.join(", ")}.`,
+    );
+  }
+  return requested;
 }
 
 function shellQuote(value: string): string {
