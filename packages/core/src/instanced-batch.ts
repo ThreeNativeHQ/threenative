@@ -65,6 +65,7 @@ export class InstancedBatch {
   readonly #direction = new Vector3();
   readonly #midpoint = new Vector3();
   readonly #rotation = new Quaternion();
+  #built = false;
   #mesh: InstancedMesh | undefined;
 
   constructor(options: IInstancedBatchOptions) {
@@ -170,8 +171,9 @@ export class InstancedBatch {
    * would look identical to one that worked. `undefined` puts that case in the caller's types.
    */
   build(options: IInstancedBatchBuildOptions = {}): InstancedMesh | undefined {
-    if (this.#mesh !== undefined)
+    if (this.#built)
       throw new Error("InstancedBatch.build was already called; the instance count is fixed.");
+    this.#built = true;
     if (this.#matrices.length === 0) return undefined;
     const mesh = new InstancedMesh(this.geometry, this.material, this.#matrices.length);
     if (options.name !== undefined) mesh.name = options.name;
@@ -190,7 +192,7 @@ export class InstancedBatch {
   }
 
   #assertOpen(method: string): void {
-    if (this.#mesh !== undefined)
+    if (this.#built)
       throw new Error(
         `InstancedBatch.${method} after build(): an InstancedMesh has a fixed instance count.`,
       );

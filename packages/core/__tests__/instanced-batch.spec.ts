@@ -133,6 +133,9 @@ describe("InstancedBatch", () => {
     // an empty batch would be indistinguishable from a working one.
     expect(props.build()).toBeUndefined();
     expect(props.mesh).toBeUndefined();
+    expect(() => props.place({ position: [1, 0, 0] })).toThrow(/after build/u);
+    expect(() => props.span([0, 0, 0], [0, 1, 0], 0.1)).toThrow(/after build/u);
+    expect(() => props.add(new Matrix4())).toThrow(/after build/u);
   });
 
   it("refuses to place after build, because an InstancedMesh count is fixed", () => {
