@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { PLAYTEST_STARTUP_READY_TIMEOUT_MS } from "@threenative/playtest";
 import { expect, test } from "vitest";
 
@@ -17,4 +19,27 @@ test("the runner's startup wait outlasts core's own bounded launch, with margin"
   // scenario reported ready at ~57s against a 25s gate bound. A backstop for a hung page has to
   // clear the slow-but-healthy case by a multiple, not by seconds.
   expect(PLAYTEST_STARTUP_READY_TIMEOUT_MS).toBeGreaterThanOrEqual(bound * 3);
+});
+
+// The desktop loading proof carries the same bound and had drifted below it. Its harness injects a
+// wall-clock wait before each fixed-step sample, and the settle sample's wait was 3s against a 25s
+// worst case: macOS and Linux resolve on the fast five-frame path in well under a second, so the
+// gap only showed on a cold Windows runner, which reached `startup-settled` with `loadingVisible`
+// still true and never logged TN_LOADING_PROOF_DISMISSED. Read from the script so the number cannot
+// drift back without this failing.
+test("the desktop loading proof waits past core's bounded launch before sampling settled", () => {
+  const harness = readFileSync(
+    fileURLToPath(
+      new URL("../../runtime-native/scripts/verify-desktop-loading.mjs", import.meta.url),
+    ),
+    "utf8",
+  );
+  const declared = harness.match(/const LOADING_SETTLE_WAIT_MS = ([\d_]+);/u)?.[1];
+  expect(declared, "verify-desktop-loading.mjs must declare LOADING_SETTLE_WAIT_MS").toBeDefined();
+  const settleWaitMs = Number(String(declared).replaceAll("_", ""));
+  expect(settleWaitMs).toBeGreaterThan(STARTUP_COMPILE_BUDGET_MS + STARTUP_STABLE_WINDOW_MS);
+
+  // And it must actually be the last of the three per-sample waits, not merely declared.
+  const waits = harness.match(/const FIXED_STEP_WALL_WAITS_MS = \[([^\]]+)\];/u)?.[1];
+  expect(waits?.split(",").at(-1)?.trim()).toBe("LOADING_SETTLE_WAIT_MS");
 });

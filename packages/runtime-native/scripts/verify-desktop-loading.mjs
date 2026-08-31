@@ -13,7 +13,15 @@ const workspaceRoot = join(runtimeRoot, "..", "..");
 const exampleRoot = join(workspaceRoot, "examples", "native-smoke");
 const bundle = join(exampleRoot, "dist", "native-smoke.js");
 const scenario = join(exampleRoot, "playtests", "loading-screen-desktop.playtest.json");
-const FIXED_STEP_WALL_WAITS_MS = [0, 1_000, 3_000];
+// The settle sample has to outlast core's own bounded launch, not just look like it does.
+// `StartupReadiness` resolves either on five consecutive in-budget frames or, for a host that never
+// produces one, only after `STARTUP_COMPILE_BUDGET_MS + STARTUP_STABLE_WINDOW_MS`. macOS and Linux
+// take the fast path in well under a second, so 3s looked sufficient for a year; a cold Windows
+// runner misses the 50ms frame budget indefinitely and reached `startup-settled` at ~4s with
+// `loadingVisible` still true and `TN_LOADING_PROOF_DISMISSED` never logged. Kept in step with the
+// exported constants by startup-ready-bound.spec.ts.
+const LOADING_SETTLE_WAIT_MS = 27_000;
+const FIXED_STEP_WALL_WAITS_MS = [0, 1_000, LOADING_SETTLE_WAIT_MS];
 const LOADING_PROOF_BACKDROP_COLOR = 0x101820;
 
 // The shared runner, not a second copy of it. This was the only script here carrying its own, and

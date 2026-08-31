@@ -74,13 +74,10 @@ points at the step that actually failed.
 **Still unproven.** The emulator step has never once executed in CI — every run skipped it because
 the capture step failed first. This removes that blocker; it does not prove the lane green.
 
-### Windows desktop core — diagnosed by reading, NOT EXECUTED HERE
+### Windows desktop core — root cause found and fixed
 
-`loading-screen-desktop.playtest.json` failed both of its transitions: `GameState.loadingVisible`
-never went `true → true → false` and `startupReady` never went `false → false → true`. All three
-labelled samples read `loadingVisible: true, startupReady: false`.
-
-The decisive evidence is in the console artifact, not the assertion:
+`loading-screen-desktop.playtest.json` failed both transitions: all three labelled samples read
+`loadingVisible: true, startupReady: false`. The console artifact is decisive:
 
 ```
 TN_LOADING_PROOF_OVERLAY_VISIBLE   1
@@ -88,18 +85,35 @@ TN_LOADING_PROOF_DISMISSED         0
 ```
 
 `game.ts` sets `{loadingVisible: false, startupReady: true}` inside `startup.whenReady().then(...)`,
-so the promise never resolved. **More ticks would not fix this** — the obvious patch, widening the
-scenario's three `waitTicks: 1` steps, treats a stuck promise as a slow one and would be the wrong
-change.
+so the promise had not resolved by the third sample.
 
-Mechanism, from reading `startup-readiness.ts`: readiness needs `STARTUP_STABLE_FRAMES = 5`
-consecutive frames each inside `STARTUP_FRAME_BUDGET_MS = 50`. The run logged `frames: 12` by the
-first label, so frames were being produced — they were not landing under 50 ms often enough in a row
-on a cold Windows runner, and the stable window kept resetting. macOS passes the same scenario.
+**A first reading of this as a stuck promise was wrong.** `StartupReadiness` always resolves:
+`#finishCompile()` arms a `stableWindowMs` timer that calls `#markReady()` unconditionally, so the
+worst case is `STARTUP_COMPILE_BUDGET_MS + STARTUP_STABLE_WINDOW_MS` — 25s. The promise was not
+stuck; it was not waited for.
 
-Unverified: the 50 ms budget is the hypothesis a Windows runner would confirm or kill. Nothing here
-was executed on Windows, so it stays a hypothesis, and the real question it raises is whether
-`startupReady` should be gated on a wall-clock frame budget in CI at all.
+`verify-desktop-loading.mjs` injects a wall-clock wait before each fixed-step sample, and they were
+`[0, 1_000, 3_000]`. The settle sample therefore landed about 4s in, against a 25s worst case. The
+other resolve path is five consecutive frames inside `STARTUP_FRAME_BUDGET_MS = 50`; macOS and Linux
+take it in well under a second, which is why 3s looked sufficient. A cold Windows runner misses the
+50ms budget indefinitely — it logged `frames: 12`, so it was rendering, just never five in a row in
+budget — and no path could complete inside 4s.
+
+This is the bound `startup-ready-bound.spec.ts` already pins for the *runner's* startup wait, for
+the same stated reason: "golden-path runs on a CPU rasteriser that can miss the frame budget
+forever". The loading harness never had the rule applied.
+
+**Fixed** by raising the settle wait to 27s, past `COMPILE_BUDGET + STABLE_WINDOW`, and pinning it
+in `startup-ready-bound.spec.ts` so it cannot drift back. Mutation-checked: restoring `3_000` fails
+with `expected 3000 to be greater than 25000`.
+
+Verified end-to-end on Linux, which exercises the fast path the change must not break:
+
+```
+desktop loading playtest proof passed: 913920 startup loading pixels, 0 settled loading pixels
+```
+
+Unverified on Windows — no Windows runner here. The reasoning predicts green; CI decides.
 
 ### iOS simulator — NOT EXECUTED HERE
 
@@ -107,6 +121,12 @@ was executed on Windows, so it stays a hypothesis, and the real question it rais
 TN_NATIVE_SMOKE_300_FRAMES:300` — SDL3 and the runtime compiled, and the app then emitted none of
 the three markers, so it never reached a first frame. Failed again on the following run. Needs macOS
 and Xcode; this machine is Linux. No claim made.
+
+Follow-up run: the markers now appear — the lane builds, boots and runs `device-smoke` — and it
+fails later on `runExpected`'s `"pass": true` text check while the CLI itself exits **0**. The
+uploaded `playtest-pass/` artifact holds only a 2-entry `console.json` and no report, and the error
+message in the log is cut off mid-`observations`, so whether `pass` is false or merely absent from
+the captured output cannot be decided from here. Needs macOS.
 
 ### macOS desktop core, Scaffolded starter desktop artifact
 
