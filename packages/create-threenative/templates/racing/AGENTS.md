@@ -21,6 +21,10 @@ state bridge. This repository owns the car feel, track, race rules, rescue, HUD,
    `npx @threenative/playtest doctor`; missing observations are not zero.
 For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
 
+For the situation *"a bullet passes through a wall"*, `RigidBody3D` enables continuous collision
+by default. Its `continuousCollision` option is the named per-body override, and
+`body.continuousCollision` reports the effective setting on web and native.
+
 ## When the framework blocks you, write plain Three.js
 
 When an `@threenative/*` API is broken, missing, or does not do what you need, replace only that
