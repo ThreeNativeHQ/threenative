@@ -245,10 +245,15 @@ describe("platformer checkpoints", () => {
       steps: Array<Record<string, unknown>>;
     };
 
+    // 70/3350 were set against a scene measured behind the loading layer, before the runner
+    // waited for startup readiness — the counts were of a frame the player never sees. c2ba91d9
+    // re-measured the running scene at 160 draws / 6127 triangles and set the budget above it.
+    // The frame-time ceiling deliberately did not move: a cap raised to fit the work is a cap
+    // routed around.
     expect(scenario.assert.performance).toEqual({
-      maxDrawCalls: 70,
+      maxDrawCalls: 200,
       maxFrameMsP95: 33,
-      maxTriangles: 3350,
+      maxTriangles: 7700,
     });
     expect(scenario.steps.map((step) => step.kind)).toEqual(["input", "wait"]);
     expect(scenario.steps).not.toContainEqual(expect.objectContaining({ kind: "performance" }));
