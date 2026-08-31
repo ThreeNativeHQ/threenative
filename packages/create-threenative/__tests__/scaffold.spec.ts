@@ -43,6 +43,10 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // The chain now exposes the pass and tone-maps it, so the same radiance was applied twice and
 // exposed again — median frame luminance 203 of 255 against 22 for the template's last good
 // baseline. Both multipliers are 1.5, calibrated on a scaffolded render rather than chosen.
+// Recomputed 2026-08-30 for `platformer` only: c2ba91d9 re-measured that template's performance
+// budgets against the running frame — the previous 70 draws / 3350 triangles were counted behind
+// the loading layer, on a frame the player never sees — and moved the scenario to 200 / 7700
+// against a measured 160 / 6127. The frame-time ceiling deliberately did not move.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -137,7 +141,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   "action-rpg": "2765a505f099f6508017534b941fbbf457ec2f8ade2a80344606767afe768933",
   defense: "aa46098c90ccb691aab0fa159a68bb45914a970a4ebb7205a964925484577a59",
   minimal: "7939dc3d650d49d8fbd149abadaf85ee0f74b4cd690e34489dd68ba10ce50713",
-  platformer: "c93901fbdea7f3f26f6140190f67e4a5ec2959151a8d5f284790d233fdb0cea2",
+  platformer: "16a4961342b6b11737fb6b90401cb503f6add62c69412a9ba05eacccb11d9a42",
   racing: "62c96e39e4da58f36387ac1bc95fefb51ba0d0fcc49b946674e2acf24dfb00c5",
   shooter: "195526ea7b58c9873e681290f344460d56825128668f8b40d1e9f27c609b5f14",
   starter: "c6e237b57f99cf6bb551471ac457bdaeadf8b1ab7de8ae53843627e42f9e88ce",
