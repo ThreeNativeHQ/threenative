@@ -44,7 +44,7 @@ jobs:
       - uses: android-actions/setup-android@v4
       - run: pnpm install --frozen-lockfile
       - name: Build browser reference workspace imports
-        run: pnpm --filter @threenative/core build
+        run: pnpm tsx scripts/workspace-packages.ts build
       - name: Install browser and Android build prerequisites
         run: |
           pnpm exec playwright install --with-deps chromium
