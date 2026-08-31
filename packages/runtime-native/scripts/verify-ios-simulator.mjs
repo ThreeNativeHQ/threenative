@@ -37,7 +37,57 @@ function run(command, args, options = {}) {
   return result.stdout;
 }
 
-function runExpected(command, args, expectedStatus, expectedText) {
+/**
+ * Keep every expectation's own output, not just the throw. A failing expectation used to raise one
+ * Error carrying the whole report inline, and a playtest report is long enough that the Actions log
+ * cut it off mid-`observations` — the run that mattered could not be read at all, and the artifact
+ * held only a two-line console.json. The full stdout, stderr and, when the report parses, its
+ * verdict now land under artifacts/ios/expectations/ where upload-artifact collects them.
+ */
+function recordExpectation(label, command, args, result, output) {
+  const directory = join(artifactRoot, 'expectations');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, `${label}.txt`),
+    [
+      `command: ${command} ${args.join(' ')}`,
+      `status: ${result.status}`,
+      `signal: ${result.signal ?? 'none'}`,
+      '---- stdout ----',
+      result.stdout || '',
+      '---- stderr ----',
+      result.stderr || '',
+    ].join('\n'),
+  );
+  // The verdict is what every expectation here is really asking about, and it is the first thing a
+  // truncated log loses. Summarise it separately so it survives on its own.
+  const start = output.indexOf('{');
+  if (start < 0) return;
+  try {
+    const report = JSON.parse(output.slice(start, output.lastIndexOf('}') + 1));
+    const failed = (report.assertionResults ?? []).filter((entry) => entry.pass !== true);
+    writeFileSync(
+      join(directory, `${label}.verdict.json`),
+      `${JSON.stringify(
+        {
+          assertionIds: (report.assertionResults ?? []).map((entry) => entry.id),
+          diagnostics: report.diagnostics ?? [],
+          failedAssertions: failed,
+          hasPassField: Object.hasOwn(report, 'pass'),
+          pass: report.pass,
+          runtime: report.runtime,
+          target: report.target,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  } catch {
+    writeFileSync(join(directory, `${label}.verdict.json`), '{"parsed":false}\n');
+  }
+}
+
+function runExpected(command, args, expectedStatus, expectedText, label = 'expectation') {
   const result = spawnSync(command, args, {
     cwd: workspaceRoot,
     encoding: 'utf8',
@@ -46,10 +96,13 @@ function runExpected(command, args, expectedStatus, expectedText) {
     timeout: 120_000,
   });
   const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+  recordExpectation(label, command, args, result, output);
   if (result.error) throw result.error;
   if (result.status !== expectedStatus || !output.includes(expectedText)) {
     throw new Error(
-      `Expected exit ${expectedStatus} containing ${expectedText}, got ${result.status}:\n${output}`,
+      `Expected exit ${expectedStatus} containing ${expectedText}, got ${result.status}. ` +
+        `Full output: artifacts/ios/expectations/${label}.txt, verdict: ${label}.verdict.json\n` +
+        output.slice(0, 4_000),
     );
   }
   return { expectedStatus, expectedText };
@@ -357,10 +410,10 @@ const playtestArgs = (scenario, artifactName) => [
   '--timeout', '30000',
 ];
 const devicePlaytest = {
-  pass: runExpected(process.execPath, playtestArgs('device-smoke.playtest.json', 'playtest-pass'), 0, '"pass": true'),
-  wrongValue: runExpected(process.execPath, playtestArgs('device-smoke-wrong-value.playtest.json', 'playtest-wrong'), 1, 'TN_PLAYTEST_VISIBILITY_FAILED'),
-  misspelled: runExpected(process.execPath, playtestArgs('device-smoke-misspelled.playtest.json', 'playtest-misspelled'), 2, 'TN_PLAYTEST_SCENARIO_INVALID'),
-  unsupportedNetwork: runExpected(process.execPath, playtestArgs('device-smoke-network.playtest.json', 'playtest-network'), 2, 'TN_PLAYTEST_UNSUPPORTED_ON_TARGET'),
+  pass: runExpected(process.execPath, playtestArgs('device-smoke.playtest.json', 'playtest-pass'), 0, '"pass": true', 'device-smoke-pass'),
+  wrongValue: runExpected(process.execPath, playtestArgs('device-smoke-wrong-value.playtest.json', 'playtest-wrong'), 1, 'TN_PLAYTEST_VISIBILITY_FAILED', 'device-smoke-wrong-value'),
+  misspelled: runExpected(process.execPath, playtestArgs('device-smoke-misspelled.playtest.json', 'playtest-misspelled'), 2, 'TN_PLAYTEST_SCENARIO_INVALID', 'device-smoke-misspelled'),
+  unsupportedNetwork: runExpected(process.execPath, playtestArgs('device-smoke-network.playtest.json', 'playtest-network'), 2, 'TN_PLAYTEST_UNSUPPORTED_ON_TARGET', 'device-smoke-network'),
 };
 try {
   run('pnpm', ['--filter', 'threenative-native-smoke', 'build'], {

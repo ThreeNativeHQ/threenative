@@ -201,6 +201,25 @@ public:
      */
     virtual uint64_t getPresentCount() const = 0;
 
+    /**
+     * True once the game's startup gate has resolved and the world is on screen.
+     *
+     * A frame count cannot express this. `StartupReadiness` resolves on five consecutive in-budget
+     * frames or, for a host that never produces one — every software rasteriser — only after its
+     * bounded window expires. A fast `--frames` run therefore finishes while the loading state is
+     * still up, and the capture holds a world that was never shown.
+     */
+    virtual bool isStartupReady() const = 0;
+
+    /**
+     * True once a rendered frame is sitting in the capture buffer.
+     *
+     * `saveScreenshot` refuses without one, and a run whose requested frames all elapsed while the
+     * world was still loading has none — the lane sees `TN_NATIVE_STARTER_EXIT_1` and a runtime that
+     * printed no frame count at all.
+     */
+    virtual bool hasCapturedFrame() const = 0;
+
     virtual void* getWebGPUBindingsState() const = 0;
 
 protected:

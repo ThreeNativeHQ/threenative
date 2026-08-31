@@ -4,7 +4,10 @@
   "target": "desktop",
   "awaitStartup": false,
   "subject": "cube",
-  "viewport": { "width": 640, "height": 360 },
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
   "warmupFrames": 0,
   "steps": [
     {
@@ -18,30 +21,411 @@
       "screenshot": "startup-mid-stall"
     },
     {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
+      "waitTicks": 1
+    },
+    {
       "waitTicks": 1,
       "label": "startup-settled",
       "screenshot": "startup-settled"
     }
   ],
-  "artifacts": { "console": true, "screenshots": "after" },
+  "artifacts": {
+    "console": true,
+    "screenshots": "after"
+  },
   "assert": {
     "resources": [
       {
         "id": "GameState",
         "path": "loadingVisible",
         "atSteps": [
-          { "label": "startup-stall", "equals": true },
-          { "label": "startup-mid-stall", "equals": true },
-          { "label": "startup-settled", "equals": false }
+          {
+            "label": "startup-stall",
+            "equals": true
+          },
+          {
+            "label": "startup-mid-stall",
+            "equals": true
+          },
+          {
+            "label": "startup-settled",
+            "equals": false
+          }
         ]
       },
       {
         "id": "GameState",
         "path": "startupReady",
         "atSteps": [
-          { "label": "startup-stall", "equals": false },
-          { "label": "startup-mid-stall", "equals": false },
-          { "label": "startup-settled", "equals": true }
+          {
+            "label": "startup-stall",
+            "equals": false
+          },
+          {
+            "label": "startup-mid-stall",
+            "equals": false
+          },
+          {
+            "label": "startup-settled",
+            "equals": true
+          }
         ]
       }
     ]

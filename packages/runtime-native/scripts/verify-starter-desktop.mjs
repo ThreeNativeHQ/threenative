@@ -9,6 +9,10 @@ import { PNG } from 'pngjs';
 
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
+// Measured: a drawn starter frame has ~17,000 distinct colours, a lost capture had 5.
+const UNRENDERED_FRAME_COLOR_FLOOR = 64;
+// 64x64. Below this the frame is a fixture, not a capture.
+const UNRENDERED_FRAME_MIN_PIXELS = 4096;
 
 export function inspectStarterScreenshot(path) {
   if (!existsSync(path)) throw new Error(`TN_NATIVE_STARTER_SCREENSHOT_MISSING: ${path}`);
@@ -24,8 +28,23 @@ export function inspectStarterScreenshot(path) {
     if (alpha > 0 && blue > 150 && green > 140 && blue > red * 1.4) cyanAssetPixels += 1;
   }
   if (colors.size < 2) throw new Error('TN_NATIVE_STARTER_SCREENSHOT_BLANK: one-color frame.');
+  // A one-colour guard is too weak to catch the capture this gate actually loses. A rendered
+  // starter frame carries roughly 17k distinct colours; an intermittent CI failure captured five —
+  // flat background, two flat shapes, thirteen pixels of the GLB — while the run log still showed
+  // TN_NATIVE_STARTER_ASSETS_LOADED and "Rendered 300 frames". That frame was never drawn, and
+  // reporting it as a missing asset sends the reader hunting for a texture that loaded fine.
+  // Only meaningful at capture resolution. A 16x16 synthetic fixture — what the installed-verifier
+  // distribution test feeds this function — is legitimately two colours, and judging it by the
+  // diversity a 1280x720 render carries would reject a frame that is exactly what it claims to be.
+  const rendered = png.width * png.height >= UNRENDERED_FRAME_MIN_PIXELS;
+  if (rendered && colors.size < UNRENDERED_FRAME_COLOR_FLOOR) {
+    throw new Error(
+      `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. ` +
+        'The run log may still show every marker: this is the capture, not the scene.',
+    );
+  }
   if (cyanAssetPixels < 100) {
-    throw new Error(`TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${cyanAssetPixels} cyan proof pixels.`);
+    throw new Error(`TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${cyanAssetPixels} cyan proof pixels in a frame of ${colors.size} colours.`);
   }
   return { colors: colors.size, cyanAssetPixels, height: png.height, width: png.width };
 }
@@ -40,6 +59,13 @@ export function analyzeStarterLog(log, frames = 300) {
   }
   for (const pattern of [/TN_NATIVE_START_FAILED/u, /validation error/iu, /TypeError:/u]) {
     if (pattern.test(log)) failures.push(`runtime log matched ${pattern}`);
+  }
+  // The capture is only evidence if the world was on screen when it was taken. The host holds the
+  // screenshot until the startup gate opens and says so; a 0 here means it captured the loading
+  // state after waiting out its budget, which is the difference between a 17,000-colour frame and
+  // a five-colour one.
+  if (log.includes('TN_STARTUP_CAPTURE_READY:0')) {
+    failures.push('startup gate never opened before capture (TN_STARTUP_CAPTURE_READY:0)');
   }
   return failures;
 }
