@@ -11,9 +11,16 @@ import type { IStandalonePlaytestConfig } from "./config.js";
  * against 175 ms under X11, GPU starvation, blank captures — used to be solved by a wrapper
  * every caller had to remember (`sh scripts/xvfb.sh`). The runner now owns the decision
  * itself: pick a display strategy from the environment, strip the Wayland variables that
- * send Chromium at the wrong windowing system, and prefer a *private* Xvfb per run when no
- * usable X display exists. `scripts/xvfb.sh` stays as a thin compatibility path over the
- * same logic; it is no longer required for playtest runs.
+ * send Chromium at the wrong windowing system, and provision a *private* Xvfb per run.
+ * `scripts/xvfb.sh` stays as a thin compatibility path over the same logic; it is no longer
+ * required for playtest runs.
+ *
+ * On Linux a private Xvfb is the DEFAULT, not the fallback, even when a live X display
+ * exists. A run that borrows the operator's desktop opens browser and host windows over
+ * whatever they are doing, and a long scenario sweep makes the machine unusable — so the
+ * display a run paints on is opt-in, through `TN_PLAYTEST_HOST_DISPLAY`. Opt in when the
+ * run genuinely needs the session's real GPU adapter (heavy TSL post chains have been
+ * observed falling back to SwiftShader under Xvfb) or when a human wants to watch it.
  *
  * Fail-closed applies here like everywhere else in this package: a run that needs pixels and
  * cannot get a display errors naming the cause. It never falls through to a headless launch
@@ -38,6 +45,12 @@ export type IDisplayStrategy = IDisplayStrategyHost | IDisplayStrategyExisting |
 
 export const DEFAULT_XVFB_SCREEN = "1600x900x24";
 
+/**
+ * Set to `1` or `true` to paint on the session's real X display instead of a private Xvfb.
+ * Opt-in on purpose: the default must never take over the operator's screen.
+ */
+export const HOST_DISPLAY_ENV = "TN_PLAYTEST_HOST_DISPLAY";
+
 /** Wayland variables that make Chromium pick the wrong windowing system; stripped from the browser child. */
 export const STRIPPED_WAYLAND_VARS = ["WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XDG_SESSION_TYPE"] as const;
 
@@ -51,17 +64,29 @@ export interface IDisplayDecisionInput {
 }
 
 /**
- * Decide where the browser's pixels come from. A Wayland session never satisfies a run by
- * itself — that is the hang measured at 120 s versus 175 ms — so only a live X display does;
- * everything else on Linux provisions a private Xvfb.
+ * Decide where the browser's pixels come from. On Linux that is a private Xvfb unless the
+ * caller asked for the session's display with `TN_PLAYTEST_HOST_DISPLAY`, and even then only
+ * when that display is actually live — a Wayland session never satisfies a run by itself,
+ * which is the hang measured at 120 s versus 175 ms.
  */
 export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStrategy {
   if (input.platform !== "linux") return { kind: "host" };
+  const privateXvfb: IDisplayStrategy = {
+    kind: "private-xvfb",
+    screen: input.env.TN_XVFB_SCREEN ?? DEFAULT_XVFB_SCREEN,
+  };
+  if (!hostDisplayRequested(input.env)) return privateXvfb;
   const display = input.env.DISPLAY;
   if (display !== undefined && display.length > 0 && (input.displaySocketExists ?? x11SocketExists)(display)) {
     return { display, kind: "existing" };
   }
-  return { kind: "private-xvfb", screen: input.env.TN_XVFB_SCREEN ?? DEFAULT_XVFB_SCREEN };
+  return privateXvfb;
+}
+
+/** Did the caller explicitly ask to paint on the session's own display? */
+export function hostDisplayRequested(env: NodeJS.ProcessEnv): boolean {
+  const value = env[HOST_DISPLAY_ENV];
+  return value === "1" || value?.toLowerCase() === "true";
 }
 
 function x11SocketExists(display: string): boolean {

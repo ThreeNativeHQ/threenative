@@ -21,11 +21,17 @@ failure. `--server-command` needs a workspace that has a `dev` script — an exa
 project; there is no root `pnpm dev`. `--browser-recipe webgpu` supplies the current Chromium WebGPU
 flags including `--enable-features=Vulkan`, without which Chromium silently serves WebGPU from
 SwiftShader and reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape
-hatch, and a run that does not name its adapter is not evidence. On headless Linux the runner now
-provisions its own private Xvfb for pixel-producing runs (stripping Wayland env itself) and takes a
-capture lock only when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock state is
-printed to stderr either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper —
-never `xvfb-run`, whose exit status is its own failing cleanup kill rather than the command's.
+hatch, and a run that does not name its adapter is not evidence. **On Linux the runner provisions a
+private Xvfb for every pixel-producing run, whether or not a display exists** (stripping Wayland env
+itself), so a scenario never opens windows over whatever the operator is doing — a sweep that
+borrows `:0` makes the machine unusable for as long as it runs. Set `TN_PLAYTEST_HOST_DISPLAY=1` to
+paint on the session's own display instead; opt in when the run needs the session's real GPU adapter
+(heavy TSL post chains have been seen falling back to SwiftShader under Xvfb) or when a human wants
+to watch it. Do **not** reach for `--headless` to keep windows off a screen: headless Chromium
+cannot capture WebGPU here, so it changes what you measure. The runner takes a capture lock only
+when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock state is printed to stderr
+either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper — never `xvfb-run`,
+whose exit status is its own failing cleanup kill rather than the command's.
 
 In a scaffolded project the same CLI is `npx @threenative/playtest`, and `diagnostics`, console,
 network, screenshot and trace assertions work against any URL. The framework template installs the

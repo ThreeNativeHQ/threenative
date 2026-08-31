@@ -21,10 +21,30 @@ test("a non-Linux platform always delegates to the host display", () => {
   ).toEqual({ kind: "host" });
 });
 
-test("a live X display is used as-is", () => {
+test("a live X display is NOT taken by default — a run must not paint on the operator's desktop", () => {
   expect(
-    decideDisplayStrategy({ env: { DISPLAY: ":99" }, platform: "linux", displaySocketExists: socketPresent }),
+    decideDisplayStrategy({ env: { DISPLAY: ":0" }, platform: "linux", displaySocketExists: socketPresent }),
+  ).toMatchObject({ kind: "private-xvfb" });
+});
+
+test("TN_PLAYTEST_HOST_DISPLAY opts a run back onto the live X display", () => {
+  expect(
+    decideDisplayStrategy({
+      displaySocketExists: socketPresent,
+      env: { DISPLAY: ":99", TN_PLAYTEST_HOST_DISPLAY: "1" },
+      platform: "linux",
+    }),
   ).toEqual({ kind: "existing", display: ":99" });
+});
+
+test("asking for the host display when it is unusable still falls to a private Xvfb, never blind", () => {
+  expect(
+    decideDisplayStrategy({
+      displaySocketExists: () => false,
+      env: { DISPLAY: ":7", TN_PLAYTEST_HOST_DISPLAY: "1" },
+      platform: "linux",
+    }),
+  ).toMatchObject({ kind: "private-xvfb" });
 });
 
 test("a DISPLAY whose socket is gone is treated as unusable, not trusted", () => {
