@@ -27,7 +27,13 @@ export function setupSky(scene: Scene, atmosphere?: AtmosphereLike): void {
     toneMapped: false,
   });
   const viewDirection = normalize(positionWorld.sub(cameraPosition));
-  material.colorNode = (atmosphere.radiance(viewDirection) as Node<"vec3">).mul(24);
+  // 24 was authored when this template had no post chain, so the dome's radiance landed straight
+  // in the frame. The chain now exposes the pass at 1.15 and tone-maps it with ACES, and the same
+  // radiance is *also* fed to `aerialPerspective` as in-scattering in postprocessing.ts — so 24
+  // was being applied twice over and then exposed again. Measured on a scaffolded minimal, median
+  // frame luminance was 203 of 255 at 24 and is 25 at 1.5, against 22 for this template's last
+  // good baseline. Both multipliers moved together; neither alone reaches it.
+  material.colorNode = (atmosphere.radiance(viewDirection) as Node<"vec3">).mul(1.5);
   const dome = new Mesh(geometry, material);
   // The dome is authored at the origin and never moves; freeze only this known-static render
   // object, leaving gameplay transforms under user control.

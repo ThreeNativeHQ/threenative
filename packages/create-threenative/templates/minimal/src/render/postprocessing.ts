@@ -89,7 +89,9 @@ export function setupPost(
             atmosphere.aerialPerspective(
               scenePass,
               scenePass.getViewZNode(),
-              (atmosphere.radiance(vec3(0, 0, 1)) as Node<"vec3">).mul(24),
+              // Same scale as the dome in sky.ts, and for the same reason: this radiance is
+              // mixed into every pixel by the haze term, so at 24 it lifted the whole frame.
+              (atmosphere.radiance(vec3(0, 0, 1)) as Node<"vec3">).mul(1.5),
             ) as Node<"vec4">,
     godraysLight: environment.godraysLight,
   });

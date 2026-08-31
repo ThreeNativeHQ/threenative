@@ -38,6 +38,11 @@ const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
 // template embeds gained the Android viewport, rotation, tap and IME helpers that proof needed.
 // The starter's name field also gained autoCapitalize/autoCorrect/spellCheck: a phone keyboard
 // rewrites what the player typed unless the field says not to.
+// Recomputed 2026-08-30 for `minimal` only: its atmosphere sky and aerial-perspective
+// in-scattering were both scaled by 24, a value authored when that template had no post chain.
+// The chain now exposes the pass and tone-maps it, so the same radiance was applied twice and
+// exposed again — median frame luminance 203 of 255 against 22 for the template's last good
+// baseline. Both multipliers are 1.5, calibrated on a scaffolded render rather than chosen.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -131,7 +136,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // its 33 ms ceiling.
   "action-rpg": "2765a505f099f6508017534b941fbbf457ec2f8ade2a80344606767afe768933",
   defense: "aa46098c90ccb691aab0fa159a68bb45914a970a4ebb7205a964925484577a59",
-  minimal: "2e4d0b3731d0dcf352912df19b1b52102ec92af5123f81bb685b69c635dfa5e7",
+  minimal: "7939dc3d650d49d8fbd149abadaf85ee0f74b4cd690e34489dd68ba10ce50713",
   platformer: "c93901fbdea7f3f26f6140190f67e4a5ec2959151a8d5f284790d233fdb0cea2",
   racing: "62c96e39e4da58f36387ac1bc95fefb51ba0d0fcc49b946674e2acf24dfb00c5",
   shooter: "195526ea7b58c9873e681290f344460d56825128668f8b40d1e9f27c609b5f14",
