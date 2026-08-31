@@ -40,6 +40,49 @@ game never reaching a sustained in-budget frame, because a CPU rasteriser runnin
 The consequence lands on `golden-path`: seven templates through the non-visual scenario set, order of
 ninety page loads, each paying that. Its `timeout-minutes: 30` was set when a page load cost seconds.
 
+## The budget is already impossible, and only an early failure hides it
+
+**Measured from CI run `33355317922`, not estimated.** Twelve consecutive scenario completions on
+the GPU-less lane, evenly spaced:
+
+```text
+03:58:33 starter-assets       04:03:43 starter-goal            04:08:03 pause
+03:59:30 starter-jump-buffer  04:04:48 hot-reload-subject      04:09:09 starter-respawn
+04:00:35 coyote-and-buffer    04:05:53 area-monitoring         04:10:14 react-restart
+04:01:41 starter-forward      04:06:58 deferred-odometer       04:11:19 seed
+```
+
+**65 seconds per scenario, tight variance.** `scripts/non-visual-scenarios.mjs` reports 13 non-visual
+scenarios for `starter` (which matches what ran) and 17 for `platformer`:
+
+| Template | Scenarios | At 65 s | Plus scaffold/install/build | Subtotal |
+| --- | ---: | ---: | ---: | ---: |
+| starter | 13 | 14.1 min | 2.8 min | ~17 min |
+| platformer | 17 | 18.4 min | ~3 min | ~21 min |
+| | | | **total** | **~38 min** |
+
+Against `timeout-minutes: 30`. The job exited at 15m41s having run `starter` only and then stopped on
+a failure, so **it has never once reached the platformer half**. The budget is not tight; it is
+already exceeded, and an early failure is the only reason nobody has seen it.
+
+This is what makes the software-tier question load-bearing rather than tidy: it is the difference
+between roughly 38 minutes and roughly 18.
+
+## Where the time actually goes
+
+`TN_STARTUP_WARMUP` from the forced-SwiftShader run (adapter vendor `google`), verbatim:
+
+```text
+TN_STARTUP_WARMUP:{"compiled":1,"slices":1,"elapsedMs":6397,"unsupported":false,
+  "abandoned":0,"timedOut":false,"computeCompiled":2,"computeAbandoned":0,
+  "computeUnsupported":false,"computeTimedOut":false}
+```
+
+**Compilation settles in 6.4 s.** The remaining ~50 s is the sustained in-budget frame window, which
+a CPU rasteriser running SSGI and SSR at 720p can never satisfy. That is the number that matters
+here: the cost is not compiling the chain, it is waiting for a smoothness condition the lane has
+already conceded does not apply to it.
+
 ## Two decisions, and only one of them is ours
 
 **1. Which tier the templates ask for — the game's decision, and it is a look decision.**
