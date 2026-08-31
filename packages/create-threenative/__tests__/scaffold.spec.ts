@@ -181,7 +181,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // WaveField/Buoyancy3D public surface updates the generated capability reference in all trees.
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
-  sailing: "6479f65f6a56215214d5a3dd320fe7dd6d8253cd69b42505dfa94010ece3759b",
+  // Recomputed after the template contract required every kit to ship a native icon.
+  sailing: "8c9e9c26a73e4cacdcffb5221d524e1d1f23ac17e95e4f03340d2050034e5b72",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
