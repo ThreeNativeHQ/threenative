@@ -24,6 +24,59 @@ buttons — and everything behind it is black except one faint blue band. **The 
 canvas is empty**, which is the signature of the frame never reaching the composited screenshot,
 not of a scenario driving the game wrong.
 
+## RESOLVED DIAGNOSIS, same day — it is the loading screen, not the renderer
+
+**Everything below this section was written before the cause was found, and two of its conclusions
+are wrong. They are kept because the ruling-out is still valid evidence.**
+
+The black frame **is the starter's own loading screen**, photographed before the game finished
+loading. The tell was in the screenshot the whole time: the faint blue band across the middle is the
+loading bar, at exactly `loading.bar.anchorY: 0.72` — 518 px down a 720 px frame. The React HUD is
+DOM and draws regardless, which is why it looked like "correct DOM, empty canvas".
+
+### The measurements that settle it
+
+A probe against the same scaffold, same commit, **under a private Xvfb**, waiting 6 s after the
+canvas appears:
+
+| Capture path | Result |
+| --- | --- |
+| `page.screenshot` | **1280x720, 515,630 bytes, the full scene** — [screenshot](./starter-blank-canvas-2026-08-30-scene-under-xvfb.png) |
+| `canvas.toDataURL("image/png")` | **1280x720, 833,820 bytes, the full scene** |
+
+So under Xvfb, on this machine, with the real NVIDIA adapter, **both capture paths render the scene
+correctly**. The only difference between a blank capture and a good one is *how long the run
+waited*.
+
+Two things this retracts:
+
+1. **The private-Xvfb default (`bbf0813c`) did not cause this.** An earlier reading of "Xvfb blank,
+   host display pass" looked decisive and was a coincidence: the host-display run came second,
+   against a warm vite server whose module graph was already compiled, so its assets were ready
+   before the capture. The variable is load time, not the display.
+2. **It is not a render regression, and not the post chain.** Forcing the mobile preset — bloom and
+   sharpen only, no SSGI, SSR or denoise — produced a **byte-identical** black frame. `prd278-followup`'s
+   99.10% nonblank measurement still stands.
+
+### The actual defect, and where it belongs
+
+**The runner photographs whatever is on screen when the scenario ends, including a loading screen,
+and reports it as the game's frame.** That is the same family as `starter-seed`: an outcome that
+depends on how long boot took. It is an engine bug, in `packages/playtest`, not a game bug.
+
+`ctx.startup.phase` (`"collapsing"` | `"ready"`, `packages/core/src/game.ts`) is already the exact
+signal, and the starter's loading screen already closes on it. What is missing is that the bridge
+does not report it and the runner does not wait for it.
+
+**The fix:** publish startup readiness through the playtest bridge, and have the runner wait for it —
+bounded — before taking the after-capture, failing closed with a named code if it never arrives
+rather than photographing the loading screen. `warmupFrames` is the wrong lever: counting frames is
+the race, not the cure.
+
+Until that lands, a scenario that must see the game can hold longer, but no scenario should have to.
+
+---
+
 ## What has been ruled out
 
 1. **Not a software rasteriser.** `capture.json` reports `{"architecture": "turing", "vendor":
