@@ -2009,6 +2009,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
         tests/lifecycle_policy_test.cpp)
     target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
+    # This test includes <SDL3/SDL.h> directly. `mystral-runtime` links SDL3 PRIVATE, so its
+    # include directories do not propagate to a consumer, and the target compiled everywhere SDL3
+    # happened to be on the default search path and nowhere else. On the hosted macOS and Windows
+    # runners it is not, so every native lane failed at
+    #   lifecycle_policy_test.cpp:23:10: fatal error: 'SDL3/SDL.h' file not found
+    # while `native:build` itself succeeded — the runtime does not need the header, only this test
+    # does. Ask SDL3 for its interface includes explicitly rather than inheriting them by luck.
+    if(SDL3_STATIC_TARGET)
+        target_link_libraries(threenative-lifecycle-policy-test PRIVATE ${SDL3_STATIC_TARGET})
+    elseif(TARGET SDL3::SDL3-static)
+        target_link_libraries(threenative-lifecycle-policy-test PRIVATE SDL3::SDL3-static)
+    endif()
     if(MYSTRAL_USE_DAWN)
         target_include_directories(threenative-lifecycle-policy-test PRIVATE
             ${DAWN_INCLUDE_DIR})
