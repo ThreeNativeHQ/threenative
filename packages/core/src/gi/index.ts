@@ -1,5 +1,5 @@
 import { type Camera, Group, type Scene } from "three";
-import { distance, float, uint, vec3 } from "three/tsl";
+import { distance, uint, vec3 } from "three/tsl";
 import type { ComputeNode, Node } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import { GPUReadback, type IGPUReadbackSample } from "../gpu-readback.js";
@@ -18,7 +18,6 @@ export interface ISurfelGIOptions {
   readonly maxAge: number;
   readonly originBias?: number;
   readonly rayBudget: number;
-  readonly sampleRadius: number;
   readonly scene?: Scene;
   readonly sceneBvh?: GPUSceneBVH;
   readonly surfelBudget: number;
@@ -52,9 +51,9 @@ function indirectFrom(
   pool: SurfelPool,
   grid: SurfelHashGrid,
   integrator: SurfelIntegrator,
-  sampleRadius: number,
+  lighting: ISurfelLightingInput | undefined,
 ): Node<"vec3"> {
-  if (!integrator.tracesScene) return vec3(0) as Node<"vec3">;
+  if (!integrator.tracesScene || lighting === undefined) return vec3(0) as Node<"vec3">;
   // Read the integrated GPU result from the cells belonging to this pixel's reconstructed world
   // position. The CPU active mask and GPU hit flags both participate, so an expired or untraced
   // lane cannot leak an old result into the composite.
@@ -64,20 +63,21 @@ function indirectFrom(
   for (let slot = 0; slot < grid.maxEntriesPerCell; slot += 1) {
     const entry = cell.mul(uint(grid.maxEntriesPerCell)).add(uint(slot));
     const present = available.greaterThan(uint(slot)).toFloat();
-    const sampleDistance = distance(gbuffer.worldPosition, grid.positions.element(entry).xyz);
-    // The game-owned radius is the gather falloff: nearby surfels contribute more, while a
-    // larger radius reaches farther through the same bounded hash bucket. Keep the existing
-    // fixed-count denominator so changing the radius changes the output, not just the weighting
-    // between samples that would otherwise cancel during normalization.
-    const radiusWeight = float(1).div(float(1).add(sampleDistance.div(sampleRadius)));
+    const samplePosition = grid.positions.element(entry).xyz;
+    const sampleDistance = distance(gbuffer.worldPosition, samplePosition);
     const surfelIndex = grid.entries.element(entry);
     const active = pool.active.element(surfelIndex).toFloat();
     const integratedFlag = pool.flags.element(surfelIndex).toFloat();
     const sample = pool.radiance.element(surfelIndex);
-    const weight = present.mul(active).mul(integratedFlag).mul(radiusWeight);
-    integrated = integrated.add(sample.xyz.mul(weight)) as Node<"vec3">;
+    const contribution = lighting.gather({
+      available,
+      sample: sample.xyz,
+      sampleDistance,
+    });
+    const mask = present.mul(active).mul(integratedFlag);
+    integrated = integrated.add(contribution.mul(mask)) as Node<"vec3">;
   }
-  return integrated.div(available.toFloat().max(1)) as Node<"vec3">;
+  return integrated;
 }
 
 /**
@@ -93,10 +93,10 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
   readonly processCadence = "fixed" as const;
   readonly warmupNodes: readonly ComputeNode[];
   readonly requiresGBuffer = true as const;
-  readonly sampleRadius: number;
   readonly updateCadence: number;
   #camera: Camera | undefined;
   #gbuffer: IGBuffer | undefined;
+  #lighting: ISurfelLightingInput | undefined;
   #readback: GPUReadback | undefined;
   #renderer: IRendererLike | undefined;
   #coverage = 0;
@@ -107,7 +107,6 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
 
   constructor(options: ISurfelGIOptions) {
     super();
-    this.sampleRadius = positive("sampleRadius", options.sampleRadius);
     this.updateCadence = positiveInteger("updateCadence", options.updateCadence);
     const poolOptions: ISurfelPoolOptions = {
       capacity: positiveInteger("surfelBudget", options.surfelBudget),
@@ -122,6 +121,7 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
       ),
     };
     this.pool = new SurfelPool(poolOptions);
+    this.#lighting = options.lighting;
     const readbackEveryFrames = options.readbackEveryFrames ?? 0;
     if (!Number.isInteger(readbackEveryFrames) || readbackEveryFrames < 0)
       throw new Error("SurfelGI.readbackEveryFrames must be a non-negative integer.");
@@ -202,7 +202,7 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
       this.pool,
       this.grid,
       this.integrator,
-      this.sampleRadius,
+      this.#lighting,
     );
   }
 
@@ -313,7 +313,7 @@ export { attachGBuffer, createGBuffer } from "./gbuffer.js";
 export type { ISurfelHashGridOptions } from "./hash-grid.js";
 export { SurfelHashGrid } from "./hash-grid.js";
 export type { ISurfelIntegrationOptions } from "./integrate.js";
-export type { ISurfelLightingInput } from "./integrate.js";
+export type { ISurfelGatherInput, ISurfelLightingInput } from "./integrate.js";
 export { SurfelIntegrator } from "./integrate.js";
 export type {
   ISurfelPoint,

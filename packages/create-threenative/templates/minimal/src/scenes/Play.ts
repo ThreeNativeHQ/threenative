@@ -124,7 +124,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
                 hashCellSize: 3,
                 maxAge: 600,
                 rayBudget: 64,
-                sampleRadius: 0.5,
                 scene: ctx.scene,
                 sceneBvh,
                 surfelBudget: 256,

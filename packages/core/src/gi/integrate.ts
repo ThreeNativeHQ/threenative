@@ -16,6 +16,17 @@ export interface ISurfelLightingInput {
   readonly normalResponse: (hitNormal: Node<"vec3">, surfelNormal: Node<"vec3">) => Node<"float">;
   /** Game-owned strength for the integrated contribution. */
   readonly strength: Node<"float">;
+  /** Game-owned per-sample gather response, including falloff and normalization. */
+  readonly gather: (input: ISurfelGatherInput) => Node<"vec3">;
+}
+
+export interface ISurfelGatherInput {
+  /** Integrated radiance read from the selected surfel. */
+  readonly sample: Node<"vec3">;
+  /** Distance from the current GBuffer pixel to the selected surfel. */
+  readonly sampleDistance: Node<"float">;
+  /** Number of valid entries in the selected spatial cell. */
+  readonly available: Node<"uint">;
 }
 
 export interface ISurfelIntegrationOptions {
@@ -76,6 +87,8 @@ export class SurfelIntegrator {
     const bias = originBias(options.originBias);
     if (options.bvh !== undefined && options.lighting === undefined)
       throw new Error("SurfelIntegrator.lighting is required when bvh is provided.");
+    if (options.bvh !== undefined && typeof options.lighting?.gather !== "function")
+      throw new Error("SurfelIntegrator.lighting.gather is required when bvh is provided.");
     this.dispatchCount = Math.min(
       this.rayBudget,
       pool.capacity,

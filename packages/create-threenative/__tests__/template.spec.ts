@@ -274,6 +274,11 @@ describe("template contracts", () => {
     const initialDirection = direction.value.clone();
     const initialStrength = strength.value;
 
+    light.target.position.set(0, 0, -1);
+    direction.update({} as never);
+
+    expect(direction.value.equals(initialDirection)).toBe(false);
+
     light.position.set(2, 3, 4);
     light.intensity = 4;
     direction.update({} as never);

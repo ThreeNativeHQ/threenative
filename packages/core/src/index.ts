@@ -169,8 +169,9 @@ export type {
  * @situation add indirect light or colour bleed to a game-owned output node
  * @situation maintain bounded surface samples over a traceable static scene
  * @constraint construct and add SurfelGI from game code, then reference indirectLight in src/render/
- * @override surfelBudget, rayBudget, updateCadence, sampleRadius, hashCellSize, and hashCellCount are game choices
- * @example const gi = ctx.add(new SurfelGI({ scene: ctx.scene, camera: ctx.camera, sceneBvh, surfelBudget: 4096, rayBudget: 1024, updateCadence: 2, sampleRadius: 0.02, hashCellSize: 0.5, hashCellCount: 4096, maxAge: 30 }));
+ * @constraint lighting.gather is game code and owns per-sample falloff and normalization
+ * @override surfelBudget, rayBudget, updateCadence, hashCellSize, and hashCellCount are game choices
+ * @example const gi = ctx.add(new SurfelGI({ scene: ctx.scene, camera: ctx.camera, sceneBvh, lighting, surfelBudget: 4096, rayBudget: 1024, updateCadence: 2, hashCellSize: 0.5, hashCellCount: 4096, maxAge: 30 }));
  */
 export { SurfelGI } from "./gi/index.js";
 export type {
@@ -179,6 +180,7 @@ export type {
   IGBufferDriven,
   ISurfelGIOptions,
   ISurfelGIStats,
+  ISurfelGatherInput,
   ISurfelHashGridOptions,
   ISurfelIntegrationOptions,
   ISurfelLightingInput,

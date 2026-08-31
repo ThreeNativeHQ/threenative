@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { attachGBuffer, createGBuffer } from "../src/gi/gbuffer.js";
 import { SurfelHashGrid } from "../src/gi/hash-grid.js";
 import { SurfelGI } from "../src/gi/index.js";
+import type { ISurfelGatherInput } from "../src/gi/index.js";
 import { SurfelIntegrator } from "../src/gi/integrate.js";
 import { SurfelPool } from "../src/gi/surfel-pool.js";
 import { GPUSceneBVH } from "../src/gpu-scene-bvh.js";
@@ -70,6 +71,8 @@ function testLighting() {
   return {
     attenuation: () => float(1),
     direction: vec3(0, 1, 0),
+    gather: ({ available, sample, sampleDistance }: ISurfelGatherInput) =>
+      sample.mul(float(1).add(sampleDistance.mul(0)).add(available.toFloat().mul(0))),
     normalResponse: () => float(1),
     radiance: vec3(0.8, 0.1, 0.05),
     strength: float(1),
@@ -204,7 +207,6 @@ describe("SurfelGI", () => {
       hashCellSize: 1,
       maxAge: 30,
       rayBudget: 4,
-      sampleRadius: 0.05,
       surfelBudget: 4,
       updateCadence: 2,
     });
@@ -216,38 +218,39 @@ describe("SurfelGI", () => {
     gi.detach();
   });
 
-  it("makes sampleRadius part of the spatial gather contract", () => {
-    const create = (sampleRadius: number) => {
+  it("lets the game gather response change the live indirect node", () => {
+    const create = (value: number) => {
       const scene = new Scene();
       scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
       const sceneBvh = new GPUSceneBVH(scene);
       const gbuffer = createGBuffer(scene, new PerspectiveCamera());
+      const gather = vi.fn(() => vec3(value));
       const gi = new SurfelGI({
         hashCellCount: 8,
         hashCellSize: 1,
-        lighting: testLighting(),
+        lighting: { ...testLighting(), gather },
         maxAge: 30,
         rayBudget: 4,
-        sampleRadius,
         sceneBvh,
         surfelBudget: 4,
         updateCadence: 2,
       });
       gi.attachGBuffer(gbuffer.pass);
-      return { gi, sceneBvh };
+      return { gather, gi, sceneBvh };
     };
 
-    const narrow = create(0.05);
-    const wide = create(0.2);
+    const first = create(0.25);
+    const second = create(0.75);
 
-    expect(containsNumber(narrow.gi.indirectLight, 0.05)).toBe(true);
-    expect(containsNumber(wide.gi.indirectLight, 0.2)).toBe(true);
-    expect(containsNumber(narrow.gi.indirectLight, 0.2)).toBe(false);
+    expect(first.gather).toHaveBeenCalled();
+    expect(second.gather).toHaveBeenCalled();
+    expect(containsNumber(first.gi.indirectLight, 0.25)).toBe(true);
+    expect(containsNumber(second.gi.indirectLight, 0.75)).toBe(true);
 
-    narrow.gi.detach();
-    narrow.sceneBvh.detach();
-    wide.gi.detach();
-    wide.sceneBvh.detach();
+    first.gi.detach();
+    first.sceneBvh.detach();
+    second.gi.detach();
+    second.sceneBvh.detach();
   });
 
   it("uses spatial hash samples and game-owned lighting input", () => {
@@ -257,24 +260,17 @@ describe("SurfelGI", () => {
     const sceneBvh = new GPUSceneBVH(scene);
     const gbuffer = createGBuffer(scene, camera);
     const gameOwnedRadiance = vec3(0.8, 0.1, 0.05);
-    const gameLighting = {
-      attenuation: () => float(1),
-      direction: vec3(0, 1, 0),
-      normalResponse: () => float(1),
-      radiance: gameOwnedRadiance,
-      strength: float(1),
-    };
+    const gameLighting = { ...testLighting(), radiance: gameOwnedRadiance };
     const gi = new SurfelGI({
       hashCellCount: 8,
       hashCellSize: 1,
       maxAge: 30,
       rayBudget: 4,
-      sampleRadius: 0.05,
       sceneBvh,
       surfelBudget: 4,
       updateCadence: 2,
       lighting: gameLighting,
-    } as never);
+    });
 
     gi.attachGBuffer(gbuffer.pass);
 
@@ -299,7 +295,6 @@ describe("SurfelGI", () => {
       maxAge: 30,
       rayBudget: 2,
       readbackEveryFrames: 1,
-      sampleRadius: 0.05,
       surfelBudget: 2,
       updateCadence: 2,
     });
@@ -327,7 +322,6 @@ describe("SurfelGI", () => {
       sceneBvh,
       surfelBudget: 4,
       updateCadence: 2,
-      sampleRadius: 0.05,
     });
     const gpu = renderer([]);
     const initialAllocations = gi.pool.allocationCount;
@@ -354,7 +348,6 @@ describe("SurfelGI", () => {
       sceneBvh,
       surfelBudget: 4,
       updateCadence: 3,
-      sampleRadius: 0.05,
     });
     const dispatched: unknown[] = [];
     const gpu = renderer(dispatched);
@@ -499,7 +492,6 @@ describe("SurfelGI", () => {
       maxAge: 30,
       rayBudget: 4,
       scene,
-      sampleRadius: 0.05,
       surfelBudget: 4,
       updateCadence: 2,
     });
@@ -536,7 +528,6 @@ describe("SurfelGI", () => {
       hashCellSize: 1,
       maxAge: 30,
       rayBudget: 4,
-      sampleRadius: 0.05,
       surfelBudget: 4,
       updateCadence: 2,
     });

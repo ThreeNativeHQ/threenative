@@ -14,15 +14,18 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ## PRD-245 — game-composed surfel indirect light — 2026-08-31
 
-Lane: contract-preserving `lane-245-r3`, generated `minimal` template, browser WebGPU. The real
-fixture was an isolated scaffold installed from local framework tarballs, headed Chromium on the
+Lane: contract-preserving round-2 repair `lane-245-r4`, following `lane-245-r3`, generated
+`minimal` template, browser WebGPU. The real fixture was an isolated scaffold installed from local
+framework tarballs, headed Chromium on the
 NVIDIA Turing adapter (`vendor=nvidia`, `architecture=turing`), 1280×720 viewport, and the
-repository WebGPU recipe. The final fresh run passed all four scenarios: `atmosphere` 600 frames,
+repository WebGPU recipe. The carried round-3 run passed all four scenarios: `atmosphere` 600 frames,
 `indirect-light` 451, `play` 660, and `survives` 70. The indirect-light scenario observed actual
 GPU radiance from populated surfel lanes after the game-owned wall recolour; all diagnostics were
-clean.
+clean. Round 2 also verified that the generated light direction follows the target-to-light
+world-space vector and that the required game-owned `lighting.gather` callback controls per-sample
+falloff and normalization in the live `indirectLight` node.
 
-The repair corrected four review defects. `SurfelGI.indirectLight` now reconstructs world position,
+The repair corrected the review defects. `SurfelGI.indirectLight` now reconstructs world position,
 resolves the configured hash cell, and consumes GPU-written BVH-integrated radiance gated by GPU hit
 flags and the CPU-owned active mask; it no longer derives light from albedo or a global hit
 fraction. Age and expiry never CPU-upload GPU-owned flags/radiance, inactive compute lanes do not
@@ -30,7 +33,9 @@ trace, and BVH-backed surfels are refreshed before expiry. GI owns a distinct GB
 attachment, preserving the SSR `metalness` attachment. The minimal template's game-owned lighting
 input carries wall colour into the compute solve, and `Play.ts` reads
 `ctx.renderer.readback(gi.pool.radiance.value)` after the solve cadence. Deleting the composition
-line leaves the lazy factory uncalled and the positive GI assertion at zero.
+line leaves the lazy factory uncalled and the positive GI assertion at zero. In the fresh round-2
+OFF arm, `giCoverage`, `giBounceRed`, and `giBounceDeltaRed` remained `0` and the positive
+assertions failed closed with `TN_PLAYTEST_RESOURCE_ASSERTION_FAILED`.
 
 The first fresh WebGPU attempt exposed a required integration fix: five RGBA16 MRT attachments
 need 40 bytes per sample while Three's default adapter request allowed 32. The core renderer now
@@ -62,6 +67,12 @@ That is the intended fail-closed direct-only contract, not a false passing GI as
 Android status: `adb devices` had no attached device. Physical Android capture, Pixel 8 frame cost,
 the Pixel 8 pass/refusal verdict, native execution/parity, and an exact same-machine no-`SurfelGI`
 HEAD draw/timing pair are **UNVERIFIED**. No phone cost or same-machine timing claim is made.
+
+Round-2 verification: the fresh packed-tarball sandbox passed all four generated scenarios on the
+named NVIDIA/Turing WebGPU adapter (`atmosphere` 600 frames, `indirect-light` 422, `play` 660,
+`survives` 70) with clean diagnostics. The inspected before/after captures showed the receiver
+changing with the coloured wall. `pnpm test` remains incomplete because six runtime-native tests
+require unbuilt Linux/QuickJS CMake executables; 626 tests passed before that setup failure.
 
 ---
 

@@ -29,21 +29,36 @@ type IndirectLightLike = {
   indirectLight: Node<"vec3">;
 };
 
+type GatherInput = {
+  available: Node<"uint">;
+  sample: Node<"vec3">;
+  sampleDistance: Node<"float">;
+};
+
 /** Appearance inputs for the opt-in solve stay in generated game render source. */
 export function createIndirectLighting(light: DirectionalLight) {
-  const directionValue = light.position.clone().normalize();
+  const directionValue = new Vector3();
+  const lightPosition = new Vector3();
+  const targetPosition = new Vector3();
+  const updateDirection = (): Vector3 => {
+    light.getWorldPosition(lightPosition);
+    light.target.getWorldPosition(targetPosition);
+    return directionValue.copy(lightPosition).sub(targetPosition).normalize();
+  };
   const direction = uniform(directionValue, "vec3")
     .setGroup(frameGroup)
-    .onFrameUpdate(() => {
-      directionValue.copy(light.position).normalize();
-      return directionValue;
-    });
+    .onFrameUpdate(updateDirection);
   const strength = uniform(light.intensity, "float")
     .setGroup(frameGroup)
     .onFrameUpdate(() => light.intensity);
+  const gatherRadius = 0.5;
   return {
     attenuation: (distance: Node<"float">) => float(1).div(float(1).add(distance)),
     direction,
+    gather: ({ available, sample, sampleDistance }: GatherInput) =>
+      sample
+        .mul(float(1).div(float(1).add(sampleDistance.div(gatherRadius))))
+        .div(available.toFloat().max(1)),
     normalResponse: () => float(1),
     radiance: wallBounceRadiance,
     strength,
