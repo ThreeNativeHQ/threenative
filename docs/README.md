@@ -41,7 +41,7 @@ Active PRD categories are [`agent-leverage/`](PRDs/agent-leverage/),
 [`experiments/`](PRDs/experiments/), [`feature-mining/`](PRDs/feature-mining/),
 [`lighting/`](PRDs/lighting/), [`mobile/`](PRDs/mobile/), [`native/`](PRDs/native/),
 [`package-naming/`](PRDs/package-naming/), [`performance/`](PRDs/performance/),
-[`starter-kits/`](PRDs/starter-kits/), [`studio-hosting/`](PRDs/studio-hosting/),
+[`starter-kits/`](PRDs/done/starter-kits/), [`studio-hosting/`](PRDs/studio-hosting/),
 [`tech-debt-code-quality/`](PRDs/tech-debt-code-quality/), [`tooling/`](PRDs/tooling/), and
 [`useful-defaults/`](PRDs/useful-defaults/).
 The asset-pipeline series closed on 2026-08-22 as
