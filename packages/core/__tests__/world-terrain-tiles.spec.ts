@@ -446,6 +446,39 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("records a visible snap when an active LOD transition is retargeted before the next render", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight: (x, z) => sampleHeight(x, z) * 500,
+      streamRadius: 0,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [4, 8],
+    });
+
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      tiles.follow({ x: 6, z: 0 });
+
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the transitioned tile to remain resident.");
+      tiles.process();
+      const beforeRetarget = visibleSurface(tile);
+
+      tiles.follow({ x: 0, z: 0 });
+      const afterRetarget = visibleSurface(tile);
+      const retargetSnap = surfaceDelta(beforeRetarget, afterRetarget);
+      expect(retargetSnap).toBeGreaterThan(0.00001);
+
+      tiles.process();
+      expect(tiles.maxLodPop).toBeGreaterThanOrEqual(retargetSnap - 0.00001);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
   it("reports visible edge geometry on every frame of an LOD transition", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
@@ -718,6 +751,47 @@ describe("TerrainTiles", () => {
       true,
     );
     tiles.dispose();
+  });
+
+  it("reports a visual seam when a recorded bridge is detached from the tile owner", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      skirtDepth: 32,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      expect(tiles.stitchedEdgeCount).toBeGreaterThan(0);
+      expect(tiles.maxVisualSeamGap).toBe(0);
+
+      tiles.remove(bridge);
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the stitched tile to remain resident.");
+      const surface = tile.lod.levels.find(({ object }) => object.visible)?.object;
+      if (!(surface instanceof Mesh)) throw new Error("Expected a visible surface mesh.");
+      const position = surface.geometry.getAttribute("position");
+      const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
+      for (let row = 0; row < resolution; row += 1) {
+        const index = row * resolution + resolution - 1;
+        position.setY(index, position.getY(index) + 128);
+      }
+      position.needsUpdate = true;
+      tiles.process();
+
+      expect(tiles.maxVisualSeamGap).toBeGreaterThan(0);
+    } finally {
+      tiles.dispose();
+    }
   });
 
   it("keeps the manually selected LOD visible when a renderer inspects the LOD", () => {

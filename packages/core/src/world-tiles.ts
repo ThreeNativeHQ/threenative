@@ -601,25 +601,6 @@ function updateStitchBridge(bridge: IStitchBridge, data: IStitchGeometryData): v
   bridge.coverageDepth = data.coverageDepth;
 }
 
-function seamGap(a: IResidentTile, b: IResidentTile): number | undefined {
-  // A transition mutates the finer mesh in place. Read its position attribute instead of the
-  // retained build-time edge samples so diagnostics describe the geometry the renderer can see.
-  const [aSide, bSide] = opposingEdge(a, b);
-  const aLevel = renderedLevel(a);
-  const bLevel = renderedLevel(b);
-  if (aLevel === undefined || bLevel === undefined) return undefined;
-  const samples = Math.max(aLevel.resolution, bLevel.resolution);
-  let maximum = 0;
-  for (let index = 0; index < samples; index += 1) {
-    const normalized = samples === 1 ? 0 : index / (samples - 1);
-    maximum = Math.max(
-      maximum,
-      Math.abs(edgeHeight(aLevel, aSide, normalized) - edgeHeight(bLevel, bSide, normalized)),
-    );
-  }
-  return maximum;
-}
-
 function levelHeight(level: ILevelGeometry, row: number, column: number): number {
   const position = level.geometry.getAttribute("position");
   const value = position.getY(row * level.resolution + column);
@@ -861,15 +842,59 @@ function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
   return Math.min(aLevel.skirtDepth, bLevel.skirtDepth);
 }
 
+function bridgeCoverageAt(bridge: IStitchBridge, normalized: number): number {
+  if (bridge.mesh.geometry !== bridge.geometry)
+    throw new Error("TerrainTiles seam diagnostic bridge geometry is not attached to its mesh.");
+  if (!Number.isInteger(bridge.resolution) || bridge.resolution < 2)
+    throw new Error("TerrainTiles seam diagnostic bridge resolution is invalid.");
+  const position = bridge.mesh.geometry.getAttribute("position");
+  if (position.count !== bridge.resolution * 2)
+    throw new Error("TerrainTiles seam diagnostic bridge geometry has invalid coverage.");
+  const samplePosition = Math.max(0, Math.min(1, normalized)) * (bridge.resolution - 1);
+  const lower = Math.floor(samplePosition);
+  const upper = Math.min(bridge.resolution - 1, lower + 1);
+  const mix = samplePosition - lower;
+  const height = (sample: number, endpoint: number): number => {
+    const value = position.getY(sample * 2 + endpoint);
+    if (!Number.isFinite(value))
+      throw new Error("TerrainTiles seam diagnostic bridge coverage must be finite.");
+    return value;
+  };
+  const fine = height(lower, 0) * (1 - mix) + height(upper, 0) * mix;
+  const coarse = height(lower, 1) * (1 - mix) + height(upper, 1) * mix;
+  return Math.abs(fine - coarse);
+}
+
 function seamObservation(
   a: IResidentTile,
   b: IResidentTile,
   bridge: IStitchBridge | undefined,
+  owner: Object3D,
 ): { gap: number; visualGap: number } {
-  const gap = seamGap(a, b);
-  if (gap === undefined || !Number.isFinite(gap))
-    throw new Error("TerrainTiles seam diagnostic observation must be finite.");
-  const visualGap = bridge === undefined ? Math.max(0, gap - seamCoverageDepth(a, b)) : 0;
+  const [aSide, bSide] = opposingEdge(a, b);
+  const aLevel = renderedLevel(a);
+  const bLevel = renderedLevel(b);
+  if (aLevel === undefined || bLevel === undefined)
+    throw new Error("TerrainTiles seam diagnostic observation has no rendered level.");
+  const samples = Math.max(aLevel.resolution, bLevel.resolution);
+  const bridgeAttached =
+    bridge !== undefined && bridge.mesh.parent === owner && bridge.mesh.visible === true;
+  let gap = 0;
+  let visualGap = 0;
+  for (let index = 0; index < samples; index += 1) {
+    const normalized = samples === 1 ? 0 : index / (samples - 1);
+    const currentGap = Math.abs(
+      edgeHeight(aLevel, aSide, normalized) - edgeHeight(bLevel, bSide, normalized),
+    );
+    if (!Number.isFinite(currentGap))
+      throw new Error("TerrainTiles seam diagnostic observation must be finite.");
+    gap = Math.max(gap, currentGap);
+    const bridgeCoverage = bridgeAttached
+      ? bridgeCoverageAt(bridge as IStitchBridge, normalized)
+      : 0;
+    const coverage = Math.max(seamCoverageDepth(a, b), bridgeCoverage);
+    visualGap = Math.max(visualGap, Math.max(0, currentGap - coverage));
+  }
   if (!Number.isFinite(visualGap))
     throw new Error("TerrainTiles visual seam diagnostic observation must be finite.");
   return { gap, visualGap };
@@ -1395,6 +1420,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       setManualLodLevel(tile.lod, level);
       return;
     }
+    const interruptedFrame =
+      tile.lodTransition === undefined ? undefined : this.#captureLodFrameForTile(tile);
     if (tile.lodTransition !== undefined) this.#finishLodTransition(tile);
     const previousLevel = tile.lodLevel;
     const previous = tile.levels[previousLevel];
@@ -1405,6 +1432,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (!countTransition) {
       setManualLodLevel(tile.lod, level);
       this.#setLodVisibility(tile);
+      this.#recordLodPopAfterRetarget(interruptedFrame);
       return;
     }
     this.#lodTransitions += 1;
@@ -1419,6 +1447,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     setManualLodLevel(tile.lod, finerLevel);
     updateLodTransitionGeometry(tile, tile.lodTransition, 0);
     this.#setLodVisibility(tile, [finerLevel]);
+    this.#recordLodPopAfterRetarget(interruptedFrame);
   }
 
   #setLodVisibility(tile: IResidentTile, visibleLevels = [tile.lodLevel]): void {
@@ -1432,12 +1461,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const snapshots: ILodFrameSnapshot[] = [];
     for (const tile of this.#resident.values()) {
       if (tile.lodTransition === undefined) continue;
-      const level = renderedLevel(tile);
-      if (level === undefined)
-        throw new Error("TerrainTiles cannot measure an LOD transition without a visible level.");
-      snapshots.push({ heights: surfaceHeights(level), resolution: level.resolution, tile });
+      snapshots.push(this.#captureLodFrameForTile(tile));
     }
     return snapshots;
+  }
+
+  #captureLodFrameForTile(tile: IResidentTile): ILodFrameSnapshot {
+    const level = renderedLevel(tile);
+    if (level === undefined)
+      throw new Error("TerrainTiles cannot measure an LOD transition without a visible level.");
+    return { heights: surfaceHeights(level), resolution: level.resolution, tile };
   }
 
   #recordLodPopAfterReconciliation(snapshots: readonly ILodFrameSnapshot[]): void {
@@ -1447,6 +1480,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         throw new Error("TerrainTiles cannot measure an LOD frame without a visible level.");
       this.#recordLodPop(surfaceDeltaFromSamples(snapshot.heights, snapshot.resolution, level));
     }
+  }
+
+  #recordLodPopAfterRetarget(snapshot: ILodFrameSnapshot | undefined): void {
+    if (snapshot === undefined) return;
+    const level = renderedLevel(snapshot.tile);
+    if (level === undefined)
+      throw new Error(
+        "TerrainTiles cannot measure a retargeted LOD frame without a visible level.",
+      );
+    this.#recordLodPop(surfaceDeltaFromSamples(snapshot.heights, snapshot.resolution, level));
   }
 
   #advanceLodTransitions(): void {
@@ -1567,6 +1610,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           tile,
           neighbor,
           this.#stitches.get(neighborPairKey([tile, neighbor])),
+          this,
         );
         this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
         this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
