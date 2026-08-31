@@ -1,0 +1,55 @@
+import { useUiState } from "@threenative/ui";
+import type { GameState } from "../state.js";
+
+export function Hud() {
+  const state = useUiState<GameState>();
+  if (state === undefined) return null;
+  const statusClass =
+    state.status === "won" ? "text-win" : state.status === "lost" ? "text-danger" : "text-accent";
+  return (
+    <div className="pointer-events-none absolute inset-0 p-6 text-[11px] uppercase tracking-[0.16em] text-text">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-[10px] text-muted">passage / bluewater run</div>
+          <div className="mt-2 flex items-baseline gap-5 text-[18px] text-white">
+            <span>
+              buoys <b id="buoys-rounded">{state.buoysRounded}</b>/4
+            </span>
+            <span className={statusClass} id="sailing-status">
+              {state.status}
+            </span>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] text-muted">wind</div>
+          <div className="mt-2 text-[22px] text-white" id="wind">
+            {Math.round(state.wind * 100)}%
+          </div>
+        </div>
+      </div>
+      <div className="absolute bottom-6 left-6 flex items-end gap-8">
+        <div>
+          <div className="text-[10px] text-muted">waterline</div>
+          <div className="mt-1 text-[26px] leading-none text-white" id="submerged-fraction">
+            {Math.round(state.submergedFraction * 100)}
+            <span className="text-[11px] text-muted">%</span>
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] text-muted">elapsed</div>
+          <div className="mt-1 text-[18px] leading-none text-white" id="elapsed">
+            {state.elapsed.toFixed(1)}s
+          </div>
+        </div>
+      </div>
+      {state.status === "sailing" ? null : (
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border border-accent/70 bg-panel/80 px-8 py-5 text-center">
+          <div className={`text-[28px] tracking-[0.28em] ${statusClass}`}>
+            {state.status === "won" ? "course complete" : "capsized"}
+          </div>
+          <div className="mt-2 text-[10px] text-muted">press R to restart</div>
+        </div>
+      )}
+    </div>
+  );
+}

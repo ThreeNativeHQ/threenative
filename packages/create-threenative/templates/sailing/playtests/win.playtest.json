@@ -1,0 +1,31 @@
+{
+  "name": "round-four-course-buoys",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "round-course",
+      "press": "ArrowUp",
+      "holdTicks": 240,
+      "release": true
+    },
+    { "kind": "wait", "label": "observe-win", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "state", "path": "buoysRounded", "equals": 4, "changed": true },
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "won",
+        "changed": true,
+        "atSteps": [{ "label": "observe-win", "equals": "won" }]
+      }
+    ]
+  }
+}

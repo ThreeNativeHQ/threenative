@@ -26,6 +26,22 @@ export { CharacterBody3D } from "./CharacterBody3D.js";
 export { CollisionShape3D } from "./CollisionShape3D.js";
 export type { ICollisionShapeHandle } from "./CollisionShape3D.js";
 /**
+ * Float a rigid body on a game-owned height source with fixed-step force ordering.
+ * @situation float a boat on waves
+ * @situation keep a hull above a moving water surface
+ * @constraint supply hull points, density, drag, and the height source
+ * @override buoyancy disables force application while submergedFraction remains measured
+ * @example new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });
+ */
+export { Buoyancy3D } from "./Buoyancy3D.js";
+export type {
+  BuoyancyPointPosition,
+  IBuoyancy3DOptions,
+  IBuoyancyHullPoint,
+  IBuoyancySurface,
+  IBuoyancySurfaceSample,
+} from "./Buoyancy3D.js";
+/**
  * Connect two physics bodies with a Godot-style joint.
  * @situation constrain a rigid body to another body
  * @situation build a hinge or pin mechanism

@@ -6,6 +6,14 @@ export { CharacterBody3D } from "../CharacterBody3D.js";
 export type { ICharacterBody3DOptions } from "../CharacterBody3D.js";
 export { CollisionShape3D } from "../CollisionShape3D.js";
 export type { CollisionShapeKind } from "../CollisionShape3D.js";
+export { Buoyancy3D } from "../Buoyancy3D.js";
+export type {
+  BuoyancyPointPosition,
+  IBuoyancy3DOptions,
+  IBuoyancyHullPoint,
+  IBuoyancySurface,
+  IBuoyancySurfaceSample,
+} from "../Buoyancy3D.js";
 export { Joint3D } from "../Joint3D.js";
 export type {
   IFixedJoint3DOptions,

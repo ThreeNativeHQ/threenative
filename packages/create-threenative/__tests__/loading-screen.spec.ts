@@ -30,6 +30,10 @@ import {
   loading as racingLoading,
 } from "../templates/racing/src/render/loading.js";
 import {
+  createLoadingScreen as createSailingLoadingScreen,
+  loading as sailingLoading,
+} from "../templates/sailing/src/render/loading.js";
+import {
   createLoadingScreen as createShooterLoadingScreen,
   loading as shooterLoading,
 } from "../templates/shooter/src/render/loading.js";
@@ -39,7 +43,15 @@ import {
 } from "../templates/starter/src/render/loading.js";
 
 const templateRoot = path.resolve("packages/create-threenative/templates");
-const stampedTemplates = ["action-rpg", "defense", "platformer", "racing", "shooter", "starter"];
+const stampedTemplates = [
+  "action-rpg",
+  "defense",
+  "platformer",
+  "racing",
+  "sailing",
+  "shooter",
+  "starter",
+];
 const loadingPath = (template: string): string =>
   path.join(templateRoot, template, "src/render/loading.ts");
 
@@ -124,7 +136,7 @@ describe("template loading screen", () => {
     expect(stampLoadingSource(edited, source)).toContain("maxWidth: 1200");
   });
 
-  it("restamps all six tracked copies from a canonical edit", async () => {
+  it("restamps all seven tracked copies from a canonical edit", async () => {
     const root = await makeTempDir("threenative-loading-restamp-");
     const stagedTemplates = path.join(root, "templates");
     await cp(templateRoot, stagedTemplates, { recursive: true });
@@ -257,6 +269,7 @@ describe("template loading screen", () => {
       [defenseLoading, createDefenseLoadingScreen, 1],
       [loading, createLoadingScreen, 2],
       [racingLoading, createRacingLoadingScreen, 1],
+      [sailingLoading, createSailingLoadingScreen, 1],
       [shooterLoading, createShooterLoadingScreen, 1],
       [starterLoading, createStarterLoadingScreen, 1],
     ] as const;

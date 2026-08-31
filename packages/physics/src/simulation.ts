@@ -195,6 +195,7 @@ export interface IPhysicsSimulation {
    */
   applyBodyImpulse(id: number, impulse: IPhysicsVector3): void;
   applyBodyForce(id: number, force: IPhysicsVector3): void;
+  applyBodyForceAtPoint(id: number, force: IPhysicsVector3, point: IPhysicsVector3): void;
   setBodyLinearVelocity(id: number, velocity: IPhysicsVector3): void;
   readBodyLinearVelocity(id: number): IPhysicsVector3;
   step(deltaTime: number, inputSnapshot?: IPhysicsInputSnapshot): void;
@@ -955,6 +956,16 @@ export function createWebPhysicsSimulation(
       requireFiniteVector(force, "force");
       requireDynamic(bodies.get(id), id, "applyForce").body.addForce(force, true);
     },
+    applyBodyForceAtPoint: (id, force, point) => {
+      requireLive();
+      requireFiniteVector(force, "force");
+      requireFiniteVector(point, "force point");
+      requireDynamic(bodies.get(id), id, "applyForceAtPoint").body.addForceAtPoint(
+        force,
+        point,
+        true,
+      );
+    },
     setBodyLinearVelocity: (id, velocity) => {
       requireLive();
       requireFiniteVector(velocity, "velocity");
@@ -1028,6 +1039,9 @@ export function createWebPhysicsSimulation(
       }
       options.world.timestep = deltaTime;
       options.world.step(options.eventQueue);
+      // Rapier retains accumulated forces unless the caller clears them. The public seam is a
+      // fixed-step force, so clear it after every step to keep web and native actuation aligned.
+      for (const entry of bodies.values()) entry.body.resetForces(true);
       dirtyBodies.clear();
     },
     readVisibleTransforms: (renderBuffer) => {

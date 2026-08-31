@@ -729,6 +729,19 @@
       "required": true
     },
     {
+      "id": "78-wave-field",
+      "title": "analytic wave field CPU and TSL displacement",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/wave-field.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 5.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",

@@ -9,6 +9,7 @@ const DURABLE_PLAYTEST_TEMPLATES = [
   "action-rpg",
   "defense",
   "racing",
+  "sailing",
   "shooter",
 ] as const;
 
@@ -88,6 +89,38 @@ describe("starter playtest proof", () => {
       expect(packageJson.scripts.test).not.toContain("4173");
     },
   );
+
+  it("should route sailing native proof to its desktop scenario instead of the starter asset verifier", async () => {
+    const packageJson = JSON.parse(
+      await readFile(
+        path.resolve("packages/create-threenative/templates/sailing/package.json"),
+        "utf8",
+      ),
+    ) as { scripts: { "test:native": string } };
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/sailing/native-playtests/survives.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert?: { diagnostics?: Record<string, boolean>; movement?: { minDistance?: number } };
+      target: string;
+    };
+
+    expect(packageJson.scripts["test:native"]).toContain(
+      "threenative-playtest --scenario native-playtests/survives.playtest.json",
+    );
+    expect(packageJson.scripts["test:native"]).toContain("--target desktop");
+    expect(packageJson.scripts["test:native"]).toContain(
+      "--executable dist-native/__PROJECT_NAME__",
+    );
+    expect(packageJson.scripts["test:native"]).not.toContain("verify-starter-desktop");
+    expect(scenario.target).toBe("desktop");
+    expect(scenario.assert?.diagnostics).toBeUndefined();
+    expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
+  });
 
   it("should contain a loadable movement and score scenario", async () => {
     const scenario = await readFile(

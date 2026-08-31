@@ -154,6 +154,9 @@ int32_t tn_physics_apply_body_impulse(TnPhysicsSimulation *simulation,
                                       uint32_t id, float x, float y, float z);
 int32_t tn_physics_apply_body_force(TnPhysicsSimulation *simulation,
                                     uint32_t id, float x, float y, float z);
+int32_t tn_physics_apply_body_force_at_point(
+    TnPhysicsSimulation *simulation, uint32_t id, float force_x, float force_y,
+    float force_z, float point_x, float point_y, float point_z);
 int32_t tn_physics_set_body_linear_velocity(
     TnPhysicsSimulation *simulation, uint32_t id, float x, float y, float z);
 int32_t tn_physics_read_body_linear_velocity(

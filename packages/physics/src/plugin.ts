@@ -1,5 +1,6 @@
 import type { ICtx, IGameObservationSampleRequest, IGamePluginHooks } from "@threenative/core";
 import type { Area3D } from "./Area3D.js";
+import type { Buoyancy3D } from "./Buoyancy3D.js";
 import { CharacterBody3D } from "./CharacterBody3D.js";
 import { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
 import { RigidBody3D } from "./RigidBody3D.js";
@@ -52,6 +53,8 @@ export interface IPhysicsContext {
   remove(body: PhysicsBody3D): void;
   addArea(area: Area3D): void;
   removeArea(area: Area3D): void;
+  addBuoyancy(buoyancy: Buoyancy3D): void;
+  removeBuoyancy(buoyancy: Buoyancy3D): void;
 }
 
 export type PhysicsPlugin = IGamePluginHooks<Record<string, unknown>, IPhysicsContext>;
@@ -113,6 +116,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   const bodies = new Set<PhysicsBody3D>();
   const bodiesById = new Map<number, PhysicsBody3D>();
   const areas = new Map<number, Area3D>();
+  const buoyancies = new Set<Buoyancy3D>();
   const areaMembershipBuffers = new Map<number, IAreaMembershipBuffers>();
   const kinematicMotions = new Map<
     number,
@@ -142,6 +146,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
           previous: new Map(),
         });
       },
+      addBuoyancy: (buoyancy) => buoyancies.add(buoyancy),
       eventQueue: physicsHandle(selected.rawEventQueue),
       kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
       numBodies: () => bodies.size,
@@ -155,6 +160,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         areaMembershipBuffers.delete(area.body.id);
         removeContactsFor(area.body.id);
       },
+      removeBuoyancy: (buoyancy) => buoyancies.delete(buoyancy),
       directSpaceState: new PhysicsDirectSpaceState3D(selected),
       simulation: selected,
       world: physicsWorldHandle(selected.rawWorld, selected),
@@ -201,6 +207,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         kinematicCount: count,
         kinematicTransforms: kinematic,
       };
+      for (const buoyancy of buoyancies) buoyancy.apply(dt);
       simulation.step(dt, input);
 
       visible = growFloat(visible, bodies.size + areas.size);
@@ -290,9 +297,11 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
     // before any input. A scene therefore gets a pristine simulation, which makes restart
     // deterministic without a game having to discover an API for it.
     sceneExit: (ctx: ICtx<Record<string, unknown>, IPhysicsContext>) => {
+      for (const buoyancy of [...buoyancies]) buoyancy.dispose();
       for (const area of [...areas.values()]) area.dispose();
       for (const body of [...bodies]) body.dispose();
       areaMembershipBuffers.clear();
+      buoyancies.clear();
       kinematicMotions.clear();
       activeContacts.clear();
       debugSeries = [];
@@ -309,9 +318,11 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
     dispose: () => {
       unregisterObservations?.();
       unregisterObservations = undefined;
+      for (const buoyancy of [...buoyancies]) buoyancy.dispose();
       for (const area of [...areas.values()]) area.dispose();
       for (const body of [...bodies]) body.dispose();
       areaMembershipBuffers.clear();
+      buoyancies.clear();
       simulation?.dispose();
       simulation = undefined;
       context = undefined;

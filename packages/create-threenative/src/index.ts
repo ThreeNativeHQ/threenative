@@ -65,6 +65,7 @@ export const FULL_LOADING_TEMPLATES = [
   "defense",
   "platformer",
   "racing",
+  "sailing",
   "shooter",
   "starter",
 ] as const;

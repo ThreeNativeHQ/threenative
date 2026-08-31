@@ -874,6 +874,22 @@ export async function warmUpScene( renderer: IWarmUpRenderer, scene: Object3D, c
 await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) });
 ```
 
+### `WaveField`
+
+`class` — Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.
+
+```ts
+export class WaveField { … }
+```
+
+- **Use when:** float a boat on waves · make water move · find the water surface height at a point
+- **Constraints:** supply every wave amplitude, wavelength, direction, speed and warp value · call setTime for the default graph clock when the game advances its own time
+
+```ts
+const field = new WaveField({ waves });
+const { height, normal } = field.sample(x, z, elapsed);
+```
+
 ### `zenithTransmittance`
 
 `function` — Return direct vertical transmittance for the supplied atmosphere.
@@ -1150,6 +1166,22 @@ export class Area3D { … }
 
 ```ts
 const area = new Area3D({ context, shape });
+```
+
+### `Buoyancy3D`
+
+`class` — Float a rigid body on a game-owned height source with fixed-step force ordering.
+
+```ts
+export class Buoyancy3D { … }
+```
+
+- **Use when:** float a boat on waves · keep a hull above a moving water surface
+- **Constraints:** supply hull points, density, drag, and the height source
+- **Overrides:** buoyancy disables force application while submergedFraction remains measured
+
+```ts
+new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });
 ```
 
 ### `CharacterBody3D`

@@ -1,5 +1,6 @@
 import type { Object3D, Vector3 } from "three";
 import { resolveInitialTransform } from "./Area3D.js";
+import type { Buoyancy3D } from "./Buoyancy3D.js";
 import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
 import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
@@ -34,6 +35,8 @@ export class RigidBody3D {
   readonly object: Object3D | undefined;
   readonly shape: CollisionShape3D;
   readonly type: RigidBodyType;
+  readonly mass: number;
+  buoyancy: Buoyancy3D | undefined;
   readonly #simulation: IPhysicsSimulation;
   readonly #physics: IPhysicsContext | undefined;
   readonly #object: Object3D | undefined;
@@ -54,6 +57,8 @@ export class RigidBody3D {
     this.shape = options.shape;
     this.#object = options.object;
     this.type = type;
+    this.mass = options.mass ?? 0;
+    this.buoyancy = undefined;
     const shape = options.shape.descriptor;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
       const layer = options.collisionLayer ?? shape.collisionLayer;
@@ -62,7 +67,7 @@ export class RigidBody3D {
     }
     const registration = this.#simulation.createBody({
       entity: options.entity,
-      mass: options.mass ?? 0,
+      mass: this.mass,
       position: initial.position,
       rotation: initial.rotation,
       sensor: shape.sensor,
@@ -78,6 +83,10 @@ export class RigidBody3D {
       z: initial.position.z,
     };
     this.#physics?.add(this);
+  }
+
+  get physics(): IPhysicsContext | undefined {
+    return this.#physics;
   }
 
   /** Called by the shared plugin before a bulk step. */
@@ -126,6 +135,15 @@ export class RigidBody3D {
   applyForce(force: { readonly x: number; readonly y: number; readonly z: number }): void {
     this.#requireLive("applyForce");
     this.#simulation.applyBodyForce(this.body.id, force);
+  }
+
+  /** Godot's force-at-position equivalent. Continuous push in world space; cleared each step. */
+  applyForceAtPoint(
+    force: { readonly x: number; readonly y: number; readonly z: number },
+    point: { readonly x: number; readonly y: number; readonly z: number },
+  ): void {
+    this.#requireLive("applyForceAtPoint");
+    this.#simulation.applyBodyForceAtPoint(this.body.id, force, point);
   }
 
   /** Godot's `linear_velocity`. */
@@ -187,6 +205,8 @@ export class RigidBody3D {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.buoyancy?.dispose();
+    this.buoyancy = undefined;
     this.#physics?.remove(this);
     this.#simulation.removeBody(this.body.id);
   }

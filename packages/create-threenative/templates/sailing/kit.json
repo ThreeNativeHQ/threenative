@@ -1,0 +1,7 @@
+{
+  "name": "sailing",
+  "title": "Sailing",
+  "blurb": "A wind-and-wave sailing starter with buoyancy, ordered course buoys, and a ship you can reshape.",
+  "genre": "sailing",
+  "kit": true
+}

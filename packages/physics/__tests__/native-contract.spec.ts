@@ -558,6 +558,9 @@ describe("native physics contract", () => {
 
     expect(() => native.applyBodyImpulse(0, vector)).toThrow(/TN_NATIVE_PHYSICS_ACTUATION_MISSING/);
     expect(() => native.applyBodyForce(0, vector)).toThrow(/TN_NATIVE_PHYSICS_ACTUATION_MISSING/);
+    expect(() => native.applyBodyForceAtPoint(0, vector, vector)).toThrow(
+      /TN_NATIVE_PHYSICS_ACTUATION_MISSING/,
+    );
     expect(() => native.setBodyLinearVelocity(0, vector)).toThrow(
       /TN_NATIVE_PHYSICS_ACTUATION_MISSING/,
     );
@@ -567,12 +570,14 @@ describe("native physics contract", () => {
   it("forwards native actuation and refuses malformed or disposed calls", () => {
     const applyBodyImpulse = vi.fn();
     const applyBodyForce = vi.fn();
+    const applyBodyForceAtPoint = vi.fn();
     const setBodyLinearVelocity = vi.fn();
     const readBodyLinearVelocity = vi.fn(() => ({ x: 4, y: 0, z: 0 }));
     const dispose = vi.fn();
     const native = createNativePhysicsSimulation(
       {
         applyBodyForce,
+        applyBodyForceAtPoint,
         applyBodyImpulse,
         dispose,
         readBodyLinearVelocity,
@@ -583,10 +588,16 @@ describe("native physics contract", () => {
 
     native.applyBodyImpulse(7, { x: 1, y: 2, z: 3 });
     native.applyBodyForce(7, { x: 4, y: 5, z: 6 });
+    native.applyBodyForceAtPoint(7, { x: 10, y: 11, z: 12 }, { x: 13, y: 14, z: 15 });
     native.setBodyLinearVelocity(7, { x: 7, y: 8, z: 9 });
 
     expect(applyBodyImpulse).toHaveBeenCalledWith(7, { x: 1, y: 2, z: 3 });
     expect(applyBodyForce).toHaveBeenCalledWith(7, { x: 4, y: 5, z: 6 });
+    expect(applyBodyForceAtPoint).toHaveBeenCalledWith(
+      7,
+      { x: 10, y: 11, z: 12 },
+      { x: 13, y: 14, z: 15 },
+    );
     expect(setBodyLinearVelocity).toHaveBeenCalledWith(7, { x: 7, y: 8, z: 9 });
     expect(native.readBodyLinearVelocity(7)).toEqual({ x: 4, y: 0, z: 0 });
 

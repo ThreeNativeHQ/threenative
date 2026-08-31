@@ -12,6 +12,7 @@ const templates = [
   "minimal",
   "platformer",
   "racing",
+  "sailing",
   "shooter",
   "starter",
 ] as const;

@@ -113,6 +113,7 @@ export interface INativeSimulation {
   /** Optional so old runtimes fail loudly through the adapter instead of silently diverging. */
   applyBodyImpulse?(id: number, impulse: IPhysicsVector3): void;
   applyBodyForce?(id: number, force: IPhysicsVector3): void;
+  applyBodyForceAtPoint?(id: number, force: IPhysicsVector3, point: IPhysicsVector3): void;
   setBodyLinearVelocity?(id: number, velocity: IPhysicsVector3): void;
   readBodyLinearVelocity?(id: number): IPhysicsVector3;
   readVisibleTransforms(renderBuffer: Float32Array): number;
@@ -480,6 +481,14 @@ export function createNativePhysicsSimulation(
       if (raw.applyBodyForce === undefined)
         throw new Error("TN_NATIVE_PHYSICS_ACTUATION_MISSING: runtime ABI is too old");
       raw.applyBodyForce(id, force);
+    },
+    applyBodyForceAtPoint: (id, force, point) => {
+      requireLive();
+      requireFiniteVector(force, "force");
+      requireFiniteVector(point, "force point");
+      if (raw.applyBodyForceAtPoint === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_ACTUATION_MISSING: runtime ABI is too old");
+      raw.applyBodyForceAtPoint(id, force, point);
     },
     setBodyLinearVelocity: (id, velocity) => {
       requireLive();

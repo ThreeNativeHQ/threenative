@@ -583,6 +583,37 @@ impl Simulation {
         ActuationStatus::Ok
     }
 
+    fn apply_body_force_at_point(
+        &mut self,
+        id: u32,
+        force_x: f32,
+        force_y: f32,
+        force_z: f32,
+        point_x: f32,
+        point_y: f32,
+        point_z: f32,
+    ) -> ActuationStatus {
+        if ![force_x, force_y, force_z, point_x, point_y, point_z]
+            .into_iter()
+            .all(f32::is_finite)
+        {
+            return ActuationStatus::NonFinite;
+        }
+        let Some(entry) = self.entries.get(&id).cloned() else {
+            return ActuationStatus::UnknownBody;
+        };
+        let body = &mut self.bodies[entry.body];
+        if !body.is_dynamic() {
+            return ActuationStatus::NotDynamic;
+        }
+        body.add_force_at_point(
+            vector![force_x, force_y, force_z],
+            point![point_x, point_y, point_z],
+            true,
+        );
+        ActuationStatus::Ok
+    }
+
     fn set_body_linear_velocity(&mut self, id: u32, x: f32, y: f32, z: f32) -> ActuationStatus {
         if ![x, y, z].into_iter().all(f32::is_finite) {
             return ActuationStatus::NonFinite;
@@ -758,6 +789,11 @@ impl Simulation {
             &(),
             &self.collision_events,
         );
+        // Rapier retains accumulated forces unless the caller clears them. The JavaScript seam
+        // promises a force for one fixed step, so keep the native backend identical to web.
+        for entry in self.entries.values() {
+            self.bodies[entry.body].reset_forces(true);
+        }
         // Rapier delivered the started/stopped transitions while the step ran; translate
         // collider handles back to body ids exactly the way the web path does
         // (`packages/physics/src/simulation.ts` maps through `byCollider` and drops events
@@ -1216,6 +1252,23 @@ pub extern "C" fn tn_physics_apply_body_force(
 ) -> i32 {
     unsafe { simulation.as_mut() }.map_or(ActuationStatus::UnknownBody as i32, |simulation| {
         simulation.apply_body_force(id, x, y, z) as i32
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_apply_body_force_at_point(
+    simulation: *mut Simulation,
+    id: u32,
+    force_x: f32,
+    force_y: f32,
+    force_z: f32,
+    point_x: f32,
+    point_y: f32,
+    point_z: f32,
+) -> i32 {
+    unsafe { simulation.as_mut() }.map_or(ActuationStatus::UnknownBody as i32, |simulation| {
+        simulation.apply_body_force_at_point(id, force_x, force_y, force_z, point_x, point_y, point_z)
+            as i32
     })
 }
 

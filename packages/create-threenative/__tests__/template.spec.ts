@@ -17,6 +17,7 @@ const brandingTemplates = [
   "minimal",
   "platformer",
   "racing",
+  "sailing",
   "shooter",
   "starter",
 ] as const;
@@ -207,7 +208,7 @@ async function linkScaffoldBuildDependencies(target: string): Promise<void> {
 describe("template contracts", () => {
   it("requires every discovered template to ship a bounded performance scenario", async () => {
     const names = await templateNames();
-    expect(names).toHaveLength(7);
+    expect(names).toHaveLength(8);
 
     const performanceAssertions: string[] = [];
     const emptyPerformanceAssertions: string[] = [];
@@ -227,7 +228,7 @@ describe("template contracts", () => {
         else performanceAssertions.push(relative);
       }
     }
-    expect(performanceAssertions, "non-empty performance assertions").toHaveLength(7);
+    expect(performanceAssertions, "non-empty performance assertions").toHaveLength(8);
     expect(emptyPerformanceAssertions, "empty performance assertions").toEqual([]);
 
     for (const template of names) {
@@ -774,7 +775,7 @@ describe("template contracts", () => {
   // mirror drifted, fails here with a diagnostic naming the defect.
   it("should keep every generated instruction pair bounded", async () => {
     const audits = await auditAllTemplates(path.resolve("."));
-    expect(audits).toHaveLength(7);
+    expect(audits).toHaveLength(8);
     for (const audit of audits) {
       expect(
         audit.violations,

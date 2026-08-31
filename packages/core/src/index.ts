@@ -381,6 +381,24 @@ export { GPUParticles3D } from "./particles.js";
 export { FluidField2D } from "./fluid-field.js";
 export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from "./fluid-field.js";
 /**
+ * Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.
+ * @situation float a boat on waves
+ * @situation make water move
+ * @situation find the water surface height at a point
+ * @constraint supply every wave amplitude, wavelength, direction, speed and warp value
+ * @constraint call setTime for the default graph clock when the game advances its own time
+ * @example const field = new WaveField({ waves });
+ * const { height, normal } = field.sample(x, z, elapsed);
+ */
+export { WaveField } from "./wave-field.js";
+export type {
+  IWaveFieldDomainWarp,
+  IWaveFieldOptions,
+  IWaveFieldSample,
+  IWaveFieldWave,
+  WaveDirection,
+} from "./wave-field.js";
+/**
  * Build a soft round sprite as pixel data instead of painting a canvas.
  * @situation give smoke, flash, or glow sprites a radial alpha falloff
  * @situation generate sprite images that render identically under every backend

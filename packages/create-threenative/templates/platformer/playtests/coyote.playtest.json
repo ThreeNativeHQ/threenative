@@ -1,6 +1,5 @@
 {
   "name": "platformer-coyote",
-  "comment": "The wait is 4 ticks because coyoteTime is 0.12s and the loop steps 1/60s, so the window is 7.2 ticks. This waited 8 \u2014 longer than the window it was asserting \u2014 and so it asserted that a jump taken AFTER coyote time still counts as a coyote jump. It passed only when the player happened to leave the ledge late enough, which is why it failed on a loaded runner and nowhere else. 4 ticks is unambiguously inside the window; raising coyoteTime to fit the scenario would have been the wrong direction.",
   "schemaVersion": 1,
   "target": "web",
   "viewport": {

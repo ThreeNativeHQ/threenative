@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use threenative_native_physics::{
-    tn_physics_add_body, tn_physics_apply_body_force, tn_physics_apply_body_impulse,
+    tn_physics_add_body, tn_physics_apply_body_force, tn_physics_apply_body_force_at_point,
+    tn_physics_apply_body_impulse,
     tn_physics_configure_character, tn_physics_create, tn_physics_destroy,
     tn_physics_read_body_linear_velocity, tn_physics_read_body_sleep_states,
     tn_physics_read_visible_transforms, tn_physics_set_body_linear_velocity, tn_physics_step,
@@ -149,6 +150,35 @@ fn force_accumulates_motion_over_steps() {
         velocity[0] > 0.0,
         "force did not accumulate velocity: x={}",
         velocity[0]
+    );
+
+    tn_physics_destroy(simulation);
+}
+
+#[test]
+fn force_at_point_produces_angular_motion() {
+    let simulation = world(0.0);
+    assert!(!simulation.is_null());
+    assert!(tn_physics_add_body(
+        simulation,
+        &body(7, 0, 0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0),
+    ));
+
+    assert_eq!(
+        tn_physics_apply_body_force_at_point(simulation, 7, 0.0, 20.0, 0.0, 1.0, 0.0, 0.0),
+        ACTUATION_OK
+    );
+    assert!(tn_physics_step(simulation, 1.0 / 60.0, std::ptr::null(), 0));
+
+    let mut transform = vec![0.0; TRANSFORM_WIDTH];
+    assert_eq!(
+        tn_physics_read_visible_transforms(simulation, transform.as_mut_ptr(), transform.len()),
+        1
+    );
+    assert!(
+        transform[6].abs() > 1e-6,
+        "off-center force did not rotate the body: qz={}",
+        transform[6]
     );
 
     tn_physics_destroy(simulation);

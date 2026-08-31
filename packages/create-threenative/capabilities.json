@@ -1022,6 +1022,26 @@
     },
     {
       "constraints": [
+        "supply every wave amplitude, wavelength, direction, speed and warp value",
+        "call setTime for the default graph clock when the game advances its own time"
+      ],
+      "example": "const field = new WaveField({ waves });\nconst { height, normal } = field.sample(x, z, elapsed);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class WaveField { … }",
+      "situations": [
+        "float a boat on waves",
+        "make water move",
+        "find the water surface height at a point"
+      ],
+      "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.",
+      "supersedes": [],
+      "symbol": "WaveField"
+    },
+    {
+      "constraints": [
         "use the returned value as a validation oracle; the rendered path samples the LUT"
       ],
       "example": "const zenith = zenithTransmittance({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });",
@@ -1317,6 +1337,19 @@
       "summary": "Detect overlaps without turning the body into a moving collider.",
       "supersedes": [],
       "symbol": "Area3D"
+    },
+    {
+      "constraints": ["supply hull points, density, drag, and the height source"],
+      "example": "new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": ["buoyancy disables force application while submergedFraction remains measured"],
+      "package": "@threenative/physics",
+      "signature": "export class Buoyancy3D { … }",
+      "situations": ["float a boat on waves", "keep a hull above a moving water surface"],
+      "summary": "Float a rigid body on a game-owned height source with fixed-step force ordering.",
+      "supersedes": [],
+      "symbol": "Buoyancy3D"
     },
     {
       "constraints": ["use moveAndSlide inside the physics update"],

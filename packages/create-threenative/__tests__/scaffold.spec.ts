@@ -177,6 +177,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // manifest/reference bytes.
   // Recomputed 2026-08-30 for PRD-122: every scaffold now carries the shared canonical role
   // contracts, provider adapters, and AGENT-ROLES.md guide.
+  // Recomputed 2026-08-30 for PRD-236: the sailing starter kit adds a scaffold tree, and its
+  // WaveField/Buoyancy3D public surface updates the generated capability reference in all trees.
+  // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
+  // scenario, routes test:native through it, and closes the generated command fence.
+  "sailing": "6803a4515096de40010edb3fe312fe0bfba722f4284c62303d36a4acbed740f6",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

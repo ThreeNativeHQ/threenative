@@ -10,6 +10,11 @@ export const PLAYER_LAYER = 1;
 export const PLATFORMER_FEEL = {
   airAcceleration: 24,
   blinkRate: 18,
+  // 0.12s is 7.2 ticks at the 1/60 step. `playtests/coyote.playtest.json` waits 4 ticks after
+  // walking off the ledge before it jumps, which keeps the jump inside this window with margin.
+  // It waited 8 — longer than the window — and so asserted that a jump taken after coyote time
+  // still counts as one; it passed only when the player left the ledge late. If you change this
+  // number, change that wait with it.
   coyoteTime: 0.12,
   dashCooldown: 0.55,
   dashSpeed: 17,

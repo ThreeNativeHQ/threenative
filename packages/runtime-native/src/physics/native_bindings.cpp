@@ -375,6 +375,20 @@ bool parseActuationArguments(js::Engine *engine,
   return true;
 }
 
+bool parseActuationAtPointArguments(js::Engine *engine,
+                                    const std::vector<js::JSValueHandle> &args,
+                                    uint32_t &id, float &forceX, float &forceY,
+                                    float &forceZ, float &pointX, float &pointY,
+                                    float &pointZ) {
+  if (!parseActuationArguments(engine, args, id, forceX, forceY, forceZ) ||
+      args.size() < 3 || !engine->isObject(args[2]) ||
+      !readFiniteNumber(engine, args[2], "x", pointX) ||
+      !readFiniteNumber(engine, args[2], "y", pointY) ||
+      !readFiniteNumber(engine, args[2], "z", pointZ))
+    return false;
+  return true;
+}
+
 bool parseBodyIdArgument(js::Engine *engine,
                          const std::vector<js::JSValueHandle> &args,
                          uint32_t &id) {
@@ -630,6 +644,31 @@ js::JSValueHandle makeSimulationObject(
                           "TN_PHYSICS_NON_FINITE: force must be a finite { x, y, z }.");
             const int32_t status =
                 tn_physics_apply_body_force(owner->simulation, id, x, y, z);
+            if (status != TN_PHYSICS_ACTUATION_OK)
+              return failActuation(engine, status);
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "applyBodyForceAtPoint",
+      engine->newFunction(
+          "applyBodyForceAtPoint",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            float forceX = 0.0f;
+            float forceY = 0.0f;
+            float forceZ = 0.0f;
+            float pointX = 0.0f;
+            float pointY = 0.0f;
+            float pointZ = 0.0f;
+            if (!parseActuationAtPointArguments(engine, args, id, forceX, forceY,
+                                                 forceZ, pointX, pointY, pointZ))
+              return fail(
+                  engine,
+                  "TN_PHYSICS_NON_FINITE: force and point must be finite { x, y, z } values.");
+            const int32_t status = tn_physics_apply_body_force_at_point(
+                owner->simulation, id, forceX, forceY, forceZ, pointX, pointY, pointZ);
             if (status != TN_PHYSICS_ACTUATION_OK)
               return failActuation(engine, status);
             return engine->newUndefined();
