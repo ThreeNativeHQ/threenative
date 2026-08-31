@@ -8,10 +8,10 @@ targets could not be built and are named below.
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 53 | 72.60% |
-| `src/audio/` | 1043 | 603 | 57.81% |
+| `src/audio/` | 1051 | 603 | 57.37% |
 | `src/canvas/` | 996 | 482 | 48.39% |
 | `src/cli/` | 1549 | 0 | 0.00% |
-| `src/fs/` | 232 | 87 | 37.50% |
+| `src/fs/` | 235 | 88 | 37.45% |
 | `src/http/` | 402 | 175 | 43.53% |
 | `src/input/` | 33 | 0 | 0.00% |
 | `src/js/` | 2609 | 1018 | 39.02% |
@@ -21,24 +21,32 @@ targets could not be built and are named below.
 | `src/storage/` | 260 | 225 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 7235 | 3023 | 41.78% |
+| `src/webgpu/` | 7235 | 3007 | 41.56% |
 | `src/webtransport/` | 770 | 145 | 18.83% |
-| `src/workers/` | 615 | 524 | 85.20% |
-| **TOTAL** | **19518** | **7651** | **39.20%** |
+| `src/workers/` | 615 | 527 | 85.69% |
+| **TOTAL** | **19529** | **7639** | **39.12%** |
 
-Source digest: `sha256:6be51db83199a75674e5defc12c5d381d7e53b0abd0febbc06c2e357b44c7690`
+Source digest: `sha256:fead94a163130a71c3ee1b483e0b36187aa5a6094fa75838921f3c38fe23f13b`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
 change requires this opt-in command to refresh the record.
 
+`src/audio/` and `src/fs/` moved down on 2026-08-31, from 57.81% and 37.50%. Both are the same
+kind of movement: lines added to fix a platform lane, on paths a Linux coverage build cannot
+execute. `src/audio/` gained the branch that tells "this machine has no audio device" apart from
+"the audio device would not open" — the first case is what a Windows CI runner is, and a machine
+with a sound card never takes it. `src/fs/` gained the ownership transfer that keeps a libuv watch
+handle alive until its close callback runs, which is the fix for a macOS shutdown segfault.
+Instrumented lines rose by 8 and 3; covered lines rose by 0 and 1.
+
 | Coverage floor | Minimum |
 | --- | ---: |
 | `src/async/` | 72.60% |
-| `src/audio/` | 57.81% |
+| `src/audio/` | 57.37% |
 | `src/canvas/` | 48.39% |
 | `src/cli/` | 0.00% |
-| `src/fs/` | 37.50% |
+| `src/fs/` | 37.45% |
 | `src/http/` | 43.53% |
 | `src/input/` | 0.00% |
 | `src/js/` | 38.23% |
