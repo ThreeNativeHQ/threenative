@@ -165,12 +165,31 @@ async function main(argv: readonly string[]): Promise<void> {
     return;
   }
 
+  // `--provenance` asks npm to attest where the tarball was built, which it can only do from a
+  // CI runner with an OIDC token. Passing it from a workstation fails the publish outright, so a
+  // local release drops the flag and says so rather than dying on it. The attestation is a
+  // property of where the release ran, not of the artifact's correctness — a locally published
+  // version is a real version, it simply carries no provenance statement.
+  const attestable = process.env.GITHUB_ACTIONS === "true";
+  if (!attestable) {
+    process.stdout.write(
+      "\nPublishing without --provenance: npm can only attest a build from CI, and this is not CI.\n",
+    );
+  }
   for (const name of order) {
     const version = versions.get(name);
     if (version === undefined) throw new Error(`TN_RELEASE_NO_VERSION: ${name}`);
     run(
       "pnpm",
-      ["--filter", name, "publish", "--no-git-checks", "--access", "public", "--provenance"],
+      [
+        "--filter",
+        name,
+        "publish",
+        "--no-git-checks",
+        "--access",
+        "public",
+        ...(attestable ? ["--provenance"] : []),
+      ],
       `publish ${name}@${version}`,
     );
     process.stdout.write(`  waiting for ${name}@${version} to be readable…\n`);
