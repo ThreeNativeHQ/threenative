@@ -2281,6 +2281,22 @@
       "symbol": "boundedTeardownStep"
     },
     {
+      "constraints": ["the bridge must answer the handshake or the run fails"],
+      "example": "const bridge = await connectPlaytestBridge(page);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function bridgeWaitTimeoutMs( operationMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs, ): number { … }",
+      "situations": [
+        "run a browser scenario against a game",
+        "inspect bridge diagnostics from a runner"
+      ],
+      "summary": "Connect a Playwright page to a playtest bridge.",
+      "supersedes": [],
+      "symbol": "bridgeWaitTimeoutMs"
+    },
+    {
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2335,7 +2351,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs, ): Promise<IPlaytestBridgeClient | undefined> { … }",
+      "signature": "export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = bridgeWaitTimeoutMs(), ): Promise<IPlaytestBridgeClient | undefined> { … }",
       "situations": [
         "run a browser scenario against a game",
         "inspect bridge diagnostics from a runner"

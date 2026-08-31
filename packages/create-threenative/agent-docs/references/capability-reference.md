@@ -2046,6 +2046,21 @@ export async function boundedTeardownStep( step: Promise<unknown> | undefined, t
 const report = await runStandalonePlaytest(options);
 ```
 
+### `bridgeWaitTimeoutMs`
+
+`function` — Connect a Playwright page to a playtest bridge.
+
+```ts
+export function bridgeWaitTimeoutMs( operationMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs, ): number { … }
+```
+
+- **Use when:** run a browser scenario against a game · inspect bridge diagnostics from a runner
+- **Constraints:** the bridge must answer the handshake or the run fails
+
+```ts
+const bridge = await connectPlaytestBridge(page);
+```
+
 ### `buildReport`
 
 `function` — Execute scenario steps, assertions, and evidence capture.
@@ -2096,7 +2111,7 @@ const bridge = await connectPlaytestBridge(page);
 `function` — Connect a Playwright page to a playtest bridge.
 
 ```ts
-export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs, ): Promise<IPlaytestBridgeClient | undefined> { … }
+export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = bridgeWaitTimeoutMs(), ): Promise<IPlaytestBridgeClient | undefined> { … }
 ```
 
 - **Use when:** run a browser scenario against a game · inspect bridge diagnostics from a runner

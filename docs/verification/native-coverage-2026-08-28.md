@@ -26,19 +26,11 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **19529** | **7639** | **39.12%** |
 
-Source digest: `sha256:fead94a163130a71c3ee1b483e0b36187aa5a6094fa75838921f3c38fe23f13b`
+Source digest: `sha256:ede9e15a3d9e1520d4beafde1d9bb299b69a4d2e0cb7ecb9ef95cac5522f9ac7`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
 change requires this opt-in command to refresh the record.
-
-`src/audio/` and `src/fs/` moved down on 2026-08-31, from 57.81% and 37.50%. Both are the same
-kind of movement: lines added to fix a platform lane, on paths a Linux coverage build cannot
-execute. `src/audio/` gained the branch that tells "this machine has no audio device" apart from
-"the audio device would not open" — the first case is what a Windows CI runner is, and a machine
-with a sound card never takes it. `src/fs/` gained the ownership transfer that keeps a libuv watch
-handle alive until its close callback runs, which is the fix for a macOS shutdown segfault.
-Instrumented lines rose by 8 and 3; covered lines rose by 0 and 1.
 
 | Coverage floor | Minimum |
 | --- | ---: |
