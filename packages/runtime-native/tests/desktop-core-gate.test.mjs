@@ -135,3 +135,18 @@ test('overlay assertion reads PNG bytes and names what is missing', () => {
   for (let index = 0; index < 4 * 4; index += 4) png.data.set([0xff, 0x00, 0xff, 255], index);
   expect(inspectOverlayBuffer(PNG.sync.write(png), { minPixels: 4 })).toEqual({ overlayPixels: 4 });
 });
+
+// A machine with no sound card is not a failing run. The Windows CI runner has no audio device,
+// and the runtime degrades to silence and renders normally — but it used to say "Failed to open
+// audio device", which this analyzer scrapes for "failed to". A run that rendered all 300 frames
+// and presented each exactly once was reported as a failed desktop core gate because of one line
+// about hardware that was never there.
+test('an absent audio device does not fail a run that rendered correctly', () => {
+  const rendered = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:300\n${HEALTHY_TICKS}`;
+  const silent = `${rendered}\n[Audio] No audio playback device on this machine; continuing in silence.`;
+  expect(analyzeDesktopLog(silent)).toEqual([]);
+
+  // The real open failure is still a failure: a device exists and would not open.
+  const broken = `${rendered}\n[Audio] Failed to open audio device: device in use`;
+  expect(analyzeDesktopLog(broken)).toContain('[Audio] Failed to open audio device: device in use');
+});

@@ -57,17 +57,29 @@ std::unique_ptr<VideoRecorder> VideoRecorder::create(
 #endif
 
     // Fallback: GPU Readback recorder (works on all platforms with WebGPU)
-    if (device && queue && instance) {
-        if (!bindingsState) {
-            std::cerr << "[VideoRecorder] GPU fallback requires an owning WebGPU bindings state" << std::endl;
-            return nullptr;
-        }
-        std::cout << "[VideoRecorder] Using GPU Readback recorder (WebGPU fallback)" << std::endl;
-        return createGPUReadbackRecorder(device, queue, instance, bindingsState);
-    }
+    if (device && queue && instance) return createGpuReadback(device, queue, instance, bindingsState);
 
     std::cerr << "[VideoRecorder] No suitable recorder available" << std::endl;
     return nullptr;
+}
+
+// The fallback on its own, reachable on a platform whose `create()` would pick OS capture first.
+std::unique_ptr<VideoRecorder> VideoRecorder::createGpuReadback(
+    WGPUDevice device,
+    WGPUQueue queue,
+    WGPUInstance instance,
+    void* bindingsState
+) {
+    if (!device || !queue || !instance) {
+        std::cerr << "[VideoRecorder] GPU readback requires a WebGPU device, queue and instance" << std::endl;
+        return nullptr;
+    }
+    if (!bindingsState) {
+        std::cerr << "[VideoRecorder] GPU fallback requires an owning WebGPU bindings state" << std::endl;
+        return nullptr;
+    }
+    std::cout << "[VideoRecorder] Using GPU Readback recorder (WebGPU fallback)" << std::endl;
+    return createGPUReadbackRecorder(device, queue, instance, bindingsState);
 }
 
 // Check if native capture is available

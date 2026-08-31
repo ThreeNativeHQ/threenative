@@ -31,7 +31,12 @@ export const executionContracts = {
     invocations: [{ args: [], passLine: "audio graph ok:" }],
   },
   "threenative-bindings-creation-test": {
-    invocations: [{ args: [], passLine: "native WebGPU creation bindings passed" }],
+    // The pass marker is `proof: <name>`, matching the behaviour-proof protocol that
+    // `tn_register_contract_test` declares in CMakeLists.txt and that
+    // `tests/webgpu-bindings-contract.test.mjs` asserts. This entry still named the marker the
+    // test printed before that protocol existed, so the target failed everywhere it ran while
+    // exiting 0 and printing its proof.
+    invocations: [{ args: [], passLine: "proof: creation-refusal" }],
   },
   "threenative-command-encoder-class-table-test": {
     invocations: [{ args: [], passLine: "command-encoder-class-table: prototype=shared" }],

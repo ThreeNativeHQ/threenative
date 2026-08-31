@@ -132,6 +132,26 @@ public:
     );
 
     /**
+     * Create the WebGPU readback recorder, bypassing OS-native capture selection.
+     *
+     * Two callers want this. One is a game that wants the rendered surface rather than whatever
+     * the OS compositor shows. The other is the contract test for the rule below: `create()`
+     * prefers ScreenCaptureKit or Windows.Graphics.Capture where they exist, and neither
+     * consults the WebGPU bindings state, so `create()` cannot reach the fallback's requirement
+     * on those platforms. This entry point reaches it on every platform.
+     *
+     * @param bindingsState owning WebGPU binding state; this recorder refuses to be built without
+     *        one, because it dereferences it during capture.
+     * @return the recorder, or nullptr when the WebGPU handles or the bindings state are missing
+     */
+    static std::unique_ptr<VideoRecorder> createGpuReadback(
+        WGPUDevice device,
+        WGPUQueue queue,
+        WGPUInstance instance,
+        void* bindingsState
+    );
+
+    /**
      * Check if native OS-level capture is available on this platform
      * @return true if ScreenCaptureKit (macOS) or Windows.Graphics.Capture (Windows) is available
      */

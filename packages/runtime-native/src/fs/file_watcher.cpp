@@ -109,8 +109,17 @@ static void onFileChange(uv_fs_event_t* handle, const char* filename, int events
  * Close callback for watch handles
  */
 static void onWatchClose(uv_handle_t* handle) {
-    auto* ctx = static_cast<WatchContext*>(handle->data);
-    // Context will be cleaned up by the Impl destructor
+    // `uv_close` is asynchronous: libuv keeps the handle on its closing queue and dereferences it
+    // on a later turn of the loop. The context owning that handle must therefore outlive the
+    // `uv_close` call, so every call site releases ownership to this callback and the context is
+    // deleted here, once libuv is finished with it.
+    //
+    // This previously read "context will be cleaned up by the Impl destructor", which was not
+    // true of either caller: `shutdown()` cleared the map and `unwatch()` erased the entry, both
+    // immediately after calling `uv_close`. That frees `ctx->handle` underneath the loop. Linux
+    // survived it by luck of allocator and epoll teardown; macOS took SIGSEGV during runtime
+    // shutdown with a live watch, which is what the shutdown-lifetime contract caught.
+    delete static_cast<WatchContext*>(handle->data);
 }
 
 // ============================================================================
@@ -149,6 +158,9 @@ void FileWatcher::shutdown() {
             ctx->active = false;
             uv_fs_event_stop(&ctx->handle);
             uv_close(reinterpret_cast<uv_handle_t*>(&ctx->handle), onWatchClose);
+            // Ownership passes to onWatchClose; the map must not free the handle libuv is still
+            // holding.
+            (void)ctx.release();
         }
     }
     impl_->watches.clear();
@@ -192,7 +204,10 @@ int FileWatcher::watch(const std::string& path, FileWatchCallback callback) {
     result = uv_fs_event_start(&ctx->handle, onFileChange, path.c_str(), 0);
     if (result != 0) {
         std::cerr << "[FileWatcher] Failed to watch '" << path << "': " << uv_strerror(result) << std::endl;
-        uv_close(reinterpret_cast<uv_handle_t*>(&ctx->handle), nullptr);
+        // Same rule on the failure path: the local unique_ptr would otherwise free the handle at
+        // `return`, while libuv is still closing it.
+        uv_close(reinterpret_cast<uv_handle_t*>(&ctx->handle), onWatchClose);
+        (void)ctx.release();
         return -1;
     }
 
@@ -211,8 +226,11 @@ void FileWatcher::unwatch(int watchId) {
     if (ctx && ctx->active) {
         ctx->active = false;
         uv_fs_event_stop(&ctx->handle);
-        uv_close(reinterpret_cast<uv_handle_t*>(&ctx->handle), onWatchClose);
         std::cout << "[FileWatcher] Stopped watching: " << ctx->path << std::endl;
+        uv_close(reinterpret_cast<uv_handle_t*>(&ctx->handle), onWatchClose);
+        // Ownership passes to onWatchClose; the erase below must not free the handle libuv is
+        // still holding. The path is read before the close for the same reason.
+        (void)ctx.release();
     }
 
     impl_->watches.erase(it);
