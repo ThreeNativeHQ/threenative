@@ -946,6 +946,24 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               : undefined,
           );
         }
+        // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
+        // until readiness settles, or a particle process dispatch compiles in the loader frame.
+        //
+        // It is charged to the render phase, because it is render-path work and a bake hidden in
+        // `residual` leaves the frame budget unable to enforce its per-frame limit. It cannot be
+        // called from inside the render block below to get that attribution, though: that block
+        // runs on `!opaque || !ready`, which is exactly the window this dispatch has to stay out
+        // of. Moving the call in there dispatched on every loader frame and never once after
+        // readiness — the inverse of the rule — so it stays here and adds its own render time.
+        if (
+          this.#renderer !== undefined &&
+          this.#sceneEntered &&
+          (!canvasLayer.opaque || startupReadiness.ready)
+        ) {
+          const computeStart = frameBudget === undefined ? 0 : budgetNow();
+          this.#computeDriven.processRender(this.#renderer);
+          frameBudget?.addRender(budgetNow() - computeStart);
+        }
         const waitingForFirstUse =
           firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
         if (
@@ -960,12 +978,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // sync are render-path work, and a frame budget that hid it in `residual` made the
           // optimizer's own cost unmeasurable exactly where the optimizer is engaged.
           const renderStart = frameBudget === undefined ? 0 : budgetNow();
-          // Render-cadence compute is first-use work too. Keep it behind an opaque startup layer
-          // until readiness settles, and include it in the render phase it consumes. A bake that
-          // runs before this timer would disappear into residual and the frame budget could not
-          // enforce its per-frame limit.
-          if (this.#renderer !== undefined && this.#sceneEntered)
-            this.#computeDriven.processRender(this.#renderer);
           // Let a depth-coupled scene update its output node while the scene pass is still the
           // next render. Ordinary scenes keep the historical hook order and timing.
           const depthCoupledOutput = this.#hasDepthCoupledOutput;
