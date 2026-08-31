@@ -1,21 +1,56 @@
 {
   "name": "platformer-coyote",
+  "comment": "The wait is 4 ticks because coyoteTime is 0.12s and the loop steps 1/60s, so the window is 7.2 ticks. This waited 8 \u2014 longer than the window it was asserting \u2014 and so it asserted that a jump taken AFTER coyote time still counts as a coyote jump. It passed only when the player happened to leave the ledge late enough, which is why it failed on a loaded runner and nowhere else. 4 ticks is unambiguously inside the window; raising coyoteTime to fit the scenario would have been the wrong direction.",
   "schemaVersion": 1,
   "target": "web",
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 92, "release": true },
-    { "kind": "wait", "waitTicks": 8, "release": true },
-    { "kind": "input", "press": "Space", "holdTicks": 2, "release": true },
-    { "kind": "wait", "waitTicks": 20, "release": true }
+    {
+      "kind": "input",
+      "press": "ArrowRight",
+      "holdTicks": 92,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 20,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
-      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
-      { "id": "state", "path": "coyoteJumps", "gte": 1, "changed": true }
+      {
+        "id": "state",
+        "path": "jumps",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "coyoteJumps",
+        "gte": 1,
+        "changed": true
+      }
     ]
   }
 }
