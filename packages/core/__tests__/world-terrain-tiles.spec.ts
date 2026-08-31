@@ -1,7 +1,7 @@
 import { Mesh, MeshBasicMaterial } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
-import { type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
+import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
 
 const sampleHeight = (x: number, z: number): number =>
   Math.sin(x * 0.17) * 2 + Math.cos(z * 0.13) * 1.5 + Math.sin((x + z) * 0.07);
@@ -21,6 +21,91 @@ function renderedHeight(tiles: TerrainTiles, key: string, index: number): number
   const level = tile.lod.levels[0]?.object;
   if (!(level instanceof Mesh)) throw new Error(`Missing rendered LOD for tile '${key}'.`);
   return level.geometry.getAttribute("position").getY(index);
+}
+
+interface IVisibleSurface {
+  readonly heights: Float32Array;
+  readonly resolution: number;
+}
+
+type Edge = "east" | "north" | "south" | "west";
+
+function visibleSurface(tile: IWorldTile): IVisibleSurface {
+  const level = tile.lod.levels.find(({ object }) => object.visible)?.object;
+  if (!(level instanceof Mesh)) throw new Error(`Missing visible LOD for tile '${tile.key}'.`);
+  const position = level.geometry.getAttribute("position");
+  const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
+  if (resolution < 3 || resolution * resolution + resolution * 4 !== position.count)
+    throw new Error(`Invalid visible LOD geometry for tile '${tile.key}'.`);
+  const heights = new Float32Array(resolution * resolution);
+  for (let index = 0; index < heights.length; index += 1) heights[index] = position.getY(index);
+  return { heights, resolution };
+}
+
+function surfaceHeight(surface: IVisibleSurface, normalizedX: number, normalizedZ: number): number {
+  const column = Math.max(0, Math.min(1, normalizedX)) * (surface.resolution - 1);
+  const row = Math.max(0, Math.min(1, normalizedZ)) * (surface.resolution - 1);
+  const column0 = Math.floor(column);
+  const row0 = Math.floor(row);
+  const column1 = Math.min(surface.resolution - 1, column0 + 1);
+  const row1 = Math.min(surface.resolution - 1, row0 + 1);
+  const columnMix = column - column0;
+  const rowMix = row - row0;
+  const upperLeft = surface.heights[row0 * surface.resolution + column0] as number;
+  const upperRight = surface.heights[row0 * surface.resolution + column1] as number;
+  const lowerLeft = surface.heights[row1 * surface.resolution + column0] as number;
+  const lowerRight = surface.heights[row1 * surface.resolution + column1] as number;
+  const upper = upperLeft + (upperRight - upperLeft) * columnMix;
+  const lower = lowerLeft + (lowerRight - lowerLeft) * columnMix;
+  return upper + (lower - upper) * rowMix;
+}
+
+function surfaceDelta(a: IVisibleSurface, b: IVisibleSurface): number {
+  const samples = Math.max(a.resolution, b.resolution);
+  let maximum = 0;
+  for (let row = 0; row < samples; row += 1) {
+    for (let column = 0; column < samples; column += 1) {
+      const normalizedX = samples === 1 ? 0 : column / (samples - 1);
+      const normalizedZ = samples === 1 ? 0 : row / (samples - 1);
+      maximum = Math.max(
+        maximum,
+        Math.abs(
+          surfaceHeight(a, normalizedX, normalizedZ) - surfaceHeight(b, normalizedX, normalizedZ),
+        ),
+      );
+    }
+  }
+  return maximum;
+}
+
+function edgeHeight(surface: IVisibleSurface, side: Edge, normalized: number): number {
+  if (side === "north") return surfaceHeight(surface, normalized, 0);
+  if (side === "south") return surfaceHeight(surface, normalized, 1);
+  if (side === "west") return surfaceHeight(surface, 0, normalized);
+  return surfaceHeight(surface, 1, normalized);
+}
+
+function visibleSeamGap(a: IWorldTile, b: IWorldTile): number {
+  const aSurface = visibleSurface(a);
+  const bSurface = visibleSurface(b);
+  const [aSide, bSide] =
+    a.tileX < b.tileX
+      ? (["east", "west"] as const)
+      : a.tileX > b.tileX
+        ? (["west", "east"] as const)
+        : a.tileZ < b.tileZ
+          ? (["south", "north"] as const)
+          : (["north", "south"] as const);
+  const samples = Math.max(aSurface.resolution, bSurface.resolution);
+  let maximum = 0;
+  for (let index = 0; index < samples; index += 1) {
+    const normalized = samples === 1 ? 0 : index / (samples - 1);
+    maximum = Math.max(
+      maximum,
+      Math.abs(edgeHeight(aSurface, aSide, normalized) - edgeHeight(bSurface, bSide, normalized)),
+    );
+  }
+  return maximum;
 }
 
 describe("TerrainTiles", () => {
@@ -199,6 +284,64 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("measures the visible per-frame displacement instead of the complete LOD mismatch", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight: (x, z) => sampleHeight(x, z) * 500,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    tiles.follow({ x: 12, z: 0 });
+
+    const tile = tiles.getTile("0:0");
+    if (tile === undefined) throw new Error("Expected the transitioned tile to remain resident.");
+    let previous = visibleSurface(tile);
+    let observedMaximum = 0;
+    for (let frame = 0; frame < 3; frame += 1) {
+      tiles.process();
+      const current = visibleSurface(tile);
+      observedMaximum = Math.max(observedMaximum, surfaceDelta(previous, current));
+      previous = current;
+    }
+
+    expect(observedMaximum).toBeGreaterThan(0);
+    expect(tiles.maxLodPop).toBeCloseTo(observedMaximum, 5);
+    expect(tiles.maxLodPop).toBeLessThanOrEqual(16);
+    tiles.dispose();
+  });
+
+  it("reports visible edge geometry on every frame of an LOD transition", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    tiles.follow({ x: 12, z: 0 });
+
+    expect(tiles.residentKeys).toEqual(["0:0", "1:0"]);
+    const a = tiles.getTile("0:0");
+    const b = tiles.getTile("1:0");
+    if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
+    for (let frame = 0; frame < 3; frame += 1) {
+      tiles.process();
+      expect(tiles.maxSeamGap).toBeCloseTo(visibleSeamGap(a, b), 6);
+    }
+    tiles.dispose();
+  });
+
   it("rejects an LOD transition whose measured mismatch exceeds the pop bound", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
@@ -212,7 +355,10 @@ describe("TerrainTiles", () => {
     });
 
     tiles.follow({ x: 0, z: 0 });
-    expect(() => tiles.follow({ x: 6, z: 0 })).toThrow(/LOD pop threshold/u);
+    expect(() => {
+      tiles.follow({ x: 6, z: 0 });
+      tiles.process();
+    }).toThrow(/LOD pop threshold/u);
     tiles.dispose();
   });
 

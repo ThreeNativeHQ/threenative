@@ -351,14 +351,6 @@ function inspectSkirtGeometry(
   return { depth, vertexCount };
 }
 
-function edgeValue(values: Float32Array, normalized: number): number {
-  const position = normalized * (values.length - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(values.length - 1, lower + 1);
-  const mix = position - lower;
-  return (values[lower] as number) * (1 - mix) + (values[upper] as number) * mix;
-}
-
 function opposingEdge(
   a: IResidentTile,
   b: IResidentTile,
@@ -369,18 +361,40 @@ function opposingEdge(
   return ["north", "south"];
 }
 
+function renderedLevel(tile: IResidentTile): ILevelGeometry | undefined {
+  return tile.levels.find(({ mesh }) => mesh.visible) ?? tile.levels[tile.lodLevel];
+}
+
+function edgeVertexHeight(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
+  const row = side === "north" ? 0 : side === "south" ? level.resolution - 1 : index;
+  const column = side === "west" ? 0 : side === "east" ? level.resolution - 1 : index;
+  return level.geometry.getAttribute("position").getY(row * level.resolution + column);
+}
+
+function edgeHeight(level: ILevelGeometry, side: keyof IEdgeSamples, normalized: number): number {
+  const position = Math.max(0, Math.min(1, normalized)) * (level.resolution - 1);
+  const lower = Math.floor(position);
+  const upper = Math.min(level.resolution - 1, lower + 1);
+  const mix = position - lower;
+  return (
+    edgeVertexHeight(level, side, lower) * (1 - mix) + edgeVertexHeight(level, side, upper) * mix
+  );
+}
+
 function seamGap(a: IResidentTile, b: IResidentTile): number {
+  // A transition mutates the finer mesh in place. Read its position attribute instead of the
+  // retained build-time edge samples so diagnostics describe the geometry the renderer can see.
   const [aSide, bSide] = opposingEdge(a, b);
-  const aEdge = a.levels[a.lodLevel]?.edgeSamples[aSide];
-  const bEdge = b.levels[b.lodLevel]?.edgeSamples[bSide];
-  if (aEdge === undefined || bEdge === undefined) return Number.POSITIVE_INFINITY;
-  const samples = Math.max(aEdge.length, bEdge.length);
+  const aLevel = renderedLevel(a);
+  const bLevel = renderedLevel(b);
+  if (aLevel === undefined || bLevel === undefined) return Number.POSITIVE_INFINITY;
+  const samples = Math.max(aLevel.resolution, bLevel.resolution);
   let maximum = 0;
   for (let index = 0; index < samples; index += 1) {
     const normalized = samples === 1 ? 0 : index / (samples - 1);
     maximum = Math.max(
       maximum,
-      Math.abs(edgeValue(aEdge, normalized) - edgeValue(bEdge, normalized)),
+      Math.abs(edgeHeight(aLevel, aSide, normalized) - edgeHeight(bLevel, bSide, normalized)),
     );
   }
   return maximum;
@@ -565,17 +579,61 @@ function updateLodTransitionGeometry(
   finer.geometry.computeBoundingSphere();
 }
 
-function lodApproximationError(a: ILevelGeometry, b: ILevelGeometry): number {
-  const finer = a.resolution >= b.resolution ? a : b;
-  const coarser = finer === a ? b : a;
+function surfaceHeights(level: ILevelGeometry): Float32Array {
+  const position = level.geometry.getAttribute("position");
+  const heights = new Float32Array(level.resolution * level.resolution);
+  for (let index = 0; index < heights.length; index += 1) heights[index] = position.getY(index);
+  return heights;
+}
+
+function maximumSurfaceDelta(before: Float32Array, after: Float32Array): number {
+  if (before.length !== after.length) return Number.POSITIVE_INFINITY;
   let maximum = 0;
-  for (let row = 0; row < finer.resolution; row += 1) {
-    for (let column = 0; column < finer.resolution; column += 1) {
-      const x = column / (finer.resolution - 1);
-      const z = row / (finer.resolution - 1);
+  for (let index = 0; index < before.length; index += 1)
+    maximum = Math.max(maximum, Math.abs((before[index] as number) - (after[index] as number)));
+  return maximum;
+}
+
+function interpolatedSamplesHeight(
+  samples: Float32Array,
+  resolution: number,
+  x: number,
+  z: number,
+): number {
+  const column = Math.max(0, Math.min(1, x)) * (resolution - 1);
+  const row = Math.max(0, Math.min(1, z)) * (resolution - 1);
+  const column0 = Math.floor(column);
+  const row0 = Math.floor(row);
+  const column1 = Math.min(resolution - 1, column0 + 1);
+  const row1 = Math.min(resolution - 1, row0 + 1);
+  const columnMix = column - column0;
+  const rowMix = row - row0;
+  const upperLeft = samples[row0 * resolution + column0] as number;
+  const upperRight = samples[row0 * resolution + column1] as number;
+  const lowerLeft = samples[row1 * resolution + column0] as number;
+  const lowerRight = samples[row1 * resolution + column1] as number;
+  const upper = upperLeft + (upperRight - upperLeft) * columnMix;
+  const lower = lowerLeft + (lowerRight - lowerLeft) * columnMix;
+  return upper + (lower - upper) * rowMix;
+}
+
+function surfaceDeltaFromSamples(
+  samples: Float32Array,
+  resolution: number,
+  level: ILevelGeometry,
+): number {
+  const sampleCount = Math.max(resolution, level.resolution);
+  let maximum = 0;
+  for (let row = 0; row < sampleCount; row += 1) {
+    for (let column = 0; column < sampleCount; column += 1) {
+      const x = column / (sampleCount - 1);
+      const z = row / (sampleCount - 1);
       maximum = Math.max(
         maximum,
-        Math.abs(levelHeight(finer, row, column) - interpolatedLevelHeight(coarser, x, z)),
+        Math.abs(
+          interpolatedSamplesHeight(samples, resolution, x, z) -
+            interpolatedLevelHeight(level, x, z),
+        ),
       );
     }
   }
@@ -733,7 +791,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#lodTransitions;
   }
 
-  /** Maximum measured height difference between the rendered LOD surfaces when switching levels. */
+  /** Maximum per-render-frame displacement of the visible LOD surface during transitions. */
   get maxLodPop(): number {
     return this.#maxLodPop;
   }
@@ -1039,12 +1097,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const next = tile.levels[level];
     if (previous === undefined || next === undefined)
       throw new Error("TerrainTiles LOD transition references a missing level.");
-    const pop = lodApproximationError(previous, next);
-    this.#maxLodPop = Math.max(this.#maxLodPop, pop);
-    if (pop > LOD_POP_THRESHOLD)
-      throw new Error(
-        `TerrainTiles LOD pop threshold ${String(LOD_POP_THRESHOLD)} exceeded by ${String(pop)}.`,
-      );
     tile.lodLevel = level;
     if (!countTransition) {
       setManualLodLevel(tile.lod, level);
@@ -1059,9 +1111,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       to: level,
     };
     const finerLevel = previous.resolution >= next.resolution ? previousLevel : level;
+    const finer = previous.resolution >= next.resolution ? previous : next;
     setManualLodLevel(tile.lod, finerLevel);
     updateLodTransitionGeometry(tile, tile.lodTransition, 0);
     this.#setLodVisibility(tile, [finerLevel]);
+    this.#recordLodPop(
+      surfaceDeltaFromSamples(surfaceHeights(previous), previous.resolution, finer),
+    );
   }
 
   #setLodVisibility(tile: IResidentTile, visibleLevels = [tile.lodLevel]): void {
@@ -1075,6 +1131,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const tile of this.#resident.values()) {
       const transition = tile.lodTransition;
       if (transition === undefined) continue;
+      const from = tile.levels[transition.from];
+      const to = tile.levels[transition.to];
+      if (from === undefined || to === undefined)
+        throw new Error("TerrainTiles LOD transition references a missing level.");
+      const finer = from.resolution >= to.resolution ? from : to;
+      const before = surfaceHeights(finer);
       transition.elapsedFrames += 1;
       transition.remainingFrames -= 1;
       updateLodTransitionGeometry(
@@ -1082,6 +1144,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         transition,
         Math.min(1, transition.elapsedFrames / LOD_TRANSITION_FRAMES),
       );
+      // Compare only the visible step. The complete LOD mismatch is the distance the morph is
+      // intended to distribute, not a pop that appeared in this rendered frame.
+      const pop =
+        transition.remainingFrames > 0
+          ? maximumSurfaceDelta(before, surfaceHeights(finer))
+          : surfaceDeltaFromSamples(before, finer.resolution, to);
+      this.#recordLodPop(pop);
       if (transition.remainingFrames > 0) continue;
       this.#maxLodTransitionFrames = Math.max(
         this.#maxLodTransitionFrames,
@@ -1097,6 +1166,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #finishLodTransition(tile: IResidentTile): void {
     const transition = tile.lodTransition;
     if (transition === undefined) return;
+    const visible = renderedLevel(tile);
+    const target = tile.levels[transition.to];
+    if (visible !== undefined && target !== undefined)
+      this.#recordLodPop(
+        surfaceDeltaFromSamples(surfaceHeights(visible), visible.resolution, target),
+      );
     this.#maxLodTransitionFrames = Math.max(this.#maxLodTransitionFrames, transition.elapsedFrames);
     this.#restoreLodTransition(tile, transition);
     tile.lodTransition = undefined;
@@ -1109,6 +1184,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const to = tile.levels[transition.to];
     if (from === undefined || to === undefined) return;
     restoreLevelSurface(tile.field, from.resolution >= to.resolution ? from : to);
+  }
+
+  #recordLodPop(pop: number): void {
+    this.#maxLodPop = Math.max(this.#maxLodPop, pop);
+    if (pop > LOD_POP_THRESHOLD)
+      throw new Error(
+        `TerrainTiles LOD pop threshold ${String(LOD_POP_THRESHOLD)} exceeded by ${String(pop)}.`,
+      );
   }
 
   #fieldAt(x: number, z: number): Heightfield {

@@ -38,14 +38,6 @@ export interface IHeightfieldSamplerOptions extends Omit<IHeightfieldOptions, "h
   readonly sampleHeight: (x: number, z: number) => number;
 }
 
-export interface IHeightfieldRegionOptions {
-  readonly columns: number;
-  readonly depth: number;
-  readonly origin: IHeightfieldOrigin;
-  readonly rows: number;
-  readonly width: number;
-}
-
 interface IStoredHeightfieldChannels {
   readonly flow?: Float32Array;
   readonly moisture?: Float32Array;
@@ -66,14 +58,6 @@ function count(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 2)
     throw new Error(`Heightfield ${name} must be an integer of at least 2.`);
   return value;
-}
-
-function alignedIndex(value: number, name: string): number {
-  finite(value, name);
-  const rounded = Math.round(value);
-  if (Math.abs(value - rounded) > 1e-6)
-    throw new Error(`Heightfield ${name} must align to the source field grid.`);
-  return rounded;
 }
 
 function shouldBuildGpuPasses(options: IHeightfieldWorldPassOptions | undefined): boolean {
@@ -248,67 +232,6 @@ export class Heightfield extends Group implements IComputeDriven {
       rows,
       width,
       ...(options.worldPasses === undefined ? {} : { worldPasses: options.worldPasses }),
-    });
-  }
-
-  /** Copy a grid-aligned tile from one canonical field without re-running its sampler or passes. */
-  static fromStoredRegion(source: Heightfield, options: IHeightfieldRegionOptions): Heightfield {
-    const columns = count(options.columns, "columns");
-    const rows = count(options.rows, "rows");
-    const width = positive(options.width, "width");
-    const depth = positive(options.depth, "depth");
-    const originX = finite(options.origin.x, "origin.x");
-    const originZ = finite(options.origin.z, "origin.z");
-    const minimumX = originX - width / 2;
-    const minimumZ = originZ - depth / 2;
-    const startColumn = alignedIndex(
-      (minimumX - source.#minimumX) / source.#cellWidth,
-      "region minimum x",
-    );
-    const startRow = alignedIndex(
-      (minimumZ - source.#minimumZ) / source.#cellDepth,
-      "region minimum z",
-    );
-    const columnStep = alignedIndex(width / (columns - 1) / source.#cellWidth, "region x spacing");
-    const rowStep = alignedIndex(depth / (rows - 1) / source.#cellDepth, "region z spacing");
-    const endColumn = startColumn + (columns - 1) * columnStep;
-    const endRow = startRow + (rows - 1) * rowStep;
-    if (
-      startColumn < 0 ||
-      startRow < 0 ||
-      endColumn >= source.columns ||
-      endRow >= source.rows ||
-      columnStep < 1 ||
-      rowStep < 1
-    )
-      throw new Error(
-        "Heightfield stored region must be grid-aligned and inside its source field.",
-      );
-
-    const expected = rows * columns;
-    const heights = new Float32Array(expected);
-    const flow = source.#flow === undefined ? undefined : new Float32Array(expected);
-    const moisture = source.#moisture === undefined ? undefined : new Float32Array(expected);
-    for (let row = 0; row < rows; row += 1) {
-      for (let column = 0; column < columns; column += 1) {
-        const sourceIndex =
-          (startRow + row * rowStep) * source.columns + startColumn + column * columnStep;
-        const targetIndex = row * columns + column;
-        heights[targetIndex] = source.#height(sourceIndex);
-        if (flow !== undefined) flow[targetIndex] = source.#flow?.[sourceIndex] as number;
-        if (moisture !== undefined)
-          moisture[targetIndex] = source.#moisture?.[sourceIndex] as number;
-      }
-    }
-    return new Heightfield({
-      columns,
-      depth,
-      heights,
-      origin: { x: originX, z: originZ },
-      rows,
-      width,
-      ...(flow === undefined ? {} : { flow }),
-      ...(moisture === undefined ? {} : { moisture }),
     });
   }
 

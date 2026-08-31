@@ -202,4 +202,9 @@ describe("Heightfield", () => {
       /new\s+\w*Material|new\s+Color|new\s+\w*Light|Texture\(|tonemapping|postprocessing/iu,
     );
   });
+
+  it("should not keep an unconsumed stored-region public API", () => {
+    const source = readFileSync(path.resolve("packages/core/src/world.ts"), "utf8");
+    expect(source).not.toMatch(/fromStoredRegion|IHeightfieldRegionOptions/u);
+  });
 });
