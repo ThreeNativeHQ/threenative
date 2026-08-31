@@ -618,6 +618,44 @@ describe("generated template ordinary-frame runtime cost", () => {
     }
   });
 
+  it("executes the racing scene player scan for 600 measured frames", async () => {
+    const { Race } = await import("../templates/racing/src/scenes/Race.js");
+    const racingPhysics = await physicsFixture();
+    try {
+      const context = sceneContext(racingPhysics.physics, Race.initialState);
+      const frame = new Race().enter(context as never);
+      const update = frame as (ctx: unknown, dt: number) => void;
+      if (typeof update !== "function")
+        throw new Error("Allocation fixture returned no race frame.");
+      for (let index = 0; index < WARMUP_FRAMES; index += 1) {
+        racingPhysics.step(DT);
+        update(context, DT);
+      }
+      const patchWarmHighWater = context.patchIdentities.size;
+      // The engine loop drains collision events every frame (plugin update); the fixture
+      // mirrors that, because a scene that steps real physics without the drain grows the
+      // Rapier event queue instead of holding a steady state.
+      const sortSpy = vi.spyOn(Array.prototype, "sort");
+      let patchHighWater = patchWarmHighWater;
+      try {
+        for (let index = 0; index < MEASURED_FRAMES; index += 1) {
+          racingPhysics.step(DT);
+          update(context, DT);
+          patchHighWater = context.patchIdentities.size;
+        }
+      } finally {
+        sortSpy.mockRestore();
+      }
+      const comparators = new Set(sortSpy.mock.calls.map((call) => call[0]));
+      expect(comparators.size, "racing Race comparator retention sentinel").toBeLessThanOrEqual(1);
+      expect(context.patchIdentities.size, "racing Race state-patch high-water sentinel").toBe(
+        patchHighWater,
+      );
+      expect(context.state.getState().position, "racing Race player ranking state").toBe("P2");
+    } finally {
+      racingPhysics.dispose();
+    }
+  });
   it("executes the racing scene player scan without an iterator", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
     const racingPhysics = await physicsFixture();

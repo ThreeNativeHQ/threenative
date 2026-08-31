@@ -4,14 +4,17 @@ Lane: `lane-193`
 
 ## Scope
 
-This repair closes the two ordinary-frame allocation paths found in review. The deterministic
-runtime probe warms each workload for 30 frames and measures exactly 600 frames. Its component
-checks cover all seven templates: minimal HUD, starter `Player`, platformer `Character` and touch
-controls, racing ranking/lap/sector, shooter `Projectile`, action-RPG `Enemy`, and defense
-`Attacker`. Its scene checks now execute minimal `Play`, platformer `Level`, shooter `Play`,
-action-RPG `Play`, and defense `Defense` for 600 frames. Racing `Race` has a focused scene
-invocation that guards the indexed player scan. The starter `Play` scene is not claimed as a
-600-frame scene fixture; its `Player` component remains covered.
+This repair closes the two ordinary-frame allocation paths found in review, plus the comparator
+and scene-coverage gaps found by the final Sol xhigh review of the useful-defaults aggregate. The
+deterministic runtime probe warms each workload for 30 frames and measures exactly 600 frames. Its
+component checks cover all seven templates: minimal HUD, starter `Player`, platformer `Character`
+and touch controls, racing ranking/lap/sector, shooter `Projectile`, action-RPG `Enemy`, and
+defense `Attacker`. Its scene checks execute minimal `Play`, starter `Play`, platformer `Level`,
+racing `Race`, shooter `Play`, action-RPG `Play`, and defense `Defense` for 600 measured frames;
+racing also keeps the focused one-frame invocation that guards the indexed player scan at spawn.
+The probe steps the physics plugin per frame in scenes that step real physics, mirroring the
+engine loop's event drain. The racing ranking comparator is pinned by a retention sentinel: the
+measured sort calls must resolve to one retained comparator, not a fresh closure per call.
 
 The generated-source changes are:
 
@@ -21,7 +24,7 @@ The generated-source changes are:
 - the earlier platformer dash, racing ranking/lap/scene, and shooter mouse-look repairs remain
   covered; and
 - the probe observes vector construction, iterator pipelines, solar input/result identity,
-  state-patch identity, scene execution, and ranking tie order.
+  state-patch identity, scene execution, ranking tie order, and sort comparator identity.
 
 ## Red controls
 
@@ -45,6 +48,7 @@ state-patch identities, and the restored racing scan produced one iterator call.
 | Platformer `Level` state | fresh state patch literal | `630` patch identities, expected `1` |
 | Racing `Race` player scan | `for...of` over ranked racers | `1` iterator call, expected `0` |
 | Shooter look state | fresh `{ yawDegrees: ... }` patch | patch high-water `634`, expected `34` |
+| Racing comparator (xhigh-review control, 2026-08-31) | inline `buffer.sort((a, b) => compare(a, b))` | `630` distinct comparators, expected `1` retained |
 | Defense counters | two spread/reduce expressions | `1200` `reduce()` calls, expected `0` |
 
 These controls cover the four negative-control groups declared by the PRD: starter/platformer,
@@ -63,7 +67,9 @@ pnpm exec vitest run --config vitest.config.ts \
   packages/create-threenative/__tests__/action-rpg.spec.ts \
   packages/create-threenative/__tests__/defense.spec.ts \
   packages/create-threenative/__tests__/touch-controls.spec.ts
-exit 0 — 8 files, 55 tests passed
+exit 0 — 7 files, 52 tests passed (recounted 2026-08-31 with the scene gate extended to
+starter `Play` and racing `Race` for 600 measured frames; the file set and totals moved with
+commits on main between the lane run and this recount)
 
 pnpm test:playtest
 exit 0 — framework-movement, framework-camera, abyss-framework-movement-axis,
