@@ -1,6 +1,6 @@
 {
-  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.0 installed from the packed server in the clean PRD-049 sandbox. `recommended` is the complete ordered authoring loop documented by every template.",
-  "version": "0.1.0",
+  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.1 installed from the published npm tarball into a clean directory; that run also served 31 technique-safe grimoire resources. `recommended` is the complete ordered authoring loop documented by every template.",
+  "version": "0.1.1",
   "profile": null,
   "recommended": [
     "sculpt_plan",

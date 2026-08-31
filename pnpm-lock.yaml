@@ -497,8 +497,8 @@ importers:
         specifier: 0.4.0
         version: 0.4.0
       threenative-sculpt-mcp:
-        specifier: 0.1.0
-        version: 0.1.0(@types/node@20.19.43)
+        specifier: 0.1.1
+        version: 0.1.1(@types/node@20.19.43)
       zustand:
         specifier: 'catalog:'
         version: 5.0.14(@types/react@19.2.0)(react@19.2.0)
@@ -2832,8 +2832,8 @@ packages:
     engines: {node: '>=20.19.0'}
     hasBin: true
 
-  threenative-sculpt-mcp@0.1.0:
-    resolution: {integrity: sha512-gJJjWUBnmL6kry6kNwjpuOH2BB2CHmp9BFnp01CzLdx+c3Wa7WRWKvxQz399/+6s6EF84duN/gvjFqwD4aosbA==}
+  threenative-sculpt-mcp@0.1.1:
+    resolution: {integrity: sha512-Y/XnivhMiTDGiL1id2vQM7x60YTGMkVcQShCGRmjCn3MWQnELbGVeXAZozGqQNcEu8tQn2umlvUFuczloxJ81A==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -4889,7 +4889,7 @@ snapshots:
       playwright: 1.62.0
       zod: 4.4.3
 
-  threenative-sculpt-mcp@0.1.0(@types/node@20.19.43):
+  threenative-sculpt-mcp@0.1.1(@types/node@20.19.43):
     dependencies:
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.3.6)
       sharp: 0.35.3(@types/node@20.19.43)

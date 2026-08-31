@@ -96,7 +96,7 @@ interface IMcpServerSpec {
   readonly version: string;
 }
 
-const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = [
+export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = [
   {
     configName: "threenative-assets",
     expectedArgs: "./node_modules/@threenative/core/mcp/assets.mjs",
@@ -107,7 +107,7 @@ const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = [
     configName: "threenative-sculpt",
     expectedArgs: "./node_modules/@threenative/core/mcp/sculpt.mjs",
     packageName: "threenative-sculpt-mcp",
-    version: "0.1.0",
+    version: "0.1.1",
   },
   {
     configName: "threenative-engine",

@@ -15,6 +15,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
   type IProjectSnapshot,
+  MCP_SERVER_SPECS,
   detectX11Compositor,
   diagnoseProject,
   formatDoctorReport,
@@ -902,12 +903,26 @@ describe("threenative doctor edge coverage", () => {
     });
   });
 
+  it("pins every MCP server at the version @threenative/core actually installs", async () => {
+    const core = JSON.parse(
+      await readFile(path.resolve("packages/core/package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string>; version: string };
+    for (const spec of MCP_SERVER_SPECS) {
+      const installed =
+        spec.packageName === "@threenative/core"
+          ? core.version
+          : core.dependencies?.[spec.packageName];
+      expect(installed, spec.packageName).toBeDefined();
+      expect(spec.version, spec.packageName).toBe(installed);
+    }
+  });
+
   it("checks resolved MCP package versions, including missing metadata and mismatches", async () => {
     const { makeTempDir } = await import("../../../test-support/temp-dir.js");
     const root = await makeTempDir("tn-doctor-mcp-versions-");
     const packageNames = [
       ["threenative-asset-mcp", "0.4.0"],
-      ["threenative-sculpt-mcp", "0.1.0"],
+      ["threenative-sculpt-mcp", "0.1.1"],
       ["@threenative/core", "0.3.0"],
     ] as const;
     for (const [name, version] of packageNames) {
