@@ -171,7 +171,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "7b72c58751eccca6fb3a577ae49c7f63dc3d056609e1180b53d545bf5bff85b6",
   racing: "deb9729ff3031b34bf3aa7809ad071e69e6c88feb7f0d2122e0e1cc89c8702cb",
   shooter: "3163dae56ce2cb981cfd50457c514e9d0a17e0377ea682639b124ad7f96f0491",
-  starter: "0c94cf9e4a78f581473f802d1c2407e3489385e2bd84bebb783ea15538bfc0c5",
+  starter: "5d7be36b7ec8339c5dfef8e4741ad5d0012eb3e91e5e494a12c14bf1b4583c26",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.

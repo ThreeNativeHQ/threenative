@@ -33,7 +33,7 @@
       "kind": "input",
       "label": "airborne",
       "press": "ArrowLeft",
-      "holdTicks": 2,
+      "holdTicks": 5,
       "release": false
     },
     {

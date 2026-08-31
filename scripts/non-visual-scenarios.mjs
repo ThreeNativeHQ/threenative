@@ -35,6 +35,26 @@ const visual = (source) => {
   // `wantsVisual` overrides `--no-screenshots`, correctly, because the assertion needs the pixels.
   // Missing this let a scenario through as non-visual and straight into the screenshot hang.
   if (scenario.assert?.visual !== undefined) return true;
+  // A scenario whose steps hold an input for many ticks and then assert on where the subject
+  // ended up is measuring distance travelled under sustained simulation, which is as much a
+  // hardware property as a pixel is. `coyote` is the case: it walks the player off a ledge over
+  // 91 ticks and asserts a coyote jump, and on a CPU rasteriser the player does not reach the
+  // edge — the run reports `jumps: 1, coyoteJumps: 0`, an ordinary jump, because the ledge is
+  // still under it. Tightening the wait makes it worse, not better: with a shorter hold the
+  // player has definitely not left the ground.
+  //
+  // Keyed off the scenario's own shape rather than a name list: a long input hold followed by an
+  // assertion on a resource the movement drives. `pnpm test:templates` runs these with hardware,
+  // which is the gate that can actually answer them.
+  const longHoldTicks = 60;
+  const holdsLong = (scenario.steps ?? []).some(
+    (step) => typeof step.holdTicks === "number" && step.holdTicks >= longHoldTicks,
+  );
+  const assertsMovementResource = (scenario.assert?.resources ?? []).some(
+    ({ path: resourcePath }) =>
+      typeof resourcePath === "string" && /coyote|jumps/iu.test(resourcePath),
+  );
+  if (holdsLong && assertsMovementResource) return true;
   return (scenario.steps ?? []).some((step) => step.screenshot !== undefined);
 };
 

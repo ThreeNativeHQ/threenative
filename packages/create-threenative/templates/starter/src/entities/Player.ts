@@ -7,11 +7,12 @@ import type { GameState } from "../state.js";
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 // Tune these two timers for jump feel; they forgive a late or early button press.
-// 0.12s is 7.2 ticks at the 1/60 step. `playtests/coyote.playtest.json` spends 3 ticks leaving the
-// ledge and 2 more airborne before it jumps — 5, inside the window with margin. It spent 8, which
-// is longer than the window it was testing, so it asserted that a jump taken after coyote time
-// still counts as one and passed only when the player left the ledge late. Change this and change
-// those two step lengths with it.
+// 0.12s is 7.2 ticks at the 1/60 step, and `playtests/coyote.playtest.json` is written against
+// that: 3 ticks walking off the ledge, 5 more airborne, then the jump — the jump lands about 5
+// ticks after the player actually leaves the ground, inside the window. Change this and those two
+// step lengths move with it. Tightening the airborne hold does NOT make the scenario safer: with
+// 2 the player has not left the ledge yet, and the jump is counted as an ordinary one
+// (`jumps: 1, coyoteJumps: 0`), which is what it measured when I tried.
 const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.14;
 const JUMP_SPEED = 5;
