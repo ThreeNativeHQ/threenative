@@ -58,7 +58,6 @@ jobs:
           # fails with "'stb_image.h' file not found" without these. The iOS lane already
           # fetches both explicitly (verify-ios-simulator.mjs); this mirrors it.
           node packages/runtime-native/scripts/download-deps.mjs --only stb
-          node packages/runtime-native/scripts/download-deps.mjs --only cgltf
       - name: Capture browser references
         run: |
           set +e
@@ -163,7 +162,27 @@ jobs:
           pnpm --filter @threenative/runtime-native native:build
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
-      - run: pnpm --filter @threenative/runtime-native native:verify:desktop
+      # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
+      # the step. So this ran without INCLUDE, LIB or a usable `cl`, and the first thing inside it
+      # that *configures* a build directory — the physics contract lane — got "the C compiler is
+      # not able to compile a simple test program". The runtime itself had already built fine one
+      # step earlier, which is why it looked like a code failure rather than a missing environment.
+      #
+      # Enter the developer environment here too, rather than exporting it through GITHUB_ENV: that
+      # would put a Windows-style PATH in front of every later step, including the bash ones.
+      - name: Verify the desktop runtime with MSVC
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          set "CC=cl"
+          set "CXX=cl"
+          set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
+          pnpm --filter @threenative/runtime-native native:verify:desktop
+      - if: runner.os != 'Windows'
+        run: pnpm --filter @threenative/runtime-native native:verify:desktop
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -261,7 +261,28 @@ while (Date.now() < deadline) {
   if (requiredMarkers.every((marker) => logs.includes(marker))) break;
 }
 const missingMarkers = requiredMarkers.filter((marker) => !logs.includes(marker));
-if (missingMarkers.length > 0) throw new Error(`iOS proof missed markers: ${missingMarkers.join(', ')}`);
+if (missingMarkers.length > 0) {
+  // The app launched and reported a pid, so "markers missing" alone says nothing about why: it
+  // covers a crash on startup, a runtime that never reached its first frame, and a log predicate
+  // that simply matched nothing. Those need different fixes, and this lane cannot be reproduced
+  // off a Mac — so the failure has to carry its own evidence rather than cost another CI round.
+  const broad = spawnSync(
+    'xcrun',
+    [
+      'simctl', 'spawn', simulator.udid, 'log', 'show', '--style', 'compact', '--start', startedAt,
+      '--predicate',
+      `process == "threenative-ios" OR senderImagePath CONTAINS "threenative-ios" OR eventMessage CONTAINS "${bundleId}"`,
+    ],
+    { cwd: workspaceRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+  );
+  const broadLog = `${broad.stdout ?? ''}${broad.stderr ?? ''}`;
+  writeFileSync(join(artifactRoot, 'simulator-marker-timeout.log'), `${logs}\n---- broad ----\n${broadLog}`);
+  const tail = broadLog.split('\n').slice(-60).join('\n');
+  throw new Error(
+    `iOS proof missed markers: ${missingMarkers.join(', ')}\n` +
+      `Process-filtered log was ${logs.length} bytes; the broader log tail follows.\n${tail}`,
+  );
+}
 if (/GPUValidationError|Validation Error|TN_IOS_PROOF_FAILED|TypeError|ReferenceError|FATAL/u.test(logs)) {
   throw new Error('iOS unified logs contain a native, JavaScript, or WebGPU failure.');
 }
