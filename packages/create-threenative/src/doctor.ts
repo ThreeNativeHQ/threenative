@@ -102,7 +102,11 @@ export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = [
     configName: "threenative-assets",
     expectedArgs: "./node_modules/@threenative/core/mcp/assets.mjs",
     packageName: "threenative-asset-mcp",
-    version: "0.4.0",
+    // Kept equal to what `@threenative/core` actually installs — its package.json dependency and
+    // `mcp/servers.mjs` both say 0.6.0, and doctor.spec asserts all three agree. A doctor that
+    // reports a version the install does not use tells a game author their MCP surface is
+    // something it is not.
+    version: "0.6.0",
   },
   {
     configName: "threenative-sculpt",

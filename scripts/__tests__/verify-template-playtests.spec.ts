@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   assertTemplatePlaytestsPassed,
   auditTemplatePlaytests,
@@ -25,7 +26,7 @@ async function writeScenario(
 
 describe("template playtest matrix", () => {
   it("reports every template and continues after a failing template", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-matrix-"));
+    const root = await makeTempDir("threenative-template-matrix-");
     const calls: string[] = [];
     try {
       const results = await runTemplatePlaytests(
@@ -58,7 +59,7 @@ describe("template playtest matrix", () => {
   });
 
   it("does not count schema-invalid setup.scene as an explicit play-state entry", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-audit-"));
+    const root = await makeTempDir("threenative-template-audit-");
     try {
       await writeScenario(root, "alpha", "assumes-play", {
         steps: [{ kind: "wait", waitTicks: 1 }],
@@ -95,7 +96,7 @@ describe("template playtest matrix", () => {
   });
 
   it("reports an audit failure after every template still runs", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-audit-matrix-"));
+    const root = await makeTempDir("threenative-template-audit-matrix-");
     const calls: string[] = [];
     try {
       const malformedDirectory = path.join(root, "alpha", "playtests");
@@ -134,7 +135,7 @@ describe("template playtest matrix", () => {
   });
 
   it("reports a structural failure and still executes every template", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-structure-matrix-"));
+    const root = await makeTempDir("threenative-template-structure-matrix-");
     const calls: string[] = [];
     try {
       const dependencies = {

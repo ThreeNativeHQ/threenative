@@ -1017,7 +1017,8 @@ describe("threenative doctor edge coverage", () => {
     const { makeTempDir } = await import("../../../test-support/temp-dir.js");
     const root = await makeTempDir("tn-doctor-mcp-versions-");
     const packageNames = [
-      ["threenative-asset-mcp", "0.4.0"],
+      // Must equal MCP_SERVER_SPECS' pin, which must equal what @threenative/core installs.
+      ["threenative-asset-mcp", "0.6.0"],
       ["threenative-sculpt-mcp", "0.1.1"],
       ["@threenative/core", "0.3.0"],
     ] as const;
