@@ -129,7 +129,7 @@ Proves screenshot change, populated coordinate or DOM element-bound regions, and
 | Field | Type | Required |
 | --- | --- | --- |
 | `frameDiff` | { baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number } | no |
-| `region` | static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
+| `region` | static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
 | `entityVisible` | { entity: string, minProjectedPixels: number, throughoutFrames?: boolean } | no |
 
 

@@ -5,10 +5,12 @@
 The browser lane is proven for the seven templates that existed at the PRD parent commit
 `c064b6a0`. Six templates now expose local touch controls and the platformer uses the same
 portable predicate on browser and native. Native execution is `UNVERIFIED`: this environment has
-no physical-device serial and no Android emulator. The complete discovered-template gate passes.
-The full repository unit gate is environment-blocked by six unbuilt native test executables, and
-the budgets gate reports a stale native-coverage digest; neither failure is caused by this lane's
-template changes.
+no physical-device serial and no Android emulator. The complete discovered-template gate passed
+before this review repair; its post-repair rerun reached every template but exited `1` on the
+unchanged `defense-survive-ten-waves` `state.leaks` assertion, and an isolated retry reproduced
+that unrelated failure. The full repository unit gate is environment-blocked by six unbuilt native
+test executables, and the budgets gate reports a stale native-coverage digest; neither failure is
+caused by this lane's template changes.
 
 The PRD's seven-template set is the `action-rpg`, `defense`, `minimal`, `platformer`, `racing`,
 `shooter`, and `starter` directories listed by:
@@ -114,11 +116,13 @@ rm packages/create-threenative/templates/action-rpg/src/render/touch-controls.ts
 Command:
 
 ```sh
-pnpm vitest run packages/create-threenative/__tests__/touch-controls.spec.ts -t action-rpg
+pnpm vitest run packages/create-threenative/__tests__/touch-controls.spec.ts
 ```
 
-Observed exit `1`; only the action-rpg ownership test failed with `ENOENT` for its deleted local
-file. The file was restored from `/tmp/prd291-action-rpg-touch-controls.ts` before verification.
+Observed exit `1`; the complete ownership spec ran all 11 tests (the six parameterized template
+cases plus the shared touch-control behavior), with 10 passing and only the action-rpg ownership
+case failing with `ENOENT` for its deleted local file. The file was restored from
+`/tmp/prd291-action-rpg-touch-controls.ts` before verification.
 
 ### AC4 — forcing controls on for desktop
 
@@ -134,9 +138,18 @@ Command:
 TN_TEMPLATE_ONLY=platformer pnpm test:templates
 ```
 
-Observed exit `1`; the desktop keyboard `survives` scenario failed its visual/entity visibility
-assertion `visibility.touch-controls` because the touch entity appeared. The portable predicate
-was restored; the keyboard lane then passed with the entity absent.
+Initial review reproduction, before the repair, exited `1`; desktop keyboard `survives` failed
+only `visibility.touch-controls` because the forced touch entity appeared, while the existing
+whole-frame `visual.0.region` assertion passed. That demonstrated the missing visual negative
+control.
+
+The repaired `survives` scenario adds a second visual region at the jump-control top-ring bound
+`(x: 1172, y: 552, width: 16, height: 20)` with `maxLuminance: 0.4` and
+`maxDarkPixelRatio: 0.05`. With the same temporary `true` mutation, the command exited `1` after
+22 platformer scenarios; `survives` reported `visual.1.region.maxDarkPixels` with observed dark
+ratio `0.234375` above `0.05`, plus `visibility.touch-controls`. All other scenarios passed.
+The portable predicate was restored. A repeat of the command then exited `0`; all 22 platformer
+scenarios passed, including keyboard `survives` and `platformer-touch-controls-web`.
 
 ## Final evidence commands
 
@@ -152,9 +165,14 @@ Commands are recorded with their observed result on 2026-08-31.
 | changed-file `pnpm exec biome check --max-diagnostics=1000 ...` | PASS — 35 files, 0 errors, 11 existing complexity/style warnings |
 | `pnpm --filter @threenative/playtest build` | PASS — ESM, DTS, and publint all passed |
 | focused Vitest: `scripts/__tests__/count-loc.spec.ts packages/create-threenative/__tests__/touch-controls.spec.ts packages/create-threenative/__tests__/platformer.spec.ts packages/create-threenative/__tests__/playtest.spec.ts` | PASS — 4 files, 74 tests |
+| `pnpm vitest run packages/playtest/__tests__/schema-boundaries.spec.ts packages/playtest/__tests__/evidence-required.spec.ts packages/create-threenative/__tests__/touch-controls.spec.ts packages/create-threenative/__tests__/platformer.spec.ts packages/create-threenative/__tests__/playtest.spec.ts scripts/__tests__/count-loc.spec.ts` | PASS — 6 files, 117 tests |
+| `TN_TEMPLATE_ONLY=platformer pnpm test:templates` with `const showTouchControls = true` | FAIL as required — `survives` failed visual `visual.1.region.maxDarkPixels` (`0.234375 > 0.05`) and semantic `visibility.touch-controls` |
+| `TN_TEMPLATE_ONLY=platformer pnpm test:templates` after restoring the portable predicate | PASS — all 22 platformer scenarios, including keyboard `survives` and touch `platformer-touch-controls-web` |
 | `TN_TEMPLATE_ONLY=action-rpg,minimal,platformer,racing,shooter,starter pnpm test:templates` | PASS — all six scaffolded template suites and six touch scenarios passed |
-| `TN_TEMPLATE_ONLY=defense pnpm test:templates` | An intermediate isolated rerun failed unchanged `defense-survive-ten-waves` (`state.leaks`); the final complete rerun passed it |
-| `pnpm test:templates` | PASS — all discovered templates passed, including `defense-pointer-placement`, `defense-survive-ten-waves`, and all six new touch scenarios |
+| `TN_TEMPLATE_ONLY=defense pnpm test:templates` (pre-repair verification) | PASS after an intermediate unchanged `defense-survive-ten-waves` (`state.leaks`) retry |
+| `pnpm test:templates` (pre-repair verification) | PASS — all discovered templates passed, including `defense-pointer-placement`, `defense-survive-ten-waves`, and all six new touch scenarios |
+| `pnpm test:templates` (post-repair rerun) | FAIL — all templates except `defense-survive-ten-waves` passed; that unchanged scenario failed `resource.state.leaks` |
+| `TN_TEMPLATE_ONLY=defense pnpm test:templates` (post-repair retry) | FAIL — reproduced the same unchanged `defense-survive-ten-waves` `state.leaks` assertion; no defense file changed |
 | `pnpm tsx scripts/count-loc.ts` | PASS — output recorded below |
 | `pnpm quality` | PASS — informational existing file-length/suppression report |
 | `pnpm budgets` | BLOCKED — stale native-coverage source digest; it requests the native coverage regeneration command, which is outside this lane |

@@ -301,6 +301,7 @@ export interface IPlaytestVisualRegionBounds {
 }
 
 export interface IPlaytestVisualRegionThresholds {
+  maxDarkPixelRatio?: number;
   maxLuminance?: number;
   minDarkPixelRatio?: number;
   minNonblankPixelRatio?: number;

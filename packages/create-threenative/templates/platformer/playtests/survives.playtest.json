@@ -47,6 +47,16 @@
           "height": 720,
           "minNonblankPixelRatio": 0.01
         }
+      },
+      {
+        "region": {
+          "x": 1172,
+          "y": 552,
+          "width": 16,
+          "height": 20,
+          "maxLuminance": 0.4,
+          "maxDarkPixelRatio": 0.05
+        }
       }
     ]
   }

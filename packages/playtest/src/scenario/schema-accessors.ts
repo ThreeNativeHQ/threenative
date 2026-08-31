@@ -28,6 +28,7 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       }
       region = {
         element,
+        ...present("maxDarkPixelRatio", optionalNumber(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
         ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
@@ -43,6 +44,7 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       }
       region = {
         ...edges,
+        ...present("maxDarkPixelRatio", optionalNumber(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
         ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
@@ -742,7 +744,7 @@ export function validateNestedAssertionKeys(
     const fields = {
       entityVisible: ["entity", "minProjectedPixels", "throughoutFrames"],
       frameDiff: ["baselineImage", "maxChangedPixelRatio", "minChangedPixelRatio"],
-      region: ["element", "height", "maxLuminance", "minDarkPixelRatio", "minNonblankPixelRatio", "width", "x", "y"],
+      region: ["element", "height", "maxDarkPixelRatio", "maxLuminance", "minDarkPixelRatio", "minNonblankPixelRatio", "width", "x", "y"],
     } as const;
     for (const [field, keys] of Object.entries(fields)) {
       if (isRecord(value[field])) {

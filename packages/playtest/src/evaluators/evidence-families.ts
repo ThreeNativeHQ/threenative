@@ -143,6 +143,23 @@ export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
           });
         }
       }
+      if (visual.region.maxDarkPixelRatio !== undefined) {
+        const darkPass = observed?.darkPixelRatio !== undefined && observed.darkPixelRatio <= visual.region.maxDarkPixelRatio;
+        assertions.push({
+          id: `visual.${index}.region.maxDarkPixels`,
+          pass: darkPass,
+          details: {
+            maximumDarkPixelRatio: visual.region.maxDarkPixelRatio,
+            observedDarkPixelRatio: observed?.darkPixelRatio,
+          },
+        });
+        if (!darkPass) diagnostics.push({
+          code: "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_EXCEEDED",
+          message: `Screenshot region at (${visual.region.x}, ${visual.region.y}) contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, above maximum ratio ${visual.region.maxDarkPixelRatio}.`,
+          severity: "error",
+          suggestion: "Check whether unexpected dark foreground geometry occupies the asserted raster region.",
+        });
+      }
     }
     if (visual.entityVisible !== undefined) {
       const frameSeries = input.report.observations?.visual?.runtimeDiagnosticsSeries;
