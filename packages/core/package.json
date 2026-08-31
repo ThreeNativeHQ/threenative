@@ -4,7 +4,14 @@
   "license": "MIT",
   "description": "The small vanilla Three.js game runtime foundation.",
   "type": "module",
-  "files": ["dist", "mcp", "scripts", "patches", "capabilities.json", "README.md"],
+  "files": [
+    "dist",
+    "mcp",
+    "scripts",
+    "patches",
+    "capabilities.json",
+    "README.md"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -53,13 +60,14 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@threenative/playtest": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-reconciler": "0.32.1",
     "@types/three": "0.185.3",
-    "@threenative/playtest": "workspace:*",
     "publint": "0.3.22",
     "react": "catalog:",
     "react-reconciler": "0.33.0",
+    "threenative-engine-mcp": "workspace:*",
     "tsup": "8.5.1",
     "typescript": "catalog:"
   },

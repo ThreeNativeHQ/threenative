@@ -47,6 +47,34 @@ describe("workspace package lists", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("builds a package's bundled workspace dependencies before the package itself", async () => {
+    const order = workspaceBuildOrder(repo);
+    const position = new Map(order.map((item, index) => [item.name, index]));
+    const names = new Set(order.map(({ name }) => name));
+    const inversions: string[] = [];
+    for (const item of order) {
+      const build = item.scripts.build ?? "";
+      if (build.length === 0) continue;
+      const sources = [build];
+      for (const match of build.matchAll(/(?:^|\s)node\s+(\S+\.mjs)/gu)) {
+        const script = path.join(item.directory, match[1] ?? "");
+        sources.push(await readFile(script, "utf8").catch(() => ""));
+      }
+      const referenced = new Set(
+        sources
+          .join("\n")
+          .match(/@threenative\/[a-z0-9-]+|create-threenative|threenative-engine-mcp/gu) ?? [],
+      );
+      for (const dependency of referenced) {
+        if (dependency === item.name || !names.has(dependency)) continue;
+        const before = position.get(dependency) ?? -1;
+        const after = position.get(item.name) ?? -1;
+        if (before > after) inversions.push(`${dependency} builds after ${item.name}`);
+      }
+    }
+    expect(inversions).toEqual([]);
+  });
+
   it("keeps the publishable set non-empty and unique", () => {
     const packages = publicWorkspacePackages(repo);
     expect(packages.length).toBeGreaterThan(0);
