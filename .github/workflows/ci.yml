@@ -228,12 +228,10 @@ jobs:
           page.on("pageerror", (error) => errors.push(error.message));
           await page.goto(process.env.SCAFFOLD_URL);
           await page.waitForSelector("canvas");
-          // The starter boots to its main menu, so pressing ArrowRight at it moves nothing. This
-          // smoke read `{"text":"THREE NATIVE\nBEGIN"}` and called it a broken scaffold, when the
-          // scaffold was simply waiting to be started — the same thing that had eighteen of the
-          // template's own scenarios failing. Start the game, then drive it.
-          await page.getByPlaceholder("character name").fill("axo");
-          await page.getByRole("button", { name: "begin" }).click();
+          // The starter boots straight into the game. It used to open on a main menu that asked for
+          // a character name, and this smoke typed one in; that menu is gone, so waiting for it hung
+          // for 30 s and failed the lane. Wait for the game's own HUD instead — which is also the
+          // assertion that it really booted, rather than that a form was filled in.
           await page.waitForFunction(() => document.body.innerText.includes("POSITION"), undefined, {
             timeout: 60_000,
           });
