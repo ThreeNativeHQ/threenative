@@ -904,9 +904,10 @@ describe("threenative doctor edge coverage", () => {
   });
 
   it("pins every MCP server at the version @threenative/core actually installs", async () => {
-    const core = JSON.parse(
-      await readFile(path.resolve("packages/core/package.json"), "utf8"),
-    ) as { dependencies?: Record<string, string>; version: string };
+    const core = JSON.parse(await readFile(path.resolve("packages/core/package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      version: string;
+    };
     for (const spec of MCP_SERVER_SPECS) {
       const installed =
         spec.packageName === "@threenative/core"
