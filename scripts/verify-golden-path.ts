@@ -1107,9 +1107,7 @@ function goldenPathTestStep(target: string): { args: string[]; command: string; 
   );
   if (listed.status !== 0) {
     process.stdout.write(
-      `golden-path ${path.basename(target)}: every scenario needs a rendered frame, and this ` +
-        `machine has no GPU (TN_PLAYTEST_ALLOW_SOFTWARE=1). Nothing is run and nothing is ` +
-        `claimed for this template here; the lanes with hardware cover it.\n`,
+      `golden-path ${path.basename(target)}: every scenario needs a rendered frame, and this machine has no GPU (TN_PLAYTEST_ALLOW_SOFTWARE=1). Nothing is run and nothing is claimed for this template here; the lanes with hardware cover it.\n`,
     );
     return { args: ["--version"], command: "pnpm", cwd: target };
   }
