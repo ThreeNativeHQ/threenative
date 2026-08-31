@@ -75,6 +75,46 @@ the race, not the cure.
 
 Until that lands, a scenario that must see the game can hold longer, but no scenario should have to.
 
+### Which commit — bisected to `739f2436`, and both named suspects are innocent
+
+`fdafd9ba..e22139c5` bisected with one scenario (`forward`), one scaffold per commit built from
+that commit's own tarballs, every run under a private Xvfb on the NVIDIA `turing` adapter. The
+check was the PNG, not the exit code.
+
+| Commit | | Frame |
+| --- | --- | --- |
+| `fdafd9ba` | the measured-green baseline | renders |
+| `ee63eea9` | **`worldEnvironment.ts` + visual pipeline — suspect, innocent** | renders |
+| `7a664b02` | | renders |
+| `9ec91dee` | **parent of the culprit** | renders |
+| `739f2436` | **`feat(starter): boot into the game, delete the main menu screen`** | **loading screen** |
+| `e7365299` | | loading screen |
+| `e69c737f` | **virtual geometry on by default — suspect, innocent** | loading screen |
+| `e22139c5` | the commit this file was filed against | loading screen |
+
+The two commits this file nominated are both on the renders-fine side or downstream of the flip:
+`ee63eea9` renders, and `e69c737f` only inherits an already-black frame. `b43b3f87` is not even in
+the range — it precedes `fdafd9ba`. **Nothing about what the frame is made of changed.**
+
+`739f2436`'s entire render-relevant diff is `start: "menu"` → `start: "play"`. That is the whole
+mechanism: the menu scene used to absorb startup load in wall-clock time, so `Play` was entered
+already-ready and its loading screen closed almost immediately. Booting straight into `Play` moved
+that wait inside the scenario, where a fixed-step runner burns 300 ticks in a fraction of the time
+the load takes. **The runner bug was always there; deleting the menu removed the cushion hiding it.**
+
+The same-commit control, which is what makes it the loading screen rather than a render regression —
+identical scaffold, identical build, only `warmupFrames` 10 → 600:
+
+| `739f2436`, `warmupFrames: 10` | `739f2436`, `warmupFrames: 600` |
+| --- | --- |
+| [loading screen](./starter-blank-canvas-2026-08-30.png) | [the game](./starter-blank-canvas-739f2436-warmed.png) |
+
+Re-run at `e22139c5` the same way: blank at 10, the full scene at 600. So `739f2436` is still the
+live cause at the tip of the range, with nothing else piled on top.
+
+This does not make `739f2436` the thing to revert — booting into the game is right, and the defect
+it exposed is the runner's. It names where the cushion went.
+
 ---
 
 ## What has been ruled out
@@ -101,7 +141,8 @@ Until that lands, a scenario that must see the game can hold longer, but no scen
 same hardware after `fdafd9ba`: *"the screenshot was 99.10% nonblank"* on headed Chromium with the
 NVIDIA RTX 2080. So this is a regression against a measured green, somewhere between `fdafd9ba` and
 `e22139c5` — a window that contains the `WorldEnvironment` port into the starter (`b43b3f87`,
-`ee63eea9`) and virtual geometry on by default (`e69c737f`).
+`ee63eea9`) and virtual geometry on by default (`e69c737f`). *(Bisected since: it is `739f2436`,
+and neither nominated suspect is involved — see "Which commit" above.)*
 
 **CI cannot see it.** `golden-path` runs `scripts/non-visual-scenarios.mjs`, which kept 13 scenarios
 and left 8 to "the lanes with hardware"; `visuals` was `skipped` in every run of this batch. A
@@ -109,10 +150,10 @@ scaffolded starter can therefore render nothing and every gate stays green.
 
 ## The next probe, and what not to do
 
-Bisect `fdafd9ba..e22139c5` with one scenario — `forward` is the cheapest — in a throwaway scaffold,
-as [prd278-followup-2026-08-30](./prd278-followup-2026-08-30.md) did with `/tmp/wn-starter2`. The
-two commits worth testing first are `b43b3f87` (WorldEnvironment into the starter) and `e69c737f`
-(virtual geometry on by default), because both change what the frame is made of.
+~~Bisect `fdafd9ba..e22139c5`~~ — **done**, see "Which commit" above: `739f2436`, and the two
+commits nominated here were both measured innocent. What is left is the fix named in the resolved
+diagnosis: publish `ctx.startup.phase` through the playtest bridge and have the runner wait on it,
+bounded, before the after-capture.
 
 Do **not** conclude from a passing `pnpm test` or a green `golden-path` that this is fixed: neither
 looks at these frames. The check is the PNG.
