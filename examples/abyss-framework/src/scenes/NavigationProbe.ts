@@ -107,6 +107,12 @@ export class NavigationProbe extends Scene<INavigationState, IPhysicsContext> {
     ctx.camera.position.set(4, 14, 18);
     ctx.camera.lookAt(4, 0, 0);
     return (frameCtx, dt) => {
+      // The navigator's whole route is the measurement, and a runner does not take its baseline
+      // until the world reports startup ready. Stepping the route before then spends part of it
+      // where nothing can observe it, and `pathLength` becomes a function of how long startup
+      // took: 8.82 on a workstation, 8.19 in CI, against a required 8.5. Both sides key off the
+      // same signal instead, so the observed window always contains the whole route.
+      if (frameCtx.startup.phase !== "ready") return;
       navigator.update(dt);
       frameCtx.state.set({ distanceToTarget: navigator.mesh.position.distanceTo(TARGET) });
     };
