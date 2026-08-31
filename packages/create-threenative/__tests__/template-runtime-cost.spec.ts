@@ -1,9 +1,14 @@
 import {
+  BufferAttribute,
+  BufferGeometry,
+  Group,
   InstancedMesh,
+  Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   Scene,
+  Texture,
   Vector2,
   Vector3,
 } from "three";
@@ -40,7 +45,16 @@ vi.mock("three", async (importOriginal) => {
   return { ...actual, Vector2: CountingVector2, Vector3: CountingVector3 };
 });
 
-vi.mock("@threenative/core", () => import("../../core/src/index.js"));
+vi.mock("@threenative/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../core/src/index.js")>();
+  // The headless probe has no AudioContext; starter Play registers the bus and plays a
+  // pickup buffer, so the fixture doubles exactly that surface — allocation is the target.
+  class FixtureAudioBus {
+    play(_buffer: unknown): void {}
+    dispose(): void {}
+  }
+  return { ...actual, AudioBus: FixtureAudioBus };
+});
 vi.mock("@threenative/physics", () => import("../../physics/src/index.js"));
 
 const WARMUP_FRAMES = 30;
@@ -50,6 +64,7 @@ const DT = 1 / 60;
 interface IPhysicsFixture {
   readonly physics: IPhysicsContext;
   dispose(): void;
+  step(dt: number): void;
 }
 
 function resetAllocationSentinel(): void {
@@ -81,6 +96,10 @@ async function physicsFixture(): Promise<IPhysicsFixture> {
   return {
     physics,
     dispose: () => plugin.dispose?.(owner),
+    // The engine loop calls the plugin's update hook every frame, which steps the world
+    // and drains collision events; a scene that steps physics per frame without it grows
+    // the Rapier event queue until the WASM heap dies. Scenes that never step may omit it.
+    step: (dt: number) => plugin.update?.(owner as never, dt),
   };
 }
 
@@ -118,6 +137,18 @@ function sceneContext(
   const state = { ...initialState };
   const inputVector = options.move ?? new Vector2();
   const lookVector = options.look ?? new Vector2();
+  // One mesh with a position attribute, so a scene's load() can project UVs the way the
+  // real packaged proof carries them; scene.load() must be awaited before enter().
+  const proofScene = new Group();
+  proofScene.add(new Mesh(new BufferGeometry().setAttribute(
+    "position",
+    new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
+  ), new MeshBasicMaterial()));
+  const assets = {
+    audio: (name: string) => Promise.resolve({ name }),
+    model: async <T>(): Promise<T> => ({ scene: proofScene }) as T,
+    texture: async () => new Texture(),
+  };
   return {
     add: (object: { readonly isObject3D?: boolean }) => {
       scene.add(object as never);
@@ -125,6 +156,7 @@ function sceneContext(
     },
     after: () => ({ cancel: () => undefined }),
     every: () => ({ cancel: () => undefined }),
+    assets,
     camera,
     canvasLayer: { camera: layerCamera, opaque: false, scene: layerScene },
     entities: {
@@ -139,6 +171,7 @@ function sceneContext(
     },
     goto: async () => undefined,
     input: {
+      axis: () => 0,
       justPressed: () => false,
       justReleased: () => false,
       pressed: () => false,
@@ -173,6 +206,7 @@ function sceneContext(
         Object.assign(state, next);
       },
     },
+    tween: () => Promise.resolve(),
     viewport: {
       resize: () => undefined,
       safeArea: { height: 900, width: 1600, x: 0, y: 0 },
@@ -325,6 +359,7 @@ describe("generated template ordinary-frame runtime cost", () => {
       });
       const mapSpy = vi.spyOn(Array.prototype, "map");
       const entriesSpy = vi.spyOn(Array.prototype, "entries");
+      const sortSpy = vi.spyOn(Array.prototype, "sort");
       const raceStep = (): void => {
         expect(route.advance(DT, sampleTarget)).toBe(sampleTarget);
         racing.rankRacers(route as never, racers, projectionTarget, rankingBuffer);
@@ -334,11 +369,19 @@ describe("generated template ordinary-frame runtime cost", () => {
       const racingAllocations = measureVectorAllocations(raceStep);
       const racingMapCalls = mapSpy.mock.calls.length;
       const racingEntriesCalls = entriesSpy.mock.calls.length;
+      const racingSortComparators = new Set(sortSpy.mock.calls.map((call) => call[0]));
+      const racingSortCalls = sortSpy.mock.calls.length;
       mapSpy.mockRestore();
       entriesSpy.mockRestore();
+      sortSpy.mockRestore();
       expect(rankingBuffer.length, "racing ranking high-water buffer").toBe(racers.length);
       expect(racingMapCalls, "racing ranking pipeline allocation sentinel").toBe(0);
       expect(racingEntriesCalls, "racing ranking/lap iterator allocation sentinel").toBe(0);
+      expect(racingSortCalls, "racing ranking sort sentinel").toBeGreaterThan(0);
+      expect(
+        racingSortComparators.size,
+        "racing comparator retention sentinel",
+      ).toBeLessThanOrEqual(1);
       expect(racingAllocations, "racing PathFollow result allocation sentinel").toEqual({
         clones: 0,
         constructors: 0,
@@ -416,15 +459,21 @@ describe("generated template ordinary-frame runtime cost", () => {
 
   it("executes scene-owned collection and formatted-state paths for 600 frames", async () => {
     const minimal = await import("../templates/minimal/src/scenes/Play.js");
+    const starter = await import("../templates/starter/src/scenes/Play.js");
     const platformer = await import("../templates/platformer/src/scenes/Level.js");
+    const racing = await import("../templates/racing/src/scenes/Race.js");
     const shooter = await import("../templates/shooter/src/scenes/Play.js");
     const actionRpg = await import("../templates/action-rpg/src/scenes/Play.js");
     const defense = await import("../templates/defense/src/scenes/Defense.js");
-    const core = await import("../../core/src/index.js");
+    // The mocked specifier, not the original module: templates resolve solarPosition
+    // through the mock factory's namespace copy, so the spy has to target that copy.
+    const core = await import("@threenative/core");
 
     for (const [name, value] of Object.entries({
       "minimal Play": minimal.Play,
+      "starter Play": starter.Play,
       "platformer Level": platformer.Level,
+      "racing Race": racing.Race,
       "shooter Play": shooter.Play,
       "action-RPG Play": actionRpg.Play,
       "defense Defense": defense.Defense,
@@ -452,6 +501,33 @@ describe("generated template ordinary-frame runtime cost", () => {
     } finally {
       solarPositionSpy.mockRestore();
       minimalPhysics.dispose();
+    }
+
+    const starterPhysics = await physicsFixture();
+    try {
+      const context = sceneContext(starterPhysics.physics, starter.Play.initialState);
+      const play = new starter.Play();
+      await play.load(context as never);
+      const update = play.enter(context as never) as (ctx: unknown, dt: number) => void;
+      if (typeof update !== "function")
+        throw new Error("Allocation fixture returned no starter scene frame.");
+      // Starter steps real physics per frame, so the loop mirrors the engine: plugin
+      // update (step + event drain) before the scene frame, warmup then measured.
+      for (let index = 0; index < WARMUP_FRAMES; index += 1) {
+        starterPhysics.step(DT);
+        update(context, DT);
+      }
+      const patchWarmHighWater = context.patchIdentities.size;
+      for (let index = 0; index < MEASURED_FRAMES; index += 1) {
+        starterPhysics.step(DT);
+        update(context, DT);
+      }
+      expect(
+        context.patchIdentities.size,
+        "starter Play state-patch high-water sentinel",
+      ).toBe(patchWarmHighWater);
+    } finally {
+      starterPhysics.dispose();
     }
 
     const platformerPhysics = await physicsFixture();
