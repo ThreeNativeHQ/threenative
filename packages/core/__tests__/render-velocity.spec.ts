@@ -2,6 +2,7 @@ import {
   BatchedMesh,
   Bone,
   BoxGeometry,
+  Float32BufferAttribute,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -11,12 +12,11 @@ import {
   Skeleton,
   SkinnedMesh,
   Uint16BufferAttribute,
-  Float32BufferAttribute,
 } from "three";
 import { WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 
-import { RenderChain, type IRenderChainRenderer } from "../src/render/chain.js";
+import { type IRenderChainRenderer, RenderChain } from "../src/render/chain.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
