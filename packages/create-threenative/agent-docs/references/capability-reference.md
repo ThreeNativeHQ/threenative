@@ -815,6 +815,22 @@ export class SpriteAnimator3D { … }
 const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: "pingPong" });
 ```
 
+### `SurfelGI`
+
+`class` — Maintain a bounded surfel solve and hand its indirect-light node to game-owned composition.
+
+```ts
+export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven { … }
+```
+
+- **Use when:** add indirect light or colour bleed to a game-owned output node · maintain bounded surface samples over a traceable static scene
+- **Constraints:** construct and add SurfelGI from game code, then reference indirectLight in src/render/
+- **Overrides:** surfelBudget, rayBudget, updateCadence, sampleRadius, hashCellSize, and hashCellCount are game choices
+
+```ts
+const gi = ctx.add(new SurfelGI({ scene: ctx.scene, camera: ctx.camera, sceneBvh, surfelBudget: 4096, rayBudget: 1024, updateCadence: 2, sampleRadius: 0.02, hashCellSize: 0.5, hashCellCount: 4096, maxAge: 30 }));
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.

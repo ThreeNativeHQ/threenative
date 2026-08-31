@@ -154,18 +154,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "ab3fd1b95416f7d67a11813ddf15b68644997dc2da42ac7a8eb88da39f6d269b",
-  defense: "6f1d7f5843d8077fc91390a275b59bfba20cc850c41098a614301b74bfb873dd",
-  minimal: "feead2edfbac1a2ccadc50481f106820d3da5116ae4c5e8cf3dec7f4e9cd74a0",
-  platformer: "82ab9de3d16b406d70dc3f099545d5d02b9a6cc355546c79fc99a215729167a4",
-  racing: "7d62e79896b383f0854c82a018a703e874eb3a779c6793c91c981f33925bf180",
-  shooter: "48c61bfb6da31c8c027b6711fea9c9065fe29202851812bb1b6a19979ac5dc1f",
-  starter: "0ce21ef925a33f0b9e70d90b3c931a5c3f08750ad93261ca10cb388b2a98f74e",
+  "action-rpg": "431159886d2062750fd8dc959ecb9844e873a84a9e0bc38ceff087a2fb27d53c",
+  defense: "e045ff15093f4f6e9c0e8bf2403830654ff5e5890c17aff2f4181ffdc5731ea7",
+  minimal: "3c0a464ba833ecd0254da4618a97941c5edc342f43c8c065dd6eef2e4d257416",
+  platformer: "2e084008f179b7daae3e319a02ce90b1e92590ee1382317eab15fff4d712839c",
+  racing: "aaa679ccf822f58d7fdc37fe519123dda5b026c638d21a93c9304c4598d5359d",
+  shooter: "6527cadd98da6249f011c654e9bb66c0e9201359654f0354574a6f0d65875abd",
+  starter: "70513290468353d0279a263d41368c5258087f87045d6dc3e978028cc6090e57",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
   // Recomputed 2026-08-30 for PRD-122: every scaffold now carries the shared canonical role
   // contracts, provider adapters, and AGENT-ROLES.md guide.
+  // Recomputed for PRD-245 after the minimal scaffold gained the game-owned SurfelGI composition.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

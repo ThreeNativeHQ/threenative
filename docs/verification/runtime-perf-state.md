@@ -12,6 +12,56 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
+## PRD-245 — game-composed surfel indirect light — 2026-08-31
+
+Lane: contract-preserving `lane-245-r3`, generated `minimal` template, browser WebGPU. The real
+fixture was an isolated scaffold installed from local framework tarballs, headed Chromium on the
+NVIDIA Turing adapter (`vendor=nvidia`, `architecture=turing`), 1280×720 viewport, and the
+repository WebGPU recipe. `pnpm tsx scripts/verify-one-template.ts minimal` passed all four
+scenarios: `atmosphere` 600 frames, `indirect-light` 151, `play` 660, and `survives` 70. The
+indirect-light scenario observed asynchronous GPU radiance from populated surfel lanes after the
+game-owned wall recolour; all diagnostics were clean.
+
+The repair corrected four review defects. `SurfelGI.indirectLight` now consumes the GPU-written
+BVH-integrated radiance buffer rather than coverage or flags. The pool's CPU-owned `active` mask
+controls residency; age and expiry never CPU-upload GPU-owned flags, and inactive compute lanes do
+not trace. GI now owns a distinct GBuffer `albedo` attachment, preserving the SSR `metalness`
+attachment. Minimal `Play.ts` reads `gi.sampleIndirectLight(wallMaterial.color.r)` only after the
+wall recolour, so the playtest observes the actual result; deleting the composition line leaves
+the lazy factory uncalled and the positive GI assertion at zero.
+
+The first fresh WebGPU attempt exposed a required integration fix: five RGBA16 MRT attachments
+need 40 bytes per sample while Three's default adapter request allowed 32. The core renderer now
+requests the same 64-byte `maxColorAttachmentBytesPerSample` budget already required by the native
+context. The final playtest had no validation errors and retained its frame-budget and diagnostics
+assertions.
+
+| proof | result |
+| --- | --- |
+| Focused repair suite | 5 files, 110 tests passed. |
+| Broad Vitest | 298 files passed, 1 skipped; 2,974 tests passed, 3 skipped. |
+| `pnpm typecheck` | Passed; root plus 20 selected workspace projects. |
+| `pnpm lint` | Passed with 492 existing complexity warnings and no errors. |
+| `pnpm budgets` | Passed; framework 38,107/15,000 LOC and native 114,229/100,000 LOC are review triggers. |
+
+The GI subsystem is 846 source lines across five core modules, with 311 focused unit-test lines.
+This is the §10b justification: the lines buy one reusable fixed-storage `IComputeDriven`
+mechanism for pool ageing/eviction, hash storage, BVH integration, GBuffer attachment,
+asynchronous radiance readback, and release; the game owns appearance and composition.
+
+The carried [GI on](PRD-245-gi-web/on-before.png), [direct-only](PRD-245-gi-web/off-before.png),
+and recolour captures remain historical artifacts from the transplanted implementation. No fresh
+numeric web/Android A/B hue measurement is claimed here. A fresh generated OFF arm, with only the
+composition line deleted, kept the direct frame and diagnostics valid but left `giCoverage` and
+`giBounceRed` at `0`; its positive GI assertions failed with `TN_PLAYTEST_RESOURCE_ASSERTION_FAILED`.
+That is the intended fail-closed direct-only contract, not a false passing GI assertion.
+
+Android status: `adb devices` had no attached device. Physical Android capture, Pixel 8 frame cost,
+the Pixel 8 pass/refusal verdict, native execution/parity, and an exact same-machine no-`SurfelGI`
+HEAD draw/timing pair are **UNVERIFIED**. No phone cost or same-machine timing claim is made.
+
+---
+
 ## Browser WebGPU: a TSL post chain, and the scaler's fps signal — 2026-08-30
 
 Lane: browser/WebGPU, `sandbox/lumen-hall` (gothic cathedral, five-stage TSL chain: SSGI +

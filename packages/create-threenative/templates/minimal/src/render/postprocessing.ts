@@ -13,7 +13,7 @@
 // and the one-line enable for the ones that ship off everywhere (godrays, contact AO,
 // vignette), is in `agent-docs/visual-baseline.md`.
 import type { Camera, DirectionalLight, Scene } from "three";
-import { vec3 } from "three/tsl";
+import { vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { OutputRenderer } from "./worldEnvironment.js";
 import { WorldEnvironment } from "./worldEnvironment.js";
@@ -22,6 +22,22 @@ type AtmosphereLike = {
   aerialPerspective(scenePass: unknown, depth: unknown, inScatteredRadiance?: unknown): unknown;
   radiance(direction: unknown): unknown;
 };
+
+type IndirectLightLike = {
+  attachGBuffer(scenePass: unknown): void;
+  indirectLight: Node<"vec3">;
+};
+
+function composeIndirectLight(
+  createIndirectLight: (() => IndirectLightLike) | undefined,
+  scenePass: unknown,
+  direct: Node<"vec4">,
+): Node<"vec4"> {
+  if (createIndirectLight === undefined) return direct;
+  const gi = createIndirectLight();
+  gi.attachGBuffer(scenePass);
+  return vec4(direct.rgb.add(gi.indirectLight.mul(0.8)), direct.a);
+}
 
 // Scene-referred exposure: multiplied into the pass before the tone curve, so the gather, the
 // reflections and the bloom threshold all see the same exposed image.
@@ -73,26 +89,38 @@ export function setupPost(
   environment: {
     atmosphere?: AtmosphereLike;
     godraysLight?: DirectionalLight;
+    createIndirectLight?: () => IndirectLightLike;
     mobile?: boolean;
   } = {},
 ): void {
   const world = new WorldEnvironment(environment.mobile === true ? mobilePreset : desktopPreset);
   const atmosphere = environment.atmosphere;
+  const createIndirectLight = environment.createIndirectLight;
   world.apply(renderer, scene, camera, {
     // The chain builds the scene pass, so aerial perspective — which needs that pass and its
     // view-Z — is composed here, first, before exposure and before any stage. Delete this
     // property to drop aerial perspective while keeping the sky and the rest of the chain.
     baseColour:
-      atmosphere === undefined
+      atmosphere === undefined && createIndirectLight === undefined
         ? undefined
-        : (scenePass) =>
-            atmosphere.aerialPerspective(
-              scenePass,
-              scenePass.getViewZNode(),
-              // Same scale as the dome in sky.ts, and for the same reason: this radiance is
-              // mixed into every pixel by the haze term, so at 24 it lifted the whole frame.
-              (atmosphere.radiance(vec3(0, 0, 1)) as Node<"vec3">).mul(1.5),
-            ) as Node<"vec4">,
+        : (scenePass) => {
+            const direct =
+              atmosphere === undefined
+                ? scenePass.getTextureNode("output")
+                : (atmosphere.aerialPerspective(
+                    scenePass,
+                    scenePass.getViewZNode(),
+                    // Same scale as the dome in sky.ts, and for the same reason: this radiance is
+                    // mixed into every pixel by the haze term, so at 24 it lifted the whole frame.
+                    (atmosphere.radiance(vec3(0, 0, 1)) as Node<"vec3">).mul(1.5),
+                  ) as Node<"vec4">);
+            let composed = direct;
+            // Delete this line to restore the direct-only baseline. The factory is the only place
+            // that constructs the BVH and SurfelGI, so the OFF mutation also removes their buffers
+            // and dispatches rather than merely dropping their colour from the final expression.
+            composed = composeIndirectLight(environment.createIndirectLight, scenePass, direct);
+            return composed;
+          },
     godraysLight: environment.godraysLight,
   });
 }

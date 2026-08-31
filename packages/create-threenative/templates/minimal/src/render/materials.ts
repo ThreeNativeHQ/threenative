@@ -14,3 +14,13 @@ export const defaultMaterial = new MeshStandardMaterial({
   roughness: 0.52,
   metalness: 0.08,
 });
+
+export const wallMaterial = new MeshStandardMaterial({
+  color: palette.accent,
+  roughness: 0.68,
+  metalness: 0.04,
+});
+
+export function setWallColour(changed: boolean): void {
+  wallMaterial.color.setHex(changed ? palette.player : palette.accent);
+}

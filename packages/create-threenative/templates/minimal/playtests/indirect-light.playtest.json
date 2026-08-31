@@ -1,0 +1,59 @@
+{
+  "name": "indirect-light",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "artifacts": { "screenshots": "before-after" },
+  "warmupFrames": 60,
+  "steps": [
+    { "kind": "wait", "label": "surfel settle", "waitTicks": 120, "release": true },
+    {
+      "kind": "input",
+      "label": "surface sweep",
+      "press": "ArrowRight",
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "change wall colour",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "giCoverage",
+        "gte": 0.001,
+        "allowTrivial": "Static-scene coverage is established during the warmup and intentionally remains bounded while the camera sweep proves the live consumer."
+      },
+      {
+        "id": "state",
+        "path": "giBounceRed",
+        "gte": 0.0001,
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        },
+        "frameDiff": { "minChangedPixelRatio": 0.001 }
+      }
+    ],
+    "renderChain": { "tier": "high" }
+  }
+}

@@ -3,8 +3,9 @@ import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parsePng } from "@threenative/assets";
-import { PerspectiveCamera, Vector3 } from "three";
-import { describe, expect, it } from "vitest";
+import { PerspectiveCamera, Scene, Vector3 } from "three";
+import { vec3, vec4 } from "three/tsl";
+import { describe, expect, it, vi } from "vitest";
 import { auditAllTemplates } from "../../../scripts/instruction-budget.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createProject } from "../src/index.js";
@@ -205,6 +206,72 @@ async function linkScaffoldBuildDependencies(target: string): Promise<void> {
 }
 
 describe("template contracts", () => {
+  it("should make the indirect-light composition line own GI construction and dispatch", async () => {
+    const [play, post] = await Promise.all([
+      readFile(path.join(templateRoot, "minimal/src/scenes/Play.ts"), "utf8"),
+      readFile(path.join(templateRoot, "minimal/src/render/postprocessing.ts"), "utf8"),
+    ]);
+    expect(play).toContain("const createIndirectLight");
+    expect(play).toContain("createIndirectLight,");
+    expect(play).not.toMatch(/const sceneBvh\s*=\s*\n\s*ctx\.renderer/u);
+    expect(play).not.toMatch(/const gi\s*=\s*\n\s*sceneBvh/u);
+
+    const compositionLine =
+      "composed = composeIndirectLight(environment.createIndirectLight, scenePass, direct);";
+    expect(post).toContain(compositionLine);
+    const offSource = post.replace(compositionLine, "");
+    expect(offSource).not.toContain("composeIndirectLight(environment.createIndirectLight");
+
+    const constructed = vi.fn();
+    const attached = vi.fn();
+    const createIndirectLight = () => {
+      constructed();
+      return { attachGBuffer: attached, indirectLight: vec3(0) };
+    };
+    const renderer = {
+      kind: "webgl",
+      raw: {},
+      createRenderChain: () => ({ applied: { dropped: [], stages: ["bloom"] } }),
+    };
+    const atmosphere = {
+      aerialPerspective: () => vec4(0, 0, 0, 1),
+      radiance: () => vec3(0),
+    };
+    const { setupPost } = await import("../templates/minimal/src/render/postprocessing.js");
+    setupPost(renderer, new Scene(), new PerspectiveCamera(), {
+      atmosphere,
+      createIndirectLight,
+      mobile: true,
+    });
+    expect(constructed).toHaveBeenCalledOnce();
+    expect(attached).toHaveBeenCalledOnce();
+
+    setupPost(renderer, new Scene(), new PerspectiveCamera(), {
+      atmosphere,
+      mobile: true,
+    });
+    expect(constructed).toHaveBeenCalledOnce();
+    expect(attached).toHaveBeenCalledOnce();
+  });
+
+  it("should observe integrated GI and fail closed when its composite line is removed", async () => {
+    const [play, post, state] = await Promise.all([
+      readFile(path.join(templateRoot, "minimal/src/scenes/Play.ts"), "utf8"),
+      readFile(path.join(templateRoot, "minimal/src/render/postprocessing.ts"), "utf8"),
+      readFile(path.join(templateRoot, "minimal/src/state.ts"), "utf8"),
+    ]);
+    expect(play).toContain("gi?.sampleIndirectLight(wallMaterial.color.r) ?? 0");
+    expect(play).not.toContain("gi.coverage * wallMaterial.color.r");
+    expect(play).toContain("readbackEveryFrames");
+    expect(state).toContain("indirect-light sample");
+
+    const compositionLine =
+      "composed = composeIndirectLight(environment.createIndirectLight, scenePass, direct);";
+    const offSource = post.replace(compositionLine, "");
+    expect(offSource).not.toContain("composeIndirectLight(environment.createIndirectLight");
+    expect(offSource).toContain("environment.createIndirectLight");
+  });
+
   it("requires every discovered template to ship a bounded performance scenario", async () => {
     const names = await templateNames();
     expect(names).toHaveLength(7);

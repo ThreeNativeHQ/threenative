@@ -1,20 +1,26 @@
 import {
   Atmosphere,
+  GPUSceneBVH,
   type ICtx,
   Scene,
   type SceneFrame,
+  SurfelGI,
   isMobile,
   solarPosition,
 } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Player } from "../entities/Player.js";
 import { setupCamera } from "../render/camera.js";
 import { createHud } from "../render/hud.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { defaultMaterial, floorMaterial } from "../render/materials.js";
+import {
+  defaultMaterial,
+  floorMaterial,
+  setWallColour,
+  wallMaterial,
+} from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
@@ -28,6 +34,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     sunAzimuth: 0,
     sunElevation: 0,
     sunTransmittanceRed: 0,
+    giCoverage: 0,
+    giBounceRed: 0,
   };
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -70,11 +78,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
-      atmosphere,
-      godraysLight: lighting.key,
-      mobile: isMobile(),
-    });
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
@@ -82,17 +85,55 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const floor = new Mesh(new BoxGeometry(10, 0.2, 4), floorMaterial);
     floor.position.y = -0.1;
     floor.receiveShadow = true;
+    floor.userData.traceable = true;
     ctx.add(floor);
     const nearWallGeometry = new BoxGeometry(1.4, 2.8, 0.6);
     nearWallGeometry.translate(-3, 1.4, 2.5);
     const distantRidgeGeometry = new BoxGeometry(12_000, 500, 100);
     distantRidgeGeometry.translate(0, 230, -5_000);
-    const hazeProbe = new Mesh(
-      mergeGeometries([nearWallGeometry, distantRidgeGeometry]),
-      defaultMaterial,
-    );
+    const wall = new Mesh(nearWallGeometry, wallMaterial);
+    setWallColour(false);
+    wall.castShadow = true;
+    wall.userData.traceable = true;
+    ctx.add(wall);
+    const hazeProbe = new Mesh(distantRidgeGeometry, defaultMaterial);
     hazeProbe.castShadow = true;
     ctx.add(hazeProbe);
+    let gi: SurfelGI | undefined;
+    let wallColourChanged = false;
+    const createIndirectLight =
+      ctx.renderer.kind === "webgpu"
+        ? () => {
+            if (gi !== undefined) return gi;
+            const sceneBvh = ctx.add(
+              new GPUSceneBVH(ctx.scene, {
+                include: (object) => object.userData.traceable === true,
+              }),
+            );
+            gi = ctx.add(
+              new SurfelGI({
+                camera: ctx.camera,
+                hashCellCount: 64,
+                hashCellSize: 0.75,
+                maxAge: 600,
+                rayBudget: 64,
+                sampleRadius: 0.035,
+                scene: ctx.scene,
+                sceneBvh,
+                surfelBudget: 256,
+                updateCadence: 2,
+                readbackEveryFrames: 4,
+              }),
+            );
+            return gi;
+          }
+        : undefined;
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      atmosphere,
+      createIndirectLight,
+      godraysLight: lighting.key,
+      mobile: isMobile(),
+    });
     new RigidBody3D({
       object: floor,
       physics: ctx.physics,
@@ -122,11 +163,19 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         atmosphere.setSunDirection(sun);
         lighting.updateSun(atmosphere.getSunDirection());
       }
+      if (frameCtx.input.justPressed("recolour")) {
+        wallColourChanged = !wallColourChanged;
+        setWallColour(wallColourChanged);
+      }
       const state = frameCtx.state.getState();
       hud.update({
         primary: state.score,
         seconds: elapsed,
       });
+      statePatch.giCoverage = gi?.coverage ?? 0;
+      statePatch.giBounceRed = wallColourChanged
+        ? (gi?.sampleIndirectLight(wallMaterial.color.r) ?? 0)
+        : 0;
       statePatch.playerX = player.mesh.position.x;
       statePatch.sunAzimuth = sun.azimuth;
       statePatch.sunElevation = sun.elevation;

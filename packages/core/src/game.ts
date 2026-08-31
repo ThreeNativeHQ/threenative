@@ -13,6 +13,7 @@ import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
 import type { IThreeNativeConfig } from "./config.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "./frame-budget.js";
+import type { IGBufferDriven } from "./gi/gbuffer.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
@@ -816,6 +817,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const node: Object3D = object;
         threeScene.add(node);
         if (typeof (node as { aerialPerspective?: unknown }).aerialPerspective === "function") {
+          this.#hasDepthCoupledOutput = true;
+        }
+        // A GBuffer is an opt-in render pass owned by a compute-driven consumer. Its scene update
+        // must happen before the renderer evaluates the pass, while a game without such a marker
+        // keeps the ordinary post-render scene hook and pays no GBuffer work.
+        if ((node as Partial<IGBufferDriven>).requiresGBuffer === true) {
           this.#hasDepthCoupledOutput = true;
         }
         if (isComputeDriven(node)) {

@@ -58,6 +58,7 @@ describe("core constraints", () => {
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
+          !file.startsWith("gi/") &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -204,6 +205,21 @@ describe("core constraints", () => {
     expect(sceneBvh).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
     expect(sceneBvh).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(sceneBvh.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // GI is the explicit mechanism exception named by PRD-245: its GBuffer names the render
+    // attachments it reads, and its public node is intentionally called indirectLight. It still
+    // cannot originate a material, light, colour, or shader, so keep those checks on every module.
+    for (const giModule of [
+      "gi/gbuffer.ts",
+      "gi/hash-grid.ts",
+      "gi/index.ts",
+      "gi/integrate.ts",
+      "gi/surfel-pool.ts",
+    ]) {
+      const giSource = readFileSync(path.join(sourceDirectory, giModule), "utf8");
+      expect(giSource).not.toMatch(/new\s+\w*(Material|Light)|new\s+Color|\.wgsl/iu);
+      expect(giSource.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+    }
 
     // The public surface may NAME the types it re-exports (`IGPUSceneBVHMaterialGroup` is a data
     // group, not a look); what it may never do is originate an appearance.

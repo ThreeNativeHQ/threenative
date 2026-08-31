@@ -141,6 +141,37 @@ describe("createRenderer", () => {
     renderer.dispose();
   });
 
+  it("requests the deferred-rendering color attachment budget on WebGPU", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    let requiredLimits: unknown;
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: (_canvas, options) => {
+          requiredLimits = (options as { requiredLimits?: unknown }).requiredLimits;
+          return {
+            domElement: canvas,
+            init: async () => undefined,
+            render: () => undefined,
+            setSize: () => undefined,
+          };
+        },
+      });
+
+      expect(requiredLimits).toEqual({ maxColorAttachmentBytesPerSample: 64 });
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should reject an invalid resolution scale at construction", async () => {
     await expect(createRenderer({ resolutionScale: 0 })).rejects.toThrow(
       "renderer.resolutionScale must be finite and positive.",

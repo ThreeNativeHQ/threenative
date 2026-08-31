@@ -189,7 +189,10 @@ export interface IRendererOptions {
   source?: IRendererPlatformSource;
   webgpuFactory?: (
     canvas: HTMLCanvasElement,
-    options: Readonly<{ antialias: boolean }>,
+    options: Readonly<{
+      antialias: boolean;
+      requiredLimits: Readonly<{ maxColorAttachmentBytesPerSample: number }>;
+    }>,
   ) => Promise<unknown> | unknown;
   webgl2Factory?: (canvas: HTMLCanvasElement, options: Readonly<{ antialias: boolean }>) => unknown;
 }
@@ -431,13 +434,20 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     antialias: options.antialias ?? true,
     trackTimestamp: true,
   } as const;
+  // Three requests WebGPU's default 32-byte colour-attachment limit. An opt-in GBuffer may add a
+  // fifth target beside output, normal, metalness, and roughness; native requests the same rounded
+  // 64-byte budget, and web must make the identical device contract explicit.
+  const webgpuParameters = {
+    ...rendererParameters,
+    requiredLimits: { maxColorAttachmentBytesPerSample: 64 },
+  } as const;
   let renderer: IRendererLike | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
       const raw = options.webgpuFactory
-        ? await options.webgpuFactory(canvas, rendererParameters)
-        : new (await import("three/webgpu")).WebGPURenderer({ canvas, ...rendererParameters });
+        ? await options.webgpuFactory(canvas, webgpuParameters)
+        : new (await import("three/webgpu")).WebGPURenderer({ canvas, ...webgpuParameters });
       const instance = raw as RendererInstance;
       await instance.init?.();
       renderer = wrapRenderer(instance, "webgpu", applied, state, reapply);

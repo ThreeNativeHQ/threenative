@@ -961,6 +961,26 @@
     },
     {
       "constraints": [
+        "construct and add SurfelGI from game code, then reference indirectLight in src/render/"
+      ],
+      "example": "const gi = ctx.add(new SurfelGI({ scene: ctx.scene, camera: ctx.camera, sceneBvh, surfelBudget: 4096, rayBudget: 1024, updateCadence: 2, sampleRadius: 0.02, hashCellSize: 0.5, hashCellCount: 4096, maxAge: 30 }));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "surfelBudget, rayBudget, updateCadence, sampleRadius, hashCellSize, and hashCellCount are game choices"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven { … }",
+      "situations": [
+        "add indirect light or colour bleed to a game-owned output node",
+        "maintain bounded surface samples over a traceable static scene"
+      ],
+      "summary": "Maintain a bounded surfel solve and hand its indirect-light node to game-owned composition.",
+      "supersedes": [],
+      "symbol": "SurfelGI"
+    },
+    {
+      "constraints": [
         "the surface comes from the game; pooling, travel, and fading belong to the engine",
         "update once per frame and dispose with the owning scene"
       ],

@@ -16,6 +16,7 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
+    recolour: { keys: ["KeyC"] },
   },
   // `playtest()` installs the bridge a scenario needs to observe entities and state. Without
   // it, semantic assertions fail closed with TN_PLAYTEST_BRIDGE_MISSING rather than passing.
