@@ -1,9 +1,14 @@
-import { readFile, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { cp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { expect, test } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+const coreRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const run = promisify(execFile);
 
 // Core's base export must stand alone: every module reachable from src/index.ts resolves
 // without @threenative/playtest, whose inlined copy tsup used to ship inside dist. The one
@@ -121,4 +126,264 @@ test("should keep the probe-volume import graph on WebGPU render targets", async
   await walk(entry);
   expect(seen).toContain(entry);
   expect(offenders).toEqual([]);
+});
+
+test("should apply the packed Three.js patch in a clean consumer and remain idempotent", async () => {
+  const sandbox = await makeTempDir("threenative-core-package-");
+  try {
+    const archiveDirectory = join(sandbox, "archive");
+    const consumer = join(sandbox, "consumer");
+    await run("pnpm", ["pack", "--pack-destination", archiveDirectory], { cwd: coreRoot });
+    const archive = (await readdir(archiveDirectory)).find((file) => file.endsWith(".tgz"));
+    if (archive === undefined) throw new Error("core package did not produce a tarball");
+    await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
+
+    const packed = join(archiveDirectory, "package");
+    const packageManifest = JSON.parse(await readFile(join(packed, "package.json"), "utf8")) as {
+      scripts?: { postinstall?: string };
+    };
+    expect(packageManifest.scripts?.postinstall).toBe("node ./scripts/postinstall.mjs");
+
+    const installedThree = join(coreRoot, "node_modules", "three");
+    const consumerThree = join(consumer, "node_modules", "three");
+    await cp(installedThree, consumerThree, { dereference: true, recursive: true });
+    await run(
+      "patch",
+      [
+        "--reverse",
+        "--batch",
+        "--silent",
+        "-p1",
+        "-i",
+        join(packed, "patches", "three@0.185.1.patch"),
+      ],
+      { cwd: consumerThree },
+    );
+    const cleanBatchedMesh = await readFile(
+      join(consumerThree, "src/objects/BatchedMesh.js"),
+      "utf8",
+    );
+    expect(cleanBatchedMesh).not.toContain("threeNativeBatchedVelocityPatch");
+
+    const environment = {
+      ...process.env,
+      INIT_CWD: consumer,
+      THREENATIVE_SKIP_MCP_SETUP: "1",
+    };
+    await run(process.execPath, ["./scripts/postinstall.mjs"], {
+      cwd: packed,
+      env: environment,
+    });
+    const patchedFiles = [
+      "src/objects/BatchedMesh.js",
+      "src/nodes/accessors/Instance.js",
+      "build/three.webgpu.js",
+    ];
+    const firstRun = await Promise.all(
+      patchedFiles.map(
+        async (file) => [file, await readFile(join(consumerThree, file), "utf8")] as const,
+      ),
+    );
+    expect(firstRun[0]?.[1]).toContain("threeNativeBatchedVelocityPatch");
+    expect(firstRun[1]?.[1]).toContain("threenative.velocity.previousInstanceMatrices");
+    expect(firstRun[2]?.[1]).toContain("_previousMatricesTexture ?? matricesTexture");
+
+    await run(process.execPath, ["./scripts/postinstall.mjs"], {
+      cwd: packed,
+      env: environment,
+    });
+    const secondRun = await Promise.all(
+      patchedFiles.map(
+        async (file) => [file, await readFile(join(consumerThree, file), "utf8")] as const,
+      ),
+    );
+    expect(secondRun).toEqual(firstRun);
+
+    const partialFile = join(consumerThree, "src/objects/BatchedMesh.js");
+    const firstBatchedMesh = firstRun.find(([file]) => file === "src/objects/BatchedMesh.js");
+    if (firstBatchedMesh === undefined) throw new Error("BatchedMesh patch file was not captured");
+    const partialText = firstBatchedMesh[1].replace(
+      "threeNativeBatchedVelocityPatch",
+      "threeNativeBatchedVelocityPatch_removed",
+    );
+    await writeFile(partialFile, partialText);
+    await expect(
+      run(process.execPath, ["./scripts/postinstall.mjs"], {
+        cwd: packed,
+        env: environment,
+      }),
+    ).rejects.toThrow(/TN_THREE_PATCH_PARTIAL/u);
+    const afterRejectedPartial = await Promise.all(
+      patchedFiles.map(
+        async (file) => [file, await readFile(join(consumerThree, file), "utf8")] as const,
+      ),
+    );
+    expect(afterRejectedPartial[0]?.[1]).toBe(partialText);
+    expect(afterRejectedPartial.slice(1)).toEqual(secondRun.slice(1));
+    await writeFile(partialFile, firstBatchedMesh[1]);
+
+    const consumerManifestPath = join(consumerThree, "package.json");
+    const consumerManifest = JSON.parse(await readFile(consumerManifestPath, "utf8")) as {
+      version: string;
+    };
+    await writeFile(
+      consumerManifestPath,
+      `${JSON.stringify({ ...consumerManifest, version: "0.185.2" })}\n`,
+    );
+    await expect(
+      run(process.execPath, ["./scripts/postinstall.mjs"], {
+        cwd: packed,
+        env: environment,
+      }),
+    ).rejects.toThrow(/TN_THREE_PATCH_VERSION/u);
+    const afterRejectedVersion = await Promise.all(
+      patchedFiles.map(
+        async (file) => [file, await readFile(join(consumerThree, file), "utf8")] as const,
+      ),
+    );
+    expect(afterRejectedVersion).toEqual(secondRun);
+  } finally {
+    await rm(sandbox, { force: true, recursive: true });
+  }
+});
+
+test("should prefer core's nested Three.js when the consumer has another version", async () => {
+  const sandbox = await makeTempDir("threenative-core-nested-three-");
+  try {
+    const archiveDirectory = join(sandbox, "archive");
+    const consumer = join(sandbox, "consumer");
+    await run("pnpm", ["pack", "--pack-destination", archiveDirectory], { cwd: coreRoot });
+    const archive = (await readdir(archiveDirectory)).find((file) => file.endsWith(".tgz"));
+    if (archive === undefined) throw new Error("core package did not produce a tarball");
+    await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
+
+    const packed = join(archiveDirectory, "package");
+    const installedThree = join(coreRoot, "node_modules", "three");
+    const coreThree = join(packed, "node_modules", "three");
+    const consumerThree = join(consumer, "node_modules", "three");
+    for (const threeRoot of [coreThree, consumerThree]) {
+      await cp(installedThree, threeRoot, { dereference: true, recursive: true });
+      await run(
+        "patch",
+        [
+          "--reverse",
+          "--batch",
+          "--silent",
+          "-p1",
+          "-i",
+          join(packed, "patches", "three@0.185.1.patch"),
+        ],
+        { cwd: threeRoot },
+      );
+    }
+    const consumerManifestPath = join(consumerThree, "package.json");
+    const consumerManifest = JSON.parse(await readFile(consumerManifestPath, "utf8")) as {
+      version: string;
+    };
+    await writeFile(
+      consumerManifestPath,
+      `${JSON.stringify({ ...consumerManifest, version: "0.185.2" })}\n`,
+    );
+
+    await run(process.execPath, ["./scripts/postinstall.mjs"], {
+      cwd: packed,
+      env: { ...process.env, INIT_CWD: consumer, THREENATIVE_SKIP_MCP_SETUP: "1" },
+    });
+
+    await expect(
+      readFile(join(coreThree, "src/objects/BatchedMesh.js"), "utf8"),
+    ).resolves.toContain("threeNativeBatchedVelocityPatch");
+    await expect(
+      readFile(join(consumerThree, "src/objects/BatchedMesh.js"), "utf8"),
+    ).resolves.not.toContain("threeNativeBatchedVelocityPatch");
+  } finally {
+    await rm(sandbox, { force: true, recursive: true });
+  }
+});
+
+test("should apply the patch to a valid workspace-hoisted Three.js", async () => {
+  const sandbox = await makeTempDir("threenative-core-hoisted-three-");
+  try {
+    const archiveDirectory = join(sandbox, "archive");
+    const consumer = join(sandbox, "apps", "game");
+    await run("pnpm", ["pack", "--pack-destination", archiveDirectory], { cwd: coreRoot });
+    const archive = (await readdir(archiveDirectory)).find((file) => file.endsWith(".tgz"));
+    if (archive === undefined) throw new Error("core package did not produce a tarball");
+    await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
+
+    const packed = join(archiveDirectory, "package");
+    const installedThree = join(coreRoot, "node_modules", "three");
+    const hoistedThree = join(sandbox, "node_modules", "three");
+    await cp(installedThree, hoistedThree, { dereference: true, recursive: true });
+    await run(
+      "patch",
+      [
+        "--reverse",
+        "--batch",
+        "--silent",
+        "-p1",
+        "-i",
+        join(packed, "patches", "three@0.185.1.patch"),
+      ],
+      { cwd: hoistedThree },
+    );
+
+    await run(process.execPath, ["./scripts/postinstall.mjs"], {
+      cwd: packed,
+      env: { ...process.env, INIT_CWD: consumer, THREENATIVE_SKIP_MCP_SETUP: "1" },
+    });
+
+    await expect(
+      readFile(join(hoistedThree, "src/objects/BatchedMesh.js"), "utf8"),
+    ).resolves.toContain("threeNativeBatchedVelocityPatch");
+  } finally {
+    await rm(sandbox, { force: true, recursive: true });
+  }
+});
+
+test("should reject Three.js resolved only through a NODE_PATH fallback", async () => {
+  const sandbox = await makeTempDir("threenative-core-global-three-");
+  try {
+    const archiveDirectory = join(sandbox, "archive");
+    const consumer = join(sandbox, "apps", "game");
+    const fallbackNodeModules = join(sandbox, "fallback", "node_modules");
+    await run("pnpm", ["pack", "--pack-destination", archiveDirectory], { cwd: coreRoot });
+    const archive = (await readdir(archiveDirectory)).find((file) => file.endsWith(".tgz"));
+    if (archive === undefined) throw new Error("core package did not produce a tarball");
+    await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
+
+    const packed = join(archiveDirectory, "package");
+    const installedThree = join(coreRoot, "node_modules", "three");
+    const fallbackThree = join(fallbackNodeModules, "three");
+    await cp(installedThree, fallbackThree, { dereference: true, recursive: true });
+    await run(
+      "patch",
+      [
+        "--reverse",
+        "--batch",
+        "--silent",
+        "-p1",
+        "-i",
+        join(packed, "patches", "three@0.185.1.patch"),
+      ],
+      { cwd: fallbackThree },
+    );
+
+    await expect(
+      run(process.execPath, ["./scripts/postinstall.mjs"], {
+        cwd: packed,
+        env: {
+          ...process.env,
+          INIT_CWD: consumer,
+          NODE_PATH: fallbackNodeModules,
+          THREENATIVE_SKIP_MCP_SETUP: "1",
+        },
+      }),
+    ).rejects.toThrow(/TN_THREE_PATCH_MISSING/u);
+    await expect(
+      readFile(join(fallbackThree, "src/objects/BatchedMesh.js"), "utf8"),
+    ).resolves.not.toContain("threeNativeBatchedVelocityPatch");
+  } finally {
+    await rm(sandbox, { force: true, recursive: true });
+  }
 });

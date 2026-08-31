@@ -40,7 +40,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "postinstall": "node ./scripts/ensure-mcp.mjs",
+    "postinstall": "node ./scripts/postinstall.mjs",
     "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict"

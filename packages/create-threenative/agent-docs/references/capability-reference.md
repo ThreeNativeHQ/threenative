@@ -279,6 +279,27 @@ export function directionFromSolarPosition(elevation: number, azimuth: number): 
 const direction = directionFromSolarPosition(sun.elevation, sun.azimuth);
 ```
 
+### `ensureVelocityOutput`
+
+`function` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export function ensureVelocityOutput(pass: IVelocityRenderPass): MRTNode { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · add a velocity target before a temporal stage consumes a scene pass
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it · call only when a temporal stage is active
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
+```
+
 ### `FluidField2D`
 
 `class` — Simulate a deterministic 2D velocity-and-dye field on the GPU while exposing its data to game-owned rendering.
@@ -635,6 +656,69 @@ export function readRenderChainReport(renderer: unknown): IRenderChainMarker | u
 const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
 ```
 
+### `readVelocityPreviousBoneMatrices`
+
+`function` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export function readVelocityPreviousBoneMatrices(object: Object3D): Float32Array | undefined { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · inspect the previous skinned pose at a renderer adapter boundary
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
+```
+
+### `readVelocityPreviousMatrices`
+
+`function` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export function readVelocityPreviousMatrices(object: Object3D): Float32Array | undefined { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · inspect the previous instance frame at a renderer adapter boundary
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
+```
+
+### `readVelocityPreviousWorldMatrix`
+
+`function` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export function readVelocityPreviousWorldMatrix(object: Object3D): Matrix4 | undefined { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · inspect the previous rigid transform at a renderer adapter boundary
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
+```
+
 ### `RenderChain`
 
 `class` — Compose game-provided render nodes in a measured, fail-closed chain.
@@ -892,6 +976,48 @@ export function updateClusteredMeshes( root: { … }
 updateClusteredMeshes(stagedRoot, myCamera, ctx.renderer.domElement.height);
 ```
 
+### `velocityTexture`
+
+`function` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export function velocityTexture(pass: IVelocityRenderPass): Node { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · read screen-space motion for a temporal stage
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
+```
+
+### `VelocityTracker`
+
+`class` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export class VelocityTracker { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · retain previous transforms for animated and instanced renderables
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it · call `update()` after gameplay writes and `commit()` after the render
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
+```
+
 ### `warmUpScene`
 
 `function` — Warms up `scene` for `camera`, in slices, presenting a frame between each. Fail closed on a nonsensical slice size rather than quietly choosing one: a zero or negative slice would loop forever, and a caller that passed it has a bug worth seeing now.
@@ -920,6 +1046,27 @@ export class WaveField { … }
 ```ts
 const field = new WaveField({ waves });
 const { height, normal } = field.sample(x, z, elapsed);
+```
+
+### `withVelocityContext`
+
+`function` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export function withVelocityContext<T>(node: T, source: Node): T { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · hand the provisioned velocity source through a composed temporal graph
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
 ```
 
 ### `zenithTransmittance`

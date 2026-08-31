@@ -1,5 +1,5 @@
 import type { Camera, Object3D, WebGLRenderer } from "three";
-import { RenderPipeline } from "three/webgpu";
+import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
   type IRenderChainBudgetWindow,
@@ -19,6 +19,10 @@ type WarmableSurface = {
 type WarmableMesh = Object3D & {
   isMesh?: boolean;
 } & Record<string, unknown>;
+
+interface ITraversableOutputNode {
+  traverse(callback: (node: object) => void): void;
+}
 
 const prewarmedRoots = new WeakSet<Object3D>();
 
@@ -132,7 +136,8 @@ export interface IRendererLike {
   renderChainUsesPerObjectVelocity?: () => boolean;
   /** Internal callback used by RenderChain; games should request velocity through the chain. */
   setRenderChainVelocityEnabled?: (enabled: boolean) => void;
-  setOutputNode(node: unknown): void;
+  /** Installs a graph; pass the authored world pass when the graph contains auxiliary passes. */
+  setOutputNode(node: unknown, worldPass?: unknown): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   /**
    * The GPU time the last resolved frame actually cost, in milliseconds, or `undefined` when the
@@ -237,6 +242,7 @@ function wrapRenderer(
   reapply: { resize: (() => void) | undefined },
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
+  let outputPass: PassNode | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
 
@@ -312,11 +318,18 @@ function wrapRenderer(
       renderChainUsesPerObjectVelocity = false;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputPass = undefined;
       raw.dispose?.();
     },
     render: (scene, camera) => {
       if (outputPipeline === undefined) raw.render(scene, camera);
-      else outputPipeline.render();
+      else {
+        // RenderPipeline.render() has no scene argument and PassNode keeps the scene it captured
+        // when the graph was built. Retarget only the authored world pass at the root the wrapper
+        // is rendering so a projection mirror and its velocity history remain the same input.
+        setOutputPipelineRoot(outputPass, scene, camera);
+        outputPipeline.render();
+      }
     },
     renderOverlay: (scene, camera) => {
       const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
@@ -329,18 +342,21 @@ function wrapRenderer(
         else Reflect.deleteProperty(raw, "autoClear");
       }
     },
-    setOutputNode: (node) => {
+    setOutputNode: (node, worldPass) => {
       if (kind !== "webgpu")
         throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
       outputPipeline?.dispose();
-      outputPipeline = new RenderPipeline(
+      const nextPipeline = new RenderPipeline(
         raw as unknown as ConstructorParameters<typeof RenderPipeline>[0],
         node as ConstructorParameters<typeof RenderPipeline>[1],
       );
+      outputPass = selectOutputPass(node, worldPass);
+      outputPipeline = nextPipeline;
     },
     clearOutputNode: () => {
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputPass = undefined;
     },
     renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,
     setRenderChainVelocityEnabled: (enabled) => {
@@ -376,6 +392,39 @@ function wrapRenderer(
     setSize: (width, height, updateStyle = false) => raw.setSize(width, height, updateStyle),
   };
   return wrapped;
+}
+
+function isOutputPassNode(node: unknown): node is PassNode {
+  return isObject(node) && node.isPassNode === true;
+}
+
+function selectOutputPass(node: unknown, worldPass: unknown): PassNode | undefined {
+  if (isOutputPassNode(worldPass)) return worldPass;
+  if (isOutputPassNode(node)) return node;
+  return findSoleOutputPass(node);
+}
+
+function findSoleOutputPass(node: unknown): PassNode | undefined {
+  if (!isTraversableOutputNode(node)) return undefined;
+  const passes = new Set<PassNode>();
+  node.traverse((candidate) => {
+    if (isOutputPassNode(candidate)) passes.add(candidate);
+  });
+  return passes.size === 1 ? passes.values().next().value : undefined;
+}
+
+function setOutputPipelineRoot(pass: PassNode | undefined, scene: Object3D, camera: Camera): void {
+  if (pass === undefined) return;
+  pass.scene = scene;
+  pass.camera = camera;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isTraversableOutputNode(value: unknown): value is ITraversableOutputNode {
+  return isObject(value) && typeof value.traverse === "function";
 }
 
 function addResizeHandling(

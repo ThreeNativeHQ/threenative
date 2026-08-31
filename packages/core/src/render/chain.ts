@@ -1,5 +1,9 @@
+import type { MRTNode, Node } from "three/webgpu";
+
 import type { IFrameBudgetWindow } from "../frame-budget.js";
 import type { RendererKind } from "../renderer.js";
+import { velocityTexture, withVelocityContext } from "./velocity.js";
+import type { IVelocityRenderPass } from "./velocity.js";
 
 /** The marker shared by render-chain logs, playtests, and native diagnostics. */
 export const RENDER_CHAIN_MARKER = "TN_RENDER_CHAIN";
@@ -31,19 +35,27 @@ export type RenderChainSource = "pinned" | "auto";
 export type RenderChainVelocitySource = "mrt" | "per-object" | null;
 
 export interface IRenderChainVelocityMeasurement {
-  /** Monotonic frame number from the stage's measurement source. */
+  /** Monotonic frame number derived from the stage's completed velocity result. */
   readonly frame: number;
-  /** Share of pixels whose temporal history was rejected in that frame. */
+  /** Share of result pixels whose temporal history was rejected in that frame. */
   readonly rejectionFraction: number;
+}
+
+export interface IRenderChainVelocityResult {
+  /** Monotonic frame number from the active temporal stage's completed result. */
+  readonly frame: number;
+  /** One binary value per result pixel: one means the temporal history was rejected. */
+  readonly rejectionMask: ArrayLike<number>;
 }
 
 export interface IRenderChainRenderer {
   readonly kind: RendererKind;
   readonly raw: unknown;
   clearOutputNode?(): void;
-  /** Internal renderer seam used to turn on core-owned per-object history only for active temporal stages. */
+  /** Internal renderer seam used to turn on core-owned previous-frame bookkeeping for active temporal stages. */
   setRenderChainVelocityEnabled?(enabled: boolean): void;
-  setOutputNode(node: unknown): void;
+  /** Install a graph and identify the authored world pass that follows the rendered scene root. */
+  setOutputNode(node: unknown, worldPass?: unknown): void;
 }
 
 const TIER_LEVEL: Record<RenderChainTier, number> = {
@@ -76,13 +88,18 @@ const VELOCITY_STAGES = new Set<RenderChainStageName>([
 ]);
 
 export interface IRenderChainVelocityRequest {
+  /** The scene pass that owns the shared velocity output. */
+  pass?: IVelocityRenderPass;
   /** Treat the renderer's MRT velocity output as provisioned. */
   mrt?: boolean;
   /** Treat objects carrying `userData.useVelocity === true` as provisioned. */
   objectFlags?: boolean;
   /** Alias accepted by integrations that call this route per-object velocity. */
   perObject?: boolean;
-  /** Read the stage's completed-frame measurement; a repeated frame is rejected as stale. */
+  /**
+   * Compatibility source for completed temporal measurements. The stage reader wins when it
+   * returns a result; this callback is consulted when an integration cannot expose that reader.
+   */
   rejectionMeasurement?: () => IRenderChainVelocityMeasurement | undefined;
   /** Explicit route, useful for a native host whose MRT is not introspectable from JavaScript. */
   source?: Exclude<RenderChainVelocitySource, null>;
@@ -99,6 +116,8 @@ export interface IRenderChainRequest {
 export interface IRenderChainStageContext {
   readonly tier: RenderChainTier;
   readonly velocity: IRenderChainVelocityReport;
+  /** TSL source handed to temporal stages when the request owns a scene pass. */
+  readonly velocityNode?: Node;
   readonly quality: (typeof RENDER_CHAIN_TIERS)[RenderChainTier];
 }
 
@@ -109,6 +128,8 @@ export interface IRenderChainStage {
   readonly minimumTier?: RenderChainTier;
   /** Return a reason to drop the stage on this target, or true when it is available. */
   readonly available?: (context: IRenderChainStageContext) => boolean | string;
+  /** Read the completed velocity result after rendering; the chain derives its rejection fraction. */
+  readonly readVelocityResult?: (node: unknown) => IRenderChainVelocityResult | undefined;
   /** Defaults from the canonical stage name for the temporal stages. */
   readonly requiresVelocity?: boolean;
 }
@@ -230,6 +251,11 @@ export class RenderChain {
   #overBudgetWindows = 0;
   #lastMeasurementFrame: number | undefined;
   #reportedMeasurement = false;
+  #velocityResultNode: unknown = undefined;
+  #velocityResultReader: ((node: unknown) => IRenderChainVelocityResult | undefined) | undefined =
+    undefined;
+  #ownedVelocityPass: IVelocityRenderPass | undefined = undefined;
+  #ownedVelocityMrt: MRTNode | null | undefined = undefined;
   #disposed = false;
   #applied: IRenderChainApplied;
 
@@ -269,6 +295,9 @@ export class RenderChain {
   /** Rebuild and install the current tier. */
   apply(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.apply called after dispose().");
+    this.#restoreOwnedVelocityOutput();
+    this.#velocityResultNode = undefined;
+    this.#velocityResultReader = undefined;
     if (this.#requested.length === 0) {
       this.#applied = emptyApplied([], this.#tier, this.#source, false);
       this.#lastMeasurementFrame = undefined;
@@ -287,13 +316,10 @@ export class RenderChain {
       this.#scene,
       requiredVelocity,
     );
+    let velocityNode: Node | undefined;
+    const originalMrt = this.#requestVelocity.pass?.getMRT();
     this.#lastMeasurementFrame = undefined;
     this.#reportedMeasurement = false;
-    const context: IRenderChainStageContext = {
-      quality: RENDER_CHAIN_TIERS[this.#tier],
-      tier: this.#tier,
-      velocity,
-    };
     const dropped: IRenderChainDroppedStage[] = [];
     const stages: RenderChainStageName[] = [];
     let node = this.#input;
@@ -324,6 +350,7 @@ export class RenderChain {
         dropped.push({ name, reason: "velocity:missing" });
         continue;
       }
+      const context = stageContext(this.#tier, velocity, velocityNode);
       const availability = definition.available?.(context);
       if (availability === false) {
         dropped.push({ name, reason: `unavailable:${this.#renderer.kind}` });
@@ -334,18 +361,39 @@ export class RenderChain {
         continue;
       }
       try {
-        const next = definition.build(node, context);
+        if (
+          requiresVelocity &&
+          velocityNode === undefined &&
+          velocity.source === "mrt" &&
+          this.#requestVelocity.pass !== undefined
+        ) {
+          velocityNode = velocityTexture(this.#requestVelocity.pass);
+          this.#ownedVelocityPass = this.#requestVelocity.pass;
+          this.#ownedVelocityMrt = originalMrt;
+        }
+        const buildContext = stageContext(this.#tier, velocity, velocityNode);
+        const next = definition.build(node, buildContext);
         if (next === undefined || next === null) throw new Error("stage returned no node");
         node = next;
         stages.push(name);
+        if (requiresVelocity && definition.readVelocityResult !== undefined) {
+          this.#velocityResultNode = next;
+          this.#velocityResultReader = definition.readVelocityResult;
+        }
       } catch (error) {
         dropped.push({ name, reason: `build:${errorMessage(error)}` });
       }
     }
 
+    const hasActiveVelocityStage = stages.some(
+      (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
+    );
+    if (velocityNode !== undefined && hasActiveVelocityStage)
+      node = withVelocityContext(node, velocityNode);
+
     if (stages.length > 0) {
       try {
-        this.#renderer.setOutputNode(node);
+        this.#renderer.setOutputNode(node, this.#requestVelocity.pass);
       } catch (error) {
         const reason = `install:${errorMessage(error)}`;
         dropped.push(...stages.map((name) => ({ name, reason })));
@@ -356,29 +404,36 @@ export class RenderChain {
       this.#renderer.clearOutputNode?.();
     }
 
+    const activeVelocity = stages.some(
+      (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
+    );
+    if (!activeVelocity) {
+      this.#restoreOwnedVelocityOutput();
+      this.#velocityResultNode = undefined;
+      this.#velocityResultReader = undefined;
+    }
+    const appliedVelocity = activeVelocity
+      ? velocity
+      : { provisioned: false, required: velocity.required, source: null };
+
     this.#applied = {
       dropped,
       requested: this.#requested,
       source: this.#source,
       stages,
       tier: this.#tier,
-      velocity,
+      velocity: appliedVelocity,
     };
     this.#renderer.setRenderChainVelocityEnabled?.(
-      velocity.source === "per-object" &&
-        stages.some(
-          (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
-        ),
+      stages.some(
+        (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
+      ),
     );
     this.#publish(true);
     return this.#applied;
   }
 
-  /**
-   * Samples a completed temporal frame. The callback is deliberately queried after rendering,
-   * not while applying the graph: a value copied during `apply()` can be a stale fixture or a
-   * tuning constant and cannot prove what the stage rejected this frame.
-   */
+  /** Samples the active temporal stage's completed velocity result after rendering. */
   observeFrame(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.observeFrame called after dispose().");
     const requiresMeasurement = this.#applied.stages.some(
@@ -386,13 +441,18 @@ export class RenderChain {
     );
     if (!requiresMeasurement) return this.#applied;
 
-    const measurement = this.#requestVelocity.rejectionMeasurement?.();
+    const result = this.#velocityResultReader?.(this.#velocityResultNode);
+    const measurement =
+      result === undefined
+        ? validateCompatibilityMeasurement(
+            this.#requestVelocity.rejectionMeasurement?.(),
+            this.#lastMeasurementFrame,
+          )
+        : deriveVelocityMeasurement(result, this.#lastMeasurementFrame);
     if (measurement === undefined) {
-      this.#lastMeasurementFrame = undefined;
       this.#setMeasurement(undefined, false);
       return this.#applied;
     }
-    validateVelocityMeasurement(measurement, this.#lastMeasurementFrame);
     this.#lastMeasurementFrame = measurement.frame;
     this.#setMeasurement(measurement, !this.#reportedMeasurement || measurement.frame % 60 === 0);
     return this.#applied;
@@ -424,6 +484,7 @@ export class RenderChain {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#restoreOwnedVelocityOutput();
     this.#renderer.setRenderChainVelocityEnabled?.(false);
     this.#renderer.clearOutputNode?.();
     forgetReport(this.#renderer);
@@ -453,6 +514,14 @@ export class RenderChain {
     const marker: IRenderChainMarker = { applied: this.#applied, marker: RENDER_CHAIN_MARKER };
     rememberReport(this.#renderer, marker);
     if (emit) this.#report(`${RENDER_CHAIN_MARKER}:${JSON.stringify(marker)}`);
+  }
+
+  #restoreOwnedVelocityOutput(): void {
+    if (this.#ownedVelocityPass !== undefined && this.#ownedVelocityMrt !== undefined) {
+      this.#ownedVelocityPass.setMRT(this.#ownedVelocityMrt);
+    }
+    this.#ownedVelocityPass = undefined;
+    this.#ownedVelocityMrt = undefined;
   }
 }
 
@@ -500,7 +569,9 @@ function resolveVelocity(
   if (!required) return { provisioned: false, required: false, source: null };
   const source =
     request.source ??
-    (request.mrt === true || hasMrtVelocity(renderer.raw) ? "mrt" : undefined) ??
+    (request.pass !== undefined || request.mrt === true || hasMrtVelocity(renderer.raw)
+      ? "mrt"
+      : undefined) ??
     (request.objectFlags === true || request.perObject === true || hasObjectVelocityFlag(scene)
       ? "per-object"
       : null);
@@ -535,26 +606,82 @@ function hasObjectVelocityFlag(scene: IRenderChainOptions["scene"]): boolean {
   return found;
 }
 
-function validateVelocityMeasurement(
-  measurement: IRenderChainVelocityMeasurement,
+function stageContext(
+  tier: RenderChainTier,
+  velocity: IRenderChainVelocityReport,
+  velocityNode: Node | undefined,
+): IRenderChainStageContext {
+  return {
+    quality: RENDER_CHAIN_TIERS[tier],
+    tier,
+    velocity,
+    ...(velocityNode === undefined ? {} : { velocityNode }),
+  };
+}
+
+function deriveVelocityMeasurement(
+  result: IRenderChainVelocityResult,
   previousFrame: number | undefined,
-): void {
-  if (!Number.isInteger(measurement.frame) || measurement.frame < 0) {
+): IRenderChainVelocityMeasurement {
+  if (!Number.isInteger(result.frame) || result.frame < 0) {
     throw new Error(
-      `RenderChain velocity measurement frame must be a non-negative integer, received ${String(measurement.frame)}.`,
+      `RenderChain velocity result frame must be a non-negative integer, received ${String(result.frame)}.`,
     );
   }
-  if (previousFrame !== undefined && measurement.frame <= previousFrame) {
+  if (previousFrame !== undefined && result.frame <= previousFrame) {
     throw new Error(
-      `RenderChain velocity measurement frame must advance beyond ${String(previousFrame)}, received ${String(measurement.frame)}.`,
+      `RenderChain velocity result frame must advance beyond ${String(previousFrame)}, received ${String(result.frame)}.`,
     );
   }
-  const resolved = measurement.rejectionFraction;
-  if (!Number.isFinite(resolved) || resolved < 0 || resolved > 1) {
+  if (!Number.isInteger(result.rejectionMask.length) || result.rejectionMask.length <= 0) {
+    throw new Error("RenderChain velocity result rejectionMask must contain at least one pixel.");
+  }
+  let rejected = 0;
+  for (let index = 0; index < result.rejectionMask.length; index += 1) {
+    const value = result.rejectionMask[index];
+    if (value !== 0 && value !== 1) {
+      throw new Error(
+        `RenderChain velocity result rejectionMask[${String(index)}] must be 0 or 1, received ${String(value)}.`,
+      );
+    }
+    rejected += value;
+  }
+  return {
+    frame: result.frame,
+    rejectionFraction: rejected / result.rejectionMask.length,
+  };
+}
+
+function validateCompatibilityMeasurement(
+  value: unknown,
+  previousFrame: number | undefined,
+): IRenderChainVelocityMeasurement | undefined {
+  if (value === undefined) return undefined;
+  if (!isObject(value))
+    throw new Error("RenderChain rejectionMeasurement must return an object or undefined.");
+  const frame = value.frame;
+  const rejectionFraction = value.rejectionFraction;
+  if (typeof frame !== "number" || !Number.isInteger(frame) || frame < 0) {
     throw new Error(
-      `RenderChain velocity rejectionFraction must be between 0 and 1, received ${String(resolved)}.`,
+      `RenderChain rejectionMeasurement frame must be a non-negative integer, received ${String(frame)}.`,
     );
   }
+  if (previousFrame !== undefined && frame <= previousFrame) {
+    throw new Error(
+      `RenderChain rejectionMeasurement frame must advance beyond ${String(previousFrame)}, received ${String(frame)}.`,
+    );
+  }
+  if (
+    typeof rejectionFraction !== "number" ||
+    !Number.isFinite(rejectionFraction) ||
+    rejectionFraction < 0 ||
+    rejectionFraction > 1
+  ) {
+    throw new Error(
+      `RenderChain rejectionMeasurement rejectionFraction must be between 0 and 1, received ${String(rejectionFraction)}.`,
+    );
+  }
+  return { frame, rejectionFraction };
 }
 
 function emptyApplied(

@@ -299,6 +299,7 @@ export type {
   IRenderChainStage,
   IRenderChainStageContext,
   IRenderChainVelocityMeasurement,
+  IRenderChainVelocityResult,
   IRenderChainVelocityReport,
   IRenderChainVelocityRequest,
   RenderChainSource,
@@ -330,6 +331,36 @@ export type {
   IProbeVolumeOptions,
   ProbeVolumeDensity,
 } from "./render/probe-volume.js";
+/**
+ * Provision screen-space motion data for temporal nodes and keep per-instance history at the
+ * frame boundary.
+ * @situation keep a skinned character or instanced crowd stable in a temporal stage
+ * @situation add the velocity output to a Three.js scene pass
+ * @constraint call `VelocityTracker.update()` before the render and `commit()` after it
+ * @constraint a pass is only given a velocity target when a temporal stage consumes it
+ * @example
+ * const scenePass = pass(scene, camera);
+ * ensureVelocityOutput(scenePass);
+ * renderer.setOutputNode(scenePass);
+ * const tracker = new VelocityTracker();
+ * tracker.update(scene);
+ * renderer.render(scene, camera);
+ * tracker.commit(scene);
+ */
+export {
+  VELOCITY_OUTPUT_NAME,
+  VELOCITY_PREVIOUS_BONE_MATRICES,
+  VELOCITY_PREVIOUS_INSTANCE_MATRICES,
+  VELOCITY_PREVIOUS_WORLD_MATRIX,
+  VelocityTracker,
+  ensureVelocityOutput,
+  readVelocityPreviousBoneMatrices,
+  readVelocityPreviousMatrices,
+  readVelocityPreviousWorldMatrix,
+  velocityTexture,
+  withVelocityContext,
+} from "./render/velocity.js";
+export type { IVelocityRenderPass } from "./render/velocity.js";
 export { warmUpScene } from "./warmup.js";
 export type {
   IWarmUpOptions,

@@ -1,5 +1,5 @@
 import {
-  type BatchedMesh,
+  BatchedMesh,
   Bone,
   BoxGeometry,
   BufferGeometry,
@@ -34,6 +34,7 @@ import {
   releaseProjectionScanWorkspace,
   scanProjection,
 } from "../src/projection-plan.js";
+import { readVelocityPreviousMatrices } from "../src/render/velocity.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -288,6 +289,55 @@ describe("SceneRenderProjection", () => {
     expect(proxy).toBeDefined();
     expect(proxy?.material).toBe(instanced.material);
     expect(instanced.parent).toBe(scene);
+  });
+
+  it("renders an authored BatchedMesh directly so every sub-draw stays live", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const material = new MeshBasicMaterial();
+    const batch = new BatchedMesh(4, 64, 96, material);
+    const geometryId = batch.addGeometry(new BoxGeometry(1, 1, 1));
+    const instanceId = batch.addInstance(geometryId);
+    batch.setMatrixAt(instanceId, new Matrix4().makeTranslation(0, 0, -4));
+    scene.add(batch);
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8, velocity: true });
+    projection.reconcile();
+
+    // A BatchedMesh owns per-sub-draw geometry ids, visibility and matrix textures. The mirror
+    // cannot reproduce those private tables from a shallow proxy, so the source remains the
+    // renderer input and ThreeNative's velocity patch observes the authored sub-draws directly.
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.root).toBe(scene);
+    expect(projection.report.reasonCode).toBe("unsupportedObject");
+    expect(projection.report.sourceRenderables).toBe(301);
+
+    const firstPrevious = readVelocityPreviousMatrices(batch);
+    expect(firstPrevious).toBeDefined();
+    expect(
+      new Matrix4()
+        .fromArray(firstPrevious as Float32Array, instanceId * 16)
+        .equals(new Matrix4().makeTranslation(0, 0, -4)),
+    ).toBe(true);
+    projection.commit();
+
+    const moved = new Matrix4().makeTranslation(3, 0, -4);
+    batch.setMatrixAt(instanceId, moved);
+    projection.reconcile();
+    const scheduledPrevious = readVelocityPreviousMatrices(batch);
+    expect(scheduledPrevious).toBeDefined();
+    expect(
+      new Matrix4().fromArray(scheduledPrevious as Float32Array, instanceId * 16).equals(moved),
+    ).toBe(false);
+    expect(
+      new Matrix4()
+        .fromArray(scheduledPrevious as Float32Array, instanceId * 16)
+        .equals(new Matrix4().makeTranslation(0, 0, -4)),
+    ).toBe(true);
+    const actual = new Matrix4();
+    batch.getMatrixAt(instanceId, actual);
+    expect(actual.equals(moved)).toBe(true);
+    projection.dispose();
   });
 
   it("mirrors the scene's lights instead of moving them out of the game's scene", () => {

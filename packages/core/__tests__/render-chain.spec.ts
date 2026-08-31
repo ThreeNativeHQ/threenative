@@ -92,6 +92,25 @@ describe("RenderChain", () => {
     expect(chain.applied.stages).toEqual(["probeVolume", "ssgi"]);
   });
 
+  it("passes the authored world pass through the renderer seam", () => {
+    const current = renderer("webgpu");
+    const worldPass = {
+      getMRT: () => null,
+      getTextureNode: () => ({}) as never,
+      setMRT: () => undefined,
+    };
+    const input = { node: "world" };
+    const setOutputNode = vi.spyOn(current, "setOutputNode");
+
+    new RenderChain(current, {
+      input,
+      request: { stages: ["bloom"], tier: "high", velocity: { pass: worldPass } },
+      stages: [stage("bloom", [])],
+    });
+
+    expect(setOutputNode).toHaveBeenCalledWith({ input, name: "bloom" }, worldPass);
+  });
+
   it("places godRays between ssgi and ssr, and vignette after bloom, whatever was requested", () => {
     // GodRays add scattered light after the GI/contact terms and before reflections;
     // vignette is a camera-lens darkening applied to the lit frame before the other
@@ -140,39 +159,105 @@ describe("RenderChain", () => {
   it("samples temporal rejection only after a completed frame", () => {
     const current = renderer("webgpu");
     Object.assign(current, { raw: { mrt: new Set(["velocity"]) } });
-    const measurement = vi.fn(() => ({ frame: 7, rejectionFraction: 0.12 }));
+    const rejectionMask = new Uint8Array(25);
+    rejectionMask.set([1, 1, 1]);
     const chain = new RenderChain(current, {
-      stages: [stage("traa", [])],
+      stages: [
+        {
+          ...stage("traa", []),
+          readVelocityResult: () => ({ frame: 7, rejectionMask }),
+        },
+      ],
       request: {
         stages: ["traa"],
         tier: "high",
-        velocity: { rejectionMeasurement: measurement },
+        velocity: { source: "mrt" },
       },
     });
 
-    expect(measurement).not.toHaveBeenCalled();
     expect(chain.applied.velocity.rejectionFraction).toBeUndefined();
     chain.observeFrame();
-    expect(measurement).toHaveBeenCalledTimes(1);
     expect(chain.applied.velocity).toMatchObject({
       measurementFrame: 7,
       rejectionFraction: 0.12,
     });
   });
 
+  it("preserves a temporal result reader when a later velocity stage has none", () => {
+    const current = renderer("webgpu");
+    Object.assign(current, { raw: { mrt: new Set(["velocity"]) } });
+    const temporalNode = { name: "traa" };
+    const blurNode = { name: "motionBlur" };
+    const rejectionMask = new Uint8Array([0, 1, 0, 0]);
+    const readVelocityResult = vi.fn((node: unknown) => {
+      expect(node).toBe(temporalNode);
+      return { frame: 7, rejectionMask };
+    });
+    const chain = new RenderChain(current, {
+      stages: [
+        {
+          build: () => temporalNode,
+          name: "traa",
+          readVelocityResult,
+        },
+        {
+          build: () => blurNode,
+          name: "motionBlur",
+        },
+      ],
+      request: { stages: ["traa", "motionBlur"], tier: "high", velocity: { source: "mrt" } },
+    });
+
+    chain.observeFrame();
+
+    expect(readVelocityResult).toHaveBeenCalledTimes(1);
+    expect(chain.applied.velocity).toMatchObject({
+      measurementFrame: 7,
+      rejectionFraction: 0.25,
+    });
+  });
+
   it("rejects a repeated temporal rejection measurement as stale", () => {
     const current = renderer("webgpu");
     Object.assign(current, { raw: { mrt: new Set(["velocity"]) } });
+    const result = { frame: 2, rejectionMask: new Uint8Array([0, 1, 0, 0]) };
+    const chain = new RenderChain(current, {
+      stages: [
+        {
+          ...stage("traa", []),
+          readVelocityResult: () => result,
+        },
+      ],
+      request: {
+        stages: ["traa"],
+        tier: "high",
+        velocity: { source: "mrt" },
+      },
+    });
+
+    chain.observeFrame();
+    expect(() => chain.observeFrame()).toThrow(/must advance/u);
+  });
+
+  it("uses the compatibility rejection callback when the active stage has no fresh result", () => {
+    const current = renderer("webgpu");
+    Object.assign(current, { raw: { mrt: new Set(["velocity"]) } });
+    const callback = vi.fn(() => ({ frame: 11, rejectionFraction: 0.2 }));
     const chain = new RenderChain(current, {
       stages: [stage("traa", [])],
       request: {
         stages: ["traa"],
         tier: "high",
-        velocity: { rejectionMeasurement: () => ({ frame: 2, rejectionFraction: 0.1 }) },
+        velocity: { source: "mrt", rejectionMeasurement: callback },
       },
     });
 
     chain.observeFrame();
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(chain.applied.velocity).toMatchObject({
+      measurementFrame: 11,
+      rejectionFraction: 0.2,
+    });
     expect(() => chain.observeFrame()).toThrow(/must advance/u);
   });
 

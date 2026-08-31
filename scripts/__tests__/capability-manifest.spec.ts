@@ -175,6 +175,31 @@ describe("capability manifest generator", () => {
     }
   });
 
+  it("keeps every public velocity example provisioned across the render boundary", async () => {
+    const velocitySymbols = new Set([
+      "VelocityTracker",
+      "ensureVelocityOutput",
+      "readVelocityPreviousBoneMatrices",
+      "readVelocityPreviousMatrices",
+      "readVelocityPreviousWorldMatrix",
+      "velocityTexture",
+      "withVelocityContext",
+    ]);
+    const manifest = await checkCapabilityManifest(process.cwd());
+    const entries = manifest.entries.filter(
+      (entry) => entry.importPath === "@threenative/core" && velocitySymbols.has(entry.symbol),
+    );
+
+    expect(entries.map((entry) => entry.symbol).sort()).toEqual([...velocitySymbols].sort());
+    for (const entry of entries) {
+      expect(entry.example, entry.symbol).toContain("ensureVelocityOutput(scenePass)");
+      expect(entry.example, entry.symbol).toContain("renderer.setOutputNode(scenePass)");
+      expect(entry.example, entry.symbol).toContain("tracker.update(scene)");
+      expect(entry.example, entry.symbol).toContain("renderer.render(scene, camera)");
+      expect(entry.example, entry.symbol).toContain("tracker.commit(scene)");
+    }
+  });
+
   it("carries @supersedes into the manifest entry as a source construct", async () => {
     const root = await makeTempDir("threenative-capability-supersedes-");
     temporaryRoots.push(root);

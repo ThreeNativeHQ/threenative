@@ -320,6 +320,27 @@
     },
     {
       "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it",
+        "call only when a temporal stage is active"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function ensureVelocityOutput(pass: IVelocityRenderPass): MRTNode { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "add a velocity target before a temporal stage consumes a scene pass"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "ensureVelocityOutput"
+    },
+    {
+      "constraints": [
         "add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic",
         "`dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code",
         "the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold"
@@ -752,6 +773,66 @@
       "symbol": "readRenderChainReport"
     },
     {
+      "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readVelocityPreviousBoneMatrices(object: Object3D): Float32Array | undefined { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "inspect the previous skinned pose at a renderer adapter boundary"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "readVelocityPreviousBoneMatrices"
+    },
+    {
+      "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readVelocityPreviousMatrices(object: Object3D): Float32Array | undefined { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "inspect the previous instance frame at a renderer adapter boundary"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "readVelocityPreviousMatrices"
+    },
+    {
+      "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readVelocityPreviousWorldMatrix(object: Object3D): Matrix4 | undefined { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "inspect the previous rigid transform at a renderer adapter boundary"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "readVelocityPreviousWorldMatrix"
+    },
+    {
       "constraints": ["stage factories own colour, strength, and all other appearance choices"],
       "example": "const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: [\"bloom\"], tier: \"auto\" } });",
       "importPath": "@threenative/core",
@@ -1045,6 +1126,47 @@
       "symbol": "updateClusteredMeshes"
     },
     {
+      "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function velocityTexture(pass: IVelocityRenderPass): Node { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "read screen-space motion for a temporal stage"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "velocityTexture"
+    },
+    {
+      "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it",
+        "call `update()` after gameplay writes and `commit()` after the render"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class VelocityTracker { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "retain previous transforms for animated and instanced renderables"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "VelocityTracker"
+    },
+    {
       "constraints": [],
       "example": "await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) });",
       "importPath": "@threenative/core",
@@ -1079,6 +1201,26 @@
       "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.",
       "supersedes": [],
       "symbol": "WaveField"
+    },
+    {
+      "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function withVelocityContext<T>(node: T, source: Node): T { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "hand the provisioned velocity source through a composed temporal graph"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "withVelocityContext"
     },
     {
       "constraints": [

@@ -86,6 +86,23 @@ export function setBatchedMeshPreviousMatrix(
   previousTexture.needsUpdate = true;
 }
 
+/** Writes the complete per-sub-draw previous frame without touching the current matrix texture. */
+export function setBatchedMeshPreviousMatrices(
+  mesh: BatchedMesh,
+  previous: ArrayLike<number>,
+): void {
+  ensureBatchedMeshVelocity(mesh);
+  const previousTexture = state(mesh)._previousMatricesTexture as Texture;
+  const image = matrixImage(previousTexture);
+  if (previous.length !== image.data.length) {
+    throw new Error(
+      `BatchedMesh previous matrix length ${String(previous.length)} does not match ${String(image.data.length)}.`,
+    );
+  }
+  image.data.set(previous);
+  previousTexture.needsUpdate = true;
+}
+
 /** Releases the extra texture owned by the material-batching lane. */
 export function disposeBatchedMeshVelocity(mesh: BatchedMesh): void {
   const previous = state(mesh)._previousMatricesTexture;

@@ -1,5 +1,5 @@
 diff --git a/build/three.cjs b/build/three.cjs
-index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda32176ef6a 100644
+index 8939a67d..b0f91724 100644
 --- a/build/three.cjs
 +++ b/build/three.cjs
 @@ -26116,6 +26116,8 @@ function copyArrayContents( src, target ) {
@@ -12,7 +12,7 @@ index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda3
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.core.js b/build/three.core.js
-index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d55d6dd6e7 100644
+index 0bb9262c..868a634b 100644
 --- a/build/three.core.js
 +++ b/build/three.core.js
 @@ -26136,6 +26136,8 @@ function copyArrayContents( src, target ) {
@@ -25,10 +25,20 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c47c1f9d78cacebf2f976ad390636dd757e6bd7a 100644
+index 2e490796..325b497a 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
-@@ -18599,6 +18599,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18500,7 +18500,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 			const previousInstanceData = _previousInstanceMatrices.get( object );
+ 
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
+ 
+ 		} );
+ 
+@@ -18599,6 +18600,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
  
  	const matricesTexture = batchMesh._matricesTexture;
@@ -36,7 +46,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c47c1f9d78cacebf2f976ad390636dd7
  
  	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
  	const j = float( indirectId ).mul( 4 ).toInt().toConst();
-@@ -18626,6 +18627,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18626,6 +18628,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  
  	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
  
@@ -56,7 +66,37 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c47c1f9d78cacebf2f976ad390636dd7
  	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
  
  	const batchingNormal = bm.mul( transformedNormal ).xyz;
-@@ -53841,7 +53855,7 @@ class NodeBuilder {
+@@ -18777,7 +18792,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+ 
+ 			if ( skeletonData !== undefined ) {
+ 
+-				skeletonData.previousBoneMatrices.set( skeleton.boneMatrices );
++				const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
++				skeletonData.previousBoneMatrices.set( scheduledPrevious ?? skeleton.boneMatrices );
+ 
+ 			}
+ 
+@@ -18844,7 +18860,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
+ 
+ 			if ( state !== undefined ) {
+ 
+-				state.previousBoneMatrices.set( skeleton.boneMatrices );
++				const scheduledPrevious = skinnedMesh[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
++				state.previousBoneMatrices.set( scheduledPrevious ?? skeleton.boneMatrices );
+ 
+ 			}
+ 
+@@ -39725,7 +39742,8 @@ class VelocityNode extends TempNode {
+ 
+ 		const previousModelMatrix = getPreviousMatrix( object );
+ 
+-		this.previousModelWorldMatrix.value.copy( previousModelMatrix );
++		const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousWorldMatrix' ) ];
++		this.previousModelWorldMatrix.value.copy( scheduledPrevious ?? previousModelMatrix );
+ 
+ 		//
+ 
+@@ -53841,7 +53859,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -65,7 +105,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c47c1f9d78cacebf2f976ad390636dd7
  
  	}
  
-@@ -83814,6 +83828,14 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +83832,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -80,7 +120,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c47c1f9d78cacebf2f976ad390636dd7
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +83948,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +83952,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -92,7 +132,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c47c1f9d78cacebf2f976ad390636dd7
  			if ( adapter === null ) {
  
 diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
-index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b243694ef 100644
+index ab62e98d..2cf4bb60 100644
 --- a/src/nodes/accessors/Batch.js
 +++ b/src/nodes/accessors/Batch.js
 @@ -1,6 +1,6 @@
@@ -137,8 +177,60 @@ index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b
  }, 'void' );
 -
 -
+diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
+index b89834b9..c7b7bdd7 100644
+--- a/src/nodes/accessors/Instance.js
++++ b/src/nodes/accessors/Instance.js
+@@ -220,7 +220,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+ 
+ 			const previousInstanceData = _previousInstanceMatrices.get( object );
+ 
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
+ 
+ 		} );
+ 
+diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
+index 2356aed8..aaeea633 100644
+--- a/src/nodes/accessors/Skinning.js
++++ b/src/nodes/accessors/Skinning.js
+@@ -149,7 +149,8 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+ 
+ 			if ( skeletonData !== undefined ) {
+ 
+-				skeletonData.previousBoneMatrices.set( skeleton.boneMatrices );
++				const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
++				skeletonData.previousBoneMatrices.set( scheduledPrevious ?? skeleton.boneMatrices );
+ 
+ 			}
+ 
+@@ -216,7 +217,8 @@ export const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = n
+ 
+ 			if ( state !== undefined ) {
+ 
+-				state.previousBoneMatrices.set( skeleton.boneMatrices );
++				const scheduledPrevious = skinnedMesh[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
++				state.previousBoneMatrices.set( scheduledPrevious ?? skeleton.boneMatrices );
+ 
+ 			}
+ 
+diff --git a/src/nodes/accessors/VelocityNode.js b/src/nodes/accessors/VelocityNode.js
+index 373548b0..c48002ab 100644
+--- a/src/nodes/accessors/VelocityNode.js
++++ b/src/nodes/accessors/VelocityNode.js
+@@ -106,7 +106,8 @@ class VelocityNode extends TempNode {
+ 
+ 		const previousModelMatrix = getPreviousMatrix( object );
+ 
+-		this.previousModelWorldMatrix.value.copy( previousModelMatrix );
++		const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousWorldMatrix' ) ];
++		this.previousModelWorldMatrix.value.copy( scheduledPrevious ?? previousModelMatrix );
+ 
+ 		//
+ 
 diff --git a/src/nodes/core/NodeBuilder.js b/src/nodes/core/NodeBuilder.js
-index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966d8de3cb6 100644
+index be00b81e..1990da8f 100644
 --- a/src/nodes/core/NodeBuilder.js
 +++ b/src/nodes/core/NodeBuilder.js
 @@ -3450,7 +3450,7 @@ class NodeBuilder {
@@ -151,7 +243,7 @@ index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966
  	}
  
 diff --git a/src/objects/BatchedMesh.js b/src/objects/BatchedMesh.js
-index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820ca193f88d 100644
+index 2ef7cb25..35cc0ffe 100644
 --- a/src/objects/BatchedMesh.js
 +++ b/src/objects/BatchedMesh.js
 @@ -181,6 +181,8 @@ function copyArrayContents( src, target ) {
@@ -164,7 +256,7 @@ index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820c
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..37b5e0be09967e8acbd38e570b71eb201fc9bad7 100644
+index 06e20369..37b5e0be 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
 @@ -102,6 +102,14 @@ class WebGPUBackend extends Backend {

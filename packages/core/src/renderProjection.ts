@@ -7,6 +7,7 @@ import {
   releaseProjectionScanWorkspace,
   scanProjection,
 } from "./projection-plan.js";
+import { VelocityTracker } from "./render/velocity.js";
 
 /**
  * An optimizer that the game never has to know about.
@@ -126,6 +127,7 @@ export class SceneRenderProjection {
   readonly #onReport: ((report: IRenderProjectionReport) => void) | undefined;
   readonly #mirror: ProjectionMirror;
   readonly #velocity: boolean | (() => boolean);
+  readonly #velocityTracker = new VelocityTracker();
   readonly #scanWorkspace = createProjectionScanWorkspace();
   #deoptimized = true;
   #reasonCode: ProjectionReasonCode = "belowMeshFloor";
@@ -137,6 +139,7 @@ export class SceneRenderProjection {
   #reported = false;
   #lastAnnounced: ProjectionReasonCode | undefined;
   #framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
+  #velocityActive: boolean;
 
   constructor(source: Scene, options: IRenderProjectionOptions = {}) {
     const minMeshes = options.minMeshes ?? 200;
@@ -145,7 +148,8 @@ export class SceneRenderProjection {
     this.#source = source;
     this.#minMeshes = minMeshes;
     this.#velocity = options.velocity ?? false;
-    this.#mirror = new ProjectionMirror(resolveVelocityEnabled(this.#velocity));
+    this.#velocityActive = resolveVelocityEnabled(this.#velocity);
+    this.#mirror = new ProjectionMirror(this.#velocityActive);
     this.#onReport = options.onReport;
   }
 
@@ -177,7 +181,12 @@ export class SceneRenderProjection {
    */
   reconcile(): void {
     const startedAt = globalThis.performance?.now() ?? 0;
-    if (this.#mirror.setVelocityEnabled(resolveVelocityEnabled(this.#velocity))) {
+    const velocityEnabled = resolveVelocityEnabled(this.#velocity);
+    if (this.#velocityActive !== velocityEnabled) {
+      this.#velocityTracker.clear();
+      this.#velocityActive = velocityEnabled;
+    }
+    if (this.#mirror.setVelocityEnabled(velocityEnabled)) {
       this.#deoptimized = true;
       this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
     }
@@ -197,7 +206,10 @@ export class SceneRenderProjection {
     // interval so the first reconcile always scans, and a deoptimization resets it.
     if (this.#deoptimized) {
       this.#framesSinceDeclineScan += 1;
-      if (this.#framesSinceDeclineScan < DECLINE_RESCAN_FRAMES) return;
+      if (this.#framesSinceDeclineScan < DECLINE_RESCAN_FRAMES) {
+        if (velocityEnabled) this.#velocityTracker.update(this.#source);
+        return;
+      }
     }
 
     // Scan and decide without touching the mirror; then either build the plan or decline whole.
@@ -228,11 +240,21 @@ export class SceneRenderProjection {
       releaseProjectionScanWorkspace(this.#scanWorkspace);
     }
 
+    if (velocityEnabled)
+      this.#velocityTracker.update(this.#deoptimized ? this.#source : this.#mirror.scene);
+    else this.#velocityTracker.clear();
+
     const elapsed = (globalThis.performance?.now() ?? 0) - startedAt;
     this.#reconcileMs += elapsed;
     this.#lastReconcileMs = elapsed;
     this.#maxReconcileMs = Math.max(this.#maxReconcileMs, elapsed);
     this.#publish();
+  }
+
+  /** Commits the rendered transform snapshot after the colour and velocity passes consume it. */
+  commit(): void {
+    if (!this.#velocityActive) return;
+    this.#velocityTracker.commit(this.root);
   }
 
   #publish(): void {
@@ -342,6 +364,7 @@ export class SceneRenderProjection {
    */
   dispose(): void {
     this.#mirror.releaseAll();
+    this.#velocityTracker.clear();
     this.#deoptimized = true;
     this.#reasonCode = "belowMeshFloor";
     this.#reason = "the projection was disposed";

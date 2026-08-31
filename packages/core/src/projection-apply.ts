@@ -728,7 +728,6 @@ export class ProjectionMirror {
     mesh.sortObjects = SORT_BATCH_OBJECTS;
     mesh.frustumCulled = false;
     if (this.#velocityEnabled) {
-      mesh.userData.useVelocity = true;
       ensureBatchedMeshVelocity(mesh);
     }
     // Carried from the sources, exactly as the instanced lane carries them: every member agreed,

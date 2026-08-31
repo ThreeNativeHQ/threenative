@@ -981,6 +981,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             renderer.surface().drawingBufferHeight,
           );
           renderer.render(this.#projection?.root ?? threeScene, camera);
+          this.#projection?.commit();
           renderer.observeRenderChainFrame?.();
           frameBudget?.addRender(budgetNow() - renderStart);
           // Resolve the GPU timestamps every frame, not once per reported window.

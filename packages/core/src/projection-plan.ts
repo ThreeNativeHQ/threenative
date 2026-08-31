@@ -710,6 +710,20 @@ function visitProjectionObject(
     workspace.lightCount += 1;
     return;
   }
+  // A BatchedMesh carries private geometry ids, visibility and matrix textures for its sub-draws.
+  // The mirror can create its own BatchedMesh for material groups, but it cannot reconstruct an
+  // authored one through the shallow exact proxy without losing those live tables. Keep the
+  // authored object as the renderer input until a faithful mirror seam exists; otherwise criterion
+  // 2 would pass a unit-level tracker test while the projected frame draws the wrong sub-draws.
+  if (
+    state.blocked === undefined &&
+    (object as { isBatchedMesh?: boolean }).isBatchedMesh === true
+  ) {
+    state.blocked = {
+      code: "unsupportedObject",
+      reason: "an authored BatchedMesh has private per-sub-draw state the mirror cannot reproduce",
+    };
+  }
   if ((object as { isLOD?: boolean }).isLOD === true) {
     state.renderables += 1;
     workspace.seen.add(object);
