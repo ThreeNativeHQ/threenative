@@ -21,6 +21,17 @@ for (const marker of [
 if (/^\s*import\s+/m.test(bundle) || /\bimport\s*\(/.test(bundle)) {
   throw new Error("Native bundle contains a runtime import; code splitting must remain disabled");
 }
+// `import.meta` is module-only syntax, and the host evaluates this bundle as a script.
+// JavaScriptCore on iOS rejected the entire file for it — "SyntaxError: import.meta is only valid
+// inside modules" — after the runtime had brought up its window, GPU device and JS engine, so the
+// app died before its first frame with nothing in the failure naming the cause. The import checks
+// above did not cover it: a bundle can carry no import statement and still not be a script.
+if (/\bimport\s*\.\s*meta\b/.test(bundle)) {
+  throw new Error(
+    "Native bundle contains import.meta, which is only valid inside a module; the native host " +
+      "evaluates this file as a script",
+  );
+}
 
 console.info(
   `Verified ${scripts[0]} (${Buffer.byteLength(bundle)} bytes), one file with no imports`,

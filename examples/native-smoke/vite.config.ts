@@ -54,6 +54,14 @@ const jsEngineProfile = {
   warmupFrames: integerSetting("THREENATIVE_JS_PROFILE_WARMUP_FRAMES", 60),
 };
 
+/**
+ * The base `import.meta.url` is replaced with, for a bundle the host evaluates as a script.
+ *
+ * It is only ever used as the second argument to `new URL(...)` for an absolute `data:` URL, where
+ * the base is ignored, so the value only has to be a well-formed absolute URL.
+ */
+const NATIVE_BUNDLE_URL = "file:///native-smoke.js";
+
 const physicsScene =
   process.env.THREENATIVE_PHYSICS_SCENE === "enabled" ||
   process.env.THREENATIVE_PHYSICS_PROOF === "enabled";
@@ -95,6 +103,25 @@ export default defineConfig({
     __TN_RUNTIME__: JSON.stringify(nativeBackend ? "native" : "web"),
   },
   plugins: [
+    {
+      // `import.meta` is only valid inside a module, and the native host evaluates this bundle as
+      // a script. JavaScriptCore on iOS refused the whole file for it —
+      // "SyntaxError: import.meta is only valid inside modules" — so the app initialised its
+      // renderer, its GPU device and its JS engine, then died before its first frame.
+      //
+      // Every occurrence comes from three's Draco/Basis/KTX2 loaders writing
+      // `new URL("data:...", import.meta.url)`, and the base of an absolute URL is ignored. A
+      // constant is therefore exactly as correct, and is valid in script scope as well as module
+      // scope. `verify-bundle.mjs` fails the build if any survive.
+      name: "threenative-script-safe-bundle",
+      renderChunk(code: string) {
+        if (!code.includes("import.meta")) return null;
+        return {
+          code: code.replaceAll("import.meta.url", JSON.stringify(NATIVE_BUNDLE_URL)),
+          map: null,
+        };
+      },
+    },
     {
       name: "threenative-physics-scene",
       transformIndexHtml: (html) =>

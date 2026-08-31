@@ -1905,6 +1905,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${CMAKE_CURRENT_BINARY_DIR}/generated)
         add_dependencies(threenative-webtransport-wire-test threenative-runtime-scripts)
         target_link_libraries(threenative-webtransport-wire-test PRIVATE quiche::quiche)
+        if(WIN32)
+            # quiche reads the Windows certificate store, so whoever links it needs the import
+            # libraries for it. `mystral-runtime` links these PUBLIC and the surface test inherits
+            # them through it; this target links quiche directly and has to name them itself, or
+            # the link fails on __imp_CertOpenSystemStoreA and its neighbours.
+            target_link_libraries(threenative-webtransport-wire-test PRIVATE
+                ws2_32 advapi32 crypt32 bcrypt userenv ntdll)
+        endif()
         tn_register_contract_test(threenative-webtransport-wire-test)
 
         add_executable(threenative-webtransport-surface-test EXCLUDE_FROM_ALL
@@ -2010,12 +2018,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # which is what makes a bindings refusal a red rather than an unexecuted skip.
     add_executable(threenative-rg11b10-renderable-test EXCLUDE_FROM_ALL
         tests/rg11b10_renderable_test.cpp)
-    target_link_libraries(threenative-rg11b10-renderable-test PRIVATE mystral-runtime)
+    # Dawn first, then the runtime. This test calls `wgpuCreateInstance` itself — it is the oracle
+    # that makes a hidden feature distinguishable from an absent one — and on Windows it got Dawn's
+    # stub proc table instead: "the null wgpuCreateInstance from dawn_proc was called which always
+    # returns nullptr". CMake propagates a static library's PRIVATE link dependencies to whoever
+    # links it, so `mystral-runtime` was bringing its own Dawn entry points in ahead of the
+    # implementation this target names, and the linker took the first definition it saw.
     if(TARGET dawn::webgpu)
         target_link_libraries(threenative-rg11b10-renderable-test PRIVATE dawn::webgpu)
     elseif(TARGET wgpu::wgpu)
         target_link_libraries(threenative-rg11b10-renderable-test PRIVATE wgpu::wgpu)
     endif()
+    target_link_libraries(threenative-rg11b10-renderable-test PRIVATE mystral-runtime)
 
     add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
         tests/lifecycle_policy_test.cpp)
