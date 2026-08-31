@@ -52,6 +52,7 @@ fn body(
         collision_layer: 1,
         collision_mask: u16::MAX.into(),
         sensor: false,
+        continuous_collision: true,
     }
 }
 

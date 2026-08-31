@@ -92,6 +92,11 @@ interface IParityObservation extends Record<string, unknown> {
   steps: number;
 }
 interface IPhysicsState extends Record<string, unknown> {
+  continuousCollision: {
+    readonly effectiveSetting: boolean;
+    readonly hit: boolean;
+    readonly projectilePosition: VectorTuple;
+  };
   parity: IParityObservation;
 }
 
@@ -101,6 +106,7 @@ declare global {
 declare const __TN_PHYSICS_CONTROL__: "masked" | "normal" | "offset-box" | "wrong-gravity";
 declare const __TN_PHYSICS_SCENARIO_BYTES__: string;
 declare const __TN_PHYSICS_SCENARIO_SHA256__: string;
+declare const __TN_CONTINUOUS_COLLISION_PROOF__: boolean;
 declare const __TN_PLAYTEST_ENABLED__: boolean;
 declare const __TN_RUNTIME__: "native" | "web";
 
@@ -122,6 +128,11 @@ let platformGroundedObserved = false;
 let spatialQueryLogged = false;
 let invalidRayChecked = false;
 let markSceneReady: (() => void) | undefined;
+let continuousCollisionWall: RigidBody3D | undefined;
+let continuousCollisionProjectile: RigidBody3D | undefined;
+let continuousCollisionArmed = false;
+let continuousCollisionFired = false;
+let continuousCollisionHit = false;
 const sceneReady = new Promise<void>((resolve) => {
   markSceneReady = resolve;
 });
@@ -258,6 +269,14 @@ function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
           if (left === undefined || right === undefined || started === undefined)
             throw new Error("TN_PHYSICS_PARITY_COLLISION_MALFORMED");
           collisionEvents.add(logicalPair(left, right, started));
+          if (
+            started &&
+            ((left === continuousCollisionWall?.body.id &&
+              right === continuousCollisionProjectile?.body.id) ||
+              (left === continuousCollisionProjectile?.body.id &&
+                right === continuousCollisionWall?.body.id))
+          )
+            continuousCollisionHit = true;
         }
         return count;
       };
@@ -281,6 +300,10 @@ function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
       const state = simulation.readCharacterState?.(currentCharacter.body.id);
       const characterPosition = position(currentCharacter);
       const query = spatialQuery(ctx.physics.directSpaceState);
+      const continuousCollisionPosition =
+        continuousCollisionProjectile === undefined
+          ? ([0, 0, 0] as VectorTuple)
+          : position(continuousCollisionProjectile);
       characterMaxY = Math.max(characterMaxY, characterPosition[1]);
       if (
         currentCharacter.grounded &&
@@ -319,7 +342,14 @@ function observer(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
         spatialQuery: query,
         steps: completedSteps,
       };
-      ctx.state.set({ parity });
+      ctx.state.set({
+        continuousCollision: {
+          effectiveSetting: continuousCollisionProjectile?.continuousCollision ?? false,
+          hit: continuousCollisionHit,
+          projectilePosition: continuousCollisionPosition,
+        },
+        parity,
+      });
       if (!spatialQueryLogged) {
         spatialQueryLogged = true;
         console.info(`TN_NATIVE_PHYSICS_QUERY:${JSON.stringify(query)}`);
@@ -352,15 +382,55 @@ function gatedPlaytest(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
       const bridge = (
         globalThis as typeof globalThis & {
           __THREENATIVE_PLAYTEST_BRIDGE__?: {
-            ready(): Promise<{ ready: boolean }> | { ready: boolean };
+            advance?(ticks: number): Promise<unknown> | unknown;
+            sample(request: unknown): Promise<unknown> | unknown;
+            ready():
+              | Promise<{
+                  ready: boolean;
+                  startup?: { compileSettled?: boolean; phase: string; progress: number };
+                }>
+              | {
+                  ready: boolean;
+                  startup?: { compileSettled?: boolean; phase: string; progress: number };
+                };
           };
         }
       ).__THREENATIVE_PLAYTEST_BRIDGE__;
       if (bridge === undefined) throw new Error("TN_PHYSICS_PARITY_BRIDGE_MISSING");
       const originalReady = bridge.ready;
+      const sample = bridge.sample;
+      bridge.sample = async (request) => {
+        const result = await sample(request);
+        continuousCollisionArmed = true;
+        return result;
+      };
+      const advance = bridge.advance;
+      if (advance !== undefined) {
+        bridge.advance = async (ticks) => {
+          if (
+            continuousCollisionArmed &&
+            !continuousCollisionFired &&
+            continuousCollisionProjectile !== undefined
+          ) {
+            continuousCollisionFired = true;
+            continuousCollisionProjectile.linearVelocity = { x: 120, y: 0, z: 0 };
+          }
+          return advance(ticks);
+        };
+      }
       bridge.ready = async () => {
         await sceneReady;
-        return originalReady();
+        const ready = await originalReady();
+        return {
+          ...ready,
+          startup: {
+            phase: ctx.startup.phase,
+            progress: ctx.startup.progress,
+            ...(runtime?.startupCompileSettled === undefined
+              ? {}
+              : { compileSettled: runtime.startupCompileSettled() }),
+          },
+        };
       };
       return cleanup;
     },
@@ -403,8 +473,17 @@ const initialParity: IParityObservation = {
   steps: 0,
 };
 
+const initialContinuousCollision = {
+  effectiveSetting: false,
+  hit: false,
+  projectilePosition: [0, 0, 0] as VectorTuple,
+};
+
 class NativePhysicsParity extends Scene<IPhysicsState, IPhysicsContext> {
-  static override readonly initialState: IPhysicsState = { parity: initialParity };
+  static override readonly initialState: IPhysicsState = {
+    continuousCollision: initialContinuousCollision,
+    parity: initialParity,
+  };
 
   override enter(ctx: ICtx<IPhysicsState, IPhysicsContext>) {
     ctx.camera.position.set(0, 2, 8);
@@ -468,6 +547,42 @@ class NativePhysicsParity extends Scene<IPhysicsState, IPhysicsContext> {
     if (area?.body.id !== scenario.bodies.find((body) => body.sensor)?.id)
       throw new Error("TN_PHYSICS_PARITY_AREA_ID");
     if (dynamicBox === undefined) throw new Error("TN_PHYSICS_PARITY_DYNAMIC_BODY_MISSING");
+
+    if (__TN_CONTINUOUS_COLLISION_PROOF__) {
+      const wallObject = ctx.add(
+        new Mesh(new BoxGeometry(0.1, 4, 4), new MeshBasicMaterial({ color: 0xff8844 })),
+      );
+      wallObject.position.set(0, 0, 0);
+      ctx.entities.add("ccdWall", wallObject);
+      continuousCollisionWall = new RigidBody3D({
+        collisionLayer: 32,
+        collisionMask: 32,
+        continuousCollision: true,
+        entity: "ccdWall",
+        object: wallObject,
+        physics: ctx.physics,
+        shape: CollisionShape3D.box(0.1, 4, 4),
+        type: "fixed",
+      });
+
+      const projectileObject = ctx.add(
+        new Mesh(new BoxGeometry(0.1, 0.1, 0.1), new MeshBasicMaterial({ color: 0xffdd44 })),
+      );
+      projectileObject.position.set(-1, 0, 0);
+      ctx.entities.add("ccdProjectile", projectileObject);
+      continuousCollisionProjectile = new RigidBody3D({
+        collisionLayer: 32,
+        collisionMask: 32,
+        entity: "ccdProjectile",
+        mass: 1,
+        object: projectileObject,
+        physics: ctx.physics,
+        shape: CollisionShape3D.sphere(0.05),
+        type: "dynamic",
+      });
+      namesByRuntimeId.set(continuousCollisionWall.body.id, "ccdWall");
+      namesByRuntimeId.set(continuousCollisionProjectile.body.id, "ccdProjectile");
+    }
     initialCharacterPosition = position(character as CharacterBody3D);
     initialDynamicBoxPosition = position(dynamicBox);
     characterMaxY = initialCharacterPosition[1];

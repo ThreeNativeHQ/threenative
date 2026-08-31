@@ -175,6 +175,27 @@ describe("native physics contract", () => {
     expect(createBody).not.toHaveBeenCalled();
   });
 
+  it("forwards continuous collision and its effective default to the native host", () => {
+    let nextId = 0;
+    const createBody = vi.fn(() => nextId++);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+
+    native.createBody({ ...bodyOptions(), continuousCollision: false });
+    native.createBody(bodyOptions());
+
+    expect(createBody).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ continuousCollision: false }),
+    );
+    expect(createBody).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ continuousCollision: true }),
+    );
+  });
+
   it("fails closed when syncFromPhysics hits a backend without readBodyTransform", () => {
     // Both shipped backends read transforms. The guard exists for any other simulation reaching
     // these nodes, so prove it against one that genuinely lacks the capability rather than

@@ -34,6 +34,7 @@ typedef struct TnPhysicsBodyOptions {
   uint32_t collision_layer;
   uint32_t collision_mask;
   bool sensor;
+  bool continuous_collision;
 } TnPhysicsBodyOptions;
 
 typedef struct TnPhysicsJointOptions {
