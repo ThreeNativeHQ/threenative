@@ -360,7 +360,7 @@ Proves an observed entity's final runtime-owned state-machine state. **Use when*
 
 Proves retained UI/HUD text or values after the scenario. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** runtime.ui
+- **Supported on:** web · **Requires:** browser.dom
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -372,6 +372,7 @@ Proves retained UI/HUD text or values after the scenario. **Use when** that is t
 | `textIncludes` | string | no |
 | `changed` | boolean | no |
 | `allowTrivial` | triviality reason | no |
+| `visible` | boolean | no |
 
 
 ```json

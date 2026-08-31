@@ -145,6 +145,7 @@ export function expectedPathAssertion(assertion: IPlaytestPathAssertion): Record
     ...(assertion.throughoutSteps === undefined ? {} : { throughoutSteps: assertion.throughoutSteps }),
     ...(assertion.changed === undefined ? {} : { changed: assertion.changed }),
     ...(assertion.allowTrivial === undefined ? {} : { allowTrivial: assertion.allowTrivial }),
+    ...(assertion.visible === undefined ? {} : { visible: assertion.visible }),
   };
 }
 

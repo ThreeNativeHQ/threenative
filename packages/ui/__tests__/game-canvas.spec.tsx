@@ -70,6 +70,7 @@ describe("GameCanvas", () => {
     });
 
     const failure = renderer.root.findByProps({ "data-threenative-canvas-error": "true" });
+    expect(failure.props.id).toBe("threenative-canvas-error");
     expect(failure.props.children).toBe("TN_TEST: boot failed");
   });
 });

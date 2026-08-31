@@ -52,7 +52,29 @@ export function openRunnerPage(
   const navigationUrl = remoteBrowser?.navigationUrl(config) ?? config.url;
   // This copy is navigation-only. Reports and operator diagnostics retain the URL supplied on
   // the command line, while Android Chrome reaches the same server through its reverse tunnel.
-  return openPageAndConnectBridge(page, { ...config, url: navigationUrl }, scenario);
+  return installBootFailure(page, scenario).then(() =>
+    openPageAndConnectBridge(page, { ...config, url: navigationUrl }, scenario));
+}
+
+async function installBootFailure(page: Page, scenario: IPlaytestScenario): Promise<void> {
+  if (scenario.bootFailure !== "renderer-no-adapter") return;
+  await page.addInitScript(() => {
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value(this: HTMLCanvasElement, contextId: string, options?: unknown) {
+        if (contextId === "webgl" || contextId === "webgl2") return null;
+        return originalGetContext.call(this, contextId, options);
+      },
+    });
+    const gpu = (navigator as Navigator & { gpu?: { requestAdapter?: unknown } }).gpu;
+    if (gpu !== undefined) {
+      Object.defineProperty(gpu, "requestAdapter", {
+        configurable: true,
+        value: async () => null,
+      });
+    }
+  });
 }
 
 export async function teardownBrowserSession(

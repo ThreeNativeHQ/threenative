@@ -69,6 +69,31 @@ describe("playtest sampling", () => {
     }
   });
 
+  test("samples a HUD node only when its rendered box is on top of the page", async () => {
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 720, height: 720, left: 0, right: 1280, top: 0, width: 1280 }),
+      textContent: " TN_TEST: boot failed ",
+    };
+    const restore = installGlobal("document", {
+      elementFromPoint: () => error,
+      getElementById: () => error,
+    });
+    const restoreWindow = installGlobal("window", { innerHeight: 720, innerWidth: 1280 });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", textIncludes: "TN_TEST", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: boot failed", visible: true },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
   test("pairs observations and retains only movement with a stationary input-off baseline", () => {
     expect(pairObservations({ score: 1, beforeOnly: true }, { score: 2, afterOnly: true })).toEqual({
       score: { after: 2, before: 1 },
