@@ -50,7 +50,7 @@ waits for the menu, clicks the name field, types a name, and clicks start before
 else — and it passes.
 
 This is the same defect that broke the hot-reload proof
-([PRD-266](./PRD-266-the-hot-reload-proof-and-the-browser-lane-run-anywhere.md) §1's neighbour): the
+([PRD-266](../performance/PRD-266-the-hot-reload-proof-and-the-browser-lane-run-anywhere.md) §1's neighbour): the
 menu screen flow landed in [PRD-218](../done/batch-2026-08-24-menu-screen-flow/PRD-218-scene-screens-and-menu-flow.md),
 three scenarios were updated, and the rest were not.
 

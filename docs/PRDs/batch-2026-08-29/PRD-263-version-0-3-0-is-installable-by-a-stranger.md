@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status:** PROPOSED — filed 2026-08-29. Depends on Lane A (a green tree),
 [PRD-261](../done/PRD-261-the-release-instruments-report-again.md) (so the result can be graded) and
-[PRD-262](./PRD-262-the-runtime-native-prebuilt-release-exists.md) (so `publish:check` can pass).
+[PRD-262](../mobile/PRD-262-the-runtime-native-prebuilt-release-exists.md) (so `publish:check` can pass).
 
 Fourth lane of [the release batch](./README.md). Moves alpha-bar row **A1** and re-proves **A2**.
 
@@ -60,7 +60,7 @@ it will need re-proving after this publish, not carrying forward.
 
 ### 3. The runtime prebuilt finding
 
-Owned by [PRD-262](./PRD-262-the-runtime-native-prebuilt-release-exists.md) and listed here only so
+Owned by [PRD-262](../mobile/PRD-262-the-runtime-native-prebuilt-release-exists.md) and listed here only so
 the count reconciles: 48 template pins + 7 package rows + 1 prebuilt finding = 56.
 
 ## Solution

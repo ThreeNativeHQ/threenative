@@ -9,7 +9,7 @@ prd_contract: v1
 files 1–2): the release workflow's own `gates` job refuses to build without a green CI push run on
 `main` for the release commit, and CI is red on `main` today.
 
-Third lane of [the release batch](./README.md). Blocks [PRD-263](./PRD-263-version-0-3-0-is-installable-by-a-stranger.md).
+Third lane of [the release batch](../batch-2026-08-29/README.md). Blocks [PRD-263](../batch-2026-08-29/PRD-263-version-0-3-0-is-installable-by-a-stranger.md).
 
 **Goal: `@threenative/runtime-native` becomes installable as something that actually runs.**
 Today it is publishable and inert.
@@ -147,7 +147,7 @@ install fails with the checksum error rather than installing. Paste it.
 
 - [ ] A release exists at `runtime-native-v0.3.0` and `prebuilt-lock.json` returns 200.
 - [ ] `pnpm publish:check` no longer reports the `@threenative/runtime-native` prebuilt finding.
-      (It will still report the template pins; [PRD-263](./PRD-263-version-0-3-0-is-installable-by-a-stranger.md) owns those.)
+      (It will still report the template pins; [PRD-263](../batch-2026-08-29/PRD-263-version-0-3-0-is-installable-by-a-stranger.md) owns those.)
 - [ ] A fresh install outside this repository writes `install-status.json` with `ok: true`, pasted.
 - [ ] The record names why the five earlier tags produced nothing, so it cannot recur unexplained.
 - [ ] No step in this PRD asserts a platform it did not execute. An unbuilt key is named as unbuilt.

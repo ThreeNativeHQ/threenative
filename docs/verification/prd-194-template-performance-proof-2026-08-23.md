@@ -1,6 +1,6 @@
 # PRD-194 template performance proof — 2026-08-23
 
-Source PRD: [PRD-194](../PRDs/batch-2026-08-22-charter-performance/PRD-194-every-template-carries-a-real-performance-proof.md)
+Source PRD: [PRD-194](../PRDs/performance/PRD-194-every-template-carries-a-real-performance-proof.md)
 
 This is the committed raw measurement record for the seven shipped templates. The browser
 measurements used Chromium WebGPU, `--browser-recipe webgpu`, an NVIDIA/Turing adapter, a
