@@ -46,6 +46,8 @@ import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import { createImpactDust, createImpactSparks, createMuzzleFlash } from "../render/vfx.js";
+import { TouchControls } from "../render/touch-controls.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 import { WaveDirector } from "../waves.js";
 import { Hitscan } from "../weapons/Hitscan.js";

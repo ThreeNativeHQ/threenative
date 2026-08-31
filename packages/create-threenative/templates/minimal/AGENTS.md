@@ -55,6 +55,10 @@ is a plain class; `src/render/hud.ts` is the one camera-parented, instanced-geom
 on every target. Register it with `ctx.entities`; rewrite its glyphs and colours freely, but do not
 add a second DOM readout. `playtests/survives.playtest.json` is the durable smoke proof.
 
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
+`src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
+passes its returned input to `Player`; keep the keyboard mapping as the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.

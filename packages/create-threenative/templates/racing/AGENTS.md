@@ -55,6 +55,10 @@ the last ray-probed road transform; `Ranking.ts` ranks route progress. `RacingCa
 `CharacterBody3D`; there is no vehicle node or racing-line solver. Register entities and keep
 `playtests/survives.playtest.json` as the smoke proof. The one React HUD reads published state.
 
+
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left steering/throttle
+stick and right boost and brake buttons. Keyboard input remains the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
