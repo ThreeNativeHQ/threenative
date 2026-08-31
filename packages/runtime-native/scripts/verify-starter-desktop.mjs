@@ -9,6 +9,8 @@ import { PNG } from 'pngjs';
 
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
+// Measured: a drawn starter frame has ~17,000 distinct colours, a lost capture had 5.
+const UNRENDERED_FRAME_COLOR_FLOOR = 64;
 
 export function inspectStarterScreenshot(path) {
   if (!existsSync(path)) throw new Error(`TN_NATIVE_STARTER_SCREENSHOT_MISSING: ${path}`);
@@ -24,8 +26,19 @@ export function inspectStarterScreenshot(path) {
     if (alpha > 0 && blue > 150 && green > 140 && blue > red * 1.4) cyanAssetPixels += 1;
   }
   if (colors.size < 2) throw new Error('TN_NATIVE_STARTER_SCREENSHOT_BLANK: one-color frame.');
+  // A one-colour guard is too weak to catch the capture this gate actually loses. A rendered
+  // starter frame carries roughly 17k distinct colours; an intermittent CI failure captured five —
+  // flat background, two flat shapes, thirteen pixels of the GLB — while the run log still showed
+  // TN_NATIVE_STARTER_ASSETS_LOADED and "Rendered 300 frames". That frame was never drawn, and
+  // reporting it as a missing asset sends the reader hunting for a texture that loaded fine.
+  if (colors.size < UNRENDERED_FRAME_COLOR_FLOOR) {
+    throw new Error(
+      `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. ` +
+        'The run log may still show every marker: this is the capture, not the scene.',
+    );
+  }
   if (cyanAssetPixels < 100) {
-    throw new Error(`TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${cyanAssetPixels} cyan proof pixels.`);
+    throw new Error(`TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${cyanAssetPixels} cyan proof pixels in a frame of ${colors.size} colours.`);
   }
   return { colors: colors.size, cyanAssetPixels, height: png.height, width: png.width };
 }

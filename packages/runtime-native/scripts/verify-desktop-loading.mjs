@@ -16,12 +16,25 @@ const scenario = join(exampleRoot, "playtests", "loading-screen-desktop.playtest
 // The settle sample has to outlast core's own bounded launch, not just look like it does.
 // `StartupReadiness` resolves either on five consecutive in-budget frames or, for a host that never
 // produces one, only after `STARTUP_COMPILE_BUDGET_MS + STARTUP_STABLE_WINDOW_MS`. macOS and Linux
-// take the fast path in well under a second, so 3s looked sufficient for a year; a cold Windows
-// runner misses the 50ms frame budget indefinitely and reached `startup-settled` at ~4s with
-// `loadingVisible` still true and `TN_LOADING_PROOF_DISMISSED` never logged. Kept in step with the
-// exported constants by startup-ready-bound.spec.ts.
-const LOADING_SETTLE_WAIT_MS = 27_000;
-const FIXED_STEP_WALL_WAITS_MS = [0, 1_000, LOADING_SETTLE_WAIT_MS];
+// take the fast path in well under a second, so 3s looked sufficient; a cold Windows runner misses
+// the 50ms frame budget indefinitely and reached `startup-settled` at ~4s with `loadingVisible`
+// still true and TN_LOADING_PROOF_DISMISSED never logged.
+//
+// The wait is spread over many small advances rather than one long sleep. Under a fixed-step
+// bridge the app renders only when advanced, so a single 27s sleep stalls the frame loop — the
+// scene's own worker proof, which requires at least two frames to advance while its computation is
+// in flight, fails with "only 1 frame(s) advanced". Short steps keep frames flowing while the
+// wall clock runs out the startup window. Kept in step with the exported constants by
+// startup-ready-bound.spec.ts.
+const LOADING_SETTLE_STEPS = 12;
+const LOADING_SETTLE_STEP_WAIT_MS = 2_500;
+const LOADING_SETTLE_WAIT_MS = LOADING_SETTLE_STEPS * LOADING_SETTLE_STEP_WAIT_MS;
+const FIXED_STEP_WALL_WAITS_MS = [
+  0,
+  1_000,
+  ...Array.from({ length: LOADING_SETTLE_STEPS }, () => LOADING_SETTLE_STEP_WAIT_MS),
+  0,
+];
 const LOADING_PROOF_BACKDROP_COLOR = 0x101820;
 
 // The shared runner, not a second copy of it. This was the only script here carrying its own, and
@@ -201,7 +214,37 @@ async function runLoadingPlaytest() {
       transport: timedTransport,
     });
     if (!report.pass) {
-      throw new Error(`native loading playtest failed: ${JSON.stringify(report, null, 2)}`);
+      // Write the report beside the screenshots before throwing. Inlining the whole thing in the
+      // message is what made the Windows failure hard to read: the Actions log cut it off, and the
+      // one number that explains it — which labelled sample held which value — was in the part that
+      // got dropped. The step's artifacts survive the truncation.
+      writeFileSync(
+        join(artifactDirectory, "loading-report.json"),
+        `${JSON.stringify(report, null, 2)}\n`,
+      );
+      const failed = (report.assertionResults ?? []).filter((entry) => entry.pass !== true);
+      const samples = (report.observations?.resourceSeries ?? []).map((sample) => ({
+        label: sample.label,
+        loadingVisible: sample.snapshots?.GameState?.loadingVisible,
+        startupReady: sample.snapshots?.GameState?.startupReady,
+      }));
+      const summary = {
+        // The startup gate resolves on five in-budget frames or, failing that, only after the
+        // bounded window. Both numbers decide whether a red here is the app or the wait.
+        settleWaitMs: LOADING_SETTLE_WAIT_MS,
+        dismissedMarkerSeen: (report.observations?.console ?? [])
+          .some((entry) => String(entry.text ?? entry).includes("TN_LOADING_PROOF_DISMISSED")),
+        failedAssertions: failed.map((entry) => ({ details: entry.details, id: entry.id })),
+        samples,
+      };
+      writeFileSync(
+        join(artifactDirectory, "loading-summary.json"),
+        `${JSON.stringify(summary, null, 2)}\n`,
+      );
+      throw new Error(
+        `native loading playtest failed. Report: ${join(artifactDirectory, "loading-report.json")}\n` +
+          `${JSON.stringify(summary, null, 2)}`,
+      );
     }
     const startupScreenshot = join(artifactDirectory, "startup-stall.png");
     const midScreenshot = join(artifactDirectory, "startup-mid-stall.png");

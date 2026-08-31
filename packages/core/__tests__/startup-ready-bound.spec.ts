@@ -22,11 +22,11 @@ test("the runner's startup wait outlasts core's own bounded launch, with margin"
 });
 
 // The desktop loading proof carries the same bound and had drifted below it. Its harness injects a
-// wall-clock wait before each fixed-step sample, and the settle sample's wait was 3s against a 25s
-// worst case: macOS and Linux resolve on the fast five-frame path in well under a second, so the
-// gap only showed on a cold Windows runner, which reached `startup-settled` with `loadingVisible`
-// still true and never logged TN_LOADING_PROOF_DISMISSED. Read from the script so the number cannot
-// drift back without this failing.
+// wall-clock wait before each fixed-step sample, and the settle sample's wait totalled 3s against a
+// 25s worst case: macOS and Linux resolve on the fast five-frame path in well under a second, so
+// the gap only showed on a cold Windows runner, which reached `startup-settled` with
+// `loadingVisible` still true and never logged TN_LOADING_PROOF_DISMISSED. Read from the script so
+// the number cannot drift back without this failing.
 test("the desktop loading proof waits past core's bounded launch before sampling settled", () => {
   const harness = readFileSync(
     fileURLToPath(
@@ -34,12 +34,32 @@ test("the desktop loading proof waits past core's bounded launch before sampling
     ),
     "utf8",
   );
-  const declared = harness.match(/const LOADING_SETTLE_WAIT_MS = ([\d_]+);/u)?.[1];
-  expect(declared, "verify-desktop-loading.mjs must declare LOADING_SETTLE_WAIT_MS").toBeDefined();
-  const settleWaitMs = Number(String(declared).replaceAll("_", ""));
+  const number = (name: string): number => {
+    const declared = harness.match(new RegExp(`const ${name} = ([\\d_]+);`, "u"))?.[1];
+    expect(declared, `verify-desktop-loading.mjs must declare ${name}`).toBeDefined();
+    return Number(String(declared).replaceAll("_", ""));
+  };
+  const settleWaitMs = number("LOADING_SETTLE_STEPS") * number("LOADING_SETTLE_STEP_WAIT_MS");
   expect(settleWaitMs).toBeGreaterThan(STARTUP_COMPILE_BUDGET_MS + STARTUP_STABLE_WINDOW_MS);
 
-  // And it must actually be the last of the three per-sample waits, not merely declared.
-  const waits = harness.match(/const FIXED_STEP_WALL_WAITS_MS = \[([^\]]+)\];/u)?.[1];
-  expect(waits?.split(",").at(-1)?.trim()).toBe("LOADING_SETTLE_WAIT_MS");
+  // Spread over many advances, never one sleep: a fixed-step bridge renders only when advanced, and
+  // the scene's worker proof fails if fewer than two frames advance while its computation is in
+  // flight. One long wait stalls the loop and reds that proof instead.
+  expect(number("LOADING_SETTLE_STEPS")).toBeGreaterThanOrEqual(8);
+
+  // The scenario must actually carry those settle steps between the two labelled samples.
+  const scenario = JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../examples/native-smoke/playtests/loading-screen-desktop.playtest.json",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    ),
+  ) as { steps: { label?: string }[] };
+  const unlabelled = scenario.steps.filter((step) => step.label === undefined).length;
+  expect(unlabelled).toBe(number("LOADING_SETTLE_STEPS"));
+  expect(scenario.steps.at(-1)?.label).toBe("startup-settled");
 });

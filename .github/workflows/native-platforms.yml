@@ -12,8 +12,17 @@ name: Native platform evidence
 # Triggered here rather than called from ci.yml as of 2026-08-31: the lane reports on every push to
 # main, and its result no longer decides ci.yml's conclusion. See the note where the call used to be
 # in ci.yml, and PRD-295 for the failures that made it advisory.
+#
+# Runs on pull requests as well as pushes since 2026-08-31: a lane that only reports after a merge
+# tells you the thing you needed before it. `push` is pinned to main and `pull_request` to PRs
+# targeting main, so a branch push fires one of them and never both — the double 24-minute matrix
+# the path filters used to cause does not come back. Reporting on a PR is not the same as blocking
+# one: this lane is not a required status check while it is still red, and PRD-295 is explicit that
+# a lane which has never been green must not gate a release.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
   workflow_call:

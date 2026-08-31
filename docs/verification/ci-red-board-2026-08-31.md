@@ -128,9 +128,38 @@ uploaded `playtest-pass/` artifact holds only a 2-entry `console.json` and no re
 message in the log is cut off mid-`observations`, so whether `pass` is false or merely absent from
 the captured output cannot be decided from here. Needs macOS.
 
-### macOS desktop core, Scaffolded starter desktop artifact
+### Scaffolded starter desktop artifact — intermittent lost capture, newly named
 
-Both green on the current run; starter was red on the baseline.
+Alternates red/green across runs (fail, pass, fail) with `TN_NATIVE_STARTER_ASSET_NOT_VISIBLE:
+found 0 cyan proof pixels`, while its own uploaded log carries every marker:
+
+```
+TN_NATIVE_SMOKE_READY            1
+TN_NATIVE_STARTER_ASSETS_LOADED  1
+Rendered 300 frames              1
+```
+
+Comparing the two runs' uploaded captures settles what the message could not:
+
+| | distinct colours | cyan pixels | max blue |
+| --- | ---: | ---: | ---: |
+| passing run `33438020754` | 17,163 | 120 | 238 |
+| failing run `33440190473` | **5** | 0 | 155 |
+
+Five colours in 1280x720 — flat background, two flat shapes, thirteen pixels of the GLB. The frame
+was never drawn. The asset loaded exactly as its marker said, so the old message sent the reader
+hunting a texture that was fine, and the `colors.size < 2` blank guard was too weak to catch a
+five-colour frame.
+
+**Not fixed** — the capture race lives in the native screenshot path and did not reproduce here.
+What is fixed is the diagnosis: `TN_NATIVE_STARTER_FRAME_NOT_RENDERED` now fires below 64 distinct
+colours and says the capture is at fault, not the scene, and the asset message carries the colour
+count. Verified against both real CI captures: the passing one still reports
+`{colors: 17163, cyanAssetPixels: 120}`, the failing one now names the capture.
+
+### macOS desktop core
+
+Green on both runs.
 
 ## Gates run locally
 
