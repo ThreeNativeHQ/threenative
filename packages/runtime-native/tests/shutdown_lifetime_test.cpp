@@ -19,11 +19,18 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
-#include <netinet/in.h>
 #include <string>
-#include <sys/socket.h>
 #include <thread>
+// BSD sockets on POSIX, Winsock2 on Windows. This test had never been compiled for MSVC, so its
+// POSIX-only includes had never had to be portable.
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 using mystral::Runtime;
 using mystral::RuntimeConfig;
@@ -32,31 +39,57 @@ namespace {
 
 // A listener whose accepted connections never answer, so the curl transfer stays in
 // flight with live poll handles until shutdown cancels it.
+// One name for the two socket vocabularies: Winsock returns SOCKET and closes with
+// `closesocket`, POSIX returns an int and closes with `close`, and the invalid value differs.
+#ifdef _WIN32
+using SocketHandle = SOCKET;
+constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
+inline void closeSocket(SocketHandle handle) { ::closesocket(handle); }
+inline bool socketIsValid(SocketHandle handle) { return handle != INVALID_SOCKET; }
+#else
+using SocketHandle = int;
+constexpr SocketHandle kInvalidSocket = -1;
+inline void closeSocket(SocketHandle handle) { ::close(handle); }
+inline bool socketIsValid(SocketHandle handle) { return handle >= 0; }
+#endif
+
 int startHangingListener() {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return -1;
+#ifdef _WIN32
+    // Winsock needs starting before any socket call, once per process.
+    static const bool winsockReady = [] {
+        WSADATA data;
+        return ::WSAStartup(MAKEWORD(2, 2), &data) == 0;
+    }();
+    if (!winsockReady) return -1;
+#endif
+    SocketHandle fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (!socketIsValid(fd)) return -1;
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = 0;
     if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
         ::listen(fd, 4) != 0) {
-        ::close(fd);
+        closeSocket(fd);
         return -1;
     }
+#ifdef _WIN32
+    int len = static_cast<int>(sizeof(addr));
+#else
     socklen_t len = sizeof(addr);
+#endif
     if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
-        ::close(fd);
+        closeSocket(fd);
         return -1;
     }
     std::thread([fd] {
-        int client = ::accept(fd, nullptr, nullptr);
-        if (client >= 0) {
+        SocketHandle client = ::accept(fd, nullptr, nullptr);
+        if (socketIsValid(client)) {
             // Hold the connection open well past the test's lifetime.
             std::this_thread::sleep_for(std::chrono::seconds(30));
-            ::close(client);
+            closeSocket(client);
         }
-        ::close(fd);
+        closeSocket(fd);
     }).detach();
     return ntohs(addr.sin_port);
 }

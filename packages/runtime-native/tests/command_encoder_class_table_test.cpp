@@ -216,7 +216,13 @@ void exerciseCommandEncoderClassContract() {
 }  // namespace
 
 int main(int argc, char** argv) {
+    // `setenv` is POSIX; MSVC provides `_putenv_s`. This test had never been compiled on
+    // Windows, so the difference had never come up.
+#ifdef _WIN32
+    _putenv_s("TN_V8_FLAGS", "--allow-natives-syntax");
+#else
     setenv("TN_V8_FLAGS", "--allow-natives-syntax", 1);
+#endif
     const bool forceLegacyShape =
         argc > 1 && std::string(argv[1]) == "legacy-shape-control";
     const auto engineV8 = mystral::js::createEngine(mystral::js::EngineType::V8);

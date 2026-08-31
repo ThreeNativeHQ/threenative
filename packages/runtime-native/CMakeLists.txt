@@ -1510,7 +1510,12 @@ elseif(WIN32)
             mfreadwrite.lib
             RuntimeObject.lib
         )
-        if(MSVC)
+        # C++/WinRT's coroutines. `/await` is the pre-C++20 mode and selects
+        # `<experimental/coroutine>`, which under `/std:c++20` static-asserts with "Standard C++
+        # coroutines are available by default in C++20 or later" — so passing it alongside C++20
+        # failed `windows_graphics_capture_impl.cpp`, and with it every target that links
+        # `mystral-runtime`. C++20 needs no flag at all.
+        if(MSVC AND CMAKE_CXX_STANDARD LESS 20)
             target_compile_options(mystral-runtime PRIVATE /await)
         endif()
     endif()

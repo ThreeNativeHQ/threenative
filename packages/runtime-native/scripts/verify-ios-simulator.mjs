@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -256,21 +256,43 @@ const requiredMarkers = [
 // `--console-pipe` attaches stdout and stderr to this process and returns when the app exits. The
 // smoke app renders its 300 frames and exits, so the timeout is a backstop; whatever it printed
 // before being killed is still captured and still answers the question.
-const launched = spawnSync(
-  'xcrun',
-  ['simctl', 'launch', '--terminate-running-process', '--console-pipe', simulator.udid, bundleId],
-  { cwd: workspaceRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 180_000 },
-);
-// A timeout is the expected ending, not a failure. `--console-pipe` returns when the app exits,
-// and the smoke app keeps running after its 300th frame — so the deadline is how this call ends
-// normally, and everything printed up to it is captured and still answers the question. Any other
-// spawn error is a real launch failure.
-if (launched.error && launched.error.code !== 'ETIMEDOUT') {
+// Stream it rather than waiting for it to finish. `--console-pipe` returns when the app exits, and
+// the smoke app keeps running after its 300th frame, so a blocking read always pays the whole
+// deadline — which pushed this job past its 45-minute limit and got it cancelled. Reading the pipe
+// as it arrives restores the early exit the old marker poll had: the proof is complete the moment
+// the last marker appears, and waiting past that learns nothing.
+const launched = await new Promise((resolve) => {
+  const child = spawn(
+    'xcrun',
+    ['simctl', 'launch', '--terminate-running-process', '--console-pipe', simulator.udid, bundleId],
+    { cwd: workspaceRoot },
+  );
+  let output = '';
+  let settled = false;
+  let deadline;
+  const finish = (status, error) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(deadline);
+    child.kill('SIGKILL');
+    resolve({ error, output, status });
+  };
+  deadline = setTimeout(() => finish(null, undefined), 180_000);
+  const read = (chunk) => {
+    output += String(chunk);
+    if (requiredMarkers.every((marker) => output.includes(marker))) finish(0, undefined);
+  };
+  child.stdout.on('data', read);
+  child.stderr.on('data', read);
+  child.on('error', (error) => finish(null, error));
+  child.on('close', (code) => finish(code, undefined));
+});
+if (launched.error) {
   const diagnostics = launchDiagnostics(simulator.udid, startedAt);
   writeFileSync(join(artifactRoot, 'simulator-launch-failure.log'), diagnostics);
   throw new Error(`${launched.error.message}\n\niOS launch diagnostics:\n${diagnostics}`);
 }
-const consoleOutput = `${launched.stdout ?? ''}${launched.stderr ?? ''}`;
+const consoleOutput = launched.output;
 // Killing `xcrun` ends the pipe, not the app, which keeps running in the simulator. That is left
 // alone deliberately: `simctl terminate` fails with "found nothing to terminate" whenever the app
 // has already exited, and a previous version of this script died on exactly that. The next launch

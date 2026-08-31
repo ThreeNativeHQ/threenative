@@ -265,7 +265,7 @@ jobs:
   build-ios-simulator:
     needs: gates
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
