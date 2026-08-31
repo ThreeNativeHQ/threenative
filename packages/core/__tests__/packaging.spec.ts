@@ -98,3 +98,27 @@ test("should ship the Three.js batched velocity patch with core", async () => {
   expect(patch).toContain("_previousMatricesTexture ?? matricesTexture");
   expect(patch).toContain("this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null");
 });
+
+test("should keep the probe-volume import graph on WebGPU render targets", async () => {
+  const entry = "render/probe-volume.ts";
+  const seen = new Set<string>();
+  const offenders: string[] = [];
+  async function walk(file: string): Promise<void> {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const source = await readFile(join(srcRoot, file), "utf8");
+    if (/WebGL\w*RenderTarget|three\/addons\/lighting\/LightProbeGrid\.js/u.test(source)) {
+      offenders.push(file);
+    }
+    for (const match of source.matchAll(/from ["'](\.[./][^"']+)["']/g)) {
+      const specifier = match[1];
+      if (specifier === undefined) continue;
+      const resolved = join(dirname(file), specifier).replace(/\.js$/u, ".ts");
+      await walk(resolved);
+    }
+  }
+
+  await walk(entry);
+  expect(seen).toContain(entry);
+  expect(offenders).toEqual([]);
+});

@@ -33,7 +33,7 @@ function harness() {
 function records(buffer) {
   const view = new DataView(buffer);
   expect(view.getUint32(0, true)).toBe(0x544e4652);
-  expect(view.getUint32(4, true)).toBe(1);
+  expect(view.getUint32(4, true)).toBe(2);
   const declaredBytes = view.getUint32(8, true);
   expect(declaredBytes).toBeLessThanOrEqual(buffer.byteLength);
   const result = [];
@@ -235,7 +235,9 @@ describe("packed frame op stream", () => {
     const bundle = { _renderBundleId: 6 };
     const encoder = device.createCommandEncoder();
     const render = encoder.beginRenderPass({
-      colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] }],
+      colorAttachments: [
+        { view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1], depthSlice: 7 },
+      ],
     });
     render.setPipeline(pipeline);
     render.setBindGroup(0, group, [4]);
@@ -280,6 +282,9 @@ describe("packed frame op stream", () => {
     expect(opcodes).toEqual(
       expect.arrayContaining(Array.from({ length: 32 }, (_, index) => index + 2)),
     );
+    const beginRenderPass = result.find(({ opcode }) => opcode === 3);
+    expect(beginRenderPass).toBeDefined();
+    expect(packed.getUint32(beginRenderPass.cursor + 68, true)).toBe(7);
     const writeTexture = result.find(({ opcode }) => opcode === 30);
     expect(writeTexture).toBeDefined();
     expect(Array.from(new Uint8Array(frame, writeTexture.cursor + 64, 4))).toEqual([1, 2, 3, 4]);

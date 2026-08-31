@@ -675,6 +675,46 @@
       "symbol": "prewarm"
     },
     {
+      "constraints": [
+        "request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting",
+        "add the volume with ctx.add() so its incremental work is measured in the render phase",
+        "call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour"
+      ],
+      "example": "const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": ["density, bounds, bakeBudgetMs, and bounces are game-owned choices"],
+      "package": "@threenative/core",
+      "signature": "export class ProbeVolume extends Object3D implements IComputeDriven { … }",
+      "situations": [
+        "light bouncing from a room I cannot see",
+        "light a wall with an off-screen emitter"
+      ],
+      "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
+      "supersedes": [],
+      "symbol": "ProbeVolume"
+    },
+    {
+      "constraints": [
+        "request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting",
+        "add the volume with ctx.add() so its incremental work is measured in the render phase",
+        "call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour"
+      ],
+      "example": "const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["density, bounds, bakeBudgetMs, and bounces are game-owned choices"],
+      "package": "@threenative/core",
+      "signature": "export function readProbeVolumeObservation(value: unknown): IProbeVolumeObservation | undefined { … }",
+      "situations": [
+        "light bouncing from a room I cannot see",
+        "light a wall with an off-screen emitter"
+      ],
+      "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
+      "supersedes": [],
+      "symbol": "readProbeVolumeObservation"
+    },
+    {
       "constraints": ["stage factories own colour, strength, and all other appearance choices"],
       "example": "const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: [\"bloom\"], tier: \"auto\" } });",
       "importPath": "@threenative/core",

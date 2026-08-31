@@ -48,7 +48,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     if (!data || bytes < 16) { state->engine->throwException("frame op stream: truncated header"); return false; }
     PackedFrameReader r{data, bytes, 0, bytes, true};
     const uint32_t magic = r.u32(), version = r.u32(), declaredBytes = r.u32(), declaredOps = r.u32();
-    if (magic != 0x544e4652 || version != 1 || declaredBytes < 16 || declaredBytes > bytes) { state->engine->throwException("frame op stream: invalid header"); return false; }
+    if (magic != 0x544e4652 || (version != 1 && version != 2) || declaredBytes < 16 || declaredBytes > bytes) { state->engine->throwException("frame op stream: invalid header"); return false; }
     r.size = declaredBytes;
     r.recordEnd = declaredBytes;
     std::unordered_map<uint32_t, WGPUCommandEncoder> encoders;
@@ -161,7 +161,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                     c.loadOp = r.u32() ? WGPULoadOp_Load : WGPULoadOp_Clear;
                     c.storeOp = r.u32() ? WGPUStoreOp_Discard : WGPUStoreOp_Store;
                     c.clearValue = {r.f64(), r.f64(), r.f64(), r.f64()};
-                    c.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+                    c.depthSlice = version >= 2 ? r.u32() : WGPU_DEPTH_SLICE_UNDEFINED;
                 }
                 WGPURenderPassDepthStencilAttachment depth{};
                 WGPURenderPassDescriptor d{};

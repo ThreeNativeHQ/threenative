@@ -58,6 +58,7 @@ describe("core constraints", () => {
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
+          file !== "render/probe-volume.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -210,6 +211,15 @@ describe("core constraints", () => {
     expect(indexSource).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    // `render/probe-volume.ts` is the one render-mechanism exception admitted by PRD-268: the
+    // WebGPU bake needs a TSL projection node and a render target, but all lighting and surface
+    // inputs still come from the game scene. It must never construct a light or choose a visible
+    // property, and the port must stay on common WebGPU render targets.
+    const probeVolume = readFileSync(path.join(sourceDirectory, "render/probe-volume.ts"), "utf8");
+    expect(probeVolume).not.toMatch(/new\s+\w*Light|new\s+Color|\.wgsl/iu);
+    expect(probeVolume).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(probeVolume).toMatch(/RenderTarget3D|texture3D|ATLAS_PADDING/u);
   });
 
   /**

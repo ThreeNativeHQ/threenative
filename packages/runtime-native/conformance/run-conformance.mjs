@@ -729,6 +729,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
         "--enable-unsafe-webgpu",
         "--disable-gpu-sandbox",
         "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
       ],
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });

@@ -157,6 +157,18 @@ The normal physics API selects the native backend on desktop and Android. Keep s
 do not import React from `src/game.ts`, do not use dynamic `import()`, and do not read a raw
 physics handle. No physical mobile or performance parity claim is made by this template.
 
+## Off-screen diffuse light
+
+For light bouncing from a room I cannot see, construct `ProbeVolume` from `@threenative/core`
+after the static geometry and lights exist. Add it with `ctx.add()`, request its bake on demand,
+and pass `volume.sampleNode(positionWorld, normalWorld)` into a game-owned Three.js material
+before the screen-space GI stage. The volume owns no light, material, colour, or falloff.
+
+This is static-lighting-first, not fully dynamic GI: moving lights and relighting require another
+explicit bake. `TN_PROBE_VOLUME` reports the unbaked/stale state, probe count, atlas bytes,
+progress, and last render-phase bake cost; keep those measurements visible while tuning bounds,
+density, and `bakeBudgetMs`.
+
 <!-- shared: asset-mcp-loop -->
 ## Finding assets — you have an MCP server for this
 

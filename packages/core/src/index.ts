@@ -307,6 +307,29 @@ export type {
   RenderChainTierRequest,
   RenderChainVelocitySource,
 } from "./render/chain.js";
+/**
+ * Bake static diffuse irradiance that reaches surfaces from outside the camera view.
+ * @situation light bouncing from a room I cannot see
+ * @situation light a wall with an off-screen emitter
+ * @constraint request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting
+ * @constraint add the volume with ctx.add() so its incremental work is measured in the render phase
+ * @constraint call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
+ * @override density, bounds, bakeBudgetMs, and bounces are game-owned choices
+ * @example const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
+ */
+export {
+  ATLAS_PADDING,
+  PROBE_VOLUME_MARKER,
+  ProbeVolume,
+  readProbeVolumeObservation,
+} from "./render/probe-volume.js";
+export type {
+  IProbeVolumeBakeProgress,
+  IProbeVolumeCoefficient,
+  IProbeVolumeObservation,
+  IProbeVolumeOptions,
+  ProbeVolumeDensity,
+} from "./render/probe-volume.js";
 export { warmUpScene } from "./warmup.js";
 export type {
   IWarmUpOptions,

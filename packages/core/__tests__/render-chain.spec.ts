@@ -80,6 +80,18 @@ describe("RenderChain", () => {
     expect(current.installed).toHaveLength(1);
   });
 
+  it("places probe-volume irradiance before screen-space GI", () => {
+    const order: string[] = [];
+    const current = renderer("webgpu");
+    const chain = new RenderChain(current, {
+      stages: [stage("ssgi", order), stage("probeVolume", order)],
+      request: { stages: ["ssgi", "probeVolume"], tier: "high" },
+    });
+
+    expect(order).toEqual(["probeVolume", "ssgi"]);
+    expect(chain.applied.stages).toEqual(["probeVolume", "ssgi"]);
+  });
+
   it("places godRays between ssgi and ssr, and vignette after bloom, whatever was requested", () => {
     // GodRays add scattered light after the GI/contact terms and before reflections;
     // vignette is a camera-lens darkening applied to the lit frame before the other

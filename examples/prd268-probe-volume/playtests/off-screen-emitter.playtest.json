@@ -1,0 +1,48 @@
+{
+  "name": "prd268-off-screen-emitter",
+  "schemaVersion": 1,
+  "subject": "a neutral wall receives an off-screen emitter through a baked probe volume",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 0,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    {
+      "kind": "click",
+      "at": { "x": 1, "y": 1 },
+      "label": "bake-and-settle",
+      "waitFrames": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "volumeEnabled", "equals": true, "changed": true },
+      { "id": "GameState", "path": "probe.status", "equals": "ready", "changed": true },
+      { "id": "GameState", "path": "probe.sampleNodeInstalled", "equals": true, "changed": true },
+      { "id": "GameState", "path": "probe.fraction", "equals": 1, "changed": true },
+      { "id": "GameState", "path": "probe.atlasBytes", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "probe.stale", "equals": false, "changed": true },
+      { "id": "GameState", "path": "probe.sampleRed", "gte": 0.01, "changed": true },
+      { "id": "GameState", "path": "probe.sampleHueRatio", "gte": 3, "changed": true }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 280,
+          "y": 100,
+          "width": 720,
+          "height": 520,
+          "minNonblankPixelRatio": 0.01
+        },
+        "frameDiff": { "minChangedPixelRatio": 0.002 }
+      }
+    ]
+  }
+}

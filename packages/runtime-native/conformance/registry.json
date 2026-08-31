@@ -742,6 +742,21 @@
       "required": true
     },
     {
+      "id": "probe-volume-sample",
+      "title": "off-screen irradiance probe volume",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/probe-volume-sample.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",

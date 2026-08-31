@@ -1,0 +1,68 @@
+{
+  "name": "prd268-off-screen-emitter-without-volume",
+  "schemaVersion": 1,
+  "subject": "the neutral wall stays unlit when the probe volume is absent",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": "after" },
+  "steps": [
+    {
+      "kind": "click",
+      "at": { "x": 1, "y": 1 },
+      "label": "volume-off-settle",
+      "waitFrames": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "volumeEnabled",
+        "equals": false,
+        "allowTrivial": "The off arm intentionally holds the volume disabled."
+      },
+      {
+        "id": "GameState",
+        "path": "probe.status",
+        "equals": "off",
+        "allowTrivial": "The off arm intentionally has no probe bake status."
+      },
+      {
+        "id": "GameState",
+        "path": "probe.sampleNodeInstalled",
+        "equals": false,
+        "allowTrivial": "The off arm intentionally installs no sample node."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 280,
+          "y": 100,
+          "width": 720,
+          "height": 520,
+          "minNonblankPixelRatio": 0.01
+        }
+      },
+      {
+        "region": {
+          "x": 500,
+          "y": 245,
+          "width": 280,
+          "height": 230,
+          "minNonblankPixelRatio": 0.8,
+          "minDarkPixelRatio": 0.95,
+          "maxLuminance": 0.25
+        }
+      }
+    ]
+  }
+}

@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -1115,7 +1116,21 @@ static js::JSValueHandle handleGpuCommandEncoderBeginRenderPass(BindingsState* s
                                         colorAttachment.loadOp = loadOp;
                                         colorAttachment.storeOp = storeOp;
                                         colorAttachment.clearValue = {r, g, b, a};
-                                        colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+                                        auto depthSliceProp = state->engine->getProperty(attachment, "depthSlice");
+                                        if (state->engine->isUndefined(depthSliceProp) ||
+                                            state->engine->isNull(depthSliceProp)) {
+                                            colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+                                        } else {
+                                            const double depthSlice = state->engine->toNumber(depthSliceProp);
+                                            if (!std::isfinite(depthSlice) || depthSlice < 0 ||
+                                                std::floor(depthSlice) != depthSlice ||
+                                                depthSlice > std::numeric_limits<uint32_t>::max()) {
+                                                state->engine->throwException(
+                                                    "beginRenderPass depthSlice must be a non-negative integer");
+                                                return state->engine->newUndefined();
+                                            }
+                                            colorAttachment.depthSlice = static_cast<uint32_t>(depthSlice);
+                                        }
                                         colorAttachmentList.push_back(colorAttachment);
                                     }
                                     if (touchesSurface) {

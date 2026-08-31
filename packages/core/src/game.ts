@@ -946,14 +946,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               : undefined,
           );
         }
-        // Render-cadence compute is first-use work too. Keep it behind an opaque startup layer
-        // until readiness settles, or a particle process dispatch can compile in the loader frame.
-        if (
-          this.#renderer !== undefined &&
-          this.#sceneEntered &&
-          (!canvasLayer.opaque || startupReadiness.ready)
-        )
-          this.#computeDriven.processRender(this.#renderer);
         const waitingForFirstUse =
           firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
         if (
@@ -968,6 +960,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // sync are render-path work, and a frame budget that hid it in `residual` made the
           // optimizer's own cost unmeasurable exactly where the optimizer is engaged.
           const renderStart = frameBudget === undefined ? 0 : budgetNow();
+          // Render-cadence compute is first-use work too. Keep it behind an opaque startup layer
+          // until readiness settles, and include it in the render phase it consumes. A bake that
+          // runs before this timer would disappear into residual and the frame budget could not
+          // enforce its per-frame limit.
+          if (this.#renderer !== undefined && this.#sceneEntered)
+            this.#computeDriven.processRender(this.#renderer);
           // Let a depth-coupled scene update its output node while the scene pass is still the
           // next render. Ordinary scenes keep the historical hook order and timing.
           const depthCoupledOutput = this.#hasDepthCoupledOutput;

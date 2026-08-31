@@ -573,6 +573,38 @@ export function prewarm(object: Object3D | readonly Object3D[]): void { … }
 prewarm(tracerPool);
 ```
 
+### `ProbeVolume`
+
+`class` — Bake static diffuse irradiance that reaches surfaces from outside the camera view.
+
+```ts
+export class ProbeVolume extends Object3D implements IComputeDriven { … }
+```
+
+- **Use when:** light bouncing from a room I cannot see · light a wall with an off-screen emitter
+- **Constraints:** request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting · add the volume with ctx.add() so its incremental work is measured in the render phase · call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
+- **Overrides:** density, bounds, bakeBudgetMs, and bounces are game-owned choices
+
+```ts
+const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
+```
+
+### `readProbeVolumeObservation`
+
+`function` — Bake static diffuse irradiance that reaches surfaces from outside the camera view.
+
+```ts
+export function readProbeVolumeObservation(value: unknown): IProbeVolumeObservation | undefined { … }
+```
+
+- **Use when:** light bouncing from a room I cannot see · light a wall with an off-screen emitter
+- **Constraints:** request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting · add the volume with ctx.add() so its incremental work is measured in the render phase · call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
+- **Overrides:** density, bounds, bakeBudgetMs, and bounces are game-owned choices
+
+```ts
+const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
+```
+
 ### `readRenderChainObservation`
 
 `function` — Compose game-provided render nodes in a measured, fail-closed chain.

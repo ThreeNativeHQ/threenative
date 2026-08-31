@@ -4,7 +4,7 @@
   const device = host.device;
   const queue = host.queue;
   const magic = 0x544e4652;
-  const version = 1;
+  const version = 2;
   let storage = new ArrayBuffer(1 << 20);
   let view = new DataView(storage);
   let cursor = 16;
@@ -180,6 +180,15 @@
     if (!Number.isSafeInteger(id) || id <= 0)
       throw new TypeError(`frame op stream: no ${label} receiver`);
     return id;
+  };
+  const renderPassDepthSlice = (attachment) => {
+    const value = attachment.depthSlice === undefined ? 0xffffffff : attachment.depthSlice;
+    if (
+      attachment.depthSlice !== undefined &&
+      (!Number.isSafeInteger(value) || value < 0 || value >= 0xffffffff)
+    )
+      throw new RangeError("frame op stream: depthSlice must be a non-negative integer");
+    return value;
   };
   const renderPassPrototype = {
     setPipeline(p) {
@@ -362,6 +371,7 @@
           f64(opt(x.b, 0));
           f64(opt(x.a, 0));
         }
+        u32(renderPassDepthSlice(c));
       }
       const d = descriptor.depthStencilAttachment;
       u32(d ? 1 : 0);
