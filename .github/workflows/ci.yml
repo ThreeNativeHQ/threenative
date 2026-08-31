@@ -326,6 +326,13 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The gate scaffolds templates that import `@threenative/*` through their export maps, so
+      # the packages have to exist as built dist. Every other job that needs them does this; this
+      # one did not, and nobody saw it because `visuals` needs `golden-path` and golden-path had
+      # never passed. Its first execution failed on
+      #   Cannot find module '.../@threenative/assets/dist/index.js'
+      - name: Build workspace packages consumed through export maps
+        run: pnpm tsx scripts/workspace-packages.ts build
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm visuals
 
