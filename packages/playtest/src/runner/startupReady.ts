@@ -35,6 +35,16 @@ export interface IWaitForStartupReadyOptions {
    * the boundary before the first observation is taken.
    */
   readonly pump: () => Promise<void>;
+  /**
+   * True once the run is being torn down, so the wait stops instead of outliving it.
+   *
+   * The runner installs SIGINT/SIGTERM handlers that close the browser and remove its profile.
+   * Without this, a signal arriving mid-wait left the poll running to its own deadline — up to
+   * three minutes — and the teardown behind it did not happen until then. The orphan gate,
+   * which kills a run on purpose and then asserts the profile is gone, is exactly the thing
+   * that catches it: `before 1, after 3`, with no process holding the directories.
+   */
+  readonly aborted?: () => boolean;
   readonly now?: () => number;
   readonly timeoutMs?: number;
 }
@@ -69,8 +79,11 @@ export async function waitForStartupReady(
   // two would be the implicit fallback this must never have.
   const settled = (observation: IPlaytestStartupObservation): boolean =>
     options.acceptCompileSettled === true && observation.compileSettled === true;
+  const aborted = options.aborted ?? (() => false);
+  if (aborted()) throw abortedDuringStartup();
   let observed = await pollStartup(bridge);
   while (observed === BUSY || (observed.phase !== "ready" && !settled(observed))) {
+    if (aborted()) throw abortedDuringStartup();
     if (now() >= deadline) {
       throw new PlaytestBridgeError(playtestDiagnostic(
         "TN_PLAYTEST_STARTUP_NOT_READY",
@@ -85,6 +98,18 @@ export async function waitForStartupReady(
     rule: observed.phase === "ready" ? "sustained-frames" : "compile-settled",
     startup: observed,
   };
+}
+
+/**
+ * The run is going away. Unwind now so the caller's teardown runs, rather than holding the
+ * process open for the rest of the deadline while a browser profile sits on disk.
+ */
+function abortedDuringStartup(): PlaytestBridgeError {
+  return new PlaytestBridgeError(playtestDiagnostic(
+    "TN_PLAYTEST_STARTUP_ABORTED",
+    "The run was torn down while waiting for application startup.",
+    "Nothing to fix in the scenario: this is the shutdown path, and the wait yields to it so the browser and its profile are released immediately.",
+  ));
 }
 
 /** The bridge was too busy to answer this time round. Distinct from any real phase. */

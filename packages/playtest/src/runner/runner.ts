@@ -216,7 +216,10 @@ async function runStandalonePlaytestInternal(
     await teardownPromise.catch(() => undefined);
     if (stopManagedServerOnTeardown) await stopServer();
   };
+  let tearingDown = false;
   const handleSignal = (): void => {
+    // Read by the startup wait so it yields to teardown instead of polling to its own deadline.
+    tearingDown = true;
     void handlePlaytestSignal(
       (stopManagedServerOnSignal) => teardown(stopManagedServerOnSignal),
       undefined,
@@ -337,6 +340,7 @@ async function runStandalonePlaytestInternal(
     const startupOutcome = bridge === undefined || scenario.awaitStartup === false
       ? undefined
       : await waitForStartupReady({
+          aborted: () => tearingDown,
           acceptCompileSettled: activeConfig.allowSoftwareAdapter === true,
           bridge,
           pump: () => waitFrames(activePage, 1),

@@ -251,3 +251,29 @@ test("a software lane that does reach full readiness still reports the stricter 
     waitForStartupReady({ acceptCompileSettled: true, bridge, pump: async () => undefined }),
   ).resolves.toEqual({ rule: "sustained-frames", startup: ready });
 });
+
+test("yields to teardown instead of polling to its own deadline", async () => {
+  // The orphan gate kills a run on purpose and then asserts the browser profile is gone. With a
+  // 180s deadline and a poll that treats a busy bridge as "still starting", a signal arriving
+  // mid-wait left this loop running for minutes while the teardown behind it waited — observed in
+  // CI as "before 1, after 3 ... no process holds these directories".
+  let tearingDown = false;
+  let polls = 0;
+  const bridge = {
+    description: { capabilities: ["runtime.startup"] },
+    readiness: async () => {
+      polls += 1;
+      if (polls === 2) tearingDown = true;
+      return { startup: { phase: "collapsing", compileSettled: false } } as never;
+    },
+  };
+  await expect(
+    waitForStartupReady({
+      aborted: () => tearingDown,
+      bridge: bridge as never,
+      pump: async () => undefined,
+      timeoutMs: 180_000,
+    }),
+  ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_ABORTED" } });
+  expect(polls).toBeLessThanOrEqual(2);
+});
