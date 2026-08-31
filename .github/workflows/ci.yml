@@ -314,27 +314,20 @@ jobs:
       # a second copy of the slowest step in the workflow.
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
 
-  visuals:
-    needs: golden-path
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # The gate scaffolds templates that import `@threenative/*` through their export maps, so
-      # the packages have to exist as built dist. Every other job that needs them does this; this
-      # one did not, and nobody saw it because `visuals` needs `golden-path` and golden-path had
-      # never passed. Its first execution failed on
-      #   Cannot find module '.../@threenative/assets/dist/index.js'
-      - name: Build workspace packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
-      - uses: ./.github/actions/playwright-chromium
-      - run: pnpm visuals
+  # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
+  # has no GPU — its first execution in the repository's history failed on
+  #   page.screenshot: Timeout 30000ms exceeded
+  #     - taking page screenshot
+  # which is the documented behaviour: a software rasteriser does not composite a WebGPU canvas
+  # for `page.screenshot`. No timeout fixes that; the lane needs hardware.
+  #
+  # It never ran before because it declared `needs: golden-path`, and golden-path had never
+  # passed. That is the third gate this session that was hiding behind a permanently red one —
+  # after native-platforms and the visuals build step itself — and each was broken the whole time.
+  #
+  # Run it where there is a GPU: `pnpm visuals` locally, or `pnpm ci:local visuals`. The look is
+  # the thing no automated gate on this runner can judge anyway, which the templates' own
+  # AGENTS.md says in as many words: every gate here is blind to how the game looks.
 
   # Building the workspace and checking the entity-registry boundary needs neither the native host
   # nor a browser, so it is a gate the scaffold and benchmark lanes can wait on instead of waiting
