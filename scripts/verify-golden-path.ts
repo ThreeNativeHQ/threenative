@@ -864,7 +864,20 @@ async function runTemplate(
         runCommand("install", "pnpm", ["install", "--reporter", "append-only"], target),
       mcp: () => assertMcpServers(target),
       dev: () => runDev(target, template, port),
-      test: () => runCommand("test", "pnpm", ["test"], target),
+      test: () => {
+        // `goldenPathTestStep` decides what "test" means on this machine: the project's own
+        // `pnpm test` where there is a GPU, and only the scenarios that need no rendered frame
+        // where TN_PLAYTEST_ALLOW_SOFTWARE says there is not. It was written for that and then
+        // only ever used to build the corrective *message*, so the CI runner kept running the
+        // full suite and died in a pixel scenario it cannot serve:
+        //   locator.screenshot: Timeout 29970ms exceeded
+        //     - attempting scroll into view action
+        //     - waiting for element to be stable
+        // A canvas that renders every frame is never "stable", so the element screenshot can only
+        // ever time out there. Run what the step actually resolved to.
+        const step = goldenPathTestStep(target);
+        return runCommand("test", step.command, step.args, step.cwd);
+      },
       buildWeb: () =>
         runCommand(
           "build web",
