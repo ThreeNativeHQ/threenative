@@ -122,14 +122,14 @@ Proves aerodynamic force telemetry and signed control-surface delivery for a fli
 
 ### `visual`
 
-Proves screenshot change, populated regions, and sustained projected entity visibility. **Use when** that is the thing the scenario must prove.
+Proves screenshot change, populated coordinate or DOM element-bound regions, and sustained projected entity visibility. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web · **Requires:** browser.screenshot
 
 | Field | Type | Required |
 | --- | --- | --- |
 | `frameDiff` | { baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number } | no |
-| `region` | { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
+| `region` | static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
 | `entityVisible` | { entity: string, minProjectedPixels: number, throughoutFrames?: boolean } | no |
 
 
@@ -145,6 +145,12 @@ Proves screenshot change, populated regions, and sustained projected entity visi
         "entity": "board.e4",
         "minProjectedPixels": 20,
         "throughoutFrames": true
+      },
+      "region": {
+        "element": {
+          "id": "error"
+        },
+        "minNonblankPixelRatio": 0.002
       }
     }
   ]

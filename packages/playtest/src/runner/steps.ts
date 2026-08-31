@@ -16,6 +16,9 @@ import {
   type IPlaytestSetupApplication,
   type IPlaytestSetupRequest,
   type IPlaytestTrivialityOptOut,
+  type IPlaytestVisualElementRegionObservation,
+  type IPlaytestVisualAssertion,
+  type IPlaytestVisualRegionBounds,
   type PlaytestVec3,
 } from "../index.js";
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
@@ -88,6 +91,53 @@ export async function captureVisualSurface(
   return content;
 }
 
+export async function sampleVisualElementBounds(
+  page: Page,
+  assertions: readonly IPlaytestVisualAssertion[],
+): Promise<IPlaytestVisualElementRegionObservation[]> {
+  const requested = assertions.flatMap((assertion, assertionIndex) => {
+    const region = assertion.region;
+    return region !== undefined && "element" in region
+      ? [{ assertionIndex, element: region.element }]
+      : [];
+  });
+  if (requested.length === 0) return [];
+  return page.evaluate((targets) => targets.map(({ assertionIndex, element }) => {
+    const node = element.id === undefined
+      ? (() => {
+          try {
+            return document.querySelector(element.selector!);
+          } catch {
+            return null;
+          }
+        })()
+      : document.getElementById(element.id);
+    if (node === null) return { assertionIndex, element, rendered: false };
+    const rect = node.getBoundingClientRect();
+    const bounds: IPlaytestVisualRegionBounds | undefined = [rect.height, rect.width, rect.left, rect.top].every(Number.isFinite) && rect.width > 0 && rect.height > 0
+      ? { height: rect.height, width: rect.width, x: rect.left, y: rect.top }
+      : undefined;
+    let rendered = bounds !== undefined;
+    for (let current: Element | null = node; rendered && current !== null; current = current.parentElement) {
+      const style = window.getComputedStyle(current);
+      const opacity = Number.parseFloat(style.opacity);
+      const contentVisibility = style.getPropertyValue?.("content-visibility") || style.contentVisibility;
+      rendered = style.display !== "none"
+        && style.visibility !== "hidden"
+        && style.visibility !== "collapse"
+        && contentVisibility !== "hidden"
+        && (!Number.isFinite(opacity) || opacity > 0);
+    }
+    if (rendered && bounds !== undefined) {
+      const centerX = Math.min(Math.max(bounds.x + bounds.width / 2, 0), Math.max(0, window.innerWidth - 1));
+      const centerY = Math.min(Math.max(bounds.y + bounds.height / 2, 0), Math.max(0, window.innerHeight - 1));
+      const topmost = document.elementFromPoint(centerX, centerY);
+      rendered = topmost === node || (topmost !== null && node.contains(topmost));
+    }
+    return { assertionIndex, ...(bounds === undefined ? {} : { bounds }), element, rendered };
+  }), requested);
+}
+
 export function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
   const observations = {} as IPlaytestObservations;
   for (const field of [...STANDALONE_PLAYTEST_OBSERVATION_FIELDS, ...HOST_PLAYTEST_OBSERVATION_FIELDS]) {
@@ -119,6 +169,7 @@ export function screenshotObservations(
   after: Buffer | undefined,
   scenario: IPlaytestScenario,
   captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined = undefined,
+  elementRegions: readonly IPlaytestVisualElementRegionObservation[] = [],
 ): IPlaytestObservations["visual"] | undefined {
   if (after === undefined) return captureFailure === undefined ? undefined : { captureFailure };
   const afterPng = PNG.sync.read(after);
@@ -139,11 +190,19 @@ export function screenshotObservations(
     changedPixelRatio = changed / pixels;
   }
   const regions = (scenario.assert?.visual ?? [])
-    .flatMap(({ region }) => region === undefined ? [] : [region])
+    .flatMap(({ region }) => region === undefined || "element" in region ? [] : [region])
     .map((region) => ({ ...region, ...regionMetrics(afterPng, region) }));
+  const capturedElementRegions = elementRegions.map((captured) => {
+    const region = scenario.assert?.visual?.[captured.assertionIndex]?.region;
+    const metrics = captured.bounds === undefined || region === undefined
+      ? {}
+      : regionMetrics(afterPng, { ...captured.bounds, maxLuminance: region.maxLuminance });
+    return { ...captured, ...metrics };
+  });
   return {
     ...(changedPixelRatio === undefined ? {} : { changedPixelRatio }),
     ...(sameSize ? { comparisonSource: "before-after" } : {}),
+    ...(capturedElementRegions.length === 0 ? {} : { elementRegions: capturedElementRegions }),
     ...(regions.length === 0 ? {} : { nonblankRegions: regions }),
     ...(captureFailure === undefined ? {} : { captureFailure }),
   };
@@ -151,7 +210,7 @@ export function screenshotObservations(
 
 export function regionMetrics(
   png: PNG,
-  region: { height: number; maxLuminance?: number; width: number; x: number; y: number },
+  region: IPlaytestVisualRegionBounds & { maxLuminance?: number },
 ): { darkPixelRatio: number; nonblankPixelRatio: number } {
   const x0 = Math.max(0, Math.floor(region.x));
   const y0 = Math.max(0, Math.floor(region.y));

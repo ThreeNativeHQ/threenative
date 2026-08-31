@@ -46,6 +46,9 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (target !== "web" && target !== "desktop" && target !== "bevy") {
     throw invalidScenario(scenarioPath, "Scenario target must be one of: web, desktop, bevy.");
   }
+  if (value.bootFailure !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario bootFailure is browser-only and requires target 'web'.");
+  }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
     throw invalidScenario(scenarioPath, "Scenario inputDelivery must be deterministic or focused-dom.");

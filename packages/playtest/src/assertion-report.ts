@@ -1,8 +1,8 @@
 import type { IPlaytestComponentAssertion, IPlaytestDiagnosticsAssertion, IPlaytestPathAssertion } from "./scenario.js";
 import type { IPlaytestDeviceMetricsObservation } from "./runner/deviceMetrics.js";
 import type { IPlaytestDiagnosticsPolicy } from "./report.js";
-import type { IPlaytestRenderChainObservation,
-  IPlaytestStartupTimeline } from "./protocol.js";
+import type { IPlaytestRenderChainObservation, IPlaytestStartupTimeline } from "./protocol.js";
+import type { IPlaytestVisualRegionBounds, IPlaytestVisualRegionTarget } from "./scenario.js";
 
 export type Vec3 = [number, number, number];
 
@@ -26,6 +26,15 @@ export interface IPlaytestAssertionResult {
   details?: Record<string, unknown>;
   id: string;
   pass: boolean;
+}
+
+export interface IPlaytestVisualElementRegionObservation {
+  assertionIndex: number;
+  bounds?: IPlaytestVisualRegionBounds;
+  darkPixelRatio?: number;
+  element: IPlaytestVisualRegionTarget;
+  nonblankPixelRatio?: number;
+  rendered: boolean;
 }
 
 export interface IPlaytestObservations {
@@ -70,6 +79,7 @@ export interface IPlaytestObservations {
     captureFailure?: { code: "TN_CAPTURE_BLANK"; label: string; reason: string };
     changedPixelRatio?: number;
     comparisonSource?: string;
+    elementRegions?: IPlaytestVisualElementRegionObservation[];
     nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; width: number; x: number; y: number }>;
     /** Visual frame observations only; performance samples live in performanceSeries. */
     runtimeDiagnosticsSeries?: unknown[];

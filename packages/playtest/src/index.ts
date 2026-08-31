@@ -39,6 +39,7 @@ export type {
   IPlaytestAssertionResult,
   IPlaytestDiagnostic,
   IPlaytestFramebufferCoverageObservation,
+  IPlaytestVisualElementRegionObservation,
   IPlaytestObservations,
 } from "./assertion-report.js";
 /**
@@ -153,6 +154,11 @@ export type {
   IPlaytestScenario,
   IPlaytestSignalAssertion,
   IPlaytestStep,
+  IPlaytestVisualAssertion,
+  IPlaytestVisualElementRegion,
+  IPlaytestVisualRegion,
+  IPlaytestVisualRegionBounds,
+  IPlaytestVisualRegionTarget,
   IPlaytestWheel,
   IPlaytestWorldRuntimeAssertion,
 } from "./scenario.js";

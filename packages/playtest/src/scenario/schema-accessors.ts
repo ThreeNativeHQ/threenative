@@ -2,7 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
-import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion } from "./schema-base.js";
+import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -17,20 +17,37 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
     : requireRecord(record.region, scenarioPath, `${objectPath}.region`);
   let region: IPlaytestVisualAssertion["region"] | undefined;
   if (regionRecord !== undefined) {
-    const edges: Record<"height" | "width" | "x" | "y", number> = { height: 0, width: 0, x: 0, y: 0 };
-    for (const key of ["height", "width", "x", "y"] as const) {
-      const item = regionRecord[key];
-      if (typeof item !== "number" || !Number.isFinite(item)) {
-        throw invalidScenario(scenarioPath, `'${objectPath}.region.${key}' must be a finite number, received ${describeValue(item)}.`);
+    const element = regionRecord.element === undefined
+      ? undefined
+      : validateVisualRegionTarget(regionRecord.element, scenarioPath, `${objectPath}.region.element`);
+    const edgeKeys = ["height", "width", "x", "y"] as const;
+    if (element !== undefined) {
+      const authoredEdge = edgeKeys.find((key) => hasKey(regionRecord, key));
+      if (authoredEdge !== undefined) {
+        throw invalidScenario(scenarioPath, `'${objectPath}.region.${authoredEdge}' cannot be combined with an element-bound region; the element supplies its bounds.`);
       }
-      edges[key] = item;
+      region = {
+        element,
+        ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
+        ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
+      };
+    } else {
+      const edges: Record<"height" | "width" | "x" | "y", number> = { height: 0, width: 0, x: 0, y: 0 };
+      for (const key of edgeKeys) {
+        const item = regionRecord[key];
+        if (typeof item !== "number" || !Number.isFinite(item)) {
+          throw invalidScenario(scenarioPath, `'${objectPath}.region.${key}' must be a finite number, received ${describeValue(item)}.`);
+        }
+        edges[key] = item;
+      }
+      region = {
+        ...edges,
+        ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
+        ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
+      };
     }
-    region = {
-      ...edges,
-      ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
-      ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
-      ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
-    };
   }
   const entityVisibleRecord = record.entityVisible === undefined
     ? undefined
@@ -56,6 +73,20 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
     ...(frameDiff === undefined ? {} : { frameDiff }),
     ...(entityVisible === undefined ? {} : { entityVisible }),
     ...(region === undefined ? {} : { region }),
+  };
+}
+
+export function validateVisualRegionTarget(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualRegionTarget {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["id", "selector"], scenarioPath, objectPath);
+  const id = optionalString(record, "id", scenarioPath, objectPath);
+  const selector = optionalString(record, "selector", scenarioPath, objectPath);
+  if ((id === undefined) === (selector === undefined)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must declare exactly one non-empty 'id' or 'selector'.`);
+  }
+  return {
+    ...(id === undefined ? {} : { id }),
+    ...(selector === undefined ? {} : { selector }),
   };
 }
 
@@ -711,10 +742,13 @@ export function validateNestedAssertionKeys(
     const fields = {
       entityVisible: ["entity", "minProjectedPixels", "throughoutFrames"],
       frameDiff: ["baselineImage", "maxChangedPixelRatio", "minChangedPixelRatio"],
-      region: ["height", "maxLuminance", "minDarkPixelRatio", "minNonblankPixelRatio", "width", "x", "y"],
+      region: ["element", "height", "maxLuminance", "minDarkPixelRatio", "minNonblankPixelRatio", "width", "x", "y"],
     } as const;
     for (const [field, keys] of Object.entries(fields)) {
       if (isRecord(value[field])) {
+        if (field === "region" && isRecord(value[field].element)) {
+          rejectUnknownKeys(value[field].element, ["id", "selector"], scenarioPath, `assert.${kind}${suffix}.${field}.element`);
+        }
         rejectUnknownKeys(value[field], keys, scenarioPath, `assert.${kind}${suffix}.${field}`);
       }
     }
