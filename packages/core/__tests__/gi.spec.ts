@@ -217,6 +217,31 @@ describe("SurfelGI", () => {
     ).toThrow("SurfelGI.sceneBvh is required when scene is provided.");
   });
 
+  it("rejects a BVH built from a different scene", () => {
+    const sceneA = new Scene();
+    const sceneB = new Scene();
+    const sceneBvh = new GPUSceneBVH(sceneB);
+
+    try {
+      expect(
+        () =>
+          new SurfelGI({
+            hashCellCount: 8,
+            hashCellSize: 1,
+            lighting: testLighting(),
+            maxAge: 30,
+            rayBudget: 4,
+            scene: sceneA,
+            sceneBvh,
+            surfelBudget: 4,
+            updateCadence: 2,
+          }),
+      ).toThrow("SurfelGI.sceneBvh must be built from the provided scene.");
+    } finally {
+      sceneBvh.detach();
+    }
+  });
+
   it("binds its indirect node to a game-owned GBuffer pass", () => {
     const scene = new Scene();
     const camera = new PerspectiveCamera();

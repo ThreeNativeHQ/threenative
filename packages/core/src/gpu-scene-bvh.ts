@@ -406,6 +406,11 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     return this.#released;
   }
 
+  /** @internal Used by scene-bound consumers to verify this snapshot's source identity. */
+  isSnapshotOf(scene: Object3D): boolean {
+    return this.#scene === scene;
+  }
+
   get triangleCount(): number {
     return this.#triangleCount;
   }

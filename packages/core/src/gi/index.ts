@@ -107,8 +107,12 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
 
   constructor(options: ISurfelGIOptions) {
     super();
-    if (options.scene !== undefined && options.sceneBvh === undefined)
-      throw new Error("SurfelGI.sceneBvh is required when scene is provided.");
+    if (options.scene !== undefined) {
+      if (options.sceneBvh === undefined)
+        throw new Error("SurfelGI.sceneBvh is required when scene is provided.");
+      if (!options.sceneBvh.isSnapshotOf(options.scene))
+        throw new Error("SurfelGI.sceneBvh must be built from the provided scene.");
+    }
     this.updateCadence = positiveInteger("updateCadence", options.updateCadence);
     const poolOptions: ISurfelPoolOptions = {
       capacity: positiveInteger("surfelBudget", options.surfelBudget),
