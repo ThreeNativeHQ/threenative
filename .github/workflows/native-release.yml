@@ -40,11 +40,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # `gh run list` infers the repository from the checkout, and this job has none, so it died
+      # on `failed to determine base repo: fatal: not a git repository` before it could ask the
+      # question. The gate has therefore never once evaluated: this workflow runs only on a
+      # `runtime-native-v*` tag, and no such tag had ever been pushed. Pass the repository
+      # explicitly rather than adding a checkout the job otherwise does not need.
       - name: Require a green CI run for this commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          successful_runs="$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json status,conclusion,event,headBranch --jq '[.[] | select(.status == "completed" and .conclusion == "success" and .event == "push" and .headBranch == "main")] | length')"
+          successful_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json status,conclusion,event,headBranch --jq '[.[] | select(.status == "completed" and .conclusion == "success" and .event == "push" and .headBranch == "main")] | length')"
           test "$successful_runs" -gt 0 || {
             echo "No completed successful CI push run on main found for $GITHUB_SHA." >&2
             exit 1
