@@ -851,6 +851,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (projectionSettled) return "ready" as const;
           return "collapsing" as const;
         },
+        // True once first-use compilation has settled, which is earlier than `phase === "ready"`
+        // and is the signal a game wants when it must not act during the launch. `phase` cannot
+        // express it: it is binary, and readiness additionally requires a sustained in-budget
+        // frame window that a software rasteriser can only ever let expire. A game gated on
+        // `phase` alone therefore does nothing for ~25s on such a lane — measured as a chase route
+        // of length 0.000000 where 6 was required, because the scenario ended first.
+        get compileSettled() {
+          return startupReadiness.compileSettled;
+        },
         get progress() {
           return projectionSettled ? 1 : 0;
         },

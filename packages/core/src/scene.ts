@@ -48,6 +48,17 @@ void | SceneFrame<TState, TPhysics>;
 
 export interface IStartupStatus {
   /**
+   * True once first-use compilation has settled — earlier than `phase === "ready"`, which also
+   * waits for a sustained in-budget frame window.
+   *
+   * This is the signal a game wants when something must not run during the launch. `phase` cannot
+   * express it: it is binary, and on a software rasteriser the frame window can only ever expire
+   * rather than be met, so a game gated on `phase` alone does nothing for tens of seconds there.
+   * Measured as a chase route of length `0.000000` against a required `6`, because the scenario
+   * ended before the window did.
+   */
+  readonly compileSettled: boolean;
+  /**
    * `collapsing` until first-use work and a sustained in-budget frame window complete, `ready`
    * once the world is safe to show.
    */

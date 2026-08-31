@@ -157,7 +157,10 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       // function of how long startup took — it passed on a workstation and failed in CI at
       // `4.43 of a required 6`, with `routeComplete` already true before the scenario began.
       // Everything else in this frame keeps running: only the measured routes wait.
-      if (frameCtx.startup.phase === "ready") {
+      // `compileSettled`, not `phase === "ready"`: readiness additionally waits for a sustained
+      // in-budget frame window, which a software rasteriser never meets, so gating on it froze
+      // these routes for the whole scenario and measured a path length of 0.
+      if (frameCtx.startup.compileSettled) {
         chaser.update(dt);
         avoidanceChaser.update(dt);
       }

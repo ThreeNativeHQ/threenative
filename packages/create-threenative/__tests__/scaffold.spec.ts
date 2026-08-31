@@ -157,7 +157,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   "action-rpg": "17285f00aedbb2df2785126eebb4b4d62779d55568d16b04f2bf78a7d93e75aa",
   defense: "ff0ffafb9ea549347923aa3633d6cbecabaec2204675a1a67906f4004d16761b",
   minimal: "d28cb27a7ecfcfd9bd7167a3f6de2d0faa97bccec3791dbcb436f4a8ef2234c4",
-  platformer: "2e52ec36e7bcef691652a5637d02f75d37c67cab5c2f0fe4f9e9bad266530bda",
+  platformer: "b89b73c7891a69dd3341b5e40082afe14fd2a1bed308776dd9ab796dccbbf2db",
   racing: "1c6929f9dc9bb26986b63460a1c802e78d5465010f0e6179f4c5db5ad43e0821",
   shooter: "8ffdc005d1c7db69078ab5b8575c9ea9b681afecbdead07af863cb28de1b65ac",
   starter: "bfea0428c7848ee8692f5fa144d504dae9a6606f41e3463baec036d5b2b5b620",

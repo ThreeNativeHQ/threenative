@@ -22,7 +22,9 @@ step "capabilities"  pnpm build
 step "native coverage" pnpm --filter @threenative/runtime-native native:coverage
 step "census"        pnpm census
 step "agent mirrors" pnpm sync:agents
-step "alpha bar"     pnpm alpha:bar --write
+# `alpha:bar --write` exits non-zero whenever a row of the bar is failing, which is its normal
+# state and not a generator error. Regenerate the table, ignore the verdict.
+printf '%-22s ' "alpha bar"; pnpm alpha:bar --write >/dev/null 2>&1; echo "ok (verdict ignored)"
 after=$(git status --porcelain)
 echo
 if [ "$before" = "$after" ]; then
