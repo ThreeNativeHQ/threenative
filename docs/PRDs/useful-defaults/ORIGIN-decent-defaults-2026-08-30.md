@@ -32,28 +32,33 @@ The rows below name where each PRD lives now; re-check a path before citing it.
 | 2 | [PRD-193](../performance/PRD-193-all-templates-model-allocation-free-frames.md) + [PRD-194](../performance/PRD-194-every-template-carries-a-real-performance-proof.md) | `performance/` | NOT STARTED | The regression net under 1. Adding five TSL stages to seven templates with no per-template performance proof is how a good default silently becomes a 30 fps one. Run **with** 1, not after. |
 | 3 | [PRD-287 — the default look holds the phone's budget, or steps down and says so](./PRD-287-the-default-look-holds-the-phones-budget.md) | **here** | OPEN | New. The device arm nothing owns, plus a correction to the tier ladder's selection meter. |
 | 4 | [PRD-288 — the first frame is not the compile bill](./PRD-288-the-first-frame-is-not-the-compile-bill.md) | **here** | OPEN | New. `packages/core/src/warmup.ts` compiles the scene and never touches the post chain. |
-| 5 | [lighting/PRD-266 — the render chain names the tier it actually ran](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | `lighting/` | PROPOSED | **Blocked on one owner decision, not on code** — see below. It is fifth in this list only because of that gate; on a yes it becomes the spine of 3 and 4. |
+| 5 | [lighting/PRD-266 — the render chain names the tier it actually ran](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | `lighting/` | PROPOSED | Re-scoped by the ruling below to capability facts, the budget signal and the report contract. Unblocked; it is the spine of 3 and 4. |
 | 6 | [lighting/PRD-270 — no lighting node ships web-only](../lighting/PRD-270-no-lighting-node-ships-web-only.md) | `lighting/` | PROPOSED | The charter calls a web-only feature unfinished. Without it the new default look is a web-only default and the native templates diverge on first `pnpm dev`. |
 
 `mobile/PRD-214`'s unstarted phases 1–2 and `performance/PRD-222` are the Android frame-rate lanes
 this batch's PRD-287 measures against. They are not in scope here; PRD-287 consumes their meters and
 does not duplicate their levers.
 
-## The one thing only the owner can answer
+## The ruling that gates rows 5 and 6 — answered 2026-08-30
 
-`lighting/PRD-266` opens with a blocking question and it gates rows 5 and 6, and the framework half
-of 3: **`CHARTER.md` lists "post-processing composition" in the *framework must never own* column,
-and `packages/core/AGENTS.md` repeats it as "not as code, and not as a `defineGame` option".**
-`WorldEnvironment` composes a post-processing order. By name it is the forbidden thing; by the
-charter's own veto test — *can the game change the appearance completely without editing package
-code?* — it passes, because every stage, strength, colour, exposure and tone curve stays in the
-game's source.
+The owner delegated this call and it was made by the agent on their behalf. It is recorded in full,
+with its reversal condition, at the top of
+[lighting/PRD-266](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md).
 
-The decision has an executable form: landing the planner in `packages/core` fails
-`packages/core/__tests__/constraints.spec.ts:62`. **Yes** means that assertion gains an entry and
-the tier ladder, capability detection and degradation become mechanism in core. **No** means the
-ladder ships as generated source in all seven templates and PRD-287 grades seven copies instead of
-one seam. Both are executable; neither is guessable. Row 1 does not wait on it.
+**Short form: no to the composer in `packages/core`, yes to a narrow platform seam.**
+`packages/core/src/render/world-environment.ts` does not land — the composer, the stage graph, the
+composite maths and the tier→parameter table ship as generated source in `templates/*/src/render/`,
+merged into the file PRD-278 already carries, and
+`packages/core/__tests__/constraints.spec.ts:62` keeps its allowlist unwidened. Core gains only
+(1) capability facts including a reason-bearing compile probe, (2) a budget signal emitting a tier
+**ordinal** with its `source` and the meter it read, and (3) the fail-closed `TN_WORLD_ENVIRONMENT`
+report contract. None of the three names a stage, a colour, a strength or a curve.
+
+It costs about twenty duplicated lines per template, which is what generated source is for. It
+reverses on a measured number — a template shipping a wrong stage order, or `count-loc.ts` scoring
+the seven copies worse than the seam — and not on argument.
+
+**Rows 5 and 6 are unblocked. Row 5 is re-scoped to the three items above.**
 
 ## Explicit exclusions
 

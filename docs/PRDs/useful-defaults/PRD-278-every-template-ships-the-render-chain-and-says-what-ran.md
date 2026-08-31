@@ -19,6 +19,13 @@ as generated source.
 `lighting.ts`, plus per-template tuning = **MEDIUM**. The copy is trivial; the six integration
 problems below are the work.
 
+**Scope grew 2026-08-30, by ruling.** The composer, the stage graph, the composite maths and the
+tier→parameter table are this PRD's, not `packages/core`'s: the owner-delegated answer to
+[lighting/PRD-266](./lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md)'s blocking
+question was no. This file also gains the mapping from the framework's tier **ordinal** to which
+stages run at which quality — the ordinal arrives as an argument, exactly as the platform decision
+in §3 does. Sequenced in [batch-2026-08-30](./batch-2026-08-30/README.md).
+
 ## Where it goes, and why it is not a package export
 
 `WorldEnvironment` picks the tone-mapping operator, the stage order, and the composite maths

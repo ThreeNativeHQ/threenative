@@ -7,9 +7,11 @@ prd_contract: v1
 **Status: OPEN — filed 2026-08-30 against `728f72e8`. Nothing below has been executed.** Part of
 the [decent-defaults batch](./README.md). Depends on
 [PRD-278](../PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain to
-measure, and on the owner ruling in
-[lighting/PRD-266](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for
-where the ladder lives.
+measure, The ruling on where the ladder lives was answered
+2026-08-30 in
+[lighting/PRD-266](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md): the
+budget signal and its meter are core, the tier→stage mapping is template source. AC1 below is that
+signal; AC4's defaults are graded in seven generated files, not one seam.
 
 **Goal: the tier a scaffolded game runs is chosen against the meter that is actually limiting the
 frame, proven on a physical phone, and the step-down says why it happened.** Today the ladder is

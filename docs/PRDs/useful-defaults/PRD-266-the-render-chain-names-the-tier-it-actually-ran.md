@@ -14,6 +14,73 @@ framework version has to handle. Evidence:
 Two changes fall out of that and are folded in below: the abstraction is named
 `WorldEnvironment`, and four defect classes have been observed rather than predicted.
 
+**ANSWERED 2026-08-30 — the answer is a split, and it is *no* on the part this PRD asks
+about.** The owner delegated this call; it was made by the agent on their behalf, and it is
+recorded here rather than in a commit message so it binds. The reasoning, the exact scope it
+grants, and the one condition that would reverse it are below. The question as originally posed
+is kept intact underneath because the argument is what makes the ruling checkable.
+
+### The ruling
+
+**No** — `packages/core/src/render/world-environment.ts` does not land. The composer, the stage
+graph, the composite maths and the tier→parameter table ship as generated source in
+`templates/*/src/render/`, merged into the file
+[PRD-278](../PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) is already
+carrying. `packages/core/__tests__/constraints.spec.ts:62` keeps its eleven-filename allowlist
+**unwidened**, and that is the load-bearing test of the ruling: an answer that needed the
+prohibition weakened would have been the wrong answer.
+
+**Yes** to a narrower seam, because three of the four things this PRD bundles are not composition
+and a game genuinely cannot write them portably (charter rule 1(a), at any size). Core may gain,
+and only this:
+
+1. **Capability facts.** Renderer `kind`, adapter info, `timestamp-query` presence, and a compile
+   probe the game hands a node to — the framework returns compiled-or-not **with a reason** and
+   never knows what the node was. It names no stage.
+2. **A budget signal.** Headroom and a tier **ordinal** with a `source` (`pinned` / `auto`),
+   computed from `FrameBudget`'s `gpuMs` where a timestamp query exists and `render` where it does
+   not, stating which input it used — the correction
+   [PRD-287](../batch-2026-08-30/PRD-287-the-default-look-holds-the-phones-budget.md) is filed on.
+   This is `ResolutionScaler`'s shape, which is already core and already decides nothing visual.
+   An ordinal is not a stage list: the template maps ordinal → which stages, at which quality.
+3. **The report contract.** `TN_WORLD_ENVIRONMENT` rides the marker path `TN_FRAME_BUDGET`
+   already uses, fail-closed on a stage entry whose `applied: false` carries an empty reason. Core
+   validates the *shape*; the template supplies every field name and value.
+
+### Why this way
+
+The charter's veto test — *can the game change the appearance completely without editing package
+code?* — is passed by the capability probe and the budget signal, and **failed by the composer**.
+The composer picks the tone-mapping operator, the stage order and the composite maths, and carries
+`bloomStrength: 0.7`, `tonemapMode: "aces"`, `ssgiIntensity: 1`. Those are defaults that choose how
+the game looks, which charter rule 3 sends to generated source *at any size*. The four upstream
+defects §3 documents are real and they are solved by shipping correct **values with the comments
+that explain them**, in the user's own repo, not by hiding them behind an API — a comment stating
+*why* `maxDistance` must scale with the scene teaches an agent more than a default it cannot see.
+
+Meanwhile the honest-reporting clause and the degradation ladder are measurement and platform
+seams. Refusing those to core would leave a game unable to tell "GI is off because I chose that"
+from "GI is off because a node silently no-op'd", which is the failure §4 names.
+
+### What it costs, and what reverses it
+
+Roughly twenty lines of tier→parameter table duplicated across seven generated files. That is the
+charter's intended cost: generated source is a floor the game rewrites, and seven templates already
+copy a 497-line file. **The ruling reverses if that duplication is measured to hurt** — a template
+shipping a wrong stage order that a shared composer would have prevented, or `scripts/count-loc.ts`
+scoring the seven copies worse than the seam. Bring either number and this reopens; do not reopen
+it on argument alone.
+
+### What each PRD does now
+
+- **This PRD** is unblocked and re-scoped to items 1–3 above. Its composer and its tier table move
+  to PRD-278's file; `design/` stays the reference implementation for both halves.
+- **PRD-278** is unchanged and becomes the composer's home, plus the ordinal→stages mapping.
+- **PRD-287** is unchanged; its AC1 is item 2 of this ruling.
+- **PRD-267** fills in the values, as it already said it would.
+
+---
+
 **BLOCKING QUESTION FOR THE OWNER — this PRD cannot ship without an answer.**
 
 `CHARTER.md` lists **"Post-processing composition"** in the *framework must never own*
