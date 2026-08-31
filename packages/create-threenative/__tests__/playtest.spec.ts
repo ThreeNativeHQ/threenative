@@ -164,6 +164,34 @@ describe("starter playtest proof", () => {
     });
   });
 
+  // Both stomp scenarios once passed and failed run to run with identical tick counts. The span
+  // was always 117; what moved was `firstTick` — the ticks that elapsed while the page booted —
+  // and `Patrol.update(dt)` walks the enemy from the moment the level loads, so a stomp landed on
+  // a target at a different point in its cycle every run. Placing the patrol frozen is what makes
+  // the landing reproducible; deleting the setup block puts the flake straight back.
+  it.each(["stomp", "stomp-rise"])(
+    "should place the platformer patrol frozen in the %s scenario",
+    async (name) => {
+      const scenario = JSON.parse(
+        await readFile(
+          path.resolve(
+            `packages/create-threenative/templates/platformer/playtests/${name}.playtest.json`,
+          ),
+          "utf8",
+        ),
+      ) as {
+        setup?: {
+          place?: readonly { entity: string; at: Record<string, number>; frozen?: boolean }[];
+        };
+      };
+      const patrol = scenario.setup?.place?.find((entry) => entry.entity === "patrol");
+
+      expect(patrol, "the patrol must be placed, or boot time decides the stomp").toBeDefined();
+      expect(patrol?.frozen).toBe(true);
+      expect(Object.keys(patrol?.at ?? {}).sort()).toEqual(["x", "y", "z"]);
+    },
+  );
+
   it("should keep touch controls absent in the normal web platformer run", async () => {
     const scenario = JSON.parse(
       await readFile(
