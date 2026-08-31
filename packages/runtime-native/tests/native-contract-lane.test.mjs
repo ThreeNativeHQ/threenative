@@ -182,6 +182,17 @@ test('a contract declared for other platforms is not required to have a target h
     validateExecutionContracts(['threenative-everywhere-test'], contracts, 'win32'),
   );
 
+  // Discovery reads CMakeLists.txt as text and cannot see an `if(NOT WIN32)` guard, so it lists
+  // the POSIX target on Windows anyway. That is not a missing contract — the contract says where
+  // the target exists, and the lane skips it there.
+  assert.doesNotThrow(() =>
+    validateExecutionContracts(
+      ['threenative-everywhere-test', 'threenative-posix-only-test'],
+      contracts,
+      'win32',
+    ),
+  );
+
   // On Linux it must be there: a platform the contract claims still fails closed without it.
   assert.throws(
     () => validateExecutionContracts(['threenative-everywhere-test'], contracts, 'linux'),

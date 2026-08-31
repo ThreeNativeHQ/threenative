@@ -179,13 +179,14 @@ export function contractAppliesTo(contract, platform = process.platform) {
 
 export function validateExecutionContracts(discoveredTargets, contracts, platform = process.platform) {
   const discovered = new Set(discoveredTargets);
-  const configured = new Set(
-    Object.entries(contracts)
-      .filter(([, contract]) => contractAppliesTo(contract, platform))
-      .map(([target]) => target),
-  );
-  const missing = discoveredTargets.filter((target) => !configured.has(target));
-  const extra = [...configured].filter((target) => !discovered.has(target)).sort();
+  // Discovery reads `add_executable` out of CMakeLists.txt as text, so it cannot see an
+  // `if(NOT WIN32)` guard and lists POSIX-only targets on Windows too. The contract's platform
+  // list is the authority on where a target exists; discovery only says what is written down.
+  const missing = discoveredTargets.filter((target) => contracts[target] === undefined);
+  const extra = Object.entries(contracts)
+    .filter(([target, contract]) => contractAppliesTo(contract, platform) && !discovered.has(target))
+    .map(([target]) => target)
+    .sort();
   const errors = [];
   if (missing.length > 0) errors.push(`missing execution contracts: ${missing.join(", ")}`);
   if (extra.length > 0) errors.push(`execution contracts without targets: ${extra.join(", ")}`);
@@ -228,6 +229,13 @@ export function runNativeContractLane({
   validateExecutionContracts(discoveredTargets, contracts);
   const failures = [];
   for (const target of discoveredTargets) {
+    // A target the contract scopes to other platforms is not built here; running it would fail on
+    // an executable CMake never produced. Reported rather than skipped silently, so the lane's
+    // output still accounts for every target it was given.
+    if (!contractAppliesTo(contracts[target])) {
+      report({ failures: [], status: "SKIP", target });
+      continue;
+    }
     const targetFailures = executeTarget(target, contracts[target], buildTarget, runTarget);
     const status = targetFailures.length === 0 ? "PASS" : "FAIL";
     report({ failures: targetFailures, status, target });

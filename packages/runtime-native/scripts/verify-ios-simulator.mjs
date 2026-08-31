@@ -261,12 +261,20 @@ const launched = spawnSync(
   ['simctl', 'launch', '--terminate-running-process', '--console-pipe', simulator.udid, bundleId],
   { cwd: workspaceRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 180_000 },
 );
-if (launched.error) {
+// A timeout is the expected ending, not a failure. `--console-pipe` returns when the app exits,
+// and the smoke app keeps running after its 300th frame — so the deadline is how this call ends
+// normally, and everything printed up to it is captured and still answers the question. Any other
+// spawn error is a real launch failure.
+if (launched.error && launched.error.code !== 'ETIMEDOUT') {
   const diagnostics = launchDiagnostics(simulator.udid, startedAt);
   writeFileSync(join(artifactRoot, 'simulator-launch-failure.log'), diagnostics);
   throw new Error(`${launched.error.message}\n\niOS launch diagnostics:\n${diagnostics}`);
 }
 const consoleOutput = `${launched.stdout ?? ''}${launched.stderr ?? ''}`;
+// Killing `xcrun` ends the pipe, not the app, which keeps running in the simulator. That is left
+// alone deliberately: `simctl terminate` fails with "found nothing to terminate" whenever the app
+// has already exited, and a previous version of this script died on exactly that. The next launch
+// clears it with `--terminate-running-process`, which is why that flag is there.
 writeFileSync(join(artifactRoot, 'simulator-console.log'), consoleOutput);
 
 // The unified log stays as the second source: it holds the crash reports and the system-side
@@ -292,7 +300,7 @@ if (missingMarkers.length > 0) {
   const tail = broadLog.split('\n').slice(-60).join('\n');
   throw new Error(
     `iOS proof missed markers: ${missingMarkers.join(', ')}\n` +
-      `App console was ${consoleOutput.length} bytes and exited ${launched.status}; ` +
+      `App console was ${consoleOutput.length} bytes (exit ${launched.status ?? launched.error?.code}); ` +
       `the broader system log tail follows.\n${tail}`,
   );
 }
