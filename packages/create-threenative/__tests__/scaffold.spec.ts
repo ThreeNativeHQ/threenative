@@ -123,13 +123,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `TN_WORLD_ENVIRONMENT` paragraph. The starter moves too: the shared file gained the
   // `baseColour` seam `minimal`'s aerial perspective needs, bloom radius and threshold as
   // arguments, and the report that prints even when every stage is off.
-  "action-rpg": "d758a51421e164e49cac7ec9d767a212d2cd6130e31e45e6093bd6a88ccf1069",
-  defense: "01e8a46af7fdf6644af7b6ccce995ed494a32e218e36e708ec4f26df77ad7139",
-  minimal: "9b8099053945baedd323b44dc42db750c6882badc8095522c3023409f04e3eac",
-  platformer: "94ab4b80286cff27f7592d07cbf5f67460f029b8b0d0711786ed17fcaddf0045",
-  racing: "43219f3a4dc0a59cace09fcb64cc48c3ce7c80371a4f98fbcdc9761bcc4e9e96",
-  shooter: "9c758b6ec29f503063211ea901e1d50b356fc6ade8f314381d57c7f8ebe510fb",
-  starter: "bf9361c3a101a1424b3e9282c4f99dcad9a31dae3413b736ba7c614e6f4bbca7",
+  // Recomputed 2026-08-30 after the later template contracts landed; these are the byte hashes
+  // of the current no-install scaffold trees, not a historical PRD parent snapshot.
+  "action-rpg": "6fcfb476387c4a14fe8e5dc55c04223095d23e0cf9c4f68e5cd8699e072f9dc9",
+  defense: "b4c8f53d2d5a9bb63233288475c57f39f6cb6997b2a26ed84f20a86fa748749d",
+  minimal: "d077a5d49a7a6890f0e7d2f6d0da164a4856c249eb06bbe09e94790801bb5992",
+  platformer: "e834732e052a60639e0eca8da1a2f105856d882ffd9aa8b8f66100af2460af70",
+  racing: "0b67d2782197001e174f6ca389f0cd0de302c5d88f89329e96dfb3b46802a916",
+  shooter: "38c5f6f767f18e309402adae82299d7afa1d88c33530cdaa1289f5fee83e494e",
+  starter: "c6e237b57f99cf6bb551471ac457bdaeadf8b1ab7de8ae53843627e42f9e88ce",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

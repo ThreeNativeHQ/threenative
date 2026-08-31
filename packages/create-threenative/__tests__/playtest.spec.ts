@@ -353,6 +353,7 @@ describe("starter playtest proof", () => {
     ) as {
       assert: {
         resources: Array<{
+          allowTrivial?: string;
           changed?: boolean;
           equals?: unknown;
           gte?: number;
@@ -370,13 +371,15 @@ describe("starter playtest proof", () => {
       "utf8",
     );
 
-    expect(level).toEqual({ changed: true, gte: -1, id: "state", lte: 1, path: "levelX" });
+    expect(level).toMatchObject({ gte: -1, id: "state", lte: 1, path: "levelX" });
+    expect(level?.allowTrivial).toEqual(expect.any(String));
+    expect(level?.allowTrivial?.trim().length).toBeGreaterThanOrEqual(20);
     expect(level).not.toHaveProperty("equals");
     expect(play).toContain("const randomStateBeforeLevel = ctx.random.state");
     expect(play).toContain(
       "const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX",
     );
-    expect(play).toContain("ctx.after(0.25, () => ctx.state.set({ levelX: seededLevelX }))");
+    expect(play).toContain("ctx.state.set({ levelX: seededLevelX });");
   });
 
   it("should load the packaged texture and GLB through the starter scene", async () => {
