@@ -86,7 +86,7 @@ class FakeRecordingAndroidDriver extends FakeAndroidDriver {
 }
 
 test("the existing device-smoke scenario reaches its visibility assertion on Android", async () => {
-  const driver = new FakeAndroidDriver(movingBridge().bridge);
+  const driver = new FakeAndroidDriver(movingBridge({ entity: "multitouch-player" }).bridge);
   const result = await runDeviceScenario("device-smoke.playtest.json", driver);
 
   expect(driver.prepared).toBe(true);
@@ -647,7 +647,7 @@ const deviceDiagnosticsOptOut = {
   networkErrorsOptOutReason: "The Android transport has no network observer in this scenario.",
 };
 
-function movingBridge(options: { clearHeldAfterAdvance?: boolean } = {}): {
+function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: string } = {}): {
   bridge: IPlaytestBridgeV1;
   sampleRequests: IPlaytestSampleRequest[];
   setHeld(value: boolean): void;
@@ -678,7 +678,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean } = {}): {
           clock: { mode: "fixed-step", tick },
           diagnostics: [],
           entities: [
-            { id: "player", transform: { position: [x, 0, 0] }, visible: true },
+            { id: options.entity ?? "player", transform: { position: [x, 0, 0] }, visible: true },
             { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },
           ],
           resources: {},

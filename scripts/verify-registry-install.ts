@@ -377,7 +377,12 @@ export function verifyRegistryInstall(
   fs.mkdirSync(cache, { recursive: true });
   const project = path.join(parent, "my-game");
   const run =
-    options.run ?? realRunner({ ...cleanRoomEnvironment(process.env), NPM_CONFIG_CACHE: cache, npm_config_cache: cache });
+    options.run ??
+    realRunner({
+      ...cleanRoomEnvironment(process.env),
+      NPM_CONFIG_CACHE: cache,
+      npm_config_cache: cache,
+    });
   const mcp = options.mcp ?? realMcpRunner;
   const steps: IRegistryInstallStep[] = [];
   try {

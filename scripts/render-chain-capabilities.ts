@@ -69,18 +69,13 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
       "stop props looking like they float",
       "ambient occlusion, contact shadows, crevice darkening",
     ],
-    constraints: [
-      "Radius is in metres; a radius sized for a room reads as a smudge on a prop.",
-    ],
+    constraints: ["Radius is in metres; a radius sized for a room reads as a smudge on a prop."],
   }),
   stage({
     symbol: "BloomNode",
     importPath: "three/addons/tsl/display/BloomNode.js",
     summary: "Glow around bright pixels. Already wired as the `bloom` stage.",
-    situations: [
-      "make a bright opening or a lamp glow",
-      "bloom, glare, light spill",
-    ],
+    situations: ["make a bright opening or a lamp glow", "bloom, glare, light spill"],
     constraints: [
       "Strength above ~0.3 on an interior washes the mid-tones; the reference-matching band is lower than it looks.",
     ],

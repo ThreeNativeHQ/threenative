@@ -52,7 +52,7 @@ class FakeIosDriver implements IDevicePlaytestDriver {
 }
 
 test("the existing device-smoke scenario reaches its visibility assertion on iOS", async () => {
-  const driver = new FakeIosDriver(bridge());
+  const driver = new FakeIosDriver(bridge("multitouch-player"));
   const result = await runIosScenario("device-smoke.playtest.json", driver);
   expect(driver.prepared).toBe(true);
   expect(result.pass).toBe(true);
@@ -251,7 +251,7 @@ const deviceDiagnosticsOptOut = {
   networkErrorsOptOutReason: "The iOS transport has no network observer in this scenario.",
 };
 
-function bridge(): IPlaytestBridgeV1 {
+function bridge(entity = "player"): IPlaytestBridgeV1 {
   let tick = 0;
   let x = 0;
   return {
@@ -271,7 +271,7 @@ function bridge(): IPlaytestBridgeV1 {
       clock: { mode: "fixed-step", tick },
       diagnostics: [],
       entities: [
-        { id: "player", transform: { position: [x, 0, 0] }, visible: true },
+        { id: entity, transform: { position: [x, 0, 0] }, visible: true },
         { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },
       ],
       resources: {},
