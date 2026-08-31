@@ -18,6 +18,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import {
   defaultMaterial,
   floorMaterial,
+  giReceiverMaterial,
   setWallColour,
   wallMaterial,
 } from "../render/materials.js";
@@ -98,6 +99,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     wall.castShadow = true;
     wall.userData.traceable = true;
     ctx.add(wall);
+    // Keep the receiver in the wall's near hash cell so the bounded gather can show its bounce.
+    const giReceiver = new Mesh(new BoxGeometry(1.1, 0.7, 0.04), giReceiverMaterial);
+    giReceiver.position.set(-3.35, 0.35, 2.85);
+    ctx.add(giReceiver);
     const hazeProbe = new Mesh(distantRidgeGeometry, defaultMaterial);
     hazeProbe.castShadow = true;
     ctx.add(hazeProbe);
@@ -116,10 +121,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
               new SurfelGI({
                 camera: ctx.camera,
                 hashCellCount: 64,
-                hashCellSize: 0.75,
+                hashCellSize: 3,
                 maxAge: 600,
                 rayBudget: 64,
-                sampleRadius: 0.035,
+                sampleRadius: 0.5,
                 scene: ctx.scene,
                 sceneBvh,
                 surfelBudget: 256,
@@ -155,6 +160,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
 
     let elapsed = 0;
+    let freezeLighting = false;
     let giBounceBaseline: number | undefined;
     let giBounceAfterRecolour: number | undefined;
     let giReadbackInFlight = false;
@@ -198,19 +204,21 @@ export class Play extends Scene<GameState, IPhysicsContext> {
               red += data[index * 4] ?? 0;
             }
             const observedRed = activeLanes === 0 ? 0 : red / activeLanes;
-            if (observedRed > 0) {
-              if (wallColourChanged) giBounceAfterRecolour = observedRed;
-              else giBounceBaseline = observedRed;
-              ctx.state.set({
-                giBounceRed: observedRed,
-                giBounceDeltaRed:
-                  wallColourChanged &&
-                  giBounceBaseline !== undefined &&
-                  giBounceAfterRecolour !== undefined
-                    ? Math.abs(giBounceAfterRecolour - giBounceBaseline)
-                    : 0,
-              });
+            if (wallColourChanged) {
+              if (giBounceBaseline === undefined) return;
+              giBounceAfterRecolour = observedRed;
+            } else if (observedRed > 0) {
+              giBounceBaseline = observedRed;
+            } else {
+              return;
             }
+            ctx.state.set({
+              giBounceRed: observedRed,
+              giBounceDeltaRed:
+                wallColourChanged && giBounceAfterRecolour !== undefined
+                  ? Math.abs(giBounceAfterRecolour - giBounceBaseline)
+                  : 0,
+            });
           })
           .catch(() => undefined)
           .finally(() => {
@@ -222,12 +230,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     return (frameCtx, dt) => {
       loading.update();
       player.update(frameCtx, dt);
-      elapsed += dt;
-      solarInput.timeOfDay = (6 + elapsed * 2) % 24;
-      solarPosition(solarInput, sun);
-      if (atmosphere !== undefined) {
-        atmosphere.setSunDirection(sun);
-        lighting.updateSun(atmosphere.getSunDirection());
+      if (frameCtx.input.justPressed("freezeLighting")) freezeLighting = true;
+      if (!freezeLighting) {
+        elapsed += dt;
+        solarInput.timeOfDay = (6 + elapsed * 2) % 24;
+        solarPosition(solarInput, sun);
+        if (atmosphere !== undefined) {
+          atmosphere.setSunDirection(sun);
+          lighting.updateSun(atmosphere.getSunDirection());
+        }
       }
       if (frameCtx.input.justPressed("recolour")) {
         wallColourChanged = !wallColourChanged;
@@ -245,7 +256,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       requestGiObservation();
       const giBounceRed =
         gi === undefined
-          ? undefined
+          ? 0
           : ((wallColourChanged ? giBounceAfterRecolour : giBounceBaseline) ?? 0);
       statePatch.giBounceRed = giBounceRed;
       statePatch.giBounceDeltaRed =

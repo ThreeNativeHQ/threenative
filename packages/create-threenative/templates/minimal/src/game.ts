@@ -16,6 +16,7 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
+    freezeLighting: { keys: ["KeyL"] },
     recolour: { keys: ["KeyC"] },
   },
   // `playtest()` installs the bridge a scenario needs to observe entities and state. Without

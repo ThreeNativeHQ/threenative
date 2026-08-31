@@ -12,8 +12,8 @@
 // `mobilePreset` and read the frame cost back out of `TN_FRAME_BUDGET`. What each stage costs,
 // and the one-line enable for the ones that ship off everywhere (godrays, contact AO,
 // vignette), is in `agent-docs/visual-baseline.md`.
-import type { Camera, DirectionalLight, Scene } from "three";
-import { float, vec3, vec4 } from "three/tsl";
+import { type Camera, type DirectionalLight, type Scene, Vector3 } from "three";
+import { float, frameGroup, uniform, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { wallBounceRadiance } from "./materials.js";
 import type { OutputRenderer } from "./worldEnvironment.js";
@@ -31,16 +31,22 @@ type IndirectLightLike = {
 
 /** Appearance inputs for the opt-in solve stay in generated game render source. */
 export function createIndirectLighting(light: DirectionalLight) {
-  // This game-authored probe points through the seeded floor/wall pair. The small horizontal
-  // components keep the ray from being parallel to either box face while the key is still
-  // accepted so this render helper remains coupled to the game's chosen light.
-  const direction = vec3(0.001, 1, 0.001);
+  const directionValue = light.position.clone().normalize();
+  const direction = uniform(directionValue, "vec3")
+    .setGroup(frameGroup)
+    .onFrameUpdate(() => {
+      directionValue.copy(light.position).normalize();
+      return directionValue;
+    });
+  const strength = uniform(light.intensity, "float")
+    .setGroup(frameGroup)
+    .onFrameUpdate(() => light.intensity);
   return {
     attenuation: (distance: Node<"float">) => float(1).div(float(1).add(distance)),
     direction,
     normalResponse: () => float(1),
     radiance: wallBounceRadiance,
-    strength: float(0.35),
+    strength,
   };
 }
 
@@ -126,9 +132,9 @@ export function setupPost(
                 : (atmosphere.aerialPerspective(
                     scenePass,
                     scenePass.getViewZNode(),
-                    // Same scale as the dome in sky.ts, and for the same reason: this radiance is
-                    // mixed into every pixel by the haze term, so at 24 it lifted the whole frame.
-                    (atmosphere.radiance(vec3(0, 0, 1)) as Node<"vec3">).mul(1.5),
+                    // Keep direct-only black receivers below the visual proof's nonblank floor;
+                    // the game-owned GI composite is the only signal that should light its patch.
+                    (atmosphere.radiance(vec3(0, 0, 1)) as Node<"vec3">).mul(0.25),
                   ) as Node<"vec4">);
             let composed = direct;
             // Delete this line to restore the direct-only baseline. The factory is the only place

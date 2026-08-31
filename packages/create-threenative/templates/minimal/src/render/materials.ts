@@ -1,6 +1,6 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
-import { MeshStandardMaterial, Vector3 } from "three";
+import { MeshBasicMaterial, MeshStandardMaterial, Vector3 } from "three";
 import { renderGroup, uniform } from "three/tsl";
 import { palette } from "./palette.js";
 
@@ -21,6 +21,9 @@ export const wallMaterial = new MeshStandardMaterial({
   roughness: 0.68,
   metalness: 0.04,
 });
+
+/** A black game-owned receiver makes the indirect-light playtest sensitive to the GI composite. */
+export const giReceiverMaterial = new MeshBasicMaterial({ color: 0x000000 });
 
 /** The wall's authored colour is the radiance input consumed by the opt-in GI solve. */
 export const wallBounceRadiance = uniform(new Vector3())

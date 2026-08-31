@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parsePng } from "@threenative/assets";
-import { PerspectiveCamera, Scene, Vector3 } from "three";
+import { DirectionalLight, PerspectiveCamera, Scene, Vector3 } from "three";
 import { vec3, vec4 } from "three/tsl";
 import { describe, expect, it, vi } from "vitest";
 import { auditAllTemplates } from "../../../scripts/instruction-budget.js";
@@ -252,6 +252,36 @@ describe("template contracts", () => {
     });
     expect(constructed).toHaveBeenCalledOnce();
     expect(attached).toHaveBeenCalledOnce();
+  });
+
+  it("should couple generated bounce inputs to the supplied key light", async () => {
+    const { createIndirectLighting } = await import(
+      "../templates/minimal/src/render/postprocessing.js"
+    );
+    const light = new DirectionalLight(0xffffff, 1);
+    light.position.set(0, 1, 0);
+    const input = createIndirectLighting(light);
+    const direction = input.direction as unknown as {
+      readonly value: Vector3;
+      update(frame: unknown): void;
+    };
+    const strength = input.strength as unknown as {
+      readonly value: number;
+      update(frame: unknown): void;
+    };
+
+    expect(direction.value).toBeInstanceOf(Vector3);
+    const initialDirection = direction.value.clone();
+    const initialStrength = strength.value;
+
+    light.position.set(2, 3, 4);
+    light.intensity = 4;
+    direction.update({} as never);
+    strength.update({} as never);
+
+    expect(direction.value.equals(initialDirection)).toBe(false);
+    expect(strength.value).not.toBe(initialStrength);
+    expect(strength.value).toBe(4);
   });
 
   it("should observe integrated GI and fail closed when its composite line is removed", async () => {

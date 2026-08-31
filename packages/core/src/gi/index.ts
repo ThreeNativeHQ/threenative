@@ -1,5 +1,5 @@
 import { type Camera, Group, type Scene } from "three";
-import { uint, vec3 } from "three/tsl";
+import { distance, float, uint, vec3 } from "three/tsl";
 import type { ComputeNode, Node } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import { GPUReadback, type IGPUReadbackSample } from "../gpu-readback.js";
@@ -52,6 +52,7 @@ function indirectFrom(
   pool: SurfelPool,
   grid: SurfelHashGrid,
   integrator: SurfelIntegrator,
+  sampleRadius: number,
 ): Node<"vec3"> {
   if (!integrator.tracesScene) return vec3(0) as Node<"vec3">;
   // Read the integrated GPU result from the cells belonging to this pixel's reconstructed world
@@ -62,13 +63,19 @@ function indirectFrom(
   let integrated = vec3(0) as Node<"vec3">;
   for (let slot = 0; slot < grid.maxEntriesPerCell; slot += 1) {
     const entry = cell.mul(uint(grid.maxEntriesPerCell)).add(uint(slot));
-    const surfelIndex = grid.entries.element(entry);
     const present = available.greaterThan(uint(slot)).toFloat();
+    const sampleDistance = distance(gbuffer.worldPosition, grid.positions.element(entry).xyz);
+    // The game-owned radius is the gather falloff: nearby surfels contribute more, while a
+    // larger radius reaches farther through the same bounded hash bucket. Keep the existing
+    // fixed-count denominator so changing the radius changes the output, not just the weighting
+    // between samples that would otherwise cancel during normalization.
+    const radiusWeight = float(1).div(float(1).add(sampleDistance.div(sampleRadius)));
+    const surfelIndex = grid.entries.element(entry);
     const active = pool.active.element(surfelIndex).toFloat();
     const integratedFlag = pool.flags.element(surfelIndex).toFloat();
-    integrated = integrated.add(
-      pool.radiance.element(surfelIndex).xyz.mul(present).mul(active).mul(integratedFlag),
-    ) as Node<"vec3">;
+    const sample = pool.radiance.element(surfelIndex);
+    const weight = present.mul(active).mul(integratedFlag).mul(radiusWeight);
+    integrated = integrated.add(sample.xyz.mul(weight)) as Node<"vec3">;
   }
   return integrated.div(available.toFloat().max(1)) as Node<"vec3">;
 }
@@ -176,7 +183,7 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
   sampleIndirectLight(): number | undefined {
     const sample = this.#readback?.sample;
     if (sample === undefined) return undefined;
-    const laneCount = Math.max(1, Math.min(this.pool.capacity, this.integrator.dispatchCount));
+    const laneCount = Math.max(1, this.pool.capacity);
     let integratedRed = 0;
     let activeLanes = 0;
     for (let index = 0; index < laneCount; index += 1) {
@@ -190,7 +197,13 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
   attachGBuffer(pass: GBufferPass): void {
     if (this.#released) throw new Error("SurfelGI cannot bind a GBuffer after release.");
     this.#gbuffer = attachGBuffer(pass);
-    this.#indirectLight = indirectFrom(this.#gbuffer, this.pool, this.grid, this.integrator);
+    this.#indirectLight = indirectFrom(
+      this.#gbuffer,
+      this.pool,
+      this.grid,
+      this.integrator,
+      this.sampleRadius,
+    );
   }
 
   attachRenderer(renderer: IRendererLike): void {

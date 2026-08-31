@@ -1,16 +1,14 @@
 import type { Camera, Scene } from "three";
 import {
-  cameraProjectionMatrixInverse,
-  cameraWorldMatrix,
   diffuseColor,
   metalness,
   mrt,
   normalWorld,
   output,
   pass,
+  positionWorld,
   roughness,
   screenUV,
-  vec4,
 } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 
@@ -22,7 +20,7 @@ export interface IGBuffer {
   readonly normal: TextureNode;
   readonly pass: GBufferPass;
   readonly viewZ: Node<"float">;
-  /** World position reconstructed from the pass depth for spatial GI lookup. */
+  /** World position written by the scene pass for spatial GI lookup. */
   readonly worldPosition: Node<"vec3">;
 }
 
@@ -38,14 +36,11 @@ function configure(passNode: GBufferPass): IGBuffer {
   const albedo = passNode.getTextureNode("albedo");
   const depth = passNode.getTextureNode("depth");
   const normal = passNode.getTextureNode("normal");
+  const worldPositionTexture = passNode.getTextureNode("worldPosition");
   const viewZ = passNode.getViewZNode();
-  const depthSample = depth.clone().sample(screenUV).x;
-  const clipPosition = vec4(screenUV.mul(2).sub(1), depthSample, 1);
-  const viewPosition = cameraProjectionMatrixInverse.mul(clipPosition);
-  const worldPosition = cameraWorldMatrix.mul(vec4(viewPosition.xyz.div(viewPosition.w), 1))
-    .xyz as Node<"vec3">;
+  const worldPosition = worldPositionTexture.sample(screenUV).xyz as Node<"vec3">;
   const textures = passNode.renderTarget.textures;
-  const orderedNames = ["output", "albedo", "normal"];
+  const orderedNames = ["output", "albedo", "normal", "worldPosition"];
   passNode.renderTarget.textures = [
     ...orderedNames.flatMap((name) => textures.filter((texture) => texture.name === name)),
     ...textures.filter((texture) => !orderedNames.includes(texture.name)),
@@ -54,6 +49,7 @@ function configure(passNode: GBufferPass): IGBuffer {
     albedo: diffuseColor,
     normal: normalWorld,
     output,
+    worldPosition: positionWorld,
   };
   if (textures.some((texture) => texture.name === "metalness")) outputs.metalness = metalness;
   if (textures.some((texture) => texture.name === "roughness")) outputs.roughness = roughness;

@@ -29,7 +29,7 @@ function hash(position: Vector3, cellSize: number, cellCount: number): number {
   return (mixed >>> 0) % cellCount;
 }
 
-function markDirty(node: StorageBufferNode<"uint">): void {
+function markDirty(node: StorageBufferNode<"uint" | "vec4">): void {
   node.value.needsUpdate = true;
 }
 
@@ -48,8 +48,11 @@ export class SurfelHashGrid {
   readonly maxEntriesPerCell: number;
   readonly cellCounts: StorageBufferNode<"uint">;
   readonly entries: StorageBufferNode<"uint">;
+  /** Entry-aligned sample positions used by the render-time gather. */
+  readonly positions: StorageBufferNode<"vec4">;
   #counts: Uint32Array;
   #entries: Uint32Array;
+  #positions: Float32Array;
   #overflowCount = 0;
   #released = false;
 
@@ -59,8 +62,10 @@ export class SurfelHashGrid {
     this.maxEntriesPerCell = positiveInteger("maxEntriesPerCell", options.maxEntriesPerCell);
     this.#counts = new Uint32Array(this.cellCount);
     this.#entries = new Uint32Array(this.cellCount * this.maxEntriesPerCell);
+    this.#positions = new Float32Array(this.cellCount * this.maxEntriesPerCell * 4);
     this.cellCounts = instancedArray(this.#counts, "uint");
     this.entries = instancedArray(this.#entries, "uint");
+    this.positions = instancedArray(this.#positions, "vec4");
   }
 
   get overflowCount(): number {
@@ -85,6 +90,7 @@ export class SurfelHashGrid {
     if (this.#released) throw new Error("SurfelHashGrid cannot rebuild after release.");
     this.#counts.fill(0);
     this.#entries.fill(0);
+    this.#positions.fill(0);
     this.#overflowCount = 0;
     pool.forEachLive((index, position) => {
       const cell = hash(position, this.cellSize, this.cellCount);
@@ -93,11 +99,18 @@ export class SurfelHashGrid {
         this.#overflowCount += 1;
         return;
       }
-      this.#entries[cell * this.maxEntriesPerCell + count] = index;
+      const entry = cell * this.maxEntriesPerCell + count;
+      this.#entries[entry] = index;
+      const offset = entry * 4;
+      this.#positions[offset] = position.x;
+      this.#positions[offset + 1] = position.y;
+      this.#positions[offset + 2] = position.z;
+      this.#positions[offset + 3] = 1;
       this.#counts[cell] = count + 1;
     });
     markDirty(this.cellCounts);
     markDirty(this.entries);
+    markDirty(this.positions);
   }
 
   query(position: Vector3, limit = this.maxEntriesPerCell): readonly number[] {
@@ -113,8 +126,10 @@ export class SurfelHashGrid {
     if (this.#released) return;
     this.cellCounts.value.dispose();
     this.entries.value.dispose();
+    this.positions.value.dispose();
     this.#released = true;
     this.#counts.fill(0);
     this.#entries.fill(0);
+    this.#positions.fill(0);
   }
 }

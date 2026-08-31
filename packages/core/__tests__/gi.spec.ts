@@ -17,6 +17,13 @@ function containsNode(root: unknown, target: object, seen = new Set<object>()): 
   return Object.values(root).some((value) => containsNode(value, target, seen));
 }
 
+function containsNumber(root: unknown, target: number, seen = new Set<object>()): boolean {
+  if (typeof root === "number") return Object.is(root, target);
+  if (typeof root !== "object" || root === null || seen.has(root)) return false;
+  seen.add(root);
+  return Object.values(root).some((value) => containsNumber(value, target, seen));
+}
+
 function renderer(dispatched: unknown[], readbackBytes = new ArrayBuffer(0)): IRendererLike {
   const canvas = new EventTarget() as HTMLCanvasElement;
   return {
@@ -79,6 +86,8 @@ describe("GBuffer", () => {
     expect(gbuffer.depth.isNode).toBe(true);
     expect(gbuffer.normal.isNode).toBe(true);
     expect(gbuffer.albedo.isNode).toBe(true);
+    expect(gbuffer.worldPosition.isNode).toBe(true);
+    expect(gbuffer.pass.getTextureNode("worldPosition").value.name).toBe("worldPosition");
     expect(gbuffer.viewZ.isNode).toBe(true);
   });
 
@@ -95,6 +104,7 @@ describe("GBuffer", () => {
     expect(gbuffer.pass.getTextureNode("metalness").value.name).toBe("metalness");
     expect(gbuffer.pass.getMRT()?.has("albedo")).toBe(true);
     expect(gbuffer.pass.getMRT()?.has("metalness")).toBe(true);
+    expect(gbuffer.pass.getMRT()?.has("worldPosition")).toBe(true);
   });
 });
 
@@ -140,11 +150,13 @@ describe("SurfelPool and SurfelHashGrid", () => {
     const grid = new SurfelHashGrid({ cellCount: 4, cellSize: 1, maxEntriesPerCell: 1 });
     const countsVersion = grid.cellCounts.value.version;
     const entriesVersion = grid.entries.value.version;
+    const positionsVersion = grid.positions.value.version;
 
     grid.rebuild(pool);
 
     expect(grid.cellCounts.value.version).toBeGreaterThan(countsVersion);
     expect(grid.entries.value.version).toBeGreaterThan(entriesVersion);
+    expect(grid.positions.value.version).toBeGreaterThan(positionsVersion);
     expect(grid.query(new Vector3(1.1, 0, 0))).toEqual([1]);
 
     const coarser = new SurfelHashGrid({ cellCount: 4, cellSize: 2, maxEntriesPerCell: 1 });
@@ -204,7 +216,41 @@ describe("SurfelGI", () => {
     gi.detach();
   });
 
-  it("uses grid-local integrated radiance and game-owned lighting input", () => {
+  it("makes sampleRadius part of the spatial gather contract", () => {
+    const create = (sampleRadius: number) => {
+      const scene = new Scene();
+      scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
+      const sceneBvh = new GPUSceneBVH(scene);
+      const gbuffer = createGBuffer(scene, new PerspectiveCamera());
+      const gi = new SurfelGI({
+        hashCellCount: 8,
+        hashCellSize: 1,
+        lighting: testLighting(),
+        maxAge: 30,
+        rayBudget: 4,
+        sampleRadius,
+        sceneBvh,
+        surfelBudget: 4,
+        updateCadence: 2,
+      });
+      gi.attachGBuffer(gbuffer.pass);
+      return { gi, sceneBvh };
+    };
+
+    const narrow = create(0.05);
+    const wide = create(0.2);
+
+    expect(containsNumber(narrow.gi.indirectLight, 0.05)).toBe(true);
+    expect(containsNumber(wide.gi.indirectLight, 0.2)).toBe(true);
+    expect(containsNumber(narrow.gi.indirectLight, 0.2)).toBe(false);
+
+    narrow.gi.detach();
+    narrow.sceneBvh.detach();
+    wide.gi.detach();
+    wide.sceneBvh.detach();
+  });
+
+  it("uses spatial hash samples and game-owned lighting input", () => {
     const scene = new Scene();
     const camera = new PerspectiveCamera();
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
@@ -234,10 +280,12 @@ describe("SurfelGI", () => {
 
     const radiance = (gi.pool as unknown as { readonly radiance?: object }).radiance;
     expect(radiance).toBeDefined();
-    if (radiance !== undefined) {
-      expect(containsNode(gi.indirectLight, radiance)).toBe(true);
-    }
+    expect(containsNode(gi.indirectLight, gi.pool.radiance)).toBe(true);
+    expect(containsNode(gi.indirectLight, gi.grid.positions)).toBe(true);
     expect(containsNode(gi.indirectLight, gi.grid.cellCounts)).toBe(true);
+    expect(containsNode(gi.indirectLight, gbuffer.pass.getTextureNode("worldPosition").value)).toBe(
+      true,
+    );
     expect(containsNode(gi.indirectLight, gbuffer.albedo, new Set([gbuffer.pass]))).toBe(false);
     expect(computeShader(gi.integrator.computeNode)).toContain("0.8");
     gi.detach();
@@ -340,8 +388,76 @@ describe("SurfelGI", () => {
       shader.indexOf("surfelSceneHit", guardOffset + (activeGuard?.[0].length ?? 0)),
     ).toBeGreaterThan(guardOffset);
     expect(shader).toMatch(
-      /NodeBuffer_\d+\.value\[ \( instanceIndex \/ 2u \) \] > \( instanceIndex % 2u \)/u,
+      /NodeBuffer_\d+\.value\[ \( nodeVar\d+ \/ 2u \) \] > \( nodeVar\d+ % 2u \)/u,
     );
+
+    integrator.release();
+    pool.release();
+    grid.release();
+    sceneBvh.detach();
+  });
+
+  it("does not clear surfel zero when an empty hash slot reuses its sentinel", () => {
+    const pool = new SurfelPool({ capacity: 2, maxAge: 30 });
+    const surfelZero = pool.allocate({ position: [0.1, 0, 0], normal: [0, 1, 0] });
+    const grid = new SurfelHashGrid({ cellCount: 1, cellSize: 1, maxEntriesPerCell: 2 });
+    grid.rebuild(pool);
+    expect(surfelZero).toBe(0);
+    expect(grid.cellCounts.value.array[0]).toBe(1);
+    expect(grid.entries.value.array[0]).toBe(0);
+    expect(grid.entries.value.array[1]).toBe(0);
+
+    const sceneBvh = new GPUSceneBVH(new Scene());
+    const integrator = new SurfelIntegrator(pool, grid, {
+      bvh: sceneBvh,
+      lighting: testLighting(),
+      rayBudget: 2,
+    });
+    const shader = computeShader(integrator.computeNode);
+    const slotExpression = shader.search(/nodeVar\d+ % 2u/u);
+    expect(slotExpression).toBeGreaterThan(-1);
+    const openBrace = shader.indexOf("{", slotExpression);
+    expect(openBrace).toBeGreaterThan(slotExpression);
+    let depth = 0;
+    let siblingElse = false;
+    for (let index = openBrace; index < shader.length; index += 1) {
+      const character = shader[index];
+      if (character === "{") depth += 1;
+      if (character !== "}") continue;
+      depth -= 1;
+      if (depth !== 0) continue;
+      siblingElse = /^\s*else\s*\{/u.test(shader.slice(index + 1));
+      break;
+    }
+    expect(siblingElse).toBe(false);
+
+    integrator.release();
+    pool.release();
+    grid.release();
+    sceneBvh.detach();
+  });
+
+  it("advances hash-entry coverage across budgeted dispatches", () => {
+    const pool = new SurfelPool({ capacity: 8, maxAge: 30 });
+    const grid = new SurfelHashGrid({ cellCount: 4, cellSize: 1, maxEntriesPerCell: 2 });
+    const sceneBvh = new GPUSceneBVH(new Scene());
+    const integrator = new SurfelIntegrator(pool, grid, {
+      bvh: sceneBvh,
+      lighting: testLighting(),
+      rayBudget: 2,
+    });
+    const dispatched: unknown[] = [];
+    const gpu = renderer(dispatched);
+    const nextOffset = (): number =>
+      (integrator as unknown as { nextDispatchOffset: number }).nextDispatchOffset;
+
+    expect(integrator.dispatchCount).toBe(2);
+    expect(nextOffset()).toBe(0);
+    integrator.dispatch(gpu);
+    expect(nextOffset()).toBe(2);
+    integrator.dispatch(gpu);
+    expect(nextOffset()).toBe(4);
+    expect(dispatched).toHaveLength(2);
 
     integrator.release();
     pool.release();
@@ -362,7 +478,7 @@ describe("SurfelGI", () => {
 
     const shader = computeShader(integrator.computeNode);
     expect(shader).toMatch(
-      /NodeBuffer_\d+\.value\[ NodeBuffer_\d+\.value\[ instanceIndex \] \] = vec4<f32>\(/u,
+      /NodeBuffer_\d+\.value\[ NodeBuffer_\d+\.value\[ nodeVar\d+ \] \] = vec4<f32>\(/u,
     );
 
     integrator.release();
@@ -398,6 +514,7 @@ describe("SurfelGI", () => {
       vi.spyOn(gi.pool.radiance.value, "dispose"),
       vi.spyOn(gi.grid.cellCounts.value, "dispose"),
       vi.spyOn(gi.grid.entries.value, "dispose"),
+      vi.spyOn(gi.grid.positions.value, "dispose"),
     ];
 
     expect(gi.processCadence).toBe("fixed");

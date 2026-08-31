@@ -1,4 +1,4 @@
-import { Fn, If, instanceIndex, uint, vec4, wgslFn } from "three/tsl";
+import { Fn, If, instanceIndex, uint, uniform, vec4, wgslFn } from "three/tsl";
 import { type ComputeNode, type Node, StructNode } from "three/webgpu";
 import { type GPUSceneBVH, bvhIntersectFirstHit, rayStruct } from "../gpu-scene-bvh.js";
 import type { IRendererLike } from "../renderer.js";
@@ -66,6 +66,9 @@ export class SurfelIntegrator {
   readonly dispatchCount: number;
   readonly computeNode: ComputeNode;
   readonly tracesScene: boolean;
+  #dispatchOffset = uniform(0, "uint");
+  #nextDispatchOffset = 0;
+  #entryCount: number;
   #released = false;
 
   constructor(pool: SurfelPool, grid: SurfelHashGrid, options: ISurfelIntegrationOptions) {
@@ -78,6 +81,7 @@ export class SurfelIntegrator {
       pool.capacity,
       grid.cellCount * grid.maxEntriesPerCell,
     );
+    this.#entryCount = grid.cellCount * grid.maxEntriesPerCell;
     this.tracesScene = options.bvh !== undefined;
     const bvh = options.bvh;
     this.computeNode = Fn(() => {
@@ -93,11 +97,13 @@ export class SurfelIntegrator {
       const lighting = options.lighting as ISurfelLightingInput;
       // One dispatch lane owns one fixed hash entry. This keeps the selected entry and the
       // radiance/flag destination aligned even when pool indices are not contiguous within a
-      // bucket. `rayBudget` simply truncates this linear entry stream.
-      const cell = index.div(uint(grid.maxEntriesPerCell));
-      const slot = index.mod(uint(grid.maxEntriesPerCell));
+      // bucket. `rayBudget` truncates this linear entry stream, while the uniform offset moves
+      // the truncated window across the fixed table on successive updates.
+      const entry = index.add(this.#dispatchOffset).mod(uint(this.#entryCount));
+      const cell = entry.div(uint(grid.maxEntriesPerCell));
+      const slot = entry.mod(uint(grid.maxEntriesPerCell));
       const cellCount = grid.cellCounts.element(cell);
-      const sampleIndex = grid.entries.element(index);
+      const sampleIndex = grid.entries.element(entry);
       const clearLane = (): void => {
         pool.flags.element(sampleIndex).assign(uint(0));
         pool.radiance.element(sampleIndex).assign(vec4(0));
@@ -119,18 +125,25 @@ export class SurfelIntegrator {
             .mul(lighting.normalResponse(hitNormal, sampleNormal.xyz))
             .mul(lighting.strength);
           If(didHit, () => {
-            pool.radiance.element(sampleIndex).assign(vec4(integrated, 1));
+            const result = vec4(integrated, 1);
+            pool.radiance.element(sampleIndex).assign(result);
             pool.flags.element(sampleIndex).assign(uint(1));
           }).Else(clearLane);
         }).Else(clearLane);
-      }).Else(clearLane);
+      });
     })().compute(this.dispatchCount);
     this.computeNode.setName("Surfel Integrate");
   }
 
   dispatch(renderer: IRendererLike): void {
     if (this.#released) return;
+    this.#dispatchOffset.value = this.#nextDispatchOffset;
     renderer.compute(this.computeNode);
+    this.#nextDispatchOffset = (this.#nextDispatchOffset + this.dispatchCount) % this.#entryCount;
+  }
+
+  get nextDispatchOffset(): number {
+    return this.#nextDispatchOffset;
   }
 
   release(): void {
