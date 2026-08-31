@@ -79,7 +79,8 @@ scenario then passed `renderChain.tier: "high"` through a headed WebGPU browser.
 | `pnpm exec vitest run packages/core/__tests__/render-chain.spec.ts` | 11/11 |
 | `pnpm lint` | 0 errors (491 pre-existing complexity warnings; one unrelated format error in another lane's uncommitted `scripts/__tests__/xvfb.spec.ts`) |
 | `TN_TEMPLATE_ONLY=starter pnpm test:templates` | 21/21 scenarios, exit 0 |
-| `pnpm test:templates` (six templates, before the starter budget fix) | action-rpg, defense, minimal, platformer, racing, shooter all "scaffolded playtests passed" |
+| `pnpm test:templates` (six templates, before `2042b33d`) | action-rpg, defense, minimal, platformer, racing, shooter all "scaffolded playtests passed" |
+| `pnpm test:templates` (after the re-measurement below) | action-rpg passes; the run stops at `defense-survive-ten-waves`, which is not this work — see "Two reds that are not this work" |
 | `pnpm visuals` | all seven frames captured and inspected; the gate then fails on `TN_VISUAL_SCORE_FLOOR: action-rpg scored 3` — a **stale committed score from 2026-08-21**, not this run's frames |
 
 `TN_TEMPLATE_ONLY` was added to `scripts/verify-template-playtests.ts` for that filtered run; unset,
@@ -96,6 +97,46 @@ every template runs, which is what CI does.
 The starter's two were already stale before this work: its chain landed in `b43b3f87` and the
 seven-template gate aborts at the first failing template, so the starter was never reached. Frame
 time did not move against its ceiling — `starter/play` measures **22.2 ms p95 against 33**.
+
+## Re-measured after the runner learned to wait — 2026-08-30, later
+
+`2042b33d` published startup readiness to the playtest bridge, so the runner now samples the world
+instead of a simulation frozen behind a loading layer. Every number above that came from a
+performance assertion was therefore taken behind that layer and was **too low**: `action-rpg`'s
+scenario reported **4 draw calls** where its running scene issues **144**. Each template was
+re-measured on its own, one gate run each:
+
+| template | draws observed | draws now | triangles observed | triangles now | frame p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| action-rpg | 144 | 180 | 1,823 | 2,300 | 10.7 ms |
+| defense | 114 | 145 | 3,583 | 4,500 | 17.1 ms |
+| platformer | 160 | 200 | 6,127 | 7,700 | 15.0 ms |
+| racing | 154 | 195 | 3,847 | 4,800 | 12.9 ms |
+| shooter | 236 | 295 | 2,007 | 2,500 | 13.0 ms |
+| starter | 130 | 160 | 8,167 | 9,800 | 22.2 ms |
+| minimal | 39 | 48 | 1,178 | 1,223 | **34.2 → see below** |
+
+Every ceiling is 33 ms and only one template reached it. **`minimal` ships without the SSGI
+gather**: with it, `play` measured **34.2 ms p95 against 33**; without it the scenario passes. Its
+sky, sun colour and depth haze are a volumetric `Atmosphere` that already owns most of the frame,
+and the file states that and says what to read after turning the gather back on. The ceiling did
+not move — a cap raised to fit the work is a cap routed around.
+
+## Two reds that are not this work
+
+Before `2042b33d`, a full seven-template run had `action-rpg`, `defense`, `minimal`, `platformer`,
+`racing` and `shooter` all reporting "scaffolded playtests passed". After it, two scenarios fail on
+gameplay timing rather than on rendering:
+
+- `defense-survive-ten-waves` — `leaks` is **1** against an asserted **0**, while `status: WON`,
+  `wave: 10` and `defeated >= 10` all pass. The route is won; one attacker crossed.
+- `platformer-avoidance` and `platformer-chase` — `movement.pathLength` **4.37** and **2.61**
+  against an asserted minimum of **6**.
+
+Both are the phase-shift the batch-2026-08-29 follow-up already names: a scenario that starts at a
+different point in a moving game's cycle grades a different game. The observation window moved when
+the runner started waiting for readiness; the render chain does not move an entity. They are left
+for the lane that changed the meter, with the before/after runs above as the evidence.
 
 ## Captured frames, looked at
 
