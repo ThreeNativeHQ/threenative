@@ -48,6 +48,7 @@ describe("scenario schema boundaries", () => {
     const parsed = validatePlaytestScenario({
       ...scenario({
         hud: [{ id: "threenative-canvas-error", textIncludes: "Error creating WebGL context", visible: true }],
+        visual: [{ region: { element: { id: "threenative-canvas-error" }, minNonblankPixelRatio: 0.002 } }],
       }),
       bootFailure: "renderer-no-adapter",
       target: "web",
@@ -56,6 +57,29 @@ describe("scenario schema boundaries", () => {
 
     expect(parsed.bootFailure).toBe("renderer-no-adapter");
     expect(parsed.assert?.hud?.[0]?.visible).toBe(true);
+    expect(parsed.assert?.visual?.[0]?.region).toEqual({
+      element: { id: "threenative-canvas-error" },
+      minNonblankPixelRatio: 0.002,
+    });
+  });
+
+  it.each(["desktop", "bevy"] as const)("rejects bootFailure on the non-web target %s", (target) => {
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      bootFailure: "renderer-no-adapter",
+      target,
+      viewport: { height: 720, width: 1280 },
+    }, `invalid-${target}-boot-failure.playtest.json`)).toThrow(/browser-only.*target|target.*web/u);
+  });
+
+  it("defaults an omitted boot-failure target to web deterministically", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario(undefined),
+      bootFailure: "renderer-no-adapter",
+      viewport: { height: 720, width: 1280 },
+    }, "omitted-target-boot-failure.playtest.json");
+
+    expect(parsed.target).toBe("web");
   });
 
   it("rejects an unknown boot-failure seam", () => {

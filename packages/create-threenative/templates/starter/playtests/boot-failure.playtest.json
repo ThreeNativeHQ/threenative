@@ -33,11 +33,10 @@
     "visual": [
       {
         "region": {
-          "height": 720,
-          "minNonblankPixelRatio": 0.002,
-          "width": 1280,
-          "x": 0,
-          "y": 0
+          "element": {
+            "id": "threenative-canvas-error"
+          },
+          "minNonblankPixelRatio": 0.002
         }
       }
     ]

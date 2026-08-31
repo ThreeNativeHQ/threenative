@@ -288,10 +288,36 @@ export interface IPlaytestFramebufferCoverageAssertion {
   };
 }
 
+export interface IPlaytestVisualRegionTarget {
+  id?: string;
+  selector?: string;
+}
+
+export interface IPlaytestVisualRegionBounds {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}
+
+export interface IPlaytestVisualRegionThresholds {
+  maxLuminance?: number;
+  minDarkPixelRatio?: number;
+  minNonblankPixelRatio?: number;
+}
+
+export interface IPlaytestVisualStaticRegion extends IPlaytestVisualRegionBounds, IPlaytestVisualRegionThresholds {}
+
+export interface IPlaytestVisualElementRegion extends IPlaytestVisualRegionThresholds {
+  element: IPlaytestVisualRegionTarget;
+}
+
+export type IPlaytestVisualRegion = IPlaytestVisualStaticRegion | IPlaytestVisualElementRegion;
+
 export interface IPlaytestVisualAssertion {
   entityVisible?: { entity: string; minProjectedPixels: number; throughoutFrames?: boolean };
   frameDiff?: { baselineImage?: string; maxChangedPixelRatio?: number; minChangedPixelRatio?: number };
-  region?: { height: number; maxLuminance?: number; minDarkPixelRatio?: number; minNonblankPixelRatio?: number; width: number; x: number; y: number };
+  region?: IPlaytestVisualRegion;
 }
 
 export interface IPlaytestAerodynamicsAssertion {

@@ -74,19 +74,86 @@ describe("playtest sampling", () => {
       contains: () => false,
       getAttribute: () => null,
       getBoundingClientRect: () => ({ bottom: 720, height: 720, left: 0, right: 1280, top: 0, width: 1280 }),
+      parentElement: null,
       textContent: " TN_TEST: boot failed ",
     };
     const restore = installGlobal("document", {
       elementFromPoint: () => error,
       getElementById: () => error,
     });
-    const restoreWindow = installGlobal("window", { innerHeight: 720, innerWidth: 1280 });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
     try {
       const page = {
         evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
       } as unknown as Page;
       await expect(sampleHud(page, [{ id: "error", textIncludes: "TN_TEST", visible: true }])).resolves.toEqual({
         error: { text: "TN_TEST: boot failed", visible: true },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects a HUD node with zero computed opacity even when its box is topmost", async () => {
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      textContent: " TN_TEST: transparent ",
+    };
+    const restore = installGlobal("document", {
+      elementFromPoint: () => error,
+      getElementById: () => error,
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "0", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: transparent", visible: false },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects a HUD node whose rendered ancestry is display none", async () => {
+    const parent = { parentElement: null };
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: parent,
+      textContent: " TN_TEST: hidden ",
+    };
+    const restore = installGlobal("document", {
+      elementFromPoint: () => error,
+      getElementById: () => error,
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: (element: unknown) => element === parent
+        ? { display: "none", opacity: "1", visibility: "visible" }
+        : { display: "block", opacity: "1", visibility: "visible" },
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: hidden", visible: false },
       });
     } finally {
       restoreWindow();

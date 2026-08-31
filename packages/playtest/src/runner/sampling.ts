@@ -35,6 +35,18 @@ export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAs
       : (() => {
           const rect = element.getBoundingClientRect();
           if (rect.width <= 0 || rect.height <= 0) return { text: snapshot, visible: false };
+          let rendered = true;
+          for (let current: Element | null = element; rendered && current !== null; current = current.parentElement) {
+            const style = window.getComputedStyle(current);
+            const opacity = Number.parseFloat(style.opacity);
+            const contentVisibility = style.getPropertyValue?.("content-visibility") || style.contentVisibility;
+            rendered = style.display !== "none"
+              && style.visibility !== "hidden"
+              && style.visibility !== "collapse"
+              && contentVisibility !== "hidden"
+              && (!Number.isFinite(opacity) || opacity > 0);
+          }
+          if (!rendered) return { text: snapshot, visible: false };
           const centerX = Math.min(Math.max(rect.left + rect.width / 2, 0), Math.max(0, window.innerWidth - 1));
           const centerY = Math.min(Math.max(rect.top + rect.height / 2, 0), Math.max(0, window.innerHeight - 1));
           const topmost = document.elementFromPoint(centerX, centerY);

@@ -1,4 +1,4 @@
-import { waitFrames, captureVisualSurface, runStep, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
@@ -35,6 +35,7 @@ import {
   type IPlaytestFramebufferCoverageObservation,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
+  type IPlaytestVisualElementRegionObservation,
   type PlaytestVec3,
 } from "../index.js";
 import type { IPlaytestObservationSnapshot } from "../protocol.js";
@@ -79,6 +80,11 @@ import {
 
 /** How long a single screenshot may take before the runner calls it a failure. */
 const SCREENSHOT_TIMEOUT_MS = 120_000;
+
+interface IVisualPageCapture {
+  elementRegions?: IPlaytestVisualElementRegionObservation[];
+  image: Buffer;
+}
 
 export { preflightDisplay, buildReport } from './runner-support.js';
 export { captureVisualSurface } from './steps.js';
@@ -393,6 +399,8 @@ async function runStandalonePlaytestInternal(
     const capturesMovementSamples = capturesAnonymousMovement || scenario.assert?.movement !== undefined;
     const movementSamples: IMovementSampleInterval[] = [];
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+    const visualAssertions = scenario.assert?.visual ?? [];
+    const hasElementBoundVisualRegion = visualAssertions.some(({ region }) => region !== undefined && "element" in region);
     const needsCapture = scenario.artifacts?.screenshots !== false
       || scenario.steps.some((step) => step.screenshot !== undefined)
       || wantsVisual;
@@ -429,7 +437,8 @@ async function runStandalonePlaytestInternal(
     const capturePage = async (
       label: string,
       requested: Parameters<Page["screenshot"]>[0],
-    ): Promise<Buffer | undefined> => {
+      captureElementBounds = false,
+    ): Promise<IVisualPageCapture | undefined> => {
       // Playwright's 30s default is sized for a machine with a GPU. A CPU rasteriser — SwiftShader
       // on a CI runner, llvmpipe on a headless box — composites the same frame one to two orders
       // of magnitude slower, and the shot times out with `page.screenshot: Timeout 30000ms
@@ -437,6 +446,9 @@ async function runStandalonePlaytestInternal(
       // one. The scenario's own timeout still bounds the run; this only stops a slow machine from
       // being reported as a failed capture.
       const options = { timeout: SCREENSHOT_TIMEOUT_MS, ...requested };
+      let elementRegions = captureElementBounds
+        ? await sampleVisualElementBounds(activePage, visualAssertions)
+        : undefined;
       let png: Buffer;
       try {
         png = await activePage.screenshot(options);
@@ -454,10 +466,11 @@ async function runStandalonePlaytestInternal(
       }
       try {
         assertCaptureNotBlank(png, label);
-        return png;
+        return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
         await presentationGrace();
+        if (captureElementBounds) elementRegions = await sampleVisualElementBounds(activePage, visualAssertions);
         try {
           png = await activePage.screenshot(options);
         } catch {
@@ -465,7 +478,7 @@ async function runStandalonePlaytestInternal(
         }
         try {
           assertCaptureNotBlank(png, label);
-          return png;
+          return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
           captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };
@@ -476,9 +489,13 @@ async function runStandalonePlaytestInternal(
     const captureVisualPage = async (
       label: string,
       artifactPath: string | undefined,
-    ): Promise<Buffer | undefined> => {
-      if (scenario.bootFailure !== undefined) {
-        return capturePage(label, artifactPath === undefined ? {} : { path: artifactPath });
+    ): Promise<IVisualPageCapture | undefined> => {
+      if (scenario.bootFailure !== undefined || hasElementBoundVisualRegion) {
+        return capturePage(
+          label,
+          artifactPath === undefined ? {} : { path: artifactPath },
+          hasElementBoundVisualRegion,
+        );
       }
       try {
         const png = await captureVisualSurface(activePage, artifactPath);
@@ -491,7 +508,7 @@ async function runStandalonePlaytestInternal(
           return undefined;
         }
         assertCaptureNotBlank(png, label);
-        return png;
+        return { image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
         await presentationGrace();
@@ -499,7 +516,7 @@ async function runStandalonePlaytestInternal(
           const retry = await captureVisualSurface(activePage, artifactPath);
           if (retry !== undefined) {
             assertCaptureNotBlank(retry, label);
-            return retry;
+            return { image: retry };
           }
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
@@ -637,7 +654,13 @@ async function runStandalonePlaytestInternal(
           ? {}
           : { path: join(activeConfig.artifactDirectory, "after.png") })
       : undefined;
-    const visual = screenshotObservations(beforeScreenshot, afterScreenshot, scenario, captureFailure);
+    const visual = screenshotObservations(
+      beforeScreenshot?.image,
+      afterScreenshot?.image,
+      scenario,
+      captureFailure,
+      afterScreenshot?.elementRegions,
+    );
     if (activeConfig.trace) {
       await context.tracing.stop({ path: join(activeConfig.artifactDirectory, "trace.zip") });
     }

@@ -65,28 +65,83 @@ export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
       if (!pass) diagnostics.push({ code: "TN_PLAYTEST_FRAME_DIFF_FAILED", message: `Screenshot changed-pixel ratio ${ratio ?? "unavailable"} was outside the asserted range.`, severity: "error", suggestion: "Check whether the expected visual change rendered and whether the thresholds match the scenario." });
     }
     if (visual.region !== undefined) {
-      const observed = input.report.observations?.visual?.nonblankRegions?.find((region) => region.x === visual.region?.x && region.y === visual.region.y && region.width === visual.region.width && region.height === visual.region.height);
       const minimum = visual.region.minNonblankPixelRatio ?? 0.002;
-      const pass = observed !== undefined && observed.nonblankPixelRatio >= minimum;
-      assertions.push({ id: `visual.${index}.region`, pass, details: { after: pass, expected: { equals: true }, minimum, observed: observed?.nonblankPixelRatio } });
-      if (!pass) diagnostics.push({ code: "TN_PLAYTEST_REGION_BLANK", message: `Screenshot region at (${visual.region.x}, ${visual.region.y}) did not meet nonblank ratio ${minimum}.`, severity: "error", suggestion: "Check camera framing and whether expected geometry renders in the asserted region." });
-      if (visual.region.minDarkPixelRatio !== undefined) {
-        const darkPass = observed?.darkPixelRatio !== undefined && observed.darkPixelRatio >= visual.region.minDarkPixelRatio;
+      if ("element" in visual.region) {
+        const observed = input.report.observations?.visual?.elementRegions?.find(({ assertionIndex }) => assertionIndex === index);
+        const bounds = observed?.bounds;
+        const hasBounds = bounds !== undefined
+          && Number.isFinite(bounds.x)
+          && Number.isFinite(bounds.y)
+          && Number.isFinite(bounds.width)
+          && Number.isFinite(bounds.height)
+          && bounds.width > 0
+          && bounds.height > 0;
+        const pass = observed?.rendered === true
+          && hasBounds
+          && observed.nonblankPixelRatio !== undefined
+          && observed.nonblankPixelRatio >= minimum;
         assertions.push({
-          id: `visual.${index}.region.darkPixels`,
-          pass: darkPass,
+          id: `visual.${index}.region`,
+          pass,
           details: {
-            maximumLuminance: visual.region.maxLuminance ?? 0.25,
-            minimumDarkPixelRatio: visual.region.minDarkPixelRatio,
-            observedDarkPixelRatio: observed?.darkPixelRatio,
+            after: pass,
+            bounds: observed?.bounds,
+            element: visual.region.element,
+            expected: { equals: true },
+            minimum,
+            observed: observed?.nonblankPixelRatio,
+            rendered: observed?.rendered ?? false,
           },
         });
-        if (!darkPass) diagnostics.push({
-          code: "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
-          message: `Screenshot region at (${visual.region.x}, ${visual.region.y}) contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, below required ratio ${visual.region.minDarkPixelRatio}.`,
-          severity: "error",
-          suggestion: "Check whether the expected foreground silhouette occupies the asserted raster region.",
-        });
+        if (!pass) diagnostics.push({ code: "TN_PLAYTEST_REGION_BLANK", message: `Screenshot bounds for element '${describeVisualElement(visual.region.element)}' did not meet nonblank ratio ${minimum}.`, severity: "error", suggestion: "Check that the target element exists, has rendered computed styles, and contains nonblank screenshot pixels." });
+        if (visual.region.minDarkPixelRatio !== undefined) {
+          const darkPass = observed?.rendered === true
+            && hasBounds
+            && observed.darkPixelRatio !== undefined
+            && observed.darkPixelRatio >= visual.region.minDarkPixelRatio;
+          assertions.push({
+            id: `visual.${index}.region.darkPixels`,
+            pass: darkPass,
+            details: {
+              bounds: observed?.bounds,
+              element: visual.region.element,
+              maximumLuminance: visual.region.maxLuminance ?? 0.25,
+              minimumDarkPixelRatio: visual.region.minDarkPixelRatio,
+              observedDarkPixelRatio: observed?.darkPixelRatio,
+              rendered: observed?.rendered ?? false,
+            },
+          });
+          if (!darkPass) diagnostics.push({
+            code: "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
+            message: `Screenshot bounds for element '${describeVisualElement(visual.region.element)}' contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, below required ratio ${visual.region.minDarkPixelRatio}.`,
+            severity: "error",
+            suggestion: "Check that the target element renders the expected foreground pixels inside its captured bounds.",
+          });
+        }
+      } else {
+        const staticRegion = visual.region;
+        const observed = input.report.observations?.visual?.nonblankRegions?.find((region) => region.x === staticRegion.x && region.y === staticRegion.y && region.width === staticRegion.width && region.height === staticRegion.height);
+        const pass = observed !== undefined && observed.nonblankPixelRatio >= minimum;
+        assertions.push({ id: `visual.${index}.region`, pass, details: { after: pass, expected: { equals: true }, minimum, observed: observed?.nonblankPixelRatio } });
+        if (!pass) diagnostics.push({ code: "TN_PLAYTEST_REGION_BLANK", message: `Screenshot region at (${staticRegion.x}, ${staticRegion.y}) did not meet nonblank ratio ${minimum}.`, severity: "error", suggestion: "Check camera framing and whether expected geometry renders in the asserted region." });
+        if (staticRegion.minDarkPixelRatio !== undefined) {
+          const darkPass = observed?.darkPixelRatio !== undefined && observed.darkPixelRatio >= staticRegion.minDarkPixelRatio;
+          assertions.push({
+            id: `visual.${index}.region.darkPixels`,
+            pass: darkPass,
+            details: {
+              maximumLuminance: staticRegion.maxLuminance ?? 0.25,
+              minimumDarkPixelRatio: staticRegion.minDarkPixelRatio,
+              observedDarkPixelRatio: observed?.darkPixelRatio,
+            },
+          });
+          if (!darkPass) diagnostics.push({
+            code: "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
+            message: `Screenshot region at (${staticRegion.x}, ${staticRegion.y}) contained ${observed?.darkPixelRatio ?? "unavailable"} dark pixels, below required ratio ${staticRegion.minDarkPixelRatio}.`,
+            severity: "error",
+            suggestion: "Check whether the expected foreground silhouette occupies the asserted raster region.",
+          });
+        }
       }
     }
     if (visual.entityVisible !== undefined) {
@@ -100,4 +155,8 @@ export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
       if (!pass) diagnostics.push({ code: "TN_PLAYTEST_ENTITY_VISIBILITY_DROPPED", message: `Entity '${visual.entityVisible.entity}' dropped below ${visual.entityVisible.minProjectedPixels} projected pixels.`, severity: "error", suggestion: "Check per-frame visibility, camera clipping, scale, and renderer state." });
     }
   }
+}
+
+function describeVisualElement(element: { id?: string; selector?: string }): string {
+  return element.id === undefined ? `selector ${JSON.stringify(element.selector)}` : `id ${JSON.stringify(element.id)}`;
 }

@@ -25,5 +25,6 @@ export type {
   IPlaytestAssertionResult,
   IPlaytestDiagnostic,
   IPlaytestFramebufferCoverageObservation,
+  IPlaytestVisualElementRegionObservation,
   IPlaytestObservations,
 } from "./assertion-report.js";

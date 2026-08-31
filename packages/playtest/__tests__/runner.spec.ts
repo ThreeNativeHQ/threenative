@@ -2,6 +2,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer } from "node:http";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { PNG } from "pngjs";
 import { expect, test, vi } from "vitest";
 
 import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
@@ -22,6 +23,7 @@ import {
   STANDALONE_PLAYTEST_OBSERVATION_FIELDS,
   substituteManagedPort,
 } from "../src/runner/runner.js";
+import { sampleVisualElementBounds, screenshotObservations } from "../src/runner/steps.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 import type { Page } from "playwright";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../src/index.js";
@@ -36,6 +38,15 @@ const CONFIG: IStandalonePlaytestConfig = {
   trace: false,
   url: "http://127.0.0.1:5173",
 };
+
+function installGlobal(name: string, value: unknown): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, { configurable: true, value, writable: true });
+  return () => {
+    if (descriptor === undefined) delete (globalThis as Record<string, unknown>)[name];
+    else Object.defineProperty(globalThis, name, descriptor);
+  };
+}
 
 test("visual capture reads the largest canvas instead of composited page UI", async () => {
   const smallCanvas = { height: 1, width: 1 } as HTMLCanvasElement;
@@ -56,6 +67,97 @@ test("visual capture reads the largest canvas instead of composited page UI", as
   expect(nth).toHaveBeenCalledWith(1);
   expect(screenshot).toHaveBeenCalledWith();
   expect(page.screenshot).not.toHaveBeenCalled();
+});
+
+test("visual observations rasterize an element-bound region captured beside the screenshot", () => {
+  const png = new PNG({ height: 20, width: 30 });
+  png.data.fill(255);
+  const currentScenario = scenario({
+    visual: [{ region: { element: { id: "threenative-canvas-error" }, minNonblankPixelRatio: 0.5 } }],
+  });
+  const captureBounds = [{
+    assertionIndex: 0,
+    bounds: { height: 10, width: 12, x: 4, y: 3 },
+    element: { id: "threenative-canvas-error" },
+    rendered: true,
+  }];
+
+  const observations = (screenshotObservations as unknown as (...args: unknown[]) => unknown)(
+    undefined,
+    PNG.sync.write(png),
+    currentScenario,
+    undefined,
+    captureBounds,
+  ) as { elementRegions?: unknown[] };
+
+  expect(observations.elementRegions).toEqual([{
+    assertionIndex: 0,
+    bounds: { height: 10, width: 12, x: 4, y: 3 },
+    darkPixelRatio: 0,
+    element: { id: "threenative-canvas-error" },
+    nonblankPixelRatio: 1,
+    rendered: true,
+  }]);
+});
+
+test("browser visual capture records id or selector bounds and renderability", async () => {
+  const visible = {
+    contains: () => false,
+    getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
+    parentElement: null,
+  };
+  const transparent = {
+    contains: () => false,
+    getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
+    parentElement: null,
+  };
+  const restoreDocument = installGlobal("document", {
+    elementFromPoint: () => visible,
+    getElementById: (id: string) => id === "visible" ? visible : transparent,
+    querySelector: () => visible,
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: (element: unknown) => ({
+      display: "block",
+      getPropertyValue: () => "",
+      opacity: element === transparent ? "0" : "1",
+      visibility: "visible",
+    }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  try {
+    const page = {
+      evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
+    } as unknown as Page;
+    await expect(sampleVisualElementBounds(page, [
+      { region: { element: { id: "visible" } } },
+      { region: { element: { selector: ".visible" } } },
+      { region: { element: { id: "transparent" } } },
+    ] as never)).resolves.toEqual([
+      {
+        assertionIndex: 0,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { id: "visible" },
+        rendered: true,
+      },
+      {
+        assertionIndex: 1,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { selector: ".visible" },
+        rendered: true,
+      },
+      {
+        assertionIndex: 2,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { id: "transparent" },
+        rendered: false,
+      },
+    ]);
+  } finally {
+    restoreWindow();
+    restoreDocument();
+  }
 });
 
 test("fixed-step startup races retry without hiding a stopped loop", async () => {
