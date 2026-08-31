@@ -90,6 +90,16 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # The first run to reach this step booted in 474s and then died in the action's own
+          # "Disabling animations" step with `Broken pipe (32)`, exit 224 — the emulator was still
+          # settling when adb was handed the next command. These options are the ones that make a
+          # hosted-runner boot cheap and repeatable: software GL rather than a GPU the runner does
+          # not have, and none of the audio, camera, boot animation or snapshot work this lane
+          # never reads. The boot timeout is raised past the 474s that was already observed.
+          emulator-options: >-
+            -no-window -no-audio -no-boot-anim -no-snapshot -camera-back none -camera-front none
+            -gpu swiftshader_indirect -accel auto
+          emulator-boot-timeout: 900
           script: >-
             node packages/runtime-native/conformance/run-conformance.mjs
             --target android --device emulator-5554
