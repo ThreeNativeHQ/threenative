@@ -218,6 +218,10 @@ export function evaluatePathAssertion(
     valueChecksBefore.push(String(textValue(before)).includes(assertion.textIncludes));
     valueChecksAfter.push(String(textValue(after)).includes(assertion.textIncludes));
   }
+  if (assertion.visible !== undefined) {
+    valueChecksBefore.push(isRecord(before) && before.visible === assertion.visible);
+    valueChecksAfter.push(isRecord(after) && after.visible === assertion.visible);
+  }
   const trivial = rejectsTrivialAssertion(kind === "hud" ? "hud" : "resources")
     && valueChecksBefore.length > 0
     && before !== undefined
@@ -573,4 +577,3 @@ export function evaluateVisibilityAssertion(
     suggestion: "Check camera framing, clipping range, entity scale, and viewport-specific layout.",
   });
 }
-

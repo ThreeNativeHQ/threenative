@@ -44,6 +44,27 @@ function scenario(assert: unknown, steps: unknown[] = [{ label: "sample", waitTi
 }
 
 describe("scenario schema boundaries", () => {
+  it("accepts the deterministic browser renderer-failure seam and visible HUD assertion", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario({
+        hud: [{ id: "threenative-canvas-error", textIncludes: "Error creating WebGL context", visible: true }],
+      }),
+      bootFailure: "renderer-no-adapter",
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    }, "boot-failure.playtest.json");
+
+    expect(parsed.bootFailure).toBe("renderer-no-adapter");
+    expect(parsed.assert?.hud?.[0]?.visible).toBe(true);
+  });
+
+  it("rejects an unknown boot-failure seam", () => {
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      bootFailure: "scene-load-throw",
+    }, "invalid-boot-failure.playtest.json")).toThrow(/bootFailure/u);
+  });
+
   it("accepts the portable runtime world field that its validator defines", () => {
     expect(() =>
       validatePlaytestScenario(

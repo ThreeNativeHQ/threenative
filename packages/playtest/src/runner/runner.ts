@@ -397,7 +397,7 @@ async function runStandalonePlaytestInternal(
       || scenario.steps.some((step) => step.screenshot !== undefined)
       || wantsVisual;
     const requiresWebGpuProvenance = browserConfig.browserArgs?.includes("--enable-unsafe-webgpu") === true;
-    const captureProvenance = needsCapture || requiresWebGpuProvenance
+    const captureProvenance = scenario.bootFailure === undefined && (needsCapture || requiresWebGpuProvenance)
       ? await readCaptureProvenance(page, browserConfig, scenario)
       : undefined;
     if (captureProvenance !== undefined) {
@@ -477,6 +477,9 @@ async function runStandalonePlaytestInternal(
       label: string,
       artifactPath: string | undefined,
     ): Promise<Buffer | undefined> => {
+      if (scenario.bootFailure !== undefined) {
+        return capturePage(label, artifactPath === undefined ? {} : { path: artifactPath });
+      }
       try {
         const png = await captureVisualSurface(activePage, artifactPath);
         if (png === undefined) {

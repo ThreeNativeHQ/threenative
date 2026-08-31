@@ -495,6 +495,7 @@ export function validatePathAssertion(value: unknown, scenarioPath: string, obje
     ...present("path", optionalString(record, "path", scenarioPath, objectPath)),
     ...present("textIncludes", optionalString(record, "textIncludes", scenarioPath, objectPath)),
     ...present("throughoutSteps", optionalBoolean(record, "throughoutSteps", scenarioPath, objectPath)),
+    ...present("visible", optionalBoolean(record, "visible", scenarioPath, objectPath)),
   };
 }
 

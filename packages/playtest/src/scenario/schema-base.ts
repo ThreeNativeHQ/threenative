@@ -121,6 +121,8 @@ export interface IPlaytestPathAssertion {
   path?: string;
   textIncludes?: string;
   throughoutSteps?: boolean;
+  /** Require a DOM node to occupy pixels above the page at the sampled viewport centre. */
+  visible?: boolean;
 }
 
 export interface IPlaytestResourcePathAlternative {
@@ -440,6 +442,8 @@ export interface IPlaytestScenario {
   acceptanceId?: string;
   artifacts?: IPlaytestArtifactRequest;
   assert?: IPlaytestScenarioAssertions;
+  /** Test-only browser seam that makes the renderer's no-adapter boot path deterministic. */
+  bootFailure?: "renderer-no-adapter";
   /**
    * Wait for the application to finish its own startup before the first observation. Default
    * true, because a fixed-step run otherwise observes a game that has not finished loading.

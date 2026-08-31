@@ -15,7 +15,7 @@ import type { Page } from "playwright";
 
 export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAssertion[]): Promise<Record<string, unknown>> {
   if (assertions.length === 0) return {};
-  return page.evaluate((requestedAssertions) => Object.fromEntries(requestedAssertions.flatMap(({ id, path }) => {
+  return page.evaluate((requestedAssertions) => Object.fromEntries(requestedAssertions.flatMap(({ id, path, visible }) => {
     const element = path === undefined
       ? document.getElementById(id)
       : (() => {
@@ -30,8 +30,18 @@ export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAs
     const rawValue = element.getAttribute("data-value");
     const value = rawValue === null ? undefined : Number.isFinite(Number(rawValue)) ? Number(rawValue) : rawValue;
     const snapshot = value === undefined ? text : value;
-    return [[id, path === undefined ? snapshot : { [path]: snapshot }] as const];
-  })), assertions.map(({ id, path }) => ({ id, ...(path === undefined ? {} : { path }) })));
+    const observed = visible === undefined
+      ? snapshot
+      : (() => {
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return { text: snapshot, visible: false };
+          const centerX = Math.min(Math.max(rect.left + rect.width / 2, 0), Math.max(0, window.innerWidth - 1));
+          const centerY = Math.min(Math.max(rect.top + rect.height / 2, 0), Math.max(0, window.innerHeight - 1));
+          const topmost = document.elementFromPoint(centerX, centerY);
+          return { text: snapshot, visible: topmost === element || (topmost !== null && element.contains(topmost)) };
+        })();
+    return [[id, path === undefined ? observed : { [path]: observed }] as const];
+  })), assertions);
 }
 
 export function pairObservations(

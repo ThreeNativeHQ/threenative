@@ -30,6 +30,26 @@ body {
   touch-action: none;
 }
 
+/* Boot failures are a page state, so the generated game owns their presentation. */
+[data-threenative-canvas-error="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: clamp(1.5rem, 8vw, 6rem);
+  overflow: auto;
+  background: #fff7ed;
+  color: #061018;
+  font-family: inherit;
+  font-size: clamp(1rem, 2vw, 1.5rem);
+  line-height: 1.5;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 #hud {
   position: fixed;
   top: 1rem;

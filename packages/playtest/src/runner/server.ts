@@ -209,6 +209,9 @@ export async function openPageAndConnectBridge(
     try {
       await page.goto(config.url, { timeout: config.timeoutMs, waitUntil: "domcontentloaded" });
       await page.waitForLoadState("load", { timeout: config.timeoutMs }).catch(() => undefined);
+      // A forced boot-failure scenario deliberately stops before the runtime bridge can install;
+      // the browser DOM and screenshot assertions still run against the rendered failure surface.
+      if (scenario.bootFailure !== undefined) return undefined;
       return await connectPlaytestBridge(page, scenario);
     } catch (error) {
       if (error instanceof PlaytestBridgeError || !isPageNavigatedRace(error)) throw error;
