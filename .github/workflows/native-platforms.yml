@@ -8,7 +8,13 @@ name: Native platform evidence
 # 2026-08-11 three separate reds on main turned out to be stale for exactly that
 # reason. Path filters also fired push and pull_request together, running the
 # whole 24-minute matrix twice per PR.
+#
+# Triggered here rather than called from ci.yml as of 2026-08-31: the lane reports on every push to
+# main, and its result no longer decides ci.yml's conclusion. See the note where the call used to be
+# in ci.yml, and PRD-295 for the failures that made it advisory.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
   workflow_call:
 

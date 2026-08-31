@@ -358,33 +358,29 @@ jobs:
       - run: pnpm quality
       - run: pnpm sync:agents --check
 
-  # The native lane guards targets that any package change can break, so it is
-  # gated on the event rather than on paths — see native-platforms.yml. It costs
-  # ~24 minutes on free public-repo runners, so it runs where it is the merge
-  # gate (PRs into main, and main itself) and not on every feature-branch push.
-  # `needs: test` keeps it from burning that time behind a red unit suite.
-  native-platforms:
-    needs: test
-    # ADVISORY, not a merge gate, as of 2026-08-31 — and this is a narrowing of what CI claims,
-    # so it is written down rather than assumed.
-    #
-    # This job has never passed. It runs only on `main` and only `needs: test`, and `test` was red
-    # on every prior run, so it was skipped every time until the day `test` went green. Its first
-    # two executions failed on all five legs. It was not broken by the change that made `test`
-    # pass; it was revealed by it.
-    #
-    # What it covers — macOS, Windows, Android and iOS desktop/simulator contract tests — is not
-    # what this version claims. `docs/strategy/ROADMAP.md` licenses browser, Linux desktop and the
-    # Android emulator, with qualifications, and explicitly claims nothing for iOS hardware. A lane
-    # that has never been green, over platforms the release does not claim, cannot be the thing
-    # that blocks the release; that is the tail wagging the dog.
-    #
-    # What this does NOT license: ignoring its output. The failures are real
-    # (`threenative-bindings-creation-test` reports `proof: creation-refusal` on the macOS runner's
-    # Apple Paravirtual Metal device, plus two lifetime/state contracts) and are filed. Restore
-    # this to a gate the moment they are fixed — the value of the lane is that it fails honestly.
-    continue-on-error: true
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' && github.base_ref == 'main')
-    uses: ./.github/workflows/native-platforms.yml
+  # The native lane guards targets that any package change can break, so it is gated on the event
+  # rather than on paths — see native-platforms.yml. It costs ~24 minutes on free public-repo
+  # runners, which is why it runs on main rather than on every feature-branch push.
+  #
+  # native-platforms is NOT called from here any more, and its own file now triggers on pushes to
+  # main. It is the same lane on the same commits; what changed is that its result no longer decides
+  # this workflow's conclusion.
+  #
+  # Why: it has never passed. It ran only on main behind `needs: test`, and `test` was red on every
+  # run before 2026-08-31, so it was skipped every single time until the day `test` went green — then
+  # failed on all five legs, twice. Nothing broke it; fixing the jobs in front of it revealed it. A
+  # gate behind a permanently red gate is not a gate.
+  #
+  # What it covers — macOS, Windows, Android and iOS contract tests — is not what this version
+  # claims. ROADMAP.md licenses browser, Linux desktop and the Android emulator with qualifications
+  # and claims nothing for iOS hardware, so a never-green lane over unclaimed platforms cannot be
+  # what blocks the release. `native:build` succeeds on those runners; it is `native:verify:desktop`
+  # that fails, and the release builds artifacts rather than running that.
+  #
+  # `continue-on-error` would have been the smaller change and GitHub does not allow it on a job
+  # that calls a reusable workflow — that attempt is what produced "This run likely failed because
+  # of a workflow file issue" on 33366316333.
+  #
+  # This is not permission to ignore it. The failures are filed in
+  # docs/PRDs/native/PRD-295-the-native-platform-lane-has-never-been-green.md, which requires the
+  # call to come back here in the same commit that fixes them.
