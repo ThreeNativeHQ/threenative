@@ -117,9 +117,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     const materials = createMaterials();
     ctx.add(createScenery(materials.rock, materials.ridge, createRandom(20_260_821)));
-    // Keep the initial -99 sentinel until seed.playtest samples it. If this draw is replaced with
-    // Math.random, the unchanged seeded state reports an out-of-range value and seed.playtest
-    // identifies the bypass instead of silently accepting an unseeded level.
+    // Two sentinels, both read by seed.playtest as an out-of-range value rather than as a
+    // transition: state.levelX starts at -99, so a level that never builds stays out of range,
+    // and seededLevelX becomes 2 if this draw did not advance ctx.random — which is what happens
+    // if someone swaps it for Math.random. Neither depends on WHEN the runner samples.
     const randomStateBeforeLevel = ctx.random.state;
     const levelX = ctx.random.range(-1, 1);
     const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX;
@@ -201,7 +202,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       pickupVisual.visible = false;
     }
 
-    ctx.after(0.25, () => ctx.state.set({ levelX: seededLevelX }));
+    // Set with the level, not 0.25 s later. The delay existed so the playtest could observe the
+    // -99 -> seeded transition, which made the assertion a race against boot time: it was sampled
+    // at tick 6 on a workstation and tick 47 in CI, and only the slow sample missed the change.
+    ctx.state.set({ levelX: seededLevelX });
     const frameState: Partial<GameState> = {};
     return (frameCtx, dt) => {
       loading.update();
