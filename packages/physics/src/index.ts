@@ -101,10 +101,13 @@ export { interactionGroups } from "./collision.js";
  * @situation create a body that collides with a character
  * @situation fire physical cannonballs that collide with ships or scenery
  * @situation fire a cannonball projectile with cannon smoke particles
+ * @situation a bullet passes through a wall
  * @constraint register rapier() in the game plugin list before using bodies
+ * @override continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
  * @example const crate = new RigidBody3D({ context, object, mode: "dynamic" });
  */
 export { RigidBody3D } from "./RigidBody3D.js";
+export type { IRigidBody3DOptions, RigidBodyType } from "./RigidBody3D.js";
 /**
  * Install the Rapier physics plugin and simulation backend.
  * @situation add physics to a portable game

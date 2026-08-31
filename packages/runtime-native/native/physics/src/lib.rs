@@ -36,6 +36,7 @@ pub struct TnPhysicsBodyOptions {
     pub collision_layer: u32,
     pub collision_mask: u32,
     pub sensor: bool,
+    pub continuous_collision: bool,
 }
 
 #[repr(C)]
@@ -309,6 +310,9 @@ impl Simulation {
             _ => return false,
         }
         .pose(position);
+        if options.body_type == 0 {
+            body = body.ccd_enabled(options.continuous_collision);
+        }
         if options.mass > 0.0 {
             body = body.additional_mass(options.mass);
         }
@@ -1577,7 +1581,80 @@ mod tests {
             collision_layer: layer,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         }
+    }
+
+    #[test]
+    fn continuous_collision_stops_a_fast_body_and_opt_out_tunnels() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(TnPhysicsBodyOptions {
+            id: 0,
+            body_type: 1,
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.05,
+            shape_y: 1.0,
+            shape_z: 1.0,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+            continuous_collision: true,
+        }));
+        for (id, continuous_collision) in [(1, true), (2, false)] {
+            assert!(simulation.add_body(TnPhysicsBodyOptions {
+                id,
+                body_type: 0,
+                shape_type: 1,
+                position_x: -1.0,
+                position_y: 0.0,
+                position_z: 0.0,
+                rotation_x: 0.0,
+                rotation_y: 0.0,
+                rotation_z: 0.0,
+                rotation_w: 1.0,
+                shape_x: 0.05,
+                shape_y: 0.0,
+                shape_z: 0.0,
+                mass: 1.0,
+                collision_layer: 1,
+                collision_mask: u16::MAX.into(),
+                sensor: false,
+                continuous_collision,
+            }));
+            assert_eq!(
+                simulation.set_body_linear_velocity(id, 120.0, 0.0, 0.0),
+                ActuationStatus::Ok
+            );
+        }
+
+        assert!(simulation.step(1.0 / 60.0, &[]));
+        let continuous_x = simulation.bodies[simulation.entries[&1].body]
+            .translation()
+            .x;
+        let discrete_x = simulation.bodies[simulation.entries[&2].body]
+            .translation()
+            .x;
+        assert!(
+            continuous_x < 0.0,
+            "continuous body crossed the wall at {continuous_x}"
+        );
+        assert!(
+            discrete_x > 0.1,
+            "opted-out body did not tunnel at {discrete_x}"
+        );
     }
 
     #[test]
@@ -1847,6 +1924,7 @@ mod tests {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         }));
         assert!(simulation.step(1.0 / 60.0, &[42.0, 2.0, 3.0, 4.0, 0.0, 0.0, 0.0, 1.0],));
         assert_eq!(
@@ -1883,6 +1961,7 @@ mod tests {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         };
         assert!(simulation.add_body(body(11)));
         assert!(simulation.add_body(body(29)));
@@ -1937,6 +2016,7 @@ mod tests {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         };
         assert!(simulation.add_body(body(1, 1, -0.1, 5.0, 0.1, 5.0)));
         assert!(simulation.add_body(body(2, 3, 0.5, 0.2, 0.3, 0.0)));
@@ -2020,6 +2100,7 @@ mod tests {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         }));
 
         let mut started = Vec::new();
@@ -2095,6 +2176,7 @@ mod tests {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         }));
         assert!(simulation.add_body(TnPhysicsBodyOptions {
             id: 1,
@@ -2114,6 +2196,7 @@ mod tests {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: true,
+            continuous_collision: true,
         }));
         assert!(simulation.step(1.0 / 60.0, &[]));
         assert!(drain_events(&mut simulation).is_empty());
@@ -2180,6 +2263,7 @@ mod tests {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         }));
         let mut landed = false;
         for _ in 0..240 {
@@ -2236,6 +2320,7 @@ mod tests {
                 collision_layer: 1,
                 collision_mask: u16::MAX.into(),
                 sensor: false,
+                continuous_collision: true,
             }));
             for index in 0..count {
                 assert!(simulation.add_body(TnPhysicsBodyOptions {
@@ -2256,6 +2341,7 @@ mod tests {
                     collision_layer: 1,
                     collision_mask: u16::MAX.into(),
                     sensor: false,
+                    continuous_collision: true,
                 }));
             }
             simulation
@@ -2325,6 +2411,7 @@ mod tests {
             collision_layer: layer,
             collision_mask: mask,
             sensor,
+            continuous_collision: true,
         };
         assert!(simulation.add_body(body(1, true, 8, 2)));
         assert!(simulation.add_body(body(2, false, 2, 4)));

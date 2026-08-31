@@ -254,6 +254,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // AGENTS.md paragraph that states the convention.
   // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
   // new FluidField2D capability manifest and generated capability-reference entry.
+  // Recomputed 2026-08-31 for PRD-292: every template's generated AGENTS.md documents the
+  // default continuous-collision convention and its per-body override.
 };
 
 const GENERATED_SCAFFOLD_METADATA =

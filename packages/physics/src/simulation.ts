@@ -76,6 +76,8 @@ export interface IPhysicsBodyCreateOptions {
   readonly mass: number;
   /** Must match `shape.sensor`; conflicting values are rejected during body creation. */
   readonly sensor: boolean;
+  /** Enable continuous collision for fast-moving dynamic bodies. Defaults to true. */
+  readonly continuousCollision?: boolean;
 }
 
 export interface IPhysicsVector3 {
@@ -616,6 +618,7 @@ function bodyDescription(
   position: IPhysicsBodyCreateOptions["position"],
   rotation: IPhysicsBodyCreateOptions["rotation"],
   mass: number,
+  continuousCollision: boolean,
 ): rapier.RigidBodyDesc {
   const description =
     type === "fixed"
@@ -626,6 +629,10 @@ function bodyDescription(
   description
     .setTranslation(position.x, position.y, position.z)
     .setRotation({ x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w });
+  // Rapier applies CCD to kinematic position targets as a sweep. Kinematic bodies are driven
+  // transforms (including teleports), so enabling it there changes the existing bulk-transform
+  // contract; CCD is meaningful for the dynamic bodies this option targets.
+  if (type === "dynamic") description.setCcdEnabled(continuousCollision);
   if (mass !== 0) description.setAdditionalMass(mass);
   return description;
 }
@@ -818,6 +825,11 @@ export function createWebPhysicsSimulation(
       const sensor = requirePhysicsBodySensor(bodyOptions);
       if (!Number.isFinite(bodyOptions.mass) || bodyOptions.mass < 0)
         throw new Error("Physics body mass must be a finite non-negative number.");
+      if (
+        bodyOptions.continuousCollision !== undefined &&
+        typeof bodyOptions.continuousCollision !== "boolean"
+      )
+        throw new Error("Physics body continuousCollision must be a boolean.");
       // A NaN reaching Rapier corrupts the body for the rest of the run and surfaces
       // frames later as a body that vanished; reject it here like every other seam.
       requireFiniteVector(bodyOptions.position, "body position");
@@ -832,6 +844,7 @@ export function createWebPhysicsSimulation(
           bodyOptions.position,
           bodyOptions.rotation,
           bodyOptions.mass,
+          bodyOptions.continuousCollision ?? true,
         ),
       );
       const rawCollider = options.world.createCollider(rawShape, rawBody);

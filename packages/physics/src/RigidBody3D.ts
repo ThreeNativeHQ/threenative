@@ -10,6 +10,8 @@ import { bulkTransformValue } from "./transformRecord.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 
+const DEFAULT_CONTINUOUS_COLLISION = true;
+
 export interface IRigidBody3DOptions {
   /** The transform this body drives. Omit for a fixed collider with no visual; supply `position`. */
   readonly object?: Object3D;
@@ -26,6 +28,8 @@ export interface IRigidBody3DOptions {
   readonly collisionLayer?: number;
   /** Godot's collision_mask — which layers this body scans. Default 0xffff. */
   readonly collisionMask?: number;
+  /** Enable continuous collision for fast-moving dynamic bodies. Default true. */
+  readonly continuousCollision?: boolean;
 }
 
 export class RigidBody3D {
@@ -36,6 +40,8 @@ export class RigidBody3D {
   readonly shape: CollisionShape3D;
   readonly type: RigidBodyType;
   readonly mass: number;
+  /** The effective continuous-collision setting for this body, including the default. */
+  readonly continuousCollision: boolean;
   buoyancy: Buoyancy3D | undefined;
   readonly #simulation: IPhysicsSimulation;
   readonly #physics: IPhysicsContext | undefined;
@@ -58,6 +64,12 @@ export class RigidBody3D {
     this.#object = options.object;
     this.type = type;
     this.mass = options.mass ?? 0;
+    if (
+      options.continuousCollision !== undefined &&
+      typeof options.continuousCollision !== "boolean"
+    )
+      throw new Error("RigidBody3D continuousCollision must be a boolean.");
+    this.continuousCollision = options.continuousCollision ?? DEFAULT_CONTINUOUS_COLLISION;
     this.buoyancy = undefined;
     const shape = options.shape.descriptor;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
@@ -73,6 +85,7 @@ export class RigidBody3D {
       sensor: shape.sensor,
       shape,
       type: this.type,
+      continuousCollision: this.continuousCollision,
     });
     options.shape.bindRaw(registration.rawShape);
     this.body = registration.body;
