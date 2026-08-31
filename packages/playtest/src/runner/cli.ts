@@ -348,6 +348,31 @@ function scenarioUnreadable(
 }
 
 const entryPath = process.argv[1];
+/**
+ * Wait for stdout to reach the far end before exiting, bounded.
+ *
+ * Returns true when the stream drained, false when the deadline passed with bytes still pending —
+ * the caller exits either way, because a stalled reader must not outrank the exit.
+ */
+export interface IDrainableStream {
+  readonly writableLength: number;
+  write(chunk: string, callback: () => void): unknown;
+}
+
+export async function flushStdout(
+  timeoutMs = 5_000,
+  stream: IDrainableStream = process.stdout,
+): Promise<boolean> {
+  if (stream.writableLength === 0) return true;
+  return await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    stream.write("", () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+}
+
 if (
   entryPath !== undefined
   && existsSync(entryPath)
@@ -355,8 +380,16 @@ if (
 ) {
   const code = await main();
   // Exit explicitly rather than waiting for the event loop to drain. A browser that refused to
-  // close leaves handles open, and the report is already written by this point, so waiting only
-  // costs the caller its exit: every template chains its scenarios with `&&`, and one run that
-  // never returns stalls the whole sequence with no error to read.
+  // close leaves handles open, and one run that never returns stalls a whole `&&` chain with no
+  // error to read.
+  //
+  // "The report is already written by this point" was the original claim here, and it is only
+  // true when stdout is a TTY or a file, where POSIX writes are synchronous. On a pipe — which is
+  // what every caller capturing this CLI gets — writes are asynchronous, and `process.exit`
+  // discards whatever has not flushed. The iOS lane read exactly 8193 bytes of its report, cut
+  // mid-object, while the process still exited 0: its verifier then looked for `"pass": true` in
+  // JSON that stopped short of the field. Drain first, bounded so a stuck stream cannot restore
+  // the hang this exit exists to prevent.
+  await flushStdout();
   process.exit(code);
 }
