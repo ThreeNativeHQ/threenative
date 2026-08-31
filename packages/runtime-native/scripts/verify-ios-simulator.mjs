@@ -269,15 +269,16 @@ const launched = await new Promise((resolve) => {
   );
   let output = '';
   let settled = false;
-  let deadline;
-  const finish = (status, error) => {
+  // Declared before `finish` so it can clear it, and assigned once — the timer is the backstop for
+  // an app that never prints its last marker.
+  const deadline = setTimeout(() => finish(null, undefined), 180_000);
+  function finish(status, error) {
     if (settled) return;
     settled = true;
     clearTimeout(deadline);
     child.kill('SIGKILL');
     resolve({ error, output, status });
-  };
-  deadline = setTimeout(() => finish(null, undefined), 180_000);
+  }
   const read = (chunk) => {
     output += String(chunk);
     if (requiredMarkers.every((marker) => output.includes(marker))) finish(0, undefined);
