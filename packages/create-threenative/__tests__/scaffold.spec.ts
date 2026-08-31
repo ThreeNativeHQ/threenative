@@ -165,13 +165,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "ab3fd1b95416f7d67a11813ddf15b68644997dc2da42ac7a8eb88da39f6d269b",
-  defense: "6f1d7f5843d8077fc91390a275b59bfba20cc850c41098a614301b74bfb873dd",
-  minimal: "feead2edfbac1a2ccadc50481f106820d3da5116ae4c5e8cf3dec7f4e9cd74a0",
-  platformer: "f09715217d2cbd643c7eeadf679b7f78f67d46ed137066ef5bcd94fbea8d353e",
-  racing: "7d62e79896b383f0854c82a018a703e874eb3a779c6793c91c981f33925bf180",
-  shooter: "48c61bfb6da31c8c027b6711fea9c9065fe29202851812bb1b6a19979ac5dc1f",
-  starter: "0ce21ef925a33f0b9e70d90b3c931a5c3f08750ad93261ca10cb388b2a98f74e",
+  "action-rpg": "32bdab62d1fda1a3922e516a30bfb54a3cd9b1e4054ecc6a36af67f70e934951",
+  defense: "ce1b559ad25c96d0c2c99f4c5cedb1275ea1f64e12219a0846d41eb8648f028c",
+  minimal: "4c71d36f77c2acb92140eeb5155de9d6b06461149565d1ba366abd2cc4cb33c2",
+  platformer: "7b72c58751eccca6fb3a577ae49c7f63dc3d056609e1180b53d545bf5bff85b6",
+  racing: "deb9729ff3031b34bf3aa7809ad071e69e6c88feb7f0d2122e0e1cc89c8702cb",
+  shooter: "3163dae56ce2cb981cfd50457c514e9d0a17e0377ea682639b124ad7f96f0491",
+  starter: "83f41f1a876fe02f22b26bb87d37b2621cf56af4d1fb06f199b0f07a1e424050",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -181,7 +181,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // WaveField/Buoyancy3D public surface updates the generated capability reference in all trees.
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
-  "sailing": "6803a4515096de40010edb3fe312fe0bfba722f4284c62303d36a4acbed740f6",
+  "sailing": "6479f65f6a56215214d5a3dd320fe7dd6d8253cd69b42505dfa94010ece3759b",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
