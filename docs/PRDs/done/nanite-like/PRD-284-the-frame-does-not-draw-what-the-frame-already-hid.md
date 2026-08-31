@@ -5,14 +5,14 @@ prd_contract: v1
 # PRD-284 — the frame does not draw what the frame already hid
 
 **Status: DECLINED on the measured headroom — 2026-08-30. Phase 4 of the
-[virtual geometry batch](./README.md). This phase declines alone and the batch stays open.**
+[virtual geometry batch](../../nanite-like/README.md). This phase declines alone and the batch stays open.**
 
 **The number.** After PRD-282, the quarry's `virtual` arm costs **1.28 ms of GPU time** per frame at
 1080p on browser WebGPU, out of a 16.7 ms budget. Occlusion culling can win at most that whole
 1.28 ms and realistically a fraction of it, against a depth pyramid and a second submission inside
 three.js's render path — the largest unknown in the batch by this PRD's own §2. On native the arm's
 problem is not overdraw at all: it is 89 draws and a 649.6 ms arrival hitch
-([PRD-283's file](../../verification/prd-283-native-and-the-kernel-2026-08-30.md)), neither of which
+([PRD-283's file](../../../verification/prd-283-native-and-the-kernel-2026-08-30.md)), neither of which
 occlusion touches.
 
 **§2's open question is left open, honestly.** How much of three.js's WebGPU renderer exposes a

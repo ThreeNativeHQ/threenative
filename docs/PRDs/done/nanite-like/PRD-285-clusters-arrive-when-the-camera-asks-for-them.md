@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-285 — clusters arrive when the camera asks for them
 
 **Status: DECLINED on its own precondition — 2026-08-30. Phase 5 of the
-[virtual geometry batch](./README.md). This phase declines alone and the batch stays open.**
+[virtual geometry batch](../../nanite-like/README.md). This phase declines alone and the batch stays open.**
 
 **The precondition §1 names is measured and not met.** No game in this repository or in the sandbox
 holds an asset that does not fit in memory on a target it must run on. The densest thing the batch
