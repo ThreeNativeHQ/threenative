@@ -20,12 +20,16 @@ Per `docs/PRDs/AGENTS.md`, `NOT STARTED` / `PROPOSED` PRDs stay in their owning 
 below are referenced, sequenced and depended on from here; they are not copied and not moved. Only
 the two new PRDs live in this folder.
 
+**Filed against a moving tree.** `batch-2026-08-22-charter-performance/` was dissolved into
+`performance/` at `3491ad96` while this batch was being written, taking its ordering README with it.
+The rows below name where each PRD lives now; re-check a path before citing it.
+
 ## Order, and why it is this order
 
 | # | PRD | Where it lives | State | Why here |
 | --- | --- | --- | --- | --- |
 | 1 | [PRD-278 — every template ships the render chain and says what ran](../PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) | `docs/PRDs/` | SCOPING | The largest visual-default delta available, and **its stated blocker is stale**: the mined file landed in `starter` at `b43b3f87`. Charter-safe — it ships as generated source, so it needs no owner ruling. Six templates, six integration problems. |
-| 2 | [PRD-193](../batch-2026-08-22-charter-performance/PRD-193-all-templates-model-allocation-free-frames.md) + [PRD-194](../batch-2026-08-22-charter-performance/PRD-194-every-template-carries-a-real-performance-proof.md) | `batch-2026-08-22-charter-performance/` | NOT STARTED | The regression net under 1. Adding five TSL stages to seven templates with no per-template performance proof is how a good default silently becomes a 30 fps one. Run **with** 1, not after. |
+| 2 | [PRD-193](../performance/PRD-193-all-templates-model-allocation-free-frames.md) + [PRD-194](../performance/PRD-194-every-template-carries-a-real-performance-proof.md) | `performance/` | NOT STARTED | The regression net under 1. Adding five TSL stages to seven templates with no per-template performance proof is how a good default silently becomes a 30 fps one. Run **with** 1, not after. |
 | 3 | [PRD-287 — the default look holds the phone's budget, or steps down and says so](./PRD-287-the-default-look-holds-the-phones-budget.md) | **here** | OPEN | New. The device arm nothing owns, plus a correction to the tier ladder's selection meter. |
 | 4 | [PRD-288 — the first frame is not the compile bill](./PRD-288-the-first-frame-is-not-the-compile-bill.md) | **here** | OPEN | New. `packages/core/src/warmup.ts` compiles the scene and never touches the post chain. |
 | 5 | [lighting/PRD-266 — the render chain names the tier it actually ran](../lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | `lighting/` | PROPOSED | **Blocked on one owner decision, not on code** — see below. It is fifth in this list only because of that gate; on a yes it becomes the spine of 3 and 4. |
