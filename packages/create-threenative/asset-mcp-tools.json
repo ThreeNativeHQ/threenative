@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by running the installed server over stdio from inside a scaffolded project - not copied from its docs. `profile` is null because the published 0.4.0 has no --profile selector: a bounded 8-tool profile exists upstream but is unpublished, so every generated project sees all 32 tools today. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that, and in 0.4.0 it reports every catalogued source as agent-ready.",
-  "version": "0.4.0",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.6.0 into a clean directory and driving it over stdio - not copied from its docs. `profile` is null because the published 0.6.0 has no --profile selector: a bounded 8-tool profile exists upstream but is unpublished, so every generated project sees all 35 tools today. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. `fab_import_asset` and `asset_import_unreal` are deliberately not recommended: they convert an Unreal pack the user already owns, which is a route a game takes on purpose rather than a step in the ordinary asset loop.",
+  "version": "0.6.0",
   "profile": null,
   "recommended": [
     "ambientcg_list_files",
@@ -20,6 +20,7 @@
     "asset_download_bundle_animation",
     "asset_download_bundle_entry",
     "asset_download_file",
+    "asset_import_unreal",
     "asset_list_bundle_animations",
     "asset_list_bundle_entries",
     "asset_list_sources",
@@ -29,8 +30,10 @@
     "audio_search_assets",
     "fab_download_free_asset",
     "fab_get_asset",
+    "fab_import_asset",
     "fab_list_filters",
     "fab_list_limited_time_free",
+    "fab_list_owned",
     "fab_search_assets",
     "itch_download_asset",
     "itch_list_downloads",

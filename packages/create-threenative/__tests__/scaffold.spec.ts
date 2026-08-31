@@ -70,6 +70,9 @@ const AGENT_ROLE_PATHS = [
 // re-running locally could converge them. If this table needs updating again, take the values
 // from a CI failure's `Received` block, or compute them from a clean checkout of HEAD — never
 // from a dirty tree in a checkout more than one lane is working in.
+// Recomputed 2026-08-31 for PRD-295: every template's AGENTS.md now carries the Fab import route
+// (fab_search_assets -> fab_list_owned -> fab_import_asset) in the shared asset-mcp-loop fragment,
+// and that fragment is embedded in all seven scaffolds.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -162,13 +165,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "6d2f325ff9835123a1eaf7067a2aee1bc5dad146b7d360305ee6ef26b15b79a0",
-  defense: "ff0ffafb9ea549347923aa3633d6cbecabaec2204675a1a67906f4004d16761b",
-  minimal: "d28cb27a7ecfcfd9bd7167a3f6de2d0faa97bccec3791dbcb436f4a8ef2234c4",
-  platformer: "b89b73c7891a69dd3341b5e40082afe14fd2a1bed308776dd9ab796dccbbf2db",
-  racing: "1c6929f9dc9bb26986b63460a1c802e78d5465010f0e6179f4c5db5ad43e0821",
-  shooter: "8ffdc005d1c7db69078ab5b8575c9ea9b681afecbdead07af863cb28de1b65ac",
-  starter: "bfea0428c7848ee8692f5fa144d504dae9a6606f41e3463baec036d5b2b5b620",
+  "action-rpg": "ab3fd1b95416f7d67a11813ddf15b68644997dc2da42ac7a8eb88da39f6d269b",
+  defense: "6f1d7f5843d8077fc91390a275b59bfba20cc850c41098a614301b74bfb873dd",
+  minimal: "feead2edfbac1a2ccadc50481f106820d3da5116ae4c5e8cf3dec7f4e9cd74a0",
+  platformer: "82ab9de3d16b406d70dc3f099545d5d02b9a6cc355546c79fc99a215729167a4",
+  racing: "7d62e79896b383f0854c82a018a703e874eb3a779c6793c91c981f33925bf180",
+  shooter: "48c61bfb6da31c8c027b6711fea9c9065fe29202851812bb1b6a19979ac5dc1f",
+  starter: "0ce21ef925a33f0b9e70d90b3c931a5c3f08750ad93261ca10cb388b2a98f74e",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.

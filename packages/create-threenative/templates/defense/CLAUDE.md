@@ -184,6 +184,13 @@ launched in: start the session in this project, not in a parent of it. The loop:
 
 **Never state a license you did not read off a tool result.**
 
+**Fab is two steps.** `fab_search_assets` finds a free listing, and `fab_list_owned` says what the
+account already paid for — a free search never shows those. Then `fab_import_asset` converts it: it checks the
+entitlement, downloads through the FabCLI session you established yourself, turns every static
+mesh into a textured `.glb` under `assets/`, and returns the paths. It refuses anything but Fab
+Standard or CC-BY, and it never logs in, claims, or buys. Most Fab listings are Unreal-only, so
+without it a listing is a dead end. Full argument shapes: `agent-docs/finding-assets.md`.
+
 The full loop — ZIP unpacking rules, the two argument shapes that bite, and the narrower
 marketplace tools — is `agent-docs/finding-assets.md`.
 <!-- /shared -->

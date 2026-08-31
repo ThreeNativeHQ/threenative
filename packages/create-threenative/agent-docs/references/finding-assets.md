@@ -6,7 +6,7 @@ asset tools when the asset is conventional; build anything specific to this game
 
 Installing `@threenative/core` writes the `.mcp.json` that launches `threenative-asset-mcp`, so
 your host lists its tools alongside your own. Your host reads that file from the directory it was
-launched in: start the session in this project, not in a parent of it. It advertises 32; these 8
+launched in: start the session in this project, not in a parent of it. It advertises 34; these 8
 are the loop you will use for nearly everything:
 
 1. `asset_search_sources` — start here, never at a provider. It returns every catalogued
@@ -45,11 +45,99 @@ Both learned the hard way: `ambientcg_search_assets` takes lowercase `type` valu
 pack names, so `query: "pickup coin"` returns nothing while `kind: "sfx"` returns the packs
 that exist. Pick a pack, download it, unzip it, and choose a file yourself.
 
+## Fab: searching, and importing an Unreal asset you own
+
+Most Fab listings ship Unreal-only — 272 `.uasset` files and no `.glb` anywhere — so Fab is two
+steps, not one: find the listing, then convert it.
+
+**1. Search free first.** `fab_search_assets` talks to Fab's public API anonymously; no account is
+involved. Its default `priceMode: "free"` is the right default and should stay your first query —
+a free asset is one anybody who clones this project can fetch too.
+
+```jsonc
+// fab_search_assets
+{
+  "query": "cave rocks",
+  "formats": ["unreal-engine"],  // "gltf", "fbx", "obj", "unity" ... omit for every format
+  "priceMode": "any",            // SEE BELOW — the default is "free"
+  "sort": "relevance",           // or rating, newest, price_asc, recently_updated
+  "limit": 24
+}
+```
+
+**Then look at what the account already owns.** A paid listing sitting in the library costs
+nothing further to use, and it will never appear in a free search — `priceMode: "free"` returns a
+different result set than `"any"` does. `fab_list_owned` answers that directly, without guessing
+at search terms:
+
+```jsonc
+// fab_list_owned
+{ "unrealOnly": true, "query": "vegetation" }   // both optional; unrealOnly drops engine installs
+                                                // and plugins the importer cannot take
+// -> [{ listingId, title, url, categories, engineVersions, hasUnrealArtifact }]
+```
+
+Reach for `priceMode: "any"` in `fab_search_assets` only when you mean to look at paid listings
+the account does *not* own yet — buying is not something these tools can do for you.
+
+Each item carries a `title` and an `id` — that `id` is the listing UID the next two tools take.
+`fab_list_filters` returns the usable `formats`, `categories` and `tags` slugs; guessing them
+silently narrows the search instead of erroring.
+
+**2. Check the licence.** Search results carry **no licence** — Fab's search endpoint omits it, so
+every item comes back with an empty `licenses` array. `fab_get_asset` is where the slugs live:
+
+```jsonc
+{ "listingIdOrUrl": "75f42402-40bb-4a1b-b557-18e2c9604273" }
+// -> licenses: [{ slug: "personal" }, { slug: "professional" }], freeLicenseSlugs: [...]
+```
+
+**3. Import.** `fab_import_asset` verifies the entitlement itself, downloads through the FabCLI
+session, converts every static mesh, and writes source GLBs into your `assets/`:
+
+```jsonc
+// fab_import_asset
+{
+  "listingIdOrUrl": "https://www.fab.com/listings/<uid>",
+  "outputDir": "assets/fab/soul-cave",
+  "packages": ["SM_S_Soul_Statue"],   // omit to convert every static mesh — packs run to gigabytes
+  "maxTextureSize": 2048,             // omit to keep Unreal's own resolution
+  "acceptFabEula": true
+}
+```
+
+Then load the returned path the ordinary way:
+`ctx.assets.model("fab/soul-cave/.../SM_S_Soul_Statue.glb")`. The normal asset compiler picks the
+GLBs up from `assets/` with no extra configuration.
+
+What the import will and will not do:
+
+- **Only assets you already own**, and only under **Fab Standard (Personal or Professional) or
+  CC-BY**. Unreal-Engine-only and legacy entitlements are refused, and a licence it cannot read is
+  refused too. It never logs in, claims, or purchases — run `fabcli auth login` yourself once.
+  Searching and `fab_get_asset` stay anonymous, so the licence check never depends on the
+  authenticated path it is guarding.
+- **Two external tools install themselves on first use** (FabCLI and UE Viewer). Set
+  `THREENATIVE_TOOLCHAIN_AUTOINSTALL=0` to require you install them instead. Linux and Windows only.
+- **`packages` is not optional in practice.** A marketplace pack converts to many gigabytes of
+  GLBs; name the handful of meshes your scene uses. Run it once without `packages` against a
+  scratch directory if you need to see what a pack contains, then re-run with the names.
+- **Read `import-report.json` before trusting the result.** It reports `materials: "complete"` or
+  `"degraded"`, counts textured against total sections, and names every mesh it skipped and every
+  texture it could not map. Unreal shader graphs have no glTF equivalent, so some sections arrive
+  with a neutral grey and say so. `.umap` levels, Blueprints, Niagara and foliage placement are
+  reported as unsupported, never silently dropped.
+- `asset_import_unreal` takes a local `sourceDir` instead of a listing, for a pack you already
+  downloaded by any means.
+
+`fab_download_free_asset` is the unrelated older path: it downloads a directly-available free
+`glb`/`fbx`/`obj`/`unity` file with no account at all. Use it when the listing already ships a
+format you can load, and the importer only when it does not.
+
 ## The narrower tools
 
-The directory spells out the conditions on each. The Fab tools talk to a marketplace: the
-server never purchases anything, and only directly-free files download.
-`smithsonian_search_assets` returns museum scans at scan resolution, which this project has no
+The directory spells out the conditions on each. The Fab tools are covered above; the server
+never purchases anything on any path. `smithsonian_search_assets` returns museum scans at scan resolution, which this project has no
 pipeline to decimate — that geometry is the wrong shape for a game. When in doubt check
 `asset_search_sources` first; its `caution` and license fields are the current truth for the
 pinned version, and they change between versions.
