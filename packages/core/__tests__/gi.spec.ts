@@ -198,6 +198,25 @@ describe("SurfelPool and SurfelHashGrid", () => {
 });
 
 describe("SurfelGI", () => {
+  it("rejects a scene without the BVH required for traced indirect light", () => {
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+
+    expect(
+      () =>
+        new SurfelGI({
+          camera,
+          hashCellCount: 8,
+          hashCellSize: 1,
+          maxAge: 30,
+          rayBudget: 4,
+          scene,
+          surfelBudget: 4,
+          updateCadence: 2,
+        }),
+    ).toThrow("SurfelGI.sceneBvh is required when scene is provided.");
+  });
+
   it("binds its indirect node to a game-owned GBuffer pass", () => {
     const scene = new Scene();
     const camera = new PerspectiveCamera();
@@ -481,17 +500,11 @@ describe("SurfelGI", () => {
   });
 
   it("dispatches its integration node and releases every owned buffer", () => {
-    const scene = new Scene();
-    const camera = new PerspectiveCamera();
-    const mesh = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
-    scene.add(mesh);
     const gi = new SurfelGI({
-      camera,
       hashCellCount: 8,
       hashCellSize: 1,
       maxAge: 30,
       rayBudget: 4,
-      scene,
       surfelBudget: 4,
       updateCadence: 2,
     });
