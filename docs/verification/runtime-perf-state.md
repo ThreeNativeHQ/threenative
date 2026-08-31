@@ -17,36 +17,39 @@ detail is not in this file exists only in git — quote it with the commit.
 Lane: contract-preserving `lane-245-r3`, generated `minimal` template, browser WebGPU. The real
 fixture was an isolated scaffold installed from local framework tarballs, headed Chromium on the
 NVIDIA Turing adapter (`vendor=nvidia`, `architecture=turing`), 1280×720 viewport, and the
-repository WebGPU recipe. `pnpm tsx scripts/verify-one-template.ts minimal` passed all four
-scenarios: `atmosphere` 600 frames, `indirect-light` 151, `play` 660, and `survives` 70. The
-indirect-light scenario observed asynchronous GPU radiance from populated surfel lanes after the
-game-owned wall recolour; all diagnostics were clean.
+repository WebGPU recipe. The final fresh run passed all four scenarios: `atmosphere` 600 frames,
+`indirect-light` 451, `play` 660, and `survives` 70. The indirect-light scenario observed actual
+GPU radiance from populated surfel lanes after the game-owned wall recolour; all diagnostics were
+clean.
 
-The repair corrected four review defects. `SurfelGI.indirectLight` now consumes the GPU-written
-BVH-integrated radiance buffer rather than coverage or flags. The pool's CPU-owned `active` mask
-controls residency; age and expiry never CPU-upload GPU-owned flags, and inactive compute lanes do
-not trace. GI now owns a distinct GBuffer `albedo` attachment, preserving the SSR `metalness`
-attachment. Minimal `Play.ts` reads `gi.sampleIndirectLight(wallMaterial.color.r)` only after the
-wall recolour, so the playtest observes the actual result; deleting the composition line leaves
-the lazy factory uncalled and the positive GI assertion at zero.
+The repair corrected four review defects. `SurfelGI.indirectLight` now reconstructs world position,
+resolves the configured hash cell, and consumes GPU-written BVH-integrated radiance gated by GPU hit
+flags and the CPU-owned active mask; it no longer derives light from albedo or a global hit
+fraction. Age and expiry never CPU-upload GPU-owned flags/radiance, inactive compute lanes do not
+trace, and BVH-backed surfels are refreshed before expiry. GI owns a distinct GBuffer `albedo`
+attachment, preserving the SSR `metalness` attachment. The minimal template's game-owned lighting
+input carries wall colour into the compute solve, and `Play.ts` reads
+`ctx.renderer.readback(gi.pool.radiance.value)` after the solve cadence. Deleting the composition
+line leaves the lazy factory uncalled and the positive GI assertion at zero.
 
 The first fresh WebGPU attempt exposed a required integration fix: five RGBA16 MRT attachments
 need 40 bytes per sample while Three's default adapter request allowed 32. The core renderer now
-requests the same 64-byte `maxColorAttachmentBytesPerSample` budget already required by the native
-context. The final playtest had no validation errors and retained its frame-budget and diagnostics
-assertions.
+keeps the 32-byte baseline request for games without GI; the minimal game explicitly opts into
+`maxColorAttachmentBytesPerSample: 64` and `maxStorageBuffersPerShaderStage: 16`. The final
+playtest had no validation errors and retained its frame-budget and diagnostics assertions.
 
 | proof | result |
 | --- | --- |
-| Focused repair suite | 5 files, 110 tests passed. |
-| Broad Vitest | 298 files passed, 1 skipped; 2,974 tests passed, 3 skipped. |
-| `pnpm typecheck` | Passed; root plus 20 selected workspace projects. |
-| `pnpm lint` | Passed with 492 existing complexity warnings and no errors. |
-| `pnpm budgets` | Passed; framework 38,107/15,000 LOC and native 114,229/100,000 LOC are review triggers. |
+| Focused repair suite | 5 files, 115 tests passed. |
+| Broad Vitest | **PASS**, 298 files passed, 1 skipped; 2,979 tests passed, 3 skipped; exit 0. |
+| `pnpm typecheck` | Passed; root plus selected workspace projects. |
+| `pnpm lint` | **PASS**, exit 0; repository Biome reported warnings only, with no errors; the explicit 16-file changed-scope check also had no errors. |
+| `pnpm budgets` | **PASS**, exit 0; 38,251/15,000 framework LOC and 114,229/100,000 native runtime LOC are review triggers, justified below. |
+| `pnpm build` | **PASS**, exit 0; generated manifests and all workspace packages/examples built. |
 
-The GI subsystem is 846 source lines across five core modules, with 311 focused unit-test lines.
+The GI subsystem is 970 source lines across five core modules, with 413 focused unit-test lines.
 This is the §10b justification: the lines buy one reusable fixed-storage `IComputeDriven`
-mechanism for pool ageing/eviction, hash storage, BVH integration, GBuffer attachment,
+mechanism for pool ageing/eviction, hash storage and lookup, BVH integration, GBuffer attachment,
 asynchronous radiance readback, and release; the game owns appearance and composition.
 
 The carried [GI on](PRD-245-gi-web/on-before.png), [direct-only](PRD-245-gi-web/off-before.png),

@@ -1,6 +1,7 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
-import { MeshStandardMaterial } from "three";
+import { MeshStandardMaterial, Vector3 } from "three";
+import { renderGroup, uniform } from "three/tsl";
 import { palette } from "./palette.js";
 
 export const floorMaterial = new MeshStandardMaterial({
@@ -21,6 +22,15 @@ export const wallMaterial = new MeshStandardMaterial({
   metalness: 0.04,
 });
 
+/** The wall's authored colour is the radiance input consumed by the opt-in GI solve. */
+export const wallBounceRadiance = uniform(new Vector3())
+  .setGroup(renderGroup)
+  .onRenderUpdate((_frame, node) => {
+    node.value.set(wallMaterial.color.r, wallMaterial.color.g, wallMaterial.color.b);
+    return node.value;
+  });
+
 export function setWallColour(changed: boolean): void {
   wallMaterial.color.setHex(changed ? palette.player : palette.accent);
+  renderGroup.needsUpdate = true;
 }

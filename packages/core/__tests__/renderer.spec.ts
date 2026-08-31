@@ -141,7 +141,7 @@ describe("createRenderer", () => {
     renderer.dispose();
   });
 
-  it("requests the deferred-rendering color attachment budget on WebGPU", async () => {
+  it("keeps the baseline WebGPU color attachment budget without GI", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     Object.defineProperty(globalThis, "navigator", {
@@ -164,7 +164,45 @@ describe("createRenderer", () => {
         },
       });
 
-      expect(requiredLimits).toEqual({ maxColorAttachmentBytesPerSample: 64 });
+      expect(requiredLimits).toEqual({
+        maxColorAttachmentBytesPerSample: 32,
+      });
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("requests the wider color attachment budget only when the game opts into it", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    let requiredLimits: unknown;
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        colorAttachmentBytesPerSample: 64,
+        maxStorageBuffersPerShaderStage: 16,
+        webgpuFactory: (_canvas, options) => {
+          requiredLimits = (options as { requiredLimits?: unknown }).requiredLimits;
+          return {
+            domElement: canvas,
+            init: async () => undefined,
+            render: () => undefined,
+            setSize: () => undefined,
+          };
+        },
+      });
+
+      expect(requiredLimits).toEqual({
+        maxColorAttachmentBytesPerSample: 64,
+        maxStorageBuffersPerShaderStage: 16,
+      });
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

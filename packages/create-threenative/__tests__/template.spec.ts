@@ -260,9 +260,11 @@ describe("template contracts", () => {
       readFile(path.join(templateRoot, "minimal/src/render/postprocessing.ts"), "utf8"),
       readFile(path.join(templateRoot, "minimal/src/state.ts"), "utf8"),
     ]);
-    expect(play).toContain("gi?.sampleIndirectLight(wallMaterial.color.r) ?? 0");
+    expect(play).toMatch(/ctx\.renderer\s*\.readback\(gi\.pool\.radiance\.value\)/u);
+    expect(play).toContain("const giBounceRed =");
+    expect(play).toContain("giBounceDeltaRed");
     expect(play).not.toContain("gi.coverage * wallMaterial.color.r");
-    expect(play).toContain("readbackEveryFrames");
+    expect(play).toContain("gi.pool.radiance.value");
     expect(state).toContain("indirect-light sample");
 
     const compositionLine =

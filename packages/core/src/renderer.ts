@@ -172,6 +172,13 @@ export interface IRendererOptions {
   antialias?: boolean;
   canvas?: HTMLCanvasElement;
   preferWebGPU?: boolean;
+  /**
+   * WebGPU colour bytes required by the game's render targets. Ordinary games keep the adapter
+   * default; a game-owned deferred target set may explicitly request the wider 64-byte contract.
+   */
+  colorAttachmentBytesPerSample?: 32 | 64;
+  /** WebGPU storage-buffer lanes required by an opted-in compute subsystem. */
+  maxStorageBuffersPerShaderStage?: 8 | 16;
   /** CSS-pixel multiplier for the drawing buffer. The default is intentional DPR 1. */
   resolutionScale?: number;
   /** Whether the game pinned that scale or the engine chose it. Reported, never inferred. */
@@ -191,7 +198,10 @@ export interface IRendererOptions {
     canvas: HTMLCanvasElement,
     options: Readonly<{
       antialias: boolean;
-      requiredLimits: Readonly<{ maxColorAttachmentBytesPerSample: number }>;
+      requiredLimits: Readonly<{
+        maxColorAttachmentBytesPerSample: number;
+        maxStorageBuffersPerShaderStage?: number;
+      }>;
     }>,
   ) => Promise<unknown> | unknown;
   webgl2Factory?: (canvas: HTMLCanvasElement, options: Readonly<{ antialias: boolean }>) => unknown;
@@ -434,12 +444,18 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     antialias: options.antialias ?? true,
     trackTimestamp: true,
   } as const;
-  // Three requests WebGPU's default 32-byte colour-attachment limit. An opt-in GBuffer may add a
-  // fifth target beside output, normal, metalness, and roughness; native requests the same rounded
-  // 64-byte budget, and web must make the identical device contract explicit.
+  // Three requests WebGPU's default 32-byte colour-attachment limit. Game-owned deferred/compute
+  // paths explicitly widen the contract; games that never construct one keep the baseline request
+  // exactly as-is and do not spend a storage-limit opt-in.
+  const requiredLimits = {
+    maxColorAttachmentBytesPerSample: options.colorAttachmentBytesPerSample ?? 32,
+    ...(options.maxStorageBuffersPerShaderStage === undefined
+      ? {}
+      : { maxStorageBuffersPerShaderStage: options.maxStorageBuffersPerShaderStage }),
+  } as const;
   const webgpuParameters = {
     ...rendererParameters,
-    requiredLimits: { maxColorAttachmentBytesPerSample: 64 },
+    requiredLimits,
   } as const;
   let renderer: IRendererLike | undefined;
 

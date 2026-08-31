@@ -1,6 +1,6 @@
 import type { Vector3 } from "three";
-import { instancedArray } from "three/tsl";
-import type { StorageBufferNode } from "three/webgpu";
+import { instancedArray, uint } from "three/tsl";
+import type { Node, StorageBufferNode } from "three/webgpu";
 import type { SurfelPool } from "./surfel-pool.js";
 
 export interface ISurfelHashGridOptions {
@@ -69,6 +69,16 @@ export class SurfelHashGrid {
 
   get released(): boolean {
     return this.#released;
+  }
+
+  /** Resolve the same spatial hash cell in the integration and render lookup paths. */
+  cellIndex(position: Node<"vec3">): Node<"uint"> {
+    if (this.#released) throw new Error("SurfelHashGrid cannot resolve a cell after release.");
+    const x = position.x.div(this.cellSize).floor().toInt();
+    const y = position.y.div(this.cellSize).floor().toInt();
+    const z = position.z.div(this.cellSize).floor().toInt();
+    const mixed = x.mul(73856093).bitXor(y.mul(19349663)).bitXor(z.mul(83492791));
+    return mixed.toUint().mod(uint(this.cellCount)) as Node<"uint">;
   }
 
   rebuild(pool: SurfelPool): void {

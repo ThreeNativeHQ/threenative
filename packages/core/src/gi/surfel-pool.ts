@@ -141,6 +141,14 @@ export class SurfelPool {
     return this.#evictionCount;
   }
 
+  get oldestAge(): number {
+    let oldest = 0;
+    for (let index = 0; index < this.capacity; index += 1) {
+      if (this.#active[index] !== 0) oldest = Math.max(oldest, this.#ages[index] ?? 0);
+    }
+    return oldest;
+  }
+
   get released(): boolean {
     return this.#released;
   }

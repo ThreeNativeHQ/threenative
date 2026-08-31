@@ -20,6 +20,12 @@
       "press": "KeyC",
       "holdTicks": 1,
       "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "bounce settle",
+      "waitTicks": 300,
+      "release": true
     }
   ],
   "assert": {
@@ -37,7 +43,7 @@
       },
       {
         "id": "state",
-        "path": "giBounceRed",
+        "path": "giBounceDeltaRed",
         "gte": 0.0001,
         "changed": true
       }

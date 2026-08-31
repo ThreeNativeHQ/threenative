@@ -181,6 +181,7 @@ export type {
   ISurfelGIStats,
   ISurfelHashGridOptions,
   ISurfelIntegrationOptions,
+  ISurfelLightingInput,
   ISurfelPoint,
   ISurfelPoolBuffers,
   ISurfelPoolOptions,

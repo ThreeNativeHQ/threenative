@@ -21,7 +21,7 @@ import {
   setWallColour,
   wallMaterial,
 } from "../render/materials.js";
-import { setupPost } from "../render/postprocessing.js";
+import { createIndirectLighting, setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 
@@ -36,6 +36,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     sunTransmittanceRed: 0,
     giCoverage: 0,
     giBounceRed: 0,
+    giBounceDeltaRed: 0,
   };
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -93,6 +94,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     distantRidgeGeometry.translate(0, 230, -5_000);
     const wall = new Mesh(nearWallGeometry, wallMaterial);
     setWallColour(false);
+    const indirectLighting = createIndirectLighting(lighting.key);
     wall.castShadow = true;
     wall.userData.traceable = true;
     ctx.add(wall);
@@ -121,8 +123,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
                 scene: ctx.scene,
                 sceneBvh,
                 surfelBudget: 256,
-                updateCadence: 2,
-                readbackEveryFrames: 4,
+                updateCadence: 30,
+                lighting: indirectLighting,
+                originBias: 0.001,
               }),
             );
             return gi;
@@ -152,6 +155,69 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
 
     let elapsed = 0;
+    let giBounceBaseline: number | undefined;
+    let giBounceAfterRecolour: number | undefined;
+    let giReadbackInFlight = false;
+    let giReadbackEpoch = 0;
+    let giObservationFrame = 0;
+    let giRecolourFrame = -1;
+    const requestGiObservation = (): void => {
+      giObservationFrame += 1;
+      if (
+        gi === undefined ||
+        ctx.renderer.kind !== "webgpu" ||
+        giReadbackInFlight ||
+        (wallColourChanged && giBounceAfterRecolour !== undefined) ||
+        (!wallColourChanged && giBounceBaseline !== undefined) ||
+        (wallColourChanged && giObservationFrame - giRecolourFrame < gi.updateCadence) ||
+        giObservationFrame % 4 !== 0
+      )
+        return;
+      giReadbackInFlight = true;
+      const epoch = giReadbackEpoch;
+      // `process()` dispatches after this scene frame. Deferring the copy to the microtask queue
+      // makes its command follow that dispatch even when the playtest advances many fixed ticks
+      // without presenting a browser frame; a synchronous copy can legally observe the previous
+      // colour while the changed compute is still queued.
+      void Promise.resolve().then(() => {
+        if (epoch !== giReadbackEpoch || gi === undefined) {
+          giReadbackInFlight = false;
+          return;
+        }
+        return ctx.renderer
+          .readback(gi.pool.radiance.value)
+          .then((bytes) => {
+            if (epoch !== giReadbackEpoch || gi === undefined) return;
+            const data = new Float32Array(bytes);
+            const laneCount = Math.min(gi.pool.capacity, Math.floor(data.length / 4));
+            let red = 0;
+            let activeLanes = 0;
+            for (let index = 0; index < laneCount; index += 1) {
+              if ((gi.pool.active.value.array[index] as number | undefined) === 0) continue;
+              activeLanes += 1;
+              red += data[index * 4] ?? 0;
+            }
+            const observedRed = activeLanes === 0 ? 0 : red / activeLanes;
+            if (observedRed > 0) {
+              if (wallColourChanged) giBounceAfterRecolour = observedRed;
+              else giBounceBaseline = observedRed;
+              ctx.state.set({
+                giBounceRed: observedRed,
+                giBounceDeltaRed:
+                  wallColourChanged &&
+                  giBounceBaseline !== undefined &&
+                  giBounceAfterRecolour !== undefined
+                    ? Math.abs(giBounceAfterRecolour - giBounceBaseline)
+                    : 0,
+              });
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            giReadbackInFlight = false;
+          });
+      });
+    };
     const statePatch: Partial<GameState> = {};
     return (frameCtx, dt) => {
       loading.update();
@@ -166,6 +232,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (frameCtx.input.justPressed("recolour")) {
         wallColourChanged = !wallColourChanged;
         setWallColour(wallColourChanged);
+        giReadbackEpoch += 1;
+        giBounceAfterRecolour = undefined;
+        giRecolourFrame = giObservationFrame;
       }
       const state = frameCtx.state.getState();
       hud.update({
@@ -173,9 +242,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         seconds: elapsed,
       });
       statePatch.giCoverage = gi?.coverage ?? 0;
-      statePatch.giBounceRed = wallColourChanged
-        ? (gi?.sampleIndirectLight(wallMaterial.color.r) ?? 0)
-        : 0;
+      requestGiObservation();
+      const giBounceRed =
+        gi === undefined
+          ? undefined
+          : ((wallColourChanged ? giBounceAfterRecolour : giBounceBaseline) ?? 0);
+      statePatch.giBounceRed = giBounceRed;
+      statePatch.giBounceDeltaRed =
+        wallColourChanged && giBounceBaseline !== undefined && giBounceAfterRecolour !== undefined
+          ? Math.abs(giBounceAfterRecolour - giBounceBaseline)
+          : 0;
       statePatch.playerX = player.mesh.position.x;
       statePatch.sunAzimuth = sun.azimuth;
       statePatch.sunElevation = sun.elevation;

@@ -23,6 +23,8 @@ const game = defineGame<GameState, IPhysicsContext>({
   plugins: [rapier(), playtest()],
   display: config.display,
   render: config.renderer,
+  // This template's game-owned GI path adds an albedo attachment to its deferred pass.
+  renderer: { colorAttachmentBytesPerSample: 64, maxStorageBuffersPerShaderStage: 16 },
   scenes: { play: Play },
   start: "play",
 });

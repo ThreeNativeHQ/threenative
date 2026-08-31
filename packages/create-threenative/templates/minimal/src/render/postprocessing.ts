@@ -13,8 +13,9 @@
 // and the one-line enable for the ones that ship off everywhere (godrays, contact AO,
 // vignette), is in `agent-docs/visual-baseline.md`.
 import type { Camera, DirectionalLight, Scene } from "three";
-import { vec3, vec4 } from "three/tsl";
+import { float, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import { wallBounceRadiance } from "./materials.js";
 import type { OutputRenderer } from "./worldEnvironment.js";
 import { WorldEnvironment } from "./worldEnvironment.js";
 
@@ -27,6 +28,21 @@ type IndirectLightLike = {
   attachGBuffer(scenePass: unknown): void;
   indirectLight: Node<"vec3">;
 };
+
+/** Appearance inputs for the opt-in solve stay in generated game render source. */
+export function createIndirectLighting(light: DirectionalLight) {
+  // This game-authored probe points through the seeded floor/wall pair. The small horizontal
+  // components keep the ray from being parallel to either box face while the key is still
+  // accepted so this render helper remains coupled to the game's chosen light.
+  const direction = vec3(0.001, 1, 0.001);
+  return {
+    attenuation: (distance: Node<"float">) => float(1).div(float(1).add(distance)),
+    direction,
+    normalResponse: () => float(1),
+    radiance: wallBounceRadiance,
+    strength: float(0.35),
+  };
+}
 
 function composeIndirectLight(
   createIndirectLight: (() => IndirectLightLike) | undefined,

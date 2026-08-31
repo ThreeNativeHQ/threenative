@@ -1,5 +1,5 @@
 import { type Camera, Group, type Scene } from "three";
-import { screenUV, uint, vec2, vec3 } from "three/tsl";
+import { uint, vec3 } from "three/tsl";
 import type { ComputeNode, Node } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import { GPUReadback, type IGPUReadbackSample } from "../gpu-readback.js";
@@ -7,14 +7,16 @@ import type { GPUSceneBVH } from "../gpu-scene-bvh.js";
 import type { IRendererLike } from "../renderer.js";
 import { type GBufferPass, type IGBuffer, type IGBufferDriven, attachGBuffer } from "./gbuffer.js";
 import { type ISurfelHashGridOptions, SurfelHashGrid } from "./hash-grid.js";
-import { SurfelIntegrator } from "./integrate.js";
+import { type ISurfelLightingInput, SurfelIntegrator } from "./integrate.js";
 import { type ISurfelPoint, type ISurfelPoolOptions, SurfelPool } from "./surfel-pool.js";
 
 export interface ISurfelGIOptions {
   readonly camera?: Camera;
   readonly hashCellCount: number;
   readonly hashCellSize: number;
+  readonly lighting?: ISurfelLightingInput;
   readonly maxAge: number;
+  readonly originBias?: number;
   readonly rayBudget: number;
   readonly sampleRadius: number;
   readonly scene?: Scene;
@@ -45,30 +47,30 @@ function positiveInteger(name: string, value: number): number {
   return value;
 }
 
-function integratedSurfelRadiance(pool: SurfelPool, integrator: SurfelIntegrator): Node<"vec3"> {
-  const laneCount = Math.max(1, Math.min(pool.capacity, integrator.dispatchCount));
-  let integrated = vec3(0) as Node<"vec3">;
-  for (let index = 0; index < laneCount; index += 1) {
-    const active = pool.active.element(uint(index)).toFloat();
-    integrated = integrated.add(pool.radiance.element(uint(index)).xyz.mul(active)) as Node<"vec3">;
-  }
-  return integrated.div(laneCount) as Node<"vec3">;
-}
-
 function indirectFrom(
   gbuffer: IGBuffer,
   pool: SurfelPool,
+  grid: SurfelHashGrid,
   integrator: SurfelIntegrator,
-  radius: number,
 ): Node<"vec3"> {
-  // The GBuffer remains the game's colour source. The radiance buffer is the BVH-backed
-  // integration result; the CPU-owned active mask excludes expired lanes without touching the
-  // GPU-owned integration state.
-  const offsets = [vec2(radius, 0), vec2(-radius, 0), vec2(0, radius), vec2(0, -radius)];
-  const samples = offsets.map((offset) => gbuffer.albedo.clone().sample(screenUV.add(offset)).rgb);
-  const albedo = samples.reduce((sum, sample) => sum.add(sample)).div(samples.length);
-  const integrated = integrator.tracesScene ? integratedSurfelRadiance(pool, integrator) : vec3(0);
-  return albedo.mul(integrated) as Node<"vec3">;
+  if (!integrator.tracesScene) return vec3(0) as Node<"vec3">;
+  // Read the integrated GPU result from the cells belonging to this pixel's reconstructed world
+  // position. The CPU active mask and GPU hit flags both participate, so an expired or untraced
+  // lane cannot leak an old result into the composite.
+  const cell = grid.cellIndex(gbuffer.worldPosition);
+  const available = grid.cellCounts.element(cell);
+  let integrated = vec3(0) as Node<"vec3">;
+  for (let slot = 0; slot < grid.maxEntriesPerCell; slot += 1) {
+    const entry = cell.mul(uint(grid.maxEntriesPerCell)).add(uint(slot));
+    const surfelIndex = grid.entries.element(entry);
+    const present = available.greaterThan(uint(slot)).toFloat();
+    const active = pool.active.element(surfelIndex).toFloat();
+    const integratedFlag = pool.flags.element(surfelIndex).toFloat();
+    integrated = integrated.add(
+      pool.radiance.element(surfelIndex).xyz.mul(present).mul(active).mul(integratedFlag),
+    ) as Node<"vec3">;
+  }
+  return integrated.div(available.toFloat().max(1)) as Node<"vec3">;
 }
 
 /**
@@ -92,6 +94,7 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
   #renderer: IRendererLike | undefined;
   #coverage = 0;
   #updates = 0;
+  #sceneBvh: GPUSceneBVH | undefined;
   #released = false;
   #indirectLight: Node<"vec3"> = vec3(0) as Node<"vec3">;
 
@@ -123,13 +126,17 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
           })
         : undefined;
     this.grid = new SurfelHashGrid(gridOptions);
+    this.#sceneBvh = options.sceneBvh;
     this.integrator = new SurfelIntegrator(this.pool, this.grid, {
       bvh: options.sceneBvh,
+      lighting: options.lighting,
+      originBias: options.originBias,
       rayBudget: options.rayBudget,
     });
     this.warmupNodes = [this.integrator.computeNode];
     this.#camera = options.camera;
     if (options.sceneBvh !== undefined) this.#seedFromBvh(options.sceneBvh);
+    this.grid.rebuild(this.pool);
     if (options.scene !== undefined && options.camera !== undefined) {
       this.#coverage = this.pool.measureCoverage(options.camera);
     }
@@ -165,30 +172,25 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
     return this.#readback?.sample;
   }
 
-  /** Read the GPU-integrated red radiance through a game-owned colour channel. */
-  sampleIndirectLight(albedoRed: number): number | undefined {
-    if (!Number.isFinite(albedoRed) || albedoRed < 0)
-      throw new Error("SurfelGI.albedoRed must be a finite non-negative number.");
+  /** Read the latest GPU-integrated red radiance for gameplay diagnostics. */
+  sampleIndirectLight(): number | undefined {
     const sample = this.#readback?.sample;
     if (sample === undefined) return undefined;
     const laneCount = Math.max(1, Math.min(this.pool.capacity, this.integrator.dispatchCount));
     let integratedRed = 0;
+    let activeLanes = 0;
     for (let index = 0; index < laneCount; index += 1) {
       if ((this.pool.active.value.array[index] as number | undefined) === 0) continue;
+      activeLanes += 1;
       integratedRed += sample.data[index * 4] ?? 0;
     }
-    return (integratedRed / laneCount) * albedoRed;
+    return activeLanes === 0 ? 0 : integratedRed / activeLanes;
   }
 
   attachGBuffer(pass: GBufferPass): void {
     if (this.#released) throw new Error("SurfelGI cannot bind a GBuffer after release.");
     this.#gbuffer = attachGBuffer(pass);
-    this.#indirectLight = indirectFrom(
-      this.#gbuffer,
-      this.pool,
-      this.integrator,
-      this.sampleRadius,
-    );
+    this.#indirectLight = indirectFrom(this.#gbuffer, this.pool, this.grid, this.integrator);
   }
 
   attachRenderer(renderer: IRendererLike): void {
@@ -202,8 +204,14 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
     if (this.#released) return;
     if (renderer === undefined) throw new Error("SurfelGI is not attached to a renderer.");
     this.#updates += 1;
+    const allocationsBefore = this.pool.allocationCount;
+    const liveBefore = this.pool.liveCount;
+    this.#refreshBeforeExpiry();
     this.pool.advanceAge(1);
-    if (this.#updates % this.updateCadence === 0) {
+    const residencyChanged =
+      allocationsBefore !== this.pool.allocationCount || liveBefore !== this.pool.liveCount;
+    if (residencyChanged || this.#updates % this.updateCadence === 0) {
+      this.#fillFromBvh();
       this.grid.rebuild(this.pool);
       this.integrator.dispatch(renderer);
     }
@@ -224,28 +232,60 @@ export class SurfelGI extends Group implements IComputeDriven, IGBufferDriven {
   }
 
   #seedFromBvh(bvh: GPUSceneBVH): void {
+    this.#fillFromBvh(bvh);
+  }
+
+  #fillFromBvh(bvh = this.#sceneBvh): void {
+    if (bvh === undefined) return;
     const positions = bvh.positions.value.array as ArrayLike<number>;
     const normals = bvh.normals.value.array as ArrayLike<number>;
     const stride = bvh.positions.value.itemSize;
     const normalStride = bvh.normals.value.itemSize;
     const count = Math.min(this.pool.capacity, bvh.positions.value.count);
-    for (let index = 0; index < count; index += 1) {
-      const offset = index * stride;
-      const normalOffset = index * normalStride;
-      const point: ISurfelPoint = {
-        normal: [
-          Number(normals[normalOffset] ?? 0),
-          Number(normals[normalOffset + 1] ?? 1),
-          Number(normals[normalOffset + 2] ?? 0),
-        ],
-        position: [
-          Number(positions[offset] ?? 0),
-          Number(positions[offset + 1] ?? 0),
-          Number(positions[offset + 2] ?? 0),
-        ],
-      };
-      this.pool.allocate(point);
+    for (let index = this.pool.liveCount; index < count; index += 1) {
+      this.pool.allocate(this.#pointFromBvh(positions, normals, stride, normalStride, index));
     }
+  }
+
+  #refreshBeforeExpiry(): void {
+    const bvh = this.#sceneBvh;
+    if (bvh === undefined) return;
+    const count = Math.min(this.pool.capacity, bvh.positions.value.count);
+    if (this.pool.liveCount < count) {
+      this.#fillFromBvh(bvh);
+      return;
+    }
+    if (this.pool.oldestAge + 1 < this.pool.maxAge) return;
+    const positions = bvh.positions.value.array as ArrayLike<number>;
+    const normals = bvh.normals.value.array as ArrayLike<number>;
+    const stride = bvh.positions.value.itemSize;
+    const normalStride = bvh.normals.value.itemSize;
+    for (let index = 0; index < count; index += 1) {
+      this.pool.allocate(this.#pointFromBvh(positions, normals, stride, normalStride, index));
+    }
+  }
+
+  #pointFromBvh(
+    positions: ArrayLike<number>,
+    normals: ArrayLike<number>,
+    stride: number,
+    normalStride: number,
+    index: number,
+  ): ISurfelPoint {
+    const offset = index * stride;
+    const normalOffset = index * normalStride;
+    return {
+      normal: [
+        Number(normals[normalOffset] ?? 0),
+        Number(normals[normalOffset + 1] ?? 1),
+        Number(normals[normalOffset + 2] ?? 0),
+      ],
+      position: [
+        Number(positions[offset] ?? 0),
+        Number(positions[offset + 1] ?? 0),
+        Number(positions[offset + 2] ?? 0),
+      ],
+    };
   }
 
   #onRemoved = (): void => this.detach();
@@ -260,6 +300,7 @@ export { attachGBuffer, createGBuffer } from "./gbuffer.js";
 export type { ISurfelHashGridOptions } from "./hash-grid.js";
 export { SurfelHashGrid } from "./hash-grid.js";
 export type { ISurfelIntegrationOptions } from "./integrate.js";
+export type { ISurfelLightingInput } from "./integrate.js";
 export { SurfelIntegrator } from "./integrate.js";
 export type {
   ISurfelPoint,

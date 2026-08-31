@@ -1,5 +1,17 @@
 import type { Camera, Scene } from "three";
-import { diffuseColor, metalness, mrt, normalWorld, output, pass, roughness } from "three/tsl";
+import {
+  cameraProjectionMatrixInverse,
+  cameraWorldMatrix,
+  diffuseColor,
+  metalness,
+  mrt,
+  normalWorld,
+  output,
+  pass,
+  roughness,
+  screenUV,
+  vec4,
+} from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 
 export type GBufferPass = ReturnType<typeof pass>;
@@ -10,6 +22,8 @@ export interface IGBuffer {
   readonly normal: TextureNode;
   readonly pass: GBufferPass;
   readonly viewZ: Node<"float">;
+  /** World position reconstructed from the pass depth for spatial GI lookup. */
+  readonly worldPosition: Node<"vec3">;
 }
 
 /** Marker consumed by the game loop so the scene update precedes the depth-backed render pass. */
@@ -25,6 +39,11 @@ function configure(passNode: GBufferPass): IGBuffer {
   const depth = passNode.getTextureNode("depth");
   const normal = passNode.getTextureNode("normal");
   const viewZ = passNode.getViewZNode();
+  const depthSample = depth.clone().sample(screenUV).x;
+  const clipPosition = vec4(screenUV.mul(2).sub(1), depthSample, 1);
+  const viewPosition = cameraProjectionMatrixInverse.mul(clipPosition);
+  const worldPosition = cameraWorldMatrix.mul(vec4(viewPosition.xyz.div(viewPosition.w), 1))
+    .xyz as Node<"vec3">;
   const textures = passNode.renderTarget.textures;
   const orderedNames = ["output", "albedo", "normal"];
   passNode.renderTarget.textures = [
@@ -45,6 +64,7 @@ function configure(passNode: GBufferPass): IGBuffer {
     normal,
     pass: passNode,
     viewZ,
+    worldPosition,
   };
 }
 

@@ -1,5 +1,5 @@
 import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, Vector3 } from "three";
-import { context, metalness, mrt, output, pass, roughness } from "three/tsl";
+import { context, float, metalness, mrt, output, pass, roughness, vec3 } from "three/tsl";
 import { WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { attachGBuffer, createGBuffer } from "../src/gi/gbuffer.js";
@@ -57,6 +57,16 @@ function computeShader(computeNode: object): string {
   ) as unknown as { build(): void; computeShader?: string };
   builder.build();
   return builder.computeShader ?? "";
+}
+
+function testLighting() {
+  return {
+    attenuation: () => float(1),
+    direction: vec3(0, 1, 0),
+    normalResponse: () => float(1),
+    radiance: vec3(0.8, 0.1, 0.05),
+    strength: float(1),
+  };
 }
 
 describe("GBuffer", () => {
@@ -123,6 +133,27 @@ describe("SurfelPool and SurfelHashGrid", () => {
     expect(grid.query(new Vector3(0, 0, 0))).toHaveLength(2);
   });
 
+  it("uses cell controls for CPU lookup and marks rebuilt GPU storage dirty", () => {
+    const pool = new SurfelPool({ capacity: 2, maxAge: 10 });
+    pool.allocate({ position: [0.1, 0, 0], normal: [0, 1, 0] });
+    pool.allocate({ position: [1.1, 0, 0], normal: [0, 1, 0] });
+    const grid = new SurfelHashGrid({ cellCount: 4, cellSize: 1, maxEntriesPerCell: 1 });
+    const countsVersion = grid.cellCounts.value.version;
+    const entriesVersion = grid.entries.value.version;
+
+    grid.rebuild(pool);
+
+    expect(grid.cellCounts.value.version).toBeGreaterThan(countsVersion);
+    expect(grid.entries.value.version).toBeGreaterThan(entriesVersion);
+    expect(grid.query(new Vector3(1.1, 0, 0))).toEqual([1]);
+
+    const coarser = new SurfelHashGrid({ cellCount: 4, cellSize: 2, maxEntriesPerCell: 1 });
+    coarser.rebuild(pool);
+    expect(coarser.query(new Vector3(1.1, 0, 0))).toEqual([0]);
+    grid.release();
+    coarser.release();
+  });
+
   it("does not CPU-upload GPU-owned flags while a surfel ages", () => {
     const pool = new SurfelPool({ capacity: 1, maxAge: 4 });
     pool.allocate({ position: [0, 0, 0], normal: [0, 1, 0] });
@@ -173,12 +204,20 @@ describe("SurfelGI", () => {
     gi.detach();
   });
 
-  it("reads the integrated surfel radiance instead of a global hit fraction", () => {
+  it("uses grid-local integrated radiance and game-owned lighting input", () => {
     const scene = new Scene();
     const camera = new PerspectiveCamera();
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
     const sceneBvh = new GPUSceneBVH(scene);
     const gbuffer = createGBuffer(scene, camera);
+    const gameOwnedRadiance = vec3(0.8, 0.1, 0.05);
+    const gameLighting = {
+      attenuation: () => float(1),
+      direction: vec3(0, 1, 0),
+      normalResponse: () => float(1),
+      radiance: gameOwnedRadiance,
+      strength: float(1),
+    };
     const gi = new SurfelGI({
       hashCellCount: 8,
       hashCellSize: 1,
@@ -188,7 +227,8 @@ describe("SurfelGI", () => {
       sceneBvh,
       surfelBudget: 4,
       updateCadence: 2,
-    });
+      lighting: gameLighting,
+    } as never);
 
     gi.attachGBuffer(gbuffer.pass);
 
@@ -197,12 +237,14 @@ describe("SurfelGI", () => {
     if (radiance !== undefined) {
       expect(containsNode(gi.indirectLight, radiance)).toBe(true);
     }
-    expect(containsNode(gi.indirectLight, gi.pool.flags)).toBe(false);
+    expect(containsNode(gi.indirectLight, gi.grid.cellCounts)).toBe(true);
+    expect(containsNode(gi.indirectLight, gbuffer.albedo, new Set([gbuffer.pass]))).toBe(false);
+    expect(computeShader(gi.integrator.computeNode)).toContain("0.8");
     gi.detach();
     sceneBvh.detach();
   });
 
-  it("reports only GPU-read integrated radiance through the game-owned albedo", async () => {
+  it("reports only GPU-read integrated radiance", async () => {
     const gi = new SurfelGI({
       hashCellCount: 8,
       hashCellSize: 1,
@@ -220,24 +262,108 @@ describe("SurfelGI", () => {
     gi.process(gpu);
     await Promise.resolve();
 
-    expect(gi.sampleIndirectLight(0.4)).toBeCloseTo(0.05);
+    expect(gi.sampleIndirectLight()).toBeCloseTo(0.25);
     gi.detach();
+  });
+
+  it("refreshes BVH-backed surfels after their maximum age", () => {
+    const scene = new Scene();
+    scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
+    const sceneBvh = new GPUSceneBVH(scene);
+    const gi = new SurfelGI({
+      hashCellCount: 8,
+      hashCellSize: 1,
+      maxAge: 2,
+      lighting: testLighting(),
+      rayBudget: 4,
+      sceneBvh,
+      surfelBudget: 4,
+      updateCadence: 2,
+      sampleRadius: 0.05,
+    });
+    const gpu = renderer([]);
+    const initialAllocations = gi.pool.allocationCount;
+
+    gi.attachRenderer(gpu);
+    for (let frame = 0; frame < 5; frame += 1) gi.process(gpu);
+
+    expect(gi.pool.liveCount).toBeGreaterThan(0);
+    expect(gi.pool.allocationCount).toBeGreaterThan(initialAllocations);
+    gi.detach();
+    sceneBvh.detach();
+  });
+
+  it("dispatches refreshed lanes before a later cadence can expose stale GPU results", () => {
+    const scene = new Scene();
+    scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
+    const sceneBvh = new GPUSceneBVH(scene);
+    const gi = new SurfelGI({
+      hashCellCount: 8,
+      hashCellSize: 1,
+      maxAge: 2,
+      lighting: testLighting(),
+      rayBudget: 4,
+      sceneBvh,
+      surfelBudget: 4,
+      updateCadence: 3,
+      sampleRadius: 0.05,
+    });
+    const dispatched: unknown[] = [];
+    const gpu = renderer(dispatched);
+
+    gi.attachRenderer(gpu);
+    gi.process(gpu);
+    gi.process(gpu);
+
+    expect(gi.pool.allocationCount).toBeGreaterThan(4);
+    expect(dispatched).toHaveLength(2);
+    gi.detach();
+    sceneBvh.detach();
   });
 
   it("guards BVH integration behind the pool's active-lane state", () => {
     const pool = new SurfelPool({ capacity: 4, maxAge: 30 });
-    const grid = new SurfelHashGrid({ cellCount: 8, cellSize: 1, maxEntriesPerCell: 1 });
+    const grid = new SurfelHashGrid({ cellCount: 8, cellSize: 1, maxEntriesPerCell: 2 });
     const scene = new Scene();
     const sceneBvh = new GPUSceneBVH(scene);
-    const integrator = new SurfelIntegrator(pool, grid, { bvh: sceneBvh, rayBudget: 4 });
+    const integrator = new SurfelIntegrator(pool, grid, {
+      bvh: sceneBvh,
+      lighting: testLighting(),
+      rayBudget: 4,
+    });
 
     const shader = computeShader(integrator.computeNode);
     const activeGuard = shader.match(/if \( \( [^\n]+ > 0u \) \) \{/);
     expect(activeGuard).not.toBeNull();
     const guardOffset = shader.indexOf(activeGuard?.[0] ?? "");
     expect(
-      shader.indexOf("surfelSceneRadiance", guardOffset + (activeGuard?.[0].length ?? 0)),
+      shader.indexOf("surfelSceneHit", guardOffset + (activeGuard?.[0].length ?? 0)),
     ).toBeGreaterThan(guardOffset);
+    expect(shader).toMatch(
+      /NodeBuffer_\d+\.value\[ \( instanceIndex \/ 2u \) \] > \( instanceIndex % 2u \)/u,
+    );
+
+    integrator.release();
+    pool.release();
+    grid.release();
+    sceneBvh.detach();
+  });
+
+  it("writes integrated radiance to the surfel selected by the hash entry", () => {
+    const pool = new SurfelPool({ capacity: 4, maxAge: 30 });
+    const grid = new SurfelHashGrid({ cellCount: 8, cellSize: 1, maxEntriesPerCell: 2 });
+    const scene = new Scene();
+    const sceneBvh = new GPUSceneBVH(scene);
+    const integrator = new SurfelIntegrator(pool, grid, {
+      bvh: sceneBvh,
+      lighting: testLighting(),
+      rayBudget: 4,
+    });
+
+    const shader = computeShader(integrator.computeNode);
+    expect(shader).toMatch(
+      /NodeBuffer_\d+\.value\[ NodeBuffer_\d+\.value\[ instanceIndex \] \] = vec4<f32>\(/u,
+    );
 
     integrator.release();
     pool.release();
