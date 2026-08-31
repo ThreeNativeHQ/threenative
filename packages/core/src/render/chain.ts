@@ -160,7 +160,31 @@ export interface IRenderChainOptions {
   };
 }
 
-const chainReports = new WeakMap<object, IRenderChainMarker>();
+/**
+ * Where a chain publishes its last report: a registered symbol on the renderer, not a
+ * module-scoped map.
+ *
+ * `tsup` emits `dist/playtest.js` as its own entry with its own copy of this module, so the
+ * browser bridge that reads the report is never the copy that wrote it. A `WeakMap` in module
+ * scope is therefore written by one copy and read by another, and `readRenderChainObservation`
+ * returned `undefined` for every installed chain — every `renderChain` assertion failed closed
+ * as UNOBSERVABLE while the chain was running and printing its marker. `Symbol.for` is one key
+ * across every copy of this module, and the report lives on the thing it is about.
+ */
+const REPORT_KEY = Symbol.for("threenative.renderChain.report");
+
+function storedReport(target: object): IRenderChainMarker | undefined {
+  return (target as Record<symbol, IRenderChainMarker | undefined>)[REPORT_KEY];
+}
+
+function storeReport(target: object, marker: IRenderChainMarker | undefined): void {
+  Object.defineProperty(target, REPORT_KEY, {
+    configurable: true,
+    enumerable: false,
+    value: marker,
+    writable: true,
+  });
+}
 
 /**
  * Read the last chain marker associated with a renderer or its raw renderer.
@@ -172,7 +196,7 @@ const chainReports = new WeakMap<object, IRenderChainMarker>();
 export function readRenderChainReport(renderer: unknown): IRenderChainMarker | undefined {
   if (!isObject(renderer)) return undefined;
   const raw = readRawRenderer(renderer);
-  return chainReports.get(renderer) ?? (isObject(raw) ? chainReports.get(raw) : undefined);
+  return storedReport(renderer) ?? (isObject(raw) ? storedReport(raw) : undefined);
 }
 
 /** JSON-safe observation used by the browser and native playtest bridges. */
@@ -556,13 +580,13 @@ function nextLowerTier(tier: RenderChainTier): RenderChainTier {
 }
 
 function rememberReport(renderer: IRenderChainRenderer, marker: IRenderChainMarker): void {
-  if (isObject(renderer)) chainReports.set(renderer, marker);
-  if (isObject(renderer.raw)) chainReports.set(renderer.raw, marker);
+  if (isObject(renderer)) storeReport(renderer, marker);
+  if (isObject(renderer.raw)) storeReport(renderer.raw, marker);
 }
 
 function forgetReport(renderer: IRenderChainRenderer): void {
-  if (isObject(renderer)) chainReports.delete(renderer);
-  if (isObject(renderer.raw)) chainReports.delete(renderer.raw);
+  if (isObject(renderer)) storeReport(renderer, undefined);
+  if (isObject(renderer.raw)) storeReport(renderer.raw, undefined);
 }
 
 function readRawRenderer(renderer: object): unknown {

@@ -201,6 +201,30 @@ describe("RenderChain", () => {
     ).toThrow(/tier/u);
   });
 
+  /**
+   * The browser bridge reads this report from `dist/playtest.js`, which `tsup` emits as its own
+   * entry with its own copy of this module — so a module-scoped map is written by one copy and
+   * read by another, and every `renderChain` assertion fails closed as UNOBSERVABLE while the
+   * chain is installed and printing its marker. Two `import()`s across `vi.resetModules()` are
+   * that pair of copies.
+   */
+  it("publishes its report where a second copy of this module can read it", async () => {
+    const current = renderer("webgpu");
+    vi.resetModules();
+    const first = await import("../src/render/chain.js");
+    new first.RenderChain(current as never, {
+      input: { node: "scene" },
+      report: () => undefined,
+      request: { stages: ["bloom"] },
+      stages: [{ build: (input) => ({ bloomed: input }), name: "bloom" }],
+    });
+    vi.resetModules();
+    const second = await import("../src/render/chain.js");
+
+    expect(second.readRenderChainObservation(current)?.tier).toBe("high");
+    expect(second.readRenderChainObservation(current)?.stages).toEqual(["bloom"]);
+  });
+
   it("accepts an empty request as a no-op", () => {
     const current = renderer("webgpu");
     const marker = vi.fn();
