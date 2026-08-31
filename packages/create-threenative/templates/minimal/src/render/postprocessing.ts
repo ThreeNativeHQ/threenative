@@ -36,15 +36,14 @@ const glow = {
   bloomThreshold: 0.2,
 } as const;
 
+// No SSGI here, and this is the one template where that is a measured decision rather than a
+// taste one: its sky, sun colour and depth haze are a volumetric `Atmosphere`, which already owns
+// most of the frame. With the gather on, `playtests/play.playtest.json` measured **34.2 ms p95
+// against the 33 ms ceiling**; without it the same scenario passes. Turn it on when you replace
+// the atmosphere with a flat sky, and read the p95 back out of `TN_FRAME_BUDGET`.
 const desktopPreset = {
   ...glow,
-  denoiseEnabled: true,
   exposure,
-  ssgiEnabled: true,
-  // Room scale, not contact scale: about two thirds of the 12-unit shadow extent
-  // `lighting.ts` lights — a small scene, so the gather radius is small too.
-  ssgiRadius: 8,
-  ssgiQuality: "medium",
   ssrEnabled: true,
   // `SSRNode` defaults this to **1 world unit**, which on a scene this size reads as
   // "reflections are on and do nothing" — the ray dies a metre from where it started.

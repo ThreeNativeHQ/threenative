@@ -123,13 +123,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `TN_WORLD_ENVIRONMENT` paragraph. The starter moves too: the shared file gained the
   // `baseColour` seam `minimal`'s aerial perspective needs, bloom radius and threshold as
   // arguments, and the report that prints even when every stage is off.
-  "action-rpg": "d758a51421e164e49cac7ec9d767a212d2cd6130e31e45e6093bd6a88ccf1069",
-  defense: "01e8a46af7fdf6644af7b6ccce995ed494a32e218e36e708ec4f26df77ad7139",
-  minimal: "9b8099053945baedd323b44dc42db750c6882badc8095522c3023409f04e3eac",
-  platformer: "94ab4b80286cff27f7592d07cbf5f67460f029b8b0d0711786ed17fcaddf0045",
-  racing: "43219f3a4dc0a59cace09fcb64cc48c3ce7c80371a4f98fbcdc9761bcc4e9e96",
-  shooter: "9c758b6ec29f503063211ea901e1d50b356fc6ade8f314381d57c7f8ebe510fb",
-  starter: "bf9361c3a101a1424b3e9282c4f99dcad9a31dae3413b736ba7c614e6f4bbca7",
+  // Recomputed 2026-08-30, second PRD-278 move: with the runner now waiting for startup readiness
+  // (2042b33d) the per-template performance budgets were being read behind a loading layer — the
+  // action-rpg scenario reported 4 draw calls where the running scene issues 144 — so every genre
+  // template's maxDrawCalls/maxTriangles is re-measured against the real frame, and `minimal`
+  // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
+  // its 33 ms ceiling.
+  "action-rpg": "2765a505f099f6508017534b941fbbf457ec2f8ade2a80344606767afe768933",
+  defense: "aa46098c90ccb691aab0fa159a68bb45914a970a4ebb7205a964925484577a59",
+  minimal: "2e4d0b3731d0dcf352912df19b1b52102ec92af5123f81bb685b69c635dfa5e7",
+  platformer: "c93901fbdea7f3f26f6140190f67e4a5ec2959151a8d5f284790d233fdb0cea2",
+  racing: "62c96e39e4da58f36387ac1bc95fefb51ba0d0fcc49b946674e2acf24dfb00c5",
+  shooter: "195526ea7b58c9873e681290f344460d56825128668f8b40d1e9f27c609b5f14",
+  starter: "c6e237b57f99cf6bb551471ac457bdaeadf8b1ab7de8ae53843627e42f9e88ce",
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

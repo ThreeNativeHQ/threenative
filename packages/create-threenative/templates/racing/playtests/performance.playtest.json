@@ -3,9 +3,9 @@
   "artifacts": { "screenshots": "after" },
   "assert": {
     "performance": {
-      "maxDrawCalls": 84,
+      "maxDrawCalls": 195,
       "maxFrameMsP95": 33,
-      "maxTriangles": 2070
+      "maxTriangles": 4800
     },
     "renderChain": { "tier": "high" }
   },
