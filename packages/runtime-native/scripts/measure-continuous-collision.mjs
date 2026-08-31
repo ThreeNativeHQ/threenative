@@ -17,23 +17,78 @@ const BODY_COUNT = 128;
 const DT = 1 / 60;
 const PROJECTILE_RADIUS = 0.05;
 const WALL_HALF_THICKNESS = 0.05;
-const START_X = -1;
+const WALL_X = 0;
+const WALL_HALF_HEIGHT = 16;
+const WALL_HALF_DEPTH = 32;
+const BODY_GRID_WIDTH = 16;
+const MOVING_BODY_FARTHEST_START_X = -479;
+const MOVING_BODY_NEAREST_START_X = -81;
 const TUNNEL_SPEED_MAX = 300;
 const MOVING_BODY_SPEED = 40;
 const WARMUP_STEPS = 120;
 const MEASURED_STEPS = 600;
 const SAMPLES = 5;
 
+function movingBodyStartX(index) {
+  return (
+    MOVING_BODY_FARTHEST_START_X +
+    ((MOVING_BODY_NEAREST_START_X - MOVING_BODY_FARTHEST_START_X) * index) / (BODY_COUNT - 1)
+  );
+}
+
+export const BENCHMARK_GEOMETRY = Object.freeze({
+  bodyCount: BODY_COUNT,
+  bodyStartFarthestX: MOVING_BODY_FARTHEST_START_X,
+  bodyStartNearestX: MOVING_BODY_NEAREST_START_X,
+  bodySpeed: MOVING_BODY_SPEED,
+  dt: DT,
+  measuredSteps: MEASURED_STEPS,
+  projectileRadius: PROJECTILE_RADIUS,
+  wallHalfDepth: WALL_HALF_DEPTH,
+  wallHalfHeight: WALL_HALF_HEIGHT,
+  wallThickness: WALL_HALF_THICKNESS * 2,
+  wallX: WALL_X,
+  warmupSteps: WARMUP_STEPS,
+});
+
+export function assertTimedCollisionGeometry() {
+  const stepDistance = MOVING_BODY_SPEED * DT;
+  const measuredStartX =
+    movingBodyStartX(BODY_COUNT - 1) + stepDistance * WARMUP_STEPS;
+  const measuredEndX =
+    movingBodyStartX(0) + stepDistance * (WARMUP_STEPS + MEASURED_STEPS);
+  const collisionEntryX = WALL_X - WALL_HALF_THICKNESS - PROJECTILE_RADIUS;
+  const collisionExitX = WALL_X + WALL_HALF_THICKNESS + PROJECTILE_RADIUS;
+  const maxY = Math.floor((BODY_COUNT - 1) / BODY_GRID_WIDTH) * 2;
+  const maxZ = ((BODY_COUNT - 1) % BODY_GRID_WIDTH) * 2;
+
+  if (
+    !(
+      measuredStartX < collisionEntryX &&
+      measuredEndX > collisionExitX &&
+      maxY + PROJECTILE_RADIUS < WALL_HALF_HEIGHT &&
+      maxZ + PROJECTILE_RADIUS < WALL_HALF_DEPTH
+    )
+  ) {
+    throw new Error(
+      `TN_PRD292_BENCHMARK_GEOMETRY_UNMEASURED: timed path ${measuredStartX}..${measuredEndX} does not cross wall collision range ${collisionEntryX}..${collisionExitX}`,
+    );
+  }
+}
+
 function addWall(world, x) {
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, 0, 0));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(WALL_HALF_THICKNESS, 10, 10), body);
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(WALL_HALF_THICKNESS, WALL_HALF_HEIGHT, WALL_HALF_DEPTH),
+    body,
+  );
 }
 
 function firstTunnelSpeed(continuous) {
   for (let speed = 1; speed <= TUNNEL_SPEED_MAX; speed += 1) {
     const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
-    addWall(world, 0);
-    const description = RAPIER.RigidBodyDesc.dynamic().setTranslation(START_X, 0, 0);
+    addWall(world, WALL_X);
+    const description = RAPIER.RigidBodyDesc.dynamic().setTranslation(-1, 0, 0);
     description.setCcdEnabled(continuous);
     const body = world.createRigidBody(description);
     world.createCollider(RAPIER.ColliderDesc.ball(PROJECTILE_RADIUS), body);
@@ -47,13 +102,13 @@ function firstTunnelSpeed(continuous) {
   return null;
 }
 
-function movingWorld(continuous) {
+function movingWorld(continuous, withWall) {
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
-  addWall(world, 10_000);
+  if (withWall) addWall(world, WALL_X);
   for (let index = 0; index < BODY_COUNT; index += 1) {
-    const y = Math.floor(index / 16) * 2;
-    const z = (index % 16) * 2;
-    const description = RAPIER.RigidBodyDesc.dynamic().setTranslation(-1_000, y, z);
+    const y = Math.floor(index / BODY_GRID_WIDTH) * 2;
+    const z = (index % BODY_GRID_WIDTH) * 2;
+    const description = RAPIER.RigidBodyDesc.dynamic().setTranslation(movingBodyStartX(index), y, z);
     description.setCcdEnabled(continuous);
     const body = world.createRigidBody(description);
     world.createCollider(RAPIER.ColliderDesc.ball(PROJECTILE_RADIUS), body);
@@ -68,10 +123,10 @@ function median(values) {
   return values[Math.floor(values.length / 2)];
 }
 
-function medianStepMs(continuous) {
+function medianStepMs(continuous, withWall) {
   const samples = [];
   for (let sample = 0; sample < SAMPLES; sample += 1) {
-    const world = movingWorld(continuous);
+    const world = movingWorld(continuous, withWall);
     for (let step = 0; step < WARMUP_STEPS; step += 1) world.step();
     const started = performance.now();
     for (let step = 0; step < MEASURED_STEPS; step += 1) world.step();
@@ -81,33 +136,97 @@ function medianStepMs(continuous) {
   return median(samples);
 }
 
-await RAPIER.init();
-const baselineStepMs = medianStepMs(false);
-const continuousStepMs = medianStepMs(true);
-const native = JSON.parse(
-  execFileSync(
-    "cargo",
-    ["run", "--quiet", "--release", "--manifest-path", nativeManifest, "--example", "measure_continuous_collision"],
-    { cwd: workspaceRoot, encoding: "utf8" },
-  ).trim().split("\n").at(-1),
-);
+function assertNear(actual, expected, label) {
+  if (typeof actual !== "number" || !Number.isFinite(actual) || Math.abs(actual - expected) > 1e-5)
+    throw new Error(
+      `TN_PRD292_BENCHMARK_GEOMETRY_MISMATCH: native ${label}=${String(actual)} expected ${String(expected)}`,
+    );
+}
 
-console.log(JSON.stringify({
-  scene: {
+export function assertNativeGeometry(native) {
+  const geometry = native?.geometry;
+  if (geometry === undefined || typeof geometry !== "object" || geometry === null)
+    throw new Error("TN_PRD292_BENCHMARK_GEOMETRY_MISSING: native runner returned no geometry");
+  for (const [label, expected] of Object.entries({
     bodyCount: BODY_COUNT,
-    definition: "one 0.1 m thick fixed wall; 0.1 m radius projectile; 1/60 s step",
+    bodySpeed: MOVING_BODY_SPEED,
+    dt: DT,
     measuredSteps: MEASURED_STEPS,
-    samples: SAMPLES,
+    projectileRadius: PROJECTILE_RADIUS,
+    wallHalfDepth: WALL_HALF_DEPTH,
+    wallHalfHeight: WALL_HALF_HEIGHT,
+    wallThickness: WALL_HALF_THICKNESS * 2,
+    wallX: WALL_X,
     warmupSteps: WARMUP_STEPS,
-  },
-  web: {
-    backend: "web",
-    rapierVersion: RAPIER.version(),
-    baselineFirstTunnelSpeed: firstTunnelSpeed(false),
-    continuousFirstTunnelSpeed: firstTunnelSpeed(true),
-    baselineStepMs,
-    continuousStepMs,
-    deltaStepMs: continuousStepMs - baselineStepMs,
-  },
-  native,
-}, null, 2));
+  }))
+    assertNear(geometry[label], expected, label);
+  assertNear(geometry.bodyStartFarthestX, MOVING_BODY_FARTHEST_START_X, "bodyStartFarthestX");
+  assertNear(geometry.bodyStartNearestX, MOVING_BODY_NEAREST_START_X, "bodyStartNearestX");
+}
+
+export function createBenchmarkReport(web, native) {
+  return {
+    scene: {
+      bodyCount: BODY_COUNT,
+      definition: `one ${WALL_HALF_THICKNESS * 2} m thick fixed wall; ${PROJECTILE_RADIUS} m radius projectile; ${DT} s step`,
+      geometry: BENCHMARK_GEOMETRY,
+      measuredSteps: MEASURED_STEPS,
+      samples: SAMPLES,
+      timedCollisionCandidate: true,
+      warmupSteps: WARMUP_STEPS,
+    },
+    web: {
+      backend: "web",
+      ...web,
+    },
+    native,
+  };
+}
+
+if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+  assertTimedCollisionGeometry();
+  await RAPIER.init();
+  const noWallBaselineStepMs = medianStepMs(false, false);
+  const noWallContinuousStepMs = medianStepMs(true, false);
+  const baselineStepMs = medianStepMs(false, true);
+  const continuousStepMs = medianStepMs(true, true);
+  const native = JSON.parse(
+    execFileSync(
+      "cargo",
+      [
+        "run",
+        "--quiet",
+        "--release",
+        "--manifest-path",
+        nativeManifest,
+        "--example",
+        "measure_continuous_collision",
+      ],
+      { cwd: workspaceRoot, encoding: "utf8" },
+    )
+      .trim()
+      .split("\n")
+      .at(-1),
+  );
+  assertNativeGeometry(native);
+  console.log(
+    JSON.stringify(
+      createBenchmarkReport(
+        {
+          noWallBaselineStepMs,
+          noWallContinuousStepMs,
+          noWallDeltaStepMs: noWallContinuousStepMs - noWallBaselineStepMs,
+          baselineFirstTunnelSpeed: firstTunnelSpeed(false),
+          continuousFirstTunnelSpeed: firstTunnelSpeed(true),
+          baselineStepMs,
+          continuousStepMs,
+          deltaStepMs: continuousStepMs - baselineStepMs,
+          rapierVersion: RAPIER.version(),
+        },
+        native,
+      ),
+      null,
+      2,
+    ),
+  );
+}
