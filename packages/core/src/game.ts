@@ -90,6 +90,15 @@ export interface IGamePluginRuntime {
   readonly random?: Pick<IRandom, "state">;
   rapier?: string | null;
   readonly seed: number | null;
+  /**
+   * Whether first-use compilation has settled, separately from full readiness.
+   *
+   * Readiness also requires a sustained in-budget frame window, which is a player-experience
+   * gate — a CPU rasteriser never meets it and resolves on the window's own timeout instead. A
+   * harness that has been told the machine has no GPU needs the earlier, cheaper signal, and it
+   * must be reported rather than inferred from a phase that cannot distinguish the two.
+   */
+  readonly startupCompileSettled?: () => boolean;
   readonly step: number;
 }
 
@@ -1043,6 +1052,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       random,
       rapier: null,
       seed: this.#config.seed ?? null,
+      startupCompileSettled: () => startupReadiness.compileSettled,
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };

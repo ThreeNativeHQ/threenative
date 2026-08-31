@@ -48,7 +48,7 @@ test("holds until the application reports its world is safe to observe", async (
       pumped += 1;
     },
   });
-  expect(observed).toEqual(ready);
+  expect(observed).toEqual({ rule: "sustained-frames", startup: ready });
   // Three not-ready readings, so three frames were pumped rather than the baseline being taken
   // against a game that had not finished loading.
   expect(pumped).toBe(3);
@@ -145,7 +145,7 @@ test("a bridge too busy to answer is still starting, not broken", async () => {
         pumped += 1;
       },
     }),
-  ).resolves.toEqual(ready);
+  ).resolves.toEqual({ rule: "sustained-frames", startup: ready });
   expect(pumped).toBe(2);
 });
 
@@ -180,4 +180,74 @@ test("an error that is not a timeout is never swallowed", async () => {
       pump: async () => undefined,
     }),
   ).rejects.toBe(boom);
+});
+
+// (c): a lane that has declared a software adapter has already conceded it is not measuring the
+// player's experience, so it must not wait for a smoothness window a CPU rasteriser can never
+// meet. What must NOT change is compile settlement — that is the part that makes a run observe
+// the game instead of the loading screen.
+const collapsingCompiled = { compileSettled: true, phase: "collapsing", progress: 0 } as const;
+const collapsingCompiling = { compileSettled: false, phase: "collapsing", progress: 0 } as const;
+
+test("a declared software adapter resolves on compile settlement, and says so", async () => {
+  const bridge = source(["runtime.startup"], [collapsingCompiling, collapsingCompiled]);
+  await expect(
+    waitForStartupReady({ acceptCompileSettled: true, bridge, pump: async () => undefined }),
+  ).resolves.toEqual({ rule: "compile-settled", startup: collapsingCompiled });
+});
+
+test("compile settlement is still required — the relaxation never skips it", async () => {
+  let clock = 0;
+  // Compilation never settles: the run must fail rather than observe a loading screen, software
+  // adapter or not. This is the half of the wait that (c) must not weaken.
+  await expect(
+    waitForStartupReady({
+      acceptCompileSettled: true,
+      bridge: source(["runtime.startup"], [collapsingCompiling]),
+      now: () => clock,
+      pump: async () => {
+        clock += 100;
+      },
+      timeoutMs: 250,
+    }),
+  ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+});
+
+test("without the operator's declaration, compile settlement is not enough", async () => {
+  let clock = 0;
+  // The same observation that resolves the software lane must NOT resolve a hardware one. An
+  // implicit relaxation would silently apply the day something else on a GPU lane got slow.
+  await expect(
+    waitForStartupReady({
+      bridge: source(["runtime.startup"], [collapsingCompiled]),
+      now: () => clock,
+      pump: async () => {
+        clock += 100;
+      },
+      timeoutMs: 250,
+    }),
+  ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+});
+
+test("a game that reports no compileSettled cannot be relaxed against", async () => {
+  let clock = 0;
+  // Relaxing on a missing signal would be inferring it. Fails closed instead.
+  await expect(
+    waitForStartupReady({
+      acceptCompileSettled: true,
+      bridge: source(["runtime.startup"], [collapsing]),
+      now: () => clock,
+      pump: async () => {
+        clock += 100;
+      },
+      timeoutMs: 250,
+    }),
+  ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+});
+
+test("a software lane that does reach full readiness still reports the stricter rule", async () => {
+  const bridge = source(["runtime.startup"], [ready]);
+  await expect(
+    waitForStartupReady({ acceptCompileSettled: true, bridge, pump: async () => undefined }),
+  ).resolves.toEqual({ rule: "sustained-frames", startup: ready });
 });

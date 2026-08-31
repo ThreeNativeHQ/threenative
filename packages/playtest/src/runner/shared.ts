@@ -46,6 +46,15 @@ export interface IRunStepSamples {
 
 export interface IStandalonePlaytestReport extends IPlaytestReport {
   artifactDirectory: string;
+  /**
+   * What the run waited for before it observed anything, and what it settled on.
+   *
+   * `rule: "compile-settled"` means the sustained in-budget frame window was not required,
+   * because the operator declared a software adapter. A pass from such a run is not a smoothness
+   * measurement and must not be read as one, so the report says which rule applied rather than
+   * leaving a reader to assume the stricter one.
+   */
+  startup?: { compileSettled?: boolean; phase: string; progress: number; rule: string };
   debugColliders?: boolean;
   input?: string;
   movementThreshold?: number;

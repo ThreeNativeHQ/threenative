@@ -195,6 +195,20 @@ runner holds — pumping frames on browser, ticks on device — until `phase` is
 startup at all — a plain Three.js page — is never waited on, and advertising the capability without
 reporting it is malformed and throws.
 
+Readiness means two things, and a GPU-less lane is only owed one of them. Core reaches `"ready"`
+after first-use compilation settles **and** a sustained in-budget frame window — the second is a
+player-experience gate, and a CPU rasteriser never meets it, so it can only expire. When the
+operator declares a software adapter (`--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE=1`) that
+lane has already conceded it is not measuring the player's experience, so the wait resolves on
+**compile settlement** instead. Measured on a real SwiftShader adapter: 56–62s per scenario before,
+31–33s after.
+
+Compile settlement is never skipped — it is the part that makes a run observe the game rather than
+the loading screen. The relaxation is keyed *only* off that declaration, never off a timeout, an
+adapter guess, or a game that does not report `compileSettled` (which fails closed rather than
+being inferred). Every report carries `startup.rule`, `"sustained-frames"` or `"compile-settled"`,
+so a software-lane pass is never read as a smoothness measurement.
+
 Never fix a boot race by lengthening a wait. Padding changes which runs get lucky; the tick counts
 were already identical in the runs that disagreed.
 

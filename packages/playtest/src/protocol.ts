@@ -39,6 +39,13 @@ export interface IPlaytestStartupObservation {
   phase: "observing" | "collapsing" | "ready";
   /** 0 while first-use work is pending, then 1. */
   progress: number;
+  /**
+   * Whether first-use compilation has settled, which happens strictly before `phase` reaches
+   * `"ready"`: readiness additionally requires a sustained in-budget frame window. Reported
+   * separately because that window is a player-experience gate, and a lane that has been told
+   * the machine has no GPU has already conceded it is not measuring that.
+   */
+  compileSettled?: boolean;
 }
 
 /**

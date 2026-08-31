@@ -169,6 +169,7 @@ export function buildReport(
   setup: IPlaytestSetupApplication | undefined = undefined,
   deviceMetrics: IPlaytestDeviceMetricsObservation | undefined = undefined,
   movementBaselineSnapshot: IPlaytestObservationSnapshot | undefined = undefined,
+  startup: IStandalonePlaytestReport["startup"] = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -336,6 +337,7 @@ export function buildReport(
     pass: assertionResults.every(({ pass }) => pass) && allDiagnostics.every(({ severity }) => severity !== "error"),
     runtime: "web",
     scenario: scenario.name,
+    ...(startup === undefined ? {} : { startup }),
     target: scenario.target,
     trivialityOptOutCount: trivialityOptOuts.length,
     trivialityOptOuts,

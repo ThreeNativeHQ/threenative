@@ -77,7 +77,13 @@ export function playtest<
         // A runner advances ticks far faster than a launch completes, and compute dispatch and
         // the first world present are both held behind an opaque loading layer. Published so the
         // runner waits for the world rather than observing a frozen simulation behind a loader.
-        startup: () => ({ phase: ctx.startup.phase, progress: ctx.startup.progress }),
+        startup: () => ({
+          phase: ctx.startup.phase,
+          progress: ctx.startup.progress,
+          ...(runtime?.startupCompileSettled === undefined
+            ? {}
+            : { compileSettled: runtime.startupCompileSettled() }),
+        }),
       });
       installRuntimeChannels(installation.bridge, runtime);
       // A runner announced itself before the page loaded: it is the one consumer of per-frame

@@ -7,8 +7,28 @@ export interface IStartupReadySource {
   readiness(): Promise<IPlaytestBridgeReady>;
 }
 
+/** Which rule the wait resolved on, so a report never reads as more than it measured. */
+export type PlaytestStartupRule = "sustained-frames" | "compile-settled";
+
+export interface IStartupReadyOutcome {
+  readonly startup: IPlaytestStartupObservation;
+  readonly rule: PlaytestStartupRule;
+}
+
 export interface IWaitForStartupReadyOptions {
   readonly bridge: IStartupReadySource;
+  /**
+   * Accept compile settlement instead of full readiness.
+   *
+   * Set only from `--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE`, never from a timeout, an
+   * adapter guess or any other fallback. Readiness requires a sustained in-budget frame window,
+   * which asks "is this running smoothly enough to show a player" — a lane that has been told
+   * out loud that the machine has no GPU has already conceded it is not measuring that, and on
+   * a CPU rasteriser the window can only ever expire rather than be met. Compile settlement is
+   * still required either way: that is the part that makes the run observe the game instead of
+   * the loading screen, and it is not weakened here.
+   */
+  readonly acceptCompileSettled?: boolean;
   /**
    * Advances the application. A browser run pumps a frame; a device renders on its own clock and
    * passes a short wait. This is not scenario semantics — no step is being counted here — it is
@@ -36,7 +56,7 @@ export interface IWaitForStartupReadyOptions {
  */
 export async function waitForStartupReady(
   options: IWaitForStartupReadyOptions,
-): Promise<IPlaytestStartupObservation | undefined> {
+): Promise<IStartupReadyOutcome | undefined> {
   const { bridge, pump } = options;
   if (!bridge.description.capabilities.includes("runtime.startup")) return undefined;
   const now = options.now ?? (() => Date.now());
@@ -44,8 +64,13 @@ export async function waitForStartupReady(
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
     throw new Error(`TN_PLAYTEST_STARTUP_TIMEOUT_INVALID: ${String(options.timeoutMs)}`);
   const deadline = now() + timeoutMs;
+  // A game that does not report compile settlement cannot be relaxed against: the relaxation
+  // needs the earlier signal to exist, and inferring it from a phase that cannot distinguish the
+  // two would be the implicit fallback this must never have.
+  const settled = (observation: IPlaytestStartupObservation): boolean =>
+    options.acceptCompileSettled === true && observation.compileSettled === true;
   let observed = await pollStartup(bridge);
-  while (observed === BUSY || observed.phase !== "ready") {
+  while (observed === BUSY || (observed.phase !== "ready" && !settled(observed))) {
     if (now() >= deadline) {
       throw new PlaytestBridgeError(playtestDiagnostic(
         "TN_PLAYTEST_STARTUP_NOT_READY",
@@ -56,7 +81,10 @@ export async function waitForStartupReady(
     await pump();
     observed = await pollStartup(bridge);
   }
-  return observed;
+  return {
+    rule: observed.phase === "ready" ? "sustained-frames" : "compile-settled",
+    startup: observed,
+  };
 }
 
 /** The bridge was too busy to answer this time round. Distinct from any real phase. */

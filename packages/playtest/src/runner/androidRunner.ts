@@ -220,7 +220,11 @@ async function runDevicePlaytestInternal(
     // application's launch runs on, so wait for the device to say its world is safe to observe.
     const attached = bridge;
     if (scenario.awaitStartup !== false)
-      await waitForStartupReady({ bridge: attached, pump: () => attached.advance(1) });
+      await waitForStartupReady({
+        acceptCompileSettled: config.allowSoftwareAdapter === true,
+        bridge: attached,
+        pump: () => attached.advance(1),
+      });
     await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);
