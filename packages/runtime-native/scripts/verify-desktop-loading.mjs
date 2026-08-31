@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 
 import { inspectOverlay, inspectScreenshot } from "./verify-desktop-core.mjs";
+import { run as sharedRun } from "./native-test-lane.mjs";
 
 const runtimeRoot = join(fileURLToPath(new URL("..", import.meta.url)));
 const workspaceRoot = join(runtimeRoot, "..", "..");
@@ -16,19 +16,13 @@ const scenario = join(exampleRoot, "playtests", "loading-screen-desktop.playtest
 const FIXED_STEP_WALL_WAITS_MS = [0, 1_000, 3_000];
 const LOADING_PROOF_BACKDROP_COLOR = 0x101820;
 
+// The shared runner, not a second copy of it. This was the only script here carrying its own, and
+// it was the only one that still died on `spawnSync pnpm ENOENT` once the Windows leg reached it:
+// npm-published CLIs are `.cmd` shims there and `spawnSync` does not apply PATHEXT. The shared
+// `run` already retries as a shim under a shell; the only thing local about this one was that its
+// cwd defaults to the workspace rather than the package.
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd ?? workspaceRoot,
-    encoding: "utf8",
-    env: options.env ?? process.env,
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: options.timeout ?? 120_000,
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`${command} exited ${result.status}:\n${result.stdout ?? ""}\n${result.stderr ?? ""}`);
-  }
-  return `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  return sharedRun(command, args, { ...options, cwd: options.cwd ?? workspaceRoot });
 }
 
 function nativeBinary() {

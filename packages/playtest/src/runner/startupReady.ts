@@ -148,9 +148,19 @@ async function readStartup(bridge: IStartupReadySource): Promise<IPlaytestStartu
   const ready = await bridge.readiness();
   const startup = ready.startup;
   if (startup === undefined || typeof startup.phase !== "string") {
+    // Say what came back. "no startup observation" covers a bridge that omitted the field, one
+    // that sent a non-object, and a transport that dropped it in flight — three different faults
+    // with three different owners. On the device mailbox this is the only description of the
+    // payload anyone gets, because the app's console does not reach the runner.
+    const shape =
+      ready === null || typeof ready !== "object"
+        ? `ready() returned ${ready === null ? "null" : typeof ready}`
+        : `ready() returned keys [${Object.keys(ready).sort().join(", ")}] with startup=${
+            startup === undefined ? "absent" : JSON.stringify(startup)
+          }`;
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_STARTUP_NOT_READY",
-      "Bridge advertises 'runtime.startup' but ready() returned no startup observation.",
+      `Bridge advertises 'runtime.startup' but ready() returned no startup observation; ${shape}.`,
       "Report { phase, progress } from the bridge's ready() handler, or stop advertising runtime.startup.",
       { capability: "runtime.startup" },
     ));

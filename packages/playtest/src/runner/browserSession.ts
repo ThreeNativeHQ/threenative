@@ -77,11 +77,18 @@ export async function teardownBrowserSession(
 }
 
 
-/** Browser profile directories Playwright creates under the temporary root. */
+/**
+ * Temporary directories Playwright creates under the temporary root.
+ *
+ * It makes two kinds with two different spellings: `playwright_chromiumdev_profile-*` for the
+ * browser profile and `playwright-artifacts-*` for traces and videos. Matching only the
+ * underscore form reclaimed the profile and left the artifacts directory behind, which the orphan
+ * gate then reported on its own. One prefix covers both.
+ */
 export function playwrightProfileDirectories(root: string = tmpdir()): readonly string[] {
   try {
     return readdirSync(root)
-      .filter((entry) => entry.startsWith("playwright_"))
+      .filter((entry) => entry.startsWith("playwright"))
       .map((entry) => join(root, entry))
       .sort();
   } catch {

@@ -33,3 +33,20 @@ test("a profile that predates the launch is never this run's to remove", () => {
 test("nothing is reclaimed when the run created nothing", () => {
   expect(reclaimableProfileDirectories([], [], "")).toEqual([]);
 });
+
+// Playwright makes two kinds of temporary directory with two different spellings:
+// `playwright_chromiumdev_profile-*` for the browser profile and `playwright-artifacts-*` for
+// traces and videos. Reclaiming only the underscore form left the artifacts directory behind, and
+// the orphan gate reported that one on its own the very next run.
+test("both playwright temporary directory spellings are reclaimable", () => {
+  const before = ["/tmp/suite/tsx-1001"];
+  const after = [
+    "/tmp/suite/tsx-1001",
+    "/tmp/suite/playwright-artifacts-OaWbFV",
+    "/tmp/suite/playwright_chromiumdev_profile-izC2Lh",
+  ];
+  expect(reclaimableProfileDirectories(before, after, "")).toEqual([
+    "/tmp/suite/playwright-artifacts-OaWbFV",
+    "/tmp/suite/playwright_chromiumdev_profile-izC2Lh",
+  ]);
+});
