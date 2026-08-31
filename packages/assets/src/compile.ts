@@ -23,6 +23,7 @@ import type {
   IModelSimplifyOptions,
   IModelTextureOverride,
   IModelTexturesOptions,
+  IModelVirtualOptions,
 } from "./passes/model.js";
 import { texturePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
@@ -112,6 +113,12 @@ export interface IModelsConfig {
    * exactly as authored. Absent means compression runs with defaults.
    */
   readonly textures?: IModelTexturesOptions | "none";
+  /**
+   * Cluster-DAG bake for virtual geometry, or `"none"` to ship every primitive as authored.
+   * Absent means the bake runs with defaults, which clusters any primitive of 65,536 triangles
+   * or more and leaves everything below it byte-identical.
+   */
+  readonly virtual?: IModelVirtualOptions | "none";
 }
 
 export interface ITexturesConfig {
@@ -388,7 +395,7 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = ["lightmap", "passes", "quantize", "simplify", "textures"];
+  const allowed = ["lightmap", "passes", "quantize", "simplify", "textures", "virtual"];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
@@ -401,12 +408,14 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   const lightmap = raw.lightmap === undefined ? undefined : parseLightmap(raw.lightmap);
   const simplify = raw.simplify === undefined ? undefined : parseModelSimplify(raw.simplify);
   const textures = raw.textures === undefined ? undefined : parseModelTextures(raw.textures);
+  const virtual = raw.virtual === undefined ? undefined : parseModelVirtual(raw.virtual);
   return {
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
     ...(simplify === undefined ? {} : { simplify }),
     ...(textures === undefined ? {} : { textures }),
+    ...(virtual === undefined ? {} : { virtual }),
   };
 }
 
@@ -498,6 +507,51 @@ function parseModelSimplify(raw: unknown): IModelSimplifyOptions {
     ratio: raw.ratio,
     ...(raw.error === undefined ? {} : { error: raw.error as number }),
   };
+}
+
+/**
+ * `"none"` ships every primitive as authored; an object moves the cluster bake's thresholds.
+ *
+ * Every key is validated here rather than deeper in the bake, because a game reaches this through
+ * `threenative.config.ts` and a silently-dropped `minSourceTriangles` is a bake that quietly did
+ * something other than what the file asked for.
+ */
+function parseModelVirtual(raw: unknown): IModelVirtualOptions | "none" {
+  if (raw === "none") return "none";
+  if (!isRecord(raw)) {
+    throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models.virtual must be "none" or an object.');
+  }
+  const counts = ["groupSize", "maxTriangles", "minSourceTriangles", "minTriangles"] as const;
+  for (const key of Object.keys(raw)) {
+    if (key !== "simplifyRatio" && !(counts as readonly string[]).includes(key)) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.virtual.${key} is not recognised.`,
+      );
+    }
+  }
+  const parsed: Record<string, number> = {};
+  for (const key of counts) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: assets.models.virtual.${key} must be a positive integer.`,
+      );
+    }
+    parsed[key] = value;
+  }
+  if (raw.simplifyRatio !== undefined) {
+    if (
+      typeof raw.simplifyRatio !== "number" ||
+      !(raw.simplifyRatio > 0) ||
+      !(raw.simplifyRatio < 1)
+    )
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.virtual.simplifyRatio must be a number between 0 and 1, exclusive.",
+      );
+    parsed.simplifyRatio = raw.simplifyRatio;
+  }
+  return parsed as IModelVirtualOptions;
 }
 
 function parseLightmap(raw: unknown): ILightmapPassOptions {

@@ -1,8 +1,9 @@
 import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { NodeIO } from "@gltf-transform/core";
+import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRLightsPunctual } from "@gltf-transform/extensions";
 import { read as readKtx2 } from "ktx-parse";
+import { TorusKnotGeometry } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
@@ -11,6 +12,53 @@ import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 
 const TRANSCODER = basisTranscoderPaths();
+
+/**
+ * A torus knot, the shape `virtual-pass.spec.ts` settled on: closed, indexed, every vertex
+ * referenced. A sphere leaves two pole vertices no triangle uses and the pass's self-verify
+ * fails on a drift that has nothing to do with the config key under test.
+ */
+async function torusKnotGlb(tubularSegments: number, radialSegments: number): Promise<Buffer> {
+  const geometry = new TorusKnotGeometry(1, 0.4, tubularSegments, radialSegments);
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const position = document
+    .createAccessor()
+    .setType("VEC3")
+    .setArray(Float32Array.from(geometry.attributes.position?.array ?? []))
+    .setBuffer(buffer);
+  const normal = document
+    .createAccessor()
+    .setType("VEC3")
+    .setArray(Float32Array.from(geometry.attributes.normal?.array ?? []))
+    .setBuffer(buffer);
+  const indices = document
+    .createAccessor()
+    .setType("SCALAR")
+    .setArray(Uint32Array.from(geometry.index?.array ?? []))
+    .setBuffer(buffer);
+  const primitive = document
+    .createPrimitive()
+    .setAttribute("POSITION", position)
+    .setAttribute("NORMAL", normal)
+    .setIndices(indices)
+    .setMaterial(document.createMaterial("rock"));
+  scene.addChild(
+    document.createNode("face").setMesh(document.createMesh("face").addPrimitive(primitive)),
+  );
+  return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+}
+
+/** 65,536 triangles: the density the bake turns itself on at. */
+async function denseFixtureGlb(): Promise<Buffer> {
+  return torusKnotGlb(512, 64);
+}
+
+/** 2,048 triangles: far under the default, so a bake here can only come from the config. */
+async function sparseFixtureGlb(): Promise<Buffer> {
+  return torusKnotGlb(64, 16);
+}
 
 describe("compileAssets", () => {
   it("should write a hashed output and a manifest entry when an input exists", async () => {
@@ -467,6 +515,62 @@ describe("compileAssets", () => {
     } as unknown as IAssetSourceConfig;
     await expect(compileAssets({ config: badDepth, cwd: root })).rejects.toThrow(
       /TN_ASSETS_CONFIG_INVALID.*between 1 and 16 bits/u,
+    );
+  });
+});
+
+/**
+ * The config file's side of PRD-283 AC5. `assets.models.virtual` is documented as the one key a
+ * game sets to move or opt out of the cluster bake, `create-threenative`'s config validator
+ * accepts and range-checks it — and `compileAssets`, which is what `threenative build` actually
+ * calls with that config, listed every model key except this one. A game that wrote the
+ * documented override never reached the pipeline: it died at `TN_ASSETS_CONFIG_UNKNOWN_KEY`
+ * before a single asset compiled.
+ */
+describe("compileAssets and assets.models.virtual", () => {
+  it("should carry virtual: none through to the pass and leave a dense primitive unclustered", async () => {
+    const root = await makeTempDir("threenative-compile-virtual-none-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "face.glb"), await denseFixtureGlb());
+
+    await compileAssets({
+      config: { models: { virtual: "none" } } as IAssetSourceConfig,
+      cwd: root,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    );
+    expect(manifest.entries["face.glb"].extensions ?? []).not.toContain("TN_virtual_geometry");
+  });
+
+  it("should carry a virtual threshold through to the pass", async () => {
+    const root = await makeTempDir("threenative-compile-virtual-threshold-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "face.glb"), await sparseFixtureGlb());
+
+    // 2,048 triangles is far under the 65,536 default, so a bake here can only mean the
+    // threshold this config named reached the pass.
+    await compileAssets({
+      config: { models: { virtual: { minSourceTriangles: 1024 } } } as IAssetSourceConfig,
+      cwd: root,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    );
+    expect(manifest.entries["face.glb"].extensions).toContain("TN_virtual_geometry");
+  });
+
+  it("should still reject a misspelled key under assets.models.virtual", async () => {
+    const root = await makeTempDir("threenative-compile-virtual-bogus-");
+    await mkdir(path.join(root, "assets"));
+
+    const bogus = {
+      models: { virtual: { minTriangls: 4 } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: bogus, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_UNKNOWN_KEY.*assets\.models\.virtual\.minTriangls/u,
     );
   });
 });

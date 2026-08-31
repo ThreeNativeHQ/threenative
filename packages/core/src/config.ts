@@ -91,6 +91,28 @@ export interface IThreeNativeModelsConfig {
     readonly ratio: number;
     readonly error?: number;
   };
+  /**
+   * Cluster-DAG bake for virtual geometry, or `"none"` to ship every primitive as authored.
+   *
+   * Absent means on with defaults: any primitive of 65,536 triangles or more bakes to a cluster
+   * DAG the loader turns into a `ClusteredMesh`, and everything below that line compiles
+   * byte-identically. The payload costs roughly 3-4x the primitive's compiled bytes, which is
+   * what `"none"` and `minSourceTriangles` are for.
+   */
+  readonly virtual?:
+    | "none"
+    | {
+        /** Clusters folded together per group, default 4. */
+        readonly groupSize?: number;
+        /** Upper bound on a cluster's triangles, default 128. */
+        readonly maxTriangles?: number;
+        /** Lower bound on a cluster's triangles, default 96. */
+        readonly minTriangles?: number;
+        /** Primitives below this many triangles are left alone, default 65,536. */
+        readonly minSourceTriangles?: number;
+        /** Fraction of a group's triangles kept per level, default 0.5. */
+        readonly simplifyRatio?: number;
+      };
 }
 
 export interface IThreeNativeConfig {

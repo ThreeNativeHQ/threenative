@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { compileAssets } from "@threenative/assets";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
@@ -435,6 +436,35 @@ describe("threenative.config.ts", () => {
     await config(root, 'export default { assets: { models: { virtual: "none" } } };');
     await expect(loadConfig(root)).resolves.toMatchObject({
       assets: { models: { virtual: "none" } },
+    });
+  });
+
+  /**
+   * The seam, not either side of it. `loadConfig` validated `assets.models.virtual` and
+   * `compileAssets` — the only consumer, called by `threenative build` with exactly this object —
+   * did not list the key at all, so every game that wrote the documented override died at
+   * `TN_ASSETS_CONFIG_UNKNOWN_KEY` before an asset compiled. Both sides were green the whole
+   * time. This test hands one to the other.
+   */
+  it("hands every resolved assets key to the pipeline that receives it", async () => {
+    const root = await project();
+    await config(
+      root,
+      `export default {
+        assets: {
+          models: {
+            virtual: { groupSize: 4, minSourceTriangles: 8192, simplifyRatio: 0.5 },
+          },
+        },
+      };`,
+    );
+    const resolved = await loadConfig(root);
+
+    // No assets/ directory, so the pipeline returns early — but only after it has parsed the
+    // config, which is the step that used to throw.
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      skipped: 0,
+      written: 0,
     });
   });
 

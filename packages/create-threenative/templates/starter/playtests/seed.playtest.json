@@ -33,11 +33,11 @@
     },
     "resources": [
       {
-        "id": "state",
-        "path": "levelX",
-        "changed": true,
+        "allowTrivial": "The seed lands 0.25s after the level builds, so whether the runner samples the -99 sentinel before or after it is a race with boot time: firstTick was 6 locally and 47 in CI run 33350164891, and only the slow sample reported TN_PLAYTEST_ASSERTION_TRIVIAL. The range is the real assertion and both sentinels fall outside it: -99 means the level never built, 2 means the seeded draw did not advance ctx.random.",
         "gte": -1,
-        "lte": 1
+        "id": "state",
+        "lte": 1,
+        "path": "levelX"
       }
     ],
     "world": {

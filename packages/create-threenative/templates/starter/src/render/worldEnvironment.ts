@@ -176,6 +176,16 @@ export interface IWorldEnvironmentOptions {
 export interface IWorldEnvironmentTarget {
   /** The directional light godrays are raymarched against. Required only by `godraysEnabled`. */
   readonly godraysLight?: DirectionalLight;
+  /**
+   * Composes the colour the chain starts from, given the scene pass it renders.
+   *
+   * The chain builds `pass(scene, camera)` itself, so a game that composes something onto the
+   * beauty pass before any stage runs — aerial perspective, read against that pass's own view-Z,
+   * is the one in these templates — has nowhere else to put it. The node returned here is the
+   * game's; the chain only decides where it is spliced in, which is first, ahead of exposure and
+   * every stage.
+   */
+  readonly baseColour?: (scenePass: ReturnType<typeof pass>) => Node<"vec4">;
 }
 
 /**
@@ -226,6 +236,12 @@ function denoised(node: ReturnType<typeof denoise>): ChainNode {
 export type OutputRenderer = {
   kind: string;
   raw: unknown;
+  /**
+   * Installs a node graph directly. Only reached when a `baseColour` is composed and every
+   * stage is off: the chain installs nothing for an empty stage list, and dropping the game's
+   * own composition on the floor would be the silent no-op this class exists to prevent.
+   */
+  setOutputNode?: (node: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
     request?: { stages?: readonly string[]; tier?: ChainContext["tier"] };
@@ -327,8 +343,9 @@ export class WorldEnvironment {
     // applied as a multiply on the scene pass instead: scene-referred, so every downstream
     // stage sees the exposed image and the bloom threshold means the same thing at any
     // exposure. Both land at the same point in the graph — before the tone curve.
-    if (requested.length === 0) {
+    if (requested.length === 0 && target.baseColour === undefined) {
       raw.toneMappingExposure = options.exposure;
+      this.#reportApplied([], []);
       return { dropped: [], stages: [] };
     }
     raw.toneMappingExposure = 1;
@@ -349,7 +366,8 @@ export class WorldEnvironment {
     // and a projection matrix inverse. The scene's camera is the one the pass rendered with.
     const view = camera as PerspectiveCamera;
 
-    const exposed = convertToTexture(scenePass.getTextureNode("output")).mul(options.exposure);
+    const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
+    const exposed = convertToTexture(base).mul(options.exposure);
     const giDenoise = (node: ChainNode): ChainNode =>
       options.denoiseEnabled ? denoised(denoise(node, depth, normal, view)) : node;
 
@@ -486,12 +504,67 @@ export class WorldEnvironment {
       }),
     ];
 
+    // A composed base colour with every stage off still has to reach the frame. The chain
+    // installs nothing for an empty stage list, so this is the one path that goes direct.
+    if (requested.length === 0) {
+      if (renderer.kind !== "webgpu") {
+        this.#reportApplied([], [{ name: "baseColour", reason: `renderer:${renderer.kind}` }]);
+        return { dropped: [], stages: [] };
+      }
+      if (renderer.setOutputNode === undefined)
+        throw new Error("setOutputNode is unavailable, so the composed base colour cannot run.");
+      renderer.setOutputNode(exposed);
+      this.#reportApplied([], []);
+      return { dropped: [], stages: [] };
+    }
+
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
     const chain = renderer.createRenderChain({
       input: exposed,
       request: { stages: requested, tier: "high" },
       stages,
     });
+    this.#reportApplied(chain.applied.stages, chain.applied.dropped);
     return { dropped: chain.applied.dropped, stages: chain.applied.stages };
+  }
+
+  /**
+   * Prints `TN_WORLD_ENVIRONMENT`: every stage this class can run, named as applied or refused
+   * **with a reason that is never blank**, plus the tone curve and exposure that framed them.
+   *
+   * The chain prints its own line for the stages it installed, and it prints nothing at all when
+   * nothing was requested — which is exactly the case where a reader most needs to know that GI
+   * is off because this file says so rather than because a node silently no-op'd. This line is
+   * emitted every run, including the run where every stage is off.
+   */
+  #reportApplied(
+    applied: readonly string[],
+    dropped: readonly { name: string; reason: string }[],
+  ): void {
+    const options = this.#options;
+    const off: Record<ChainStage["name"], string> = {
+      ambientOcclusion: "gtaoEnabled is false",
+      bloom: "bloomEnabled is false",
+      godRays: "godraysEnabled is false",
+      sharpen: "sharpenEnabled is false",
+      ssgi: "ssgiEnabled is false",
+      ssr: "ssrEnabled is false",
+      vignette: "vignetteAmount is 0",
+    };
+    const stages = (Object.keys(off) as ChainStage["name"][]).sort().map((name) => {
+      if (applied.includes(name)) return { applied: true, name };
+      const refused = dropped.find((entry) => entry.name === name);
+      return { applied: false, name, reason: refused?.reason ?? off[name] };
+    });
+    console.info(
+      `TN_WORLD_ENVIRONMENT:${JSON.stringify({
+        denoise: options.denoiseEnabled,
+        exposure: options.exposure,
+        marker: "TN_WORLD_ENVIRONMENT",
+        ssgiQuality: options.ssgiQuality,
+        stages,
+        tonemapMode: options.tonemapMode,
+      })}`,
+    );
   }
 }
