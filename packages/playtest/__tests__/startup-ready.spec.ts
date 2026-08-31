@@ -118,3 +118,4 @@ test("a scenario whose subject is the launch can opt out, and the field is valid
   // Fails closed rather than coercing a typo into an opt-out.
   expect(() => validatePlaytestScenario({ ...base, awaitStartup: "no" }, "s.json")).toThrow();
 });
+

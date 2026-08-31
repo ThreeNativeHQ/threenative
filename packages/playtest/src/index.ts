@@ -90,6 +90,7 @@ export {
   PLAYTEST_FROZEN_MARKER,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
+  PLAYTEST_STARTUP_READY_TIMEOUT_MS,
   assertJsonSafe,
   jsonByteLength,
 } from "./protocol.js";

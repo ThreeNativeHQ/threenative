@@ -1,14 +1,6 @@
-import { playtestDiagnostic, type IPlaytestBridgeReady, type IPlaytestStartupObservation } from "../index.js";
+import { PLAYTEST_STARTUP_READY_TIMEOUT_MS, playtestDiagnostic, type IPlaytestBridgeReady, type IPlaytestStartupObservation } from "../index.js";
 import { PlaytestBridgeError } from "./bridgeClient.js";
 
-/**
- * How long a run will wait for an application to finish its own first-use startup work.
- *
- * Generous on purpose: this covers shader compilation on a cold machine, and a run that waited
- * a few seconds too long costs a few seconds, while one that gave up too early photographs a
- * loading screen and reports it as the game.
- */
-export const PLAYTEST_STARTUP_READY_TIMEOUT_MS = 30_000;
 
 export interface IStartupReadySource {
   readonly description: { readonly capabilities: readonly string[] };

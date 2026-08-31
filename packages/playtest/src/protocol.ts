@@ -41,6 +41,17 @@ export interface IPlaytestStartupObservation {
   progress: number;
 }
 
+/**
+ * How long a run will wait for an application to finish its own first-use startup work.
+ *
+ * Above core's own bound with room to spare: `StartupReadiness` resolves anyway after a 15 s
+ * compile budget plus a 10 s sustained-frame window, so a healthy application is ready inside
+ * ~25 s even on a CPU rasteriser that never meets the frame budget. A timeout under that would
+ * fail exactly the slow, GPU-less lanes this wait exists to make honest. It is still a bound:
+ * a game that never gets there is named, not waited on forever.
+ */
+export const PLAYTEST_STARTUP_READY_TIMEOUT_MS = 60_000;
+
 export interface IPlaytestBridgeReady {
   ready: boolean;
   reason?: string;
