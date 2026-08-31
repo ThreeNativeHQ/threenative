@@ -44,12 +44,13 @@ The observed validator outputs were:
 The 087 lane’s approved range was squashed onto `main` as:
 
 ```text
-96b7032c test(platformer): harden terminal loop gate
+1d7d7d0f test(platformer): harden terminal loop gate
 ```
 
-Only `packages/create-threenative/__tests__/playtest.spec.ts` and
-`packages/create-threenative/templates/platformer/package.json` were staged for that commit.
-Four pre-existing unstaged `packages/playtest/` edits were left untouched. No PRD was archived:
+The delivered code changes were limited to `packages/create-threenative/__tests__/playtest.spec.ts`
+and `packages/create-threenative/templates/platformer/package.json`; this manager record is also
+part of the squash. Four pre-existing unstaged `packages/playtest/` edits were left untouched. No
+PRD was archived:
 236 and 267 are blocked, and 087’s parent batch still has explicit child-kit evidence outside this
 run.
 
@@ -60,3 +61,7 @@ run.
 - The root test run observed `624` passed and `6` failures for unbuilt native executables.
 - The shipped `create-threenative@0.2.3` registry probe returned npm `E404`; historical `0.2.2`
   evidence was not reused.
+- A final guarded `pnpm test` at `4f7afff4` reached package tests but exited 1 in
+  `packages/playtest` publint because its declared `dist/*.d.ts` files were absent at that point;
+  no full-suite pass is claimed. The suite also encountered two earlier worktree-guard exits when
+  other agents advanced `main` during the run.
