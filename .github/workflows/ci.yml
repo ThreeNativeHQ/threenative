@@ -155,7 +155,15 @@ jobs:
   golden-path:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 was a guess from when a page load cost seconds, and it is now measurably too small. Run
+    # 33355317922 completed twelve scenarios 65s apart on this lane; at 13 non-visual scenarios for
+    # starter and 17 for platformer that is ~38 minutes, and the job has never once reached the
+    # platformer half because it kept failing inside starter first. The software-lane readiness rule
+    # brings the per-scenario cost from ~56s to ~33s, which projects to ~25 minutes here — inside 30,
+    # but with about five minutes of margin rather than comfort, and projected from another machine.
+    # 45 is that projection plus room to be wrong about it. It is a ceiling on patience, not a
+    # performance assertion: nothing in this job measures how long it took.
+    timeout-minutes: 45
     env:
       # This job proves a stranger can scaffold a project, install it, build it and have its own
       # playtests run. The scaffold's `test` script refuses a software adapter, which is right for
