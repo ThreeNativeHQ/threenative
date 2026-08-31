@@ -132,6 +132,25 @@ static void onRawAdapterRequest(WGPURequestAdapterStatus status, WGPUAdapter ada
 }  // namespace
 
 int main() {
+    mystral::RuntimeConfig config;
+    config.width = 1;
+    config.height = 1;
+    config.noSdl = true;
+
+    auto runtime = mystral::Runtime::create(config);
+    if (!runtime) {
+        std::cerr << "could not create headless native runtime\n";
+        return 1;
+    }
+
+    // The oracle runs after the runtime exists, not before it.
+    //
+    // Where Dawn is reached through its proc table — Windows links `webgpu_dawn` that way — the
+    // entry points are stubs until something calls `dawnProcSetProcs`, and it is the runtime's
+    // initialisation that does so. Calling `wgpuCreateInstance` first therefore got the stub:
+    // "the null wgpuCreateInstance from dawn_proc was called which always returns nullptr", on a
+    // platform whose runtime renders 300 frames through the very same library. The oracle is
+    // still raw Dawn with no binding in between, and its answer is read below, after this.
 #if defined(MYSTRAL_WEBGPU_DAWN)
     // The oracle: raw Dawn, no binding in between. This is what makes a refusal a red rather
     // than a skip — without it, a hidden feature and an absent feature look identical from JS.
@@ -170,17 +189,6 @@ int main() {
 #else
     std::cout << "[RG11B10] backend is not Dawn; raw oracle unavailable" << std::endl;
 #endif
-
-    mystral::RuntimeConfig config;
-    config.width = 1;
-    config.height = 1;
-    config.noSdl = true;
-
-    auto runtime = mystral::Runtime::create(config);
-    if (!runtime) {
-        std::cerr << "could not create headless native runtime\n";
-        return 1;
-    }
 
     // Inject the oracle's answer; the JS compares every layer it can see against it.
     const std::string setupWithOracle = [](const std::string& tpl) {
