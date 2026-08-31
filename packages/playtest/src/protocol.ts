@@ -44,13 +44,20 @@ export interface IPlaytestStartupObservation {
 /**
  * How long a run will wait for an application to finish its own first-use startup work.
  *
- * Above core's own bound with room to spare: `StartupReadiness` resolves anyway after a 15 s
- * compile budget plus a 10 s sustained-frame window, so a healthy application is ready inside
- * ~25 s even on a CPU rasteriser that never meets the frame budget. A timeout under that would
- * fail exactly the slow, GPU-less lanes this wait exists to make honest. It is still a bound:
- * a game that never gets there is named, not waited on forever.
+ * Derived, not picked. Core bounds its own launch twice — `STARTUP_COMPILE_BUDGET_MS` (15s) for
+ * first-use compilation, then `STARTUP_STABLE_WINDOW_MS` (10s) for the sustained-frame window,
+ * which resolves anyway — so the readiness gate itself is bounded at 25s. Measured end to end on
+ * a real SwiftShader adapter, a starter scenario took ~57s to report ready, because the scene
+ * build and first-use work that happen *before* that gate opens are not inside those budgets.
+ *
+ * This deadline is a backstop for a page that has hung, not a schedule anything should approach,
+ * so it is set at roughly 3x that measured software launch and >7x the gate's own bound. A margin
+ * of a few seconds over a worst case measured on one machine is a coin flip, not headroom.
+ *
+ * Pinned against core's constants by packages/core/__tests__/startup-ready-bound.spec.ts, which
+ * fails if either budget is raised past it.
  */
-export const PLAYTEST_STARTUP_READY_TIMEOUT_MS = 60_000;
+export const PLAYTEST_STARTUP_READY_TIMEOUT_MS = 180_000;
 
 export interface IPlaytestBridgeReady {
   ready: boolean;
