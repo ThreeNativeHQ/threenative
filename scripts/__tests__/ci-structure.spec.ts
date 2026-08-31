@@ -39,8 +39,47 @@ describe("CI pipeline structure", () => {
     expect(ci).toMatch(/pull_request:\n\s+branches:\n\s+- main/u);
     expect(ci).toContain("group: ci-${{ github.ref }}");
     expect(native).toContain("group: native-release-${{ github.ref }}");
-    expect(native).toContain("gh run list --workflow ci.yml --commit");
+    expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
     expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
+  });
+
+  // A `gh` call infers its repository from a git checkout. A job that never checks out has
+  // none, so `gh` dies with "failed to determine base repo" — and a gate that dies is a gate
+  // that never asked its question. `native-release.yml`'s CI gate shipped that way and could
+  // not be caught by anything: the workflow runs only on a `runtime-native-v*` tag, and the
+  // first such tag ever pushed was the one that exposed it.
+  // A `gh` call infers its repository from a git checkout. A job that never checks out has
+  // none, so `gh` dies with "failed to determine base repo" -- and a gate that dies is a gate
+  // that never asked its question. The native release's CI gate shipped that way and nothing
+  // could have caught it: that workflow runs only on a `runtime-native-v*` tag, and the first
+  // such tag ever pushed was the one that exposed it.
+  it("passes an explicit repository to every gh call in a job that never checks out", async () => {
+    const offenders: string[] = [];
+    for (const relative of workflows) {
+      const source = await readFile(path.join(repo, relative), "utf8");
+      for (const [job, section] of jobSections(source)) {
+        if (section.includes("uses: actions/checkout")) continue;
+        // Read whole commands, not lines: a flag may sit on a continuation line, and a `#`
+        // line is prose. Both were false readings of this same section.
+        const lines = section.split("\n").filter((line) => !/^\s*#/u.test(line));
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index] ?? "";
+          if (!/(?:^|[\s"'`(|&;$])gh\s+(?:api|run|release|pr|issue|workflow|cache)\b/u.test(line))
+            continue;
+          let command = line;
+          for (let next = index + 1; next < lines.length; next += 1) {
+            const continuation = lines[next] ?? "";
+            const continued =
+              command.trimEnd().endsWith("\\") || /^\s*-{1,2}\w/u.test(continuation);
+            if (!continued) break;
+            command += ` ${continuation}`;
+          }
+          if (command.includes("--repo")) continue;
+          offenders.push(`${relative} ${job}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("requires the matching native release for a publishing dispatch", async () => {
