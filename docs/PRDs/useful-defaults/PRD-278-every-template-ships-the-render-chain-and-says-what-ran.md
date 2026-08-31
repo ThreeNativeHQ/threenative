@@ -11,7 +11,7 @@ copying nothing, so this PRD is the plan and the integration work; the file arri
 
 **Goal: a scaffolded game's first `pnpm dev` renders through a real chain, and a stage that could
 not run says so by name.** Mined from `lumen-hall`. Sibling of
-[PRD-276](./PRD-276-instanced-batch-assembly-is-mechanism.md), and the opposite verdict: that one
+[PRD-276](../PRD-276-instanced-batch-assembly-is-mechanism.md), and the opposite verdict: that one
 was mechanism and went into a package, this one decides how the game looks and can only ever ship
 as generated source.
 
@@ -21,10 +21,10 @@ problems below are the work.
 
 **Scope grew 2026-08-30, by ruling.** The composer, the stage graph, the composite maths and the
 tier→parameter table are this PRD's, not `packages/core`'s: the owner-delegated answer to
-[lighting/PRD-266](./lighting/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md)'s blocking
+[PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md)'s blocking
 question was no. This file also gains the mapping from the framework's tier **ordinal** to which
 stages run at which quality — the ordinal arrives as an argument, exactly as the platform decision
-in §3 does. Sequenced in [batch-2026-08-30](./batch-2026-08-30/README.md).
+in §3 does. Sequenced in [useful-defaults](./README.md); the batch this PRD was first filed under is kept as [its origin memo](./ORIGIN-decent-defaults-2026-08-30.md).
 
 ## Where it goes, and why it is not a package export
 

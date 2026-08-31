@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-266 — `WorldEnvironment` is a seam the game fills, and it names the tier it actually ran
 
 **Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Batch:
-[docs/PRDs/lighting](./README.md), which carries the repo evaluation this PRD implements.
+[docs/PRDs/lighting](../lighting/README.md), which carries the repo evaluation this PRD implements.
 
 **Updated 2026-08-30 from a working prototype.** The whole chain was built by hand inside a
 sandbox game (`../sandbox/lumen-hall`, installed from tarballs) to find out what the
@@ -25,7 +25,7 @@ is kept intact underneath because the argument is what makes the ruling checkabl
 **No** — `packages/core/src/render/world-environment.ts` does not land. The composer, the stage
 graph, the composite maths and the tier→parameter table ship as generated source in
 `templates/*/src/render/`, merged into the file
-[PRD-278](../PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) is already
+[PRD-278](./PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) is already
 carrying. `packages/core/__tests__/constraints.spec.ts:62` keeps its eleven-filename allowlist
 **unwidened**, and that is the load-bearing test of the ruling: an answer that needed the
 prohibition weakened would have been the wrong answer.
@@ -40,7 +40,7 @@ and only this:
 2. **A budget signal.** Headroom and a tier **ordinal** with a `source` (`pinned` / `auto`),
    computed from `FrameBudget`'s `gpuMs` where a timestamp query exists and `render` where it does
    not, stating which input it used — the correction
-   [PRD-287](../batch-2026-08-30/PRD-287-the-default-look-holds-the-phones-budget.md) is filed on.
+   [PRD-287](./PRD-287-the-default-look-holds-the-phones-budget.md) is filed on.
    This is `ResolutionScaler`'s shape, which is already core and already decides nothing visual.
    An ordinal is not a stage list: the template maps ordinal → which stages, at which quality.
 3. **The report contract.** `TN_WORLD_ENVIRONMENT` rides the marker path `TN_FRAME_BUDGET`
@@ -118,7 +118,7 @@ fails, the change is the problem, not the test."* The attempt was therefore reve
 than the allowlist widened.
 
 The reference implementation and its ten specs live in
-[`design/`](./design/README.md), outside `packages/` and outside every test glob, as an
+[`design/`](../lighting/design/README.md), outside `packages/` and outside every test glob, as an
 appendix to this PRD rather than as a landed feature. Three of the ten reds were verified by
 mutation: removing the canonical sort, removing the unknown-stage throw, and restoring
 upstream's one-world-unit SSR default each fail exactly one case and nothing else.
