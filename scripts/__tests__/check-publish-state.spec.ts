@@ -577,3 +577,33 @@ describe("pnpm publish:check", () => {
     ]);
   });
 });
+
+// The prebuilt release is the one finding this repository has shipped past before:
+// `@threenative/runtime-native@0.2.0` is on the registry today with no prebuilt release behind it.
+// `install-prebuilt.mjs` treats that as a packaging fact rather than a broken download — it warns,
+// the install finishes, and the native lanes fail closed later on the binary that is not there. So
+// it is publishable on purpose, and only on purpose.
+describe("acknowledging a missing prebuilt release", () => {
+  it("refuses by default and reports rather than refuses when named", () => {
+    const absent = () => "absent" as const;
+    const refusing = prebuiltReleaseCensus("/repo", absent, "0.3.0", false);
+    expect(refusing).toHaveLength(1);
+    expect(refusing[0]?.severity).toBe("fail");
+
+    const acknowledged = prebuiltReleaseCensus("/repo", absent, "0.3.0", true);
+    expect(acknowledged).toHaveLength(1);
+    // Still reported: an acknowledged finding that stopped being printed would be a silent one.
+    expect(acknowledged[0]?.severity).toBe("warn");
+    expect(acknowledged[0]?.detail).toContain("--allow-missing-prebuilt");
+    expect(acknowledged[0]?.detail).toContain("fails closed");
+  });
+
+  it("acknowledges only the missing release, never an unreachable one", () => {
+    // "unreachable" means the question was not answered. Acknowledging an answer nobody has would
+    // publish on the strength of a network failure.
+    const unreachable = () => "unreachable" as const;
+    const findings = prebuiltReleaseCensus("/repo", unreachable, "0.3.0", true);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toBe("blocked");
+  });
+});

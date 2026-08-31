@@ -118,7 +118,14 @@ async function packReleaseSet(packages: readonly { name: string }[]): Promise<vo
 async function main(argv: readonly string[]): Promise<void> {
   const publish = argv.includes("--yes");
   const skipGates = argv.includes("--skip-gates");
-  const unknown = argv.filter((arg) => !["--yes", "--skip-gates"].includes(arg));
+  // Publish the runtime package before its prebuilt release exists. A deliberate, named decision:
+  // `install-prebuilt.mjs` already treats a missing release as a packaging fact rather than a
+  // broken download — it warns, the install finishes, the web half of a game works, and every
+  // native lane fails closed later on the binary that is not there.
+  const allowMissingPrebuilt = argv.includes("--allow-missing-prebuilt");
+  const unknown = argv.filter(
+    (arg) => !["--yes", "--skip-gates", "--allow-missing-prebuilt"].includes(arg),
+  );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
 
   // Publish from a committed tree, always. The 0.2.x releases went out of a working tree and
@@ -144,6 +151,7 @@ async function main(argv: readonly string[]): Promise<void> {
 
   const report = await checkPublishState({
     allowCurrentPublishSetPins: true,
+    allowMissingPrebuilt,
     repo: REPO,
   });
   process.stdout.write(`\n${formatPublishReport(report)}`);

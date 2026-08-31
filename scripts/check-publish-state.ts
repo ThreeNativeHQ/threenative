@@ -41,8 +41,12 @@ export interface IPublishPackage {
 export interface IPublishFinding {
   readonly detail: string;
   readonly package: string;
-  /** `blocked` means the question was not answered — never a pass, and never a plain failure. */
-  readonly severity: "blocked" | "fail";
+  /**
+   * `blocked` means the question was not answered — never a pass, and never a plain failure.
+   * `warn` is a finding the caller acknowledged on purpose: it is still printed, and the report
+   * still says the tree is not clean, but it does not refuse the publish.
+   */
+  readonly severity: "blocked" | "fail" | "warn";
 }
 
 export interface IPublishReport {
@@ -276,6 +280,7 @@ export function prebuiltReleaseCensus(
   repo: string,
   probe: PrebuiltReleaseProbe = headPrebuiltRelease,
   version = runtimePackageVersion(repo),
+  acknowledged = false,
 ): readonly IPublishFinding[] {
   if (version === undefined) return [];
   const url = releaseManifestUrl(version);
@@ -289,9 +294,11 @@ export function prebuiltReleaseCensus(
   if (state === "absent") {
     return [
       {
-        detail: `No prebuilt release exists at ${url}; publish runtime-native-v${version} before publishing the runtime package.`,
+        detail: acknowledged
+          ? `No prebuilt release exists at ${url}. Publishing anyway, acknowledged with ${ALLOW_MISSING_PREBUILT}: installs will warn and continue, and every native lane fails closed on the missing binary until runtime-native-v${version} is published.`
+          : `No prebuilt release exists at ${url}; publish runtime-native-v${version} before publishing the runtime package.`,
         package: "@threenative/runtime-native",
-        severity: "fail",
+        severity: acknowledged ? "warn" : "fail",
       },
     ];
   }
@@ -603,6 +610,18 @@ export function missingFromReleaseWorkflow(
 
 export interface ICheckPublishOptions {
   readonly allowCurrentPublishSetPins?: boolean;
+  /**
+   * Publish the runtime package even though its prebuilt release does not exist yet.
+   *
+   * The absence is a real, named state rather than a broken download: `install-prebuilt.mjs`
+   * treats `PREBUILT_RELEASE_MISSING` as a packaging fact, warns, and lets the install finish, so
+   * the web half of a game works and the native lanes fail closed later on the missing binary.
+   * `@threenative/runtime-native@0.2.0` is on the registry in exactly this state today.
+   *
+   * It stays a deliberate, named decision rather than a default: without this flag the finding is
+   * still `fail`, and with it the report says out loud what was accepted.
+   */
+  readonly allowMissingPrebuilt?: boolean;
   readonly lookup?: RegistryLookup;
   readonly prebuiltProbe?: PrebuiltReleaseProbe;
   readonly repo?: string;
@@ -660,7 +679,14 @@ export async function checkPublishState(
       allowCurrentPublishSetPins: options.allowCurrentPublishSetPins,
     }),
   );
-  findings.push(...prebuiltReleaseCensus(repo, options.prebuiltProbe));
+  findings.push(
+    ...prebuiltReleaseCensus(
+      repo,
+      options.prebuiltProbe,
+      undefined,
+      options.allowMissingPrebuilt === true,
+    ),
+  );
   const readTarball = options.tarballs ?? pnpmPackReader();
   for (const item of packages) {
     const contents = readTarball(item);
@@ -670,7 +696,9 @@ export async function checkPublishState(
   const blocked = findings.some((finding) => finding.severity === "blocked");
   return {
     checked: packages.map((item) => item.name),
-    exitCode: blocked ? 2 : findings.length > 0 ? 1 : 0,
+    // An acknowledged finding is reported but does not refuse: the caller already said, by name,
+    // that it accepts this exact state.
+    exitCode: blocked ? 2 : findings.some((finding) => finding.severity !== "warn") ? 1 : 0,
     findings,
   };
 }
@@ -679,27 +707,33 @@ export function formatPublishReport(report: IPublishReport): string {
   const lines = [`Checked ${report.checked.length} package(s): ${report.checked.join(", ")}`];
   for (const finding of report.findings)
     lines.push(`${finding.severity.toUpperCase()}  ${finding.package}: ${finding.detail}`);
+  const refusing = report.findings.filter((finding) => finding.severity !== "warn").length;
   lines.push(
-    report.exitCode === 0
-      ? "Every package is ready to publish."
-      : `${report.findings.length} finding(s). This tree must not be published as it stands.`,
+    refusing > 0
+      ? `${report.findings.length} finding(s). This tree must not be published as it stands.`
+      : report.findings.length > 0
+        ? `Ready to publish with ${report.findings.length} acknowledged finding(s) above.`
+        : "Every package is ready to publish.",
   );
   return `${lines.join("\n")}\n`;
 }
 
 const ALLOW_CURRENT_PUBLISH_SET_PINS = "--allow-current-publish-set-pins";
+const ALLOW_MISSING_PREBUILT = "--allow-missing-prebuilt";
 
 async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
-  const unknown = argv.filter((argument) => argument !== ALLOW_CURRENT_PUBLISH_SET_PINS);
+  const supported = new Set([ALLOW_CURRENT_PUBLISH_SET_PINS, ALLOW_MISSING_PREBUILT]);
+  const unknown = argv.filter((argument) => !supported.has(argument));
   if (unknown.length > 0) {
     process.stderr.write(
-      `TN_PUBLISH_UNKNOWN_FLAG: ${unknown.join(", ")}. Supported flag: ${ALLOW_CURRENT_PUBLISH_SET_PINS}\n`,
+      `TN_PUBLISH_UNKNOWN_FLAG: ${unknown.join(", ")}. Supported flags: ${[...supported].join(", ")}\n`,
     );
     process.exitCode = 1;
     return;
   }
   const report = await checkPublishState({
     allowCurrentPublishSetPins: argv.includes(ALLOW_CURRENT_PUBLISH_SET_PINS),
+    allowMissingPrebuilt: argv.includes(ALLOW_MISSING_PREBUILT),
   });
   process.stdout.write(formatPublishReport(report));
   process.exitCode = report.exitCode;
