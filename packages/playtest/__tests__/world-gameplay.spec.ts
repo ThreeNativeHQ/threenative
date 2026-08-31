@@ -191,6 +191,8 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
   expect(lod).not.toHaveProperty("gte");
   expect(component("maxSeamGap")).toMatchObject({ gte: 0.000001, lte: 64 });
   expect(component("maxSeamGap")).not.toHaveProperty("allowTrivial");
+  expect(component("stitchedEdges")).toMatchObject({ entity: "terrain", gte: 1 });
+  expect(component("stitchedEdges")).not.toHaveProperty("allowTrivial");
   expect(component("maxVisualSeamGap")).toMatchObject({ lte: 0 });
   expect(component("skirtVertexCount")).toMatchObject({ gte: 1 });
   expect(component("maxLodPop")).toMatchObject({
@@ -199,6 +201,19 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
     lte: 16,
   });
   expect(component("maxLodTransitionFrames")).toMatchObject({ gte: 3 });
+});
+
+test("rejects a terrain observation when reconciliation produced no stitched edge", () => {
+  const result = evaluateRichPlaytestAssertions({
+    report: report({}, { stitchedEdges: { after: 0 } }),
+    scenario: scenario({
+      components: [{ component: "stitchedEdges", entity: "terrain", gte: 1 }],
+    }),
+  });
+
+  expect(result.assertions).toContainEqual(
+    expect.objectContaining({ id: "component.terrain.stitchedEdges.value", pass: false }),
+  );
 });
 
 test("rejects a zero raw seam observation", () => {

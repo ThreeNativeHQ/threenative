@@ -110,6 +110,21 @@ interface ILodTransition {
   remainingFrames: number;
 }
 
+interface IStitchBridge {
+  readonly keys: readonly [string, string];
+  geometry: BufferGeometry;
+  readonly mesh: Mesh;
+  resolution: number;
+  coverageDepth: number;
+  bytes: number;
+}
+
+interface ILodFrameSnapshot {
+  readonly heights: Float32Array;
+  readonly resolution: number;
+  readonly tile: IResidentTile;
+}
+
 const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
 const LOD_POP_THRESHOLD = 16;
 const LOD_TRANSITION_FRAMES = 3;
@@ -417,27 +432,173 @@ function refreshEdgeSamples(level: ILevelGeometry): void {
   }
 }
 
-function reconcileSurfaceEdge(
-  finer: ILevelGeometry,
+function edgeWorldPoint(
+  field: Heightfield,
+  side: keyof IEdgeSamples,
+  normalized: number,
+  height: number,
+): [number, number, number] {
+  const minimumX = field.origin.x - field.width / 2;
+  const minimumZ = field.origin.z - field.depth / 2;
+  const x =
+    side === "west"
+      ? minimumX
+      : side === "east"
+        ? minimumX + field.width
+        : minimumX + normalized * field.width;
+  const z =
+    side === "north"
+      ? minimumZ
+      : side === "south"
+        ? minimumZ + field.depth
+        : minimumZ + normalized * field.depth;
+  return [x, height, z];
+}
+
+function restoreLevelEdge(
+  field: Heightfield,
+  level: ILevelGeometry,
+  side: keyof IEdgeSamples,
+): boolean {
+  const position = level.geometry.getAttribute("position");
+  const normalAttribute = level.geometry.getAttribute("normal");
+  const normal = new Vector3();
+  let changed = false;
+  for (let index = 0; index < level.resolution; index += 1) {
+    const normalized = index / (level.resolution - 1);
+    const [x, , z] = edgeWorldPoint(field, side, normalized, 0);
+    const vertex = edgeVertexIndex(level, side, index);
+    const height = field.heightAt(x, z);
+    field.normalAt(x, z, normal);
+    if (position.getY(vertex) !== height) {
+      position.setY(vertex, height);
+      changed = true;
+    }
+    if (
+      normalAttribute.getX(vertex) !== normal.x ||
+      normalAttribute.getY(vertex) !== normal.y ||
+      normalAttribute.getZ(vertex) !== normal.z
+    ) {
+      normalAttribute.setXYZ(vertex, normal.x, normal.y, normal.z);
+      changed = true;
+    }
+  }
+  if (!changed) return false;
+  updateLevelSkirts(level);
+  refreshEdgeSamples(level);
+  position.needsUpdate = true;
+  normalAttribute.needsUpdate = true;
+  level.geometry.computeBoundingBox();
+  level.geometry.computeBoundingSphere();
+  return true;
+}
+
+interface IStitchGeometryData {
+  readonly coverageDepth: number;
+  readonly indices: Uint32Array;
+  readonly normals: Float32Array;
+  readonly positions: Float32Array;
+}
+
+function stitchGeometryData(
+  finer: IResidentTile,
+  finerLevel: ILevelGeometry,
   finerSide: keyof IEdgeSamples,
-  coarser: ILevelGeometry,
+  coarser: IResidentTile,
+  coarserLevel: ILevelGeometry,
   coarserSide: keyof IEdgeSamples,
-): void {
-  const position = finer.geometry.getAttribute("position");
-  for (let index = 0; index < finer.resolution; index += 1) {
-    const normalized = index / (finer.resolution - 1);
-    const height = interpolatedEdgeSample(
-      coarser.edgeSamples[coarserSide],
+): IStitchGeometryData {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  let coverageDepth = 0;
+  for (let index = 0; index < finerLevel.resolution; index += 1) {
+    const normalized = index / (finerLevel.resolution - 1);
+    const fineHeight = interpolatedEdgeSample(
+      finerLevel.edgeSamples[finerSide],
+      normalized,
+      `${finerSide} of finer LOD`,
+    );
+    const coarseHeight = interpolatedEdgeSample(
+      coarserLevel.edgeSamples[coarserSide],
       normalized,
       `${coarserSide} of coarser LOD`,
     );
-    position.setY(edgeVertexIndex(finer, finerSide, index), height);
+    coverageDepth = Math.max(coverageDepth, Math.abs(fineHeight - coarseHeight));
+    positions.push(...edgeWorldPoint(finer.field, finerSide, normalized, fineHeight));
+    positions.push(...edgeWorldPoint(coarser.field, coarserSide, normalized, coarseHeight));
+    normals.push(0, 1, 0, 0, 1, 0);
   }
-  updateLevelSkirts(finer);
-  refreshEdgeSamples(finer);
-  position.needsUpdate = true;
-  finer.geometry.computeBoundingBox();
-  finer.geometry.computeBoundingSphere();
+  for (let index = 0; index < finerLevel.resolution - 1; index += 1) {
+    const fine = index * 2;
+    const coarse = fine + 1;
+    const nextFine = fine + 2;
+    const nextCoarse = coarse + 2;
+    indices.push(
+      fine,
+      coarse,
+      nextFine,
+      nextFine,
+      coarse,
+      nextCoarse,
+      nextFine,
+      coarse,
+      fine,
+      nextCoarse,
+      coarse,
+      nextFine,
+    );
+  }
+  return {
+    coverageDepth,
+    indices: Uint32Array.from(indices),
+    normals: Float32Array.from(normals),
+    positions: Float32Array.from(positions),
+  };
+}
+
+function stitchGeometry(data: IStitchGeometryData): BufferGeometry {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(data.positions, 3));
+  geometry.setAttribute("normal", new BufferAttribute(data.normals, 3));
+  geometry.setIndex(new BufferAttribute(data.indices, 1));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function geometryBytes(geometry: BufferGeometry): number {
+  const index = geometry.getIndex();
+  return (
+    geometry.getAttribute("position").array.byteLength +
+    geometry.getAttribute("normal").array.byteLength +
+    (index?.array.byteLength ?? 0)
+  );
+}
+
+function updateStitchBridge(bridge: IStitchBridge, data: IStitchGeometryData): void {
+  if (bridge.resolution !== data.positions.length / 6) {
+    const previous = bridge.geometry;
+    bridge.geometry = stitchGeometry(data);
+    bridge.mesh.geometry = bridge.geometry;
+    bridge.resolution = data.positions.length / 6;
+    bridge.bytes = geometryBytes(bridge.geometry);
+    previous.dispose();
+  } else {
+    const position = bridge.geometry.getAttribute("position");
+    const normal = bridge.geometry.getAttribute("normal");
+    const index = bridge.geometry.getIndex();
+    if (index === null) throw new Error("TerrainTiles stitch bridge is missing its index.");
+    position.array.set(data.positions);
+    normal.array.set(data.normals);
+    index.array.set(data.indices);
+    position.needsUpdate = true;
+    normal.needsUpdate = true;
+    index.needsUpdate = true;
+    bridge.geometry.computeBoundingBox();
+    bridge.geometry.computeBoundingSphere();
+  }
+  bridge.coverageDepth = data.coverageDepth;
 }
 
 function seamGap(a: IResidentTile, b: IResidentTile): number | undefined {
@@ -647,14 +808,6 @@ function surfaceHeights(level: ILevelGeometry): Float32Array {
   return heights;
 }
 
-function maximumSurfaceDelta(before: Float32Array, after: Float32Array): number {
-  if (before.length !== after.length) return Number.POSITIVE_INFINITY;
-  let maximum = 0;
-  for (let index = 0; index < before.length; index += 1)
-    maximum = Math.max(maximum, Math.abs((before[index] as number) - (after[index] as number)));
-  return maximum;
-}
-
 function interpolatedSamplesHeight(
   samples: Float32Array,
   resolution: number,
@@ -708,11 +861,30 @@ function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
   return Math.min(aLevel.skirtDepth, bLevel.skirtDepth);
 }
 
+function seamObservation(
+  a: IResidentTile,
+  b: IResidentTile,
+  bridge: IStitchBridge | undefined,
+): { gap: number; visualGap: number } {
+  const gap = seamGap(a, b);
+  if (gap === undefined || !Number.isFinite(gap))
+    throw new Error("TerrainTiles seam diagnostic observation must be finite.");
+  const visualGap = bridge === undefined ? Math.max(0, gap - seamCoverageDepth(a, b)) : 0;
+  if (!Number.isFinite(visualGap))
+    throw new Error("TerrainTiles visual seam diagnostic observation must be finite.");
+  return { gap, visualGap };
+}
+
 function areNeighbors(a: IResidentTile, b: IResidentTile): boolean {
   return Math.abs(a.tileX - b.tileX) + Math.abs(a.tileZ - b.tileZ) === 1;
 }
 
 type NeighborPair = readonly [IResidentTile, IResidentTile];
+
+function neighborPairKey(pair: NeighborPair): string {
+  const [a, b] = pair;
+  return a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`;
+}
 
 function neighborPairs(tiles: readonly IResidentTile[]): NeighborPair[] {
   const pairs: NeighborPair[] = [];
@@ -736,16 +908,42 @@ function neighborLodCorrection(
   return { coarser, level: finer.lodLevel + 1 };
 }
 
-function reconcileNeighborPair(pair: NeighborPair): void {
+function reconcileNeighborPair(
+  pair: NeighborPair,
+  surface: MeshSurface,
+  existingBridge: IStitchBridge | undefined,
+): IStitchBridge | undefined {
   const [a, b] = pair;
   const [aSide, bSide] = opposingEdge(a, b);
   const aLevel = renderedLevel(a);
   const bLevel = renderedLevel(b);
   if (aLevel === undefined || bLevel === undefined)
     throw new Error("TerrainTiles cannot reconcile a neighbor with no rendered LOD level.");
-  if (aLevel.resolution === bLevel.resolution) return;
-  if (aLevel.resolution > bLevel.resolution) reconcileSurfaceEdge(aLevel, aSide, bLevel, bSide);
-  else reconcileSurfaceEdge(bLevel, bSide, aLevel, aSide);
+  restoreLevelEdge(a.field, aLevel, aSide);
+  restoreLevelEdge(b.field, bLevel, bSide);
+  if (aLevel.resolution === bLevel.resolution) return undefined;
+  const finer = aLevel.resolution > bLevel.resolution ? a : b;
+  const finerLevel = aLevel.resolution > bLevel.resolution ? aLevel : bLevel;
+  const finerSide = aLevel.resolution > bLevel.resolution ? aSide : bSide;
+  const coarser = finer === a ? b : a;
+  const coarserLevel = finer === a ? bLevel : aLevel;
+  const coarserSide = finer === a ? bSide : aSide;
+  const data = stitchGeometryData(finer, finerLevel, finerSide, coarser, coarserLevel, coarserSide);
+  if (existingBridge === undefined) {
+    const geometry = stitchGeometry(data);
+    const mesh = new Mesh(geometry, surface);
+    mesh.frustumCulled = true;
+    return {
+      bytes: geometryBytes(geometry),
+      coverageDepth: data.coverageDepth,
+      geometry,
+      keys: [a.key, b.key].sort() as [string, string],
+      mesh,
+      resolution: finerLevel.resolution,
+    };
+  }
+  updateStitchBridge(existingBridge, data);
+  return existingBridge;
 }
 
 function setManualLodLevel(lod: LOD, level: number): void {
@@ -798,6 +996,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   // empty/evicted value; each finite live-geometry observation can only increase it.
   #maxSeamGap = 0;
   #maxVisualSeamGap = 0;
+  #stitchedEdges = 0;
+  #stitchBytes = 0;
+  readonly #stitches = new Map<string, IStitchBridge>();
   #released = false;
   #renderer: IRendererLike | undefined;
 
@@ -862,6 +1063,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   get residentBytes(): number {
     return (
       this.#topologyBytes +
+      this.#stitchBytes +
       [...this.#resident.values()].reduce((total, tile) => total + tile.bytes, 0)
     );
   }
@@ -908,9 +1110,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#maxSeamGap;
   }
 
-  /** Maximum remaining visible gap after skirt coverage observed across follow/process calls. */
+  /** Maximum remaining visible gap after skirt or bridge coverage observed across follow/process calls. */
   get maxVisualSeamGap(): number {
     return this.#maxVisualSeamGap;
+  }
+
+  /** Number of mixed-LOD edge reconciliations observed during this residency lifetime. */
+  get stitchedEdgeCount(): number {
+    return this.#stitchedEdges;
   }
 
   get warmupNodes(): readonly unknown[] {
@@ -986,6 +1193,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#recordSeamDiagnostics();
     this.#reconcileNeighbors();
     this.#recordSeamDiagnostics();
+    this.#recordPeaks();
   }
 
   heightAt(x: number, z: number): number {
@@ -1010,6 +1218,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   process(renderer = this.#renderer): void {
     if (this.#released) return;
+    const lodFrame = this.#captureLodFrame();
     this.#advanceLodTransitions();
     if (renderer !== undefined) {
       this.#topologyField?.process(renderer);
@@ -1021,6 +1230,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#recordSeamDiagnostics();
     this.#reconcileNeighbors();
     this.#recordSeamDiagnostics();
+    this.#recordLodPopAfterReconciliation(lodFrame);
+    this.#recordPeaks();
   }
 
   debug(): Record<string, unknown> {
@@ -1073,6 +1284,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
       maxLodPop: this.#maxLodPop,
+      stitchedEdges: this.#stitchedEdges,
       skirtVertexCount: [...this.#resident.values()].reduce(
         (total, tile) => total + tile.skirtVertexCount,
         0,
@@ -1207,9 +1419,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     setManualLodLevel(tile.lod, finerLevel);
     updateLodTransitionGeometry(tile, tile.lodTransition, 0);
     this.#setLodVisibility(tile, [finerLevel]);
-    this.#recordLodPop(
-      surfaceDeltaFromSamples(surfaceHeights(previous), previous.resolution, finer),
-    );
   }
 
   #setLodVisibility(tile: IResidentTile, visibleLevels = [tile.lodLevel]): void {
@@ -1219,16 +1428,34 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     });
   }
 
+  #captureLodFrame(): ILodFrameSnapshot[] {
+    const snapshots: ILodFrameSnapshot[] = [];
+    for (const tile of this.#resident.values()) {
+      if (tile.lodTransition === undefined) continue;
+      const level = renderedLevel(tile);
+      if (level === undefined)
+        throw new Error("TerrainTiles cannot measure an LOD transition without a visible level.");
+      snapshots.push({ heights: surfaceHeights(level), resolution: level.resolution, tile });
+    }
+    return snapshots;
+  }
+
+  #recordLodPopAfterReconciliation(snapshots: readonly ILodFrameSnapshot[]): void {
+    for (const snapshot of snapshots) {
+      const level = renderedLevel(snapshot.tile);
+      if (level === undefined)
+        throw new Error("TerrainTiles cannot measure an LOD frame without a visible level.");
+      this.#recordLodPop(surfaceDeltaFromSamples(snapshot.heights, snapshot.resolution, level));
+    }
+  }
+
   #advanceLodTransitions(): void {
     for (const tile of this.#resident.values()) {
       const transition = tile.lodTransition;
       if (transition === undefined) continue;
       const from = tile.levels[transition.from];
-      const to = tile.levels[transition.to];
-      if (from === undefined || to === undefined)
+      if (from === undefined || tile.levels[transition.to] === undefined)
         throw new Error("TerrainTiles LOD transition references a missing level.");
-      const finer = from.resolution >= to.resolution ? from : to;
-      const before = surfaceHeights(finer);
       transition.elapsedFrames += 1;
       transition.remainingFrames -= 1;
       updateLodTransitionGeometry(
@@ -1236,13 +1463,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         transition,
         Math.min(1, transition.elapsedFrames / LOD_TRANSITION_FRAMES),
       );
-      // Compare only the visible step. The complete LOD mismatch is the distance the morph is
-      // intended to distribute, not a pop that appeared in this rendered frame.
-      const pop =
-        transition.remainingFrames > 0
-          ? maximumSurfaceDelta(before, surfaceHeights(finer))
-          : surfaceDeltaFromSamples(before, finer.resolution, to);
-      this.#recordLodPop(pop);
       if (transition.remainingFrames > 0) continue;
       this.#maxLodTransitionFrames = Math.max(
         this.#maxLodTransitionFrames,
@@ -1270,18 +1490,36 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #reconcileNeighbors(): void {
-    for (const pair of neighborPairs([...this.#resident.values()])) reconcileNeighborPair(pair);
+    const pairs = neighborPairs([...this.#resident.values()]);
+    const active = new Set<string>();
+    for (const pair of pairs) {
+      const key = neighborPairKey(pair);
+      active.add(key);
+      const previousBytes = this.#stitches.get(key)?.bytes ?? 0;
+      const bridge = reconcileNeighborPair(pair, this.#surface, this.#stitches.get(key));
+      if (bridge === undefined) {
+        this.#removeStitch(key);
+        continue;
+      }
+      if (this.#stitches.has(key)) {
+        this.#stitchBytes += bridge.bytes - previousBytes;
+      } else {
+        this.#stitches.set(key, bridge);
+        this.add(bridge.mesh);
+        this.#stitchBytes += bridge.bytes;
+      }
+      this.#stitchedEdges += 1;
+    }
+    for (const key of this.#stitches.keys()) {
+      if (!active.has(key)) this.#removeStitch(key);
+    }
+    if (this.residentBytes > this.residentByteBudget)
+      throw new Error("TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.");
   }
 
   #finishLodTransition(tile: IResidentTile): void {
     const transition = tile.lodTransition;
     if (transition === undefined) return;
-    const visible = renderedLevel(tile);
-    const target = tile.levels[transition.to];
-    if (visible !== undefined && target !== undefined)
-      this.#recordLodPop(
-        surfaceDeltaFromSamples(surfaceHeights(visible), visible.resolution, target),
-      );
     this.#maxLodTransitionFrames = Math.max(this.#maxLodTransitionFrames, transition.elapsedFrames);
     this.#restoreLodTransition(tile, transition);
     tile.lodTransition = undefined;
@@ -1297,6 +1535,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #recordLodPop(pop: number): void {
+    if (!Number.isFinite(pop)) throw new Error("TerrainTiles LOD pop observation must be finite.");
     this.#maxLodPop = Math.max(this.#maxLodPop, pop);
     if (pop > LOD_POP_THRESHOLD)
       throw new Error(
@@ -1304,18 +1543,32 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       );
   }
 
+  #removeStitch(key: string): void {
+    const bridge = this.#stitches.get(key);
+    if (bridge === undefined) return;
+    this.#stitches.delete(key);
+    this.remove(bridge.mesh);
+    this.#stitchBytes -= bridge.bytes;
+    bridge.geometry.dispose();
+  }
+
+  #removeStitchesForTile(tileKey: string): void {
+    for (const [key, bridge] of this.#stitches) {
+      if (bridge.keys.includes(tileKey)) this.#removeStitch(key);
+    }
+  }
+
   #recordSeamDiagnostics(): void {
     const tiles = [...this.#resident.values()];
     for (const tile of tiles) {
       for (const neighbor of tiles) {
         if (tile.key >= neighbor.key || !areNeighbors(tile, neighbor)) continue;
-        const gap = seamGap(tile, neighbor);
-        if (gap === undefined || !Number.isFinite(gap))
-          throw new Error("TerrainTiles seam diagnostic observation must be finite.");
+        const { gap, visualGap } = seamObservation(
+          tile,
+          neighbor,
+          this.#stitches.get(neighborPairKey([tile, neighbor])),
+        );
         this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
-        const visualGap = Math.max(0, gap - seamCoverageDepth(tile, neighbor));
-        if (!Number.isFinite(visualGap))
-          throw new Error("TerrainTiles visual seam diagnostic observation must be finite.");
         this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
       }
     }
@@ -1334,6 +1587,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   #evict(tile: IResidentTile): void {
     if (this.#resident.get(tile.key) === tile) this.#resident.delete(tile.key);
+    this.#removeStitchesForTile(tile.key);
     this.remove(tile.lod);
     tile.collider.dispose();
     tile.field.detach();

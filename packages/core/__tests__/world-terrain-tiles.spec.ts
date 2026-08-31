@@ -108,6 +108,68 @@ function visibleSeamGap(a: IWorldTile, b: IWorldTile): number {
   return maximum;
 }
 
+function edgeSampleCoordinates(
+  tile: IWorldTile,
+  side: Edge,
+  normalized: number,
+): { column: number; row: number; x: number; z: number } {
+  const field = tile.field;
+  const minimumX = field.origin.x - field.width / 2;
+  const minimumZ = field.origin.z - field.depth / 2;
+  const x =
+    side === "west"
+      ? minimumX
+      : side === "east"
+        ? minimumX + field.width
+        : minimumX + normalized * field.width;
+  const z =
+    side === "north"
+      ? minimumZ
+      : side === "south"
+        ? minimumZ + field.depth
+        : minimumZ + normalized * field.depth;
+  return {
+    column:
+      side === "west"
+        ? 0
+        : side === "east"
+          ? field.columns - 1
+          : Math.round(normalized * (field.columns - 1)),
+    row:
+      side === "north"
+        ? 0
+        : side === "south"
+          ? field.rows - 1
+          : Math.round(normalized * (field.rows - 1)),
+    x,
+    z,
+  };
+}
+
+function canonicalEdgeError(
+  tile: IWorldTile,
+  side: Edge,
+  surface: IVisibleSurface,
+  colliderHeights?: Float32Array,
+): number {
+  const field = tile.field;
+  const normalizedCoordinate = (index: number): number =>
+    surface.resolution === 1 ? 0 : index / (surface.resolution - 1);
+  let maximum = 0;
+  for (let index = 0; index < surface.resolution; index += 1) {
+    const normalized = normalizedCoordinate(index);
+    const { column, row, x, z } = edgeSampleCoordinates(tile, side, normalized);
+    const rendered = edgeHeight(surface, side, normalized);
+    const canonical = field.heightAt(x, z);
+    const collider =
+      colliderHeights === undefined
+        ? 0
+        : Math.abs(rendered - (colliderHeights[column * field.rows + row] as number));
+    maximum = Math.max(maximum, Math.abs(rendered - canonical), collider);
+  }
+  return maximum;
+}
+
 describe("TerrainTiles", () => {
   it("counts retained topology storage against the hard byte cap", () => {
     expect(
@@ -244,6 +306,74 @@ describe("TerrainTiles", () => {
     expect(withObservation.tiles.debug()).toHaveProperty("topology");
     withObservation.tiles.dispose();
     withoutObservation.tiles.dispose();
+  });
+
+  it("keeps stitched rendered edges equal to the canonical query and collider source", () => {
+    const colliderHeights = new Map<string, Float32Array>();
+    const tiles = new TerrainTiles({
+      createCollider: ({ field, key }) => {
+        colliderHeights.set(key, field.toColliderHeights());
+        return { dispose: () => undefined };
+      },
+      residentByteBudget: 1_000_000,
+      residentTileBudget: 9,
+      sampleHeight: (x, z) => (Math.abs(x - 8) < 1e-6 ? Math.sin(z * (Math.PI / 2)) * 10 : 0),
+      streamRadius: 1,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      const a = tiles.getTile("0:0");
+      const b = tiles.getTile("1:0");
+      if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
+      expect(Math.abs(a.lodLevel - b.lodLevel)).toBe(1);
+      expect(tiles.maxSeamGap).toBeGreaterThan(0);
+
+      const aSurface = visibleSurface(a);
+      const bSurface = visibleSurface(b);
+      expect(canonicalEdgeError(a, "east", aSurface, colliderHeights.get(a.key))).toBeLessThan(
+        0.00001,
+      );
+      expect(canonicalEdgeError(b, "west", bSurface, colliderHeights.get(b.key))).toBeLessThan(
+        0.00001,
+      );
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("restores canonical shared edges when mixed neighbors return to equal LOD", () => {
+    const tiles = new TerrainTiles({
+      residentByteBudget: 1_000_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [9, 18],
+    });
+
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      tiles.follow({ x: 8, z: 0 });
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+
+      const a = tiles.getTile("0:0");
+      const b = tiles.getTile("1:0");
+      if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
+      expect(a.lodLevel).toBe(0);
+      expect(b.lodLevel).toBe(0);
+      expect(visibleSeamGap(a, b)).toBeLessThan(0.00001);
+      expect(canonicalEdgeError(a, "east", visibleSurface(a))).toBeLessThan(0.00001);
+      expect(canonicalEdgeError(b, "west", visibleSurface(b))).toBeLessThan(0.00001);
+    } finally {
+      tiles.dispose();
+    }
   });
 
   it("morphs one LOD surface within the measured pop bound for three frames", () => {
@@ -400,10 +530,45 @@ describe("TerrainTiles", () => {
     const aSurface = visibleSurface(a);
     const bSurface = visibleSurface(b);
     expect(aSurface.resolution).not.toBe(bSurface.resolution);
-    expect(visibleSeamGap(a, b)).toBeLessThan(0.00001);
+    expect(visibleSeamGap(a, b)).toBeGreaterThan(0);
+    expect(tiles.stitchedEdgeCount).toBeGreaterThan(0);
+    expect(tiles.maxVisualSeamGap).toBe(0);
     expect(a.lodLevel).toBeLessThanOrEqual(b.lodLevel + 1);
     expect(b.lodLevel).toBeLessThanOrEqual(a.lodLevel + 1);
     tiles.dispose();
+  });
+
+  it("measures the final rendered LOD frame after edge restoration", () => {
+    const tiles = new TerrainTiles({
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight: (x, z) => (Math.abs(x - 8) < 1e-6 ? Math.sin(z * (Math.PI / 2)) * 10 : 0),
+      streamRadius: 1,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    try {
+      tiles.follow({ x: 8, z: 0 });
+      tiles.follow({ x: 12, z: 0 });
+      const tile = tiles.getTile("1:0");
+      if (tile === undefined) throw new Error("Expected the transitioned tile to remain resident.");
+      let previous = visibleSurface(tile);
+      let observedMaximum = 0;
+      for (let frame = 0; frame < 3; frame += 1) {
+        tiles.process();
+        const current = visibleSurface(tile);
+        observedMaximum = Math.max(observedMaximum, surfaceDelta(previous, current));
+        previous = current;
+      }
+
+      expect(observedMaximum).toBeLessThan(0.00001);
+      expect(tiles.maxLodPop).toBeCloseTo(observedMaximum, 5);
+    } finally {
+      tiles.dispose();
+    }
   });
 
   it("coordinates adjacent resident LOD targets instead of allowing a two-level jump", () => {

@@ -53,6 +53,11 @@
         "lte": 0
       },
       {
+        "component": "stitchedEdges",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
         "allowTrivial": "TerrainTiles reports the skirt vertices observed in its rendered geometry.",
         "component": "skirtVertexCount",
         "entity": "terrain",
