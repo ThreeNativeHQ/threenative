@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-281 — a dense mesh bakes to a crack-free cluster DAG
 
-**Status: DONE — measured 2026-08-30. Phase 1 of the [virtual geometry batch](../../nanite-like/README.md).
+**Status: DONE — measured 2026-08-30. Phase 1 of the [virtual geometry batch](./README.md).
 The invariant holds: a cut taken at any of ~130 thresholds leaves zero open interior edges, on a
 connected body and on a body of disconnected shells, and both mutations §5 names crack it. Numbers,
 mutations and the payload budget are in

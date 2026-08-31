@@ -2,7 +2,7 @@
 
 A first-person walk through geometry far denser than the screen can resolve. It is the instrument
 [PRD-280](../../docs/PRDs/done/nanite-like/PRD-280-the-quarry-is-the-instrument.md) asks for — the thing
-that prices the problem the [virtual geometry batch](../../docs/PRDs/nanite-like/README.md) opens or
+that prices the problem the [virtual geometry batch](../../docs/PRDs/done/nanite-like/README.md) opens or
 closes on — and it is graded as a measurement rather than as a game.
 
 It is still walkable, and that matters: popping and cracks are found by eye at eye height long

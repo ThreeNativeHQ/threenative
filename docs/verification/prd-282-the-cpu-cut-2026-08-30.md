@@ -2,7 +2,7 @@
 
 Date: 2026-08-30. Subject: `packages/core/src/clustered-mesh.ts` and
 `packages/core/src/clustered-batch.ts`, measured on `examples/quarry`. Phase 2 of the
-[virtual geometry batch](../PRDs/nanite-like/README.md).
+[virtual geometry batch](../PRDs/done/nanite-like/README.md).
 
 **Verdict: the cut pays, and PRD-282's kill switch clears on both halves.** On the quarry's route at
 1080p on browser WebGPU, the `virtual` arm costs **1.28 ms of GPU time against `decimated`'s 2.45 ms**

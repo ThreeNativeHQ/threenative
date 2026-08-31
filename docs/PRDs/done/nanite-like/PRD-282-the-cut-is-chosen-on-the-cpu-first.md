@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-282 — the cut is chosen on the CPU first
 
 **Status: DONE on browser — measured 2026-08-30. Phase 2 of the
-[virtual geometry batch](../../nanite-like/README.md). The kill switch clears on both halves: on the quarry's route
+[virtual geometry batch](./README.md). The kill switch clears on both halves: on the quarry's route
 at 1080p on browser WebGPU the `virtual` arm costs **1.28 ms of GPU time against `decimated`'s
 2.45 ms** and sits closer to the `dense` reference than `decimated` does — 40.46% mean changed
 pixels against 42.18%. Numbers, the four defects the run found, and the narrow image margin are in

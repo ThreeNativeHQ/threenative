@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-279 — geometry the camera cannot resolve is never submitted
 
 **Status: DONE — the design held, 2026-08-30. Filed against `80254bd0`; the batch it opened is
-closed in [its README](../../nanite-like/README.md).** Every kill gate below was run rather than argued. The two
+closed in [its README](./README.md).** Every kill gate below was run rather than argued. The two
 decisions this file exists to make both survived contact:
 
 - **No visibility buffer.** The game's own material draws every cluster, on browser and on native.
@@ -37,7 +37,7 @@ not own = **9 → HIGH mode.**
 
 **This is the batch's design document.** It holds the charter argument, the verified state of this
 repository, the sources and their licences, and the risks. The execution is six sibling PRDs
-indexed in [README.md](../../nanite-like/README.md), each owning one phase and its decline condition.
+indexed in [README.md](./README.md), each owning one phase and its decline condition.
 
 Sibling context: the [feature-mining batch](../../feature-mining/README.md), whose correction about
 `GPUParticles3D` — *mechanism is not the look* — is the rule this PRD lives or dies by.
@@ -187,7 +187,7 @@ batch rather than just itself. Nothing downstream is written until the phase abo
 | 0 — the instrument and the price | [PRD-280 — the quarry is the instrument](./PRD-280-the-quarry-is-the-instrument.md) | The dense arm is not meaningfully more expensive than the decimated one |
 | 1 — the bake | [PRD-281 — a dense mesh bakes to a crack-free cluster DAG](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md) | Partitioning needs a native build step in the asset pipeline, or the error bounds cannot be made monotonic |
 | 2 — the cut, on the CPU | [PRD-282 — the cut is chosen on the CPU first](./PRD-282-the-cut-is-chosen-on-the-cpu-first.md) | The selected cut cannot beat drawing the source mesh whole |
-| 3 — the cut, on the GPU, on both targets | [PRD-283 — the cut moves to the GPU and native runs it](../../nanite-like/PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | The kernel cannot match the CPU oracle, or native cannot run it |
+| 3 — the cut, on the GPU, on both targets | [PRD-283 — the cut moves to the GPU and native runs it](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | The kernel cannot match the CPU oracle, or native cannot run it |
 | 4 — occlusion | [PRD-284 — the frame does not draw what the frame already hid](./PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) | Nothing: this phase declines alone |
 | 5 — streaming | [PRD-285 — clusters arrive when the camera asks for them](./PRD-285-clusters-arrive-when-the-camera-asks-for-them.md) | Nothing: this phase declines alone |
 
@@ -224,7 +224,7 @@ Unchecked, and several are conditional on the phase before them surviving its ga
 - [ ] **AC4 — red-green, the empty cut.** A camera that resolves nothing produces zero submitted
       clusters and no draw, not a zero-count indirect draw that draws nothing and warns nothing —
       the failure mode `projection-apply.ts:146` already records for `InstancedMesh`.
-- [ ] **AC5 — compute matches the CPU oracle.** ([PRD-283](../../nanite-like/PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md)) For a fixed camera set, the Phase 3 kernel selects
+- [ ] **AC5 — compute matches the CPU oracle.** ([PRD-283](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md)) For a fixed camera set, the Phase 3 kernel selects
       the same cluster set as the Phase 2 walk, exactly.
 - [ ] **AC6 — it originates no appearance.** `packages/core/__tests__/constraints.spec.ts` asserts
       the module constructs no material, light or colour and contains no hex literal, on the same

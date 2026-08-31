@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-284 — the frame does not draw what the frame already hid
 
 **Status: DECLINED on the measured headroom — 2026-08-30. Phase 4 of the
-[virtual geometry batch](../../nanite-like/README.md). This phase declines alone and the batch stays open.**
+[virtual geometry batch](./README.md). This phase declines alone and the batch stays open.**
 
 **The number.** After PRD-282, the quarry's `virtual` arm costs **1.28 ms of GPU time** per frame at
 1080p on browser WebGPU, out of a 16.7 ms budget. Occlusion culling can win at most that whole

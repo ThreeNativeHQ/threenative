@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-280 — the quarry is the instrument
 
-**Status: DONE — measured 2026-08-30. Phase 0 of the [virtual geometry batch](../../nanite-like/README.md).
+**Status: DONE — measured 2026-08-30. Phase 0 of the [virtual geometry batch](./README.md).
 The gate is evaluated in
 [docs/verification/prd-280-the-quarry-is-the-instrument-2026-08-30.md](../../../verification/prd-280-the-quarry-is-the-instrument-2026-08-30.md)
 and the verdict is OPEN: `dense` costs 13.9 ms more GPU time per frame than `decimated` at 1080p on

@@ -1,7 +1,7 @@
 # PRD-283 — the cut moves to the GPU and native runs it
 
 Date: 2026-08-30. Subject: `examples/quarry`'s `virtual` arm on the packed Linux desktop host.
-Phase 3 of the [virtual geometry batch](../PRDs/nanite-like/README.md).
+Phase 3 of the [virtual geometry batch](../PRDs/done/nanite-like/README.md).
 
 **Verdict, in two parts.**
 

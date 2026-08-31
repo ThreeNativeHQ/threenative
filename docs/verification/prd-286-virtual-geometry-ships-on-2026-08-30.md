@@ -2,7 +2,7 @@
 
 Date: 2026-08-30. Subject: `assets.models.virtual` defaulting to on, the engine taking the cut, and
 the threshold that decides which primitives are touched. Follows the
-[virtual geometry batch](../PRDs/nanite-like/README.md).
+[virtual geometry batch](../PRDs/done/nanite-like/README.md).
 
 **Verdict: on by default, above 65,536 triangles per primitive, with `assets.models.virtual: "none"`
 to opt out.** A game that imports a body too dense for the screen now draws only what the camera

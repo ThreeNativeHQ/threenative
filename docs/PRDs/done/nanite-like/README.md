@@ -3,16 +3,17 @@
 **Status: SHIPPED and ON BY DEFAULT, on browser, with a named native regression. Phases 0 through 2
 are done and measured; phase 3 is half done; phases 4 and 5 decline on numbers. Closed 2026-08-30.**
 
-**Filed 2026-08-30:** PRDs 279, 280, 281, 282, 284 and 285 are archived under
-[`docs/PRDs/done/nanite-like/`](../done/nanite-like/). PRD-283 stays here because it is `PARTLY
-DONE`; this folder retires when it closes.
+**Closed and archived 2026-08-30.** Every PRD in the batch is done or declined with its number
+recorded; PRD-283's last open criterion, the cold-agent install, closed against
+[`sandbox/virtual-quarry`](../../../verification/prd-283-cold-agent-install-2026-08-30.md) — which
+found `assets.models.virtual` never reaching the pipeline it configures, fixed in `7a44b18c`.
 
 **A game does nothing and gets this.** Any primitive of 65,536 triangles or more bakes to a cluster
 DAG, the loader returns a clustered mesh, and the engine cuts it every frame before it renders.
 Ordinary props are untouched and compile byte-identically; `assets.models.virtual: "none"` opts out
 of the payload entirely. The threshold, the four changes a default demanded, and the arrival hitch
 it forced closed are in
-[docs/verification/prd-286-virtual-geometry-ships-on-2026-08-30.md](../../verification/prd-286-virtual-geometry-ships-on-2026-08-30.md).
+[docs/verification/prd-286-virtual-geometry-ships-on-2026-08-30.md](../../../verification/prd-286-virtual-geometry-ships-on-2026-08-30.md).
 Engine-driven on the quarry: **1.92 ms of GPU time against `dense`'s 6.97 and `decimated`'s 2.45**.
 
 The pipeline bakes a cluster DAG into the `.glb`
@@ -30,10 +31,10 @@ compute kernel declined rather than shipped.
 
 | what | where |
 | --- | --- |
-| the instrument, and the price of the problem | [PRD-280's file](../../verification/prd-280-the-quarry-is-the-instrument-2026-08-30.md) |
-| the bake, the invariant, and both mutations | [PRD-281's file](../../verification/prd-281-cluster-dag-bake-2026-08-30.md) |
-| the CPU cut, its numbers, and four defects the run found | [PRD-282's file](../../verification/prd-282-the-cpu-cut-2026-08-30.md) |
-| native, and why the kernel did not ship | [PRD-283's file](../../verification/prd-283-native-and-the-kernel-2026-08-30.md) |
+| the instrument, and the price of the problem | [PRD-280's file](../../../verification/prd-280-the-quarry-is-the-instrument-2026-08-30.md) |
+| the bake, the invariant, and both mutations | [PRD-281's file](../../../verification/prd-281-cluster-dag-bake-2026-08-30.md) |
+| the CPU cut, its numbers, and four defects the run found | [PRD-282's file](../../../verification/prd-282-the-cpu-cut-2026-08-30.md) |
+| native, and why the kernel did not ship | [PRD-283's file](../../../verification/prd-283-native-and-the-kernel-2026-08-30.md) |
 
 **What it is.** A game imports a mesh far denser than the screen can resolve, and the frame submits
 only the clusters that resolve — on web and on native, from the same source, **with the game's own
@@ -42,7 +43,7 @@ at bake time.
 
 **What it is not.** Not a second renderer, not a scene format, not a preset, and not a visibility
 buffer. The last one is the load-bearing decision and it is argued in full in
-[PRD-279](../done/nanite-like/PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md): every published
+[PRD-279](./PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md): every published
 implementation this batch mines resolves materials in a full-screen pass, which means owning the
 shading path, which this framework may not do. Dropping it costs performance and is the only reason
 the feature is admissible here.
@@ -51,13 +52,13 @@ the feature is admissible here.
 
 | # | PRD | Phase | Status |
 | --- | --- | --- | --- |
-| 279 | [geometry the camera cannot resolve is never submitted](../done/nanite-like/PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md) | the design, the charter argument, the verified state of this repository, the sources | **DONE — the design held** |
-| 280 | [the quarry is the instrument](../done/nanite-like/PRD-280-the-quarry-is-the-instrument.md) | 0 — the game, and the price of the problem | **DONE — open, +13.9 ms** |
-| 281 | [a dense mesh bakes to a crack-free cluster DAG](../done/nanite-like/PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md) | 1 — the baker, offline | **DONE — watertight at every threshold** |
-| 282 | [the cut is chosen on the CPU first](../done/nanite-like/PRD-282-the-cut-is-chosen-on-the-cpu-first.md) | 2 — selection and one indirect draw | **DONE on browser — 1.28 ms against 2.45 ms** |
-| 283 | [the cut moves to the GPU and native runs it](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | 3 — compute, and both targets | **PARTLY DONE — native runs it, the kernel declined** |
-| 284 | [the frame does not draw what the frame already hid](../done/nanite-like/PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) | 4 — two-pass occlusion | **DECLINED — 1.28 ms is the whole prize** |
-| 285 | [clusters arrive when the camera asks for them](../done/nanite-like/PRD-285-clusters-arrive-when-the-camera-asks-for-them.md) | 5 — streaming | **DECLINED — no asset that does not fit** |
+| 279 | [geometry the camera cannot resolve is never submitted](./PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md) | the design, the charter argument, the verified state of this repository, the sources | **DONE — the design held** |
+| 280 | [the quarry is the instrument](./PRD-280-the-quarry-is-the-instrument.md) | 0 — the game, and the price of the problem | **DONE — open, +13.9 ms** |
+| 281 | [a dense mesh bakes to a crack-free cluster DAG](./PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md) | 1 — the baker, offline | **DONE — watertight at every threshold** |
+| 282 | [the cut is chosen on the CPU first](./PRD-282-the-cut-is-chosen-on-the-cpu-first.md) | 2 — selection and one indirect draw | **DONE on browser — 1.28 ms against 2.45 ms** |
+| 283 | [the cut moves to the GPU and native runs it](./PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | 3 — compute, and both targets | **DONE — native runs it, the kernel declined, the install proved** |
+| 284 | [the frame does not draw what the frame already hid](./PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) | 4 — two-pass occlusion | **DECLINED — 1.28 ms is the whole prize** |
+| 285 | [clusters arrive when the camera asks for them](./PRD-285-clusters-arrive-when-the-camera-asks-for-them.md) | 5 — streaming | **DECLINED — no asset that does not fit** |
 
 Read 279 first. It holds the charter argument, the table of what this repository already ships
 (with file and line), the two facts that are actually blocking, and the licence rules for the

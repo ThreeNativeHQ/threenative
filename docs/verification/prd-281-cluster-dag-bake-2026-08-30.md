@@ -1,7 +1,7 @@
 # PRD-281 — a dense mesh bakes to a crack-free cluster DAG
 
 Date: 2026-08-30. Subject: `packages/assets/src/virtual/` at `c21e70e0` and the pipeline wiring that
-follows it. Phase 1 of the [virtual geometry batch](../PRDs/nanite-like/README.md).
+follows it. Phase 1 of the [virtual geometry batch](../PRDs/done/nanite-like/README.md).
 
 **Verdict: the invariant holds.** A cut taken at any threshold on a baked DAG leaves **zero** open
 interior edges and zero doubly covered ones, on a connected body and on a body of disconnected
