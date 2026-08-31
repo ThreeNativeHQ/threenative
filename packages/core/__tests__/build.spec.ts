@@ -64,7 +64,12 @@ describe("core package build", () => {
     } finally {
       await rm(consumer, { force: true, recursive: true });
     }
-  }, 15_000);
+    // This spawns a real `tsc` with `skipLibCheck: false`, so it type-checks the hot subpath
+    // against the DOM lib rather than reading a file: 6.1s on an idle 16-core workstation. The
+    // 15s budget was a fast-machine number and CI timed out on it while running 297 test files
+    // on two cores. Sized at ~10x the measured cost, because being generous costs a machine that
+    // finishes in six seconds nothing, and being tight costs the whole lane.
+  }, 60_000);
 
   it("should emit the optional world subpath without pulling it into the main entry", async () => {
     const dist = path.resolve("packages/core/dist");
