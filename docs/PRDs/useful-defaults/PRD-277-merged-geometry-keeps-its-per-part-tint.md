@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED — filed 2026-08-30, surveyed at `9b97d704`. **Deliberately not
 implemented: no caller exists.** Sibling of
-[PRD-276](../PRD-276-instanced-batch-assembly-is-mechanism.md), mined from the same game and
+[PRD-276](../feature-mining/PRD-276-instanced-batch-assembly-is-mechanism.md), mined from the same game and
 judged by the same rules.
 
 **Goal: an agent authoring a building out of primitives gets it into one draw without losing

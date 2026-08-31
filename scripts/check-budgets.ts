@@ -392,9 +392,15 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
     vendoredExternalMcp: await vendoredExternalMcp(root),
     vendoredNativeRuntime: await vendoredNativeRuntime(root),
     trackedNativeThirdParty: await trackedNativeThirdParty(root),
+    // Active PRDs are organized by concern; archived and blocked records are separate filing
+    // states and should not inflate the active-work count printed by this gate.
     prdFiles: (
-      await readdir(path.join(root, "docs", "PRDs"), { withFileTypes: true }).catch(() => [])
-    ).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).length,
+      await filesUnder(
+        path.join(root, "docs", "PRDs"),
+        (file) => /^PRD-.*\.md$/u.test(path.basename(file)),
+        new Set(["BLOCKED", "done"]),
+      )
+    ).length,
   };
 }
 

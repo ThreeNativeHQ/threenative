@@ -6,13 +6,13 @@ prd_contract: v1
 
 **Status:** OPEN — **the ladder produced its answer, filed as
 [PRD-227 — the frame crosses once](PRD-227-the-frame-crosses-once.md)**
-([evidence](../verification/runtime-perf-state.md)). PRD-226 keeps the instrument, the method
+([evidence](../../verification/runtime-perf-state.md)). PRD-226 keeps the instrument, the method
 rules and the graveyard; PRD-227 owns the fix. Arm A4's job — an independent second route to the
 backend term — was closed without building it: the A2 ablation says 1.95 ms and the `commandNs`
 instrument says 2.037 ms, **0.09 ms apart**.
 
 **Phase 1's gate is met: the budget is measured and published**
-([record](../verification/runtime-perf-state.md)).
+([record](../../verification/runtime-perf-state.md)).
 
 ```
 native backend command recording + the GPU work it causes   1.95 ms   (17%)
@@ -29,10 +29,10 @@ independent second route to the backend term; until it runs, the sum holds by co
 than by cross-check.
 
 Filed 2026-08-27; **arm A1 also closed one of the three outcomes**
-([record](../verification/runtime-perf-state.md)): Dawn 11.85 ms against wgpu-native
+([record](../../verification/runtime-perf-state.md)): Dawn 11.85 ms against wgpu-native
 11.51 ms `render.p50` on the same scene, interleaved, unprofiled — **flat**. The backend is not the
 owner, so the Phase 5 backend option is struck. Filed after PRD-224's measurement refuted the fifth
-consecutive lever. Supersedes the lever queue in [the PRD-222 fix plan](../verification/runtime-perf-state.md);
+consecutive lever. Supersedes the lever queue in [the PRD-222 fix plan](../../verification/runtime-perf-state.md);
 does not supersede PRD-222, which owns the target.
 
 **Goal, restated by the owner 2026-08-27: 60 fps or better on native. 30 fps is not acceptable.**
@@ -41,7 +41,7 @@ milestone; it is not a passing result.
 
 The panel is **120 Hz**, so presented frame rate is quantised to 120/n. Sixty fps means the whole
 frame fits in **16.67 ms**. It currently costs **43–48 ms**
-([meter audit](../verification/runtime-perf-state.md)), so the target is a
+([meter audit](../../verification/runtime-perf-state.md)), so the target is a
 **~3× reduction — 28–33 ms per frame to remove.** Chrome already does the same scene at 60 fps on
 the same phone, so the number is reachable; it is not reachable by a lever.
 
@@ -148,7 +148,7 @@ missing thing.
       **A3 and A4 remain.**
 - [ ] Sum gate green, both routes to backend+driver agreeing. **Not yet: A4 is the second route and
       has not run, so `T0 − A2` currently holds by construction, not by cross-check.**
-- [x] The budget published: [record](../verification/runtime-perf-state.md).
+- [x] The budget published: [record](../../verification/runtime-perf-state.md).
       Backend+GPU 1.95 ms, JS+bridge 9.26 ms, Chrome 4.05 ms, each with its run spread. The
       JS/bridge split awaits A3.
 - [x] **Stop rule satisfied for the backend question**: A1 and A2 both ran before anything was

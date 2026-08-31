@@ -11,7 +11,7 @@ copying nothing, so this PRD is the plan and the integration work; the file arri
 
 **Goal: a scaffolded game's first `pnpm dev` renders through a real chain, and a stage that could
 not run says so by name.** Mined from `lumen-hall`. Sibling of
-[PRD-276](../PRD-276-instanced-batch-assembly-is-mechanism.md), and the opposite verdict: that one
+[PRD-276](../feature-mining/PRD-276-instanced-batch-assembly-is-mechanism.md), and the opposite verdict: that one
 was mechanism and went into a package, this one decides how the game looks and can only ever ship
 as generated source.
 

@@ -29,27 +29,27 @@ binding document.
 
 ## PRDs
 
-- **Active work:** top-level `PRD-*.md` files remain active; grouped work lives in the active
-  batches below.
+- **Active work:** concern-specific folders under `PRDs/` hold active proposals; direct-child
+  `PRD-*.md` files are a filing error. `pnpm budgets` reports the active PRD count recursively.
 - **Done work:** completed PRDs live in [`done/`](PRDs/done/).
 - **Blocked work:** PRDs blocked on a named external dependency live in
   [`BLOCKED/<reason>/`](PRDs/BLOCKED/), where blocked is not done.
 - **Archive rule:** a PRD moves to `done/` in the same commit that finishes its acceptance
   evidence.
 
-The repository currently records 148 done PRD files and 17 blocked PRD files. Active batches are
-[`agent-leverage/`](PRDs/agent-leverage/),
-[`batch-26-08-16/`](PRDs/mobile/), [`experiments/`](PRDs/experiments/),
-[`performance/`](PRDs/performance/),
-[`starter-kits/`](PRDs/starter-kits/), and [`studio-hosting/`](PRDs/studio-hosting/).
+Active PRD categories are [`agent-leverage/`](PRDs/agent-leverage/),
+[`experiments/`](PRDs/experiments/), [`feature-mining/`](PRDs/feature-mining/),
+[`lighting/`](PRDs/lighting/), [`mobile/`](PRDs/mobile/), [`native/`](PRDs/native/),
+[`package-naming/`](PRDs/package-naming/), [`performance/`](PRDs/performance/),
+[`starter-kits/`](PRDs/starter-kits/), [`studio-hosting/`](PRDs/studio-hosting/),
+[`tech-debt-code-quality/`](PRDs/tech-debt-code-quality/), [`tooling/`](PRDs/tooling/), and
+[`useful-defaults/`](PRDs/useful-defaults/).
 The asset-pipeline series closed on 2026-08-22 as
 [`done/asset-pipeline/`](PRDs/done/asset-pipeline/README.md).
 `batch-2026-08-22-defects/` closed on 2026-08-22 as
 [`done/batch-2026-08-22-defects/`](PRDs/done/batch-2026-08-22-defects/README.md).
-`batch-26-08-18/`, `native/` and `production-readiness-26-08-14/` were deleted on 2026-08-22 as
-outdated documentation; their PRDs live in [`done/`](PRDs/done/) or
-[`BLOCKED/`](PRDs/BLOCKED/README.md).
-`alpha-readiness/` was deleted on 2026-08-18 and `batch-26-08-17/` closed as
+Historical batch aliases and retired category names remain only in dated records; new active PRDs
+use the concern-specific folders above. The former `batch-26-08-17/` closed as
 [`done/fps-friction-26-08-17/`](PRDs/done/fps-friction-26-08-17/README.md).
 
 **Studio is no longer in this repository.** It is the local agent-and-preview surface — a server

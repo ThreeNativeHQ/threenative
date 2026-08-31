@@ -4,7 +4,7 @@
 break.** Budget and priorities live in
 [NATIVE-PERF-BOTTLENECKS](NATIVE-PERF-BOTTLENECKS.md); this page is the design.
 
-**Status, 2026-08-28.** The op stream ([PRD-227](../PRDs/PRD-227-the-frame-crosses-once.md) Change 1)
+**Status, 2026-08-28.** The op stream ([PRD-227](../PRDs/performance/PRD-227-the-frame-crosses-once.md) Change 1)
 is working-tree code with no verification record. **Nothing here is evidence until gate P1 lands.**
 
 ## What is built

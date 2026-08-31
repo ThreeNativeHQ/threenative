@@ -104,6 +104,13 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [259](../done/PRD-259-fewer-pixels-must-still-look-like-the-same-game.md) **DECLINED** | Current-main browser proof and the provenance-locked Android emulator comparison both rejected temporal reconstruction: TAAU softened Bayview and exceeded the 2.35 ms saved-pixel budget; the challenger ghosted moving geometry and then failed on `createView`. No product API or render source shipped. | upstream Three 0.185.1 `TAAUNode`, MIT; `pmndrs/upscaler`, MIT + AMD FSR notice | 8 → HIGH |
 | [260](../done/PRD-260-standard-navigation-reaches-native-without-webassembly.md) **DECLINED** | The opening consumer gate found no native navmesh caller; PRD-052's 31-line portable steering remains the measured Android answer. No navcat dependency, second backend/API, or synthetic benchmark was added. | [`isaac-mason/navcat`](https://github.com/isaac-mason/navcat) `bc9d3c3f372a`, MIT | 8 → HIGH |
 
+## Later mechanism extraction
+
+[PRD-276 — instanced batch assembly is mechanism](./PRD-276-instanced-batch-assembly-is-mechanism.md)
+is filed here because it extracts a rendering mechanism from `lumen-hall` while leaving every
+appearance choice in the game. Its sibling [PRD-277](../useful-defaults/PRD-277-merged-geometry-keeps-its-per-part-tint.md)
+remains in `useful-defaults/` because it is still a proposed default, not a mined mechanism record.
+
 **Order to attack:** 251 → 243 → 246 → 240 → 245.
 253 is blocked until its detached Bistro consumer loads the same assets on browser and native;
 258 is blocked until its committed many-soldier consumer boots against exact current-engine

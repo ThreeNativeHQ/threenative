@@ -68,7 +68,7 @@ flowchart LR
 ```
 
 Physics got this right: one coarse crossing per frame, typed arrays across the boundary. Rendering
-is the outlier, and [PRD-227](../PRDs/PRD-227-the-frame-crosses-once.md) is making it cross once too
+is the outlier, and [PRD-227](../PRDs/performance/PRD-227-the-frame-crosses-once.md) is making it cross once too
 — the design is in [NATIVE-RENDER-TRANSPORT](NATIVE-RENDER-TRANSPORT.md).
 
 ## Open, ranked

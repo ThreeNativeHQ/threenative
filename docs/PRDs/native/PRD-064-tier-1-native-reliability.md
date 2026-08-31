@@ -251,7 +251,7 @@ to a line item here. **Until then the trigger stays crossed and reported, never 
 
 PRD-161's opening snapshot names **78,266 / 50,000** and a **+28,266** overshoot. The current
 re-runnable walk in `scripts/check-budgets.ts` measures **78,289 / 50,000**, a **+28,289-line
-residual**. The [refreshed native census](../verification/native-runtime-census-2026-08-16.md)
+residual**. The [refreshed native census](../../verification/native-runtime-census-2026-08-16.md)
 records the counted areas, owners, live proof or caller, plain alternative, and KEEP verdict. The
 limit and trigger text are unchanged; this is an owner record, not a budget-limit decision.
 

@@ -87,9 +87,10 @@ flowchart TD
 - **`lighting/PRD-268`** (irradiance probe volume) and **`lighting/PRD-269`** (motion vectors) — the
   largest quality jumps available and both multi-week. Neither is a default until the chain is in
   the templates at all.
-- **`tech-debt/PRD-203`** (template loading screens stop drifting) and **`PRD-106`** (a project can
-  obtain its own reference image) — real developer value, filed as hygiene and tooling. They are
-  referenced from here and stay where they are; move them if a later round disagrees.
+- **[`tech-debt-code-quality/PRD-203`](../tech-debt-code-quality/PRD-203-template-loading-screens-stop-drifting.md)**
+  (template loading screens stop drifting) and **[`tooling/PRD-106`](../tooling/PRD-106-reference-image-generation.md)**
+  (a project can obtain its own reference image) — real developer value, filed as hygiene and
+  tooling rather than defaults. They are referenced from here but live in their owning categories.
 - **`agent-leverage/PRD-123` and `PRD-124`** — a compatibility corpus and a repair benchmark. Both
   are instruments. They tell this repository how it is doing; they do not hand a stranger anything.
 - **Everything in `BLOCKED/`.** A default blocked on a device that is not attached is not a default

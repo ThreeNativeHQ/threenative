@@ -33,7 +33,7 @@ need a phone.**
 **Blocks:** beta row 4 aggregate. [PRD-076](./PRD-076-tier-1-parity-reconciliation.md)
 adjudicated the desktop lane on 2026-08-15 and explicitly left Android open.
 [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md) and
-[PRD-064](../PRD-064-tier-1-native-reliability.md) both carry an Android cell this settles.
+[PRD-064](../native/PRD-064-tier-1-native-reliability.md) both carry an Android cell this settles.
 
 **Complexity: 6 → MEDIUM mode.** One bisected regression to attribute across a web/native seam, one
 lane re-run, one adjudication written against two existing ledgers.

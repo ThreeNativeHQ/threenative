@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** PROPOSED — filed 2026-08-28. Depends on
 [PRD-230](./PRD-230-the-webgpu-bindings-move-one-surface-at-a-time.md) Phase 2, which puts the
 profiling fields inside a `FrameProfiling` sub-struct. **Coordinate with
-[PRD-227](../../PRD-227-the-frame-crosses-once.md) and
+[PRD-227](../../performance/PRD-227-the-frame-crosses-once.md) and
 [PRD-228](../PRD-228-the-pixel-budget-is-the-engines.md) before starting** — they own these meters
 and are live.
 

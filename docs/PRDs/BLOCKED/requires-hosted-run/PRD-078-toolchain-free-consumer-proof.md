@@ -167,7 +167,7 @@ Phase 3: `packages/runtime-native/scripts/profile-production.mjs`, `docs/verific
 Phase 4: `docs/strategy/ROADMAP.md`, `docs/strategy/VALUE-PROPOSITION.md`,
 `docs/PRDs/done/PRD-048-native-distribution.md`.
 
-**Depends on:** nothing. **Unblocks:** beta bar row 5, [PRD-064](../../PRD-064-tier-1-native-reliability.md)
+**Depends on:** nothing. **Unblocks:** beta bar row 5, [PRD-064](../../native/PRD-064-tier-1-native-reliability.md)
 Phase 4's unreached positive measurement, and the four criteria
 [PRD-048](../../done/PRD-048-native-distribution.md) closed as *"waived by the owner, not
 met"* — the release rerun, the checksum lock, the registry packages, and the clean-machine

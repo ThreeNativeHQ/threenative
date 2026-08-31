@@ -13,6 +13,10 @@ residual fail-open holes, three-times-declared schema), and template drift
 (`loading.ts` × 6). Core, UI and engine-mcp came back clean and get no PRD beyond the
 Tier-4 sweep.
 
+[PRD-265](./PRD-265-playtest-runner-never-grades-a-lane-it-cannot-observe.md) is a later,
+separate runner-semantics audit. It is filed in this category because it pays down the same
+fail-closed correctness debt, but it is not one of the twelve findings in the 2026-08-23 scan.
+
 ## Scope and ownership
 
 | PRD | Outcome | Scan items | Complexity | Depends on |

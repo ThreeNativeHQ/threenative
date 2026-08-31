@@ -69,6 +69,25 @@ async function writeNativeCensus(
 }
 
 describe("budget gate", () => {
+  it("should count active PRDs recursively without counting done or blocked records", async () => {
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, "docs", "PRDs", "performance"), { recursive: true });
+    await mkdir(path.join(root, "docs", "PRDs", "done"), { recursive: true });
+    await mkdir(path.join(root, "docs", "PRDs", "BLOCKED", "requires-device"), {
+      recursive: true,
+    });
+    await writeFile(path.join(root, "docs", "PRDs", "performance", "PRD-224-example.md"), "active");
+    await writeFile(path.join(root, "docs", "PRDs", "done", "PRD-001-example.md"), "done");
+    await writeFile(
+      path.join(root, "docs", "PRDs", "BLOCKED", "requires-device", "PRD-002-example.md"),
+      "blocked",
+    );
+
+    const report = await collectBudgets(root);
+
+    expect(report.prdFiles).toBe(1);
+  });
+
   it("should allow 8 framework packages plus example workspaces", async () => {
     const root = await fixtureRoot();
     for (let index = 0; index < 8; index += 1) {
