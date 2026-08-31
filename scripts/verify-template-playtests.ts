@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createProject } from "../packages/create-threenative/src/index.js";
+import { fileURLToPath } from "node:url";
+import { createProject, templateRoot } from "../packages/create-threenative/src/index.js";
 import { TEMPLATE_NAMES, inspectAllTemplates, packageLocalFramework } from "./visual-gate.js";
 
 async function run(command: string, args: readonly string[], cwd: string): Promise<void> {
@@ -17,28 +18,219 @@ async function run(command: string, args: readonly string[], cwd: string): Promi
   });
 }
 
-const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-playtests-"));
-try {
-  const structuralErrors = inspectAllTemplates().flatMap(({ errors }) => errors);
-  if (structuralErrors.length > 0)
-    throw new Error(`TN_VISUAL_STRUCTURE_FAILED:\n${structuralErrors.join("\n")}`);
-  if (TEMPLATE_NAMES.length === 0) throw new Error("TN_TEMPLATE_DISCOVERY_EMPTY");
-  // One template at a time while iterating on it: the full sweep scaffolds, installs and drives
-  // seven projects, and a filtered run is the difference between a ten-minute loop and a one-
-  // minute one. Unset — which is what CI is — every template runs.
-  const only = process.env.TN_TEMPLATE_ONLY?.split(",").filter((name) => name !== "");
-  if (only !== undefined) {
-    const unknown = only.filter((name) => !TEMPLATE_NAMES.includes(name));
-    if (unknown.length > 0)
-      throw new Error(`TN_TEMPLATE_ONLY names no such template: ${unknown.join(", ")}`);
-  }
-  const packageSources = await packageLocalFramework(root);
-  for (const template of only ?? TEMPLATE_NAMES) {
+export interface ITemplatePlaytestResult {
+  readonly error?: string;
+  readonly pass: boolean;
+  readonly template: string;
+}
+
+export interface ITemplatePlaytestAudit {
+  readonly assumesStartInPlay?: number;
+  readonly error?: string;
+  readonly explicitStart?: number;
+  readonly scenarioCount: number;
+  readonly template: string;
+}
+
+export interface ITemplatePlaytestStructure {
+  readonly errors: readonly string[];
+  readonly files?: readonly string[];
+  readonly template: string;
+}
+
+export interface ITemplatePlaytestDependencies {
+  readonly auditRoot?: string;
+  readonly createProject?: typeof createProject;
+  readonly inspectTemplates?: () => readonly ITemplatePlaytestStructure[];
+  readonly run?: typeof run;
+}
+
+interface IJsonRecord {
+  readonly [key: string]: unknown;
+}
+
+const TEMPLATE_PLAYTEST_ROOTS = ["playtests", "native-playtests"] as const;
+
+/**
+ * Runs each selected template independently and reports every result before failing the sweep.
+ * A failed scaffold is a result too: the next template must still be exercised.
+ */
+export async function runTemplatePlaytests(
+  templates: readonly string[],
+  root: string,
+  packageSources: Readonly<Record<string, string>>,
+  dependencies: ITemplatePlaytestDependencies = {},
+): Promise<readonly ITemplatePlaytestResult[]> {
+  const create = dependencies.createProject ?? createProject;
+  const execute = dependencies.run ?? run;
+  const results: ITemplatePlaytestResult[] = [];
+  for (const template of templates) {
     const target = path.join(root, template);
-    await createProject({ install: true, packageSources, target, template });
-    await run("pnpm", ["test"], target);
-    console.info(`${template}: scaffolded playtests passed.`);
+    try {
+      await create({ install: true, packageSources, target, template });
+      await execute("pnpm", ["test"], target);
+      console.info(`${template}: scaffolded playtests passed.`);
+      results.push({ pass: true, template });
+    } catch (error) {
+      const detail = errorDetail(error);
+      console.error(`${template}: scaffolded playtests failed: ${detail}`);
+      results.push({ error: detail, pass: false, template });
+    }
   }
-} finally {
-  await rm(root, { force: true, recursive: true });
+  return results;
+}
+
+export function assertTemplatePlaytestsPassed(results: readonly ITemplatePlaytestResult[]): void {
+  const failed = results.filter(({ pass }) => !pass);
+  if (failed.length > 0) {
+    throw new Error(
+      `TN_TEMPLATE_PLAYTESTS_FAILED: ${failed
+        .map(({ error, template }) => `${template}: ${error ?? "unknown error"}`)
+        .join("; ")}`,
+    );
+  }
+}
+
+/** Audits every scenario in each template's web and native playtest trees. */
+export async function auditTemplatePlaytests(
+  root: string,
+  templates: readonly string[],
+): Promise<readonly ITemplatePlaytestAudit[]> {
+  const audits: ITemplatePlaytestAudit[] = [];
+  for (const template of templates) {
+    let files: readonly string[] = [];
+    try {
+      files = (
+        await Promise.all(
+          TEMPLATE_PLAYTEST_ROOTS.map((directory) =>
+            scenarioFiles(path.join(root, template, directory)),
+          ),
+        )
+      )
+        .flat()
+        .sort();
+      let explicitStart = 0;
+      for (const file of files) {
+        const scenario = await readScenario(file);
+        if (hasExplicitStart(scenario)) explicitStart += 1;
+      }
+      audits.push({
+        assumesStartInPlay: files.length - explicitStart,
+        explicitStart,
+        scenarioCount: files.length,
+        template,
+      });
+    } catch (error) {
+      const detail = errorDetail(error);
+      console.error(`${template}: template playtest audit failed: ${detail}`);
+      audits.push({ error: detail, scenarioCount: files.length, template });
+    }
+  }
+  return audits;
+}
+
+/** Audits and runs every selected template before failing on any audit or playtest result. */
+export async function verifyTemplatePlaytests(
+  templates: readonly string[],
+  root: string,
+  packageSources: Readonly<Record<string, string>>,
+  dependencies: ITemplatePlaytestDependencies = {},
+): Promise<readonly ITemplatePlaytestResult[]> {
+  const audits = await auditTemplatePlaytests(dependencies.auditRoot ?? templateRoot(), templates);
+  for (const audit of audits) {
+    if (audit.error !== undefined) continue;
+    console.info(
+      `template audit ${audit.template}: ${audit.scenarioCount} scenarios; ${audit.assumesStartInPlay} assume start in play; ${audit.explicitStart} declare an explicit start.`,
+    );
+  }
+
+  const structures = (dependencies.inspectTemplates ?? inspectAllTemplates)();
+  const structuralFailures = structures.flatMap(({ errors, template }) =>
+    templates.includes(template) && errors.length > 0
+      ? [{ error: `TN_VISUAL_STRUCTURE_FAILED:\n${errors.join("\n")}`, pass: false, template }]
+      : [],
+  );
+  for (const failure of structuralFailures)
+    console.error(`${failure.template}: template structure failed: ${failure.error}`);
+
+  const results = await runTemplatePlaytests(templates, root, packageSources, dependencies);
+  const auditFailures = audits.flatMap(({ error, template }) =>
+    error === undefined ? [] : [{ error, pass: false, template }],
+  );
+  assertTemplatePlaytestsPassed([...results, ...auditFailures, ...structuralFailures]);
+  return results;
+}
+
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function scenarioFiles(directory: string): Promise<readonly string[]> {
+  const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await scenarioFiles(file)));
+    else if (entry.isFile() && entry.name.endsWith(".playtest.json")) files.push(file);
+  }
+  return files.sort();
+}
+
+async function readScenario(file: string): Promise<IJsonRecord> {
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(file, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(`TN_TEMPLATE_PLAYTEST_AUDIT_INVALID: ${file}: ${String(error)}`);
+  }
+  if (!isRecord(value)) {
+    throw new Error(`TN_TEMPLATE_PLAYTEST_AUDIT_INVALID: ${file}: expected a JSON object.`);
+  }
+  return value;
+}
+
+function hasExplicitStart(scenario: IJsonRecord): boolean {
+  const steps = scenario.steps;
+  if (steps === undefined) return false;
+  if (!Array.isArray(steps)) {
+    throw new Error("TN_TEMPLATE_PLAYTEST_AUDIT_INVALID: steps is not an array.");
+  }
+  return steps.some((step) => isRecord(step) && step.label === "start-game");
+}
+
+function isRecord(value: unknown): value is IJsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function main(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-playtests-"));
+  try {
+    if (TEMPLATE_NAMES.length === 0) throw new Error("TN_TEMPLATE_DISCOVERY_EMPTY");
+    // One template at a time while iterating on it: the full sweep scaffolds, installs and drives
+    // seven projects, and a filtered run is the difference between a ten-minute loop and a one-
+    // minute one. Unset — which is what CI is — every template runs.
+    const only = process.env.TN_TEMPLATE_ONLY?.split(",").filter((name) => name !== "");
+    if (only !== undefined) {
+      const unknown = only.filter((name) => !TEMPLATE_NAMES.includes(name));
+      if (unknown.length > 0)
+        throw new Error(`TN_TEMPLATE_ONLY names no such template: ${unknown.join(", ")}`);
+    }
+    const packageSources = await packageLocalFramework(root);
+    await verifyTemplatePlaytests(only ?? TEMPLATE_NAMES, root, packageSources);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+}
+
+if (
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`${errorDetail(error)}\n`);
+    process.exitCode = 1;
+  });
 }
