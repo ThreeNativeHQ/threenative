@@ -794,6 +794,35 @@ describe("TerrainTiles", () => {
     }
   });
 
+  it("rejects an attached bridge translated away from its seam", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      skirtDepth: 32,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      expect(tiles.stitchedEdgeCount).toBeGreaterThan(0);
+      expect(tiles.maxVisualSeamGap).toBe(0);
+
+      bridge.position.x += 128;
+
+      expect(() => tiles.process()).toThrow(/bridge.*topology|bridge.*coordinate/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
   it("keeps the manually selected LOD visible when a renderer inspects the LOD", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
