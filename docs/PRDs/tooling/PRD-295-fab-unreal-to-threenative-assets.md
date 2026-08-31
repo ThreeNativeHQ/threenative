@@ -4,9 +4,18 @@ prd_contract: v1
 
 # PRD-295 — A Fab listing becomes runtime-ready ThreeNative GLBs in one agent flow
 
-**Status: NOT STARTED, written 2026-08-30.** No implementation or gate below has run. The
-downloaded Open World Demo Collection under `~/Downloads/` is local proof material, not evidence
-until the commands, hashes, reports, and rendered result required below are recorded.
+**Status: IMPLEMENTED 2026-08-31, two gates not green.** Evidence:
+`docs/verification/PRD-295.md`. Shipped as `threenative-asset-mcp` 0.6.0 (published) and pinned in
+`packages/core`. Not archived to `done/` because `pnpm lint` is red in ~20 files this change does
+not touch (pre-existing `noExcessiveCognitiveComplexity`), and `pnpm test` was not run whole — this
+shared checkout carries another lane's uncommitted work in `template-runtime-cost.spec.ts`. The
+three suites this change affects pass.
+
+Two owner decisions overrode the plan below and are recorded in the verification file: the external
+executables **do** auto-install (`THREENATIVE_TOOLCHAIN_AUTOINSTALL=0` opts out), and a licence gate
+was added that admits only Fab Standard and CC-BY and fails closed on anything it cannot read.
+A third tool, `fab_list_owned`, was added beyond the two this PRD names, because a free search
+structurally cannot surface a listing the account already paid for.
 
 **Complexity: 10 → HIGH mode.** More than 10 files (+3), a new import pipeline (+2), process and
 artifact orchestration (+2), changes across the external asset MCP and this workspace (+2), and an
