@@ -373,7 +373,9 @@ describe("starter playtest proof", () => {
 
     expect(level).toMatchObject({ gte: -1, id: "state", lte: 1, path: "levelX" });
     expect(level?.allowTrivial).toEqual(expect.any(String));
-    expect(level?.allowTrivial?.trim().length).toBeGreaterThanOrEqual(20);
+    expect(level?.allowTrivial).toMatch(
+      /The seeded level value is intentionally held once runtime readiness is reached/u,
+    );
     expect(level).not.toHaveProperty("equals");
     expect(play).toContain("const randomStateBeforeLevel = ctx.random.state");
     expect(play).toContain(
