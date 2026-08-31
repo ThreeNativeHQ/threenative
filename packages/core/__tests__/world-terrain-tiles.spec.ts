@@ -346,6 +346,90 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("fails closed when a live seam edge contains a non-finite position", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    tiles.follow({ x: 12, z: 0 });
+    for (let frame = 0; frame < 3; frame += 1) tiles.process();
+
+    const tile = tiles.getTile("0:0");
+    if (tile === undefined) throw new Error("Expected the corrupted tile to remain resident.");
+    const surface = tile.lod.levels.find(({ object }) => object.visible)?.object;
+    if (!(surface instanceof Mesh)) throw new Error("Expected a visible surface mesh.");
+    const position = surface.geometry.getAttribute("position");
+    const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
+    for (let row = 0; row < resolution; row += 1)
+      position.setY(row * resolution + resolution - 1, Number.NaN);
+
+    try {
+      expect(() => tiles.process()).toThrow(/seam diagnostic.*finite|invalid.*seam/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("reconciles a mixed-LOD surface edge before skirt coverage", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    tiles.follow({ x: 12, z: 0 });
+    for (let frame = 0; frame < 3; frame += 1) tiles.process();
+
+    const a = tiles.getTile("0:0");
+    const b = tiles.getTile("1:0");
+    if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
+    const aSurface = visibleSurface(a);
+    const bSurface = visibleSurface(b);
+    expect(aSurface.resolution).not.toBe(bSurface.resolution);
+    expect(visibleSeamGap(a, b)).toBeLessThan(0.00001);
+    expect(a.lodLevel).toBeLessThanOrEqual(b.lodLevel + 1);
+    expect(b.lodLevel).toBeLessThanOrEqual(a.lodLevel + 1);
+    tiles.dispose();
+  });
+
+  it("coordinates adjacent resident LOD targets instead of allowing a two-level jump", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 1_000_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [1, 2],
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+
+    const center = tiles.getTile("0:0");
+    const east = tiles.getTile("1:0");
+    if (center === undefined || east === undefined)
+      throw new Error("Expected the center and east neighbor to remain resident.");
+    expect(center.lodLevel).toBe(0);
+    expect(east.lodLevel).toBe(1);
+    expect(Math.abs(center.lodLevel - east.lodLevel)).toBeLessThanOrEqual(1);
+    tiles.dispose();
+  });
+
   it("retains the maximum seam diagnostics after a transient transition seam closes", () => {
     const skirtDepth = 0.000001;
     const tiles = new TerrainTiles({
@@ -367,13 +451,12 @@ describe("TerrainTiles", () => {
     const a = tiles.getTile("0:0");
     const b = tiles.getTile("1:0");
     if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
-    let observedMaximum = visibleSeamGap(a, b);
-    let observedVisualMaximum = Math.max(0, observedMaximum - skirtDepth);
+    expect(tiles.maxSeamGap).toBeGreaterThan(0);
+    expect(tiles.maxVisualSeamGap).toBeGreaterThan(0);
+    const observedMaximum = tiles.maxSeamGap;
+    const observedVisualMaximum = tiles.maxVisualSeamGap;
     for (let frame = 0; frame < 3; frame += 1) {
       tiles.process();
-      const current = visibleSeamGap(a, b);
-      observedMaximum = Math.max(observedMaximum, current);
-      observedVisualMaximum = Math.max(observedVisualMaximum, current - skirtDepth);
     }
 
     expect(observedMaximum).toBeGreaterThan(0);

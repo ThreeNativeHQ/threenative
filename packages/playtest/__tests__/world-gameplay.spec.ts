@@ -189,6 +189,8 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
   expect(lod).toMatchObject({ changed: true });
   expect(lod).not.toHaveProperty("allowTrivial");
   expect(lod).not.toHaveProperty("gte");
+  expect(component("maxSeamGap")).toMatchObject({ gte: 0.000001, lte: 64 });
+  expect(component("maxSeamGap")).not.toHaveProperty("allowTrivial");
   expect(component("maxVisualSeamGap")).toMatchObject({ lte: 0 });
   expect(component("skirtVertexCount")).toMatchObject({ gte: 1 });
   expect(component("maxLodPop")).toMatchObject({
@@ -197,4 +199,19 @@ test("requires the terrain scenario to prove an LOD transition after its baselin
     lte: 16,
   });
   expect(component("maxLodTransitionFrames")).toMatchObject({ gte: 3 });
+});
+
+test("rejects a zero raw seam observation", () => {
+  const result = evaluateRichPlaytestAssertions({
+    report: report({}, { maxSeamGap: { after: 0 } }),
+    scenario: scenario({
+      components: [
+        { component: "maxSeamGap", entity: "terrain", gte: 0.000001, lte: 64 },
+      ],
+    }),
+  });
+
+  expect(result.assertions).toContainEqual(
+    expect.objectContaining({ id: "component.terrain.maxSeamGap.value", pass: false }),
+  );
 });

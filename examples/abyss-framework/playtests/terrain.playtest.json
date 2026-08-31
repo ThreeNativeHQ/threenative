@@ -41,9 +41,9 @@
         "gte": 1
       },
       {
-        "allowTrivial": "TerrainTiles reports a raw edge discontinuity covered by its visual skirt depth.",
         "component": "maxSeamGap",
         "entity": "terrain",
+        "gte": 0.000001,
         "lte": 64
       },
       {

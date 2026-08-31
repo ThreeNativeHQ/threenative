@@ -147,6 +147,15 @@ function keyFor(tileX: number, tileZ: number): string {
   return `${String(tileX)}:${String(tileZ)}`;
 }
 
+function lodLevelForDistance(distance: number, thresholds: readonly number[]): number {
+  let level = 0;
+  for (const threshold of thresholds) {
+    if (distance < threshold) break;
+    level += 1;
+  }
+  return level;
+}
+
 function resolutionFor(tileResolution: number, factor: number): number {
   const cells = (tileResolution - 1) / factor;
   if (!Number.isInteger(cells))
@@ -240,6 +249,12 @@ function edgeSamplesFor(values: readonly number[], resolution: number): IEdgeSam
     east[index] = values[index * resolution + resolution - 1] as number;
   }
   return { east, north, south, west };
+}
+
+function edgeVertexIndex(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
+  const row = side === "north" ? 0 : side === "south" ? level.resolution - 1 : index;
+  const column = side === "west" ? 0 : side === "east" ? level.resolution - 1 : index;
+  return row * level.resolution + column;
 }
 
 function appendQuad(
@@ -366,9 +381,10 @@ function renderedLevel(tile: IResidentTile): ILevelGeometry | undefined {
 }
 
 function edgeVertexHeight(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
-  const row = side === "north" ? 0 : side === "south" ? level.resolution - 1 : index;
-  const column = side === "west" ? 0 : side === "east" ? level.resolution - 1 : index;
-  return level.geometry.getAttribute("position").getY(row * level.resolution + column);
+  const value = level.geometry.getAttribute("position").getY(edgeVertexIndex(level, side, index));
+  if (!Number.isFinite(value))
+    throw new Error("TerrainTiles seam diagnostic edge height must be finite.");
+  return value;
 }
 
 function edgeHeight(level: ILevelGeometry, side: keyof IEdgeSamples, normalized: number): number {
@@ -379,6 +395,49 @@ function edgeHeight(level: ILevelGeometry, side: keyof IEdgeSamples, normalized:
   return (
     edgeVertexHeight(level, side, lower) * (1 - mix) + edgeVertexHeight(level, side, upper) * mix
   );
+}
+
+function interpolatedEdgeSample(samples: Float32Array, normalized: number, name: string): number {
+  const position = Math.max(0, Math.min(1, normalized)) * (samples.length - 1);
+  const lower = Math.floor(position);
+  const upper = Math.min(samples.length - 1, lower + 1);
+  const mix = position - lower;
+  const lowerValue = samples[lower] as number;
+  const upperValue = samples[upper] as number;
+  if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue))
+    throw new Error(`TerrainTiles retained ${name} edge sample must be finite.`);
+  return lowerValue * (1 - mix) + upperValue * mix;
+}
+
+function refreshEdgeSamples(level: ILevelGeometry): void {
+  for (const side of ["east", "north", "south", "west"] as const) {
+    const samples = level.edgeSamples[side];
+    for (let index = 0; index < level.resolution; index += 1)
+      samples[index] = edgeVertexHeight(level, side, index);
+  }
+}
+
+function reconcileSurfaceEdge(
+  finer: ILevelGeometry,
+  finerSide: keyof IEdgeSamples,
+  coarser: ILevelGeometry,
+  coarserSide: keyof IEdgeSamples,
+): void {
+  const position = finer.geometry.getAttribute("position");
+  for (let index = 0; index < finer.resolution; index += 1) {
+    const normalized = index / (finer.resolution - 1);
+    const height = interpolatedEdgeSample(
+      coarser.edgeSamples[coarserSide],
+      normalized,
+      `${coarserSide} of coarser LOD`,
+    );
+    position.setY(edgeVertexIndex(finer, finerSide, index), height);
+  }
+  updateLevelSkirts(finer);
+  refreshEdgeSamples(finer);
+  position.needsUpdate = true;
+  finer.geometry.computeBoundingBox();
+  finer.geometry.computeBoundingSphere();
 }
 
 function seamGap(a: IResidentTile, b: IResidentTile): number | undefined {
@@ -518,6 +577,7 @@ function restoreLevelSurface(field: Heightfield, level: ILevelGeometry): void {
     }
   }
   updateLevelSkirts(level);
+  refreshEdgeSamples(level);
   position.needsUpdate = true;
   normalAttribute.needsUpdate = true;
   level.geometry.computeBoundingBox();
@@ -573,6 +633,7 @@ function updateLodTransitionGeometry(
     }
   }
   updateLevelSkirts(finer);
+  refreshEdgeSamples(finer);
   position.needsUpdate = true;
   normalAttribute.needsUpdate = true;
   finer.geometry.computeBoundingBox();
@@ -649,6 +710,42 @@ function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
 
 function areNeighbors(a: IResidentTile, b: IResidentTile): boolean {
   return Math.abs(a.tileX - b.tileX) + Math.abs(a.tileZ - b.tileZ) === 1;
+}
+
+type NeighborPair = readonly [IResidentTile, IResidentTile];
+
+function neighborPairs(tiles: readonly IResidentTile[]): NeighborPair[] {
+  const pairs: NeighborPair[] = [];
+  for (let index = 0; index < tiles.length; index += 1) {
+    const tile = tiles[index] as IResidentTile;
+    for (let neighborIndex = index + 1; neighborIndex < tiles.length; neighborIndex += 1) {
+      const neighbor = tiles[neighborIndex] as IResidentTile;
+      if (areNeighbors(tile, neighbor)) pairs.push([tile, neighbor]);
+    }
+  }
+  return pairs;
+}
+
+function neighborLodCorrection(
+  pair: NeighborPair,
+): { coarser: IResidentTile; level: number } | undefined {
+  const [a, b] = pair;
+  if (Math.abs(a.lodLevel - b.lodLevel) <= 1) return undefined;
+  const finer = a.lodLevel < b.lodLevel ? a : b;
+  const coarser = finer === a ? b : a;
+  return { coarser, level: finer.lodLevel + 1 };
+}
+
+function reconcileNeighborPair(pair: NeighborPair): void {
+  const [a, b] = pair;
+  const [aSide, bSide] = opposingEdge(a, b);
+  const aLevel = renderedLevel(a);
+  const bLevel = renderedLevel(b);
+  if (aLevel === undefined || bLevel === undefined)
+    throw new Error("TerrainTiles cannot reconcile a neighbor with no rendered LOD level.");
+  if (aLevel.resolution === bLevel.resolution) return;
+  if (aLevel.resolution > bLevel.resolution) reconcileSurfaceEdge(aLevel, aSide, bLevel, bSide);
+  else reconcileSurfaceEdge(bLevel, bSide, aLevel, aSide);
 }
 
 function setManualLodLevel(lod: LOD, level: number): void {
@@ -831,6 +928,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (this.#released) throw new Error("TerrainTiles cannot follow after release.");
     const x = finite(position.x, "follow x");
     const z = finite(position.z, "follow z");
+    const hadFocus = this.#focus !== undefined;
     this.#focus = { x, z };
     const centerX = Math.floor((x + this.tileSize / 2) / this.tileSize);
     const centerZ = Math.floor((z + this.tileSize / 2) / this.tileSize);
@@ -884,6 +982,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#recordPeaks();
     }
     this.#recordPeaks();
+    this.#coordinateNeighborLods(hadFocus);
+    this.#recordSeamDiagnostics();
+    this.#reconcileNeighbors();
     this.#recordSeamDiagnostics();
   }
 
@@ -917,6 +1018,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tile.field.process(renderer);
       }
     }
+    this.#recordSeamDiagnostics();
+    this.#reconcileNeighbors();
     this.#recordSeamDiagnostics();
   }
 
@@ -1072,11 +1175,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #selectLod(tile: IResidentTile, distance: number, countTransition = true): void {
-    let level = 0;
-    for (const threshold of this.#lodDistances) {
-      if (distance < threshold) break;
-      level += 1;
-    }
+    this.#setLodLevel(tile, lodLevelForDistance(distance, this.#lodDistances), countTransition);
+  }
+
+  #setLodLevel(tile: IResidentTile, level: number, countTransition = true): void {
     if (level === tile.lodLevel) {
       setManualLodLevel(tile.lod, level);
       return;
@@ -1153,6 +1255,24 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
   }
 
+  #coordinateNeighborLods(countTransitions: boolean): void {
+    const pairs = neighborPairs([...this.#resident.values()]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const pair of pairs) {
+        const correction = neighborLodCorrection(pair);
+        if (correction === undefined) continue;
+        this.#setLodLevel(correction.coarser, correction.level, countTransitions);
+        changed = true;
+      }
+    }
+  }
+
+  #reconcileNeighbors(): void {
+    for (const pair of neighborPairs([...this.#resident.values()])) reconcileNeighborPair(pair);
+  }
+
   #finishLodTransition(tile: IResidentTile): void {
     const transition = tile.lodTransition;
     if (transition === undefined) return;
@@ -1190,11 +1310,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       for (const neighbor of tiles) {
         if (tile.key >= neighbor.key || !areNeighbors(tile, neighbor)) continue;
         const gap = seamGap(tile, neighbor);
-        if (gap === undefined || !Number.isFinite(gap)) continue;
+        if (gap === undefined || !Number.isFinite(gap))
+          throw new Error("TerrainTiles seam diagnostic observation must be finite.");
         this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
         const visualGap = Math.max(0, gap - seamCoverageDepth(tile, neighbor));
-        if (Number.isFinite(visualGap))
-          this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
+        if (!Number.isFinite(visualGap))
+          throw new Error("TerrainTiles visual seam diagnostic observation must be finite.");
+        this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
       }
     }
   }
