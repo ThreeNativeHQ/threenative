@@ -15,7 +15,7 @@ block now reads `pass` from a reproducible source. Depended on Lane A
 ([PRD-229](refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5,
 files 1–2) only so that its own record could cite a green `pnpm test`.
 
-Second lane of [the release batch](../batch-2026-08-29/README.md).
+Second lane of [the release batch](../alpha-readiness/README.md).
 
 **Goal: the three instruments that grade this release can each run and say what they found.**
 Two of the seven alpha-bar rows are unmeasured for want of a run nobody has done, and the command

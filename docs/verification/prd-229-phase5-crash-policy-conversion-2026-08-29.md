@@ -1,6 +1,6 @@
 # PRD-229 Phase 5 — the crash-policy source-text assertions become behaviour tests, 2026-08-29
 
-**Lane A of [the release batch](../PRDs/batch-2026-08-29/README.md).** Two files converted, the
+**Lane A of [the release batch](../PRDs/alpha-readiness/README.md).** Two files converted, the
 first two of Phase 5's scope. Executed on `main` at `c94942d6`, machine `linux-x64`, no device.
 
 ## The red
