@@ -173,6 +173,12 @@ describe("template loading screen", () => {
     await cp(path.join(templateRoot, "..", "template-assets"), path.join(root, "template-assets"), {
       recursive: true,
     });
+    // `agent-files` became a required scaffold input; a staged package without it fails
+    // TN_AGENT_FILES_MISSING, which is the scaffolder correctly refusing to generate a project
+    // with no agent roles rather than this test finding a real defect.
+    await cp(path.join(templateRoot, "..", "agent-files"), path.join(root, "agent-files"), {
+      recursive: true,
+    });
     await cp(
       path.join(templateRoot, "..", "capabilities.json"),
       path.join(root, "capabilities.json"),

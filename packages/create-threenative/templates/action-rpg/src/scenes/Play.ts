@@ -421,7 +421,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       player.update(frameCtx, dt);
       ability.update(dt);
-      for (const enemy of enemies.values()) enemy.update(frameCtx, dt, player.mesh.position);
+      // Enemies act only once first-use compilation has settled. They damage the player, and the
+      // combat scenario asserts an exact health at a labelled step — so stepping them during the
+      // launch makes that number a function of how long the launch took. Measured as 90 on a
+      // software rasteriser against 95 on a real GPU from the same build, which is the comment
+      // core carries in playtest.ts for the same reason.
+      if (frameCtx.startup.compileSettled) {
+        for (const enemy of enemies.values()) enemy.update(frameCtx, dt, player.mesh.position);
+      }
 
       currentRoom = roomFor(player.mesh.position.x);
       const previous = frameCtx.state.getState();
