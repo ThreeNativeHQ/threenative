@@ -37,8 +37,7 @@ describe("golden path matrix", () => {
       const commands = goldenPathCorrectiveCommands(missing);
       expect(commands.test).toEqual({ args: ["test"], command: "pnpm", cwd: missing });
     } finally {
-      if (previous === undefined) delete process.env.TN_PLAYTEST_ALLOW_SOFTWARE;
-      else process.env.TN_PLAYTEST_ALLOW_SOFTWARE = previous;
+      process.env.TN_PLAYTEST_ALLOW_SOFTWARE = previous ?? "";
     }
   });
 
