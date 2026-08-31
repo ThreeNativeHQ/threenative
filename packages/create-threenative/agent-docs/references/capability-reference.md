@@ -1314,20 +1314,52 @@ const mirror = subscribeUiState(bridge);
 
 ## `@threenative/core/world`
 
+### `getWorldCapabilities`
+
+`function` — Resolve the active world-generation path from host capability facts. The function accepts the adapter facts instead of reaching through a renderer-specific global, so browser and native hosts can report the same object. Missing limits are not treated as infinite: a host must either provide a valid GPU limit report or explicitly choose CPU fallback. GPU generation remains unavailable until a GPU readback can own the canonical field; a host adapter report therefore never upgrades a CPU fallback into a GPU generation claim.
+
+```ts
+export function getWorldCapabilities(options: IWorldCapabilitiesOptions = { … }
+```
+
+- **Use when:** decide whether generated terrain can use GPU compute · report why terrain generation is using a reduced CPU fallback
+- **Constraints:** unsupported is returned when compute limits are unknown or below the requirement; callers must not silently continue
+- **Overrides:** minimumWorkgroupsPerDimension, minimumStorageBufferBindingSize, and cpuFallbackIterations
+
+```ts
+const capabilities = getWorldCapabilities({ limits: adapter.limits, cpuFallbackIterations: 8 });
+```
+
 ### `Heightfield`
 
 `class` — One height buffer shared by world queries, rendered geometry, and a physics heightfield. The game supplies every value, so changing the terrain's shape never requires a package edit. `fromSampler` evaluates that game function exactly once at each vertex and retains only the resulting numbers. Queries interpolate those same numbers instead of evaluating the function again.
 
 ```ts
-export class Heightfield { … }
+export class Heightfield extends Group implements IComputeDriven { … }
 ```
 
-- **Use when:** build terrain geometry and collision from one game-authored height function · query the same ground height or normal that a player sees and collides with · build islands and coastlines from terrain
+- **Use when:** build terrain geometry and collision from one game-authored height function · generate a terrain a player can walk across · query the same ground height or normal that a player sees and collides with · ask how high the ground is here · build islands and coastlines from terrain
 - **Constraints:** sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output · rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order
 - **Overrides:** rows, columns, width, depth, origin, and sampleHeight are explicit on every field
 
 ```ts
 const field = Heightfield.fromSampler({ rows: 65, columns: 65, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: terrainHeight });
+```
+
+### `TerrainTiles`
+
+`class` — Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.
+
+```ts
+export class TerrainTiles extends Object3D implements IComputeDriven { … }
+```
+
+- **Use when:** stream terrain without cracks · keep generated terrain resident around a moving player · put a generated terrain tile into a game-owned physics world
+- **Constraints:** sampleHeight and surface are required game choices; no landform or surface preset is installed · residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
+- **Overrides:** tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets
+
+```ts
+const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
 ```
 
 ## `@threenative/physics`

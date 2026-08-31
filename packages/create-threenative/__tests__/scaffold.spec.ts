@@ -187,6 +187,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed after the template contract required every kit to ship a native icon.
   sailing: "a7e6b702bd1236a8784d4a37715a7441dc384c8ef107217baea0a3f88a315dfd",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
+  // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
+  // terrain fields, bounded tile residency, and the three plain-language world situations.
+  // Recomputed 2026-08-31 for the PRD-251 review repair: the generated world capability
+  // reference now states that GPU generation fails closed until canonical readback is supported.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.

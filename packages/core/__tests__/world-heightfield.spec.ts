@@ -117,6 +117,59 @@ describe("Heightfield", () => {
     );
   });
 
+  it("should reject GPU generation until a GPU field can be canonical", () => {
+    expect(
+      () =>
+        new Heightfield({
+          columns: 3,
+          depth: 2,
+          heights: new Float32Array([3, 2, 1, 2, 1, 0, 1, 0, -1]),
+          origin: { x: 0, z: 0 },
+          rows: 3,
+          width: 2,
+          worldPasses: {
+            dispatchBudget: 1,
+            erosion: {
+              depositionRate: 0.35,
+              erosionRate: 0.22,
+              evaporation: 0.04,
+              iterations: 0,
+              rainfall: 0.08,
+              sedimentCapacity: 0.7,
+              timeStep: 0.05,
+            },
+            gpu: true,
+          },
+        }),
+    ).toThrow(/GPU generation cannot be canonical/u);
+  });
+
+  it("should keep an omitted GPU flag on the canonical CPU path", () => {
+    const value = new Heightfield({
+      columns: 3,
+      depth: 2,
+      heights: new Float32Array([3, 2, 1, 2, 1, 0, 1, 0, -1]),
+      origin: { x: 0, z: 0 },
+      rows: 3,
+      width: 2,
+      worldPasses: {
+        dispatchBudget: 1,
+        erosion: {
+          depositionRate: 0.35,
+          erosionRate: 0.22,
+          evaporation: 0.04,
+          iterations: 0,
+          rainfall: 0.08,
+          sedimentCapacity: 0.7,
+          timeStep: 0.05,
+        },
+      },
+    });
+
+    expect(value.generationComplete).toBe(true);
+    expect(value.debug()).toMatchObject({ complete: true, dispatched: 0 });
+  });
+
   it("should construct no appearance under the world subpath", () => {
     const source = readFileSync(path.resolve("packages/core/src/world.ts"), "utf8");
     expect(source).not.toMatch(

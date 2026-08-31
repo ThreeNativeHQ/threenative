@@ -17,6 +17,18 @@ That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`. Pooled
 that rule — see `docs/architecture/CHARTER.md`'s "Tracer streaks and sprite pixel data are
 mechanism" and `docs/PRDs/done/PRD-162-tracer-streaks-and-sprite-pixel-data-are-mechanism.md`.
 
+### World subpath
+
+The optional `@threenative/core/world` subpath owns numeric heightfield storage, ordered world
+passes, bounded terrain-tile residency, LOD composition, skirts, collider lifetime and capability
+reporting. `Heightfield` and `TerrainTiles` require the game's sampler and surface input; the
+subpath never selects a terrain shape, material, biome, species, lighting or platform path.
+`residentTileBudget` and `residentByteBudget` are hard limits, and `getWorldCapabilities` must
+report `gpu`, `cpu-fallback` with its reduced iteration count, or `unsupported` with the reason.
+Use `heightAt`, `normalAt` and `sample` on the resident field so queries stay tied to the same
+stored values that produce geometry and collision. `follow` is the only residency update entry
+point; a tile is evicted as one unit with its collider, geometry and asset release.
+
 `picking.ts` is the one place a third-party dependency other than `three` and `zustand`
 reaches core. It is contained deliberately: `ScenePicker` builds a hierarchy on first use,
 patches no `three` prototype, and a game that never calls `ctx.raycast` never builds one.

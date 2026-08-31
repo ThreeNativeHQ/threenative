@@ -9,15 +9,53 @@
     "movement": {
       "entity": "player",
       "minDistance": 300,
-      "pathLength": 300
+      "pathLength": 300,
+      "minAxisDelta": {
+        "axis": "x",
+        "min": 300
+      }
     },
-    "visibility": [
+    "components": [
       {
-        "entity": "chunk.0",
-        "present": false
+        "allowTrivial": "TerrainTiles reports its hard tile cap from the first observation.",
+        "component": "residentTiles",
+        "entity": "terrain",
+        "lte": 9
       },
       {
-        "entity": "chunk.7",
+        "allowTrivial": "TerrainTiles reports its hard byte cap from the first observation.",
+        "component": "residentBytes",
+        "entity": "terrain",
+        "lte": 8000000
+      },
+      {
+        "allowTrivial": "TerrainTiles records a nonzero peak resident tile count at startup.",
+        "component": "peakResidentTiles",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "TerrainTiles records a nonzero peak resident byte count at startup.",
+        "component": "peakResidentBytes",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "TerrainTiles reports a raw edge discontinuity covered by its visual skirt depth.",
+        "component": "maxSeamGap",
+        "entity": "terrain",
+        "lte": 64
+      },
+      {
+        "changed": true,
+        "component": "lodTransitions",
+        "entity": "terrain"
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "TerrainTiles is intentionally visible from the initial camera framing so the capture always includes the streamed field.",
+        "entity": "terrain",
         "minProjectedPixels": 1,
         "present": true
       }

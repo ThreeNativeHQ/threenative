@@ -1484,6 +1484,26 @@
     },
     {
       "constraints": [
+        "unsupported is returned when compute limits are unknown or below the requirement; callers must not silently continue"
+      ],
+      "example": "const capabilities = getWorldCapabilities({ limits: adapter.limits, cpuFallbackIterations: 8 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [
+        "minimumWorkgroupsPerDimension, minimumStorageBufferBindingSize, and cpuFallbackIterations"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function getWorldCapabilities(options: IWorldCapabilitiesOptions = { … }",
+      "situations": [
+        "decide whether generated terrain can use GPU compute",
+        "report why terrain generation is using a reduced CPU fallback"
+      ],
+      "summary": "Resolve the active world-generation path from host capability facts. The function accepts the adapter facts instead of reaching through a renderer-specific global, so browser and native hosts can report the same object. Missing limits are not treated as infinite: a host must either provide a valid GPU limit report or explicitly choose CPU fallback. GPU generation remains unavailable until a GPU readback can own the canonical field; a host adapter report therefore never upgrades a CPU fallback into a GPU generation claim.",
+      "supersedes": [],
+      "symbol": "getWorldCapabilities"
+    },
+    {
+      "constraints": [
         "sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output",
         "rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order"
       ],
@@ -1494,15 +1514,39 @@
         "rows, columns, width, depth, origin, and sampleHeight are explicit on every field"
       ],
       "package": "@threenative/core",
-      "signature": "export class Heightfield { … }",
+      "signature": "export class Heightfield extends Group implements IComputeDriven { … }",
       "situations": [
         "build terrain geometry and collision from one game-authored height function",
+        "generate a terrain a player can walk across",
         "query the same ground height or normal that a player sees and collides with",
+        "ask how high the ground is here",
         "build islands and coastlines from terrain"
       ],
       "summary": "One height buffer shared by world queries, rendered geometry, and a physics heightfield. The game supplies every value, so changing the terrain's shape never requires a package edit. `fromSampler` evaluates that game function exactly once at each vertex and retains only the resulting numbers. Queries interpolate those same numbers instead of evaluating the function again.",
       "supersedes": [],
       "symbol": "Heightfield"
+    },
+    {
+      "constraints": [
+        "sampleHeight and surface are required game choices; no landform or surface preset is installed",
+        "residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws"
+      ],
+      "example": "const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [
+        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class TerrainTiles extends Object3D implements IComputeDriven { … }",
+      "situations": [
+        "stream terrain without cracks",
+        "keep generated terrain resident around a moving player",
+        "put a generated terrain tile into a game-owned physics world"
+      ],
+      "summary": "Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.",
+      "supersedes": [],
+      "symbol": "TerrainTiles"
     },
     {
       "constraints": ["add the area to the physics context before stepping the world"],
