@@ -11,7 +11,10 @@ function registeredEntities(): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const file of ["game.ts", "physics.ts"]) {
     const source = readFileSync(join(smoke, "src", file), "utf8");
-    for (const match of source.matchAll(/ctx\.entities\.add\(\s*"([^"]+)"/gu)) ids.add(match[1]);
+    for (const match of source.matchAll(/ctx\.entities\.add\(\s*"([^"]+)"/gu)) {
+      const id = match[1];
+      if (id !== undefined) ids.add(id);
+    }
   }
   expect(ids.size).toBeGreaterThan(0);
   return ids;
