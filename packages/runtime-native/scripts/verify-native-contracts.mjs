@@ -48,6 +48,11 @@ export const executionContracts = {
     invocations: [{ args: [], passLine: "render-pass-class-table: prototype=shared" }],
   },
   "threenative-crash-handler-policy-test": {
+    // POSIX only. The test drives `sigaction` and `siginfo_t` directly, which MSVC does not
+    // provide, and the Windows host installs a different crash handler — so on Windows this is a
+    // contract that does not exist, not one that is skipped. Declared here because the target is
+    // guarded in CMakeLists.txt, and this file fails closed on a contract with no target.
+    platforms: ["darwin", "linux"],
     invocations: [{ args: [], passLine: "native crash-handler policy contract passed" }],
   },
   "threenative-dom-dispatch-lifetime-test": {
@@ -167,9 +172,18 @@ export function discoverNativeTestTargets(cmakeSource) {
   return discovered;
 }
 
-export function validateExecutionContracts(discoveredTargets, contracts) {
+/** Does this contract exist on the platform the lane is running on? */
+export function contractAppliesTo(contract, platform = process.platform) {
+  return contract?.platforms === undefined || contract.platforms.includes(platform);
+}
+
+export function validateExecutionContracts(discoveredTargets, contracts, platform = process.platform) {
   const discovered = new Set(discoveredTargets);
-  const configured = new Set(Object.keys(contracts));
+  const configured = new Set(
+    Object.entries(contracts)
+      .filter(([, contract]) => contractAppliesTo(contract, platform))
+      .map(([target]) => target),
+  );
   const missing = discoveredTargets.filter((target) => !configured.has(target));
   const extra = [...configured].filter((target) => !discovered.has(target)).sort();
   const errors = [];

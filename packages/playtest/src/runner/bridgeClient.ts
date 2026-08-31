@@ -118,13 +118,39 @@ export async function connectPlaytestBridge(
   scenario: IPlaytestScenario,
   timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
 ): Promise<IPlaytestBridgeClient | undefined> {
-  return connectPlaytestBridgeTransport(new PlaywrightTransport(page, timeoutMs), scenario, timeoutMs);
+  // The transport keeps the operation budget; the bridge wait gets the startup one. They were the
+  // same value, which meant an application's whole first-use compilation had to fit inside a
+  // request/response round trip.
+  return connectPlaytestBridgeTransport(
+    new PlaywrightTransport(page, timeoutMs),
+    scenario,
+    bridgeWaitTimeoutMs(timeoutMs),
+  );
+}
+
+/**
+ * How long to wait for the page to install its playtest bridge.
+ *
+ * The bridge appears during application startup, not during a request/response round trip, so
+ * `operationTimeoutMs` is the wrong budget for it by construction — the same mistake, in the same
+ * direction, as timing a bulk `advance` with it. On a software-rendered two-core runner the
+ * scaffolded starter spends seconds in first-use compilation before the bridge exists, and the run
+ * was reported as `TN_PLAYTEST_BRIDGE_MISSING` with `frames: 0`: not a page without a bridge, a
+ * page that had not finished booting yet.
+ *
+ * One operation plus the startup budget, matching `advanceTimeoutMs`. A page that genuinely
+ * installs no bridge still fails with the same diagnostic, just later.
+ */
+export function bridgeWaitTimeoutMs(
+  operationMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+): number {
+  return operationMs + PLAYTEST_STARTUP_COMPILE_BUDGET_MS;
 }
 
 export async function connectPlaytestBridgeTransport(
   transport: IBridgeTransport,
   scenario: IPlaytestScenario,
-  timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+  timeoutMs: number = bridgeWaitTimeoutMs(),
 ): Promise<IPlaytestBridgeClient | undefined> {
   const required = requiredPlaytestCapabilities(scenario);
   const bridgeRequired = missingPlaytestCapabilities(required, transport.capabilities);

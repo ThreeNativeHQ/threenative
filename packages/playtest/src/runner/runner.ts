@@ -71,6 +71,8 @@ import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 import {
   openRunnerPage,
   remoteBrowserFor,
+  playwrightProfileDirectories,
+  removeStrandedProfiles,
   teardownBrowserSession,
   type IRemoteBrowserSession,
 } from "./browserSession.js";
@@ -202,6 +204,7 @@ async function runStandalonePlaytestInternal(
     serverTeardownPromise ??= stopManagedServer(server);
     await serverTeardownPromise;
   };
+  let profilesBeforeLaunch: readonly string[] | undefined;
   const teardown = async (stopManagedServerOnTeardown = ownsServer): Promise<void> => {
     teardownPromise ??= (async () => {
       // Chromium does not always exit when asked — under a virtual display with a live GPU
@@ -212,6 +215,17 @@ async function runStandalonePlaytestInternal(
       // over a live Chromium, stranding it and its profile directory — which is the orphan the
       // suite gate catches. Wait for the launch to settle, then close whatever it produced.
       await teardownBrowserSession(page, context, browser, browserLaunch, options.remoteBrowser);
+      // Teardown above is deliberately bounded, and the CLI exits as soon as it returns — so
+      // Playwright's own removal of the profile directory may never run. Reclaim what this run
+      // launched and nothing else; the orphan gate reports whatever is left.
+      if (profilesBeforeLaunch !== undefined) {
+        const removed = removeStrandedProfiles(profilesBeforeLaunch);
+        if (removed.length > 0) {
+          process.stderr.write(
+            `${JSON.stringify({ reclaimedBrowserProfiles: removed.length })}\n`,
+          );
+        }
+      }
     })();
     await teardownPromise.catch(() => undefined);
     if (stopManagedServerOnTeardown) await stopServer();
@@ -252,6 +266,8 @@ async function runStandalonePlaytestInternal(
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
     await options.remoteBrowser?.prepare(activeConfig);
+    // Snapshot the profiles that already exist, so teardown can tell this run's from a sibling's.
+    profilesBeforeLaunch = playwrightProfileDirectories();
     browserLaunch = options.remoteBrowser === undefined
       ? chromium.launch({
           ...(browserConfig.browserArgs === undefined ? {} : { args: resolveBrowserArguments(browserConfig.browserArgs) }),

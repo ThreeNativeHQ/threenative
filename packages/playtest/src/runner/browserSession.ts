@@ -1,3 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { Browser, BrowserContext, Page } from "playwright";
 
 import type { IPlaytestScenario } from "../index.js";
@@ -69,4 +74,67 @@ export async function teardownBrowserSession(
   await boundedTeardownStep(context?.close(), 5_000);
   const launched = browser ?? (await settledTeardownValue(browserLaunch, 10_000));
   await boundedTeardownStep(launched?.close(), 10_000);
+}
+
+
+/** Browser profile directories Playwright creates under the temporary root. */
+export function playwrightProfileDirectories(root: string = tmpdir()): readonly string[] {
+  try {
+    return readdirSync(root)
+      .filter((entry) => entry.startsWith("playwright_"))
+      .map((entry) => join(root, entry))
+      .sort();
+  } catch {
+    // No temporary root, or one this process cannot read. Either way there is nothing to reclaim.
+    return [];
+  }
+}
+
+/**
+ * Which of the profile directories this run created are safe to remove.
+ *
+ * Playwright deletes the profile of a browser it closed, but that removal happens in its driver
+ * and the runner calls `process.exit` as soon as teardown returns — deliberately, because a
+ * Chromium under a virtual display can sit in `close()` forever and the report is already written.
+ * The cost showed up in the orphan gate: `playwright_chromiumdev_profile-*` left behind with, in
+ * its own words, "no process holds these directories, so this is a real leak".
+ *
+ * Two conditions, because the temporary root is shared. A directory is only reclaimed if it
+ * appeared after this run launched its browser, and if no live process still names it — a sibling
+ * runner's profile satisfies neither, and deleting one out from under a running browser would
+ * trade this leak for a much worse failure.
+ */
+export function reclaimableProfileDirectories(
+  before: readonly string[],
+  after: readonly string[],
+  processArguments: string,
+): readonly string[] {
+  const existing = new Set(before);
+  return after.filter((directory) => !existing.has(directory) && !processArguments.includes(directory));
+}
+
+/** Remove the profiles this run stranded. Returns what it removed, for the caller to report. */
+export function removeStrandedProfiles(
+  before: readonly string[],
+  root: string = tmpdir(),
+): readonly string[] {
+  // `ps` is how the orphan gate itself decides whether a directory is still held. Windows has no
+  // equivalent here and does not run this lane, so it simply reclaims nothing.
+  if (process.platform === "win32") return [];
+  const listing = spawnSync("ps", ["-eo", "args="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  if (listing.status !== 0) return [];
+  const removed: string[] = [];
+  for (const directory of reclaimableProfileDirectories(
+    before,
+    playwrightProfileDirectories(root),
+    listing.stdout ?? "",
+  )) {
+    try {
+      rmSync(directory, { force: true, recursive: true });
+      removed.push(directory);
+    } catch {
+      // A profile that cannot be removed is reported by the gate rather than hidden here.
+    }
+  }
+  return removed;
 }

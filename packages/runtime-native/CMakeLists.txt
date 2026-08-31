@@ -1964,9 +1964,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${WGPU_TEST_INCLUDES})
     endif()
 
-    add_executable(threenative-crash-handler-policy-test EXCLUDE_FROM_ALL
-        tests/crash_handler_policy_test.cpp)
-    target_link_libraries(threenative-crash-handler-policy-test PRIVATE mystral-runtime)
+    # POSIX only: the test drives `sigaction` and `siginfo_t` directly, and MSVC provides
+    # neither. The Windows host installs a different crash handler, so this contract does not
+    # exist there rather than being skipped; `verify-native-contracts.mjs` records the same
+    # platform list, because it fails closed on a contract with no target.
+    if(NOT WIN32)
+        add_executable(threenative-crash-handler-policy-test EXCLUDE_FROM_ALL
+            tests/crash_handler_policy_test.cpp)
+        target_link_libraries(threenative-crash-handler-policy-test PRIVATE mystral-runtime)
+    endif()
 
     add_executable(threenative-wgpu-null-handle-test EXCLUDE_FROM_ALL
         tests/wgpu_null_handle_test.cpp)
@@ -2035,7 +2041,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-bindings-creation-test)
     tn_register_contract_test(threenative-canvas2d-dirty-test)
     tn_register_contract_test(threenative-command-encoder-class-table-test)
-    tn_register_contract_test(threenative-crash-handler-policy-test)
+    if(NOT WIN32)
+        tn_register_contract_test(threenative-crash-handler-policy-test)
+    endif()
     tn_register_contract_test(threenative-device-pixel-ratio-test)
     tn_register_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_register_contract_test(threenative-worker-production-test)

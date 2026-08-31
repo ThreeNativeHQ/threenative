@@ -162,3 +162,35 @@ test("desktop physics runs the scene with the physics-enabled verification binar
     /const buildDirectory = runActuationBindingsProof\(\);[\s\S]*runDesktopPhysics\(desktop, buildDirectory\)/u,
   );
 });
+
+// The Windows desktop leg reached the contract build and failed compiling
+// `crash_handler_policy_test.cpp`: it drives `sigaction` and `siginfo_t`, which MSVC does not
+// provide. The target is guarded to POSIX in CMakeLists.txt, and this file fails closed on a
+// contract whose target does not exist — so the contract has to carry the same platform list, or
+// guarding the build would simply move the failure into validation.
+test('a contract declared for other platforms is not required to have a target here', () => {
+  const contracts = {
+    'threenative-everywhere-test': { invocations: [{ args: [], passLine: 'ok' }] },
+    'threenative-posix-only-test': {
+      platforms: ['darwin', 'linux'],
+      invocations: [{ args: [], passLine: 'ok' }],
+    },
+  };
+
+  // On Windows the POSIX target is absent, and that is correct rather than missing.
+  assert.doesNotThrow(() =>
+    validateExecutionContracts(['threenative-everywhere-test'], contracts, 'win32'),
+  );
+
+  // On Linux it must be there: a platform the contract claims still fails closed without it.
+  assert.throws(
+    () => validateExecutionContracts(['threenative-everywhere-test'], contracts, 'linux'),
+    /execution contracts without targets: threenative-posix-only-test/u,
+  );
+
+  // A target with no contract at all still fails closed on every platform.
+  assert.throws(
+    () => validateExecutionContracts(['threenative-unregistered-test'], {}, 'linux'),
+    /missing execution contracts: threenative-unregistered-test/u,
+  );
+});
