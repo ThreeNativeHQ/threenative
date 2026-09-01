@@ -1070,10 +1070,15 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
     "lightmap",
     "passes",
     "quantize",
+    "sharedImages",
     "simplify",
     "textures",
     "virtual",
   ]);
+  if (models.sharedImages !== undefined && typeof models.sharedImages !== "boolean") {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.models.sharedImages must be true or false.");
+  }
+  const sharedImages = models.sharedImages as boolean | undefined;
   let lightmap: IThreeNativeModelsConfig["lightmap"];
   if (models.lightmap !== undefined) {
     const rawLightmap = assertRecord(models.lightmap, "assets.models.lightmap");
@@ -1164,6 +1169,7 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(passes === undefined || Object.keys(passes).length === 0 ? {} : { passes }),
     ...(quantize === undefined || Object.keys(quantize).length === 0 ? {} : { quantize }),
+    ...(sharedImages === undefined ? {} : { sharedImages }),
     ...(simplify === undefined ? {} : { simplify }),
     ...(textures === undefined ? {} : { textures }),
     ...(virtual === undefined ? {} : { virtual }),

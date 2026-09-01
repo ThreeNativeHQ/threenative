@@ -468,6 +468,27 @@ describe("threenative.config.ts", () => {
     });
   });
 
+  it("hands assets.models.sharedImages to the pipeline that receives it", async () => {
+    // The same seam again: the pipeline grew `sharedImages` for packs whose models all embed
+    // the same textures, and this validator's key list is where a documented setting dies
+    // before an asset compiles.
+    const root = await project();
+    await config(root, "export default { assets: { models: { sharedImages: true } } };");
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({ models: { sharedImages: true } });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      skipped: 0,
+      written: 0,
+    });
+  });
+
+  it("rejects a non-boolean assets.models.sharedImages with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { assets: { models: { sharedImages: "yes" } } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.sharedImages/u);
+  });
+
   it("rejects an unknown key under assets.models.virtual with the named code", async () => {
     const root = await project();
     await config(root, "export default { assets: { models: { virtual: { ratio: 0.5 } } } };");

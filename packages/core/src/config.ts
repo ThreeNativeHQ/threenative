@@ -63,6 +63,12 @@ export interface IThreeNativeModelsConfig {
     readonly uvBits?: number;
   };
   /**
+   * Write each distinct embedded image once under `shared/images/` and reference it from every
+   * model that carries it. A marketplace pack whose eight pines all embed the same bark map then
+   * ships and encodes it once. Default false; the served GLB references files beside it.
+   */
+  readonly sharedImages?: boolean;
+  /**
    * Embedded-texture compression for images carried inside a `.glb`.
    *
    * On by default in the compile step; `"none"` ships every embedded image exactly as
