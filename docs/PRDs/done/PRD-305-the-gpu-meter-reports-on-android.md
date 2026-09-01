@@ -4,36 +4,25 @@ prd_contract: v1
 
 # PRD-305 — The GPU meter reports on Android, or says on the record why it cannot
 
-**Status:** BLOCKED — `requires-physical-device`, filed 2026-08-31 against `2e014460`, probed
-2026-09-01. Evidence:
-[`gpu-meter-android-probe-2026-09-01`](../../../verification/gpu-meter-android-probe-2026-09-01.md).
+**Status:** DONE, 2026-09-01. Evidence:
+[`gpu-meter-on-android-2026-09-01`](../../verification/gpu-meter-on-android-2026-09-01.md), and the
+device reading in [`runtime-perf-state`](../../verification/runtime-perf-state.md).
 
-**What is missing is a phone, and nothing else.** Every file:line below is a read of this tree, and
-no Android run has been executed — that absence is the whole reason this PRD exists, and it stays
-unexecuted because no device is attached:
+**`gpuMs` reports on Android.** A Pixel 8 (Mali-G715) produced `TN_FRAME_BUDGET` windows carrying
+`gpuMs 0.19` — the first GPU number this repository holds for a phone that was read by the
+instrument rather than derived by ablation arithmetic. The device granted `timestamp-query`, and
+the host now says so on the path a game takes rather than only on the headless one.
 
-```
-$ adb devices -l
-List of devices attached
+Two defects the run exposed and this PRD fixed: the windowed device-creation branch printed no
+`timestamp-query` probe at all, so the question was unanswerable from a log; and the
+required-feature arrays were bounded by literals that did not track their size, so a device
+advertising all three compression formats would have silently lost `core-features-and-limits`.
 
-```
-
-`adb` itself is fine (1.0.41 / 37.0.0-14910828, on disk at `~/Android/Sdk/platform-tools/`), and
-four emulator images are installed. **The emulator cannot answer this question.** `--target android`
-in the conformance runner is the emulator lane and refuses a physical serial, so the two are
-different targets by construction; and an emulator's WebGPU adapter is software, so whether *it*
-grants `timestamp-query` says nothing about what a Pixel 8's driver grants. A green from there
-would be a claim about the wrong hardware — which is the failure mode this PRD was written to end,
-not to repeat.
-
-**Unblocked by:** a Pixel 8 (or any physical Android device) attached over `adb`, cool enough to
-pass preflight. The run itself is Phase 1 below and is a measurement, not an edit.
-
-**Blocks:** [PRD-308](../../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md)
-and through it
-[PRD-311](../../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Both stay OPEN in
-their batch rather than blocked — a dependency that is not ready is not the same as a missing
-capability.
+**Unblocks [PRD-308](../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md)** and
+through it [PRD-311](../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Read
+`gpuMs 0.19` as *the meter works*, not as a game's GPU cost: the subject was a near-empty scene, and
+the phone was on the charger, so no fps figure from that run is comparable to the unplugged
+baselines.
 
 **Outcome:** a `TN_FRAME_BUDGET` line captured from a Pixel 8 carries a real `gpuMs`, and the
 repository holds the logcat that proves it. If the device does not grant `timestamp-query`, the
@@ -43,10 +32,10 @@ silence that reads identically to "we never tried".
 **Depends on:** nothing. Every piece of plumbing already exists; none of it has been executed on a
 phone.
 
-**Unblocks:** [PRD-308](../../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) (per-pass GPU
+**Unblocks:** [PRD-308](../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) (per-pass GPU
 attribution on the phone) and through it
-[PRD-311](../../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Task 2 of Band 1; see
-[README](../../architecture/README.md) for the tick-back rule.
+[PRD-311](../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Task 2 of Band 1; see
+[README](../architecture/README.md) for the tick-back rule.
 
 **Complexity: 4 → MEDIUM mode.** +1 (1–5 files), +2 (multi-package: `core`, `playtest`, and a
 device lane), +1 (a physical-device measurement whose outcome may be "the device says no").

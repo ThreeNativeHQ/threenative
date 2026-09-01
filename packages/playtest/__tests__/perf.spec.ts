@@ -308,3 +308,27 @@ describe("projection markers in the perf report", () => {
     );
   });
 });
+
+describe("the GPU column never reads as a measured zero", () => {
+  it("should name the reason when no window carries gpuMs", () => {
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("gpu: not reported");
+    expect(text).toContain("timestamp-query");
+    expect(text).toContain("TN_WEBGPU_FEATURES");
+    // No column at all rather than a column of dashes a reader would total.
+    expect(text).not.toContain("gpu ms");
+  });
+
+  it("should say unmeasured for a single window the device refused", () => {
+    const withGpu = budgetLine(1, 30, 40, 20).replace('"window":1', '"window":1,"gpuMs":4.5');
+    const parsed = parsePerformanceMarkers(`${withGpu}\n${budgetLine(2, 30, 40, 20)}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("gpu ms");
+    expect(text).toContain("4.50");
+    expect(text).toContain("unmeasured");
+    expect(text).not.toContain("gpu: not reported");
+  });
+});
