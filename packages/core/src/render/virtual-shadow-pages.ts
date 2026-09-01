@@ -1,0 +1,664 @@
+/**
+ * Renderer-independent bookkeeping for virtual shadow pages.
+ *
+ * Four pieces, none of which know a GPU exists: stable virtual page addresses and a bounded
+ * physical page pool with LRU eviction (`PhysicalPagePool`), camera-centred clip windows snapped
+ * to whole pages in a light-space basis (`DirectionalClipmap`), the pages a frame needs from
+ * receiver points and visible caster bounds (`ReceiverDemandPass`), and the pages a moving caster
+ * dirties (`ShadowInvalidationTracker`). `VirtualShadowNode` in `virtual-shadow.ts` is the only
+ * consumer; everything here is pure so its rules are provable in a node-environment spec.
+ *
+ * Fail closed: malformed input throws at the boundary instead of producing a page that samples
+ * nothing.
+ */
+
+const EPSILON = 1e-9;
+
+/** A plain `{x, y, z}` triple; three's `Vector3` satisfies it without a copy. */
+export interface IVector3Like {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+/** An axis-aligned world-space box as two corners. */
+export interface IBoundsLike {
+  readonly min: IVector3Like;
+  readonly max: IVector3Like;
+}
+
+/** A point in the light-space basis: `u` and `v` across the light, `w` toward it. */
+export interface ILightSpacePoint {
+  readonly u: number;
+  readonly v: number;
+  readonly w: number;
+}
+
+/** The address of one virtual page: a clip level and integer page coordinates. */
+export interface IVirtualPageAddress {
+  readonly level: number;
+  readonly x: number;
+  readonly y: number;
+  readonly key: string;
+}
+
+function assertInteger(name: string, value: number): void {
+  if (!Number.isInteger(value)) {
+    throw new TypeError(`${name} must be an integer; received ${String(value)}`);
+  }
+}
+
+function assertPositiveInteger(name: string, value: number): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new TypeError(`${name} must be a positive integer; received ${String(value)}`);
+  }
+}
+
+function assertFiniteVector(name: string, vector: IVector3Like | null | undefined): void {
+  if (
+    !vector ||
+    !Number.isFinite(vector.x) ||
+    !Number.isFinite(vector.y) ||
+    !Number.isFinite(vector.z)
+  ) {
+    throw new TypeError(`${name} must contain finite x, y and z values`);
+  }
+}
+
+/** Build the string key of a virtual page. */
+export function makePageKey(level: number, x: number, y: number): string {
+  assertInteger("level", level);
+  assertInteger("x", x);
+  assertInteger("y", y);
+  return `${level}:${x}:${y}`;
+}
+
+/** Parse a key produced by {@link makePageKey}; throws on anything else. */
+export function parsePageKey(key: string): { level: number; x: number; y: number } {
+  if (typeof key !== "string") throw new TypeError("page key must be a string");
+  const parts = key.split(":").map(Number);
+  if (parts.length !== 3 || parts.some((value) => !Number.isInteger(value))) {
+    throw new TypeError(`invalid page key: ${key}`);
+  }
+  return { level: parts[0] as number, x: parts[1] as number, y: parts[2] as number };
+}
+
+/** One resident physical page. `slot` is the atlas layer that holds it. */
+export interface IPhysicalPageEntry {
+  readonly key: string;
+  readonly slot: number;
+  pinned: boolean;
+  dirty: boolean;
+  readonly generation: number;
+  lastUsedFrame: number;
+}
+
+export interface IPhysicalPageAllocation {
+  readonly entry: IPhysicalPageEntry;
+  readonly reused: boolean;
+  readonly evictedKey: string | null;
+}
+
+/**
+ * A bounded set of physical page slots with deterministic least-recently-used eviction.
+ *
+ * Pinned entries and entries named in `protectedKeys` are never evicted; when nothing else can
+ * go, `allocate` returns `null` and counts an overflow rather than silently reusing a page.
+ */
+export class PhysicalPagePool {
+  readonly capacity: number;
+  evictions = 0;
+  overflow = 0;
+  #generation = 0;
+  readonly #resident = new Map<string, IPhysicalPageEntry>();
+  #freeSlots: number[];
+
+  constructor(capacity: number) {
+    assertPositiveInteger("capacity", capacity);
+    this.capacity = capacity;
+    this.#freeSlots = Array.from({ length: capacity }, (_, slot) => slot);
+  }
+
+  get size(): number {
+    return this.#resident.size;
+  }
+
+  has(key: string): boolean {
+    return this.#resident.has(key);
+  }
+
+  get(key: string): IPhysicalPageEntry | undefined {
+    return this.#resident.get(key);
+  }
+
+  /** Resident entries ordered by slot. */
+  entries(): IPhysicalPageEntry[] {
+    return [...this.#resident.values()].sort((a, b) => a.slot - b.slot);
+  }
+
+  allocate(
+    key: string,
+    {
+      frame = 0,
+      pinned = false,
+      protectedKeys = new Set<string>(),
+    }: { frame?: number; pinned?: boolean; protectedKeys?: ReadonlySet<string> } = {},
+  ): IPhysicalPageAllocation | null {
+    assertInteger("frame", frame);
+    const resident = this.#resident.get(key);
+    if (resident) {
+      resident.lastUsedFrame = frame;
+      resident.pinned ||= pinned;
+      return { entry: resident, reused: true, evictedKey: null };
+    }
+
+    let slot = this.#freeSlots.shift();
+    let evictedKey: string | null = null;
+    if (slot === undefined) {
+      const candidate = this.entries()
+        .filter((entry) => !entry.pinned && !protectedKeys.has(entry.key))
+        .sort((a, b) => a.lastUsedFrame - b.lastUsedFrame || a.slot - b.slot)[0];
+      if (!candidate) {
+        this.overflow += 1;
+        return null;
+      }
+      slot = candidate.slot;
+      evictedKey = candidate.key;
+      this.#resident.delete(candidate.key);
+      this.evictions += 1;
+    }
+
+    this.#generation += 1;
+    const entry: IPhysicalPageEntry = {
+      key,
+      slot,
+      pinned,
+      dirty: true,
+      generation: this.#generation,
+      lastUsedFrame: frame,
+    };
+    this.#resident.set(key, entry);
+    return { entry, reused: false, evictedKey };
+  }
+
+  touch(key: string, frame: number): boolean {
+    assertInteger("frame", frame);
+    const entry = this.#resident.get(key);
+    if (!entry) return false;
+    entry.lastUsedFrame = frame;
+    return true;
+  }
+
+  markDirty(key: string): boolean {
+    const entry = this.#resident.get(key);
+    if (!entry) return false;
+    entry.dirty = true;
+    return true;
+  }
+
+  /** Dirty every resident page; returns how many there were. */
+  markAllDirty(): number {
+    for (const entry of this.#resident.values()) entry.dirty = true;
+    return this.#resident.size;
+  }
+
+  release(key: string): boolean {
+    const entry = this.#resident.get(key);
+    if (!entry) return false;
+    this.#resident.delete(key);
+    this.#freeSlots.push(entry.slot);
+    this.#freeSlots.sort((a, b) => a - b);
+    return true;
+  }
+
+  clear(): void {
+    this.#resident.clear();
+    this.#freeSlots = Array.from({ length: this.capacity }, (_, slot) => slot);
+  }
+}
+
+/** One clip level's window of `pagesPerAxis²` virtual pages around the centre. */
+export interface IClipWindow {
+  readonly level: number;
+  readonly extent: number;
+  readonly pageWorldSize: number;
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+export interface IDirectionalClipmapOptions {
+  /** Unit-free direction *toward* the source; normalised here. */
+  readonly direction: IVector3Like;
+  /** Half-width of each level's window in world units, finest first. */
+  readonly clipExtents: readonly number[];
+  readonly pagesPerAxis: number;
+  /** Fraction of an extent inside which a point selects that level; `(0, 1]`. */
+  readonly selectionGuard?: number;
+}
+
+function dot(a: IVector3Like, b: IVector3Like): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+function cross(a: IVector3Like, b: IVector3Like): IVector3Like {
+  return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+}
+
+function normalize(vector: IVector3Like): IVector3Like {
+  const magnitude = Math.sqrt(dot(vector, vector));
+  if (magnitude <= EPSILON) throw new RangeError("direction must have non-zero length");
+  return { x: vector.x / magnitude, y: vector.y / magnitude, z: vector.z / magnitude };
+}
+
+function cornersOfBounds(bounds: IBoundsLike): IVector3Like[] {
+  if (!bounds?.min || !bounds?.max) throw new TypeError("bounds must provide min and max vectors");
+  assertFiniteVector("bounds.min", bounds.min);
+  assertFiniteVector("bounds.max", bounds.max);
+  const corners: IVector3Like[] = [];
+  for (const x of [bounds.min.x, bounds.max.x]) {
+    for (const y of [bounds.min.y, bounds.max.y]) {
+      for (const z of [bounds.min.z, bounds.max.z]) corners.push({ x, y, z });
+    }
+  }
+  return corners;
+}
+
+/**
+ * Camera-centred clip windows in a light-space basis, snapped to whole pages.
+ *
+ * The basis is right-handed (`U × V = W`). A page camera placed along `+W` with `up = V` then
+ * renders screen X = `V × W` = `+U`, which is the axis the sampler reads the atlas along. The
+ * prototype this was ported from built `V = U × W` and every page came out mirrored.
+ */
+export class DirectionalClipmap {
+  readonly clipExtents: readonly number[];
+  readonly pagesPerAxis: number;
+  readonly selectionGuard: number;
+  readonly levelCount: number;
+  basisU: IVector3Like;
+  basisV: IVector3Like;
+  basisW: IVector3Like;
+  centerWorld: IVector3Like = { x: 0, y: 0, z: 0 };
+  centerLight: ILightSpacePoint = { u: 0, v: 0, w: 0 };
+  #windows: IClipWindow[] = [];
+
+  constructor({
+    direction,
+    clipExtents,
+    pagesPerAxis,
+    selectionGuard = 0.9,
+  }: IDirectionalClipmapOptions) {
+    assertFiniteVector("direction", direction);
+    assertPositiveInteger("pagesPerAxis", pagesPerAxis);
+    if (!Array.isArray(clipExtents) || clipExtents.length === 0) {
+      throw new TypeError("clipExtents must be a non-empty array");
+    }
+    if (clipExtents.some((extent) => !Number.isFinite(extent) || extent <= 0)) {
+      throw new RangeError("every clip extent must be positive");
+    }
+    for (let level = 1; level < clipExtents.length; level += 1) {
+      if ((clipExtents[level] as number) <= (clipExtents[level - 1] as number)) {
+        throw new RangeError("clipExtents must increase from the finest level to the coarsest");
+      }
+    }
+    if (!Number.isFinite(selectionGuard) || selectionGuard <= 0 || selectionGuard > 1) {
+      throw new RangeError("selectionGuard must be in the range (0, 1]");
+    }
+    this.clipExtents = [...clipExtents];
+    this.pagesPerAxis = pagesPerAxis;
+    this.selectionGuard = selectionGuard;
+    this.levelCount = clipExtents.length;
+    this.basisW = normalize(direction);
+    this.basisU = { x: 1, y: 0, z: 0 };
+    this.basisV = { x: 0, y: 0, z: 1 };
+    this.setDirection(direction);
+  }
+
+  /** Re-orient the basis; returns true when it changed enough that cached pages are stale. */
+  setDirection(direction: IVector3Like): boolean {
+    assertFiniteVector("direction", direction);
+    const nextW = normalize(direction);
+    const unchanged =
+      this.#windows.length > 0 && Math.abs(dot(nextW, this.basisW) - 1) <= 1e-9;
+    this.basisW = nextW;
+    const reference: IVector3Like =
+      Math.abs(this.basisW.y) > 0.95 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
+    this.basisU = normalize(cross(this.basisW, reference));
+    this.basisV = normalize(cross(this.basisW, this.basisU));
+    this.updateCenter(this.centerWorld);
+    return !unchanged;
+  }
+
+  project(worldPoint: IVector3Like): ILightSpacePoint {
+    assertFiniteVector("worldPoint", worldPoint);
+    return {
+      u: dot(worldPoint, this.basisU),
+      v: dot(worldPoint, this.basisV),
+      w: dot(worldPoint, this.basisW),
+    };
+  }
+
+  unproject({ u, v, w = 0 }: { u: number; v: number; w?: number }): IVector3Like {
+    if (![u, v, w].every(Number.isFinite)) {
+      throw new TypeError("light-space coordinates must be finite");
+    }
+    return {
+      x: this.basisU.x * u + this.basisV.x * v + this.basisW.x * w,
+      y: this.basisU.y * u + this.basisV.y * v + this.basisW.y * w,
+      z: this.basisU.z * u + this.basisV.z * v + this.basisW.z * w,
+    };
+  }
+
+  updateCenter(worldPoint: IVector3Like): readonly IClipWindow[] {
+    assertFiniteVector("worldPoint", worldPoint);
+    this.centerWorld = { x: worldPoint.x, y: worldPoint.y, z: worldPoint.z };
+    this.centerLight = this.project(worldPoint);
+    const halfPages = Math.floor(this.pagesPerAxis / 2);
+    this.#windows = this.clipExtents.map((extent, level) => {
+      const pageWorldSize = (extent * 2) / this.pagesPerAxis;
+      const minX = Math.floor(this.centerLight.u / pageWorldSize) - halfPages;
+      const minY = Math.floor(this.centerLight.v / pageWorldSize) - halfPages;
+      return {
+        level,
+        extent,
+        pageWorldSize,
+        minX,
+        minY,
+        maxX: minX + this.pagesPerAxis,
+        maxY: minY + this.pagesPerAxis,
+      };
+    });
+    return this.#windows;
+  }
+
+  getWindow(level: number): IClipWindow {
+    const window = this.#windows[level];
+    if (!window) throw new RangeError(`invalid clip level: ${level}`);
+    return { ...window };
+  }
+
+  pageWorldSize(level: number): number {
+    return this.getWindow(level).pageWorldSize;
+  }
+
+  containsPage(level: number, x: number, y: number): boolean {
+    const window = this.#windows[level];
+    return (
+      window !== undefined &&
+      x >= window.minX &&
+      x < window.maxX &&
+      y >= window.minY &&
+      y < window.maxY
+    );
+  }
+
+  worldToPage(worldPoint: IVector3Like, level: number): IVirtualPageAddress {
+    const window = this.#windows[level];
+    if (!window) throw new RangeError(`invalid clip level: ${level}`);
+    const projected = this.project(worldPoint);
+    const x = Math.floor(projected.u / window.pageWorldSize);
+    const y = Math.floor(projected.v / window.pageWorldSize);
+    return { level, x, y, key: makePageKey(level, x, y) };
+  }
+
+  /** The finest level whose guarded extent contains the point, else the coarsest. */
+  selectLevel(worldPoint: IVector3Like): number {
+    const projected = this.project(worldPoint);
+    const distance = Math.max(
+      Math.abs(projected.u - this.centerLight.u),
+      Math.abs(projected.v - this.centerLight.v),
+    );
+    for (let level = 0; level < this.levelCount; level += 1) {
+      if (distance <= (this.clipExtents[level] as number) * this.selectionGuard) return level;
+    }
+    return this.levelCount - 1;
+  }
+
+  /** Light-space extent and world centre (at `w = 0`) of one page. */
+  pageBounds(level: number, x: number, y: number) {
+    const pageWorldSize = this.pageWorldSize(level);
+    const minU = x * pageWorldSize;
+    const minV = y * pageWorldSize;
+    const centerU = minU + pageWorldSize * 0.5;
+    const centerV = minV + pageWorldSize * 0.5;
+    return {
+      level,
+      x,
+      y,
+      minU,
+      minV,
+      maxU: minU + pageWorldSize,
+      maxV: minV + pageWorldSize,
+      centerU,
+      centerV,
+      pageWorldSize,
+      centerWorld: this.unproject({ u: centerU, v: centerV, w: 0 }),
+    };
+  }
+
+  boundsToPageRange(bounds: IBoundsLike, level: number) {
+    const window = this.#windows[level];
+    if (!window) throw new RangeError(`invalid clip level: ${level}`);
+    const projected = cornersOfBounds(bounds).map((corner) => this.project(corner));
+    const minU = Math.min(...projected.map(({ u }) => u));
+    const maxU = Math.max(...projected.map(({ u }) => u));
+    const minV = Math.min(...projected.map(({ v }) => v));
+    const maxV = Math.max(...projected.map(({ v }) => v));
+    const pageSize = window.pageWorldSize;
+    return {
+      minX: Math.floor(minU / pageSize),
+      maxX: Math.floor((maxU - EPSILON) / pageSize),
+      minY: Math.floor(minV / pageSize),
+      maxY: Math.floor((maxV - EPSILON) / pageSize),
+    };
+  }
+
+  boundsToPageKeys(bounds: IBoundsLike, level: number): string[] {
+    const range = this.boundsToPageRange(bounds, level);
+    const keys: string[] = [];
+    for (let x = range.minX; x <= range.maxX; x += 1) {
+      for (let y = range.minY; y <= range.maxY; y += 1) keys.push(makePageKey(level, x, y));
+    }
+    return keys;
+  }
+
+  windowPages(level: number): IVirtualPageAddress[] {
+    const window = this.#windows[level];
+    if (!window) throw new RangeError(`invalid clip level: ${level}`);
+    const pages: IVirtualPageAddress[] = [];
+    for (let x = window.minX; x < window.maxX; x += 1) {
+      for (let y = window.minY; y < window.maxY; y += 1) {
+        pages.push({ level, x, y, key: makePageKey(level, x, y) });
+      }
+    }
+    return pages;
+  }
+}
+
+/** One page a frame asks for, ordered by pin, level and distance from the camera. */
+export interface IPageRequest extends IVirtualPageAddress {
+  readonly pinned: boolean;
+  readonly priority: number;
+}
+
+export interface IReceiverDemandInput {
+  readonly cameraPosition: IVector3Like;
+  /** World points a receiver is known to occupy on screen, e.g. from screen-grid rays. */
+  readonly receiverPoints: readonly IVector3Like[];
+  /** Bounds of casters inside the view, so their pages are resident before they are seen. */
+  readonly visibleBounds: readonly IBoundsLike[];
+  readonly clipmap: DirectionalClipmap;
+}
+
+function boundsSamplePoints(bounds: IBoundsLike): IVector3Like[] {
+  const { min, max } = bounds;
+  return [
+    { x: (min.x + max.x) * 0.5, y: (min.y + max.y) * 0.5, z: (min.z + max.z) * 0.5 },
+    ...cornersOfBounds(bounds),
+  ];
+}
+
+/**
+ * Turn the points a frame can see into page requests: each point selects its finest level,
+ * requests its page and a guard band around it, and the coarsest window is pinned in full so
+ * every fragment has a page to fall back to.
+ */
+export class ReceiverDemandPass {
+  readonly guardBand: number;
+
+  constructor({ guardBand = 1 }: { guardBand?: number } = {}) {
+    if (!Number.isInteger(guardBand) || guardBand < 0) {
+      throw new TypeError("guardBand must be a non-negative integer");
+    }
+    this.guardBand = guardBand;
+  }
+
+  collect({
+    cameraPosition,
+    receiverPoints,
+    visibleBounds,
+    clipmap,
+  }: IReceiverDemandInput): IPageRequest[] {
+    assertFiniteVector("cameraPosition", cameraPosition);
+    const requests = new Map<string, { -readonly [K in keyof IPageRequest]: IPageRequest[K] }>();
+    const cameraLight = clipmap.project(cameraPosition);
+
+    const addRequest = (
+      { level, x, y, key }: IVirtualPageAddress,
+      { pinned = false, priority = 0 }: { pinned?: boolean; priority?: number } = {},
+    ) => {
+      if (!clipmap.containsPage(level, x, y)) return;
+      const existing = requests.get(key);
+      if (!existing) {
+        requests.set(key, { key, level, x, y, pinned, priority });
+        return;
+      }
+      existing.pinned ||= pinned;
+      existing.priority = Math.min(existing.priority, priority);
+    };
+
+    const addPoint = (point: IVector3Like) => {
+      const level = clipmap.selectLevel(point);
+      const page = clipmap.worldToPage(point, level);
+      const projected = clipmap.project(point);
+      const du = projected.u - cameraLight.u;
+      const dv = projected.v - cameraLight.v;
+      const basePriority = du * du + dv * dv;
+      for (let dx = -this.guardBand; dx <= this.guardBand; dx += 1) {
+        for (let dy = -this.guardBand; dy <= this.guardBand; dy += 1) {
+          const x = page.x + dx;
+          const y = page.y + dy;
+          addRequest(
+            { level, x, y, key: makePageKey(level, x, y) },
+            { priority: basePriority + (dx * dx + dy * dy) * 0.001 },
+          );
+        }
+      }
+    };
+
+    for (const point of receiverPoints) addPoint(point);
+    for (const bounds of visibleBounds) {
+      for (const point of boundsSamplePoints(bounds)) addPoint(point);
+    }
+    for (const page of clipmap.windowPages(clipmap.levelCount - 1)) {
+      addRequest(page, { pinned: true, priority: -1 });
+    }
+
+    return [...requests.values()].sort(
+      (a, b) =>
+        Number(b.pinned) - Number(a.pinned) ||
+        a.level - b.level ||
+        a.priority - b.priority ||
+        a.x - b.x ||
+        a.y - b.y,
+    );
+  }
+}
+
+function copyBounds(bounds: IBoundsLike): IBoundsLike {
+  return { min: { ...bounds.min }, max: { ...bounds.max } };
+}
+
+function boundsEqual(a: IBoundsLike, b: IBoundsLike, epsilon = 1e-6): boolean {
+  return (["x", "y", "z"] as const).every(
+    (axis) =>
+      Math.abs(a.min[axis] - b.min[axis]) <= epsilon &&
+      Math.abs(a.max[axis] - b.max[axis]) <= epsilon,
+  );
+}
+
+/**
+ * Remembers each tracked caster's last bounds and dirties every page the old and new bounds
+ * cover on every level when they change. Unchanged bounds dirty nothing.
+ */
+export class ShadowInvalidationTracker {
+  readonly clipmap: DirectionalClipmap;
+  readonly #tracked = new Map<number | string, IBoundsLike>();
+  readonly #invalidated = new Set<string>();
+
+  constructor(clipmap: DirectionalClipmap) {
+    if (!clipmap) throw new TypeError("clipmap is required");
+    this.clipmap = clipmap;
+  }
+
+  get trackedCount(): number {
+    return this.#tracked.size;
+  }
+
+  #invalidateBounds(bounds: IBoundsLike): void {
+    for (let level = 0; level < this.clipmap.levelCount; level += 1) {
+      for (const key of this.clipmap.boundsToPageKeys(bounds, level)) this.#invalidated.add(key);
+    }
+  }
+
+  /** Record a caster's current bounds; returns true when pages were dirtied. */
+  update(id: number | string, bounds: IBoundsLike): boolean {
+    if (id === undefined || id === null) throw new TypeError("tracked caster id is required");
+    const previous = this.#tracked.get(id);
+    if (previous && boundsEqual(previous, bounds)) return false;
+    if (previous) this.#invalidateBounds(previous);
+    this.#invalidateBounds(bounds);
+    this.#tracked.set(id, copyBounds(bounds));
+    return true;
+  }
+
+  has(id: number | string): boolean {
+    return this.#tracked.has(id);
+  }
+
+  remove(id: number | string): boolean {
+    const previous = this.#tracked.get(id);
+    if (!previous) return false;
+    this.#invalidateBounds(previous);
+    this.#tracked.delete(id);
+    return true;
+  }
+
+  /** Dirty the current coverage of every tracked caster; returns the pending key count. */
+  invalidateAll(): number {
+    for (const bounds of this.#tracked.values()) this.#invalidateBounds(bounds);
+    return this.#invalidated.size;
+  }
+
+  /** Drop trackers whose id is not in `liveIds`, dirtying the pages they covered. */
+  prune(liveIds: ReadonlySet<number | string>): number {
+    let removed = 0;
+    for (const id of [...this.#tracked.keys()]) {
+      if (!liveIds.has(id) && this.remove(id)) removed += 1;
+    }
+    return removed;
+  }
+
+  consumeInvalidatedKeys(): Set<string> {
+    const result = new Set(this.#invalidated);
+    this.#invalidated.clear();
+    return result;
+  }
+
+  clear(): void {
+    this.#tracked.clear();
+    this.#invalidated.clear();
+  }
+}
