@@ -1,32 +1,24 @@
-name: Cancel PRD workflows after failure
-description: Stop the failed run and queued or running work on other PRD branches.
+name: Cancel this run after a failure
+description: Stop the remaining jobs of the run that failed. Never touches another branch's runs.
 runs:
   using: composite
   steps:
-    - name: Cancel current and competing PRD workflow runs
+    # This used to enumerate every in_progress and queued run in the repository and cancel any
+    # whose branch matched a PRD pattern. With ~20 agent worktrees pushing at once, that made one
+    # red job anywhere delete everybody's CI: at 03:42:54 on 2026-09-01 a failure in this branch's
+    # native lane cancelled six runs across four branches inside twenty seconds — prd-304,
+    # prd-306, prd-310, and this branch's own CI, none of which had failed. Every one of those
+    # lanes then re-pushed, so the sweep cost more runner time than the doomed jobs it stopped,
+    # and it destroyed results their owners were waiting on.
+    #
+    # Cancelling the rest of *this* run is the part that was actually fail-fast: the run is already
+    # red, its remaining jobs cannot change that, and their runners are better spent elsewhere.
+    # Another branch's run is not competing work. It is somebody else's answer.
+    - name: Cancel the remaining jobs of this run
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-
-        for status in in_progress queued; do
-          while IFS=$'\t' read -r run_id head_branch; do
-            if [[ "$run_id" == "$GITHUB_RUN_ID" ]]; then
-              continue
-            fi
-            case "$head_branch" in
-              linchpin/*|feat/prd-*|feat/ci-prd-*|fix/prd-*|fix/ci-prd-*|ci-prd-*) ;;
-              *) continue ;;
-            esac
-            gh api --method POST \
-              "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel" >/dev/null 2>&1 || true
-          done < <(
-            gh api --paginate \
-              "repos/$GITHUB_REPOSITORY/actions/runs?status=$status&per_page=100" \
-              --jq '.workflow_runs[] | [.id, .head_branch] | @tsv'
-          )
-        done
-
         gh api --method POST \
           "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel"

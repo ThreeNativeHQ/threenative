@@ -65,20 +65,25 @@ const expectedTemplates = [
 ] as const;
 
 describe("CI pipeline structure", () => {
-  it("a failed PRD job cancels current and competing PRD workflow runs", async () => {
+  it("a failed job cancels its own run and nothing on another branch", async () => {
     const action = await readFile(
       path.join(repo, ".github/actions/cancel-run-on-failure/action.yml"),
       "utf8",
     );
     expect(action).toContain("GH_TOKEN: ${{ github.token }}");
     expect(action).toContain("repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel");
-    expect(action).toContain("for status in in_progress queued");
-    expect(action).toContain("status=$status");
-    expect(action).toContain("linchpin/*");
-    expect(action).toContain("feat/prd-*");
-    expect(action).toContain("feat/ci-prd-*");
-    expect(action).toContain('if [[ "$run_id" == "$GITHUB_RUN_ID" ]]');
-    expect(action).not.toContain("main|release");
+
+    // The first version swept every in_progress and queued run in the repository and cancelled
+    // any whose branch looked like a PRD lane. On 2026-09-01 at 03:42:54 one red native job took
+    // out six runs across four branches in twenty seconds, three of them other people's, none of
+    // them failing. Those lanes re-pushed, so the sweep spent more runner time than it saved.
+    // Cancelling anything outside this run is the behaviour under test, and it must stay gone.
+    expect(action).not.toContain("status=in_progress");
+    expect(action).not.toContain("for status in in_progress queued");
+    expect(action).not.toContain("head_branch");
+    expect(action).not.toContain("linchpin/*");
+    expect(action).not.toContain("--paginate");
+    expect(action.match(/actions\/runs\//gu) ?? []).toHaveLength(1);
 
     for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
       const source = await readFile(path.join(repo, relative), "utf8");
