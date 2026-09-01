@@ -124,8 +124,11 @@ pnpm native:build                          # opt-in; downloads deps, compiles th
 pnpm native:verify:desktop                 # 300 native frames + a non-blank screenshot
 ```
 
-CI chains `install → typecheck → lint → test → scaffold-smoke → visuals`. **Prove it locally before
-you push** — CI is the slow lane and a red there costs more than a run here. Registry commands take
+CI runs `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, `test`, `test-browser`,
+`test-playtest`, the `golden-path` matrix, and the main/nightly `template-nonvisual` matrix;
+`native-platforms.yml` adds advisory Android, `desktop-parity`, desktop, starter-linux, and iOS
+evidence. **Prove it locally before you push** — CI is the slow lane and a red there costs more than
+a run here. Registry commands take
 the untracked local `.npmrc` explicitly (`npm --userconfig .npmrc <command>`); never print it.
 
 TypeScript 5.9 `strict`, **ESM only**; relative imports carry `.js` even though the file is `.ts`.

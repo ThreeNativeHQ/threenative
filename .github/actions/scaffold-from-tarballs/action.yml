@@ -1,0 +1,43 @@
+name: Scaffold from packed workspace tarballs
+description: Resolve packed workspace archives to create-threenative package flags and scaffold once.
+
+inputs:
+  archives-directory:
+    description: Directory containing pnpm pack archives.
+    required: true
+  specs-file:
+    description: Tab-separated workspace package name and archive-prefix file.
+    required: true
+  target:
+    description: Absolute target directory for the scaffold.
+    required: true
+  template:
+    description: create-threenative template name.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TN_SCAFFOLD_ARCHIVES: ${{ inputs.archives-directory }}
+        TN_SCAFFOLD_SPECS: ${{ inputs.specs-file }}
+        TN_SCAFFOLD_TARGET: ${{ inputs.target }}
+        TN_SCAFFOLD_TEMPLATE: ${{ inputs.template }}
+      run: |
+        set -euo pipefail
+        package_args=()
+        while IFS=$'\t' read -r package_name archive_prefix; do
+          [ -n "$package_name" ] || continue
+          archive=$(find "$TN_SCAFFOLD_ARCHIVES" -name "${archive_prefix}*.tgz" -print -quit)
+          [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
+          case "$package_name" in
+            create-threenative) package_flag="--cli-package" ;;
+            threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
+            @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
+            *) echo "unsupported workspace package $package_name"; exit 1 ;;
+          esac
+          package_args+=("$package_flag" "$archive")
+        done < "$TN_SCAFFOLD_SPECS"
+        node packages/create-threenative/dist/index.js "$TN_SCAFFOLD_TARGET" \
+          --template "$TN_SCAFFOLD_TEMPLATE" --no-install "${package_args[@]}"

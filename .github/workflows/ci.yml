@@ -7,6 +7,8 @@ on:
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: "17 3 * * *"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -51,6 +53,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
       # settles. Its 30s default is a quiet-machine number: this job also compiles the native host,
       # and on a two-core runner the same gate passed one run and failed the next on a profile
@@ -59,6 +62,17 @@ jobs:
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
       - uses: actions/checkout@v7
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Restore native compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}
+          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -73,11 +87,19 @@ jobs:
       - name: Install Linux desktop build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
+          ccache
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      - name: Activate native compiler cache
+        run: |
+          cat > "$RUNNER_TEMP/tn-ccache.cmake" <<'CMAKE'
+          set(CMAKE_C_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
+          set(CMAKE_CXX_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
+          CMAKE
+          echo "CMAKE_PROJECT_INCLUDE_BEFORE=$RUNNER_TEMP/tn-ccache.cmake" >> "$GITHUB_ENV"
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       # The target names are discovered from CMakeLists.txt rather than listed here: a
@@ -154,6 +176,12 @@ jobs:
 
   golden-path:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - starter
+          - platformer
     runs-on: ubuntu-latest
     # 30 was a guess from when a page load cost seconds, and it is now measurably too small. Run
     # 33355317922 completed twelve scenarios 65s apart on this lane; at 13 non-visual scenarios for
@@ -171,12 +199,7 @@ jobs:
       # acceptance is stated here, out loud, around an unmodified project. The runs still report
       # the adapter they got; what is proven here is the golden path, not the pixels.
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"
-      # One template, not all of them. This lane proves that a stranger can scaffold, install,
-      # build and play — one template proves that chain, and driving all of them re-proves it N
-      # times while running every template's scenario suite on a runner with no GPU. That is where
-      # this lane spent hours failing on scenario facts rather than golden-path facts. Per-template
-      # scenarios keep their gate in `pnpm test:templates`, which has hardware.
-      TN_GOLDEN_PATH_TEMPLATES: starter
+      TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -194,39 +217,37 @@ jobs:
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
-      - name: Generate starter scaffold
+      - name: Scaffold the golden-path template from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-${{ matrix.template }}
+          template: ${{ matrix.template }}
+      - uses: ./.github/actions/playwright-chromium
+      - name: Run the scaffold's GPU-free assertions
         run: |
-          target="$RUNNER_TEMP/threenative-starter"
-          package_args=()
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
-          done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            "${package_args[@]}"
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
           # The template advertises this script, so a stranger runs it on day one. `vite build`
           # does not typecheck, so nothing else in this job would notice it going red.
           pnpm --dir "$target" run typecheck
           # MCP surface validation is centralized in verify-golden-path.ts below.
-          pnpm exec playwright install --with-deps chromium
           # This job proves the golden path, not the pixels: a runner with no GPU cannot serve the
           # scenarios that capture frames, and test-browser and visuals already cover those. The
           # split is computed from the scenario files, and the script prints what it left out.
-          mapfile -t scenarios < <(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          mapfile -t scenarios <<< "$scenario_list"
+          test "${#scenarios[@]}" -gt 0
           scenario_args=()
           for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+      - name: Drive the starter's interactive HUD smoke
+        if: matrix.template == 'starter'
+        run: |
+          target="$RUNNER_TEMP/threenative-starter"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
@@ -259,37 +280,65 @@ jobs:
           }
           await browser.close();
           NODE
-      - name: Generate platformer scaffold
+      - run: pnpm verify:golden-path
+
+  template-nonvisual:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - action-rpg
+          - defense
+          - minimal
+          - platformer
+          - racing
+          - sailing
+          - shooter
+          - starter
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pack local framework packages
         run: |
-          target="$RUNNER_TEMP/threenative-platformer"
-          package_args=()
+          mkdir -p "$RUNNER_TEMP/threenative-packages"
+          pnpm tsx scripts/workspace-packages.ts build
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
           while IFS=$'\t' read -r package_name archive_prefix; do
             [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template platformer --no-install \
-            "${package_args[@]}"
+      - name: Scaffold the template from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-${{ matrix.template }}
+          template: ${{ matrix.template }}
+      - uses: ./.github/actions/playwright-chromium
+      - name: Run the template's GPU-free scenarios
+        run: |
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
-          # The template advertises this script, so a stranger runs it on day one. `vite build`
-          # does not typecheck, so nothing else in this job would notice it going red.
           pnpm --dir "$target" run typecheck
-          pnpm exec playwright install chromium
-          mapfile -t scenarios < <(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          mapfile -t scenarios <<< "$scenario_list"
+          test "${#scenarios[@]}" -gt 0
           scenario_args=()
           for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
-          sh scripts/xvfb.sh pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
+          pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
-      - uses: ./.github/actions/playwright-chromium
-      - run: pnpm verify:golden-path
 
   benchmark:
     needs: build
@@ -390,3 +439,13 @@ jobs:
   # This is not permission to ignore it. The failures are filed in
   # docs/PRDs/native/PRD-295-the-native-platform-lane-has-never-been-green.md, which requires the
   # call to come back here in the same commit that fixes them.
+  supply-chain:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
