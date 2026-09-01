@@ -39,6 +39,7 @@ import {
   buildProvenance,
   captureBrowserCanvas,
   hardwareAdapterBlocker,
+  missingHardwareReferenceBlocker,
   makeEntry,
   launchAndroidConformanceActivity,
   runCommand,
@@ -89,6 +90,28 @@ test("a software adapter blocks a hardware row instead of failing it", () => {
   assert.equal(hardwareAdapterBlocker("TN_CONFORMANCE_FROZEN_TEMPORAL_HISTORY:realism-taa"), null);
   assert.equal(hardwareAdapterBlocker("Error: page crashed"), null);
   assert.equal(hardwareAdapterBlocker(undefined), null);
+});
+
+test("native lanes do not launch hardware rows without a browser reference", () => {
+  const missing = "/tmp/three-native-missing-hardware-reference.png";
+  assert.match(
+    missingHardwareReferenceBlocker({ requiresHardwareAdapter: true }, missing, () => false),
+    /Missing browser reference capture/u,
+  );
+  assert.equal(
+    missingHardwareReferenceBlocker({ requiresHardwareAdapter: false }, missing, () => false),
+    null,
+  );
+  assert.equal(
+    missingHardwareReferenceBlocker({ requiresHardwareAdapter: true }, missing, () => true),
+    null,
+  );
+});
+
+test("the GPU scene BVH row requires a hardware adapter", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const row = registry.tests.find(({ id }) => id === "76-gpu-scene-bvh");
+  assert.equal(row?.requiresHardwareAdapter, true);
 });
 
 test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {

@@ -2169,6 +2169,11 @@ function referencePath(referenceArg, id, test) {
   return join(referenceRootPath(referenceArg), `${id}${suffix}.png`);
 }
 
+export function missingHardwareReferenceBlocker(test, reference, exists = existsSync) {
+  if (test?.requiresHardwareAdapter !== true || exists(reference)) return null;
+  return `Missing browser reference capture: ${reference}`;
+}
+
 function applyReferenceAndMetrics(test, result, reference) {
   if (result.status !== "pass") return;
   if (!existsSync(reference)) {
@@ -2391,6 +2396,13 @@ async function main(argv = process.argv.slice(2)) {
   const executeRows = async (port, broker = null) => {
     for (const test of registry.tests) {
       const result = createResult(test);
+      const hardwareReferenceBlocker =
+        !dryRun && ["android", "android-hardware", "desktop"].includes(target)
+          ? missingHardwareReferenceBlocker(
+              test,
+              referencePath(valueAfter(argv, "--reference"), test.id, test),
+            )
+          : null;
       const expiredRowExclusion = expired.find(
         (entry) => entry.target === target && entry.row === test.id,
       );
@@ -2407,6 +2419,9 @@ async function main(argv = process.argv.slice(2)) {
       } else if (targetBlocker) {
         result.status = "blocked";
         result.blockedReason = targetBlocker;
+      } else if (hardwareReferenceBlocker !== null) {
+        result.status = "blocked";
+        result.blockedReason = hardwareReferenceBlocker;
       } else if (!dryRun && target === "desktop" && test.inputProof === "multitouch") {
         result.status = "blocked";
         result.blockedReason =
