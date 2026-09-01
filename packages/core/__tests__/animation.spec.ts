@@ -3,6 +3,17 @@ import { describe, expect, it } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 
 describe("AnimationPlayer", () => {
+  it("should say how to fix a duplicate clip name rather than only that there is one", () => {
+    const root = new Object3D();
+    const first = new AnimationClip("A_TPose", 1, []);
+    const second = new AnimationClip("A_TPose", 1, []);
+    // Two stock animation libraries built on one rig both ship a bind pose under this name, which
+    // is what a game hits the moment it loads a second `.glb` of clips.
+    expect(() => new AnimationPlayer({ clips: [first, second], root })).toThrow(
+      /Duplicate animation clip 'A_TPose'\. Two clip sources define it; keep one per name/,
+    );
+  });
+
   it("crossfades named clips while keeping action weights normalized", () => {
     const root = new Object3D();
     const idle = new AnimationClip("idle", 1, []);

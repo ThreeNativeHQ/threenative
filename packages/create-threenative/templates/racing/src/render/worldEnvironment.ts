@@ -365,9 +365,16 @@ export class WorldEnvironment {
       scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
     }
     const depth = scenePass.getTextureNode("depth");
-    const normal = scenePass.getTextureNode("normal");
-    const metal = scenePass.getTextureNode("metalness");
-    const rough = scenePass.getTextureNode("roughness");
+    // PassNode adds every named colour texture requested through getTextureNode() to its
+    // framebuffer. Keep the surface-data attachments lazy: a bloom-only outdoor scene does
+    // not need MRT, and asking for normal/metalness/roughness here would give ordinary
+    // materials extra targets with no fragment outputs.
+    const normal = (): ReturnType<typeof scenePass.getTextureNode> =>
+      scenePass.getTextureNode("normal");
+    const metal = (): ReturnType<typeof scenePass.getTextureNode> =>
+      scenePass.getTextureNode("metalness");
+    const rough = (): ReturnType<typeof scenePass.getTextureNode> =>
+      scenePass.getTextureNode("roughness");
     // Every stage here is perspective-camera maths — view-space reconstruction from depth,
     // and a projection matrix inverse. The scene's camera is the one the pass rendered with.
     const view = camera as PerspectiveCamera;
@@ -375,13 +382,13 @@ export class WorldEnvironment {
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
     const exposed = convertToTexture(base).mul(options.exposure);
     const giDenoise = (node: ChainNode): ChainNode =>
-      options.denoiseEnabled ? denoised(denoise(node, depth, normal, view)) : node;
+      options.denoiseEnabled ? denoised(denoise(node, depth, normal(), view)) : node;
 
     const stages: ChainStage[] = [
       stage({
         name: "ssgi",
         build: (input) => {
-          const gi = ssgi(input, depth, normal, view);
+          const gi = ssgi(input, depth, normal(), view);
           const tier = SSGI_QUALITY[options.ssgiQuality];
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
@@ -405,7 +412,7 @@ export class WorldEnvironment {
       stage({
         name: "ambientOcclusion",
         build: (input) => {
-          const contact = ao(depth, normal, view);
+          const contact = ao(depth, normal(), view);
           contact.radius.value = options.gtaoRadius;
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
@@ -451,7 +458,7 @@ export class WorldEnvironment {
           // silhouettes the depth term owns. Denoise before the floor: the floor's
           // subtraction amplifies relative noise on near-floor values.
           let shaft: ChainNode = convertToTexture(shafts);
-          if (options.denoiseEnabled) shaft = denoised(denoise(shaft, depth, normal, view));
+          if (options.denoiseEnabled) shaft = denoised(denoise(shaft, depth, normal(), view));
           // Floor, then scale, then tint. The floor is what turns this from a whole-frame
           // brightener into a shaft renderer; the tint by the light's own colour is what
           // stops a warm sun throwing a white beam.
@@ -477,10 +484,10 @@ export class WorldEnvironment {
           // reflections onto a second copy builds two parallel graphs, and the frame comes
           // out as the bare background colour.
           const base = convertToTexture(input);
-          const reflections = ssr(base, depth, normal as unknown as Parameters<typeof ssr>[2], {
+          const reflections = ssr(base, depth, normal() as unknown as Parameters<typeof ssr>[2], {
             camera: view,
-            metalnessNode: metal.r,
-            roughnessNode: rough.g,
+            metalnessNode: metal().r,
+            roughnessNode: rough().g,
             reflectNonMetals: true,
           });
           reflections.maxDistance.value = options.ssrMaxDistance;

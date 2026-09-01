@@ -105,7 +105,14 @@ export class AnimationPlayer {
     this.#strideSync = options.strideSync ?? true;
     this.#strideRoot = options.strideRoot ?? options.root;
     for (const clip of options.clips) {
-      if (this.#actions.has(clip.name)) throw new Error(`Duplicate animation clip '${clip.name}'.`);
+      if (this.#actions.has(clip.name))
+        // Two clip sources on one rig is the normal way to assemble a character's vocabulary, and
+        // stock libraries all ship a bind pose under the same name. Failing closed is right — a
+        // silently dropped clip is a pose bug nobody thinks to look for — but the message says
+        // what to do about it, because every game that loads two `.glb` files hits this.
+        throw new Error(
+          `Duplicate animation clip '${clip.name}'. Two clip sources define it; keep one per name before constructing the player.`,
+        );
       const action = this.mixer.clipAction(clip);
       if (action === null)
         throw new Error(`Animation clip '${clip.name}' could not create an action.`);
