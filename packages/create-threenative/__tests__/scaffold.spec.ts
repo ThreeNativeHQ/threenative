@@ -211,15 +211,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // capability manifest and the reference generated from it gained the raw .uasset loader
   // entries (parseUAssetStaticMesh, UAssetLoader, the FRawMesh and FMeshDescription readers),
   // and those bytes are embedded in every scaffold.
-  "action-rpg": "da5a9bd14b0b51d6652334e999ca770cf5f4b6f036b9b94a9919805e0354ea3e",
-  defense: "4fc8ff88638c462039ba18e682ce7b67341afa074874c1e931b45d66146302aa",
+  "action-rpg": "097360cc45406403d8423ea6c94b3b6a6c5d556ffe1994a76160864f34d3cf06",
+  defense: "05a73ffe300fd992b2c6ba6df1eed89f610a301c1f079fbaaec5e9fff131ff2c",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "67fee7bec043f9da1c54d683e9cc5f6c598d87da774ce556f1554539c415266b",
-  platformer: "e434f030496f5b4238d53f258f467da08ccafbb9bf0a2769b2ccd9b511cffd6b",
-  racing: "9b7a6d856abfea5074ca17a29b83c105868edf22a039f20de1e46618b13b2db7",
-  shooter: "208b9087addcf69fe2e8a4a45b426442922aae4a76aa279e22b9e4b24d3f57a6",
-  starter: "42200ccdb076ffc7427162ab439c5cb13bb16eb613a1a8fa11ac73119091f7c9",
+  minimal: "5c3d71e5fdeffe74dabbf77c4278a5913a618b62a17cc37f43df7d9f1b54c745",
+  platformer: "b26fcff2de2c32bf48ea33e965e76d1b6db9dc353102ca7e5e757c3595f9e0e6",
+  racing: "b60e45197fd0c256b5dd332b8546b366fbaf33e1df2bc8697939e0d4f76483ec",
+  shooter: "c34a544ab4bd51a1dcf0d614b0b0021fe2f680ee37f379847d956bb539df0ebf",
+  starter: "e5db2580055d00c3adccdb5adb6ce825d8dbbd3ccede740fce0427c646b77bfd",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -230,7 +230,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "822068ab9e1d53f596438e397eca1ffa51c0e2ced42b23478d8cf691965c0ddd",
+  sailing: "d54bb314cc487e0ae16bd44cb7f7cbaa7a17eeddcbbdd111359926fdded7d14c",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

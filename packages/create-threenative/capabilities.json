@@ -1105,6 +1105,30 @@
       "symbol": "readVelocityPreviousWorldMatrix"
     },
     {
+      "constraints": [
+        "the light must be a DirectionalLight with `castShadow` and a target in the scene",
+        "clipExtents are half-widths in world units, finest first, strictly increasing",
+        "call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves"
+      ],
+      "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function readVirtualShadowMarker(line: string): IVirtualShadowStats | undefined { … }",
+      "situations": [
+        "crisp shadows close to the player across a large outdoor level",
+        "shadow map too coarse over a big terrain",
+        "one directional light shadow for a whole open world",
+        "shadows shimmer when the camera moves"
+      ],
+      "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves or a tracked caster changes inside it. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
+      "supersedes": [],
+      "symbol": "readVirtualShadowMarker"
+    },
+    {
       "constraints": ["stage factories own colour, strength, and all other appearance choices"],
       "example": "const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: [\"bloom\"], tier: \"auto\" } });",
       "importPath": "@threenative/core",
@@ -1437,6 +1461,31 @@
       "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
       "supersedes": [],
       "symbol": "VelocityTracker"
+    },
+    {
+      "constraints": [
+        "the light must be a DirectionalLight with `castShadow` and a target in the scene",
+        "clipExtents are half-widths in world units, finest first, strictly increasing",
+        "call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves"
+      ],
+      "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement",
+        "bias, normalBias, intensity and mapSize stay on `light.shadow`; every option here has a default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class VirtualShadowNode extends ShadowBaseNode { … }",
+      "situations": [
+        "crisp shadows close to the player across a large outdoor level",
+        "shadow map too coarse over a big terrain",
+        "one directional light shadow for a whole open world",
+        "shadows shimmer when the camera moves"
+      ],
+      "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves or a tracked caster changes inside it. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
+      "supersedes": [],
+      "symbol": "VirtualShadowNode"
     },
     {
       "constraints": [],
