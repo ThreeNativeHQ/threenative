@@ -12,7 +12,7 @@ per hypothesis. Three separate sessions have worked GPU cost out by rebuilding t
 experiment and pushing a settings file through `run-as`; the town pass (9–11 ms) is still the
 biggest single cost in the frame ledger and is **still unattributed**.
 
-**Depends on:** [PRD-305](PRD-305-the-gpu-meter-reports-on-android.md). If the Pixel 8 does not
+**Depends on:** [PRD-305](../BLOCKED/requires-physical-device/PRD-305-the-gpu-meter-reports-on-android.md). If the Pixel 8 does not
 grant `timestamp-query`, this PRD is retargeted rather than started — that is exactly what PRD-305
 exists to find out.
 
