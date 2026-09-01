@@ -92,16 +92,25 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // Measured per template on 2026-08-28: action-rpg 2933, defense 3012, minimal 3849, platformer
   // 3389, racing 2979, shooter 3077, starter 4223 — every cap moves by exactly +82.
   // PRD-256 adds the shared 24-word static-lightmap setup, rollback, and platform warning.
-  defaultMaxWords: 3036,
+  // And a uniform +134 on 2026-08-31 (PRD-304): every template now ships
+  // `src/render/quality.ts`, a named three-tier quality switch whose presets carry the measured
+  // GPU cost of each stage they enable. A convention missing from the templates' AGENTS.md does
+  // not exist, and this one has to name the three tiers, the platform default, the `tier`
+  // override and the `TN_QUALITY_TIER` report, or a game can neither ask for the cheap look on a
+  // desktop nor tell which look produced a capture. The section was cut to its shortest form
+  // first — the per-stage numbers live in `quality.ts` itself and are not repeated here — and
+  // then measured: `defense` and `shooter`, the two templates sitting exactly at their caps,
+  // both render exactly +134. `sailing` absorbed all of it in headroom (2971 against 3036).
+  defaultMaxWords: 3170,
   // The same measured +26 rides every override below — +27 on `platformer` and `shooter`, whose
   // own wrapping splits one more word — because the stride-sync line is in the shared fragment, so all seven
   // templates carry it and none of them absorbed it in headroom.
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
-    platformer: 3413,
+    platformer: 3547,
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
-    shooter: 3101,
+    shooter: 3235,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
     // PRD-248 adds +84 measured rendered words, `minimal` only, because only this template ships
     // the atmosphere: its sky dome, sun colour and depth haze now come from one `Atmosphere` node
@@ -116,13 +125,13 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // game that hits one has nothing to read. The detail is in the reference page, which this
     // budget does not count; only the naming is inline, and it was trimmed to its shortest form
     // before the limit moved.
-    minimal: 3881,
+    minimal: 4015,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
     // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
     // +4 measured for the TSL silent-no-op traps; see the note on `minimal` for the reasoning.
-    starter: 4251,
+    starter: 4385,
   },
 };
 
