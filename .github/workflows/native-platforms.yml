@@ -598,13 +598,10 @@ jobs:
       || contains(github.event.pull_request.labels.*.name, 'native')
     runs-on: macos-15
     timeout-minutes: 60
-    # Advisory while the simulator's worker proof is unresolved: the app reaches
-    # TN_NATIVE_SMOKE_READY and TN_NATIVE_SMOKE_FIRST_FRAME, then fails
-    # TN_NATIVE_WORKER_PROOF_FAIL "worker result was not delivered", so it never reaches 300
-    # frames. That is real iOS behaviour and needs a Mac to diagnose; it must not hold every other
-    # lane's merge hostage. The job still runs and its artifacts still upload — PRD-295 is explicit
-    # that an advisory lane which stays advisory becomes noise, so this comes off with the fix.
-    continue-on-error: true
+    # The simulator verifier and the exact no-Xcode consumer handoff passed in isolated run
+    # 33498394620 on 2026-09-01, including the worker proof, package telemetry, and consumer
+    # physics scenarios. Keep this job fail-closed so a later regression is visible immediately;
+    # pull requests opt into the platform lane with the `native` label while the lane is advisory.
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

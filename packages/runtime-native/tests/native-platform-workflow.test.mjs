@@ -89,6 +89,11 @@ test('iOS workflow dispatch can run without unrelated platform cancellation', ()
   expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(4);
 });
 
+test('iOS consumer proof is a required gate after the simulator proof passes', () => {
+  expect(workflow).not.toContain('continue-on-error: true');
+  expect(workflow).not.toContain('worker proof is unresolved');
+});
+
 test('Android release lane installs both Rust cross-compilation targets before Gradle', () => {
   const rustTargets = 'rustup target add aarch64-linux-android x86_64-linux-android';
   expect(releaseWorkflow).toContain(rustTargets);
