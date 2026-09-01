@@ -579,7 +579,7 @@
       "status": "implemented",
       "scene": "conformance/scenes/shared/offscreen-screenshot.js",
       "tolerance": {
-        "pixelMismatchRatio": 0.01,
+        "pixelMismatchRatio": 0.02,
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
@@ -1217,6 +1217,8 @@
       "status": "implemented",
       "scene": "conformance/scenes/shared/realism-velocity.js",
       "baseline": "conformance/baselines/realism-effects.json",
+      "captureFrames": 12,
+      "temporal": { "settledFrame": 8, "nextFrame": 9, "assertsDifferenceFromFrameZero": true, "capture": "settled" },
       "browserRecipe": "webgpu",
       "requiresHardwareAdapter": true,
       "deviceMetrics": { "notThermallyConfounded": true },

@@ -48,10 +48,10 @@ test('desktop log requires both markers, exact frame completion, and clean error
 test('desktop worker evidence fails closed on rollback or an incomplete packed proof', () => {
   const proof = {
     callbacksAfterTerminate: 0,
-    completionOrder: [1],
+    completionOrder: [2],
     framesAdvanced: 10,
-    inputChecksum: 353589368,
-    outputChecksum: 2624713848,
+    inputChecksum: 319126392,
+    outputChecksum: 2110598008,
     sourceForm: 'classic-blob',
     workerIdentity: 'dedicated-worker',
   };
