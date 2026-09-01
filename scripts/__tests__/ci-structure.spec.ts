@@ -65,6 +65,26 @@ const expectedTemplates = [
 ] as const;
 
 describe("CI pipeline structure", () => {
+  it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
+    const packageJson = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const hook = await readFile(path.join(repo, "githooks/pre-commit"), "utf8");
+
+    expect(packageJson.scripts["capabilities:sync"]).toContain("build-capability-manifest.ts");
+    expect(packageJson.scripts["capabilities:sync"]).toContain("generate-capability-reference.ts");
+    expect(packageJson.scripts["capabilities:check"]).toContain(
+      "build-capability-manifest.ts --check",
+    );
+    expect(packageJson.scripts.budgets).toContain("pnpm capabilities:check");
+    expect(hook).toContain("git diff --cached --name-only");
+    expect(hook).toContain("packages/[^/]+/(src/.*|package\\.json)");
+    expect(hook).toContain("pnpm capabilities:sync");
+    expect(hook).toContain("git add --");
+    expect(hook).not.toContain("git add -A");
+    expect(hook).not.toContain("git add .");
+  });
+
   it("a failed job cancels its own run and nothing on another branch", async () => {
     const action = await readFile(
       path.join(repo, ".github/actions/cancel-run-on-failure/action.yml"),

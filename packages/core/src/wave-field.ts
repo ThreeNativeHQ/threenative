@@ -1,5 +1,6 @@
 import { Vector3 } from "three";
-import { Fn, float, positionLocal, sin, uniform, vec3 } from "three/tsl";
+import { Fn, cos, float, normalize, positionLocal, sin, uniform, vec2, vec3 } from "three/tsl";
+import type { Node } from "three/webgpu";
 
 export type WaveDirection =
   | readonly [number, number]
@@ -12,6 +13,17 @@ export interface IWaveFieldWave {
   readonly speed: number;
   readonly phase?: number;
   readonly steepness?: number;
+  /**
+   * Mark this wave as detail: the graph fades it out with the `fade` node passed to
+   * `heightNode` / `normalNode`, and leaves it at full amplitude everywhere else.
+   *
+   * A wave shorter than the distance one screen pixel covers cannot be resolved, and what it
+   * produces instead is a crawling moire that reads as a repeating pattern. Fading it is the fix.
+   * `sample` on the CPU has no camera and therefore no fade, so CPU and GPU height differ by at
+   * most the summed amplitude of the detail waves — keep them small, or float things on the
+   * non-detail waves alone.
+   */
+  readonly detail?: boolean;
 }
 
 export interface IWaveFieldDomainWarp {
@@ -29,10 +41,26 @@ export interface IWaveFieldOptions {
   readonly domainWarp?: readonly IWaveFieldDomainWarp[];
 }
 
+/** Where, when, and how finely to evaluate the field in a graph. */
+export interface IWaveFieldGraphOptions {
+  /**
+   * The horizontal point to evaluate at, in whatever space the caller wants the answer in.
+   * Defaults to this vertex's local x and z.
+   */
+  readonly point?: Node<"vec2">;
+  /** The clock. Defaults to the field's own `time` uniform. */
+  readonly time?: Node<"float">;
+  /** A 0..1 multiplier on every wave marked `detail`. Omitted, detail waves stay at full size. */
+  readonly fade?: Node<"float">;
+}
+
 export interface IWaveFieldSample {
   readonly height: number;
   readonly normal: Vector3;
 }
+
+/** A `float().toVar()` — an accumulator the graph writes back into. */
+type FloatVar = ReturnType<Node<"float">["toVar"]>;
 
 const TWO_PI = Math.PI * 2;
 const WAVE_STRIDE = 8;
@@ -135,6 +163,7 @@ export class WaveField {
         wave.steepness === undefined ? 0 : finite("waves.steepness", wave.steepness);
       return {
         amplitude,
+        detail: wave.detail === true,
         direction: [directionX, directionZ] as const,
         wavelength,
         speed,
@@ -186,7 +215,7 @@ export class WaveField {
       parameters[offset + 4] = wave.speed;
       parameters[offset + 5] = wave.phase;
       parameters[offset + 6] = wave.steepness;
-      parameters[offset + 7] = 0;
+      parameters[offset + 7] = wave.detail ? 1 : 0;
     }
     const warpOffset = waves.length * WAVE_STRIDE;
     for (const [index, warp] of domainWarp.entries()) {
@@ -288,41 +317,163 @@ export class WaveField {
     return { height, normal };
   }
 
+  /**
+   * Walk the domain warp in a graph, moving `x` and `z` in place.
+   *
+   * Returns the warp's jacobian when a gradient is wanted, so the caller can rotate the wave
+   * gradient back out of warped space; an identity matrix costs four registers a fragment and is
+   * not allocated when nobody needs it.
+   */
+  #warpGraph(x: FloatVar, z: FloatVar, timeNode: Node<"float">, wantJacobian: boolean) {
+    const parameters = this.parameters;
+    const warpOffset = this.#waveCount * WAVE_STRIDE;
+    const jacobian = wantJacobian
+      ? { xx: float(1).toVar(), xz: float(0).toVar(), zx: float(0).toVar(), zz: float(1).toVar() }
+      : undefined;
+    for (let index = 0; index < this.#warpCount; index += 1) {
+      const offset = warpOffset + index * WARP_STRIDE;
+      const waveVectorX = float(parameters[offset] as number);
+      const waveVectorZ = float(parameters[offset + 1] as number);
+      const displacementX = float(parameters[offset + 2] as number);
+      const displacementZ = float(parameters[offset + 3] as number);
+      const phase = x
+        .mul(waveVectorX)
+        .add(z.mul(waveVectorZ))
+        .sub(timeNode.mul(float(parameters[offset + 4] as number)))
+        .add(float(parameters[offset + 5] as number));
+      const sine = sin(phase).toVar();
+      x.addAssign(sine.mul(displacementX));
+      z.addAssign(sine.mul(displacementZ));
+      if (jacobian === undefined) continue;
+      const cosine = cos(phase).toVar();
+      const derivativeX = cosine.mul(waveVectorX);
+      const derivativeZ = cosine.mul(waveVectorZ);
+      // Materialised before any assignment: each row reads the previous jacobian, and assigning
+      // in place first would feed the next row a value from this iteration.
+      const nextXX = jacobian.xx
+        .add(displacementX.mul(derivativeX).mul(jacobian.xx))
+        .add(displacementX.mul(derivativeZ).mul(jacobian.zx))
+        .toVar();
+      const nextXZ = jacobian.xz
+        .add(displacementX.mul(derivativeX).mul(jacobian.xz))
+        .add(displacementX.mul(derivativeZ).mul(jacobian.zz))
+        .toVar();
+      const nextZX = jacobian.zx
+        .add(displacementZ.mul(derivativeX).mul(jacobian.xx))
+        .add(displacementZ.mul(derivativeZ).mul(jacobian.zx))
+        .toVar();
+      const nextZZ = jacobian.zz
+        .add(displacementZ.mul(derivativeX).mul(jacobian.xz))
+        .add(displacementZ.mul(derivativeZ).mul(jacobian.zz))
+        .toVar();
+      jacobian.xx.assign(nextXX);
+      jacobian.xz.assign(nextXZ);
+      jacobian.zx.assign(nextZX);
+      jacobian.zz.assign(nextZZ);
+    }
+    return jacobian;
+  }
+
+  /** Sum the waves at an already-warped point. The gradient is optional and costs a cosine. */
+  #sumGraph(
+    x: FloatVar,
+    z: FloatVar,
+    timeNode: Node<"float">,
+    fade: Node<"float"> | undefined,
+    wantGradient: boolean,
+  ) {
+    const parameters = this.parameters;
+    const height = float(0).toVar();
+    // A height-only caller never pays for the derivative: no cosine, no slope var.
+    const gradientX = wantGradient ? float(0).toVar() : undefined;
+    const gradientZ = wantGradient ? float(0).toVar() : undefined;
+    for (let index = 0; index < this.#waveCount; index += 1) {
+      const offset = index * WAVE_STRIDE;
+      const directionX = parameters[offset] as number;
+      const directionZ = parameters[offset + 1] as number;
+      const waveNumber = parameters[offset + 3] as number;
+      const phase = x
+        .mul(float(directionX * waveNumber))
+        .add(z.mul(float(directionZ * waveNumber)))
+        .sub(timeNode.mul(float(parameters[offset + 4] as number)))
+        .add(float(parameters[offset + 5] as number));
+      const scalar =
+        (parameters[offset + 2] as number) + (parameters[offset + 6] as number) / waveNumber;
+      // `detail` is a build-time constant, so the fade costs one multiply on the waves that
+      // asked for it and nothing at all on the rest.
+      const amplitude =
+        fade !== undefined && parameters[offset + 7] === 1
+          ? fade.mul(float(scalar))
+          : float(scalar);
+      height.addAssign(sin(phase).mul(amplitude));
+      if (gradientX === undefined || gradientZ === undefined) continue;
+      const slope = cos(phase).mul(amplitude).mul(float(waveNumber)).toVar();
+      gradientX.addAssign(slope.mul(float(directionX)));
+      gradientZ.addAssign(slope.mul(float(directionZ)));
+    }
+    return { gradientX, gradientZ, height };
+  }
+
+  /**
+   * Evaluate the field in a graph: the same packed values `sample` reads, as TSL.
+   *
+   * Returns the height and the two horizontal gradient components, all in the space `point` is
+   * given in, so a caller that passes world XZ gets a world-space answer.
+   */
+  #evaluate(options: IWaveFieldGraphOptions, wantGradient: boolean) {
+    const timeNode = options.time ?? this.time;
+    const point = options.point ?? vec2(positionLocal.x, positionLocal.z);
+    const x = point.x.toVar();
+    const z = point.y.toVar();
+    const jacobian = this.#warpGraph(x, z, timeNode, wantGradient && this.#warpCount > 0);
+    const { gradientX, gradientZ, height } = this.#sumGraph(
+      x,
+      z,
+      timeNode,
+      options.fade,
+      wantGradient,
+    );
+    if (jacobian === undefined || gradientX === undefined || gradientZ === undefined)
+      return { gradientX, gradientZ, height };
+    // The waves were summed in warped space; rotate their gradient back out through the warp's
+    // jacobian, or the normal leans the wrong way exactly where the warp bends the field most.
+    return {
+      gradientX: gradientX.mul(jacobian.xx).add(gradientZ.mul(jacobian.zx)),
+      gradientZ: gradientX.mul(jacobian.xz).add(gradientZ.mul(jacobian.zz)),
+      height,
+    };
+  }
+
+  /** Surface height at a point, as a graph. The scalar half of what `sample` returns. */
+  heightNode(options: IWaveFieldGraphOptions = {}): Node<"float"> {
+    return Fn(() => this.#evaluate(options, false).height)() as unknown as Node<"float">;
+  }
+
+  /**
+   * The analytic surface normal at a point, as a graph — the same value `sample` returns, and the
+   * reason a water material needs no hand-written ripple pattern.
+   *
+   * Differencing the height, or stamping a normal map over the surface, is what puts visible
+   * repeats in water: both quantise a field that has none. This differentiates the wave sum
+   * itself, so the normal repeats only where the waves do, which for wavelengths with no common
+   * multiple is nowhere.
+   *
+   * Evaluate it per fragment — pass `point` in world XZ — and the ripples survive at any distance
+   * from the camera, at the cost of the wave sum running per pixel rather than per vertex.
+   */
+  normalNode(options: IWaveFieldGraphOptions = {}): Node<"vec3"> {
+    return Fn(() => {
+      const { gradientX, gradientZ } = this.#evaluate(options, true);
+      if (gradientX === undefined || gradientZ === undefined)
+        throw new Error("WaveField.normalNode lost its gradient.");
+      return normalize(vec3(gradientX.negate(), 1, gradientZ.negate()));
+    })() as unknown as Node<"vec3">;
+  }
+
   /** Return a TSL node that displaces local vertices using the same packed values as `sample`. */
   displacementNode(timeNode = this.time) {
-    const parameters = this.parameters;
-    const waveCount = this.#waveCount;
-    const warpCount = this.#warpCount;
-    const warpOffset = waveCount * WAVE_STRIDE;
-    return Fn(() => {
-      const x = positionLocal.x.toVar();
-      const z = positionLocal.z.toVar();
-      for (let index = 0; index < warpCount; index += 1) {
-        const offset = warpOffset + index * WARP_STRIDE;
-        const phase = x
-          .mul(float(parameters[offset] as number))
-          .add(z.mul(float(parameters[offset + 1] as number)))
-          .sub(timeNode.mul(float(parameters[offset + 4] as number)))
-          .add(float(parameters[offset + 5] as number));
-        const sine = sin(phase);
-        x.addAssign(sine.mul(float(parameters[offset + 2] as number)));
-        z.addAssign(sine.mul(float(parameters[offset + 3] as number)));
-      }
-      const height = float(0).toVar();
-      for (let index = 0; index < waveCount; index += 1) {
-        const offset = index * WAVE_STRIDE;
-        const waveNumber = parameters[offset + 3] as number;
-        const phase = x
-          .mul(float((parameters[offset] as number) * waveNumber))
-          .add(z.mul(float((parameters[offset + 1] as number) * waveNumber)))
-          .sub(timeNode.mul(float(parameters[offset + 4] as number)))
-          .add(float(parameters[offset + 5] as number));
-        const amplitude = float(parameters[offset + 2] as number).add(
-          float(parameters[offset + 6] as number).div(float(waveNumber)),
-        );
-        height.addAssign(sin(phase).mul(amplitude));
-      }
-      return positionLocal.add(vec3(0, height, 0));
-    })();
+    return Fn(() =>
+      positionLocal.add(vec3(0, this.#evaluate({ time: timeNode }, false).height, 0)),
+    )();
   }
 }

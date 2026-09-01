@@ -6,6 +6,7 @@ catalog:
   '@gltf-transform/extensions': 4.4.2
   '@gltf-transform/functions': 4.4.2
   three-mesh-bvh: 0.9.14
+  fflate: 0.8.3
   '@dimforge/rapier3d-compat': 0.19.3
   recast-navigation: 0.43.1
   react: 19.2.0

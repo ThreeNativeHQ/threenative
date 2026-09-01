@@ -102,7 +102,9 @@ jobs:
       #   @threenative/core
       #   @threenative/physics
       #   @threenative/playtest
+      #   @threenative/raw-unreal
       #   @threenative/runtime-native
+      #   @threenative/ueformat
       #   @threenative/ui
       #   create-threenative
       #   threenative-engine-mcp

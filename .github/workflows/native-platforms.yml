@@ -20,14 +20,10 @@ name: Native platform evidence
 # one: this lane is not a required status check while it is still red, and PRD-295 is explicit that
 # a lane which has never been green must not gate a release.
 #
-# Narrowed 2026-09-01: on a pull request only the two Linux jobs run. Reporting before a merge is
-# worth paying for when the report can change; the macOS, Windows, Android-emulator and iOS legs
-# reported the same red on every one of the last 100 runs, of which 37 failed and 37 were cancelled
-# by a competing push before finishing. Those four carry an `if` that lets a pull request opt in
-# with the `native` label, and they still run on every push to main and on the nightly cron. The
-# Linux legs stayed because Linux desktop is the target ROADMAP licenses and they are the cheapest
-# here — 5.8 min for the starter — so the "a core or playtest change broke the native bundle"
-# signal survives on every PR.
+# Since 2026-09-01 every platform leg runs on every event. Reporting before a merge matters only
+# when every target actually reports; advisory status controls whether a known-red leg blocks, not
+# whether it runs. PR runs may cancel only when a newer commit supersedes them, while main runs
+# queue until their evidence is complete.
 on:
   push:
     branches: [main]
@@ -66,14 +62,11 @@ jobs:
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
     # branch where the work happens is a leg nobody is watching.
     #
-    # Advisory (owner-approved 2026-09-01) until PRD-295 lands: the lane reports 88/88 conformance
-    # failures at the emulator's GPU layer — "bad color buffer handle", every row, both with and
-    # without the template fixes — which is the emulator's GPU emulation, not anything a render
-    # commit fixes. continue-on-error means the leg still runs on every event, its ledger and
-    # captures still upload, and its red is still readable in the job log; it only stops the red
-    # from failing the run and cancelling its siblings (which killed desktop-parity twice while it
-    # was mid-run). This comes OFF in the commit that fixes the lane — an advisory that stays
-    # advisory becomes noise, and the fail-closed iOS leg is the model to return to.
+    # Advisory for one proving run after the 2026-09-01 focus failure: Android's
+    # ImmersiveModeConfirmation owned the foreground instead of the conformance app. The harness now
+    # dismisses that emulator prompt before its first activity launch. continue-on-error keeps this
+    # proving run from cancelling its siblings; remove it as soon as the hosted emulator confirms
+    # the fix, so a later Android regression fails closed like iOS.
     if: inputs.ios_only != true
     continue-on-error: true
     runs-on: ubuntu-24.04
@@ -580,12 +573,6 @@ jobs:
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
-    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
-    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
-    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
-    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
-    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
-    # because a competing push cancels them. What it does buy is six runners held per PR while the
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60

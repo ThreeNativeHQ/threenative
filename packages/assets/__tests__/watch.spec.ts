@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -70,6 +71,37 @@ function readManifestEntries(manifestPath: string): Promise<Record<string, IMani
 }
 
 describe("watchAssets", () => {
+  it("should serve a Meshopt-compressed source byte-identical under models: none on the initial compile", async () => {
+    // Wildwood's dev watcher died on its initial compile: the health pass could not decode a
+    // Meshopt source, so no manifest was written and the game served whatever stale public/
+    // copy was left from an older build. `models: "none"` promises the served bytes are the
+    // source bytes; the watcher's first compile must honour that for a compressed source.
+    const { buildFixtureGlb } = await import("../../../test-support/generate-fixture-model.js");
+    const { modelPass } = await import("../src/passes/model.js");
+    const compressed = await modelPass().apply(Buffer.from(await buildFixtureGlb()), "pine.glb");
+    if (Buffer.isBuffer(compressed)) throw new Error("the model pass did not compress the fixture");
+    const root = await makeTempDir("threenative-watch-meshopt-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "pine.glb"), compressed.buffer);
+    openHandles.push(
+      watchAssets({
+        config: { models: "none" },
+        cwd: root,
+        debounceMs: DEBOUNCE_MS,
+        onChange: () => {},
+      }),
+    );
+    await openHandles[0]?.ready;
+
+    const publicDirectory = path.join(root, "public");
+    const entries = await readManifestEntries(path.join(publicDirectory, "assets.manifest.json"));
+    const served = await readFile(
+      path.join(publicDirectory, requireEntry(entries, "pine.glb").output),
+    );
+    const sha = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
+    expect(sha(served)).toBe(sha(compressed.buffer));
+  });
+
   it("should recompile only the changed input", async () => {
     const root = await makeTempDir("threenative-watch-changed-");
     await mkdir(path.join(root, "assets"));

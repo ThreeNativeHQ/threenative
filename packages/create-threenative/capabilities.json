@@ -1456,6 +1456,30 @@
     },
     {
       "constraints": [
+        "it draws nothing; the game supplies the mesh, the material and every colour",
+        "the material must be transparent so the frame beneath it is already drawn",
+        "thickness is metres, saturating at maxThickness; sky behind the surface reads deep",
+        "one reflection is a second draw of the world, so resolutionScale is the whole cost",
+        "the mirror plane is level, from level alone; do not parent target to a scaled mesh"
+      ],
+      "example": "const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class WaterSurface3D { … }",
+      "situations": [
+        "reflect the sky and the shoreline in a lake, pond or river",
+        "see the bed through the water and have the shallows fade at the shore",
+        "know how deep the water is under a pixel without a second render pass",
+        "stop a water surface repeating in visible bands or stripes"
+      ],
+      "summary": "Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres of water between them.",
+      "supersedes": [],
+      "symbol": "WaterSurface3D"
+    },
+    {
+      "constraints": [
         "supply every wave amplitude, wavelength, direction, speed and warp value",
         "call setTime for the default graph clock when the game advances its own time"
       ],
@@ -3504,6 +3528,245 @@
     },
     {
       "constraints": [
+        "materials are never chosen here; the geometry carries groups, the game carries materials"
+      ],
+      "example": "const geometry = createThreeGeometry(parseUAssetStaticMesh(buffer));",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function createThreeGeometry(decoded: IDecodedUAssetStaticMesh): BufferGeometry { … }",
+      "situations": [
+        "build custom scene objects from Unreal mesh data instead of a whole mesh",
+        "hand a decoded Unreal mesh to a framework pipeline that owns materials itself"
+      ],
+      "summary": "Converts a decoded `.uasset` static mesh into a `THREE.BufferGeometry`, with one draw group per material section.",
+      "supersedes": [],
+      "symbol": "createThreeGeometry"
+    },
+    {
+      "constraints": [
+        "the fallback is three.js's own plain MeshStandardMaterial; every real material comes from the game"
+      ],
+      "example": "const mesh = createThreeObject(decoded, { materialFactory: (d) => d.sections.map(() => barkMaterial) });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function createThreeObject( decoded: IDecodedUAssetStaticMesh, options: IThreeAdapterOptions = { … }",
+      "situations": [
+        "put a raw .uasset mesh on screen without converting it to glTF first",
+        "key materials to a package's own sections by name or section index"
+      ],
+      "summary": "Converts a decoded `.uasset` static mesh into a renderable `THREE.Mesh` with provenance in `userData.unreal` and material selection left to the game's `materialFactory`.",
+      "supersedes": [],
+      "symbol": "createThreeObject"
+    },
+    {
+      "constraints": [
+        "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
+      ],
+      "example": "const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function decompressCompressedBuffer( buffer: ICompressedBuffer, codecs: IUAssetCodecs, ): Uint8Array { … }",
+      "situations": ["decompress the package-trailer payload that carries a UE5 MeshDescription"],
+      "summary": "Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.",
+      "supersedes": [],
+      "symbol": "decompressCompressedBuffer"
+    },
+    {
+      "constraints": [
+        "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
+      ],
+      "example": "const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function findCompressedBufferOffsets(bytes: Uint8Array): number[] { … }",
+      "situations": ["decompress the package-trailer payload that carries a UE5 MeshDescription"],
+      "summary": "Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.",
+      "supersedes": [],
+      "symbol": "findCompressedBufferOffsets"
+    },
+    {
+      "constraints": [
+        "every count is validated against its neighbors before any geometry is built"
+      ],
+      "example": "const description = parseMeshDescription(payload, offset);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function findMeshDescriptionOffsets(bytes: Uint8Array): number[] { … }",
+      "situations": [
+        "inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription"
+      ],
+      "summary": "Parses a serialized `FMeshDescription` — element containers, allocation bit arrays, and attribute sets — into validated typed arrays, exactly consuming its byte range.",
+      "supersedes": [],
+      "symbol": "findMeshDescriptionOffsets"
+    },
+    {
+      "constraints": [
+        "only inline uncompressed blobs are found; compressed or external bulk data throws rather than guessing"
+      ],
+      "example": "const blob = parseRawMesh(bytes, offset);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function findRawMeshBlobs(bytes: Uint8Array): IRawMeshBlob[] { … }",
+      "situations": [
+        "read the source geometry of a Fab pack saved by UE 4.18 straight from its .uasset"
+      ],
+      "summary": "Parses one `FRawMesh` blob — the UE4.18-era source-model layout — validating that the fixed eighteen-array walk consumes the blob exactly and every count agrees with the wedge totals.",
+      "supersedes": [],
+      "symbol": "findRawMeshBlobs"
+    },
+    {
+      "constraints": [
+        "every count is validated against its neighbors before any geometry is built"
+      ],
+      "example": "const description = parseMeshDescription(payload, offset);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function looksLikeMeshDescription(bytes: Uint8Array, offset = 0): boolean { … }",
+      "situations": [
+        "inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription"
+      ],
+      "summary": "Parses a serialized `FMeshDescription` — element containers, allocation bit arrays, and attribute sets — into validated typed arrays, exactly consuming its byte range.",
+      "supersedes": [],
+      "symbol": "looksLikeMeshDescription"
+    },
+    {
+      "constraints": [
+        "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
+      ],
+      "example": "const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function parseCompressedBuffer(bytes: Uint8Array, offset = 0): ICompressedBuffer { … }",
+      "situations": ["decompress the package-trailer payload that carries a UE5 MeshDescription"],
+      "summary": "Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.",
+      "supersedes": [],
+      "symbol": "parseCompressedBuffer"
+    },
+    {
+      "constraints": [
+        "every count is validated against its neighbors before any geometry is built"
+      ],
+      "example": "const description = parseMeshDescription(payload, offset);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function parseMeshDescription(input: Uint8Array, offset = 0): IMeshDescription { … }",
+      "situations": [
+        "inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription"
+      ],
+      "summary": "Parses a serialized `FMeshDescription` — element containers, allocation bit arrays, and attribute sets — into validated typed arrays, exactly consuming its byte range.",
+      "supersedes": [],
+      "symbol": "parseMeshDescription"
+    },
+    {
+      "constraints": [
+        "only inline uncompressed blobs are found; compressed or external bulk data throws rather than guessing"
+      ],
+      "example": "const blob = parseRawMesh(bytes, offset);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob { … }",
+      "situations": [
+        "read the source geometry of a Fab pack saved by UE 4.18 straight from its .uasset"
+      ],
+      "summary": "Parses one `FRawMesh` blob — the UE4.18-era source-model layout — validating that the fixed eighteen-array walk consumes the blob exactly and every count agrees with the wedge totals.",
+      "supersedes": [],
+      "symbol": "parseRawMesh"
+    },
+    {
+      "constraints": [
+        "only legacy-tag uncooked editor packages are read; IoStore (.utoc/.ucas), PAK archives, cooked render buffers, Nanite, and skeletal data throw UAssetError",
+        "the format layer never invents fallback geometry; every malformed or unsupported layout surfaces as UAssetError with its byte offset or counts"
+      ],
+      "example": "const decoded = parseUAssetStaticMesh(await file.arrayBuffer(), { oodle });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function parseUAssetStaticMesh( input: ArrayBuffer | ArrayBufferView, options: IUAssetParseOptions = { … }",
+      "situations": [
+        "load a raw Unreal editor .uasset mesh in the browser without conversion",
+        "decode a Fab pack's UE4.18 static meshes straight from their .uasset files"
+      ],
+      "summary": "Parses a raw Unreal editor `.uasset` static mesh into validated, plain typed arrays — UE5 `FMeshDescription` payloads (including the Oodle-compressed package-trailer form) and the UE4.18-era `FRawMesh` source-model layout, with no interchange conversion at any step.",
+      "supersedes": [],
+      "symbol": "parseUAssetStaticMesh"
+    },
+    {
+      "constraints": [
+        "only the summary prefix is read; locating payload data is the payload readers' self-validating signature scans"
+      ],
+      "example": "const summary = readPackageSummary(bytes);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function readPackageSummary(bytes: Uint8Array): IPackageSummary { … }",
+      "situations": [
+        "report which engine generation a .uasset was written by before decoding it",
+        "reject a non-Unreal file with the stable INVALID_PACKAGE_TAG error"
+      ],
+      "summary": "Reads the fixed prefix of `FPackageFileSummary` — the legacy tag, engine versions, and the custom-version list — without walking the name map, export map, or dependency graph.",
+      "supersedes": [],
+      "symbol": "readPackageSummary"
+    },
+    {
+      "constraints": [
+        "every parse, decompression, and geometry failure surfaces as this error; the loader never invents fallback geometry"
+      ],
+      "example": "catch (error) { if (error instanceof UAssetError) log(error.code, error.details); }",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export class UAssetError extends Error { … }",
+      "situations": [
+        "tell why a raw .uasset failed to load, by code, before any geometry is shown",
+        "branch on an unsupported Unreal layout instead of shipping broken geometry"
+      ],
+      "summary": "The error thrown for every malformed, truncated, or unsupported `.uasset` input, carrying a stable `code` and structured details instead of invented fallback geometry.",
+      "supersedes": [],
+      "symbol": "UAssetError"
+    },
+    {
+      "constraints": [
+        "UE5 Oodle payloads require an `oodle` codec in the parse options; see README licensing"
+      ],
+      "example": "const mesh = new UAssetLoader(manager, { parse: { oodle } }).parse(data);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export class UAssetLoader extends Loader { … }",
+      "situations": [
+        "load a .uasset asset in the browser with the standard three.js loader protocol",
+        "hand raw Fab-pack meshes to the framework's asset loading without a conversion step"
+      ],
+      "summary": "Loads a raw Unreal `.uasset` static mesh as a three.js loader — `load(url)` for the browser, `parse(data)` for bytes you already hold — with parse and adapter options passed through.",
+      "supersedes": [],
+      "symbol": "UAssetLoader"
+    },
+    {
+      "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
       "example": "gradualBackground(...)",
@@ -3546,6 +3809,116 @@
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects sparkle.",
       "symbol": "sparkle"
+    },
+    {
+      "constraints": [
+        "rejects indices, channels, or material sections that disagree with the vertex count before any geometry is constructed"
+      ],
+      "example": "const geometry = createThreeGeometry(model.lods[0]);",
+      "importPath": "@threenative/ueformat",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ueformat",
+      "signature": "export function createThreeGeometry( lod: IUEModelLOD, adapterOptions: IThreeAdapterOptions = { … }",
+      "situations": [
+        "convert one Unreal mesh LOD into a three.js BufferGeometry by hand",
+        "build custom scene objects from Unreal mesh data instead of a whole model"
+      ],
+      "summary": "Converts one parsed Unreal mesh LOD into a `THREE.BufferGeometry` — coordinates, scale, winding, normals, tangents, UVs, vertex colours, morphs, skin weights, and material groups.",
+      "supersedes": [],
+      "symbol": "createThreeGeometry"
+    },
+    {
+      "constraints": [
+        "every material comes from the game through `materialFactory`; the fallback is three.js's own GLTFLoader default, a plain MeshStandardMaterial",
+        "parsed bones are exposed on `userData` but never bound into a THREE.SkinnedMesh — skeletal rendering is the game's job"
+      ],
+      "example": "const hero = createThreeObject(parseUEModel(buffer), { lodDistances: [0, 25, 50] });",
+      "importPath": "@threenative/ueformat",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ueformat",
+      "signature": "export function createThreeObject( model: IUEModelData, adapterOptions: IThreeAdapterOptions = { … }",
+      "situations": [
+        "put a mesh exported from an Unreal package on screen",
+        "load an Unreal static or skeletal mesh with LODs, sockets, and collision geometry"
+      ],
+      "summary": "Builds a renderable Three.js object — a `Group` for single-LOD models, a `THREE.LOD` for multi-LOD ones — from parsed `.uemodel` data, with collision geometry on `userData`.",
+      "supersedes": [],
+      "symbol": "createThreeObject"
+    },
+    {
+      "constraints": [
+        "only UEFormat v10 UEMODEL files are accepted; anything else throws UEFormatError with the byte offset",
+        "ZSTD-compressed bodies require an injected `zstdDecoder`; the package never bundles a ZSTD implementation"
+      ],
+      "example": "const model = parseUEModel(await file.arrayBuffer());",
+      "importPath": "@threenative/ueformat",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ueformat",
+      "signature": "export function parseUEModel( input: ArrayBuffer | ArrayBufferView, options: IParseUEModelOptions = { … }",
+      "situations": [
+        "parse a mesh exported from an Unreal package without Unreal installed",
+        "inspect the LODs, skeleton, sockets, and collision inside a .uemodel file"
+      ],
+      "summary": "Parses a UEFormat v10 `.uemodel` body — the interchange format CUE4Parse and FModel export from Unreal packages — into validated, plain mesh data without building any Three.js objects.",
+      "supersedes": [],
+      "symbol": "parseUEModel"
+    },
+    {
+      "constraints": [
+        "the summary reflects one already-parsed model; it does not read files itself"
+      ],
+      "example": "const summary = summarizeUEModel(parseUEModel(buffer));",
+      "importPath": "@threenative/ueformat",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ueformat",
+      "signature": "export function summarizeUEModel(model: IUEModelData): IUEModelSummary { … }",
+      "situations": [
+        "report what a UEFormat model contains without dumping its vertex data",
+        "validate a .uemodel file before building geometry from it"
+      ],
+      "summary": "Summarizes a parsed `.uemodel` — LOD, material, skeleton, collision, and unknown-attribute counts — without dumping vertex arrays, for logs, validation, and build reports.",
+      "supersedes": [],
+      "symbol": "summarizeUEModel"
+    },
+    {
+      "constraints": [
+        "every parse and geometry failure surfaces as this error; nothing malformed is silently skipped"
+      ],
+      "example": "catch (error) { if (error instanceof UEFormatError) log(error.code, error.offset); }",
+      "importPath": "@threenative/ueformat",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/ueformat",
+      "signature": "export class UEFormatError extends Error { … }",
+      "situations": [
+        "tell why a .uemodel file failed to load",
+        "report a malformed Unreal export with its byte offset instead of a generic error"
+      ],
+      "summary": "The error thrown for every malformed, truncated, or unsupported `.uemodel` input, carrying a stable `code` and the byte offset where validation stopped.",
+      "supersedes": [],
+      "symbol": "UEFormatError"
+    },
+    {
+      "constraints": [
+        "ZSTD-compressed bodies require an injected `zstdDecoder` in the parse options"
+      ],
+      "example": "const model = new UEFormatLoader(manager).parse(data);",
+      "importPath": "@threenative/ueformat",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/ueformat",
+      "signature": "export class UEFormatLoader extends Loader { … }",
+      "situations": [
+        "load a .uemodel asset in the browser with the standard three.js loader protocol",
+        "hand a game's Unreal-exported meshes to the framework's asset loading"
+      ],
+      "summary": "Loads a `.uemodel` file as a Three.js loader — `load(url)` for the browser, `parse(data)` for bytes you already hold — with the parser and three-adapter options passed straight through.",
+      "supersedes": [],
+      "symbol": "UEFormatLoader"
     },
     {
       "constraints": [],
