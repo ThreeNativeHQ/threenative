@@ -107,7 +107,12 @@ describe("parseRawMesh", () => {
     const lod0 = rawMeshBlob(DIAMOND);
     const lod1 = rawMeshBlob({
       ...DIAMOND,
-      vertices: [[0, 0, 0], [2, 0, 0], [0, 2, 0], [0, 0, 2]] as const,
+      vertices: [
+        [0, 0, 0],
+        [2, 0, 0],
+        [0, 2, 0],
+        [0, 0, 2],
+      ] as const,
     });
     const package_ = new Writer();
     package_.bytes(new Uint8Array(137));

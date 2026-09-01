@@ -52,10 +52,15 @@ export function findCompressedBufferOffsets(bytes: Uint8Array): number[] {
 export function parseCompressedBuffer(bytes: Uint8Array, offset = 0): ICompressedBuffer {
   const reader = new BinaryReader(bytes, offset);
   const magic = reader.uint32BE("FCompressedBuffer magic");
-  assertUAsset(magic === COMPRESSED_BUFFER_MAGIC, "INVALID_COMPRESSED_BUFFER", "Invalid FCompressedBuffer magic", {
-    offset,
-    magic: `0x${magic.toString(16)}`,
-  });
+  assertUAsset(
+    magic === COMPRESSED_BUFFER_MAGIC,
+    "INVALID_COMPRESSED_BUFFER",
+    "Invalid FCompressedBuffer magic",
+    {
+      offset,
+      magic: `0x${magic.toString(16)}`,
+    },
+  );
 
   const crc32 = reader.uint32BE("FCompressedBuffer CRC32");
   const method = reader.uint8("compression method");
@@ -71,10 +76,15 @@ export function parseCompressedBuffer(bytes: Uint8Array, offset = 0): ICompresse
   );
   const rawHash = reader.raw(32, "raw BLAKE3 hash");
 
-  assertUAsset(blockCount <= 1_000_000, "INVALID_COMPRESSED_BUFFER", "Invalid compressed block count", {
-    offset,
-    blockCount,
-  });
+  assertUAsset(
+    blockCount <= 1_000_000,
+    "INVALID_COMPRESSED_BUFFER",
+    "Invalid compressed block count",
+    {
+      offset,
+      blockCount,
+    },
+  );
   assertUAsset(
     totalCompressedSize >= 64,
     "INVALID_COMPRESSED_BUFFER",
@@ -82,7 +92,8 @@ export function parseCompressedBuffer(bytes: Uint8Array, offset = 0): ICompresse
     { offset, totalCompressedSize },
   );
   assertUAsset(
-    totalCompressedSize <= Number.MAX_SAFE_INTEGER && offset + totalCompressedSize <= bytes.byteLength,
+    totalCompressedSize <= Number.MAX_SAFE_INTEGER &&
+      offset + totalCompressedSize <= bytes.byteLength,
     "TRUNCATED_PACKAGE",
     "Compressed buffer extends past the package",
     { offset, totalCompressedSize, packageSize: bytes.byteLength },
@@ -155,7 +166,10 @@ function safeNumber(value: bigint, label: string, offset: number): number {
 
 /** Decompresses a parsed `FCompressedBuffer` block-by-block. Uncompressed payloads are copied
  * natively; Oodle and LZ4 payloads require the caller's codec. */
-export function decompressCompressedBuffer(buffer: ICompressedBuffer, codecs: IUAssetCodecs): Uint8Array {
+export function decompressCompressedBuffer(
+  buffer: ICompressedBuffer,
+  codecs: IUAssetCodecs,
+): Uint8Array {
   if (buffer.method === COMPRESSION_METHOD.NONE) {
     return Uint8Array.from(buffer.payloadBytes.subarray(0, buffer.totalRawSize));
   }
@@ -164,10 +178,14 @@ export function decompressCompressedBuffer(buffer: ICompressedBuffer, codecs: IU
   const codec = isOodle ? codecs.oodle : codecs.lz4;
   const codecName = isOodle ? "Oodle" : "LZ4";
   if (typeof codec !== "function") {
-    throw new UAssetError("MISSING_CODEC", `${codecName} decompression is required for this Unreal payload`, {
-      method: buffer.method,
-      offset: buffer.offset,
-    });
+    throw new UAssetError(
+      "MISSING_CODEC",
+      `${codecName} decompression is required for this Unreal payload`,
+      {
+        method: buffer.method,
+        offset: buffer.offset,
+      },
+    );
   }
 
   const output = new Uint8Array(buffer.totalRawSize);
@@ -180,6 +198,11 @@ export function decompressCompressedBuffer(buffer: ICompressedBuffer, codecs: IU
 
   for (let index = 0; index < buffer.blockSizes.length; index += 1) {
     const compressedSize = buffer.blockSizes[index];
+    if (compressedSize === undefined) {
+      throw new UAssetError("INVALID_COMPRESSED_BUFFER", "Compressed block table ended early", {
+        block: index,
+      });
+    }
     const rawBlockSize = Math.min(maximumBlockSize, buffer.totalRawSize - targetOffset);
     const compressed = buffer.payloadBytes.subarray(sourceOffset, sourceOffset + compressedSize);
     const decompressed = codec(compressed, rawBlockSize);

@@ -1,3 +1,9 @@
+/**
+ * The stable error codes a `UAssetError` can carry.
+ * @situation switch on a raw .uasset failure without parsing error strings
+ * @constraint codes are part of the public surface; new failure modes add codes rather than reusing them
+ * @example if (error.code === "MISSING_CODEC") hintAtOodleSetup();
+ */
 export type UAssetErrorCode =
   | "INVALID_PACKAGE_TAG"
   | "TRUNCATED_PACKAGE"
@@ -17,12 +23,20 @@ export type UAssetErrorCode =
 /**
  * The error thrown for every malformed, truncated, or unsupported `.uasset` input, carrying a
  * stable `code` and structured details instead of invented fallback geometry.
+ * @situation tell why a raw .uasset failed to load, by code, before any geometry is shown
+ * @situation branch on an unsupported Unreal layout instead of shipping broken geometry
+ * @constraint every parse, decompression, and geometry failure surfaces as this error; the loader never invents fallback geometry
+ * @example catch (error) { if (error instanceof UAssetError) log(error.code, error.details); }
  */
 export class UAssetError extends Error {
   readonly code: UAssetErrorCode;
   readonly details: Readonly<Record<string, unknown>>;
 
-  constructor(code: UAssetErrorCode, message: string, details: Readonly<Record<string, unknown>> = {}) {
+  constructor(
+    code: UAssetErrorCode,
+    message: string,
+    details: Readonly<Record<string, unknown>> = {},
+  ) {
     super(message);
     this.name = "UAssetError";
     this.code = code;

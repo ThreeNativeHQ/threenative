@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
 import { decompress as oodle } from "ooz-wasm";
+import { describe, expect, it } from "vitest";
 
 import {
   COMPRESSION_METHOD,
@@ -38,11 +38,7 @@ function surfaceArea(positions: Float32Array, indices: Uint16Array | Uint32Array
     const acx = at(positions, c) - ax;
     const acy = at(positions, c + 1) - ay;
     const acz = at(positions, c + 2) - az;
-    const cross = [
-      aby * acz - abz * acy,
-      abz * acx - abx * acz,
-      abx * acy - aby * acx,
-    ];
+    const cross = [aby * acz - abz * acy, abz * acx - abx * acz, abx * acy - aby * acx];
     area += Math.hypot(cross[0] ?? 0, cross[1] ?? 0, cross[2] ?? 0) * 0.5;
   }
   return area;
@@ -84,7 +80,7 @@ describe("parseUAssetStaticMesh", () => {
     });
     expect(decoded.positions.length / 3).toBe(24);
     expect(decoded.uvs.length / 2).toBe(24);
-    expect(decoded.normals?.length / 3).toBe(24);
+    expect(decoded.normals?.length).toBe(72);
     expect(decoded.indices.length).toBe(36);
     expect(decoded.indices.every((index) => index >= 0 && index < 24)).toBe(true);
     expect(decoded.sections).toEqual([

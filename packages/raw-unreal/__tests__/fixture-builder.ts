@@ -54,7 +54,9 @@ export class Writer {
   /** An FString in the UTF-8 positive-length form, NUL included. */
   fstring(value: string): this {
     const encoded = new TextEncoder().encode(value);
-    return this.int32(encoded.length + 1).bytes(encoded).uint8(0);
+    return this.int32(encoded.length + 1)
+      .bytes(encoded)
+      .uint8(0);
   }
 
   concat(): Uint8Array {
@@ -85,29 +87,18 @@ export interface IRawMeshFixture {
   trailingBytes?: number;
 }
 
-/** Builds an FRawMesh blob per `operator<<(FArchive&, FRawMesh&)`: version pair, then the
- * fixed-order TArrays including all eight UV channels and (from version 1) the import map. */
-export function rawMeshBlob(fixture: IRawMeshFixture): Uint8Array {
-  const version = fixture.version ?? 1;
-  const wedgeCount = fixture.wedgeIndices.length;
-  if (fixture.wedgeNormals.length !== wedgeCount) throw new Error("fixture normals must match wedges");
-  if (fixture.uvs.length !== wedgeCount) throw new Error("fixture uvs must match wedges");
-  if (fixture.faceMaterials.length * 3 !== wedgeCount) throw new Error("fixture faces must be wedges/3");
-
-  const writer = new Writer();
-  writer.int32(version).int32(0);
-  writer.int32(fixture.faceMaterials.length);
-  for (const material of fixture.faceMaterials) writer.int32(material);
-  writer.int32(fixture.faceMaterials.length); // FaceSmoothingMasks, one per face
-  for (let face = 0; face < fixture.faceMaterials.length; face += 1) writer.int32(0);
-  writer.int32(fixture.vertices.length);
-  for (const [x, y, z] of fixture.vertices) writer.vec3(x, y, z);
+/** Writes the fixed-stride per-wedge arrays: WedgeIndices, both tangents, the normals, all
+ * eight UV channels (only channel 0 populated), and WedgeColors. */
+function writeWedgeArrays(writer: Writer, fixture: IRawMeshFixture, wedgeCount: number): void {
   writer.int32(wedgeCount);
   for (const wedge of fixture.wedgeIndices) writer.uint32(wedge);
-  writer.int32(wedgeCount); // WedgeTangentX
-  for (let wedge = 0; wedge < wedgeCount; wedge += 1) writer.vec3(1, 0, 0);
-  writer.int32(wedgeCount); // WedgeTangentY
-  for (let wedge = 0; wedge < wedgeCount; wedge += 1) writer.vec3(0, 1, 0);
+  for (const [tx, ty, tz] of [
+    [1, 0, 0],
+    [0, 1, 0],
+  ] as const) {
+    writer.int32(wedgeCount);
+    for (let wedge = 0; wedge < wedgeCount; wedge += 1) writer.vec3(tx, ty, tz);
+  }
   writer.int32(wedgeCount); // WedgeTangentZ (the normals)
   for (const [x, y, z] of fixture.wedgeNormals) writer.vec3(x, y, z);
   for (let channel = 0; channel < 8; channel += 1) {
@@ -119,6 +110,28 @@ export function rawMeshBlob(fixture: IRawMeshFixture): Uint8Array {
     }
   }
   writer.int32(0); // WedgeColors
+}
+
+/** Builds an FRawMesh blob per `operator<<(FArchive&, FRawMesh&)`: version pair, then the
+ * fixed-order TArrays including all eight UV channels and (from version 1) the import map. */
+export function rawMeshBlob(fixture: IRawMeshFixture): Uint8Array {
+  const version = fixture.version ?? 1;
+  const wedgeCount = fixture.wedgeIndices.length;
+  if (fixture.wedgeNormals.length !== wedgeCount)
+    throw new Error("fixture normals must match wedges");
+  if (fixture.uvs.length !== wedgeCount) throw new Error("fixture uvs must match wedges");
+  if (fixture.faceMaterials.length * 3 !== wedgeCount)
+    throw new Error("fixture faces must be wedges/3");
+
+  const writer = new Writer();
+  writer.int32(version).int32(0);
+  writer.int32(fixture.faceMaterials.length);
+  for (const material of fixture.faceMaterials) writer.int32(material);
+  writer.int32(fixture.faceMaterials.length); // FaceSmoothingMasks, one per face
+  for (let face = 0; face < fixture.faceMaterials.length; face += 1) writer.int32(0);
+  writer.int32(fixture.vertices.length);
+  for (const [x, y, z] of fixture.vertices) writer.vec3(x, y, z);
+  writeWedgeArrays(writer, fixture, wedgeCount);
   if (version >= 1) {
     writer.int32(0); // ImportedMaterialNames
   }
@@ -130,12 +143,15 @@ export function rawMeshBlob(fixture: IRawMeshFixture): Uint8Array {
 
 /** Wraps payload bytes in a minimal legacy package: tag, a −7 summary with the given versions,
  * a one-entry custom-version list, and then the payload. */
-export function legacyPackage(payload: Uint8Array, options: {
-  fileVersionUE4?: number;
-  licenseeVersion?: number;
-  editorObjectVersion?: number;
-  nameTable?: string;
-} = {}): Uint8Array {
+export function legacyPackage(
+  payload: Uint8Array,
+  options: {
+    fileVersionUE4?: number;
+    licenseeVersion?: number;
+    editorObjectVersion?: number;
+    nameTable?: string;
+  } = {},
+): Uint8Array {
   const writer = new Writer();
   writer.uint32(0x9e2a83c1);
   writer.int32(-7); // LegacyFileVersion

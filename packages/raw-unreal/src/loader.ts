@@ -1,7 +1,7 @@
 import { FileLoader, Loader, type LoadingManager } from "three";
 
 import { parseUAssetStaticMesh } from "./static-mesh.js";
-import { createThreeObject, type IThreeAdapterOptions } from "./three-adapter.js";
+import { type IThreeAdapterOptions, createThreeObject } from "./three-adapter.js";
 import type { IUAssetParseOptions } from "./types.js";
 
 export interface IUAssetLoaderOptions {

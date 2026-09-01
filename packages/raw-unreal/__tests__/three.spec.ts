@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
+import { decompress as oodle } from "ooz-wasm";
 import { BufferGeometry, Mesh, MeshStandardMaterial } from "three";
 import { describe, expect, it } from "vitest";
-import { decompress as oodle } from "ooz-wasm";
 
 import {
   UAssetLoader,
@@ -39,10 +39,29 @@ describe("createThreeObject", () => {
 
   it("gives every section a game-provided material through materialFactory", () => {
     const blob = rawMeshBlob({
-      vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]] as const,
+      vertices: [
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+      ] as const,
       wedgeIndices: [0, 2, 1, 0, 1, 3],
-      wedgeNormals: [[0, 0, 1], [0, 0, 1], [0, 0, 1], [0, 1, 0], [0, 1, 0], [0, 1, 0]] as const,
-      uvs: [[0, 0], [1, 0], [0, 1], [0, 0], [1, 0], [0, 1]] as const,
+      wedgeNormals: [
+        [0, 0, 1],
+        [0, 0, 1],
+        [0, 0, 1],
+        [0, 1, 0],
+        [0, 1, 0],
+        [0, 1, 0],
+      ] as const,
+      uvs: [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [0, 0],
+        [1, 0],
+        [0, 1],
+      ] as const,
       faceMaterials: [0, 1],
     });
     const decoded = parseUAssetStaticMesh(legacyPackage(blob));
@@ -58,10 +77,29 @@ describe("createThreeObject", () => {
 
   it("builds a standalone BufferGeometry with bounding volumes", () => {
     const blob = rawMeshBlob({
-      vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]] as const,
+      vertices: [
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+      ] as const,
       wedgeIndices: [0, 2, 1, 0, 1, 3],
-      wedgeNormals: [[0, 0, 1], [0, 0, 1], [0, 0, 1], [0, 1, 0], [0, 1, 0], [0, 1, 0]] as const,
-      uvs: [[0, 0], [1, 0], [0, 1], [0, 0], [1, 0], [0, 1]] as const,
+      wedgeNormals: [
+        [0, 0, 1],
+        [0, 0, 1],
+        [0, 0, 1],
+        [0, 1, 0],
+        [0, 1, 0],
+        [0, 1, 0],
+      ] as const,
+      uvs: [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [0, 0],
+        [1, 0],
+        [0, 1],
+      ] as const,
       faceMaterials: [0, 0],
     });
     const geometry = createThreeGeometry(parseUAssetStaticMesh(legacyPackage(blob)));

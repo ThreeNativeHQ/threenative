@@ -53,7 +53,12 @@ export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob {
     const start = pos;
     const end = pos + count * elementSize;
     if (end > bytes.byteLength) {
-      throw rawMeshError(`${label} runs past the payload`, { offset, count, end, byteLength: bytes.byteLength });
+      throw rawMeshError(`${label} runs past the payload`, {
+        offset,
+        count,
+        end,
+        byteLength: bytes.byteLength,
+      });
     }
     pos = end;
     return { count, start };
@@ -67,7 +72,10 @@ export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob {
   const licenseeVersion = view.getInt32(pos, true);
   pos += 4;
   if (licenseeVersion !== 0) {
-    throw rawMeshError("FRawMesh licensee version is not the stock layout", { offset, licenseeVersion });
+    throw rawMeshError("FRawMesh licensee version is not the stock layout", {
+      offset,
+      licenseeVersion,
+    });
   }
 
   const faces = array(4, "FaceMaterialIndices");
@@ -90,43 +98,15 @@ export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob {
   const faceCount = faces.count;
   const wedgeCount = wedges.count;
   const vertexCount = vertices.count;
-  if (wedgeCount !== faceCount * 3) {
-    throw rawMeshError("FRawMesh wedge count does not match three per face", {
-      offset,
-      wedgeCount,
-      faceCount,
-    });
-  }
-  if (smoothing.count !== 0 && smoothing.count !== faceCount) {
-    throw rawMeshError("FRawMesh smoothing-mask count does not match the face count", {
-      offset,
-      smoothingCount: smoothing.count,
-      faceCount,
-    });
-  }
-  if (normals.count !== 0 && normals.count !== wedgeCount) {
-    throw rawMeshError("FRawMesh normal count does not match the wedge count", {
-      offset,
-      normalCount: normals.count,
-      wedgeCount,
-    });
-  }
+  validateRawMeshCounts(offset, {
+    faceCount,
+    wedgeCount,
+    vertexCount,
+    smoothingCount: smoothing.count,
+    normalCount: normals.count,
+    uvChannels,
+  });
   const nonEmptyUvChannels = uvChannels.filter((channel) => channel.count > 0);
-  if (nonEmptyUvChannels.length === 0) {
-    throw rawMeshError("FRawMesh has no texture coordinates", { offset });
-  }
-  for (const channel of uvChannels) {
-    if (channel.count !== 0 && channel.count !== wedgeCount) {
-      throw rawMeshError("FRawMesh UV channel does not match the wedge count", {
-        offset,
-        uvCount: channel.count,
-        wedgeCount,
-      });
-    }
-  }
-  if (wedgeCount === 0 || vertexCount === 0) {
-    throw rawMeshError("FRawMesh has no renderable geometry", { offset });
-  }
 
   // Wedge indices must reference real vertices before any geometry is built from them.
   for (let wedge = 0; wedge < wedgeCount; wedge += 1) {
@@ -155,11 +135,11 @@ export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob {
   }
 
   const wedgeNormals =
-    normals.count > 0
-      ? copyFloats(view, normals.start, normals.count * 3)
-      : undefined;
+    normals.count > 0 ? copyFloats(view, normals.start, normals.count * 3) : undefined;
 
-  const wedgeUvs = nonEmptyUvChannels.map((channel) => copyFloats(view, channel.start, channel.count * 2));
+  const wedgeUvs = nonEmptyUvChannels.map((channel) =>
+    copyFloats(view, channel.start, channel.count * 2),
+  );
 
   return {
     offset,
@@ -174,6 +154,58 @@ export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob {
       wedgeUvs,
     },
   };
+}
+
+/** The cross-count checks that make an FRawMesh parse trustworthy: wedges per face, per-wedge
+ * optional channels, at least one UV channel, and non-empty renderable geometry. */
+function validateRawMeshCounts(
+  offset: number,
+  counts: {
+    faceCount: number;
+    wedgeCount: number;
+    vertexCount: number;
+    smoothingCount: number;
+    normalCount: number;
+    uvChannels: readonly IRawArray[];
+  },
+): void {
+  const { faceCount, wedgeCount, vertexCount, smoothingCount, normalCount, uvChannels } = counts;
+  if (wedgeCount !== faceCount * 3) {
+    throw rawMeshError("FRawMesh wedge count does not match three per face", {
+      offset,
+      wedgeCount,
+      faceCount,
+    });
+  }
+  if (smoothingCount !== 0 && smoothingCount !== faceCount) {
+    throw rawMeshError("FRawMesh smoothing-mask count does not match the face count", {
+      offset,
+      smoothingCount,
+      faceCount,
+    });
+  }
+  if (normalCount !== 0 && normalCount !== wedgeCount) {
+    throw rawMeshError("FRawMesh normal count does not match the wedge count", {
+      offset,
+      normalCount,
+      wedgeCount,
+    });
+  }
+  if (!uvChannels.some((channel) => channel.count > 0)) {
+    throw rawMeshError("FRawMesh has no texture coordinates", { offset });
+  }
+  for (const channel of uvChannels) {
+    if (channel.count !== 0 && channel.count !== wedgeCount) {
+      throw rawMeshError("FRawMesh UV channel does not match the wedge count", {
+        offset,
+        uvCount: channel.count,
+        wedgeCount,
+      });
+    }
+  }
+  if (wedgeCount === 0 || vertexCount === 0) {
+    throw rawMeshError("FRawMesh has no renderable geometry", { offset });
+  }
 }
 
 function copyFloats(view: DataView, start: number, count: number): Float32Array {
@@ -195,8 +227,10 @@ export function findRawMeshBlobs(bytes: Uint8Array): IRawMeshBlob[] {
   const blobs: IRawMeshBlob[] = [];
   for (let offset = 0; offset + 20 <= bytes.byteLength; offset += 1) {
     try {
-      blobs.push(parseRawMesh(bytes, offset));
-      offset += blobs[blobs.length - 1].byteLength - 1;
+      const blob = parseRawMesh(bytes, offset);
+      blobs.push(blob);
+      // Skip past this blob so its own interior cannot register as a second candidate.
+      offset += blob.byteLength - 1;
     } catch (error) {
       if (!(error instanceof UAssetError)) throw error;
     }

@@ -1,6 +1,6 @@
 import {
-  BufferGeometry,
   BufferAttribute,
+  BufferGeometry,
   type Material,
   Mesh,
   MeshStandardMaterial,

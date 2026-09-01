@@ -71,7 +71,8 @@ function readBitArray(reader: BinaryReader): IBitArray {
   }
   const validIds: number[] = [];
   for (let id = 0; id < numBits; id += 1) {
-    if ((words[id >>> 5] & (1 << (id & 31))) !== 0) validIds.push(id);
+    const word = words[id >>> 5];
+    if (word !== undefined && (word & (1 << (id & 31))) !== 0) validIds.push(id);
   }
   return { numBits, validIds };
 }
@@ -127,14 +128,24 @@ function readAttributeEntry(reader: BinaryReader, rawName: string): IAttributeEn
   const name = rawName.trimEnd();
   const typeIndex = reader.uint32(`${name} type`);
   const type = ATTRIBUTE_TYPES[typeIndex];
-  assertUAsset(type !== undefined, "INVALID_MESH_DESCRIPTION", `Unknown MeshDescription attribute type`, {
-    attribute: name,
-    typeIndex,
-  });
+  assertUAsset(
+    type !== undefined,
+    "INVALID_MESH_DESCRIPTION",
+    "Unknown MeshDescription attribute type",
+    {
+      attribute: name,
+      typeIndex,
+    },
+  );
   const extent = reader.uint32(`${name} extent`);
-  assertUAsset(extent >= 1 && extent <= 64, "INVALID_MESH_DESCRIPTION", `Invalid extent for ${name}`, {
-    extent,
-  });
+  assertUAsset(
+    extent >= 1 && extent <= 64,
+    "INVALID_MESH_DESCRIPTION",
+    `Invalid extent for ${name}`,
+    {
+      extent,
+    },
+  );
   const numElements = reader.int32(`${name} number of elements`);
   const numChannels = reader.int32(`${name} channel count`);
   assertUAsset(
@@ -175,7 +186,10 @@ function readAttributeEntry(reader: BinaryReader, rawName: string): IAttributeEn
       }
       channel = { extent: channelExtent, values, serializedCount: count };
     } else {
-      channel = { extent: channelExtent, ...readBulkValues(reader, type, `${name}[${channelIndex}]`) };
+      channel = {
+        extent: channelExtent,
+        ...readBulkValues(reader, type, `${name}[${channelIndex}]`),
+      };
     }
     const expectedCount = numElements * extent;
     assertUAsset(
@@ -207,14 +221,17 @@ function readAttributeEntry(reader: BinaryReader, rawName: string): IAttributeEn
   };
 }
 
-function readDefaultValue(reader: BinaryReader, type: IAttributeType): number | boolean | string | number[] {
+function readDefaultValue(
+  reader: BinaryReader,
+  type: IAttributeType,
+): number | boolean | string | number[] {
   switch (type.kind) {
     case "float": {
       const values: number[] = [];
       for (let index = 0; index < type.components; index += 1) {
         values.push(reader.float32(type.name));
       }
-      return type.components === 1 ? values[0] : values;
+      return type.components === 1 ? (values[0] ?? 0) : values;
     }
     case "int":
       return reader.int32(type.name);
@@ -229,7 +246,10 @@ function readAttributesSet(reader: BinaryReader): IElementContainer["attributeSe
   const numElements = reader.int32("attribute-set number of elements");
   const attributeCount = reader.int32("attribute map count");
   assertUAsset(
-    numElements >= 0 && numElements <= MAX_MESH_ELEMENTS && attributeCount >= 0 && attributeCount <= 1024,
+    numElements >= 0 &&
+      numElements <= MAX_MESH_ELEMENTS &&
+      attributeCount >= 0 &&
+      attributeCount <= 1024,
     "INVALID_MESH_DESCRIPTION",
     "Invalid attribute-set size",
     { numElements, attributeCount },
@@ -243,7 +263,11 @@ function readAttributesSet(reader: BinaryReader): IElementContainer["attributeSe
   return { numElements, attributes };
 }
 
-function readElementContainer(reader: BinaryReader, elementName: string, channelIndex: number): IElementContainer {
+function readElementContainer(
+  reader: BinaryReader,
+  elementName: string,
+  channelIndex: number,
+): IElementContainer {
   const allocation = readBitArray(reader);
   const numHoles = reader.int32(`${elementName} NumHoles`);
   const attributeSet = readAttributesSet(reader);
@@ -251,7 +275,11 @@ function readElementContainer(reader: BinaryReader, elementName: string, channel
     attributeSet.numElements === allocation.numBits,
     "INVALID_MESH_DESCRIPTION",
     `Allocation and attribute count disagree for ${elementName}`,
-    { channelIndex, allocatedSlots: allocation.numBits, attributeElements: attributeSet.numElements },
+    {
+      channelIndex,
+      allocatedSlots: allocation.numBits,
+      attributeElements: attributeSet.numElements,
+    },
   );
   assertUAsset(
     numHoles >= 0 && numHoles <= allocation.numBits,
