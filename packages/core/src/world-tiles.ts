@@ -131,6 +131,7 @@ const LOD_POP_THRESHOLD = 16;
 const LOD_TRANSITION_FRAMES = 3;
 const BRIDGE_COORDINATE_EPSILON = 1e-4;
 const BRIDGE_COORDINATE_RELATIVE_EPSILON = 2 ** -22;
+const BRIDGE_STRIP_INDEX_PATTERN = [0, 1, 2, 2, 1, 3, 2, 1, 0, 3, 1, 2] as const;
 type PositionAttribute = BufferAttribute | InterleavedBufferAttribute;
 
 function bridgeCoordinateMatches(actual: number, expected: number): boolean {
@@ -708,16 +709,27 @@ function geometryBytes(geometry: BufferGeometry): number {
   );
 }
 
-function validateBridgeTriangleTopology(geometry: BufferGeometry, vertexCount: number): void {
+function validateBridgeTriangleTopology(
+  geometry: BufferGeometry,
+  expectedVertexCount?: number,
+): PositionAttribute {
+  const position = geometry.getAttribute("position");
   const index = geometry.getIndex();
   const drawRange = geometry.drawRange;
+  const positionArray = position?.array;
   if (
+    position === undefined ||
+    position.itemSize !== 3 ||
+    !Number.isInteger(position.count) ||
+    position.count < 6 ||
+    position.count % 2 !== 0 ||
+    positionArray === undefined ||
+    positionArray.length < position.count * position.itemSize ||
+    (expectedVertexCount !== undefined && position.count !== expectedVertexCount) ||
     index === null ||
     index.itemSize !== 1 ||
     !Number.isInteger(index.count) ||
     index.array.length !== index.count ||
-    index.count < 3 ||
-    index.count % 3 !== 0 ||
     !Number.isInteger(drawRange.start) ||
     drawRange.start !== 0 ||
     (drawRange.count !== Number.POSITIVE_INFINITY &&
@@ -728,18 +740,35 @@ function validateBridgeTriangleTopology(geometry: BufferGeometry, vertexCount: n
     throw new Error(
       "TerrainTiles seam diagnostic bridge topology has invalid rendered triangle data.",
     );
+  const vertexCount = position.count;
+  const stripResolution = vertexCount / 2;
+  const expectedIndexCount = (stripResolution - 1) * BRIDGE_STRIP_INDEX_PATTERN.length;
+  if (index.count !== expectedIndexCount)
+    throw new Error(
+      "TerrainTiles seam diagnostic bridge topology has invalid rendered triangle data.",
+    );
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    if (
+      !Number.isFinite(position.getX(vertex)) ||
+      !Number.isFinite(position.getY(vertex)) ||
+      !Number.isFinite(position.getZ(vertex))
+    )
+      throw new Error("TerrainTiles seam diagnostic bridge coordinates must be finite.");
+  }
   for (let offset = 0; offset < index.count; offset += 1) {
+    const segment = Math.floor(offset / BRIDGE_STRIP_INDEX_PATTERN.length);
+    const pair = segment * 2;
+    const expected =
+      pair + (BRIDGE_STRIP_INDEX_PATTERN[offset % BRIDGE_STRIP_INDEX_PATTERN.length] as number);
     const vertex = index.getX(offset);
-    if (!Number.isInteger(vertex) || vertex < 0 || vertex >= vertexCount)
+    if (vertex !== expected)
       throw new Error("TerrainTiles seam diagnostic bridge topology has invalid index data.");
   }
+  return position;
 }
 
 function updateStitchBridge(bridge: IStitchBridge, data: IStitchGeometryData): void {
-  const position = bridge.geometry.getAttribute("position");
-  if (position === undefined)
-    throw new Error("TerrainTiles seam diagnostic bridge topology has invalid coverage.");
-  validateBridgeTriangleTopology(bridge.geometry, position.count);
+  const position = validateBridgeTriangleTopology(bridge.geometry, bridge.resolution * 2);
   if (bridge.resolution !== data.positions.length / 6) {
     const previous = bridge.geometry;
     bridge.geometry = stitchGeometry(data);
@@ -750,8 +779,15 @@ function updateStitchBridge(bridge: IStitchBridge, data: IStitchGeometryData): v
   } else {
     const normal = bridge.geometry.getAttribute("normal");
     const index = bridge.geometry.getIndex();
-    if (index === null)
-      throw new Error("TerrainTiles seam diagnostic bridge topology has invalid index data.");
+    if (
+      normal === undefined ||
+      normal.itemSize !== 3 ||
+      normal.count !== position.count ||
+      index === null
+    )
+      throw new Error(
+        "TerrainTiles seam diagnostic bridge topology has invalid rendered triangle data.",
+      );
     position.array.set(data.positions);
     normal.array.set(data.normals);
     index.array.set(data.indices);
@@ -1024,10 +1060,9 @@ function bridgeCoverageAt(
     throw new Error("TerrainTiles seam diagnostic bridge topology does not match its tile pair.");
   if (!Number.isFinite(normalized))
     throw new Error("TerrainTiles seam diagnostic bridge sample coordinate must be finite.");
-  const position = bridge.mesh.geometry.getAttribute("position");
+  const position = validateBridgeTriangleTopology(bridge.mesh.geometry, bridge.resolution * 2);
   if (position.count !== bridge.resolution * 2)
-    throw new Error("TerrainTiles seam diagnostic bridge geometry has invalid coverage.");
-  validateBridgeTriangleTopology(bridge.mesh.geometry, position.count);
+    throw new Error("TerrainTiles seam diagnostic bridge topology has invalid coverage.");
   const [finer, coarser] = bridgeEndpointPair(a, aSide, b, bSide);
   bridge.mesh.updateWorldMatrix(true, false);
   finer.level.mesh.updateWorldMatrix(true, false);
