@@ -12,6 +12,37 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ---
 
+## Android: the GPU meter reports on a Pixel 8 — 2026-09-01
+
+**First GPU reading taken from a phone by the instrument rather than by ablation arithmetic.**
+Pixel 8 (`shiba`), adapter **Mali-G715**, Android first proof (`examples/native-smoke`), 300
+frames, 1080x2400 at `resolutionScale 1`, `sampleCount 4`, over Wi-Fi adb.
+
+| window | fps | gpuMs | render p50 | residual share |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 41.29 | **0.19** | 2.72 ms | 0.602 |
+| 2 | 41.89 | **0.19** | 2.95 ms | — |
+
+The device granted `timestamp-query`, and now says so on the path a game takes:
+
+```
+TN_WEBGPU_FEATURES:{"timestamp-query":true,"texture-compression-bc":false,
+  "texture-compression-etc2":true,"texture-compression-astc":true,
+  "indirect-first-instance":false,"rg11b10ufloat-renderable":false}
+```
+
+**Read 0.19 ms as "the meter works", not as a game's GPU cost.** The first proof is a near-empty
+scene whose frame is 60 % `residual`; attributing a real game's GPU time on the phone is PRD-308,
+which this unblocks. **The phone was on the charger** (level 65 → 72 %, battery 30.1 °C, thermal
+status 0), so no fps figure here is comparable to the unplugged 59.99–60.02 fps template baseline
+above, and none is claimed to be.
+
+Full record, including the feature-array bound that could silently have dropped
+`core-features-and-limits` on a device advertising all three compression formats:
+[`gpu-meter-on-android-2026-09-01`](gpu-meter-on-android-2026-09-01.md).
+
+---
+
 ## Browser WebGPU: a TSL post chain, and the scaler's fps signal — 2026-08-30
 
 Lane: browser/WebGPU, `sandbox/lumen-hall` (gothic cathedral, five-stage TSL chain: SSGI +

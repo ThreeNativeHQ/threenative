@@ -11,6 +11,15 @@ export interface IAssetLoaderOptions {
    * version throws.
    */
   readonly manifest?: string;
+  /**
+   * Directory the game's uncompiled assets live in, relative to `basePath`.
+   *
+   * Only consulted when there is no manifest, and only after the verbatim path has been tried. It
+   * is what makes the delete-test possible: remove everything the asset pipeline produced and the
+   * game still finds `assets/rock.png` where the author put it, just slower and uncompressed.
+   * Defaults to the compile step's own default source directory.
+   */
+  readonly sourcePath?: string;
   readonly model?: (url: string) => Promise<unknown>;
   readonly texture?: (url: string) => Promise<Texture>;
   readonly audio?: (url: string) => Promise<AudioBuffer>;
@@ -332,6 +341,9 @@ export async function createKtx2Loader(options: {
 
 export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoader {
   const basePath = options.basePath ?? "";
+  // `assets` is what `@threenative/assets` compiles from unless a project says otherwise, so it is
+  // where an unbaked game's files are. A project that moved its sources passes `sourcePath`.
+  const sourcePath = (options.sourcePath ?? "assets").replace(/^\/+|\/+$/gu, "");
   const manifestUrl = resolvePath(basePath, options.manifest ?? "assets.manifest.json");
   let manifestRequest: Promise<IAssetManifest | undefined> | undefined;
   const manifestOnce = (): Promise<IAssetManifest | undefined> => {
@@ -402,16 +414,61 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
 
   // Cache keys stay on the logical path so `release` matches whatever was loaded with or
   // without a manifest; loaders always receive the fully resolved url.
-  const resolveUrl = async (path: string): Promise<string> => {
-    if (isExternalAssetPath(path)) return path;
+  /**
+   * Where a logical path might live, in the order worth trying.
+   *
+   * With a manifest there is exactly one answer, and a path the manifest does not list is an
+   * error rather than a guess. Without one there are two, and both are real games:
+   *
+   * - a project with **no asset pipeline** puts its files straight into `public/` and refers to
+   *   them by name, so the verbatim path is right;
+   * - a project **whose compiled output has been removed** still has its sources under
+   *   `assets/`, and the content-addressed name the manifest would have given is gone with it.
+   *
+   * The second case is the delete-test — *delete the entire baked output and the game runs
+   * identically, just slower* — and it could not pass while only the first was tried: the loader
+   * asked for `/rock.png`, which exists nowhere in a compiled project, and the game never booted.
+   */
+  const resolveCandidates = async (path: string): Promise<readonly string[]> => {
+    if (isExternalAssetPath(path)) return [path];
     const manifest = await manifestOnce();
-    if (manifest === undefined) return resolvePath(basePath, path);
-    const listed = manifest.entries[path];
-    const output = isRecord(listed) ? listed.output : undefined;
-    if (typeof output !== "string") {
-      throw new Error(`Asset '${path}' is not listed in the asset manifest '${manifestUrl}'.`);
+    if (manifest !== undefined) {
+      const listed = manifest.entries[path];
+      const output = isRecord(listed) ? listed.output : undefined;
+      if (typeof output !== "string") {
+        throw new Error(`Asset '${path}' is not listed in the asset manifest '${manifestUrl}'.`);
+      }
+      return [resolvePath(basePath, output)];
     }
-    return resolvePath(basePath, output);
+    const verbatim = resolvePath(basePath, path);
+    if (sourcePath === "") return [verbatim];
+    const fromSource = resolvePath(basePath, `${sourcePath}/${path}`);
+    return fromSource === verbatim ? [verbatim] : [verbatim, fromSource];
+  };
+
+  /**
+   * Loads from the first candidate that works, and names every one it tried when none do.
+   *
+   * A single combined error matters more than it looks: the failure this replaces reported only
+   * the last url, so "the game cannot find its texture" read as one missing file rather than as
+   * two places that were looked at and neither had it.
+   */
+  const loadFirst = async <T>(
+    path: string,
+    urls: readonly string[],
+    load: (url: string) => Promise<T>,
+  ): Promise<T> => {
+    const failures: string[] = [];
+    for (const url of urls) {
+      try {
+        return await load(url);
+      } catch (error) {
+        failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
+      }
+    }
+    throw new Error(
+      `TN_ASSETS_UNRESOLVED: '${path}' could not be loaded from ${urls.length} candidate url(s): ${failures.join("; ")}`,
+    );
   };
 
   const cached = <T>(kind: string, path: string, load: (url: string) => Promise<T>): Promise<T> => {
@@ -423,8 +480,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       kind: kind as AssetKind,
       loaded: false,
       promise: Promise.resolve()
-        .then(() => resolveUrl(path))
-        .then((resolved) => load(resolved)),
+        .then(() => resolveCandidates(path))
+        .then((candidates) => loadFirst(path, candidates, load)),
       released: false,
     };
     entry.promise = entry.promise.then((value) => {
