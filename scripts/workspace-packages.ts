@@ -34,10 +34,17 @@ const SKIPPED_DIRECTORY_NAMES = new Set([
 export interface IWorkspacePackage {
   readonly dependencies: readonly string[];
   readonly directory: string;
+  /** Export-map subpaths, with `.` representing a root conditional export. */
+  readonly exports: readonly string[];
   readonly name: string;
   readonly private: boolean;
   readonly scripts: Readonly<Record<string, string>>;
   readonly version: string;
+}
+
+export interface IWorkspacePackageOptions {
+  /** Keep fixture-only manifest scans useful when a test omits publication metadata. */
+  readonly requireVersion?: boolean;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -55,6 +62,15 @@ function dependencyNames(manifest: Record<string, unknown>): readonly string[] {
   );
 }
 
+function exportSubpaths(manifest: Record<string, unknown>): readonly string[] {
+  const exported = manifest.exports;
+  if (exported === undefined) return [];
+  if (typeof exported === "string" || Array.isArray(exported)) return ["."];
+  const map = record(exported);
+  const subpaths = Object.keys(map).filter((key) => key.startsWith("."));
+  return subpaths.length === 0 ? ["."] : subpaths;
+}
+
 function packageRoot(input: string): string {
   const resolved = path.resolve(input);
   const nested = path.join(resolved, "packages");
@@ -62,8 +78,12 @@ function packageRoot(input: string): string {
 }
 
 /** Reads the package manifests that are the source of truth for every pipeline package list. */
-export function workspacePackages(repo = REPO): readonly IWorkspacePackage[] {
+export function workspacePackages(
+  repo = REPO,
+  options: IWorkspacePackageOptions = {},
+): readonly IWorkspacePackage[] {
   const root = packageRoot(repo);
+  const requireVersion = options.requireVersion ?? true;
   if (!fs.existsSync(root))
     throw new Error(`TN_WORKSPACE_PACKAGES_MISSING: ${root} does not exist.`);
   const packages: IWorkspacePackage[] = [];
@@ -78,8 +98,7 @@ export function workspacePackages(repo = REPO): readonly IWorkspacePackage[] {
     if (
       typeof name !== "string" ||
       name.length === 0 ||
-      typeof version !== "string" ||
-      version.length === 0
+      (requireVersion && (typeof version !== "string" || version.length === 0))
     ) {
       throw new Error(`TN_WORKSPACE_PACKAGE_INVALID: ${manifestPath} needs a name and version.`);
     }
@@ -87,6 +106,7 @@ export function workspacePackages(repo = REPO): readonly IWorkspacePackage[] {
     packages.push({
       dependencies: dependencyNames(manifest),
       directory,
+      exports: exportSubpaths(manifest),
       name,
       private: manifest.private === true,
       scripts: Object.fromEntries(
@@ -94,7 +114,7 @@ export function workspacePackages(repo = REPO): readonly IWorkspacePackage[] {
           typeof value === "string" ? [[key, value]] : [],
         ),
       ),
-      version,
+      version: typeof version === "string" ? version : "",
     });
   }
   if (packages.length === 0)
@@ -107,8 +127,24 @@ export function workspacePackages(repo = REPO): readonly IWorkspacePackage[] {
   return packages.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export function publicWorkspacePackages(repo = REPO): readonly IWorkspacePackage[] {
-  return workspacePackages(repo).filter(({ private: isPrivate }) => !isPrivate);
+export function publicWorkspacePackages(
+  repo = REPO,
+  options: IWorkspacePackageOptions = {},
+): readonly IWorkspacePackage[] {
+  return workspacePackages(repo, options).filter(({ private: isPrivate }) => !isPrivate);
+}
+
+/** Whether a package publishes code beyond the package.json metadata escape hatch. */
+export function hasPublicExports(item: Pick<IWorkspacePackage, "exports">): boolean {
+  return item.exports.some((subpath) => subpath !== "./package.json");
+}
+
+/** Public workspace packages whose manifests publish at least one code export. */
+export function publicWorkspacePackagesWithExports(
+  repo = REPO,
+  options: IWorkspacePackageOptions = {},
+): readonly IWorkspacePackage[] {
+  return publicWorkspacePackages(repo, options).filter(hasPublicExports);
 }
 
 /** Returns packages in deterministic dependency order, with dependencies before dependents. */
