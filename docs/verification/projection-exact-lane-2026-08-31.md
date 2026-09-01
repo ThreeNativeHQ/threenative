@@ -63,10 +63,19 @@ it**. No such subject is reachable from this repository:
 - `examples/engine-load-test` does exercise the projection, and has no characters — it is 65,536
   instanced anchors, which is the population already folded.
 - The subject the direction document actually measured — Bayview, 780 → 315 draws — is a **sandbox
-  game outside this repository**. Its checkout is present on this machine and its
-  `node_modules/@threenative/*` symlinks all point at a path that does not exist, so it cannot run
-  without repointing them; that tree also holds another session's uncommitted work in a sibling
-  game, and this lane does not edit it.
+  game outside this repository**, and it was attempted. Its `node_modules/@threenative/*` symlinks
+  all point at a path that no longer exists; repointing them at this lane's packages resolved the
+  engine, and the run then failed one layer down:
+
+  ```
+  Error: Cannot find module '…/prd259-bayview-current-20260830/node_modules/vite/bin/vite.js'
+  ```
+
+  Its `vite` install is gone too, and its `@threenative/*` dependencies are declared `workspace:*`,
+  which does not resolve outside a workspace — so restoring it means re-installing that project
+  against a layout it no longer has. That is a mutation to a shared sandbox tree holding another
+  session's uncommitted work in a sibling game, and this lane does not make it. **The symlinks were
+  put back exactly as they were found.**
 
 The honest consequence: **Phase 2's target reason is still unchosen**, and this PRD stays PARTIAL
 until a run produces the ranked table. The instrument is what makes that run a one-command read
