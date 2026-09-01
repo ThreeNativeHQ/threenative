@@ -140,29 +140,34 @@ describe("CI pipeline structure", () => {
     expect(guard).toContain("expect(unstyled).toEqual([])");
   });
 
-  it("boots the Android parity emulator on KVM, like the release lane already does", async () => {
+  it("asks the Android parity emulator for KVM, and reports what it got", async () => {
     // `-accel auto` finds no writable /dev/kvm and falls back to software emulation without
     // saying so. That lane logged a 474-second boot and then lost a run that had already passed
-    // 74/0 to `adb ETIMEDOUT`. native-release.yml carried the udev rule all along; the parity
-    // lane did not, and nothing noticed because the symptom reads as a slow runner.
+    // 74/0 to `adb ETIMEDOUT`.
+    //
+    // The rule is installed, the mode is reported, and neither is asserted: ending the step on
+    // `test -w /dev/kvm` — the shape native-release.yml carries, where nothing has exercised it —
+    // failed the job outright on a runner without KVM, which is worse than the boot it fixes.
     const parity = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const release = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
-    const rule = 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"';
-    for (const [name, workflow] of [
-      ["parity", parity],
-      ["release", release],
-    ] as const) {
-      expect(workflow, `${name} lane must install the KVM udev rule`).toContain(rule);
-      expect(workflow, `${name} lane must prove /dev/kvm is writable`).toContain(
-        "test -w /dev/kvm",
-      );
-    }
-    // And it has to happen before the emulator starts, not after.
-    expect(parity.indexOf("test -w /dev/kvm")).toBeLessThan(
+    expect(parity).toContain('KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"');
+    expect(parity).toContain("TN_EMULATOR_ACCEL:kvm");
+    expect(parity).toContain("TN_EMULATOR_ACCEL:software");
+
+    // Before the emulator starts, or it accelerates nothing.
+    expect(parity.indexOf("99-kvm4all.rules")).toBeLessThan(
       parity.indexOf("reactivecircus/android-emulator-runner"),
+    );
+
+    // And the step must not end on a bare assertion that kills the lane.
+    const step = parity.slice(
+      parity.indexOf("Enable KVM for the emulator"),
+      parity.indexOf("reactivecircus/android-emulator-runner"),
+    );
+    expect(step, "the KVM step must report its mode, not assert it").not.toMatch(
+      /\n\s+test -w \/dev\/kvm\s*\n/u,
     );
   });
 });

@@ -93,7 +93,17 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          test -w /dev/kvm
+          # Report the mode, never assert it. `test -w /dev/kvm` as the last line of this step —
+          # copied from native-release.yml, where nothing has exercised it — turned "this runner
+          # has no KVM" into a failed job, which is worse than the slow boot it was meant to fix.
+          # A lane that cannot get acceleration should still run and say so.
+          if [ -w /dev/kvm ]; then
+            echo "TN_EMULATOR_ACCEL:kvm"
+          else
+            echo "TN_EMULATOR_ACCEL:software"
+            echo "::warning::/dev/kvm is not writable on this runner; the emulator falls back to \
+          software emulation, which is the 474-second boot this step exists to avoid."
+          fi
       - name: Run checksum-locked APKs on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
