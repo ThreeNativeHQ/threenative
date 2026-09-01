@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import {
   compareCaptures,
   deletePlan,
   deletionPlan,
+  disableAssetWatcher,
   formatReport,
   judge,
   readReceipt,
@@ -62,6 +63,7 @@ function dependencies(
   const frames = [frame(100), frame(101), frame(101)];
   return {
     build: overrides.build ?? (async () => undefined),
+    disableWatcher: overrides.disableWatcher ?? (async () => undefined),
     readCapture:
       overrides.readCapture ??
       (async (artifacts) => {
@@ -133,9 +135,9 @@ describe("bake delete-test", () => {
     expect(() => assertScenarioAsserts({ steps: [{ kind: "wait" }] }, "play.json")).toThrow(
       /TN_DELETE_TEST_EMPTY_SCENARIO/u,
     );
-    expect(() => assertScenarioAsserts({ assert: {}, steps: [{ kind: "wait" }] }, "p.json")).toThrow(
-      /TN_DELETE_TEST_EMPTY_SCENARIO/u,
-    );
+    expect(() =>
+      assertScenarioAsserts({ assert: {}, steps: [{ kind: "wait" }] }, "p.json"),
+    ).toThrow(/TN_DELETE_TEST_EMPTY_SCENARIO/u);
     expect(() => assertScenarioAsserts({ steps: [] }, "play.json")).toThrow(
       /TN_DELETE_TEST_EMPTY_SCENARIO/u,
     );
@@ -201,6 +203,24 @@ describe("bake delete-test", () => {
     );
     expect(report.pass).toBe(false);
     expect(report.reasons[0]).toContain("TN_DELETE_TEST_PICTURE_MOVED");
+  });
+
+  it("should refuse to run at all when it cannot switch the asset watcher off", async () => {
+    const root = await makeTempDir("delete-test-watcher-");
+    await writeFile(path.join(root, "vite.config.ts"), "export default {};\n");
+    await expect(disableAssetWatcher(root)).rejects.toThrow(/TN_DELETE_TEST_WATCHER_UNKNOWN/u);
+  });
+
+  it("should comment the watcher out of a config that installs it", async () => {
+    const root = await makeTempDir("delete-test-watcher-ok-");
+    await writeFile(
+      path.join(root, "vite.config.ts"),
+      "export default defineConfig({\n  plugins: [\n    assetsWatchPlugin(),\n  ],\n});\n",
+    );
+    await disableAssetWatcher(root);
+    const patched = await readFile(path.join(root, "vite.config.ts"), "utf8");
+    expect(patched).not.toMatch(/^\s*assetsWatchPlugin\(\),$/mu);
+    expect(patched).toContain("disabled by the delete-test");
   });
 
   it("should refuse to measure anything when the baked run already fails", async () => {

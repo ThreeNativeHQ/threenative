@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { readFile, readdir, rm, stat } from "node:fs/promises";
+import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PNG } from "pngjs";
 import type { IBakeReceipt, IBakeReceiptOutput } from "../packages/assets/src/index.js";
@@ -185,6 +185,32 @@ export function judge(band: ICaptureDelta, change: ICaptureDelta): string[] {
   return [];
 }
 
+/**
+ * Stops the project's dev server from re-baking the files this gate is about to delete.
+ *
+ * The templates' `vite.config.ts` installs `assetsWatchPlugin()`, which recompiles `assets/` into
+ * `public/` every time `pnpm dev` starts. Left in place it restores every deleted output before the
+ * page loads, and the gate reports a green that measured nothing — which is what the first run of
+ * this gate did, and what its negative control caught.
+ *
+ * Fails closed: a config with no watcher line is refused rather than tested, because "the line was
+ * not there" and "the watcher is off" look identical from here and only one of them is safe.
+ */
+export async function disableAssetWatcher(projectDir: string): Promise<void> {
+  const file = path.join(projectDir, "vite.config.ts");
+  const source = await readFile(file, "utf8");
+  const line = "    assetsWatchPlugin(),\n";
+  if (!source.includes(line)) {
+    throw new Error(
+      `TN_DELETE_TEST_WATCHER_UNKNOWN: '${file}' does not install assetsWatchPlugin() in the shape this gate knows how to switch off. Without that, the dev server re-bakes what this gate deletes and the result means nothing.`,
+    );
+  }
+  await writeFile(
+    file,
+    source.replace(line, "    // assetsWatchPlugin() — disabled by the delete-test\n"),
+  );
+}
+
 /** Every file under `root`, relative to it — used to report what a failing run could not find. */
 export async function listFiles(root: string, prefix = ""): Promise<string[]> {
   let entries: Dirent[];
@@ -209,6 +235,8 @@ export interface IScenarioRun {
 
 export interface IBakeDeleteTestDependencies {
   readonly build: (projectDir: string) => Promise<void>;
+  /** Switches off whatever would rebuild the bake between the deletion and the second run. */
+  readonly disableWatcher: (projectDir: string) => Promise<void>;
   readonly readCapture: (artifactsDir: string) => Promise<Buffer>;
   readonly runScenario: (
     projectDir: string,
@@ -238,6 +266,7 @@ export async function runBakeDeleteTest(
 ): Promise<IBakeDeleteTestReport> {
   const projectDir = await dependencies.scaffold(options.template, options.root);
   await dependencies.build(projectDir);
+  await dependencies.disableWatcher(projectDir);
 
   const scenarioFile = path.join(projectDir, options.scenario);
   assertScenarioAsserts(JSON.parse(await readFile(scenarioFile, "utf8")), scenarioFile);
@@ -294,12 +323,9 @@ export function formatReport(report: IBakeDeleteTestReport): string {
     : [head, ...report.reasons].join("\n");
 }
 
-/** The real dependencies: a scaffolded project, its own build, and the shipped playtest runner. */
-async function liveDependencies(repoRoot: string): Promise<IBakeDeleteTestDependencies> {
+/** Build, capture and scenario execution against a project that already exists on disk. */
+async function runnerDependencies(): Promise<Omit<IBakeDeleteTestDependencies, "scaffold">> {
   const { spawn } = await import("node:child_process");
-  const { createProject } = await import("../packages/create-threenative/src/index.js");
-  const { packageLocalFramework } = await import("./visual-gate.js");
-  const packages = (await packageLocalFramework(repoRoot)) as Record<string, string>;
 
   const execute = async (
     command: string,
@@ -322,6 +348,7 @@ async function liveDependencies(repoRoot: string): Promise<IBakeDeleteTestDepend
       const result = await execute("pnpm", ["build"], projectDir);
       if (!result.ok) throw new Error(`TN_DELETE_TEST_BUILD_FAILED: ${result.detail}`);
     },
+    disableWatcher: disableAssetWatcher,
     readCapture: async (artifactsDir) => {
       const frames = (await listFiles(artifactsDir)).filter((file) => file.endsWith(".png")).sort();
       const after = frames.at(-1);
@@ -350,6 +377,16 @@ async function liveDependencies(repoRoot: string): Promise<IBakeDeleteTestDepend
         ],
         projectDir,
       ),
+  };
+}
+
+/** Adds a scaffold from locally packed tarballs — how a stranger's machine would install this. */
+async function liveDependencies(repoRoot: string): Promise<IBakeDeleteTestDependencies> {
+  const { createProject } = await import("../packages/create-threenative/src/index.js");
+  const { packageLocalFramework } = await import("./visual-gate.js");
+  const packages = (await packageLocalFramework(repoRoot)) as Record<string, string>;
+  return {
+    ...(await runnerDependencies()),
     scaffold: async (template, root) => {
       const created = await createProject(
         { install: true, packageSources: packages, target: template, template },
@@ -388,10 +425,24 @@ if (
         ]
       : [flag("--template") ?? "starter"];
     const scenario = flag("--scenario") ?? "playtests/play.playtest.json";
-    const dependencies = await liveDependencies(repoRoot);
+    // `--project` runs against a project that is already scaffolded and built — the shape CI is
+    // in, where the golden-path job has done both already and a second scaffold would only prove
+    // the packer twice.
+    const existing = flag("--project");
+    const dependencies: IBakeDeleteTestDependencies =
+      existing === undefined
+        ? await liveDependencies(repoRoot)
+        : {
+            ...(await runnerDependencies()),
+            build: async () => undefined,
+            scaffold: async () => path.resolve(existing),
+          };
     let failed = 0;
     for (const template of templates) {
-      const root = await mkdtemp(path.join(os.tmpdir(), `threenative-delete-test-${template}-`));
+      const root =
+        existing === undefined
+          ? await mkdtemp(path.join(os.tmpdir(), `threenative-delete-test-${template}-`))
+          : path.resolve(existing);
       try {
         const report = await runBakeDeleteTest({ root, scenario, template }, dependencies);
         console.log(formatReport(report));
