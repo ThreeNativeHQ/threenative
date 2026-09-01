@@ -989,8 +989,11 @@ function textureQuality(value: unknown, label: string): number {
 }
 
 function textureMaxSize(value: unknown): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
-    fail("TN_CONFIG_ASSETS_INVALID", "assets.textures.maxSize must be a positive integer.");
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 4) {
+    fail(
+      "TN_CONFIG_ASSETS_INVALID",
+      "assets.textures.maxSize must be a positive integer of at least 4.",
+    );
   }
   return value;
 }

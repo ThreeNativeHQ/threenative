@@ -443,8 +443,8 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
 }
 
 function positiveTextureSize(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be a positive integer.`);
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 4) {
+    throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be a positive integer of at least 4.`);
   }
   return value;
 }

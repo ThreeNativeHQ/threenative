@@ -40,6 +40,23 @@ function ktx2Magic(bytes: Buffer): boolean {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("should keep a non-block-aligned maxSize as an actual maximum", async () => {
+    // Removing the floor snap makes this 16x8 source encode at 12x8 for maxSize 10, exceeding
+    // the game-owned cap. The literal 8x4 result preserves this source's 2:1 aspect ratio.
+    const { outputBytes } = await compileOne(
+      "threenative-tex-max-size-ten-",
+      "cliff.png",
+      rgbaPng({ height: 8, width: 16 }),
+      { textures: { maxSize: 10 } },
+    );
+
+    const ktx2 = readKTX2(outputBytes);
+    expect([ktx2.pixelWidth, ktx2.pixelHeight]).toEqual([8, 4]);
+    expect(Math.max(ktx2.pixelWidth, ktx2.pixelHeight)).toBeLessThanOrEqual(10);
+    expect(ktx2.pixelWidth % 4).toBe(0);
+    expect(ktx2.pixelHeight % 4).toBe(0);
+  });
+
   it("should cap standalone colour and normal textures through the encoder decoder without upscaling or changing none bytes", async () => {
     // Removing maxSize from the pass configuration makes the first two KTX2 dimensions stay
     // 12x8, so this asserts the encoded artifact rather than a decoder mock.

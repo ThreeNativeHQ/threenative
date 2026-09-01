@@ -374,6 +374,15 @@ describe("threenative.config.ts", () => {
         /assets\.textures\.maxSize must be a positive integer/u,
       );
     }
+
+    for (const value of ["1", "2", "3"]) {
+      const root = await project();
+      await config(root, `export default { assets: { textures: { maxSize: ${value} } } };`);
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+      await expect(loadConfig(root)).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer of at least 4/u,
+      );
+    }
   });
 
   it("parses the models block and the none shorthand into the resolved config", async () => {

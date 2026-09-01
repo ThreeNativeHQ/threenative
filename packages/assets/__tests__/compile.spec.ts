@@ -411,6 +411,13 @@ describe("compileAssets", () => {
         /assets\.textures\.maxSize must be a positive integer/u,
       );
     }
+
+    for (const value of [1, 2, 3]) {
+      const tooSmallMaxSize = { textures: { maxSize: value } } as unknown as IAssetSourceConfig;
+      await expect(compileAssets({ config: tooSmallMaxSize, cwd: root })).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer of at least 4/u,
+      );
+    }
   });
 
   it("should optimize a model through the built-in registry and record the manifest fields", async () => {

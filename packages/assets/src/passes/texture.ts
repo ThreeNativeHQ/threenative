@@ -144,7 +144,7 @@ function resizeForEncoding(
   const target =
     maxSize === undefined
       ? { height: decoded.height, width: decoded.width }
-      : cappedSize(decoded.width, decoded.height, maxSize);
+      : cappedSize(decoded.width, decoded.height, Math.floor(maxSize / 4) * 4);
   const resized = target.width !== decoded.width || target.height !== decoded.height;
   return {
     data: resized
