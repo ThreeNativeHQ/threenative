@@ -184,6 +184,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     return this.#stats;
   }
 
+  /** The stock shadow nodes behind each level, for diagnostics. */
+  get levelNodes(): readonly Node[] {
+    return this.#levels.map((level) => level.node as unknown as Node);
+  }
+
   /** The placeholder lights, one per level; exposed for tests and debug views. */
   get levelLights(): readonly Object3D[] {
     return this.#levels.map((level) => level.light);
@@ -224,9 +229,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
       levelShadow.camera.near = 1;
       levelShadow.camera.far = this.options.lightDistance + this.options.depthRange;
       levelShadow.camera.updateProjectionMatrix();
-      // Cached: the stock node renders only when asked.
+      // Cached: the stock node renders only when asked — and not before this node has placed
+      // the level, which happens in `updateBefore`. A render requested here would run on the
+      // first frame from an unplaced light, and three's per-frame guard would then keep that
+      // blank map as the frame's answer.
       levelShadow.autoUpdate = false;
-      levelShadow.needsUpdate = true;
+      levelShadow.needsUpdate = false;
       const light = new LevelLight(levelShadow);
       light.name = `VirtualShadowLevel${String(index)}`;
       this.#levels.push({
