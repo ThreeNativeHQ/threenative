@@ -195,7 +195,6 @@ No PRD, `postprocessing.ts`, applicability-table, or convention-name path was ch
 
 The follow-up strengthened the template-owned `platformer-one-way` assertion before changing
 the implementation. Its `groundSurfaceY` assertion now requires `gte: 2.55`, `lte: 2.65`, and
-<<<<<<< HEAD
 `changed: true`, and samples exactly `2.6` at `elevated-landing`, matching the elevated platform
 authored at `y: 2.6` in `platformer/src/scenes/Level.ts`.
 
