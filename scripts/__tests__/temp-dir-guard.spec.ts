@@ -30,6 +30,10 @@ const allowedProductionCreators = new Map<string, string>([
   ],
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
   ["scripts/sweep-proof.ts", "The production proof gate removes roots in finally."],
+  [
+    "scripts/sync-mcp-configs.ts",
+    "The host-config sync round-trips each template through a scratch copy removed in finally.",
+  ],
   ["scripts/template-baseline.ts", "The production baseline gate removes its root in finally."],
   ["scripts/verify-golden-path.ts", "The production golden-path gate removes roots in finally."],
   ["scripts/verify-one-template.ts", "The production template gate owns its cleanup."],

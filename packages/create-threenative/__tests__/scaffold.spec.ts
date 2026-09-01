@@ -178,13 +178,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-31 after squashing PRD-289 onto local main 6b91f42f: current main's
   // scaffold assets and the convention-enabled generated trees are measured together.
   // Recomputed 2026-08-31 after PRD-251 added the terrain entries to the generated manifest.
-  "action-rpg": "1a63da8a9fd6431960503fec12e1f7b679accdf3e249b97e025f6b4cd2d1da89",
-  defense: "8955469d46e4b13e80d3733f5ecb04e90d2db3038e950248ebc6b56d45a3af27",
-  minimal: "0015289e358d3f53cd837f46841ee714bf0b7dffbd0c13a62502b92809e3ab30",
-  platformer: "3e2f877ccf46ba84c8b690329267383e6739972f958fadc2d601949e9dafd9e9",
-  racing: "7944b169e528cd7d069422b88f51288e92e6dcf055187a1292ec5036b91b77de",
-  shooter: "8dc6649ec3bea727e52589d3727500cc458859b8e580940fe9df74feac36b91d",
-  starter: "6bc0c92287235d290dbd7acd6ffe1eb318611bb4c0d56fd8f450a891cabd877f",
+  // Recomputed 2026-08-31 when every template began shipping the MCP config each agent host
+  // reads. Claude Code and Codex already had theirs; Cursor, VS Code, the Gemini CLI, opencode and
+  // Zed each gained a project-scoped file, and the shared asset-MCP instructions now name all
+  // seven instead of `.mcp.json` alone. Five new files and one paragraph move all eight trees.
+  "action-rpg": "f988c375837c898a845c04e255a5c47df4f23d5186b03c76b4117063b02c95b5",
+  defense: "cce6dae01436f1030c768959d819fa293d05fe1979e89c2079f1253a91d377ea",
+  minimal: "238298e429b60ad3e9470af9c56d86aba827c0ace2c74e463af4552108f3b59a",
+  platformer: "7ce0dbe4e935cf5244fad0affb9fc7aed3688f0ef9222b099e3366a4cc345b23",
+  racing: "0de2158aaca3ff9f104641716ffd33cfb2b6ff41e43be453790c3a94a6451c1b",
+  shooter: "8ebdf0bc3901ffe011daf2e373f61bd53c48422c4c8131d5826bd46573c9c0b9",
+  starter: "b91ae6dbd6200ba08c0e9d8a17c913f5c5ada94354c32103f0da6295465e5e27",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -195,7 +199,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "2600e0cc8a835b4ebea23473859172e3ac267958070e4adbb6728006692b81d5",
+  sailing: "b212bb41cfd317ca08e7be5ae637c0b1e708c2525fcb4664c48e7b2153c1f0ce",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

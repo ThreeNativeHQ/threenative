@@ -73,8 +73,11 @@ The scaffolder itself takes a target directory plus `inspect <file.glb> [--json]
 boring: `--template`, `--no-install`, and the `--*-package` overrides CI uses to test against
 local tarballs. `pnpm dev` inside a generated project is a package script, never a CLI command.
 
-The MCP servers reach a generated project through the `.mcp.json` that installing
-`@threenative/core` writes — asset, sculpt and capability servers, each launching through a shim
-inside core. The asset server itself remains the externally pinned `threenative-asset-mcp`;
-never vendor it. Its recorded surface is `asset-mcp-tools.json`, updated by running the pinned
+The MCP servers reach a generated project through the configs installing `@threenative/core`
+writes — asset, sculpt and capability servers, each launching through a shim inside core, wired
+for every host that reads a project-scoped config. `MCP_HOSTS` in `packages/core/mcp/install.mjs`
+is that list and the only one; `pnpm sync:mcp` writes it into every template and `--check` fails
+the budgets when one is stale. A host that only reads a machine-wide config is deliberately
+absent: installing a library into one game must never edit a file governing every other project.
+The asset server itself remains the externally pinned `threenative-asset-mcp`; never vendor it. Its recorded surface is `asset-mcp-tools.json`, updated by running the pinned
 server — never by reading its docs.

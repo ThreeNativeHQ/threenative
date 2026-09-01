@@ -229,9 +229,9 @@ tools; anything specific to this game is written in `src/render/` — a download
 in for a bespoke design reads as a weird asset dropped into the scene. When in doubt, build it
 programmatically.
 
-Installing `@threenative/core` writes the `.mcp.json` that launches `threenative-asset-mcp`, so
-your host lists its tools alongside your own. Your host reads that file from the directory it was
-launched in: start the session in this project, not in a parent of it. The loop:
+Installing `@threenative/core` writes the MCP config your host reads (Claude Code, Codex, Cursor,
+VS Code, Gemini CLI, opencode, Zed), so `threenative-asset-mcp` tools appear beside yours. Your
+host reads it from the launch directory: start the session here, not a parent. The loop:
 
 1. `asset_search_sources` first, never a provider — its output is the authority on what is
    reachable.
@@ -240,7 +240,7 @@ launched in: start the session in this project, not in a parent of it. The loop:
 3. `polyhaven_list_files` / `ambientcg_list_files` **before downloading** — read licenses and
    pick a sane resolution there (a game does not need the 16k).
 4. `asset_download_file` / `audio_download_asset` with `acceptLicense: true`; they write where
-   `.mcp.json` points, never where you pass a path.
+   configured, never where you pass a path.
 5. Append file, source, license and URL to `CREDITS.md` before the turn ends.
 
 **Never state a license you did not read off a tool result.**

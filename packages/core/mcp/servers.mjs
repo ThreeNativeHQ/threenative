@@ -32,14 +32,64 @@ export const MCP_SERVERS = Object.freeze({
  * checkout whose bundle has not been built. */
 export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.6.0" }),
-  sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.1.0" }),
+  sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.1.1" }),
   engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.0" }),
 });
 
+/** How one host spells a stdio MCP server. Hosts agree on what to run and disagree on where to
+ * write it down, so the servers are declared once above and translated here. `key` is the property
+ * the host reads its server table from; `entry` is one server in that host's own shape. */
+const SERVER_FORMATS = Object.freeze({
+  // Claude Code (`.mcp.json`), Cursor and the Gemini CLI all read this one.
+  mcpServers: Object.freeze({
+    key: "mcpServers",
+    entry: (server) => ({
+      command: server.command,
+      args: [...server.args],
+      ...(server.env === undefined ? {} : { env: { ...server.env } }),
+    }),
+  }),
+  // VS Code names the table `servers` and requires an explicit transport per server.
+  vscode: Object.freeze({
+    key: "servers",
+    entry: (server) => ({
+      type: "stdio",
+      command: server.command,
+      args: [...server.args],
+      ...(server.env === undefined ? {} : { env: { ...server.env } }),
+    }),
+  }),
+  // opencode folds the command and its arguments into one array and spells the environment
+  // `environment`. A server it does not mark enabled is written down and never started.
+  opencode: Object.freeze({
+    key: "mcp",
+    entry: (server) => ({
+      type: "local",
+      command: [server.command, ...server.args],
+      enabled: true,
+      ...(server.env === undefined ? {} : { environment: { ...server.env } }),
+    }),
+  }),
+  // Zed calls them context servers and needs `source: "custom"` to accept a command of our own.
+  zed: Object.freeze({
+    key: "context_servers",
+    entry: (server) => ({
+      source: "custom",
+      command: server.command,
+      args: [...server.args],
+      ...(server.env === undefined ? {} : { env: { ...server.env } }),
+    }),
+  }),
+});
+
+export const SERVER_FORMAT_NAMES = Object.freeze(Object.keys(SERVER_FORMATS));
+
 /** Adds the ThreeNative servers to an existing config without touching anything else in it, and
  * reports whether the file needs rewriting. Fails closed on a config that is not an object: an
- * unreadable `.mcp.json` is the user's, and overwriting it would lose servers we did not write. */
-export function mergeMcpServers(existing) {
+ * unreadable config is the user's, and overwriting it would lose servers we did not write. */
+export function mergeMcpServers(existing, format = "mcpServers") {
+  const shape = SERVER_FORMATS[format];
+  if (shape === undefined) throw new Error(`Unknown MCP config format '${format}'.`);
   const malformed =
     existing !== undefined &&
     (typeof existing !== "object" || existing === null || Array.isArray(existing));
@@ -47,13 +97,38 @@ export function mergeMcpServers(existing) {
     throw new Error("MCP config root must be an object.");
   }
   const previous = existing ?? {};
-  const servers = { ...(previous.mcpServers ?? {}) };
+  const servers = { ...(previous[shape.key] ?? {}) };
   let changed = false;
   for (const [name, server] of Object.entries(MCP_SERVERS)) {
-    const wanted = JSON.parse(JSON.stringify(server));
+    const wanted = shape.entry(server);
     if (JSON.stringify(servers[name]) === JSON.stringify(wanted)) continue;
     servers[name] = wanted;
     changed = true;
   }
-  return { changed, config: { ...previous, mcpServers: servers } };
+  return { changed, config: { ...previous, [shape.key]: servers } };
 }
+
+/** One server as a Codex TOML table. Derived from `MCP_SERVERS` rather than written out beside it:
+ * two hand-maintained lists of the same three servers drift, and the drift is silent until an
+ * agent in Codex quietly has no asset tools. */
+function codexServerBlock(name, server) {
+  const args = server.args.map((argument) => JSON.stringify(argument)).join(", ");
+  const lines = [
+    `[mcp_servers.${name}]`,
+    `command = ${JSON.stringify(server.command)}`,
+    `args = [${args}]`,
+  ];
+  if (server.env !== undefined) {
+    lines.push("", `[mcp_servers.${name}.env]`);
+    for (const [key, value] of Object.entries(server.env)) {
+      lines.push(`${key} = ${JSON.stringify(value)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+export const CODEX_MCP_SERVERS = Object.freeze(
+  Object.entries(MCP_SERVERS).map(([name, server]) =>
+    Object.freeze({ body: codexServerBlock(name, server), name }),
+  ),
+);
