@@ -170,7 +170,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
   "action-rpg": "0c0f1b152fba3cd16ce936339a13fd5824095a4583e1af38ba3ceab0651ec396",
   defense: "437939e91656d44c7fbc14312c3ceb2dc9334df8d83735d08addb4ac85db0217",
-  minimal: "02a4078a8fcc3db233340ac4c66e78bf86a7f54ed6c4fdb0d9a8a6c738a8a88c",
+  // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual capture.
+  minimal: "c1ee0b1cbc2d1bca3ffd7eb4c66d8e6e12b5926419528de99d5a1e8745829d9f",
   platformer: "35d620d7633f3a20293785ed0789019e96520e97008cac79e6d28a1a14478e9d",
   racing: "e196de18dafdb0c0c0c09d86fb2db59d588a1f4d80feb869e607be9c39ed98cd",
   shooter: "237c10bd369dd71e985cc5f2ca8af20c033f8241d2c69a8f35f8f5d6a254aeec",
@@ -457,7 +458,7 @@ describe("create-threenative", () => {
     expect(source.match(/replaceAll\(placeholder, value\)/gu)).toHaveLength(1);
   });
 
-  it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
+  it("keeps every no-install scaffold tree byte-stable against its accepted hash", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
     try {
       const actual: Record<string, string> = {};
