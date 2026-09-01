@@ -64,7 +64,7 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // docs/verification/instruction-budgets-2026-08-23.md.
   // PRD-217 adds one shared pointer line to the reference index, naming the web-view UI page
   // (`agent-docs/webview-ui.md`): +11 rendered words in every template, measured. It is in the
-  // shared fragment rather than per template because the page ships to all seven, and a page the
+  // shared skill rather than per template because the page ships to all seven, and a page the
   // instructions never name does not exist. Four templates sat exactly at their cap and carry the
   // increment here; `action-rpg`, `racing` and `starter` absorbed it inside existing headroom,
   // starter after trimming a `data-tn-interactive` sentence the new page states in full.
@@ -81,7 +81,7 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // does not exist, and this one has to name its override, its validation and its per-window
   // reporting or a game can neither turn it off nor tell which resolution produced an fps number.
   // `defense`, the template sitting exactly at the default cap, renders 2930 against 2753.
-  // It is its own `agent-docs/pixel-budget.md` fragment: `performance-default.md` carries an
+  // It is its own performance skill section: the lightmap and frame-budget guidance carries an
   // executable 130-word cap of its own, and this is a different subject from the target table.
   // And a uniform +82 on 2026-08-28 (PRD-237 + PRD-241): the shared ctx-surface table gained the
   // `ctx.pointer` row and paragraph (PRD-237's portable 3D pointer events) and the tween row grew
@@ -103,7 +103,7 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // both render exactly +134. `sailing` absorbed all of it in headroom (2971 against 3036).
   defaultMaxWords: 3170,
   // The same measured +26 rides every override below — +27 on `platformer` and `shooter`, whose
-  // own wrapping splits one more word — because the stride-sync line is in the shared fragment, so all seven
+  // own wrapping splits one more word — because the stride-sync line is in the shared skill, so all seven
   // templates carry it and none of them absorbed it in headroom.
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.

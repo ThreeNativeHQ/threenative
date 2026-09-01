@@ -37,6 +37,13 @@ const AGENT_ROLE_PATHS = [
   "AGENT-ROLES.md",
 ] as const;
 
+// The engine-bug report skill ships through `agent-files` to every scaffold, in the two skill
+// directories hosts discover: Claude Code reads `.claude/skills`, Codex reads `.agents/skills`.
+const BUG_REPORT_SKILL_PATHS = [
+  ".claude/skills/file-engine-bug/SKILL.md",
+  ".agents/skills/file-engine-bug/SKILL.md",
+] as const;
+
 // Refreshed for the startup-readiness loading gate: each template's `src/render/loading.ts` was
 // reduced to the shared `startup.whenReady()` contract and every template's AGENTS.md carries
 // the readiness wording into the shipped scaffold.
@@ -585,6 +592,22 @@ describe("create-threenative", () => {
         expect(guide).not.toContain(".codex/skills");
         expect(guide).toContain("threenative-builder");
         expect(guide).toContain("threenative-verifier");
+
+        const bugSkillBodies = await Promise.all(
+          BUG_REPORT_SKILL_PATHS.map(async (relativePath) => {
+            const content = await readFile(path.join(result.target, relativePath), "utf8");
+            expect(content, relativePath).not.toContain("__PROJECT_NAME__");
+            expect(content, relativePath).not.toContain("__PROJECT_ID__");
+            return content;
+          }),
+        );
+        for (const skill of bugSkillBodies) {
+          expect(skill).toContain("gh auth status");
+          expect(skill).toContain("gh issue create");
+          expect(skill).toContain("ThreeNativeHQ/threenative");
+        }
+        // Both host adapters ship one recipe; a drift between them ships two contracts.
+        expect(new Set(bugSkillBodies).size).toBe(1);
         const packageJson = JSON.parse(
           await readFile(path.join(result.target, "package.json"), "utf8"),
         ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
@@ -653,7 +676,7 @@ describe("create-threenative", () => {
       ).resolves.toContain("debug()");
       await expect(
         readFile(path.join(result.target, "src/scenes/Play.ts"), "utf8"),
-      ).resolves.toContain('ctx.entities.add("player"');
+      ).resolves.toMatch(/ctx\.entities\.add\(\s*"player"/u);
       const renderFiles = await Promise.all(
         ["lighting.ts", "postprocessing.ts", "materials.ts"].map((file) =>
           readFile(path.join(result.target, "src/render", file), "utf8"),
@@ -1090,14 +1113,28 @@ describe("create-threenative", () => {
     const namespaces = new Set(surface.tools.map((tool) => tool.split("_")[0]));
     for (const template of ALL_TEMPLATES) {
       const agents = await readFile(path.join(TEMPLATE_ROOT, template, "AGENTS.md"), "utf8");
-      const mentioned = [...agents.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/gu)]
+      const assetSkill = await readFile(
+        path.join(
+          TEMPLATE_ROOT,
+          "..",
+          "agent-files",
+          ".agents",
+          "skills",
+          "threenative-assets",
+          "SKILL.md",
+        ),
+        "utf8",
+      );
+      const authoringText = `${agents}\n${assetSkill}`;
+      const mentioned = [...authoringText.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/gu)]
         .map((match) => match[1] as string)
         .filter((name) => namespaces.has(name.split("_")[0] as string));
       expect(
         mentioned.filter((name) => !served.has(name)),
         template,
       ).toEqual([]);
-      for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
+      for (const name of surface.recommended)
+        expect(authoringText, `${template}/${name}`).toContain(name);
     }
   });
 

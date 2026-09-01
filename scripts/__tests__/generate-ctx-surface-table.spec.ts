@@ -27,7 +27,7 @@ const ENTRIES: readonly IManifestEntry[] = [
   },
 ];
 
-describe("ctx-surface supersession table", () => {
+describe("context skill supersession table", () => {
   it("derives one row per enforced construct, sorted by capability", () => {
     const rows = buildSupersessionRows(ENTRIES);
     expect(rows).toContain("`new Raycaster(` | `ScenePicker` | `@threenative/core`");
@@ -36,7 +36,7 @@ describe("ctx-surface supersession table", () => {
   });
 
   it("replaces an existing region in place rather than appending a second one", () => {
-    const once = applyRegion("## ctx surface\n\nhand-written prose\n", ENTRIES);
+    const once = applyRegion("## context skill\n\nhand-written prose\n", ENTRIES);
     expect(once.match(new RegExp(GENERATED_REGION_START, "gu"))?.length).toBe(1);
 
     const edited = once.replace("new Raycaster(", "new Raycaster() by hand");
@@ -45,7 +45,7 @@ describe("ctx-surface supersession table", () => {
   });
 
   it("appends the region to a fragment that never had one", () => {
-    const applied = applyRegion("# fragment\n", []);
+    const applied = applyRegion("# skill\n", []);
     expect(applied).toContain(GENERATED_REGION_START);
     expect(applied).toContain("|---|---|---|");
     expect(applied.trimEnd().endsWith("<!-- /generated -->")).toBe(true);
