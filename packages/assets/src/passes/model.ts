@@ -9,8 +9,9 @@ import {
 } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from "@gltf-transform/extensions";
 import { dedup, prune, quantize, reorder, simplify } from "@gltf-transform/functions";
-import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
+import { MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
 import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
+import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import {
   type IModelVirtualOptions,
   type IModelVirtualSummary,
@@ -165,61 +166,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Reads the glTF JSON header out of a `.glb`/`.gltf` buffer without full parsing. */
-function peekExtensions(input: Buffer): ReadonlySet<string> {
-  try {
-    const json =
-      input.subarray(0, 4).toString("ascii") === "glTF"
-        ? (JSON.parse(
-            input.subarray(20, 20 + input.readUInt32LE(12)).toString("utf8"),
-          ) as GLTF.IGLTF)
-        : (JSON.parse(input.toString("utf8")) as GLTF.IGLTF);
-    return new Set([...(json.extensionsUsed ?? []), ...(json.extensionsRequired ?? [])]);
-  } catch {
-    // Full parsing reports malformed input with a proper named error; the peek only
-    // decides which codecs to prepare.
-    return new Set();
-  }
-}
-
 function jsonOfGlb(binary: Buffer): GLTF.IGLTF {
   return JSON.parse(
     binary.subarray(20, 20 + binary.readUInt32LE(12)).toString("utf8"),
   ) as GLTF.IGLTF;
 }
 
-async function createIo(): Promise<NodeIO> {
-  // The decoder's WebAssembly module instantiates asynchronously after import, and registering it
-  // before it has does not fail — it fails later, inside the reader, as an unreadable-file error
-  // on a file that is perfectly well formed. A process whose first model reaches this pass in the
-  // same tick loses that race, which is every bake script ever written.
-  await MeshoptDecoder.ready;
-  const io = new NodeIO()
-    // TN_virtual_geometry is registered on the reader too: the pass re-reads its own output to
-    // verify it, and an unregistered extension is dropped on read rather than reported.
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
-    .registerDependencies({ "meshopt.decoder": MeshoptDecoder });
-  return io;
-}
-
 async function readDocument(input: Buffer, logicalPath: string): Promise<Document> {
-  let io = await createIo();
-  if (peekExtensions(input).has(DRACO_EXTENSION)) {
-    // Loaded only when a Draco input actually appears, so projects without one never pay
-    // for the codec.
-    const { createDecoderModule } = await import("draco3dgltf");
-    io = io.registerDependencies({ "draco3d.decoder": await createDecoderModule() });
-  }
+  // The shared reader: Meshopt decoder awaited and registered, Draco loaded only when the
+  // header names it, and TN_virtual_geometry registered on the reader too because the pass
+  // re-reads its own output to verify it — an unregistered extension is dropped on read rather
+  // than reported.
   try {
-    // readJSON resolves to the Document itself; binaryToJSON only unwraps the container.
-    const document =
-      input.subarray(0, 4).toString("ascii") === "glTF"
-        ? await io.readJSON(await io.binaryToJSON(input))
-        : await io.readJSON({
-            json: JSON.parse(input.toString("utf8")) as GLTF.IGLTF,
-            resources: {},
-          });
-    return document;
+    return await readGltfDocument(await createGltfReader(input), input);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(

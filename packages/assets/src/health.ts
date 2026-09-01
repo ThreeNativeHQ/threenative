@@ -1,6 +1,6 @@
-import { type Document, type GLTF, ImageUtils, NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { type Document, ImageUtils } from "@gltf-transform/core";
 import { type AssetKind, type IAssetTargets, classify } from "./compile.js";
+import { createGltfReader, readGltfDocument } from "./gltf-io.js";
 import { parsePng } from "./png.js";
 
 export type AssetFindingGrade = "fail" | "ok" | "warn";
@@ -118,17 +118,12 @@ export function textureStats(bytes: Buffer, mimeType?: string): ITextureStats {
 }
 
 async function parseModel(data: Buffer, logicalPath: string): Promise<Document> {
-  // ALL_EXTENSIONS, matching the model pass's `createIo()`. glTF-Transform refuses a document
-  // whose `extensionsRequired` names something the reader was not told about, so a bare NodeIO
-  // turned an ordinary EXT_texture_webp export into a hard build failure — from the health
-  // report, which only measures and is never supposed to decide whether a build runs.
-  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+  // The same codec-aware reader as the model pass. The health report only measures and must
+  // never decide whether a build runs: a bare reader refused ordinary EXT_texture_webp exports
+  // for an unregistered required extension, then Meshopt-compressed sources for a missing
+  // decoder, and both killed `models: "none"` builds from a report that is meant to be advisory.
   try {
-    if (data.subarray(0, 4).toString("ascii") === "glTF") {
-      return await io.readJSON(await io.binaryToJSON(data));
-    }
-    const json = JSON.parse(data.toString("utf8")) as GLTF.IGLTF;
-    return await io.readJSON({ json, resources: {} });
+    return await readGltfDocument(await createGltfReader(data), data);
   } catch (error) {
     throw new Error(
       `TN_ASSETS_MODEL_UNREADABLE: could not parse '${logicalPath}' for the health report: ${messageOf(error)}. External buffer or image URIs are not measured; use a self-contained .glb.`,
