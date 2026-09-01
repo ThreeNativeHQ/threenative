@@ -272,7 +272,7 @@ describe("projection markers in the perf report", () => {
     const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 1 }, "log"));
 
     expect(text).toContain("780 authored renderables, 118 draws planned");
-    expect(text).toContain("the renderer and the plan disagree");
+    expect(text).toContain("all passes; the plan counts the colour pass only");
     const skinned = text.indexOf("skinned");
     const lod = text.indexOf("lod ");
     expect(skinned).toBeGreaterThan(0);
