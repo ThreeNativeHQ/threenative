@@ -730,6 +730,7 @@ function validateBridgeTriangleTopology(
     index.itemSize !== 1 ||
     !Number.isInteger(index.count) ||
     index.array.length !== index.count ||
+    !(index.array instanceof Uint16Array || index.array instanceof Uint32Array) ||
     !Number.isInteger(drawRange.start) ||
     drawRange.start !== 0 ||
     (drawRange.count !== Number.POSITIVE_INFINITY &&

@@ -1,4 +1,4 @@
-import { Mesh, MeshBasicMaterial } from "three";
+import { BufferAttribute, Mesh, MeshBasicMaterial } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
@@ -906,6 +906,37 @@ describe("TerrainTiles", () => {
       if (index === null) throw new Error("Expected the bridge to have an index buffer.");
       index.array.fill(0);
       index.needsUpdate = true;
+
+      expect(() => tiles.process()).toThrow(/bridge.*topology/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects an attached bridge whose rendered index buffer uses floating-point data", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      skirtDepth: 32,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      expect(tiles.stitchedEdgeCount).toBeGreaterThan(0);
+      expect(tiles.maxVisualSeamGap).toBe(0);
+
+      const index = bridge.geometry.getIndex();
+      if (index === null) throw new Error("Expected the bridge to have an index buffer.");
+      bridge.geometry.setIndex(new BufferAttribute(new Float32Array(index.array), 1));
 
       expect(() => tiles.process()).toThrow(/bridge.*topology/u);
     } finally {
