@@ -182,7 +182,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      # ccache wrote to the workspace while actions/cache saved ${{ runner.temp }}/ccache, a
+      # directory that never existed. The save skipped every time, `gh cache list` held no
+      # native-ccache entry after five runs, and every job recompiled from scratch while the
+      # workflow read as though it were cached. This path and the cache step's must stay equal.
+      CCACHE_DIR: ${{ runner.temp }}/ccache
+      CCACHE_MAXSIZE: 900M
+      CCACHE_COMPRESS: "1"
+      # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
+      # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
+      # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
+      # zero ccache references in the generated build, while these two put `ccache /usr/bin/cc` on
+      # the compile line. Job-level env also reaches the QuickJS configure and the MSVC steps,
+      # which a preset-only fix would miss.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
       - name: Restore native third-party dependencies
@@ -194,7 +208,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -229,15 +243,15 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
-      - name: Activate native compiler cache
-        run: |
-          cat > "$RUNNER_TEMP/tn-ccache.cmake" <<'CMAKE'
-          set(CMAKE_C_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
-          set(CMAKE_CXX_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
-          CMAKE
-          echo "CMAKE_PROJECT_INCLUDE_BEFORE=$RUNNER_TEMP/tn-ccache.cmake" >> "$GITHUB_ENV"
+      - name: Zero the compiler cache counters
+        shell: bash
+        run: ccache --zero-stats
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Report the compiler cache hit rate
+        if: always()
+        shell: bash
+        run: ccache --show-stats
       - name: Compare the desktop host with browser references
         run: |
           set +e
@@ -299,7 +313,21 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      # ccache wrote to the workspace while actions/cache saved ${{ runner.temp }}/ccache, a
+      # directory that never existed. The save skipped every time, `gh cache list` held no
+      # native-ccache entry after five runs, and every job recompiled from scratch while the
+      # workflow read as though it were cached. This path and the cache step's must stay equal.
+      CCACHE_DIR: ${{ runner.temp }}/ccache
+      CCACHE_MAXSIZE: 900M
+      CCACHE_COMPRESS: "1"
+      # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
+      # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
+      # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
+      # zero ccache references in the generated build, while these two put `ccache /usr/bin/cc` on
+      # the compile line. Job-level env also reaches the QuickJS configure and the MSVC steps,
+      # which a preset-only fix would miss.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
       - name: Restore native third-party dependencies
@@ -311,7 +339,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -337,16 +365,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: choco install ccache --yes --no-progress
-      - name: Activate native compiler cache
+      - name: Zero the compiler cache counters
         shell: bash
-        run: |
-          cmake_include="$RUNNER_TEMP/tn-ccache.cmake"
-          cat > "$cmake_include" <<'CMAKE'
-          set(CMAKE_C_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
-          set(CMAKE_CXX_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
-          CMAKE
-          if command -v cygpath >/dev/null 2>&1; then cmake_include=$(cygpath -w "$cmake_include"); fi
-          echo "CMAKE_PROJECT_INCLUDE_BEFORE=$cmake_include" >> "$GITHUB_ENV"
+        run: ccache --zero-stats
       - name: Install Windows HTTP build dependencies
         if: runner.os == 'Windows'
         run: >-
@@ -366,6 +387,10 @@ jobs:
           pnpm --filter @threenative/runtime-native native:build
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Report the compiler cache hit rate
+        if: always()
+        shell: bash
+        run: ccache --show-stats
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
       # the step. So this ran without INCLUDE, LIB or a usable `cl`, and the first thing inside it
       # that *configures* a build directory — the physics contract lane — got "the C compiler is
@@ -401,7 +426,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      # ccache wrote to the workspace while actions/cache saved ${{ runner.temp }}/ccache, a
+      # directory that never existed. The save skipped every time, `gh cache list` held no
+      # native-ccache entry after five runs, and every job recompiled from scratch while the
+      # workflow read as though it were cached. This path and the cache step's must stay equal.
+      CCACHE_DIR: ${{ runner.temp }}/ccache
+      CCACHE_MAXSIZE: 900M
+      CCACHE_COMPRESS: "1"
+      # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
+      # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
+      # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
+      # zero ccache references in the generated build, while these two put `ccache /usr/bin/cc` on
+      # the compile line. Job-level env also reaches the QuickJS configure and the MSVC steps,
+      # which a preset-only fix would miss.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
       - name: Restore native third-party dependencies
@@ -413,7 +452,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -433,13 +472,9 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
-      - name: Activate native compiler cache
-        run: |
-          cat > "$RUNNER_TEMP/tn-ccache.cmake" <<'CMAKE'
-          set(CMAKE_C_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
-          set(CMAKE_CXX_COMPILER_LAUNCHER ccache CACHE STRING "" FORCE)
-          CMAKE
-          echo "CMAKE_PROJECT_INCLUDE_BEFORE=$RUNNER_TEMP/tn-ccache.cmake" >> "$GITHUB_ENV"
+      - name: Zero the compiler cache counters
+        shell: bash
+        run: ccache --zero-stats
       - name: Build and pack the scaffold dependencies
         run: |
           pnpm --filter @threenative/runtime-native native:build
@@ -450,6 +485,10 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Report the compiler cache hit rate
+        if: always()
+        shell: bash
+        run: ccache --show-stats
       - name: Scaffold the native starter from local tarballs
         uses: ./.github/actions/scaffold-from-tarballs
         with:

@@ -276,13 +276,38 @@ describe("CI pipeline structure", () => {
       expect(section, name).toContain("packages/runtime-native/third_party");
       expect(section, name).toContain("packages/runtime-native/scripts/download-deps.mjs");
       expect(section, name).toContain("CCACHE_DIR");
-      expect(section, name).toContain("CMAKE_PROJECT_INCLUDE_BEFORE");
-      expect(section, name).toContain("CMAKE_C_COMPILER_LAUNCHER");
-      expect(section, name).toContain("CMAKE_CXX_COMPILER_LAUNCHER");
+      // CMake reads the launcher from the environment under these two names only. It does not
+      // read CMAKE_PROJECT_INCLUDE_BEFORE from the environment, so writing a .cmake file and
+      // exporting that name compiled without ccache while looking activated.
+      expect(section, name).toContain("CMAKE_C_COMPILER_LAUNCHER: ccache");
+      expect(section, name).toContain("CMAKE_CXX_COMPILER_LAUNCHER: ccache");
+      expect(section, name).not.toMatch(/^\s+echo "CMAKE_PROJECT_INCLUDE_BEFORE=/mu);
       const keys = [...section.matchAll(/^\s+key:\s*(.+)$/gmu)].map((match) => match[1] ?? "");
       expect(keys.length, `${name} has no explicit cache keys`).toBeGreaterThanOrEqual(2);
       for (const key of keys) expect(key, name).toContain("hashFiles(");
       expect(section, name).toContain("packages/runtime-native/CMakeLists.txt");
+
+      // A compiler cache that ccache writes to one directory and actions/cache saves from
+      // another is not a compiler cache: the save finds nothing, no entry is ever stored, and
+      // every run recompiles from scratch while the workflow reads as if it were cached. That
+      // shipped, and `gh cache list` had no native-ccache entry at all after five runs. These
+      // three assertions are the difference between the steps existing and the cache working.
+      const ccacheDir = section.match(/^\s+CCACHE_DIR:\s*(.+)$/mu)?.[1]?.trim();
+      expect(ccacheDir, `${name} does not set CCACHE_DIR`).toBeDefined();
+      const cachedPaths = [...section.matchAll(/^\s+path:\s*(.+)$/gmu)].map((match) =>
+        (match[1] ?? "").trim(),
+      );
+      expect(cachedPaths, `${name} caches ${ccacheDir}`).toContain(ccacheDir);
+
+      // GitHub cache keys are immutable: a key that is only a content hash saves once and is
+      // never updated again, so the cache stops growing the moment a source file changes. The
+      // run id makes every run save, and restore-keys makes every run restore the newest.
+      const ccacheKey = keys.find((key) => key.includes("native-ccache"));
+      expect(ccacheKey, `${name} has no native-ccache key`).toBeDefined();
+      expect(ccacheKey, `${name} never re-saves its compiler cache`).toContain("github.run_id");
+
+      // A cache nobody measures is a cache nobody notices going cold.
+      expect(section, `${name} never reports its ccache hit rate`).toContain("ccache --show-stats");
     }
   });
 
