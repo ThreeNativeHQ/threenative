@@ -320,8 +320,7 @@ export class DirectionalClipmap {
   setDirection(direction: IVector3Like): boolean {
     assertFiniteVector("direction", direction);
     const nextW = normalize(direction);
-    const unchanged =
-      this.#windows.length > 0 && Math.abs(dot(nextW, this.basisW) - 1) <= 1e-9;
+    const unchanged = this.#windows.length > 0 && Math.abs(dot(nextW, this.basisW) - 1) <= 1e-9;
     this.basisW = nextW;
     const reference: IVector3Like =
       Math.abs(this.basisW.y) > 0.95 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
