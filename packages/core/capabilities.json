@@ -2,6 +2,203 @@
   "entries": [
     {
       "constraints": [
+        "source and output directories must be disjoint; a pass failure stops the build with the asset path"
+      ],
+      "example": "const result = await compileAssets({ source: \"assets\", output: \"public\" });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export async function compileAssets( options: IAssetCompileOptions = { … }",
+      "situations": [
+        "compile game assets before a web or native build",
+        "optimize textures for the GPU",
+        "produce a manifest for runtime asset loading"
+      ],
+      "summary": "Compiles a project's source assets into content-addressed runtime files and a manifest.",
+      "supersedes": [],
+      "symbol": "compileAssets"
+    },
+    {
+      "constraints": [
+        "the returned lines describe findings; target enforcement happens in runHealthReport"
+      ],
+      "example": "const lines = formatHealthReport(report);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function formatHealthReport(report: IAssetHealthReport): readonly string[] { … }",
+      "situations": [
+        "print asset size, license, and target findings after compilation",
+        "show why an asset health check is warning or failing"
+      ],
+      "summary": "Formats asset health findings and their summary for human-readable output.",
+      "supersedes": [],
+      "symbol": "formatHealthReport"
+    },
+    {
+      "constraints": ["rows must use bytes before and after from the same compiled input"],
+      "example": "const lines = formatModelSizes(modelRows);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly string[] { … }",
+      "situations": [
+        "inspect how model optimization changed file and GPU sizes",
+        "print model compression results after an asset build"
+      ],
+      "summary": "Formats model byte, geometry, and embedded-texture measurements for a build report.",
+      "supersedes": [],
+      "symbol": "formatModelSizes"
+    },
+    {
+      "constraints": ["an empty row list produces no report lines"],
+      "example": "const lines = formatTextureSizes(textureRows);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function formatTextureSizes(rows: readonly ITextureSizeRow[]): readonly string[] { … }",
+      "situations": [
+        "inspect texture compression savings",
+        "print which codec a compiled texture uses"
+      ],
+      "summary": "Formats standalone texture byte measurements for a build report.",
+      "supersedes": [],
+      "symbol": "formatTextureSizes"
+    },
+    {
+      "constraints": [
+        "the input must be a static self-contained GLB with at least one punctual light"
+      ],
+      "example": "const pass = lightmapPass({ atlasSize: 1024, padding: 2 });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function lightmapPass(options: ILightmapPassOptions): IAssetPass { … }",
+      "situations": [
+        "add baked static lighting to a model",
+        "generate TEXCOORD_1 data for a lightmapped scene"
+      ],
+      "summary": "Generates lightmap UVs and bakes a static GLB's lightmap atlas.",
+      "supersedes": [],
+      "symbol": "lightmapPass"
+    },
+    {
+      "constraints": [
+        "the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output"
+      ],
+      "example": "const pass = modelPass({ simplify: { ratio: 0.5 } });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function modelPass(options: IModelPassOptions = { … }",
+      "situations": [
+        "reduce a model's download and GPU footprint",
+        "optimize a GLB before shipping it with a game"
+      ],
+      "summary": "Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.",
+      "supersedes": [],
+      "symbol": "modelPass"
+    },
+    {
+      "constraints": [
+        "non-PNG or truncated bytes return undefined instead of being treated as a valid image"
+      ],
+      "example": "const png = parsePng(bytes); if (png !== undefined) console.log(png.width, png.height);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function parsePng(value: Buffer): IPngInfo | undefined { … }",
+      "situations": [
+        "inspect a PNG before choosing a texture codec",
+        "read source texture dimensions in an asset health check"
+      ],
+      "summary": "Reads dimensions and alpha metadata from a PNG signature and IHDR header.",
+      "supersedes": [],
+      "symbol": "parsePng"
+    },
+    {
+      "constraints": [
+        "the supplied working directory must resolve both basis_transcoder.js and basis_transcoder.wasm from its Three.js installation"
+      ],
+      "example": "const transcoder = resolveBasisTranscoder(process.cwd());",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function resolveBasisTranscoder(cwd: string): IBasisTranscoder { … }",
+      "situations": [
+        "prepare compressed textures for runtime loading",
+        "copy the Basis transcoder into a compiled asset output"
+      ],
+      "summary": "Finds Three.js's Basis Universal transcoder files for the runtime KTX2 loader.",
+      "supersedes": [],
+      "symbol": "resolveBasisTranscoder"
+    },
+    {
+      "constraints": [
+        "a finding is fail-grade only when the corresponding project target was declared"
+      ],
+      "example": "const report = await runHealthReport(inputs, { maxTextureDimension: 2048 });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export async function runHealthReport( inputs: readonly IAssetHealthInput[], targets: IAssetTargets = { … }",
+      "situations": [
+        "check asset dimensions, triangles, materials, and licenses",
+        "enforce asset budgets during a build"
+      ],
+      "summary": "Measures compiled assets and grades them against declared project targets.",
+      "supersedes": [],
+      "symbol": "runHealthReport"
+    },
+    {
+      "constraints": [
+        "compressed source width and height must each be divisible by 4; use a codec \"none\" override for an intentionally unaligned texture",
+        "every compressed source width and height must be divisible by 4 because BC7, BC1, ETC2, and ASTC 4x4 use 4x4 blocks; WebGPU rejects an unaligned texture at draw time",
+        "use a matching codec \"none\" override when an intentionally unaligned source cannot be resized"
+      ],
+      "example": "const pass = texturePass({ quality: 150 });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function texturePass(options: ITexturePassOptions = { … }",
+      "situations": [
+        "optimize textures for the GPU",
+        "compress PNG or JPEG files before runtime loading"
+      ],
+      "summary": "Encodes standalone textures as mipmapped KTX2/Basis assets for GPU storage.",
+      "supersedes": [],
+      "symbol": "texturePass"
+    },
+    {
+      "constraints": [
+        "call close on the returned handle; initial and burst failures are reported without stopping the dev server"
+      ],
+      "example": "const watcher = watchAssets({ cwd: process.cwd() });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function watchAssets(options: IAssetWatchOptions = { … }",
+      "situations": [
+        "recompile a changed texture without restarting the dev server",
+        "see asset pipeline failures as files are saved"
+      ],
+      "summary": "Watches an asset source directory and recompiles settled changes during development.",
+      "supersedes": [],
+      "symbol": "watchAssets"
+    },
+    {
+      "constraints": [
         "name the body a game moves as strideRoot when the animated rig is a child of it",
         "a one-shot clip always plays at its authored rate; the matched rate re-times loops only"
       ],
