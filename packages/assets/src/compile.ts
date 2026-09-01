@@ -137,6 +137,7 @@ export interface IModelsConfig {
 }
 
 export interface ITexturesConfig {
+  readonly maxSize?: number;
   readonly overrides?: readonly ITextureOverride[];
   readonly quality?: number;
 }
@@ -426,16 +427,26 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.textures must be "none" or an object.');
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "quality" && key !== "overrides") {
+    if (key !== "maxSize" && key !== "quality" && key !== "overrides") {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.textures.${key} is not recognised.`);
     }
   }
   return {
+    ...(raw.maxSize === undefined
+      ? {}
+      : { maxSize: positiveTextureSize(raw.maxSize, "assets.textures.maxSize") }),
     ...(raw.quality === undefined
       ? {}
       : { quality: textureQuality(raw.quality, "assets.textures.quality") }),
     ...(raw.overrides === undefined ? {} : { overrides: validateTextureOverrides(raw.overrides) }),
   };
+}
+
+function positiveTextureSize(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be a positive integer.`);
+  }
+  return value;
 }
 
 /** `"none"` disables the built-in model pass; an object configures it; absent means defaults. */

@@ -4,6 +4,7 @@ import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js"
 import { textureStats } from "../health.js";
 import { decodeImageBytes } from "./decode-image.js";
 import { globMatch } from "./glob.js";
+import { cappedSize, resampleRgba } from "./model-textures.js";
 
 /**
  * Encodes compiled textures to KTX2/Basis so the GPU stores them compressed instead of as
@@ -31,6 +32,8 @@ export interface ITextureOverride {
 }
 
 export interface ITexturePassOptions {
+  /** Longest edge to retain; larger sources are downsampled without upscaling. */
+  readonly maxSize?: number;
   readonly overrides?: readonly ITextureOverride[];
   /** ETC1S encoder quality 1–255, default 150. Ignored for UASTC. */
   readonly quality?: number;
@@ -79,6 +82,7 @@ export async function encodeLinearRgbaKtx2(
 export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
   return {
     configuration: {
+      ...(options.maxSize === undefined ? {} : { maxSize: options.maxSize }),
       overrides: options.overrides ?? [],
       quality: options.quality ?? DEFAULT_ETC1S_QUALITY,
     },
@@ -96,12 +100,19 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       const decoded = await decodeImageBytes(input, logicalPath);
       const choice = chooseCodec(logicalPath, rgbaHasAlpha(decoded.data), options);
       if (choice.codec === "none") return input;
-      assertBlockAligned(logicalPath, choice.codec, decoded.width, decoded.height);
+      const { data, resized, target } = resizeForEncoding(
+        decoded,
+        choice.normalMap,
+        options.maxSize,
+      );
+      assertBlockAligned(logicalPath, choice.codec, target.width, target.height);
       const encoded = await encodeToKTX2(
-        new Uint8Array(input.buffer, input.byteOffset, input.byteLength),
+        resized
+          ? new Uint8Array([0])
+          : new Uint8Array(input.buffer, input.byteOffset, input.byteLength),
         {
           generateMipmap: true,
-          imageDecoder: async () => decoded,
+          imageDecoder: async () => ({ data, height: target.height, width: target.width }),
           ...encodeSettingsFor(choice),
         },
       );
@@ -118,6 +129,36 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       };
     },
     name: "ktx2",
+  };
+}
+
+function resizeForEncoding(
+  decoded: { data: Uint8Array; height: number; width: number },
+  normalMap: boolean,
+  maxSize: number | undefined,
+): {
+  readonly data: Uint8Array;
+  readonly resized: boolean;
+  readonly target: { readonly height: number; readonly width: number };
+} {
+  const target =
+    maxSize === undefined
+      ? { height: decoded.height, width: decoded.width }
+      : cappedSize(decoded.width, decoded.height, maxSize);
+  const resized = target.width !== decoded.width || target.height !== decoded.height;
+  return {
+    data: resized
+      ? resampleRgba(
+          decoded.data,
+          decoded.width,
+          decoded.height,
+          target.width,
+          target.height,
+          !normalMap,
+        )
+      : decoded.data,
+    resized,
+    target,
   };
 }
 

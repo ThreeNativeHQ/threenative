@@ -217,6 +217,30 @@ describe("compileAssets", () => {
     expect(secondManifest.entries["rock.png"].output).not.toBe(first.entries["rock.png"].output);
   });
 
+  it("should recompile when standalone texture maxSize changes instead of re-serving stale bytes", async () => {
+    const root = await makeTempDir("threenative-compile-texture-max-size-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 16, width: 16 }));
+
+    await compileAssets({
+      config: { textures: { maxSize: 12 } },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+    const manifestPath = path.join(root, "public", "assets.manifest.json");
+    const first = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    const second = await compileAssets({
+      config: { textures: { maxSize: 8 } },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+    const secondManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(second.written).toBe(1);
+    expect(secondManifest.entries["rock.png"].output).not.toBe(first.entries["rock.png"].output);
+  });
+
   it("should skip compilation without touching the output when no source directory exists", async () => {
     // The pre-pipeline state: projects built before this step have no assets/ and their
     // builds must keep working unchanged.
@@ -380,6 +404,13 @@ describe("compileAssets", () => {
     await expect(compileAssets({ config: badQuality, cwd: root })).rejects.toThrow(
       /between 1 and 255/u,
     );
+
+    for (const value of [0, -1, 1.5, "2048"]) {
+      const badMaxSize = { textures: { maxSize: value } } as unknown as IAssetSourceConfig;
+      await expect(compileAssets({ config: badMaxSize, cwd: root })).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer/u,
+      );
+    }
   });
 
   it("should optimize a model through the built-in registry and record the manifest fields", async () => {

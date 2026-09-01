@@ -977,13 +977,20 @@ function validateAssetTargets(
   };
 }
 
-const ASSET_TEXTURE_KEYS: readonly string[] = ["overrides", "quality"];
+const ASSET_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality"];
 const TEXTURE_OVERRIDE_KEYS: readonly string[] = ["codec", "glob", "quality"];
 const TEXTURE_CODECS: readonly string[] = ["etc1s", "none", "uastc"];
 
 function textureQuality(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 255) {
     fail("TN_CONFIG_ASSETS_INVALID", `${label} must be an integer between 1 and 255.`);
+  }
+  return value;
+}
+
+function textureMaxSize(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.textures.maxSize must be a positive integer.");
   }
   return value;
 }
@@ -1035,6 +1042,7 @@ function validateTextures(
   const textures = assertRecord(raw, "assets.textures");
   assertKeys(textures, "assets.textures", ASSET_TEXTURE_KEYS);
   return {
+    ...(textures.maxSize === undefined ? {} : { maxSize: textureMaxSize(textures.maxSize) }),
     ...(textures.quality === undefined
       ? {}
       : { quality: textureQuality(textures.quality, "assets.textures.quality") }),

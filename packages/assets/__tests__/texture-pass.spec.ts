@@ -40,6 +40,48 @@ function ktx2Magic(bytes: Buffer): boolean {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("should cap standalone colour and normal textures through the encoder decoder without upscaling or changing none bytes", async () => {
+    // Removing maxSize from the pass configuration makes the first two KTX2 dimensions stay
+    // 12x8, so this asserts the encoded artifact rather than a decoder mock.
+    const root = await makeTempDir("threenative-tex-max-size-");
+    await mkdir(path.join(root, "assets", "ui"), { recursive: true });
+    const source = rgbaPng({ height: 8, width: 12 });
+    const small = rgbaPng({ height: 4, width: 4 });
+    await writeFile(path.join(root, "assets", "cliff.png"), source);
+    await writeFile(path.join(root, "assets", "ridge_normal.png"), source);
+    await writeFile(path.join(root, "assets", "small.png"), small);
+    await writeFile(path.join(root, "assets", "ui", "icon.png"), source);
+
+    await compileAssets({
+      config: {
+        textures: {
+          maxSize: 8,
+          overrides: [{ codec: "none", glob: "ui/**" }],
+        },
+      },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    );
+    for (const logicalPath of ["cliff.png", "ridge_normal.png"]) {
+      const compiled = await readFile(
+        path.join(root, "public", manifest.entries[logicalPath].output),
+      );
+      const ktx2 = readKTX2(compiled);
+      expect([ktx2.pixelWidth, ktx2.pixelHeight]).toEqual([8, 4]);
+    }
+    const smallOutput = await readFile(
+      path.join(root, "public", manifest.entries["small.png"].output),
+    );
+    expect([readKTX2(smallOutput).pixelWidth, readKTX2(smallOutput).pixelHeight]).toEqual([4, 4]);
+    expect(
+      await readFile(path.join(root, "public", manifest.entries["ui/icon.png"].output)),
+    ).toEqual(source);
+  });
+
   it("should encode to UASTC when the source has an alpha channel", async () => {
     // Alpha varies across the row, so stripping it changes the codec choice — that is the
     // negative control for this test.

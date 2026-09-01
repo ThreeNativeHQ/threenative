@@ -31,6 +31,8 @@ export interface IThreeNativeBootSplash {
 
 /** Texture compression options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeTexturesConfig {
+  /** Caps the longest edge, preserving aspect and 4x4 block alignment; never upscales. */
+  readonly maxSize?: number;
   readonly overrides?: readonly {
     readonly codec: "etc1s" | "none" | "uastc";
     readonly glob: string;

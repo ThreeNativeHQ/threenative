@@ -365,6 +365,17 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/between 1 and 255/u);
   });
 
+  it("rejects an invalid standalone texture maxSize with the named code", async () => {
+    for (const value of ["0", "-1", "1.5", '"2048"']) {
+      const root = await project();
+      await config(root, `export default { assets: { textures: { maxSize: ${value} } } };`);
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+      await expect(loadConfig(root)).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer/u,
+      );
+    }
+  });
+
   it("parses the models block and the none shorthand into the resolved config", async () => {
     const configured = await project();
     await config(
