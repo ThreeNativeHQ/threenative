@@ -1,33 +1,34 @@
-// Generated for you: ordinary Three.js; the stage order and fallback report are game-owned.
+// Generated for you: ordinary Three.js; ThreeNative does not read this file.
+//
+// This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
+// owns which stages run at which tier and records what each one measured. `WorldEnvironment`,
+// also in this folder, builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
+// applied or refused **with a reason**, so a stage that silently no-op'd is never mistaken for
+// one you turned off.
+//
+// To make the game cheaper or prettier everywhere, edit `quality.ts`. To force one tier for one
+// run — a desktop that is dropping frames, a capture you want to compare — pass it:
+// `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
+// `TN_QUALITY_TIER` names the tier that ran either way.
 import type { Camera, DirectionalLight, Scene } from "three";
+import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
 import type { OutputRenderer } from "./worldEnvironment.js";
 import { WorldEnvironment } from "./worldEnvironment.js";
-
-const desktopPreset = {
-  bloomEnabled: true,
-  bloomStrength: 0.38,
-  denoiseEnabled: false,
-  exposure: 1.12,
-  ssgiEnabled: false,
-  ssrEnabled: false,
-  tonemapMode: "aces",
-} as const;
-
-const mobilePreset = {
-  bloomEnabled: true,
-  bloomStrength: 0.28,
-  exposure: 1.12,
-  ssgiEnabled: false,
-  ssrEnabled: false,
-  tonemapMode: "aces",
-} as const;
 
 export function setupPost(
   renderer: OutputRenderer,
   scene: Scene,
   camera: Camera,
-  environment: { godraysLight?: DirectionalLight; mobile?: boolean } = {},
+  environment: {
+    godraysLight?: DirectionalLight;
+    mobile?: boolean;
+    /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
+    tier?: QualityTier;
+  } = {},
 ): void {
-  const world = new WorldEnvironment(environment.mobile === true ? mobilePreset : desktopPreset);
+  const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
+  const source = environment.tier === undefined ? "platform" : "override";
+  console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
+  const world = new WorldEnvironment(qualityPreset(tier));
   world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
 }

@@ -7,6 +7,38 @@ managed file.
 
 Node-only. Carries the encoder dependencies the runtime must never inherit.
 
+## The delete-test, and the receipt that makes it possible
+
+Every baking pass in here obeys one rule: **delete the entire baked output and the game runs
+identically, just slower.** That is what separates a baking pass from a compiler of game meaning —
+the thing this project has already tried once and deleted. A pass that cannot pass the delete-test
+does not ship.
+
+Each compile therefore writes `public/bake.receipt.json` beside the manifest, listing every file
+the run produced — compiled outputs, auxiliary outputs like the lightmap atlas, and the Basis
+transcoder — with the producer and the source each came from. The producer writes it because only
+the producer knows: a consumer that reconstructed the list by globbing `public/` would either miss
+an output or delete a source asset, and both mistakes look like a passing test.
+
+Two consequences worth knowing before you add a pass:
+
+- **A pass that writes a file it does not declare fails the build**, by name
+  (`TN_ASSETS_UNDECLARED_OUTPUT`). Declare auxiliary outputs through `auxiliaryOutputs`.
+- **Nothing in the shipped runtime reads the receipt.** `@threenative/core` falls back to the
+  source path when the manifest is absent, and deleting the receipt is part of the test.
+
+`pnpm bake:delete-test --template starter` runs it: build, switch the dev server's asset watcher
+off so it cannot re-bake what is about to be deleted, run the scenario, delete every file the
+receipt names plus the manifest and the receipt, run the same scenario again, and compare. The
+comparison is against a same-code band measured in the same run — captures are not
+bit-deterministic — not against an assumed zero.
+
+**It is red today, and that is the point.** The starter does not survive losing its bake: the
+loader's documented no-manifest fallback resolves `<basePath>/<logical path>`, which in a compiled
+project points at nothing — the sources live in `assets/` and the outputs are content-addressed.
+The gate is therefore not wired into CI yet; it goes in with the change that makes it pass. See
+`docs/verification/bake-delete-test-2026-08-31.md`.
+
 ## Embedded model textures
 
 The images inside a `.glb` go through the pipeline too, on by default. A prop carrying three

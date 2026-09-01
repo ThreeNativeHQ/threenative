@@ -6,6 +6,8 @@ export type {
   IAssetPassOutput,
   IAssetSourceConfig,
   IAssetTargets,
+  IBakeReceipt,
+  IBakeReceiptOutput,
   IBasisTranscoder,
   IModelsConfig,
   ITexturesConfig,

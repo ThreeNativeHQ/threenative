@@ -165,7 +165,11 @@ describe("watchAssets", () => {
       expect(logged).toMatch(/rock\.png/u);
       expect(await readFile(manifestPath, "utf8")).toBe(manifestRaw);
       expect((await readFile(outputPath)).equals(bytesBefore)).toBe(true);
-      expect(await readdir(publicDirectory)).toEqual(["assets.manifest.json", rockOutput].sort());
+      // The receipt is part of a successful compile's output, so the last good one survives the
+      // failure exactly as the manifest and the compiled bytes do.
+      expect(await readdir(publicDirectory)).toEqual(
+        ["assets.manifest.json", "bake.receipt.json", rockOutput].sort(),
+      );
 
       // Fixing the input heals the deviation: the next burst recompiles and updates the manifest.
       await writeFile(path.join(root, "assets", "rock.png"), "fixed png");

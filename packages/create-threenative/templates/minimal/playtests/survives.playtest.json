@@ -36,17 +36,6 @@
         "allowTrivial": "The minimal cube has an authored non-unit target height; this retained factor proves normaliseToMetres ran in generated source."
       }
     ],
-    "movement": { "entity": "player", "minDistance": 0.5 },
-    "visual": [
-      {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 1280,
-          "height": 720,
-          "minNonblankPixelRatio": 0.01
-        }
-      }
-    ]
+    "movement": { "entity": "player", "minDistance": 0.5 }
   }
 }

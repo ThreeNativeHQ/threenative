@@ -37,7 +37,9 @@ import {
   androidFocusedWindowOwner,
   androidSystemDialog,
   buildProvenance,
+  captureBrowserCanvas,
   hardwareAdapterBlocker,
+  makeEntry,
   runCommand,
   unexpectedBlockedRows,
   expiredExclusions,
@@ -114,6 +116,58 @@ test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () 
   assert.deepEqual(unexpectedBlockedRows(mislabelled, registry), [
     { id: "realism-ssr", reason: "bundle failed" },
   ]);
+});
+
+test("browser capture waits for submitted WebGPU work before requesting a compositor screenshot", async () => {
+  const dir = makeTempDirSync("threenative-browser-queue-drain-");
+  try {
+    const scene = "conformance/scenes/shared/first-proof-game.js";
+    const ordinaryPath = makeEntry(
+      { captureFrames: 2, id: "queue-drain", scene },
+      "browser",
+      1234,
+      dir,
+    );
+    const ordinary = readFileSync(ordinaryPath, "utf8");
+    assert.match(
+      ordinary,
+      /onSubmittedWorkDone[\s\S]*__tn_conformance__\/complete/u,
+      "a software WebGPU queue must finish before its compositor capture is requested",
+    );
+    assert.doesNotMatch(ordinary, /canvas\.toBlob/u);
+
+    const temporalPath = makeEntry(
+      { id: "queue-drain-temporal", scene, temporal: { settledFrame: 2 } },
+      "browser",
+      1234,
+      dir,
+    );
+    const temporal = readFileSync(temporalPath, "utf8");
+    assert.match(
+      temporal,
+      /captureFrame = async[\s\S]*onSubmittedWorkDone[\s\S]*__tn_conformance__\/complete/u,
+      "every temporal frame must drain its queue before capture",
+    );
+
+    const calls = [];
+    const page = {
+      locator(selector) {
+        calls.push(["locator", selector]);
+        return {
+          async screenshot(options) {
+            calls.push(["screenshot", options]);
+          },
+        };
+      },
+    };
+    await captureBrowserCanvas(page, "/tmp/composited.png");
+    assert.deepEqual(calls, [
+      ["locator", "#c"],
+      ["screenshot", { path: "/tmp/composited.png", timeout: 90_000 }],
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("allowFailure survives a spawn error, not just a non-zero exit", () => {

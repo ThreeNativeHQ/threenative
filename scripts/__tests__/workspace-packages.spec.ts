@@ -80,12 +80,15 @@ describe("workspace package derivation", () => {
     ]);
 
     const workflow = await readFile(path.join(process.cwd(), ".github/workflows/ci.yml"), "utf8");
+    const scaffoldAction = await readFile(
+      path.join(process.cwd(), ".github/actions/scaffold-from-tarballs/action.yml"),
+      "utf8",
+    );
     expect(workflow).toContain("scripts/workspace-packages.ts --archives");
     expect(workflow).toContain("while IFS=$'\\t' read -r package_name archive_prefix");
     expect(workflow).toContain('pnpm --filter "$package_name"');
-    expect(workflow).toContain(
-      'find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz"',
-    );
+    expect(workflow).toContain("uses: ./.github/actions/scaffold-from-tarballs");
+    expect(scaffoldAction).toContain('find "$TN_SCAFFOLD_ARCHIVES" -name "${archive_prefix}*.tgz"');
     // The workflow is inspected directly by the L1 scan, while these assertions keep its
     // package/archive stream visibly tied to the derivation helper.
     expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
