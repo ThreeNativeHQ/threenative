@@ -48,6 +48,14 @@ describe("ResolutionScaler against a stalled window", () => {
   /** The measured window: 296 ordinary frames at 9.8 ms and four pipeline stalls at 1.94 s. */
   const stalledWindow = (): IFrameBudgetWindow =>
     windowOf((frame) => (frame > 0 && frame % 75 === 0 ? 1_940 : 9.8));
+  /**
+   * Chrome's Performance panel starts its CPU profiler on the renderer thread. In the Wildwood
+   * trace captured 2026-09-01 that blocked one frame for 352.5 ms while every ordinary frame
+   * stayed at the 60 Hz panel period. One sample is below p99's rank in a 300-frame window, but it
+   * is still large enough to pull fps-from-mean below the scaler's down threshold.
+   */
+  const profilerStartWindow = (): IFrameBudgetWindow =>
+    windowOf((frame) => (frame === 150 ? 352.5 : 16.67));
   const steadyWindow = (dtMs: number): IFrameBudgetWindow => windowOf(() => dtMs);
 
   it("reproduces the window that caused it: the mean says 22 fps, the median says 102", () => {
@@ -70,6 +78,18 @@ describe("ResolutionScaler against a stalled window", () => {
     // Window 1 is discarded as startup by the controller's own warm-up rule.
     scaler.observe(steadyWindow(9.8));
     expect(scaler.observe(stalledWindow())).toBeUndefined();
+    expect(scaler.scale).toBe(1.0);
+  });
+
+  it("defers on one profiler-start stall that is too rare to reach p99", () => {
+    const window = profilerStartWindow();
+    expect(window.fps).toBeLessThan(60 * RESOLUTION_SCALER.targetFpsFraction);
+    expect(window.presented.p99).toBeCloseTo(16.67, 2);
+    expect(window.presented.max).toBeCloseTo(352.5, 1);
+
+    const scaler = new ResolutionScaler({ targetFps: 60 });
+    scaler.observe(steadyWindow(16.67));
+    expect(scaler.observe(window)).toBeUndefined();
     expect(scaler.scale).toBe(1.0);
   });
 
