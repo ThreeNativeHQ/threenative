@@ -256,8 +256,14 @@ describe("runHealthReport", () => {
 
     const result = await compileAssets({ cwd: root, transcoder: basisTranscoderPaths() });
 
-    // Default result shape stays exactly as before — no report key unless asked for.
-    expect(result).toEqual({ skipped: 0, written: 2 });
+    // No report key unless asked for. The receipt always rides along: it is what the delete-test
+    // deletes, and a caller that never looks at it still needs the compile step to have written it.
+    expect(result.report).toBeUndefined();
+    expect({ skipped: result.skipped, written: result.written }).toEqual({
+      skipped: 0,
+      written: 2,
+    });
+    expect(result.receipt?.outputs.length).toBeGreaterThan(0);
 
     const detailed = await compileAssets({
       cwd: root,
