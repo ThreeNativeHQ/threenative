@@ -128,7 +128,10 @@ test('the native lane reports on pull requests, not only after a merge', () => {
 
 test('native workflow verifies a freshly scaffolded starter on Linux', () => {
   const workflow = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
-  assert.match(workflow, /starter-linux:[\s\S]*--template starter[\s\S]*test:native/);
+  assert.match(
+    workflow,
+    /starter-linux:[\s\S]*uses: \.\/\.github\/actions\/scaffold-from-tarballs[\s\S]*template: starter[\s\S]*test:native/,
+  );
   assert.match(workflow, /native-starter-linux/);
 });
 

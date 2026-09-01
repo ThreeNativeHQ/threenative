@@ -464,7 +464,7 @@ export function validateReport(report, registry) {
   return errors;
 }
 
-function makeEntry(test, target, port, entryRoot) {
+export function makeEntry(test, target, port, entryRoot) {
   const sceneAbs = join(runtimeRoot, test.scene);
   const entryAbs = join(entryRoot, `${target}-${test.id}.js`);
   const sceneRelative = `./${relative(dirname(entryAbs), sceneAbs).replaceAll("\\", "/")}`;
@@ -493,14 +493,15 @@ function makeEntry(test, target, port, entryRoot) {
 });
 console.info(${JSON.stringify(`TN_MULTITOUCH_PROOF_PASS:${test.id}`)});`
     : "";
-  const finalCapture = `const screenshot = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
-const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'image/png' }, body: screenshot });
-if (!response.ok) throw new Error('completion upload failed: ' + response.status);`;
+  const waitForSubmittedWork = "if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();";
+  const finalCapture = `${waitForSubmittedWork}
+const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST' });
+if (!response.ok) throw new Error('compositor capture failed: ' + response.status + ' ' + await response.text());`;
   const browserCapture = test.temporal
     ? `const captureFrame = async (label) => {
-  const frame = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
-  const frameResponse = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}/' + label, { method: 'POST', headers: { 'content-type': 'image/png' }, body: frame });
-  if (!frameResponse.ok) throw new Error('temporal capture upload failed: ' + frameResponse.status);
+  ${waitForSubmittedWork}
+  const frameResponse = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}/' + label, { method: 'POST' });
+  if (!frameResponse.ok) throw new Error('temporal compositor capture failed: ' + frameResponse.status + ' ' + await frameResponse.text());
 };
 await captureFrame('frame-zero');
 for (let frame = 0; frame < ${Number(test.temporal.settledFrame)}; frame += 1) await new Promise(requestAnimationFrame);
@@ -515,7 +516,6 @@ ${finalCapture}`;
       ? `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
 ${proofWait}
 ${browserCapture}
-if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();
 `
       : `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
 ${proofWait}`;
@@ -596,8 +596,9 @@ function contentType(path) {
   return "application/octet-stream";
 }
 
-function createCompletionBroker(captureRoot) {
+function createCompletionBroker() {
   const waiters = new Map();
+  const captureHandlers = new Map();
   return {
     wait(id, timeoutMs) {
       return new Promise((resolvePromise) => {
@@ -609,6 +610,10 @@ function createCompletionBroker(captureRoot) {
           });
         }, timeoutMs);
         waiters.set(id, {
+          cancel() {
+            clearTimeout(timer);
+            waiters.delete(id);
+          },
           settle(value) {
             clearTimeout(timer);
             waiters.delete(id);
@@ -617,8 +622,12 @@ function createCompletionBroker(captureRoot) {
         });
       });
     },
+    capture(id, handler) {
+      captureHandlers.set(id, handler);
+    },
     cancel(id) {
-      waiters.delete(id);
+      waiters.get(id)?.cancel();
+      captureHandlers.delete(id);
     },
     async handle(req, res, pathname) {
       const match = pathname.match(/^\/__tn_conformance__\/(complete|error)\/([a-z0-9-]+)(?:\/([a-z-]+))?$/u);
@@ -637,14 +646,28 @@ function createCompletionBroker(captureRoot) {
       }
       const data = Buffer.concat(chunks);
       const waiter = waiters.get(id);
-      if (kind === "complete" && data.length > 0) {
-        const screenshot = join(captureRoot, `${id}${frameLabel ? `-${frameLabel}` : ""}.png`);
-        writeFileSync(screenshot, data);
-        res.writeHead(204);
-        if (frameLabel !== undefined) {
-          res.end();
-        } else {
-          res.end(() => waiter?.settle({ kind: "complete", screenshot }));
+      if (kind === "complete") {
+        const capture = captureHandlers.get(id);
+        if (capture === undefined) {
+          const error = `browser capture handler is missing for ${id}`;
+          res.writeHead(409);
+          res.end(error, () => waiter?.settle({ kind: "error", error }));
+          return true;
+        }
+        try {
+          const screenshot = await capture(frameLabel);
+          res.writeHead(204);
+          if (frameLabel !== undefined) {
+            res.end();
+          } else {
+            res.end(() => waiter?.settle({ kind: "complete", screenshot }));
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          res.writeHead(500);
+          res.end(message, () => {
+            if (frameLabel === undefined) waiter?.settle({ kind: "error", error: message });
+          });
         }
       } else {
         const error = data.toString("utf8") || "browser reported an empty screenshot";
@@ -656,8 +679,12 @@ function createCompletionBroker(captureRoot) {
   };
 }
 
+export async function captureBrowserCanvas(page, screenshot) {
+  await page.locator("#c").screenshot({ path: screenshot, timeout: 90_000 });
+}
+
 async function withServer(captureRoot, assetRoot, fn) {
-  const broker = createCompletionBroker(captureRoot);
+  const broker = createCompletionBroker();
   const rootPrefix = runtimeRoot.endsWith(sep) ? runtimeRoot : `${runtimeRoot}${sep}`;
   const assetPrefix = assetRoot && (assetRoot.endsWith(sep) ? assetRoot : `${assetRoot}${sep}`);
   const server = createServer(async (req, res) => {
@@ -735,6 +762,11 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", (error) => pageErrors.push(error.message));
     const completion = broker.wait(test.id, Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000));
+    broker.capture(test.id, async (frameLabel) => {
+      const screenshot = join(captureRoot, `${test.id}${frameLabel ? `-${frameLabel}` : ""}.png`);
+      await captureBrowserCanvas(page, screenshot);
+      return screenshot;
+    });
     await page.goto(url, { waitUntil: "domcontentloaded" });
     adapterInfo = await page.evaluate(async () => {
       const adapter = await navigator.gpu?.requestAdapter();
@@ -850,6 +882,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       adapterInfo,
     };
   } finally {
+    broker.cancel(test.id);
     await browser?.close();
   }
   mkdirSync(captureRoot, { recursive: true });
