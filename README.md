@@ -66,16 +66,16 @@ export default game;
 
 ## Packages
 
-| Package | Version | Purpose |
-| --- | --- | --- |
-| `@threenative/assets` | `0.3.0` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
-| `@threenative/core` | `0.3.0` | Bootstrap, scenes, lifecycle, input, and renderer integration |
-| `create-threenative` | `0.2.3` | Scaffold a readable game project from seven templates |
-| `@threenative/physics` | `0.3.0` | Rapier-backed Godot-shaped physics and navigation |
-| `@threenative/playtest` | `0.3.0` | Browser, native, and scenario assertion harness |
-| `@threenative/runtime-native` | `0.3.0` | Owned C++ host for desktop, Android, and iOS |
-| `@threenative/ui` | `0.3.0` | React bindings for HUD and game state |
-| `threenative-engine-mcp` | `0.2.0` | Offline MCP capability discovery for authoring agents |
+| Package | Purpose |
+| --- | --- |
+| `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
+| `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
+| `create-threenative` | Scaffold a readable game project from seven templates |
+| `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
+| `@threenative/playtest` | Browser, native, and scenario assertion harness |
+| `@threenative/runtime-native` | Owned C++ host for desktop, Android, and iOS |
+| `@threenative/ui` | React bindings for HUD and game state |
+| `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
 
 ## Status
 
