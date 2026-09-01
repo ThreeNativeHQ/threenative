@@ -122,10 +122,31 @@ of those three lines.
 | Desktop capture, default and forced `low` | above |
 | Pixel 8, scaffolded starter | above |
 
+## Three templates, not one — added 2026-09-01
+
+The first version of this record proved the starter and said so. Two more were then scaffolded with
+`tier: "low"` forced at their own `setupPost` call, chosen to span the two chain shapes among the
+seven affected files:
+
+| template | chain at `high` | tier reported | distinctColors | luminanceStdDev |
+| --- | --- | --- | ---: | ---: |
+| starter | SSGI + SSR + sharpen + bloom | `low … source=override` | 16,312 | 0.0710 |
+| shooter | SSGI + SSR + sharpen + bloom | `low … source=override` | **51,968** | **0.1558** |
+| minimal | SSR + sharpen + bloom, no SSGI | `low … source=override` | 1,841 | 0.0832 |
+
+Compare the blank this replaces: `distinctColors 637`, `luminanceStdDev 0.0181`. `minimal` has the
+fewest distinct colours of the three because its sky is a volumetric `Atmosphere` — smooth
+gradients, not flat fill — and its `luminanceStdDev` is 4.6x the blank's, which is the number that
+separates a picture from a uniform frame.
+
+`action-rpg` was attempted and **did not report**: its page never produced a canvas inside the 60 s
+wait while the machine was busy. That is the harness under load, not a result, and it is recorded
+as unrun rather than counted either way.
+
 ## Not executed
 
 - No iOS, macOS or Windows run; no emulator run.
-- The other six affected templates were not captured individually. They share the identical
-  `worldEnvironment.ts` (one md5 across all seven), all eight still typecheck as pristine scaffolds,
-  and the starter is proved on two platforms — but *shown* is the starter, and that is what this
-  file claims.
+- **Four of the seven affected templates were not captured**: `action-rpg` (attempted, timed out),
+  `defense`, `platformer` and `racing`. All seven share one identical `worldEnvironment.ts` (a
+  single md5 across them) and all eight typecheck as pristine scaffolds, but shown is shown —
+  three templates on desktop, one of them also on a phone.
