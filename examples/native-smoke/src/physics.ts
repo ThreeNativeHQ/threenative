@@ -357,9 +357,10 @@ function gatedPlaytest(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
         }
       ).__THREENATIVE_PLAYTEST_BRIDGE__;
       if (bridge === undefined) throw new Error("TN_PHYSICS_PARITY_BRIDGE_MISSING");
+      const originalReady = bridge.ready;
       bridge.ready = async () => {
         await sceneReady;
-        return { ready: true };
+        return originalReady();
       };
       return cleanup;
     },

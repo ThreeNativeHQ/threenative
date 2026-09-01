@@ -177,13 +177,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
   // Recomputed 2026-08-31 after squashing PRD-289 onto local main 6b91f42f: current main's
   // scaffold assets and the convention-enabled generated trees are measured together.
-  "action-rpg": "1bcbd2670c2da6ffc7c64f4a35276843f497e078edb6c0023e84fe360ea56bd1",
-  defense: "2b4b1be469d7955a9f7f3625c0b713bbb8707742c769eefc4fa15bb728277df0",
-  minimal: "492cae19ece93a1b24325d6c7a8fffedbb0c1d8f7b38366fe3bde635151cd775",
-  platformer: "655fff7f5fb24f9d27195e12bed9ea195056e12cd6cc6d092480c2bd4c66d446",
-  racing: "ac220f50eb6a5072ff2b29c1539ad7fb222fcd7147edce0cb1f5dbc86e5e9c5e",
-  shooter: "f1a10ced2ad215a0ffe6ec6b6d9045cd159122de5eae710ced1d83bff3f9da61",
-  starter: "9211de42bd0a64b9b88599efd9da8f63c948cfdc87aa0e85c68f94b05f47d8fd",
+  // Recomputed 2026-08-31 after PRD-251 added the terrain entries to the generated manifest.
+  "action-rpg": "1a63da8a9fd6431960503fec12e1f7b679accdf3e249b97e025f6b4cd2d1da89",
+  defense: "8955469d46e4b13e80d3733f5ecb04e90d2db3038e950248ebc6b56d45a3af27",
+  minimal: "0015289e358d3f53cd837f46841ee714bf0b7dffbd0c13a62502b92809e3ab30",
+  platformer: "3e2f877ccf46ba84c8b690329267383e6739972f958fadc2d601949e9dafd9e9",
+  racing: "7944b169e528cd7d069422b88f51288e92e6dcf055187a1292ec5036b91b77de",
+  shooter: "8dc6649ec3bea727e52589d3727500cc458859b8e580940fe9df74feac36b91d",
+  starter: "6bc0c92287235d290dbd7acd6ffe1eb318611bb4c0d56fd8f450a891cabd877f",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -194,8 +195,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "e96473617865a6a04a9e64fe1060623d74470a7b53ba302bf1002e051ced06da",
+  sailing: "2600e0cc8a835b4ebea23473859172e3ac267958070e4adbb6728006692b81d5",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
+  // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
+  // terrain fields, bounded tile residency, and the three plain-language world situations.
+  // Recomputed 2026-08-31 for the PRD-251 review repair: the generated world capability
+  // reference now states that GPU generation fails closed until canonical readback is supported.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
