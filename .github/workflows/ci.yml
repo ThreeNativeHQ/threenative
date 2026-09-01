@@ -61,11 +61,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      # ccache wrote to the workspace while actions/cache saved ${{ runner.temp }}/ccache, a
-      # directory that never existed. The save skipped every time, `gh cache list` held no
-      # native-ccache entry after five runs, and every job recompiled from scratch while the
-      # workflow read as though it were cached. This path and the cache step's must stay equal.
-      CCACHE_DIR: ${{ runner.temp }}/ccache
+      # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
+      # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
+      # after five runs, and every job recompiled from scratch while the workflow read as though
+      # it were cached. This value and the cache step's `path` must stay the same path — and it
+      # has to be spelled with `github.workspace`, because job-level `env` cannot see the
+      # `runner` context at all: `${{ runner.temp }}` here is what GitHub rejects outright with
+      # "This run likely failed because of a workflow file issue" and zero jobs started.
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
@@ -92,7 +95,7 @@ jobs:
       - name: Restore native compiler cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/ccache
+          path: ${{ github.workspace }}/.cache/ccache
           key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6

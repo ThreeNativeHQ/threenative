@@ -311,6 +311,20 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  it("job-level env never reads the runner context", async () => {
+    // `jobs.<id>.env` cannot see the `runner` context. GitHub does not warn: it refuses the whole
+    // workflow with "This run likely failed because of a workflow file issue" and starts zero
+    // jobs, so a red here looks like an outage rather than a typo. Step-level env is indented
+    // deeper and is allowed to use it.
+    for (const workflow of workflows) {
+      const source = await readFile(path.join(repo, workflow), "utf8");
+      const offenders = source
+        .split("\n")
+        .filter((line) => /^ {6}[A-Za-z_][A-Za-z0-9_]*: .*\$\{\{\s*runner\./u.test(line));
+      expect(offenders, workflow).toEqual([]);
+    }
+  });
+
   it("golden-path still exercises both templates through the verifier", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const goldenPath = requiredJob(ci, "golden-path");
