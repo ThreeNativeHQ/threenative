@@ -126,13 +126,28 @@ describe("PhysicalPagePool", () => {
 describe("DirectionalClipmap", () => {
   it("rejects malformed construction", () => {
     expect(
-      () => new DirectionalClipmap({ direction: { x: 0, y: 0, z: 0 }, clipExtents: [1], pagesPerAxis: 2 }),
+      () =>
+        new DirectionalClipmap({
+          direction: { x: 0, y: 0, z: 0 },
+          clipExtents: [1],
+          pagesPerAxis: 2,
+        }),
     ).toThrow(/non-zero/u);
     expect(
-      () => new DirectionalClipmap({ direction: { x: 0, y: 1, z: 0 }, clipExtents: [], pagesPerAxis: 2 }),
+      () =>
+        new DirectionalClipmap({
+          direction: { x: 0, y: 1, z: 0 },
+          clipExtents: [],
+          pagesPerAxis: 2,
+        }),
     ).toThrow(/clipExtents/u);
     expect(
-      () => new DirectionalClipmap({ direction: { x: 0, y: 1, z: 0 }, clipExtents: [4, 2], pagesPerAxis: 2 }),
+      () =>
+        new DirectionalClipmap({
+          direction: { x: 0, y: 1, z: 0 },
+          clipExtents: [4, 2],
+          pagesPerAxis: 2,
+        }),
     ).toThrow(/increase/u);
     expect(
       () =>
