@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 16259)
+Total output lines: 1391
+
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
@@ -583,27 +586,7 @@ describe("create-threenative", () => {
         const contents = await Promise.all(
           AGENT_ROLE_PATHS.map(async (relativePath) => {
             const content = await readFile(path.join(result.target, relativePath), "utf8");
-            expect(content, relativePath).not.toContain("__PROJECT_NAME__");
-            expect(content, relativePath).not.toContain("__PROJECT_ID__");
-            return [relativePath, content] as const;
-          }),
-        );
-        const files = new Map(contents);
-        const builder = files.get(".threenative/agents/builder.md") ?? "";
-        const verifier = files.get(".threenative/agents/verifier.md") ?? "";
-        expect(builder).toContain("one bounded player-visible outcome");
-        expect(builder).toContain("engine-owned or game-owned");
-        expect(builder).toContain("production readiness");
-        expect(verifier.toLowerCase()).toContain("read-only");
-        expect(verifier).toContain("must not edit");
-        expect(new Set(verifier.match(/`(?:PASS|REQUEST_CHANGES|NOT_OBSERVED)`/gu))).toEqual(
-          new Set(["`PASS`", "`REQUEST_CHANGES`", "`NOT_OBSERVED`"]),
-        );
-
-        const adapterPaths = [
-          [".claude/agents/threenative-builder.md", ".claude/agents/threenative-verifier.md"],
-          [
-            ".agents/skills/threenative-builder/SKILL.md",
+            expect(content, relativePath).not.toCon…259 tokens truncated…tive-builder/SKILL.md",
             ".agents/skills/threenative-verifier/SKILL.md",
           ],
         ] as const;
@@ -1393,3 +1376,4 @@ describe("create-threenative", () => {
     }
   });
 });
+
