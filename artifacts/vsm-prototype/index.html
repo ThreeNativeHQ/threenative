@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ThreeNative Virtual Shadow Maps</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main id="app">
+    <section class="view-panel stock" id="stock-panel">
+      <canvas id="stock-canvas"></canvas>
+      <div class="view-label">
+        <span class="eyebrow">THREE.JS BASELINE</span>
+        <strong>Single 1024² shadow map</strong>
+        <small>Fixed orthographic coverage</small>
+      </div>
+    </section>
+    <section class="view-panel virtual" id="virtual-panel">
+      <canvas id="virtual-canvas"></canvas>
+      <div class="view-label">
+        <span class="eyebrow accent">THREENATIVE</span>
+        <strong>Virtual Shadow Maps</strong>
+        <small>128² pages · clipmaps · bounded cache</small>
+      </div>
+    </section>
+  </main>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">TN</div>
+      <div>
+        <span>ThreeNative Rendering Lab</span>
+        <strong>Virtual Shadow Maps</strong>
+      </div>
+    </div>
+    <div class="mode-pill" data-mode-label>SIDE-BY-SIDE PROOF</div>
+  </header>
+
+  <aside id="diagnostics" class="diagnostics">
+    <div class="diagnostics-heading">
+      <div>
+        <span class="eyebrow accent">LIVE PAGE CACHE</span>
+        <strong>Physical atlas residency</strong>
+      </div>
+      <span class="ready-dot"></span>
+    </div>
+    <canvas data-residency-map class="residency-map"></canvas>
+    <div class="stats-grid">
+      <span>Requested<b data-stat="requested">0</b></span>
+      <span>Resident<b data-stat="resident">0</b></span>
+      <span>Rendered<b data-stat="rendered">0</b></span>
+      <span>Cache hits<b data-stat="cached">0</b></span>
+      <span>Reuse<b data-stat="reuseRatio">0%</b></span>
+      <span>Dirty<b data-stat="dirtyResident">0</b></span>
+      <span>Invalidated<b data-stat="invalidated">0</b></span>
+      <span>Evicted<b data-stat="evicted">0</b></span>
+      <span>Overflow<b data-stat="overflow">0</b></span>
+      <span class="hidden-stat">Capacity<b data-stat="physicalCapacity">0</b></span>
+    </div>
+    <p>White outlines are pinned coarse fallback pages. Yellow outlines were rendered this frame.</p>
+  </aside>
+
+  <div class="bottom-note">Drag either view to orbit · virtual page origins remain snapped in light space</div>
+
+  <script type="module">
+    import * as THREE from './vendor/three.module.js';
+    import { boot } from './src/demo/boot.js';
+
+    boot(THREE, window.__TN_VSM_CONFIG__ || {}).catch((error) => {
+      window.__TN_VSM_ERROR__ = String(error.stack || error);
+      document.body.dataset.error = 'true';
+      console.error(error);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+{
+  "mode": "debug",
+  "debug": {
+    "feature": "ThreeNative Virtual Shadow Maps",
+    "implementation": "virtual pages + bounded physical atlas + page table + clipmap fallback",
+    "honestScope": "WebGL2 CPU receiver-demand vertical slice; GPU depth/compute demand is deferred",
+    "mode": "debug",
+    "threeRevision": "160",
+    "frame": 24,
+    "stats": {
+      "frame": 24,
+      "requested": 164,
+      "resident": 164,
+      "rendered": 0,
+      "cached": 164,
+      "invalidated": 0,
+      "evicted": 0,
+      "overflow": 0,
+      "reuseRatio": 1,
+      "dirtyResident": 0,
+      "pageSize": 128,
+      "atlasPagesPerAxis": 13,
+      "atlasTextureSize": 1664,
+      "virtualPagesPerAxis": 8,
+      "clipLevels": 4,
+      "virtualAddressPages": 256,
+      "physicalCapacity": 169,
+      "cumulative": {
+        "rendered": 164,
+        "cached": 3516,
+        "invalidated": 0,
+        "evicted": 0,
+        "overflow": 0
+      }
+    },
+    "cumulative": {
+      "rendered": 164,
+      "cached": 3516,
+      "invalidated": 0,
+      "evicted": 0,
+      "overflow": 0
+    },
+    "residentByLevel": [
+      18,
+      45,
+      37,
+      64
+    ],
+    "pageTableValidEntries": 164,
+    "atlas": {
+      "pageSize": 128,
+      "pagesPerAxis": 13,
+      "textureSize": 1664,
+      "physicalCapacity": 169,
+      "virtualAddressPages": 256
+    },
+    "clipExtents": [
+      20,
+      46,
+      98,
+      198
+    ],
+    "invalidationProof": {
+      "moved": false,
+      "invalidatedPages": 0,
+      "renderedAfterMove": 0,
+      "moveDistance": 0
+    },
+    "conventionalComparison": null,
+    "assertions": {
+      "boundedPhysicalPool": true,
+      "validPageTable": true,
+      "renderedVirtualPages": true,
+      "cacheReuseObserved": true,
+      "noOverflow": true
+    }
+  },
+  "errors": []
+}
