@@ -661,7 +661,7 @@ jobs:
             scenario=$1
             artifacts=$2
             node packages/playtest/dist/runner/cli.js "$scenario" \
-              --target ios --app "$app" --bundle-id dev.threenative.runtime \
+              --target ios --app "$app" --bundle-id "$bundle_id" \
               --artifacts "$artifacts"
           }
           expect_ios_failure() {
@@ -679,6 +679,9 @@ jobs:
 
           THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=normal \
             pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios
+          report="$app.json"
+          bundle_id=$(node -e 'const report = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof report.appId !== "string" || report.appId.length === 0) throw new Error("TN_IOS_CONSUMER_BUNDLE_ID_MISSING"); process.stdout.write(report.appId);' "$report")
+          echo "TN_IOS_CONSUMER_BUNDLE_ID:$bundle_id"
           test -d "$app"
           run_ios examples/native-smoke/playtests/physics.playtest.json \
             packages/runtime-native/artifacts/ios/consumer-physics-pass

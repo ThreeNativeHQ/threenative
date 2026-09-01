@@ -77,6 +77,13 @@ test('iOS lane executes simulator proof and negative-control tests on an Apple r
   }
 });
 
+test('iOS consumer launches the bundle identifier produced by its packager', () => {
+  expect(workflow).toContain('bundle_id=$(node -e');
+  expect(workflow).toContain('report="$app.json"');
+  expect(workflow).toContain('--bundle-id "$bundle_id"');
+  expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
+});
+
 test('Android release lane installs both Rust cross-compilation targets before Gradle', () => {
   const rustTargets = 'rustup target add aarch64-linux-android x86_64-linux-android';
   expect(releaseWorkflow).toContain(rustTargets);
