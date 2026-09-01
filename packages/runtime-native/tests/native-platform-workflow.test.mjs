@@ -90,7 +90,12 @@ test('iOS workflow dispatch can run without unrelated platform cancellation', ()
 });
 
 test('iOS consumer proof is a required gate after the simulator proof passes', () => {
-  expect(workflow).not.toContain('continue-on-error: true');
+  // Fail-closed since the simulator's worker proof passed in isolated run 33498394620. The one
+  // deliberate continue-on-error in this workflow is the android emulator parity leg — advisory
+  // until PRD-295, pinned by scripts/__tests__/ci-structure.spec.ts — and this assertion keeps
+  // the iOS lane from drifting back into that shape while its proof holds.
+  const iosJob = workflow.slice(workflow.indexOf('  ios-simulator:'));
+  expect(iosJob).not.toContain('continue-on-error: true');
   expect(workflow).not.toContain('worker proof is unresolved');
 });
 
