@@ -243,13 +243,39 @@ jobs:
       TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}
     steps:
       - uses: actions/checkout@v7
+      # Skip the whole lane when this exact tree has already proved it. The key hashes everything
+      # the lane consumes — every package source and manifest, every template, the scripts that
+      # pack and verify, the lockfile, and the workflow itself — so a hit means the inputs are
+      # byte-identical to a run that passed, on any branch. A PR that only touches docs or PRDs
+      # skips ~12 minutes; a rebase that changes nothing here reuses the proof rather than
+      # re-earning it; anything that could change the answer misses and runs in full.
+      #
+      # Deliberately broad rather than clever. A key that names only the "related" files is one
+      # forgotten input away from a gate that passes because nothing ran, and this repository has
+      # already been bitten by exactly that reasoning: the path filters on native-platforms let
+      # core, playtest and create-threenative changes through unproven. Extra misses cost minutes.
+      # A false pass costs a broken release.
+      - name: Restore the proof that this tree already passed
+        id: proof
+        uses: actions/cache/restore@v4
+        with:
+          path: .golden-path-proof
+          key: golden-path-proof-${{ matrix.template }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**', 'scripts/**', '.github/**') }}
+      - if: steps.proof.outputs.cache-hit == 'true'
+        run: |
+          echo "golden-path ${{ matrix.template }}: reusing the proof recorded for this tree"
+          cat .golden-path-proof/commit
       - uses: pnpm/action-setup@v6
+        if: steps.proof.outputs.cache-hit != 'true'
       - uses: actions/setup-node@v7
+        if: steps.proof.outputs.cache-hit != 'true'
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.proof.outputs.cache-hit != 'true'
       - name: Pack local framework packages
+        if: steps.proof.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/threenative-packages"
           pnpm tsx scripts/workspace-packages.ts build
@@ -259,6 +285,7 @@ jobs:
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Scaffold the golden-path template from local tarballs
+        if: steps.proof.outputs.cache-hit != 'true'
         uses: ./.github/actions/scaffold-from-tarballs
         with:
           archives-directory: ${{ runner.temp }}/threenative-packages
@@ -266,7 +293,9 @@ jobs:
           target: ${{ runner.temp }}/threenative-${{ matrix.template }}
           template: ${{ matrix.template }}
       - uses: ./.github/actions/playwright-chromium
+        if: steps.proof.outputs.cache-hit != 'true'
       - name: Run the scaffold's GPU-free assertions
+        if: steps.proof.outputs.cache-hit != 'true'
         run: |
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
@@ -286,7 +315,7 @@ jobs:
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
       - name: Drive the starter's interactive HUD smoke
-        if: matrix.template == 'starter'
+        if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
         run: |
           target="$RUNNER_TEMP/threenative-starter"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
@@ -322,6 +351,21 @@ jobs:
           await browser.close();
           NODE
       - run: pnpm verify:golden-path
+        if: steps.proof.outputs.cache-hit != 'true'
+      - name: Record the proof for this tree
+        if: success() && steps.proof.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .golden-path-proof
+          echo "$GITHUB_SHA" > .golden-path-proof/commit
+      # cache/save rather than the combined action on purpose: the combined action's post step
+      # writes the entry whatever the job did, which would record a proof for a run that failed.
+      # `if: success()` is the whole safety property here.
+      - name: Save the proof for this tree
+        if: success() && steps.proof.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .golden-path-proof
+          key: golden-path-proof-${{ matrix.template }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**', 'scripts/**', '.github/**') }}
       - if: failure()
         uses: ./.github/actions/cancel-run-on-failure
 

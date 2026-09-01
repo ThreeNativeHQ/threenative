@@ -359,6 +359,37 @@ describe("CI pipeline structure", () => {
     expect(goldenPath).toContain("pnpm verify:golden-path");
   });
 
+  it("the golden-path proof cache cannot record a run that failed", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "golden-path-template");
+
+    // The combined `actions/cache` writes its entry in a post step whatever the job did, which
+    // would stamp a passing proof onto a failed run and then skip the lane for every later tree
+    // that hashes the same. Split restore/save with `if: success()` is the whole safety property.
+    expect(job).toContain("actions/cache/restore@v4");
+    expect(job).toContain("actions/cache/save@v4");
+    expect(job).not.toMatch(/uses: actions\/cache@v4/u);
+    const save = job.slice(job.indexOf("Save the proof for this tree"));
+    expect(save).toContain("if: success() && steps.proof.outputs.cache-hit != 'true'");
+
+    // A key that names only the "related" inputs is one forgotten file away from a gate that
+    // passes because nothing ran — which is how the native-platforms path filters let core,
+    // playtest and create-threenative changes through unproven. Keep it broad.
+    for (const input of ["pnpm-lock.yaml", "packages/**", "scripts/**", ".github/**"]) {
+      expect(job, input).toContain(input);
+    }
+
+    // Every step that does work must be behind the hit check. One that is not runs against a
+    // scaffold the cache hit never created.
+    const steps = job.split(/^ {6}- /mu).slice(1);
+    const unguarded = steps.filter(
+      (step) =>
+        /(?:pnpm |threenative-playtest|scaffold-from-tarballs|playwright)/u.test(step) &&
+        !step.includes("steps.proof.outputs.cache-hit"),
+    );
+    expect(unguarded, "steps that would run without a scaffold on a cache hit").toEqual([]);
+  });
+
   it("the golden-path required context is still reported by a job of that exact name", async () => {
     // `golden-path` is a required check in the `main protection` ruleset, and required checks are
     // matched by exact context string. A matrix job reports `golden-path (starter)` and
