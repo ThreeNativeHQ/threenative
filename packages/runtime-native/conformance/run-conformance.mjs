@@ -56,6 +56,14 @@ const workspaceRoot = resolve(runtimeRoot, "..", "..");
 const runnerPath = fileURLToPath(import.meta.url);
 const NATIVE_TEMPORAL_LABELS = Object.freeze(["frame-zero", "settled", "next"]);
 
+export function temporalCaptureLabel(test) {
+  const label = test?.temporal?.capture ?? "next";
+  if (!NATIVE_TEMPORAL_LABELS.includes(label)) {
+    throw new Error(`Unknown temporal capture label: ${label}`);
+  }
+  return label;
+}
+
 /**
  * The environment a parity run reads. Values are hashed, never recorded, so a report can say
  * that two runs saw a different `ANDROID_SDK_ROOT` without publishing anyone's home directory.
@@ -227,6 +235,12 @@ export function validateRegistry(registry) {
       if (!Number.isFinite(value) || value < 0) {
         errors.push(`${label}: tolerance.${metric} must be a non-negative finite number`);
       }
+    }
+    if (
+      entry?.temporal !== undefined
+      && !NATIVE_TEMPORAL_LABELS.includes(entry.temporal?.capture ?? "next")
+    ) {
+      errors.push(`${label}: temporal.capture must be frame-zero, settled, or next`);
     }
   }
   if (!Array.isArray(registry.exclusions) || registry.exclusions.length === 0) {
@@ -825,7 +839,14 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       return;
     }
     try {
-      const inspection = inspectCapture(readFileSync(outcome.screenshot));
+      const comparisonScreenshot = test.temporal === undefined
+        ? outcome.screenshot
+        : join(captureRoot, `${test.id}-${temporalCaptureLabel(test)}.png`);
+      if (!comparisonScreenshot || !existsSync(comparisonScreenshot)) {
+        throw new Error(`TN_CONFORMANCE_TEMPORAL_CAPTURE_MISSING:${test.id}`);
+      }
+      const inspection = inspectCapture(readFileSync(comparisonScreenshot));
+      result.browser.screenshot = comparisonScreenshot;
       result.browser.uniform = inspection.uniform;
       result.browser.width = inspection.width;
       result.browser.height = inspection.height;
@@ -956,10 +977,9 @@ function validateNativeTemporalCaptures(test, captures) {
     NATIVE_TEMPORAL_LABELS.map((label) => {
       const path = captures[label];
       if (!existsSync(path)) throw new Error(`TN_CONFORMANCE_TEMPORAL_CAPTURE_MISSING:${test.id}:${label}`);
-      const inspection = inspectCapture(readFileSync(path));
-      if (inspection.uniform !== false) {
-        throw new Error(`TN_CONFORMANCE_TEMPORAL_CAPTURE_BLANK:${test.id}:${label}`);
-      }
+      const inspection = inspectCapture(readFileSync(path), {
+        allowUniform: label !== temporalCaptureLabel(test),
+      });
       return [label, inspection];
     }),
   );
@@ -1052,11 +1072,12 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
         staging || runtimeRoot,
       );
       result.gpuValidationErrors.push(...temporal.gpuValidationErrors);
-      const finalInspection = temporal.inspections.next;
+      const finalLabel = temporalCaptureLabel(test);
+      const finalInspection = temporal.inspections[finalLabel];
       result.native = {
         completed: temporal.gpuValidationErrors.length === 0,
         exitCode: null,
-        screenshot: temporal.captures.next,
+        screenshot: temporal.captures[finalLabel],
         stdout: temporal.stdout.slice(-4000),
         stderr: temporal.stderr.slice(-4000),
         uniform: finalInspection.uniform,
@@ -1548,6 +1569,7 @@ async function runAndroid(
     runCommand(tools.adb, androidArgs(serial, ...args), { timeout: 120_000 });
   const temporalCaptures =
     test.temporal === undefined ? null : nativeTemporalCapturePaths(test, captureRoot);
+  const temporalFinalLabel = test.temporal === undefined ? null : temporalCaptureLabel(test);
   const androidMailboxRoot = `/sdcard/Android/data/${APP_ID}/files`;
   const temporalRemoteCaptures =
     temporalCaptures === null
@@ -1681,7 +1703,7 @@ async function runAndroid(
         await waitForAndroidRemoteFile(tools.adb, serial, remotePath, temporalTimeoutMs);
         const png = readAndroidRemoteBinary(tools.adb, serial, remotePath);
         inspectScreenshot(png);
-        const capture = inspectCapture(png);
+        const capture = inspectCapture(png, { allowUniform: label !== temporalFinalLabel });
         if (`${capture.width}x${capture.height}` !== ANDROID_CAPTURE_SIZE) {
           throw new Error(
             `TN_ANDROID_DISPLAY_ORIENTATION: captured ${capture.width}x${capture.height} but the lane requires ${ANDROID_CAPTURE_SIZE}; the display was still rotating.`,
@@ -1733,10 +1755,10 @@ async function runAndroid(
       if (beforeCaptureBlocker) throw new Error(beforeCaptureBlocker);
       const afterCaptureBlocker = androidForegroundBlocker(androidWindowDump(common));
       if (afterCaptureBlocker) throw new Error(afterCaptureBlocker);
-      const finalCapture = temporal.inspections.next;
+      const finalCapture = temporal.inspections[temporalFinalLabel];
       result.native = {
         completed: true,
-        screenshot: temporalCaptures.next,
+        screenshot: temporalCaptures[temporalFinalLabel],
         uniform: finalCapture.uniform,
         width: finalCapture.width,
         height: finalCapture.height,
@@ -2140,8 +2162,9 @@ export function referenceRootPath(referenceArg) {
   return isAbsolute(referenceArg) ? referenceArg : resolve(runtimeRoot, referenceArg);
 }
 
-function referencePath(referenceArg, id) {
-  return join(referenceRootPath(referenceArg), `${id}.png`);
+function referencePath(referenceArg, id, test) {
+  const suffix = test?.temporal === undefined ? "" : `-${temporalCaptureLabel(test)}`;
+  return join(referenceRootPath(referenceArg), `${id}${suffix}.png`);
 }
 
 function applyReferenceAndMetrics(test, result, reference) {
@@ -2212,7 +2235,13 @@ export function unexpectedBlockedRows(report, registry) {
     }
     if (test.status !== "implemented") continue;
     const reason = String(result.blockedReason ?? "");
-    if (test.requiresHardwareAdapter === true && /hardware GPU adapter/u.test(reason)) continue;
+    // A hardware row has no browser reference when the browser lane correctly refuses the
+    // software adapter. Keep that environment block distinct from a missing reference on an
+    // ordinary row, which remains an unexpected lane defect.
+    if (
+      test.requiresHardwareAdapter === true
+      && (/hardware GPU adapter/u.test(reason) || /^Missing browser reference capture:/u.test(reason))
+    ) continue;
     unexpected.push({ id: result.id, reason: reason || "blocked without a reason" });
   }
   return unexpected;
@@ -2446,7 +2475,7 @@ async function main(argv = process.argv.slice(2)) {
           applyReferenceAndMetrics(
             test,
             result,
-            referencePath(valueAfter(argv, "--reference"), test.id),
+            referencePath(valueAfter(argv, "--reference"), test.id, test),
           );
         } else if (!dryRun && bundled && ["android", "android-hardware"].includes(target)) {
           await runAndroid(
@@ -2461,7 +2490,7 @@ async function main(argv = process.argv.slice(2)) {
           applyReferenceAndMetrics(
             test,
             result,
-            referencePath(valueAfter(argv, "--reference"), test.id),
+            referencePath(valueAfter(argv, "--reference"), test.id, test),
           );
         } else if (!dryRun && bundled && target === "ios") {
           runIos(test, result);
