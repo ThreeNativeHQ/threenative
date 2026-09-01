@@ -4,8 +4,28 @@ prd_contract: v1
 
 # PRD-306 — Delete every baked file and the game still runs: the delete-test becomes a gate
 
-**Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only. Every file:line is a read of
-this tree on that date.
+**Status:** PARTIAL, filed 2026-08-31 against `2e014460`, built 2026-08-31. Evidence:
+[`bake-delete-test-2026-08-31`](../../verification/bake-delete-test-2026-08-31.md).
+
+**The gate exists and it is red.** Both phases landed — `compileAssets` writes
+`bake.receipt.json`, and `pnpm bake:delete-test` builds a template, deletes every file the receipt
+names plus the manifest and the receipt, and runs the same scenario again. What it found is that
+**no template survives losing its bake**: the loader's documented no-manifest fallback resolves
+`<basePath>/<logical path>`, which in a compiled project points at nothing, because the sources
+live in `assets/` and the outputs are content-addressed in `public/`.
+
+The gate is therefore **not wired into CI** — a required step that is red blocks every pull
+request, and an advisory one is a gate nobody runs. It goes into the golden-path job in the commit
+that makes it pass. **This stop-gates [PRD-307](PRD-307-reflections-are-prefiltered-before-the-game-ships.md):**
+the direction document's fifth falsifier says a baking pass that cannot pass the delete-test is an
+IR and does not ship, and a second baking pass must not land while the first one's game cannot boot
+without it.
+
+One thing to read before trusting any future run of this gate: **its first end-to-end run reported a
+false green**, because `assetsWatchPlugin()` in every template's `vite.config.ts` re-bakes on
+`pnpm dev` startup and restored every deleted file before the page loaded. The gate now switches
+that plugin off and refuses to run if it cannot find it. The full account is in the verification
+file.
 
 **Outcome:** `pnpm bake:delete-test` builds a template, deletes every artifact the asset compile
 step produced, runs the same playtest scenario against the same source, and **fails when the game
