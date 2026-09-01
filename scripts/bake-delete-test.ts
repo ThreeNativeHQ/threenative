@@ -450,6 +450,10 @@ if (
       } catch (error) {
         console.error(`${template}: ${error instanceof Error ? error.message : String(error)}`);
         failed += 1;
+      } finally {
+        // The gate owns the scaffold it created; the diagnosis it prints — which file the game
+        // asked for and did not find — is what a reader needs, not the tree it was in.
+        if (existing === undefined) await rm(root, { force: true, recursive: true });
       }
     }
     process.exitCode = failed === 0 ? 0 : 1;

@@ -44,6 +44,10 @@ const allowedProductionCreators = new Map<string, string>([
   ],
   ["scripts/visual-gate.ts", "The production visual gate removes its root in finally."],
   [
+    "scripts/bake-delete-test.ts",
+    "The delete-test gate removes the scaffold it created in finally.",
+  ],
+  [
     "scripts/realism-effects-visual.ts",
     "The production realism-effects visual gate removes its bundle root in finally.",
   ],
