@@ -388,7 +388,10 @@ const captureTemplate: CaptureTemplate = async (
       page.on("pageerror", (error) => pageErrors.push(error.message));
       await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
       await page.waitForSelector("canvas", { timeout: 30_000 });
-      await page.waitForTimeout(2_000);
+      if ((await page.locator('[data-threenative-canvas="true"]').count()) > 0)
+        await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 30_000 });
+      else await page.waitForTimeout(2_000);
+      await page.waitForTimeout(250);
       if (pageErrors.length > 0) throw new Error(`TN_VISUAL_PAGE_ERROR: ${pageErrors.join(" | ")}`);
       const content = await page.screenshot({ type: "png" });
       const stats = assertFrameShowsSomething(content, template);

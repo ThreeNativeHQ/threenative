@@ -175,15 +175,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  // Recomputed 2026-08-31 for the shared engine-bug-report instruction and the file-engine-bug
-  // skill: every scaffold now carries the upstream bug-filing rule and both host skill copies.
-  "action-rpg": "abdf054487932b12d6b5fb40eee76439fe8011c194c66f95a40a53f90f17ee16",
-  defense: "167df14e2ae84e4fcf5941b7a41689c9b9edf3a82d7666fb39cec1d5671c43d4",
-  minimal: "ec1ecc081821b7da71c7dcf8e6f6dce99312263ad3159e3758fa17a21058a467",
-  platformer: "3b7140d1196f01a44560290ea72625122e564b412334001496e1ed92f2411fa4",
-  racing: "eb113850fa3e2af083384cde185aff4299fdb2f1d8db77590a2e4c51926d4522",
-  shooter: "4c21ad31d806c176ec47a48a1f7270514d7708538738edf9963c2515ddfddf04",
-  starter: "a2d11db0d8ea1231cd4dea73d4bd10cc88cdc56f80fd674f82810f1eeec32274",
+  // Recomputed 2026-08-31 after squashing PRD-289 onto local main 6b91f42f: current main's
+  // scaffold assets and the convention-enabled generated trees are measured together.
+  "action-rpg": "1bcbd2670c2da6ffc7c64f4a35276843f497e078edb6c0023e84fe360ea56bd1",
+  defense: "2b4b1be469d7955a9f7f3625c0b713bbb8707742c769eefc4fa15bb728277df0",
+  minimal: "492cae19ece93a1b24325d6c7a8fffedbb0c1d8f7b38366fe3bde635151cd775",
+  platformer: "655fff7f5fb24f9d27195e12bed9ea195056e12cd6cc6d092480c2bd4c66d446",
+  racing: "ac220f50eb6a5072ff2b29c1539ad7fb222fcd7147edce0cb1f5dbc86e5e9c5e",
+  shooter: "f1a10ced2ad215a0ffe6ec6b6d9045cd159122de5eae710ced1d83bff3f9da61",
+  starter: "9211de42bd0a64b9b88599efd9da8f63c948cfdc87aa0e85c68f94b05f47d8fd",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -194,7 +194,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "7349e8b8bd02b89dba1c22e346b3221d44f205ea8ab7834e747897a36914d0aa",
+  sailing: "e96473617865a6a04a9e64fe1060623d74470a7b53ba302bf1002e051ced06da",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
@@ -665,7 +665,7 @@ describe("create-threenative", () => {
       ).resolves.toContain("debug()");
       await expect(
         readFile(path.join(result.target, "src/scenes/Play.ts"), "utf8"),
-      ).resolves.toContain('ctx.entities.add("player"');
+      ).resolves.toMatch(/ctx\.entities\.add\(\s*"player"/u);
       const renderFiles = await Promise.all(
         ["lighting.ts", "postprocessing.ts", "materials.ts"].map((file) =>
           readFile(path.join(result.target, "src/render", file), "utf8"),

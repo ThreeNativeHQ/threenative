@@ -6,11 +6,38 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "press": "Space", "holdTicks": 4, "release": true },
-    { "kind": "wait", "waitTicks": 100, "release": true }
+    { "kind": "input", "label": "jump", "press": "Space", "holdTicks": 4, "release": true },
+    { "kind": "wait", "label": "airborne-visual", "waitTicks": 8, "release": true },
+    { "kind": "wait", "label": "elevated-landing", "waitTicks": 100, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "components": [
+      {
+        "entity": "player",
+        "component": "groundCorrectionEnabled",
+        "atSteps": [
+          { "label": "airborne-visual", "equals": false },
+          { "label": "elevated-landing", "equals": true }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "groundSurfaceY",
+        "gte": 2.55,
+        "lte": 2.65,
+        "changed": true,
+        "atSteps": [{ "label": "elevated-landing", "equals": 2.6 }]
+      },
+      {
+        "entity": "player",
+        "component": "visualAttached",
+        "atSteps": [
+          { "label": "airborne-visual", "equals": true },
+          { "label": "elevated-landing", "equals": true }
+        ]
+      }
+    ],
     "movement": { "entity": "player", "minAxisDelta": { "axis": "+y", "min": 1.5 } },
     "resources": [{ "id": "state", "path": "peakRise", "gte": 1.5, "changed": true }]
   }

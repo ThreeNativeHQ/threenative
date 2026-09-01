@@ -1,6 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, Vector3 } from "three";
+import { prepareVehicleConventions } from "../conventions.js";
 import { Boost } from "../kart/boost.js";
 import { createMaterials } from "../render/materials.js";
 import { vehicle } from "../render/shapes.js";
@@ -26,12 +27,15 @@ export class RacingCar {
   readonly boost = new Boost();
   #speed = 0;
   #heading = 0;
+  #normaliseFactor: number;
   #topSpeed = 0;
 
   constructor(ctx: GameCtx, spawn: Vector3) {
     this.mesh.position.copy(spawn);
     this.mesh.castShadow = true;
-    this.mesh.add(vehicle(createMaterials()));
+    const visual = vehicle(createMaterials());
+    this.#normaliseFactor = prepareVehicleConventions(visual);
+    this.mesh.add(visual);
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.25, minWidth: 0.2 },
@@ -95,6 +99,7 @@ export class RacingCar {
     return {
       boostActive: this.boost.active,
       heading: this.#heading,
+      normaliseFactor: this.#normaliseFactor,
       position: this.mesh.position.toArray(),
       speed: this.speed,
       topSpeed: this.#topSpeed,

@@ -14,6 +14,20 @@
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "components": [
+      {
+        "allowTrivial": "GroundSnap settles the commander before this long simulation; the finite near-zero clearance is the generated call-site proof.",
+        "component": "groundClearance",
+        "entity": "player",
+        "lte": 0.01
+      },
+      {
+        "allowTrivial": "The commander mesh has an authored non-unit height; this retained factor proves normaliseToMetres ran in the generated player.",
+        "component": "normaliseFactor",
+        "entity": "player",
+        "gte": 1.01
+      }
+    ],
     "resources": [
       { "id": "state", "path": "status", "equals": "WON", "changed": true },
       { "id": "state", "path": "wave", "equals": 10, "changed": true },

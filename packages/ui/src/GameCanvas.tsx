@@ -18,6 +18,12 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
 
   useEffect(() => {
     let cancelled = false;
+    const publishStartupPhase = (): void => {
+      const phase = game.ctx?.startup.phase;
+      if (!cancelled && phase !== undefined && host.current !== null)
+        host.current.dataset.threenativeStartup = phase;
+    };
+    const startupTimer = globalThis.setInterval(publishStartupPhase, 100);
     setFailure(undefined);
     void game
       .start()
@@ -34,6 +40,7 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
           canvas.style.touchAction = "none";
           host.current.replaceChildren(canvas);
         }
+        publishStartupPhase();
       })
       .catch((error: unknown) => {
         // A rejected start must be visible, not an unhandled promise rejection that
@@ -45,6 +52,7 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
 
     return () => {
       cancelled = true;
+      globalThis.clearInterval(startupTimer);
       game.stop();
     };
   }, [game]);
@@ -54,6 +62,7 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
       ref={host}
       className={className}
       data-threenative-canvas="true"
+      data-threenative-startup="starting"
       style={{ height: "100%", width: "100%" }}
     >
       {failure === undefined ? null : (

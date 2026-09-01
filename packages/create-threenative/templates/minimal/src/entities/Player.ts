@@ -1,6 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { BoxGeometry, Mesh } from "three";
+import { BoxGeometry, Group, Mesh } from "three";
+import { type IMinimalConventions, preparePlayerConventions } from "../conventions.js";
 import { defaultMaterial } from "../render/materials.js";
 import type { GameState } from "../state.js";
 
@@ -13,16 +14,22 @@ const MOVE_SPEED = 2;
 const SPAWN = { x: -2, y: 0.5, z: 0 } as const;
 
 export class Player {
-  readonly mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6), defaultMaterial);
+  readonly mesh: Group;
+  readonly visual: Mesh;
   readonly body: CharacterBody3D;
+  #conventions: IMinimalConventions;
   #coyoteTime = 0;
   #jumpBuffer = 0;
   #jumps = 0;
   #coyoteJumps = 0;
 
   constructor(ctx: GameCtx) {
+    this.mesh = new Group();
+    this.visual = new Mesh(new BoxGeometry(0.6, 1, 0.6), defaultMaterial);
+    this.visual.castShadow = true;
+    this.mesh.add(this.visual);
     this.mesh.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
-    this.mesh.castShadow = true;
+    this.#conventions = preparePlayerConventions(this.visual);
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
@@ -48,13 +55,17 @@ export class Player {
     this.body.velocity.x = move.x * MOVE_SPEED;
     this.body.velocity.z = -move.y * MOVE_SPEED;
     this.body.moveAndSlide(dt);
+    this.#conventions.applyGrounding(0, dt);
   }
 
   debug(): Record<string, unknown> {
     return {
       coyoteJumps: this.#coyoteJumps,
       grounded: this.body.grounded,
+      groundClearance: this.#conventions.groundSnap.clearance,
+      groundCorrectionEnabled: this.#conventions.groundSnap.enabled,
       jumps: this.#jumps,
+      normaliseFactor: this.#conventions.normaliseFactor,
       position: this.mesh.position.toArray(),
     };
   }

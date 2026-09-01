@@ -1,6 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { type Material, Mesh, Vector3 } from "three";
+import { Group, type Material, Mesh, Vector3 } from "three";
+import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
 import { roundedBox } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 
@@ -17,27 +18,38 @@ const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.14;
 const JUMP_SPEED = 5;
 const MOVE_SPEED = 2;
+const PLAYER_FOOT_OFFSET = 0.51;
+const VISUAL_ATTACHMENT_TOLERANCE = 0.1;
 const SPAWN = { x: -2, y: 0.5, z: 0 } as const;
 
 export class Player {
-  readonly mesh: Mesh;
+  readonly mesh: Group;
+  readonly visual: Mesh;
   readonly body: CharacterBody3D;
   #coyoteTime = 0;
   #jumpBuffer = 0;
   #jumps = 0;
   #coyoteJumps = 0;
   #odometer = 0;
+  #supportSurfaceY = 0;
   #previousPosition = new Vector3();
+  #bodyWorldPosition = new Vector3();
+  #visualWorldPosition = new Vector3();
+  #visualBodyOffsetY: number | undefined;
   #hasPreviousPosition = false;
+  #conventions: IStarterConventions;
 
   constructor(
     ctx: GameCtx,
     material: Material,
     spawn: { readonly x: number; readonly y: number; readonly z: number } = SPAWN,
   ) {
-    this.mesh = new Mesh(roundedBox(0.6, 1, 0.6), material);
+    this.mesh = new Group();
+    this.visual = new Mesh(roundedBox(0.6, 1, 0.6), material);
+    this.visual.castShadow = true;
+    this.mesh.add(this.visual);
     this.mesh.position.set(spawn.x, spawn.y, spawn.z);
-    this.mesh.castShadow = true;
+    this.#conventions = preparePlayerConventions(this.visual);
     ctx.add(this.mesh);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
@@ -47,7 +59,11 @@ export class Player {
     });
   }
 
-  update(ctx: GameCtx, dt: number): void {
+  update(
+    ctx: GameCtx,
+    dt: number,
+    supportSurfaceY?: (position: Pick<Vector3, "x" | "y" | "z">) => number | undefined,
+  ): void {
     if (this.#hasPreviousPosition) {
       this.#odometer += this.mesh.position.distanceTo(this.#previousPosition);
     }
@@ -70,6 +86,15 @@ export class Player {
     this.body.moveAndSlide(dt);
     this.#hasPreviousPosition = true;
     if (this.body.grounded) this.#coyoteTime = COYOTE_TIME;
+    const supportingSurfaceY = supportSurfaceY?.(this.mesh.position);
+    const canCorrectGrounding =
+      this.body.grounded && this.body.velocity.y <= 0 && supportingSurfaceY !== undefined;
+    // The resolver identifies the supporting collider; derive the contact plane from the
+    // grounded character so a changed platform height never pulls the visual from its body.
+    if (canCorrectGrounding) this.#supportSurfaceY = this.mesh.position.y - PLAYER_FOOT_OFFSET;
+    this.#conventions.groundSnap.enabled = canCorrectGrounding;
+    this.#conventions.applyGrounding(this.#supportSurfaceY, dt);
+    this.#captureVisualBodyOffset();
   }
 
   respawn(): void {
@@ -82,16 +107,29 @@ export class Player {
   debug(): {
     coyoteJumps: number;
     grounded: boolean;
+    groundClearance: number | null;
+    groundCorrectionEnabled: boolean;
+    groundSurfaceY: number;
     jumps: number;
+    normaliseFactor: number;
     odometer: number;
     position: number[];
+    visualAttached: boolean;
+    visualAttachmentDrift: number;
   } {
+    const visualAttachmentDrift = this.#visualAttachmentDrift();
     return {
       coyoteJumps: this.#coyoteJumps,
       grounded: this.body.grounded,
+      groundClearance: this.#conventions.groundSnap.clearance,
+      groundCorrectionEnabled: this.#conventions.groundSnap.enabled,
+      groundSurfaceY: this.#supportSurfaceY,
       jumps: this.#jumps,
+      normaliseFactor: this.#conventions.normaliseFactor,
       odometer: this.#odometer,
       position: this.mesh.position.toArray(),
+      visualAttached: visualAttachmentDrift <= VISUAL_ATTACHMENT_TOLERANCE,
+      visualAttachmentDrift,
     };
   }
 
@@ -114,5 +152,22 @@ export class Player {
   dispose(): void {
     this.body.dispose();
     this.mesh.removeFromParent();
+  }
+
+  #captureVisualBodyOffset(): void {
+    if (this.#visualBodyOffsetY !== undefined || !this.body.grounded || this.body.velocity.y > 0)
+      return;
+    this.mesh.getWorldPosition(this.#bodyWorldPosition);
+    this.visual.getWorldPosition(this.#visualWorldPosition);
+    this.#visualBodyOffsetY = this.#visualWorldPosition.y - this.#bodyWorldPosition.y;
+  }
+
+  #visualAttachmentDrift(): number {
+    if (this.#visualBodyOffsetY === undefined) return 0;
+    this.mesh.getWorldPosition(this.#bodyWorldPosition);
+    this.visual.getWorldPosition(this.#visualWorldPosition);
+    return Math.abs(
+      this.#visualWorldPosition.y - this.#bodyWorldPosition.y - this.#visualBodyOffsetY,
+    );
   }
 }
