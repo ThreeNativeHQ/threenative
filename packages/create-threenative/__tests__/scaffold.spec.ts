@@ -37,6 +37,13 @@ const AGENT_ROLE_PATHS = [
   "AGENT-ROLES.md",
 ] as const;
 
+// The engine-bug report skill ships through `agent-files` to every scaffold, in the two skill
+// directories hosts discover: Claude Code reads `.claude/skills`, Codex reads `.agents/skills`.
+const BUG_REPORT_SKILL_PATHS = [
+  ".claude/skills/file-engine-bug/SKILL.md",
+  ".agents/skills/file-engine-bug/SKILL.md",
+] as const;
+
 // Refreshed for the startup-readiness loading gate: each template's `src/render/loading.ts` was
 // reduced to the shared `startup.whenReady()` contract and every template's AGENTS.md carries
 // the readiness wording into the shipped scaffold.
@@ -168,13 +175,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "0c0f1b152fba3cd16ce936339a13fd5824095a4583e1af38ba3ceab0651ec396",
-  defense: "437939e91656d44c7fbc14312c3ceb2dc9334df8d83735d08addb4ac85db0217",
-  minimal: "02a4078a8fcc3db233340ac4c66e78bf86a7f54ed6c4fdb0d9a8a6c738a8a88c",
-  platformer: "35d620d7633f3a20293785ed0789019e96520e97008cac79e6d28a1a14478e9d",
-  racing: "e196de18dafdb0c0c0c09d86fb2db59d588a1f4d80feb869e607be9c39ed98cd",
-  shooter: "237c10bd369dd71e985cc5f2ca8af20c033f8241d2c69a8f35f8f5d6a254aeec",
-  starter: "457e182b6b1a00e0f8a96367b3a707e39cc18f3ea8f17ef81be4a526b0c355a3",
+  // Recomputed 2026-08-31 for the shared engine-bug-report instruction and the file-engine-bug
+  // skill: every scaffold now carries the upstream bug-filing rule and both host skill copies.
+  "action-rpg": "abdf054487932b12d6b5fb40eee76439fe8011c194c66f95a40a53f90f17ee16",
+  defense: "167df14e2ae84e4fcf5941b7a41689c9b9edf3a82d7666fb39cec1d5671c43d4",
+  minimal: "ec1ecc081821b7da71c7dcf8e6f6dce99312263ad3159e3758fa17a21058a467",
+  platformer: "3b7140d1196f01a44560290ea72625122e564b412334001496e1ed92f2411fa4",
+  racing: "eb113850fa3e2af083384cde185aff4299fdb2f1d8db77590a2e4c51926d4522",
+  shooter: "4c21ad31d806c176ec47a48a1f7270514d7708538738edf9963c2515ddfddf04",
+  starter: "a2d11db0d8ea1231cd4dea73d4bd10cc88cdc56f80fd674f82810f1eeec32274",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -185,7 +194,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "a7e6b702bd1236a8784d4a37715a7441dc384c8ef107217baea0a3f88a315dfd",
+  sailing: "7349e8b8bd02b89dba1c22e346b3221d44f205ea8ab7834e747897a36914d0aa",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
@@ -572,6 +581,22 @@ describe("create-threenative", () => {
         expect(guide).not.toContain(".codex/skills");
         expect(guide).toContain("threenative-builder");
         expect(guide).toContain("threenative-verifier");
+
+        const bugSkillBodies = await Promise.all(
+          BUG_REPORT_SKILL_PATHS.map(async (relativePath) => {
+            const content = await readFile(path.join(result.target, relativePath), "utf8");
+            expect(content, relativePath).not.toContain("__PROJECT_NAME__");
+            expect(content, relativePath).not.toContain("__PROJECT_ID__");
+            return content;
+          }),
+        );
+        for (const skill of bugSkillBodies) {
+          expect(skill).toContain("gh auth status");
+          expect(skill).toContain("gh issue create");
+          expect(skill).toContain("ThreeNativeHQ/threenative");
+        }
+        // Both host adapters ship one recipe; a drift between them ships two contracts.
+        expect(new Set(bugSkillBodies).size).toBe(1);
         const packageJson = JSON.parse(
           await readFile(path.join(result.target, "package.json"), "utf8"),
         ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };

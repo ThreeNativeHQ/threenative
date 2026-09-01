@@ -92,16 +92,24 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // Measured per template on 2026-08-28: action-rpg 2933, defense 3012, minimal 3849, platformer
   // 3389, racing 2979, shooter 3077, starter 4223 — every cap moves by exactly +82.
   // PRD-256 adds the shared 24-word static-lightmap setup, rollback, and platform warning.
-  defaultMaxWords: 3036,
+  //
+  // Re-measured 2026-08-31 against 81698466 (the PRD-278 cap bump) because the gate had gone
+  // red on main before this change: template-growth commits since that cap — the PRD-268 probe
+  // volumes, the godrays refusal, and the see-it-in-numbers section (e5d64b5f) — added +530
+  // (minimal, platformer, starter) or +569 (action-rpg, defense, racing, shooter) rendered
+  // words without moving a limit. This change then adds the shared engine-bug-report fragment,
+  // a uniform +104 measured everywhere. Caps now sit on the measured values; the per-template
+  // table is docs/verification/instruction-budgets-2026-08-31.md.
+  defaultMaxWords: 3437,
   // The same measured +26 rides every override below — +27 on `platformer` and `shooter`, whose
   // own wrapping splits one more word — because the stride-sync line is in the shared fragment, so all seven
   // templates carry it and none of them absorbed it in headroom.
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
-    platformer: 3413,
+    platformer: 3775,
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
-    shooter: 3101,
+    shooter: 3502,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
     // PRD-248 adds +84 measured rendered words, `minimal` only, because only this template ships
     // the atmosphere: its sky dome, sun colour and depth haze now come from one `Atmosphere` node
@@ -116,13 +124,13 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // game that hits one has nothing to read. The detail is in the reference page, which this
     // budget does not count; only the naming is inline, and it was trimmed to its shortest form
     // before the limit moved.
-    minimal: 3881,
+    minimal: 4207,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
     // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
     // +4 measured for the TSL silent-no-op traps; see the note on `minimal` for the reasoning.
-    starter: 4251,
+    starter: 4554,
   },
 };
 

@@ -56,6 +56,11 @@ const requiredSharedFragments = [
   // PRD-228: the shipped resolutionScale convention. Its own fragment rather than a paragraph
   // in performance-default, which carries an executable 130-word cap and a different subject.
   "pixel-budget",
+  // Landed 2026-08-30 (e5d64b5f) but not registered here — the spec was red on main before
+  // the next fragment arrived.
+  "see-it-in-numbers",
+  // The upstream engine-bug-filing rule, paired with the shipped file-engine-bug skill.
+  "engine-bug-report",
 ] as const;
 // The frame-time ceiling stays mandatory; PRD-214 added an fps floor and per-phase ceilings
 // beside it, so the pattern bounds the opening of the object rather than its whole shape.
