@@ -19,6 +19,8 @@ const bundle = join(workspaceRoot, 'examples', 'native-smoke', 'dist', 'native-s
 const nativeSmokeRoot = join(workspaceRoot, 'examples', 'native-smoke');
 const bundleId = 'dev.threenative.runtime';
 const checkOnly = process.argv.includes('--check');
+const SIMULATOR_LAUNCH_ATTEMPTS = 2;
+const SIMULATOR_LAUNCH_TIMEOUT_MS = 180_000;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -213,6 +215,38 @@ function launchDiagnostics(device, since) {
   return `${result.stdout || ''}\n${result.stderr || ''}`.trim();
 }
 
+function simulatorDiagnostic(label, args) {
+  const result = spawnSync('xcrun', args, {
+    cwd: workspaceRoot,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: 15_000,
+  });
+  return [
+    `---- ${label} ----`,
+    `command: xcrun ${args.join(' ')}`,
+    `status: ${result.status ?? 'not-started'}`,
+    `signal: ${result.signal ?? 'none'}`,
+    `error: ${result.error?.message ?? 'none'}`,
+    'stdout:',
+    result.stdout || '',
+    'stderr:',
+    result.stderr || '',
+  ].join('\n');
+}
+
+function simulatorProcessTelemetry(device) {
+  return [
+    simulatorDiagnostic('installed apps', ['simctl', 'listapps', device]),
+    simulatorDiagnostic('simulator processes', [
+      'simctl', 'spawn', device, 'ps', '-A', '-o', 'pid,ppid,comm,args',
+    ]),
+    simulatorDiagnostic('launchd system', [
+      'simctl', 'spawn', device, 'launchctl', 'print', 'system',
+    ]),
+  ].join('\n');
+}
+
 function validateScreenshot(path) {
   const png = PNG.sync.read(readFileSync(path));
   let min = 255;
@@ -290,13 +324,42 @@ run('xcrun', ['simctl', 'install', simulator.udid, app]);
 // that is sitting right there. Wait for the registration itself rather than for a fixed delay,
 // which would be a guess about a machine's speed.
 awaitBundleRegistration(simulator.udid, bundleId);
-const startedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
 const requiredMarkers = [
   'TN_NATIVE_SMOKE_READY:webgpu',
   'TN_NATIVE_SMOKE_FIRST_FRAME',
   'TN_NATIVE_SMOKE_300_FRAMES:300',
 ];
+
+function captureSimulatorLaunch(device, markers) {
+  return new Promise((resolve) => {
+    const child = spawn(
+      'xcrun',
+      ['simctl', 'launch', '--terminate-running-process', '--console-pipe', device, bundleId],
+      { cwd: workspaceRoot },
+    );
+    let output = '';
+    let settled = false;
+    // Declared before `finish` so it can clear it, and assigned once — the timer is the backstop
+    // for an app that never prints its last marker.
+    const deadline = setTimeout(() => finish(null, undefined), SIMULATOR_LAUNCH_TIMEOUT_MS);
+    function finish(status, error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      child.kill('SIGKILL');
+      resolve({ error, output, status });
+    }
+    const read = (chunk) => {
+      output += String(chunk);
+      if (markers.every((marker) => output.includes(marker))) finish(0, undefined);
+    };
+    child.stdout.on('data', read);
+    child.stderr.on('data', read);
+    child.on('error', (error) => finish(null, error));
+    child.on('close', (code) => finish(code, undefined));
+  });
+}
 
 // Read the app's stdout, not the unified log.
 //
@@ -306,62 +369,64 @@ const requiredMarkers = [
 // showed the app becoming active, creating its SDL view controller, and then going silent, with no
 // `[Mystral]` line anywhere: not a hang, an instrument pointed at the wrong place.
 //
-// `--console-pipe` attaches stdout and stderr to this process and returns when the app exits. The
-// smoke app renders its 300 frames and exits, so the timeout is a backstop; whatever it printed
-// before being killed is still captured and still answers the question.
-// Stream it rather than waiting for it to finish. `--console-pipe` returns when the app exits, and
-// the smoke app keeps running after its 300th frame, so a blocking read always pays the whole
-// deadline — which pushed this job past its 45-minute limit and got it cancelled. Reading the pipe
-// as it arrives restores the early exit the old marker poll had: the proof is complete the moment
-// the last marker appears, and waiting past that learns nothing.
-const launched = await new Promise((resolve) => {
-  const child = spawn(
-    'xcrun',
-    ['simctl', 'launch', '--terminate-running-process', '--console-pipe', simulator.udid, bundleId],
-    { cwd: workspaceRoot },
-  );
-  let output = '';
-  let settled = false;
-  // Declared before `finish` so it can clear it, and assigned once — the timer is the backstop for
-  // an app that never prints its last marker.
-  const deadline = setTimeout(() => finish(null, undefined), 180_000);
-  function finish(status, error) {
-    if (settled) return;
-    settled = true;
-    clearTimeout(deadline);
-    child.kill('SIGKILL');
-    resolve({ error, output, status });
+// `--console-pipe` attaches stdout and stderr to this process. Stream it rather than waiting for
+// it to finish: the smoke app keeps running after its 300th frame, so the proof is complete the
+// moment the last marker appears. A second bounded launch handles the intermittent simulator
+// state where SpringBoard accepts the request but no app process or console pipe appears.
+let launched;
+let startedAt = '';
+let logs = '';
+let missingMarkers = requiredMarkers;
+let processTelemetry = '';
+const launchAttempts = [];
+for (let attempt = 1; attempt <= SIMULATOR_LAUNCH_ATTEMPTS; attempt += 1) {
+  startedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  launched = await captureSimulatorLaunch(simulator.udid, requiredMarkers);
+  if (launched.error) {
+    const diagnostics = `${launchDiagnostics(simulator.udid, startedAt)}\n\n${simulatorProcessTelemetry(simulator.udid)}`;
+    writeFileSync(join(artifactRoot, 'simulator-launch-failure.log'), diagnostics);
+    throw new Error(`${launched.error.message}\n\niOS launch diagnostics:\n${diagnostics}`);
   }
-  const read = (chunk) => {
-    output += String(chunk);
-    if (requiredMarkers.every((marker) => output.includes(marker))) finish(0, undefined);
-  };
-  child.stdout.on('data', read);
-  child.stderr.on('data', read);
-  child.on('error', (error) => finish(null, error));
-  child.on('close', (code) => finish(code, undefined));
-});
-if (launched.error) {
-  const diagnostics = launchDiagnostics(simulator.udid, startedAt);
-  writeFileSync(join(artifactRoot, 'simulator-launch-failure.log'), diagnostics);
-  throw new Error(`${launched.error.message}\n\niOS launch diagnostics:\n${diagnostics}`);
+
+  const consoleOutput = launched.output;
+  writeFileSync(join(artifactRoot, `simulator-launch-attempt-${attempt}.log`), consoleOutput);
+  // The unified log stays as the second source: it holds crash reports and system-side refusals
+  // that stdout cannot show.
+  logs = `${consoleOutput}\n${unifiedLog(simulator.udid, startedAt)}`;
+  missingMarkers = requiredMarkers.filter((marker) => !logs.includes(marker));
+  processTelemetry = missingMarkers.length > 0 ? simulatorProcessTelemetry(simulator.udid) : '';
+  if (processTelemetry) {
+    writeFileSync(join(artifactRoot, `simulator-process-timeout-attempt-${attempt}.log`), processTelemetry);
+    writeFileSync(join(artifactRoot, 'simulator-process-timeout.log'), processTelemetry);
+  }
+  launchAttempts.push({
+    attempt,
+    consoleBytes: consoleOutput.length,
+    exit: launched.status ?? launched.error?.code ?? null,
+    missingMarkers,
+    startedAt,
+  });
+  writeFileSync(
+    join(artifactRoot, 'simulator-launch-attempts.json'),
+    `${JSON.stringify({ attempts: launchAttempts, maxAttempts: SIMULATOR_LAUNCH_ATTEMPTS }, null, 2)}\n`,
+  );
+  if (missingMarkers.length === 0) break;
+  if (attempt < SIMULATOR_LAUNCH_ATTEMPTS) {
+    console.log(
+      `TN_IOS_SIMULATOR_LAUNCH_RETRY:${JSON.stringify({ attempt, missingMarkers, nextAttempt: attempt + 1 })}`,
+    );
+  }
 }
+
 const consoleOutput = launched.output;
-// Killing `xcrun` ends the pipe, not the app, which keeps running in the simulator. That is left
-// alone deliberately: `simctl terminate` fails with "found nothing to terminate" whenever the app
-// has already exited, and a previous version of this script died on exactly that. The next launch
+// Killing `xcrun` ends the pipe, not the app, which keeps running in the simulator. The next launch
 // clears it with `--terminate-running-process`, which is why that flag is there.
 writeFileSync(join(artifactRoot, 'simulator-console.log'), consoleOutput);
 
-// The unified log stays as the second source: it holds the crash reports and the system-side
-// refusals that stdout cannot show.
-const logs = `${consoleOutput}\n${unifiedLog(simulator.udid, startedAt)}`;
-const missingMarkers = requiredMarkers.filter((marker) => !logs.includes(marker));
 if (missingMarkers.length > 0) {
-  // The app launched and reported a pid, so "markers missing" alone says nothing about why: it
-  // covers a crash on startup, a runtime that never reached its first frame, and a log predicate
-  // that simply matched nothing. Those need different fixes, and this lane cannot be reproduced
-  // off a Mac — so the failure has to carry its own evidence rather than cost another CI round.
+  // A missing marker covers a startup crash, a runtime that never reached its first frame, and a
+  // simulator that accepted the launch without creating an app process. Keep all three probes in
+  // the artifact so the next fix is based on the machine's state, not a guess.
   const broad = spawnSync(
     'xcrun',
     [
@@ -372,10 +437,13 @@ if (missingMarkers.length > 0) {
     { cwd: workspaceRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
   const broadLog = `${broad.stdout ?? ''}${broad.stderr ?? ''}`;
-  writeFileSync(join(artifactRoot, 'simulator-marker-timeout.log'), `${logs}\n---- broad ----\n${broadLog}`);
+  writeFileSync(
+    join(artifactRoot, 'simulator-marker-timeout.log'),
+    `${logs}\n---- broad ----\n${broadLog}\n---- process telemetry ----\n${processTelemetry}`,
+  );
   const tail = broadLog.split('\n').slice(-60).join('\n');
   throw new Error(
-    `iOS proof missed markers: ${missingMarkers.join(', ')}\n` +
+    `iOS proof missed markers after ${launchAttempts.length} launch attempts: ${missingMarkers.join(', ')}\n` +
       `App console was ${consoleOutput.length} bytes (exit ${launched.status ?? launched.error?.code}); ` +
       `the broader system log tail follows.\n${tail}`,
   );

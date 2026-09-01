@@ -223,3 +223,13 @@ test('iOS native smoke requires a bounded worker proof with an explicit frame ha
   assert.match(workerProof, /frame - startedFrame >= WORKER_MINIMUM_FRAMES/u);
   assert.match(verifier, /'TN_NATIVE_WORKER_PROOF_PASS:'/u);
 });
+
+test('iOS launch retries once and records simulator process telemetry on timeout', () => {
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+
+  assert.match(verifier, /const SIMULATOR_LAUNCH_ATTEMPTS = 2;/u);
+  assert.match(verifier, /simulator-launch-attempt-\$\{attempt\}\.log/u);
+  assert.match(verifier, /simctl', 'spawn', device, 'ps'/u);
+  assert.match(verifier, /simulator-process-timeout\.log/u);
+  assert.match(verifier, /attempt < SIMULATOR_LAUNCH_ATTEMPTS/u);
+});
