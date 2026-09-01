@@ -133,10 +133,20 @@ jobs:
           targets=$(grep -oE 'add_executable\(\s*threenative-[a-z0-9-]+-test' CMakeLists.txt \
             | sed -E 's/.*\(\s*//' | sort -u)
           echo "contract targets: $targets"
-          for target in $targets; do
-            cmake --build build/tn-linux --target "$target" --parallel "$(nproc)" || \
-              echo "target $target is not buildable in build/tn-linux"
-          done
+          # One ninja invocation over every target, not one per target. Ninja schedules the whole
+          # set against a single dependency graph, so the objects these executables share are
+          # compiled once instead of being re-checked by each of ~20 sequential builds. The loop
+          # survives as the fallback: a combined build reports only that something failed, and the
+          # per-target pass is what names which target cannot build while letting the rest through.
+          target_args=()
+          for target in $targets; do target_args+=(--target "$target"); done
+          if ! cmake --build build/tn-linux "${target_args[@]}" --parallel "$(nproc)"; then
+            echo "combined contract build failed; rebuilding per target to name the one that broke"
+            for target in $targets; do
+              cmake --build build/tn-linux --target "$target" --parallel "$(nproc)" || \
+                echo "target $target is not buildable in build/tn-linux"
+            done
+          fi
       # timestamp-query and rg11b10-renderable are cross-engine contracts and the JS engine is
       # a build-time choice, so QuickJS needs its own configured build directory. Without it
       # those tests fail closed on CI naming build/tn-linux-quickjs, exactly as happened to
