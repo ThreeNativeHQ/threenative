@@ -447,11 +447,29 @@ export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from 
 export { WaveField } from "./wave-field.js";
 export type {
   IWaveFieldDomainWarp,
+  IWaveFieldGraphOptions,
   IWaveFieldOptions,
   IWaveFieldSample,
   IWaveFieldWave,
   WaveDirection,
 } from "./wave-field.js";
+/**
+ * Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres
+ * of water between them.
+ * @situation reflect the sky and the shoreline in a lake, pond or river
+ * @situation see the bed through the water and have the shallows fade at the shore
+ * @situation know how deep the water is under a pixel without a second render pass
+ * @situation stop a water surface repeating in visible bands or stripes
+ * @constraint it draws nothing; the game supplies the mesh, the material and every colour
+ * @constraint the material must be transparent so the frame beneath it is already drawn
+ * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
+ * @constraint one reflection is a second draw of the world, so resolutionScale is the whole cost
+ * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
+ * @example const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
+ * material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
+ */
+export { WaterSurface3D } from "./water-surface.js";
+export type { IWaterReflectionOptions, IWaterSurfaceOptions } from "./water-surface.js";
 /**
  * Build a soft round sprite as pixel data instead of painting a canvas.
  * @situation give smoke, flash, or glow sprites a radial alpha falloff
