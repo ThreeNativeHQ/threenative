@@ -6,6 +6,7 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   checkTemplateQuality,
   costCommentGaps,
+  eagerSurfaceNodes,
   formatTemplateQualityReport,
   presetLiteralsIn,
   templateNames,
@@ -130,6 +131,44 @@ describe("check-template-quality", () => {
       await fixture({ post: POST.replace("TN_QUALITY_TIER ", "") }),
     );
     expect(formatTemplateQualityReport(report)).toContain("does not report TN_QUALITY_TIER");
+  });
+
+  it("should catch a surface node requested eagerly, in either shape", () => {
+    // The single-line shape that shipped the black mobile look on seven templates.
+    expect(eagerSurfaceNodes('const normal = scenePass.getTextureNode("normal");')).toEqual([
+      "normal (line 1)",
+    ]);
+    // And the wrapped one — the accessors are formatted across two lines, so a line-based check
+    // reads the `=>` as absent and calls the fix a defect.
+    expect(
+      eagerSurfaceNodes('const metal = (): T =>\n      scenePass.getTextureNode("metalness");'),
+    ).toEqual([]);
+  });
+
+  it("should accept the deferred forms and ignore the ones that are not attachments", () => {
+    expect(eagerSurfaceNodes('const normal = (): T => textureNode("normal");')).toEqual([]);
+    expect(eagerSurfaceNodes('const node = () => scenePass.getTextureNode("roughness");')).toEqual(
+      [],
+    );
+    // `depth` and `output` are not surface-data attachments: the pass has them either way, so
+    // requesting them eagerly costs nothing and the gate must not object.
+    expect(
+      eagerSurfaceNodes(
+        'const depth = scenePass.getTextureNode("depth");\nconst base = scenePass.getTextureNode("output");',
+      ),
+    ).toEqual([]);
+  });
+
+  it("should report every eager request rather than only the first", () => {
+    expect(
+      eagerSurfaceNodes(
+        [
+          'const normal = scenePass.getTextureNode("normal");',
+          'const metal = scenePass.getTextureNode("metalness");',
+          'const rough = scenePass.getTextureNode("roughness");',
+        ].join("\n"),
+      ),
+    ).toEqual(["metalness (line 2)", "normal (line 1)", "roughness (line 3)"]);
   });
 
   it("should name both incumbent literals", () => {

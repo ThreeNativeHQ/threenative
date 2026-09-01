@@ -126,6 +126,45 @@ function postprocessingProblems(source: string | undefined): string[] {
   return problems;
 }
 
+/**
+ * Surface-data texture nodes must be requested lazily, or the frame goes black.
+ *
+ * `PassNode` adds every named colour texture requested through `getTextureNode()` to its
+ * framebuffer, so asking for `normal`, `metalness` or `roughness` at the top of `apply()` gives a
+ * pass an attachment no fragment shader writes. WebGPU refuses that pipeline — *"Color target has
+ * no corresponding fragment stage output"* — and the frame renders black **while the chain reports
+ * every stage as applied**.
+ *
+ * This is a gate rather than a fix because the fix already existed. It was found, understood and
+ * written down in `sailing`'s `worldEnvironment.ts` on 2026-08-31, and the other seven templates
+ * carried the defect anyway until 2026-09-01, shipping a black mobile look on every phone. A
+ * comment in one template is not a convention.
+ */
+const LAZY_SURFACE_NODES = ["normal", "metalness", "roughness"] as const;
+
+export function eagerSurfaceNodes(source: string): string[] {
+  const eager: string[] = [];
+  for (const name of LAZY_SURFACE_NODES) {
+    const needle = `getTextureNode("${name}")`;
+    let at = source.indexOf(needle);
+    while (at !== -1) {
+      // Walk back to the start of the statement this call sits in. An `=>` inside that span means
+      // the call is an arrow body — deferred, which is the fix. Line-based matching cannot do
+      // this: the accessors wrap, so `=>` routinely lands on the previous line.
+      const statement = source.lastIndexOf(";", at);
+      const block = source.lastIndexOf("{", at);
+      const from = Math.max(statement, block) + 1;
+      const preceding = source.slice(from, at);
+      const commented = /(^|\n)\s*(\/\/|\*)[^\n]*$/u.test(source.slice(from, at + needle.length));
+      if (!preceding.includes("=>") && !commented) {
+        eager.push(`${name} (line ${source.slice(0, at).split("\n").length})`);
+      }
+      at = source.indexOf(needle, at + needle.length);
+    }
+  }
+  return eager.sort();
+}
+
 /** A convention missing from the template's `AGENTS.md` does not exist. */
 function docProblems(source: string | undefined): string[] {
   if (source === undefined) return ["no AGENTS.md"];
@@ -148,10 +187,17 @@ export async function checkTemplateQuality(root: string): Promise<ITemplateQuali
   const findings: ITemplateQualityFinding[] = [];
   for (const template of templates) {
     const render = path.join(templatesDir, template, "src", "render");
+    const world = await readOptional(path.join(render, "worldEnvironment.ts"));
     const problems = [
       ...qualityProblems(await readOptional(path.join(render, "quality.ts"))),
       ...postprocessingProblems(await readOptional(path.join(render, "postprocessing.ts"))),
       ...docProblems(await readOptional(path.join(templatesDir, template, "AGENTS.md"))),
+      ...(world === undefined
+        ? ["no src/render/worldEnvironment.ts"]
+        : eagerSurfaceNodes(world).map(
+            (entry) =>
+              `worldEnvironment.ts requests ${entry} eagerly — that attaches a colour target no fragment shader writes, and the frame renders black while the chain reports success`,
+          )),
     ];
     for (const problem of problems) findings.push({ problem, template });
   }
