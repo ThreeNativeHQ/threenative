@@ -187,6 +187,7 @@ describe("CI pipeline structure", () => {
     );
     expect(capture).toBeGreaterThanOrEqual(0);
     expect(comparison).toBeGreaterThan(capture);
+    expect(capture).toBeLessThan(desktop.indexOf("Install Linux desktop build dependencies"));
     expect(occurrences(desktop, /test "\$status" -eq 0 -o "\$status" -eq 2/gu)).toBe(2);
     expect(occurrences(desktop, /check-lane-blocks\.mjs/gu)).toBe(2);
     expect(desktop).toContain("TN_PARITY_DESKTOP_REPORT_MISSING");
