@@ -215,7 +215,7 @@ jobs:
       - if: failure()
         uses: ./.github/actions/cancel-run-on-failure
 
-  golden-path:
+  golden-path-template:
     needs: build
     strategy:
       fail-fast: false
@@ -382,6 +382,31 @@ jobs:
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
+
+  # `golden-path` is a required status check in the `main protection` ruleset, and required checks
+  # match the reported context by exact string. A matrix job does not report its own name — it
+  # reports `golden-path (starter)` and `golden-path (platformer)` — so the moment this lane became
+  # a matrix, the context the ruleset waits for stopped existing and every PR would sit on
+  # "Expected — waiting for status to be reported" forever.
+  #
+  # This job is that context. It runs no work; it reads the matrix result and fails when any leg
+  # failed. `if: always()` matters: without it a failed matrix leaves this skipped, and a skipped
+  # required check counts as satisfied, which would turn the ruleset into decoration. Adding a
+  # template to the matrix above needs no ruleset change, which is the point of the indirection.
+  golden-path:
+    needs: golden-path-template
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every golden-path template to have passed
+        run: |
+          set -euo pipefail
+          result='${{ needs.golden-path-template.result }}'
+          echo "golden-path templates: $result"
+          test "$result" = "success"
       - if: failure()
         uses: ./.github/actions/cancel-run-on-failure
 

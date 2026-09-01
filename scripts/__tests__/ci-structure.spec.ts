@@ -353,10 +353,26 @@ describe("CI pipeline structure", () => {
 
   it("golden-path still exercises both templates through the verifier", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const goldenPath = requiredJob(ci, "golden-path");
+    const goldenPath = requiredJob(ci, "golden-path-template");
     expect(goldenPath).toMatch(/template:\s*\n\s+- starter\s*\n\s+- platformer/u);
     expect(goldenPath).toContain("TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}");
     expect(goldenPath).toContain("pnpm verify:golden-path");
+  });
+
+  it("the golden-path required context is still reported by a job of that exact name", async () => {
+    // `golden-path` is a required check in the `main protection` ruleset, and required checks are
+    // matched by exact context string. A matrix job reports `golden-path (starter)` and
+    // `golden-path (platformer)`, never `golden-path`, so making this lane a matrix silently left
+    // the ruleset waiting on a context nothing would ever report. This job is that context.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const aggregate = requiredJob(ci, "golden-path");
+    expect(aggregate).toContain("needs: golden-path-template");
+    expect(aggregate).not.toContain("strategy:");
+    // Without always(), a failed matrix leaves this skipped, and a skipped required check counts
+    // as satisfied — the ruleset would pass on exactly the runs it exists to stop.
+    expect(aggregate).toContain("if: always()");
+    expect(aggregate).toContain("needs.golden-path-template.result");
+    expect(aggregate).toMatch(/test "\$result" = "success"/u);
   });
 
   it("the scaffold block exists exactly once in the shared action", async () => {
