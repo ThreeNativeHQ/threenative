@@ -19,6 +19,15 @@ name: Native platform evidence
 # the path filters used to cause does not come back. Reporting on a PR is not the same as blocking
 # one: this lane is not a required status check while it is still red, and PRD-295 is explicit that
 # a lane which has never been green must not gate a release.
+#
+# Narrowed 2026-09-01: on a pull request only the two Linux jobs run. Reporting before a merge is
+# worth paying for when the report can change; the macOS, Windows, Android-emulator and iOS legs
+# reported the same red on every one of the last 100 runs, of which 37 failed and 37 were cancelled
+# by a competing push before finishing. Those four carry an `if` that lets a pull request opt in
+# with the `native` label, and they still run on every push to main and on the nightly cron. The
+# Linux legs stayed because Linux desktop is the target ROADMAP licenses and they are the cheapest
+# here — 5.8 min for the starter — so the "a core or playtest change broke the native bundle"
+# signal survives on every PR.
 on:
   push:
     branches: [main]
@@ -40,6 +49,21 @@ permissions:
 jobs:
   android-emulator-parity:
     name: Android emulator visual parity
+    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
+    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
+    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
+    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
+    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
+    # because a competing push cancels them. What it does buy is six runners held per PR while the
+    # gates people actually read sit queued behind them.
+    #
+    # So the platform legs report where their result is read — pushes to main, the nightly cron,
+    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
+    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
+    # and Linux desktop is the only desktop target ROADMAP licenses.
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -305,6 +329,21 @@ jobs:
 
   desktop:
     name: ${{ matrix.platform }} desktop core
+    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
+    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
+    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
+    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
+    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
+    # because a competing push cancels them. What it does buy is six runners held per PR while the
+    # gates people actually read sit queued behind them.
+    #
+    # So the platform legs report where their result is read — pushes to main, the nightly cron,
+    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
+    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
+    # and Linux desktop is the only desktop target ROADMAP licenses.
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native')
     strategy:
       fail-fast: false
       matrix:
@@ -532,6 +571,21 @@ jobs:
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
+    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
+    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
+    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
+    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
+    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
+    # because a competing push cancels them. What it does buy is six runners held per PR while the
+    # gates people actually read sit queued behind them.
+    #
+    # So the platform legs report where their result is read — pushes to main, the nightly cron,
+    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
+    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
+    # and Linux desktop is the only desktop target ROADMAP licenses.
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native')
     runs-on: macos-15
     timeout-minutes: 60
     # Advisory while the simulator's worker proof is unresolved: the app reaches

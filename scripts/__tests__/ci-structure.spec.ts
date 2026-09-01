@@ -311,6 +311,27 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  it("only the Linux native legs run on a pull request", async () => {
+    // 100 runs of this workflow: 37 failed, 37 cancelled by a competing push, none succeeded. The
+    // four platform legs reported the same red every time while holding six runners per PR ahead
+    // of the gates people read. They report on main, on the nightly cron, and on a PR that opts in
+    // with the `native` label. The Linux legs keep running on every PR — that is where a core or
+    // playtest change breaking the native bundle shows up, on the target ROADMAP licenses.
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const guarded = ["android-emulator-parity", "desktop", "ios-simulator"] as const;
+    for (const name of guarded) {
+      const job = requiredJob(native, name);
+      expect(job, name).toContain("github.event_name != 'pull_request'");
+      expect(job, name).toContain("contains(github.event.pull_request.labels.*.name, 'native')");
+    }
+    for (const name of ["desktop-parity", "starter-linux"] as const) {
+      expect(requiredJob(native, name), name).not.toContain("github.event_name != 'pull_request'");
+    }
+  });
+
   it("job-level env never reads the runner context", async () => {
     // `jobs.<id>.env` cannot see the `runner` context. GitHub does not warn: it refuses the whole
     // workflow with "This run likely failed because of a workflow file issue" and starts zero
