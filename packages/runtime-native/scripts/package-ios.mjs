@@ -206,15 +206,17 @@ function findApp(directory) {
   return undefined;
 }
 
-function compileIosAssets(catalog, output, includeAppIcon = false) {
+export function compileIosAssets(catalog, output, includeAppIcon = false, execute = spawnSync) {
   const iconArguments = includeAppIcon ? ['--app-icon', 'AppIcon'] : [];
-  const result = spawnSync(
+  const result = execute(
     'xcrun',
     [
       'actool',
       '--compile',
       output,
       ...iconArguments,
+      '--output-partial-info-plist',
+      '/dev/null',
       '--platform',
       'iphonesimulator',
       '--minimum-deployment-target',

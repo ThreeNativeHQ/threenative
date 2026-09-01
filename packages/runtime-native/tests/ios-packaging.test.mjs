@@ -8,6 +8,7 @@ import { PNG } from 'pngjs';
 import { afterEach, test } from 'vitest';
 
 import {
+  compileIosAssets,
   packageIosSimulator,
   runIosPackageCli,
   stageIosSimulatorApp,
@@ -32,6 +33,26 @@ const binaryInfoPlist = Buffer.from(
 );
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
+});
+
+test('iOS actool receives a partial-info-plist output sink when compiling an app icon', () => {
+  const root = makeTempDirSync('threenative-ios-actool-output-');
+  roots.push(root);
+  const catalog = join(root, 'Assets.xcassets');
+  const output = join(root, 'compiled');
+  mkdirSync(catalog, { recursive: true });
+  mkdirSync(output, { recursive: true });
+
+  let args;
+  compileIosAssets(catalog, output, true, (_command, invocationArgs) => {
+    args = invocationArgs;
+    writeFileSync(join(output, 'Assets.car'), 'compiled-assets');
+    return { status: 0, stderr: '', stdout: '' };
+  });
+
+  const partialInfoPlist = args.indexOf('--output-partial-info-plist');
+  assert.notEqual(partialInfoPlist, -1);
+  assert.equal(args[partialInfoPlist + 1], '/dev/null');
 });
 
 test('iOS staging converts Xcode binary Info.plist archives before applying metadata', () => {
