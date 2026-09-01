@@ -28,6 +28,17 @@ are the loop you will use for nearly everything:
    ends**. Poly Haven requires a visible Poly Haven credit when its API is used, ambientCG is
    CC0 per asset page, and audio and bundle licenses are per pack.
 
+**For a Poly Haven *model*, steps 3-4 collapse into `polyhaven_import_model`.** Poly Haven
+publishes models as a `.gltf` beside a `.bin` and loose texture files and **never as a `.glb`**, so
+doing it by hand means fetching five to eight URLs and rebuilding the directory layout the glTF's
+relative URIs expect before anything will load. Pass `assetId`, an `outputPath` ending in `.glb`,
+a `resolution` (it defaults to `1k`, which is what a game floor wants), and `acceptLicense: true`;
+it downloads through the same guarded path, packs one self-contained GLB that
+`ctx.assets.model()` loads directly, and returns **triangle count and per-texture dimensions** —
+the two numbers `create-threenative inspect` does not report and that every triangle and texture
+budget is written in. Ask for a resolution the asset does not publish and it names the ones that
+exist. Textures and HDRIs still use `asset_download_file`.
+
 **Never state a license you did not read off a tool result.** If `polyhaven_list_files` or
 `ambientcg_search_assets` did not tell you, you do not know it.
 
@@ -112,6 +123,23 @@ GLBs up from `assets/` with no extra configuration.
 
 What the import will and will not do:
 
+- **A pack of uncooked editor assets cannot be converted at all**, and this is the common case for
+  marketplace packs, which ship as Unreal *source* projects. Cooking is what writes the renderable
+  vertex and index buffers into the file; an uncooked package keeps only the editable source mesh
+  and lets the editor derive the rest, so there is no geometry for UE Viewer to read. The import
+  detects this and fails `UNREAL_SOURCE_UNCOOKED` naming the evidence it found —
+  `/Script/UnrealEd`, `AssetImportData`, `SourceModels`. **Believe it and stop.** No engine
+  version, `packages` filter or flag changes the answer, and the download is gigabytes each time
+  you try. The only route to those meshes is opening the pack in Unreal Editor and exporting FBX
+  or glTF yourself. Prefer a listing that ships a non-Unreal format, and treat one that does not as
+  a likely dead end before you spend the bandwidth.
+- **A free listing still has to be in the library first.** `fab_import_asset` refuses with
+  `FABCLI_NOT_OWNED` until the listing is claimed, and it never claims — by design. Run
+  `fabcli claim <uid>` yourself, which needs the interactive `fabcli auth login` session rather
+  than the API token `fabcli auth status` reports as authenticated. Note also that `fab_get_asset`
+  reports a free CC-BY offer as `isFree: false` with an empty `freeLicenseSlugs`; the listing
+  appearing in `fab_search_assets` with `priceMode: "free"` at `startingPrice.amount: 0` is the
+  reliable signal, so check the search before concluding a listing costs money.
 - **Only assets you already own**, and only under **Fab Standard (Personal or Professional) or
   CC-BY**. Unreal-Engine-only and legacy entitlements are refused, and a licence it cannot read is
   refused too. It never logs in, claims, or purchases — run `fabcli auth login` yourself once.

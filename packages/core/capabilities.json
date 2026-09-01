@@ -317,6 +317,25 @@
     },
     {
       "constraints": [
+        "this walks the target's vertices; call it on a check or a debug sample, not every frame"
+      ],
+      "example": "import { boneContact } from \"@threenative/core\";\nconst contact = boneContact(worker, \"hand_r\", keyboard);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function boneContact( root: Object3D, boneName: string, target: Object3D, ): IBoneContactReport { … }",
+      "situations": [
+        "check that a seated character's hands reach the keyboard",
+        "check that a character's hips meet the chair it is sitting on",
+        "turn \"the character is not touching the prop\" into a number a scenario can assert"
+      ],
+      "summary": "Measure whether a named bone reaches the object it is supposed to be touching, in metres.",
+      "supersedes": [],
+      "symbol": "boneContact"
+    },
+    {
+      "constraints": [
         "amplitude, rotationAmplitude, frequency, decay, and curve are required game choices",
         "update returns an offset and never writes to a camera"
       ],
@@ -349,6 +368,62 @@
       "summary": "Manage a camera or screen-facing canvas layer.",
       "supersedes": [],
       "symbol": "CanvasLayer"
+    },
+    {
+      "constraints": ["a track that binds nothing counts as driving nothing"],
+      "example": "import { clipBoneCoverage } from \"@threenative/core\";\nconst coverage = clipBoneCoverage(character, clip);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function clipBoneCoverage(root: Object3D, clip: AnimationClip): IClipCoverageReport { … }",
+      "situations": [
+        "find out why a character keeps the previous animation's hand shape",
+        "check how much of a rig a clip covers before shipping it"
+      ],
+      "summary": "Report which bones of a character a clip does not drive.",
+      "supersedes": [],
+      "symbol": "clipBoneCoverage"
+    },
+    {
+      "constraints": [
+        "each bone is compared as a whole quaternion relative to its own rig's bind pose, so the two rigs never have to share a bind convention; a bone-direction check reports zero on the roll this catches",
+        "both rigs must face the same way in world space, and both are driven and then restored to the transforms they arrived with"
+      ],
+      "example": "import { clipPoseError } from \"@threenative/core\";\nconst report = clipPoseError({ root: rig, clip: retargeted }, { root: source, clip: original });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "bones maps one rig's bone names onto the other's when they differ; samples sets how many poses are compared"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function clipPoseError( subject: IClipPoseSubject, reference: IClipPoseSubject, options: IClipPoseErrorOptions = { … }",
+      "situations": [
+        "find out why a retargeted animation looks wrong on a character",
+        "tell a fixed retarget from one that merely moved",
+        "catch a retarget that rolled every limb about its own axis"
+      ],
+      "summary": "Score a retargeted clip against the source it came from, per bone, in degrees.",
+      "supersedes": [],
+      "symbol": "clipPoseError"
+    },
+    {
+      "constraints": [
+        "the reason is Three.js's own, captured off its console hook so a scenario's console assertions stay clean"
+      ],
+      "example": "import { clipTrackBindings } from \"@threenative/core\";\nconst bindings = clipTrackBindings(character, clip);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function clipTrackBindings(root: Object3D, clip: AnimationClip): IClipBindingReport { … }",
+      "situations": [
+        "find out why a character plays its bind pose instead of the animation",
+        "check that a loaded clip actually drives the model it was written for"
+      ],
+      "summary": "Report which of a clip's tracks bind to nothing on a character.",
+      "supersedes": [],
+      "symbol": "clipTrackBindings"
     },
     {
       "constraints": [

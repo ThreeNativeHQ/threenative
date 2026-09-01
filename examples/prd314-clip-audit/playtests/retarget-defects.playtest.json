@@ -1,0 +1,47 @@
+{
+  "name": "prd314-retarget-defects",
+  "schemaVersion": 1,
+  "subject": "the four checks name the roll, the track that binds nothing, the bones nothing drives, and the hand that misses the keyboard",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": "after" },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "clip-settles",
+      "waitTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "Three.js logs its own error for the track this scenario exists to catch; the mixer refusing to bind Hips.undefined is the defect being proven, not an unrelated failure.",
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "arm", "equals": "broken" },
+      { "id": "state", "path": "pose.maxDegrees", "gte": 20 },
+      { "id": "state", "path": "pose.worstDegrees", "gte": 20 },
+      { "id": "state", "path": "bindings.tracks", "equals": 2 },
+      { "id": "state", "path": "bindings.bound", "equals": 1 },
+      { "id": "state", "path": "bindings.unbound", "equals": ["Hips.undefined"] },
+      { "id": "state", "path": "coverage.undriven", "equals": ["Hips", "Arm", "Hand"] },
+      { "id": "state", "path": "contact.handMetres", "gte": 0.2 },
+      { "id": "state", "path": "contact.hipsSeated", "equals": true }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 340,
+          "y": 100,
+          "width": 600,
+          "height": 520,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

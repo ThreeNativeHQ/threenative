@@ -66,6 +66,15 @@ state. Seeded randomness is deterministic only when `defineGame({ seed })` is co
 override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
 the source. The bridge flushes about 100 ms; keep speed/lap in state and frame feedback in Three.js.
 
+When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
+retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
+own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
+caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
+(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
+`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
+clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
+supposed to be touching.
+
 ## Budget real time for the look
 
 Open a capture after visual changes. A scenario with no assertions or missing observations fails.

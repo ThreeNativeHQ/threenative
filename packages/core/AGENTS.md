@@ -6,14 +6,19 @@ Read `/AGENTS.md` first. This file covers only what is different here.
 
 The wiring every game repeats and no game should write: renderer bootstrap and WebGPU
 fallback, the fixed-step loop, scene lifecycle, plugin wiring, input mapping, asset loading,
-animation playback, hot-reload state preservation, the throttled state store, accelerated
-scene ray queries, queryable heightfield storage shared by rendering and physics, and the entity
-registry that makes a running game inspectable.
+animation playback, skinned-pose measurement and clip conformance diagnostics, hot-reload state
+preservation, the throttled state store, accelerated scene ray queries, queryable heightfield
+storage shared by rendering and physics, and the entity registry that makes a running game
+inspectable.
 
 That list is closed. Adding to it needs a PRD and a line in `CHARTER.md`. Pooled tracer streaks
 (`TracerPool3D`) and sprite pixel-data generation (`softCircleDataTexture`) are admitted under
 that rule — see `docs/architecture/CHARTER.md`'s "Tracer streaks and sprite pixel data are
 mechanism" and `docs/PRDs/done/PRD-162-tracer-streaks-and-sprite-pixel-data-are-mechanism.md`.
+Clip conformance (`clipPoseError`, `clipTrackBindings`, `clipBoneCoverage`, `boneContact`) is
+admitted the same way — see `CHARTER.md`'s "Pose conformance measurement is mechanism" and
+`docs/PRDs/authoring/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md`. It measures and
+reports; it moves nothing and decides no appearance.
 
 ### World subpath
 

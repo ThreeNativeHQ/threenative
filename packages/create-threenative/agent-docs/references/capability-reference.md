@@ -272,6 +272,22 @@ const billboard = new Billboard3D(label, { camera });
 billboard.update();
 ```
 
+### `boneContact`
+
+`function` — Measure whether a named bone reaches the object it is supposed to be touching, in metres.
+
+```ts
+export function boneContact( root: Object3D, boneName: string, target: Object3D, ): IBoneContactReport { … }
+```
+
+- **Use when:** check that a seated character's hands reach the keyboard · check that a character's hips meet the chair it is sitting on · turn "the character is not touching the prop" into a number a scenario can assert
+- **Constraints:** this walks the target's vertices; call it on a check or a debug sample, not every frame
+
+```ts
+import { boneContact } from "@threenative/core";
+const contact = boneContact(worker, "hand_r", keyboard);
+```
+
 ### `CameraShake`
 
 `class` — Produce a game-authored camera shake offset for a template-owned camera rig.
@@ -299,6 +315,55 @@ export class CanvasLayer { … }
 
 ```ts
 const hud = new CanvasLayer({ camera });
+```
+
+### `clipBoneCoverage`
+
+`function` — Report which bones of a character a clip does not drive.
+
+```ts
+export function clipBoneCoverage(root: Object3D, clip: AnimationClip): IClipCoverageReport { … }
+```
+
+- **Use when:** find out why a character keeps the previous animation's hand shape · check how much of a rig a clip covers before shipping it
+- **Constraints:** a track that binds nothing counts as driving nothing
+
+```ts
+import { clipBoneCoverage } from "@threenative/core";
+const coverage = clipBoneCoverage(character, clip);
+```
+
+### `clipPoseError`
+
+`function` — Score a retargeted clip against the source it came from, per bone, in degrees.
+
+```ts
+export function clipPoseError( subject: IClipPoseSubject, reference: IClipPoseSubject, options: IClipPoseErrorOptions = { … }
+```
+
+- **Use when:** find out why a retargeted animation looks wrong on a character · tell a fixed retarget from one that merely moved · catch a retarget that rolled every limb about its own axis
+- **Constraints:** each bone is compared as a whole quaternion relative to its own rig's bind pose, so the two rigs never have to share a bind convention; a bone-direction check reports zero on the roll this catches · both rigs must face the same way in world space, and both are driven and then restored to the transforms they arrived with
+- **Overrides:** bones maps one rig's bone names onto the other's when they differ; samples sets how many poses are compared
+
+```ts
+import { clipPoseError } from "@threenative/core";
+const report = clipPoseError({ root: rig, clip: retargeted }, { root: source, clip: original });
+```
+
+### `clipTrackBindings`
+
+`function` — Report which of a clip's tracks bind to nothing on a character.
+
+```ts
+export function clipTrackBindings(root: Object3D, clip: AnimationClip): IClipBindingReport { … }
+```
+
+- **Use when:** find out why a character plays its bind pose instead of the animation · check that a loaded clip actually drives the model it was written for
+- **Constraints:** the reason is Three.js's own, captured off its console hook so a scenario's console assertions stay clean
+
+```ts
+import { clipTrackBindings } from "@threenative/core";
+const bindings = clipTrackBindings(character, clip);
 ```
 
 ### `ClusteredBatch`

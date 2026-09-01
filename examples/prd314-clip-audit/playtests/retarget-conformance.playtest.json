@@ -1,0 +1,46 @@
+{
+  "name": "prd314-retarget-conformance",
+  "schemaVersion": 1,
+  "subject": "a correct retarget scores zero across a 90-degree bind-pose difference and the hands reach the keyboard",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": "after" },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "clip-settles",
+      "waitTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "arm", "equals": "correct" },
+      { "id": "state", "path": "pose.meanDegrees", "gte": 0, "lte": 0.5 },
+      { "id": "state", "path": "pose.maxDegrees", "gte": 0, "lte": 0.5 },
+      { "id": "state", "path": "bindings.tracks", "equals": 4 },
+      { "id": "state", "path": "bindings.bound", "equals": 4 },
+      { "id": "state", "path": "coverage.driven", "equals": 4 },
+      { "id": "state", "path": "contact.handMetres", "gte": 0, "lte": 0.06 },
+      { "id": "state", "path": "contact.hipsSeated", "equals": true }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 340,
+          "y": 100,
+          "width": 600,
+          "height": 520,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

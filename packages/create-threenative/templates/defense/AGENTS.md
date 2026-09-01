@@ -61,6 +61,15 @@ a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's 
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
+When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
+retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
+own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
+caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
+(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
+`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
+clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
+supposed to be touching.
+
 ## Look and evidence
 
 ## Budget real time for the look
