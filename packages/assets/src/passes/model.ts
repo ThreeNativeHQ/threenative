@@ -917,9 +917,10 @@ async function writeAndVerifyShared(
   const io = new NodeIO()
     .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
-  // Encoded bytes → the store key they were filed under, so the writer's image order need not
-  // match the document's texture order.
-  const byDigest = new Map<string, { key: string; image: ISharedImage }>();
+  // Encoded bytes → every store key they were filed under. Equal encoded bytes can come from
+  // distinct source keys, so each writer callback consumes one deterministic candidate rather
+  // than letting the last source key overwrite the earlier ones.
+  const byDigest = new Map<string, { key: string; image: ISharedImage }[]>();
   const textures = document.getRoot().listTextures();
   for (const [index, texture] of textures.entries()) {
     const key = plan.keys[index];
@@ -931,13 +932,16 @@ async function writeAndVerifyShared(
         `TN_ASSETS_SHARED_IMAGE_MISSING: '${logicalPath}' texture #${String(index)} was never stored.`,
       );
     }
-    byDigest.set(digestOf(image), { image: stored, key });
+    const digest = digestOf(image);
+    const candidates = byDigest.get(digest) ?? [];
+    candidates.push({ image: stored, key });
+    byDigest.set(digest, candidates);
   }
   const auxiliaryOutputs = new Map<string, IAssetAuxiliaryOutput>();
   let written: Awaited<ReturnType<typeof writeSharedGlb>>;
   try {
     written = await writeSharedGlb(io, document, logicalPath, (bytes) => {
-      const found = byDigest.get(digestOf(bytes));
+      const found = byDigest.get(digestOf(bytes))?.shift();
       if (found === undefined) {
         throw new Error("the writer emitted an image the pass did not file in the shared store");
       }
@@ -975,7 +979,9 @@ async function writeAndVerifyShared(
     );
   }
   return {
-    auxiliaryOutputs: [...auxiliaryOutputs.values()],
+    auxiliaryOutputs: [...auxiliaryOutputs.values()].sort((left, right) =>
+      (left.outputPath ?? "") < (right.outputPath ?? "") ? -1 : 1,
+    ),
     buffer: written.buffer,
     extensions: written.extensionsUsed,
     verified: verified.getRoot(),

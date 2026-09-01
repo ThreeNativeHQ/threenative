@@ -3,6 +3,7 @@ import path from "node:path";
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { buildFixtureDocument } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
@@ -54,6 +55,44 @@ async function fixture(seed: number): Promise<Buffer> {
   return Buffer.from(await new NodeIO().writeBinary(document));
 }
 
+/**
+ * Two reachable base-colour maps with different valid PNG containers that decode to the same
+ * pixels. The Basis encoder therefore emits the same bytes, while source-keyed storage must
+ * retain both distinct paths.
+ */
+async function encodedImageCollisionFixture(): Promise<{
+  readonly input: Buffer;
+  readonly sourcePng: Buffer;
+  readonly rewrittenPng: Buffer;
+}> {
+  const document = buildFixtureDocument();
+  const sourcePng = rgbaPng({
+    blue: (x, y) => (x * 3 + y * 5) % 256,
+    green: (x, y) => (x * 7 + y * 11) % 256,
+    height: 32,
+    red: (x, y) => (x * 13 + y * 17) % 256,
+    width: 32,
+  });
+  // pngjs produces a different, still-valid container at level 0 while preserving every RGBA
+  // sample. This is intentionally source-byte distinct rather than a copied texture object.
+  const rewrittenPng = PNG.sync.write(PNG.sync.read(sourcePng), { deflateLevel: 0 });
+  const [first, second] = document.getRoot().listTextures();
+  const [cloth, skin] = document.getRoot().listMaterials();
+  if (first === undefined || second === undefined || cloth === undefined || skin === undefined) {
+    throw new Error("collision fixture requires the textured character materials");
+  }
+  first.setImage(sourcePng).setMimeType("image/png");
+  second.setImage(rewrittenPng).setMimeType("image/png");
+  // Both maps feed the same slot/settings and both materials are reachable from the fixture.
+  cloth.setNormalTexture(null);
+  skin.setBaseColorTexture(second);
+  return {
+    input: Buffer.from(await new NodeIO().writeBinary(document)),
+    rewrittenPng,
+    sourcePng,
+  };
+}
+
 function countingStore(
   inner: ISharedImageStore,
 ): ISharedImageStore & { puts: number; hits: number } {
@@ -86,6 +125,56 @@ async function applyShared(
 }
 
 describe("shared model images", () => {
+  it("should retain one shared output per distinct source key when encoded bytes collide", async () => {
+    const fixture = await encodedImageCollisionFixture();
+    expect(fixture.rewrittenPng).not.toEqual(fixture.sourcePng);
+
+    const result = await applyShared(
+      createSharedImageStore(),
+      fixture.input,
+      "props/collision.glb",
+    );
+    const uris = (unpackGlb(result.buffer).json.images ?? []).map((image) => image.uri);
+    const outputs = result.auxiliaryOutputs.map((output) => output.outputPath);
+
+    expect(new Set(uris).size).toBe(2);
+    expect(new Set(outputs).size).toBe(2);
+  });
+
+  it("should declare every distinct source-keyed shared image during an empty-public compile", async () => {
+    const root = await makeTempDir("threenative-shared-images-collision-");
+    await mkdir(path.join(root, "assets", "props"), { recursive: true });
+    const fixture = await encodedImageCollisionFixture();
+    await writeFile(path.join(root, "assets", "props", "collision.glb"), fixture.input);
+
+    await expect(
+      compileAssets({
+        config: { models: { sharedImages: true } },
+        cwd: root,
+        transcoder: basisTranscoderPaths(),
+      }),
+    ).resolves.toMatchObject({ written: 1 });
+
+    const files = (await readdir(path.join(root, "public", "shared", "images"))).sort();
+    const expectedPaths = files.map((file) => `shared/images/${file}`);
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { sharedImages?: { output: string }[] }> };
+    const receipt = JSON.parse(
+      await readFile(path.join(root, "public", "bake.receipt.json"), "utf8"),
+    ) as { outputs: { path: string }[] };
+
+    expect(files).toHaveLength(2);
+    expect(
+      manifest.entries["props/collision.glb"]?.sharedImages?.map((image) => image.output),
+    ).toEqual(expectedPaths);
+    expect(
+      receipt.outputs
+        .map((output) => output.path)
+        .filter((output) => output.startsWith("shared/images/")),
+    ).toEqual(expectedPaths);
+  });
+
   it("should write each distinct image once and reference it from every model by a relative uri", async () => {
     const store = countingStore(createSharedImageStore());
     const a = await applyShared(store, await fixture(0), "props/a.glb");
