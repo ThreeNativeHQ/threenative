@@ -34,9 +34,11 @@ Captures here are not bit-deterministic: two identical runs of the same build mo
 921,600 pixels, mean |Δ| 2.668/255**. A pixel comparison therefore cannot answer "did the default
 look move". The object the chain is handed can.
 
-`scripts/preset-neutrality.local.ts` reconstructs each template's `desktopPreset` and
-`mobilePreset` from `git show origin/main:…/postprocessing.ts` and deep-compares them to this
-branch's resolved tiers:
+A one-off script — written for this run and not retained, because the repository's temp-directory
+guard reserves `scripts/` for gates that own their cleanup — reconstructed each template's
+`desktopPreset` and `mobilePreset` by stripping the imports and `setupPost` from
+`git show origin/main:…/postprocessing.ts`, exporting the two literals, and deep-comparing them to
+this branch's `qualityPreset("high")` and `qualityPreset("low")`:
 
 ```
 action-rpg   high == origin/main desktopPreset, low == mobilePreset
@@ -55,8 +57,9 @@ starter      high == origin/main desktopPreset, low == mobilePreset
 
 ## The switch is reached, and it reports
 
-`scripts/tier-capture.local.ts` scaffolds the starter, captures it twice at its default tier, then
-forces `tier: "low"` in the scene and captures again.
+A second one-off script, also not retained, scaffolded the starter against locally packed tarballs,
+captured it twice at its default tier, then patched `tier: "low"` into the scene's `setupPost` call,
+rebuilt and captured again. Chromium headed under a private Xvfb, 1280x720.
 
 ```
 default (a)      TN_QUALITY_TIER high mobile=false source=platform
@@ -78,8 +81,8 @@ silencing the line. The frames differ by **9× the same-code noise band**.
 The `tier: "low"` capture is blank — the canvas renders nothing behind the DOM HUD. That is not
 what this PRD set out to show, and it is **not caused by this change**.
 
-Control: `scripts/control-capture.local.ts`, run from a worktree of `origin/main`'s templates with
-no PRD-304 code, scaffolds the same starter and forces the incumbent `mobilePreset` by passing
+Control: the same capture script, run from a worktree of `origin/main`'s templates with no PRD-304
+code, scaffolding the same starter and forcing the incumbent `mobilePreset` by passing
 `mobile: true`. It produces the same blank frame with the same four statistics:
 
 ```
