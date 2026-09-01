@@ -18,6 +18,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node
 import { fileURLToPath } from "node:url";
 import { SDL3_ANDROID_VERSION, stageAndroidAssets } from "../scripts/package-android.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
+import { prepareAndroidEmulator } from "../scripts/android-emulator.mjs";
 import {
   androidMultitouchScript,
   MULTITOUCH_PROOF_POINTS,
@@ -1349,6 +1350,11 @@ export function androidForegroundBlocker(windowDump, appId = APP_ID) {
   return null;
 }
 
+export function launchAndroidConformanceActivity(common, serial, extras = []) {
+  prepareAndroidEmulator(serial, common);
+  return common("shell", "am", "start", "-W", "-n", ACTIVITY, ...extras);
+}
+
 /** The landscape size the Android lane pins so its captures compare against the web reference. */
 export const ANDROID_CAPTURE_SIZE = "1280x720";
 
@@ -1623,16 +1629,12 @@ async function runAndroid(
         temporalRemoteCaptures["frame-zero"],
       );
     }
-    const launch = common(
-      "shell",
-      "am",
-      "start",
-      "-W",
-      "-n",
-      ACTIVITY,
-      ...(temporalRemoteCaptures === null
+    const launch = launchAndroidConformanceActivity(
+      common,
+      serial,
+      temporalRemoteCaptures === null
         ? []
-        : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", androidMailboxRoot]),
+        : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", androidMailboxRoot],
     );
     if (!/Status:\s*ok/iu.test(String(launch.stdout)))
       throw new Error(`Android activity failed to start: ${launch.stdout}`);

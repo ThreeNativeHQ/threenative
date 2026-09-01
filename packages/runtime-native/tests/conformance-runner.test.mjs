@@ -40,6 +40,7 @@ import {
   captureBrowserCanvas,
   hardwareAdapterBlocker,
   makeEntry,
+  launchAndroidConformanceActivity,
   runCommand,
   temporalCaptureLabel,
   unexpectedBlockedRows,
@@ -484,6 +485,29 @@ test("a capture is refused when any window but the app owns focus", () => {
   const source = readFileSync(runner, "utf8");
   assert.match(source, /const beforeCaptureBlocker = androidForegroundBlocker\(/u);
   assert.match(source, /const afterCaptureBlocker = androidForegroundBlocker\(/u);
+});
+
+test("Android conformance dismisses immersive confirmation before its first activity launch", () => {
+  const calls = [];
+  const common = (...args) => {
+    calls.push(args);
+    return { stdout: args.includes("start") ? "Status: ok" : "" };
+  };
+
+  const result = launchAndroidConformanceActivity(common, "emulator-5554");
+
+  assert.deepEqual(calls, [
+    ["shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"],
+    [
+      "shell",
+      "am",
+      "start",
+      "-W",
+      "-n",
+      "com.threenative.game/com.threenative.runtime.MystralActivity",
+    ],
+  ]);
+  assert.equal(result.stdout, "Status: ok");
 });
 
 test("a leaked capture-size override is reset rather than restored back onto the device", () => {
