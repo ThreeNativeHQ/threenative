@@ -1,4 +1,5 @@
 import { BufferAttribute, BufferGeometry, LOD, Mesh, Object3D, Vector3 } from "three";
+import type { InterleavedBufferAttribute, Matrix4 } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import type { IRendererLike } from "./renderer.js";
@@ -130,6 +131,17 @@ const LOD_POP_THRESHOLD = 16;
 const LOD_TRANSITION_FRAMES = 3;
 const BRIDGE_COORDINATE_EPSILON = 1e-4;
 const BRIDGE_COORDINATE_RELATIVE_EPSILON = 2 ** -22;
+type PositionAttribute = BufferAttribute | InterleavedBufferAttribute;
+
+function bridgeCoordinateMatches(actual: number, expected: number): boolean {
+  return (
+    Math.abs(actual - expected) <=
+    Math.max(
+      BRIDGE_COORDINATE_EPSILON,
+      Math.max(1, Math.abs(actual), Math.abs(expected)) * BRIDGE_COORDINATE_RELATIVE_EPSILON,
+    )
+  );
+}
 
 class EmptyCollider implements IWorldTileCollider {
   #disposed = false;
@@ -412,6 +424,124 @@ function edgeHeight(level: ILevelGeometry, side: keyof IEdgeSamples, normalized:
   return (
     edgeVertexHeight(level, side, lower) * (1 - mix) + edgeVertexHeight(level, side, upper) * mix
   );
+}
+
+function edgeWorldVertexHeight(
+  level: ILevelGeometry,
+  side: keyof IEdgeSamples,
+  index: number,
+  target: Vector3,
+): number {
+  const position = level.geometry.getAttribute("position");
+  const vertex = edgeVertexIndex(level, side, index);
+  const localX = position.getX(vertex);
+  const localY = position.getY(vertex);
+  const localZ = position.getZ(vertex);
+  if (!Number.isFinite(localX) || !Number.isFinite(localY) || !Number.isFinite(localZ))
+    throw new Error("TerrainTiles seam diagnostic bridge coordinates must be finite.");
+  target.set(localX, localY, localZ).applyMatrix4(level.mesh.matrixWorld);
+  if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z))
+    throw new Error("TerrainTiles seam diagnostic bridge world coordinates must be finite.");
+  return target.y;
+}
+
+function edgeWorldHeight(
+  level: ILevelGeometry,
+  side: keyof IEdgeSamples,
+  normalized: number,
+  target: Vector3,
+): number {
+  const position = Math.max(0, Math.min(1, normalized)) * (level.resolution - 1);
+  const lower = Math.floor(position);
+  const upper = Math.min(level.resolution - 1, lower + 1);
+  const mix = position - lower;
+  return (
+    edgeWorldVertexHeight(level, side, lower, target) * (1 - mix) +
+    edgeWorldVertexHeight(level, side, upper, target) * mix
+  );
+}
+
+function bridgeEndpointWorldHeight(
+  position: PositionAttribute,
+  matrixWorld: Matrix4,
+  vertex: number,
+  expectedX: number,
+  expectedY: number,
+  expectedZ: number,
+  worldPosition: Vector3,
+): number {
+  const localX = position.getX(vertex);
+  const localY = position.getY(vertex);
+  const localZ = position.getZ(vertex);
+  if (!Number.isFinite(localX) || !Number.isFinite(localY) || !Number.isFinite(localZ))
+    throw new Error("TerrainTiles seam diagnostic bridge coordinates must be finite.");
+  worldPosition.set(localX, localY, localZ).applyMatrix4(matrixWorld);
+  if (
+    !Number.isFinite(worldPosition.x) ||
+    !Number.isFinite(worldPosition.y) ||
+    !Number.isFinite(worldPosition.z)
+  )
+    throw new Error("TerrainTiles seam diagnostic bridge world coordinates must be finite.");
+  if (
+    !Number.isFinite(expectedX) ||
+    !Number.isFinite(expectedY) ||
+    !Number.isFinite(expectedZ) ||
+    !bridgeCoordinateMatches(worldPosition.x, expectedX) ||
+    !bridgeCoordinateMatches(worldPosition.y, expectedY) ||
+    !bridgeCoordinateMatches(worldPosition.z, expectedZ)
+  )
+    throw new Error(
+      "TerrainTiles seam diagnostic bridge topology does not match current neighboring edges.",
+    );
+  return worldPosition.y;
+}
+
+function bridgeEndpointHeight(
+  bridge: IStitchBridge,
+  position: PositionAttribute,
+  sample: number,
+  endpoint: number,
+  tile: IResidentTile,
+  side: keyof IEdgeSamples,
+  level: ILevelGeometry,
+  worldPosition: Vector3,
+  expectedWorldPosition: Vector3,
+): number {
+  const sampleNormalized = sample / (bridge.resolution - 1);
+  const [expectedX, , expectedZ] = edgeWorldPoint(tile.field, side, sampleNormalized, 0);
+  const expectedY = edgeWorldHeight(level, side, sampleNormalized, expectedWorldPosition);
+  return bridgeEndpointWorldHeight(
+    position,
+    bridge.mesh.matrixWorld,
+    sample * 2 + endpoint,
+    expectedX,
+    expectedY,
+    expectedZ,
+    worldPosition,
+  );
+}
+
+interface IBridgeEndpoint {
+  readonly level: ILevelGeometry;
+  readonly side: keyof IEdgeSamples;
+  readonly tile: IResidentTile;
+}
+
+function bridgeEndpointPair(
+  a: IResidentTile,
+  aSide: keyof IEdgeSamples,
+  b: IResidentTile,
+  bSide: keyof IEdgeSamples,
+): readonly [IBridgeEndpoint, IBridgeEndpoint] {
+  const aLevel = renderedLevel(a);
+  const bLevel = renderedLevel(b);
+  if (aLevel === undefined || bLevel === undefined)
+    throw new Error(
+      "TerrainTiles seam diagnostic bridge topology has no rendered neighboring edge.",
+    );
+  const aEndpoint = { level: aLevel, side: aSide, tile: a };
+  const bEndpoint = { level: bLevel, side: bSide, tile: b };
+  return aLevel.resolution > bLevel.resolution ? [aEndpoint, bEndpoint] : [bEndpoint, aEndpoint];
 }
 
 function interpolatedEdgeSample(samples: Float32Array, normalized: number, name: string): number {
@@ -866,52 +996,66 @@ function bridgeCoverageAt(
   const position = bridge.mesh.geometry.getAttribute("position");
   if (position.count !== bridge.resolution * 2)
     throw new Error("TerrainTiles seam diagnostic bridge geometry has invalid coverage.");
+  const [finer, coarser] = bridgeEndpointPair(a, aSide, b, bSide);
   bridge.mesh.updateWorldMatrix(true, false);
+  finer.level.mesh.updateWorldMatrix(true, false);
+  coarser.level.mesh.updateWorldMatrix(true, false);
   const worldPosition = new Vector3();
+  const expectedWorldPosition = new Vector3();
   const samplePosition = Math.max(0, Math.min(1, normalized)) * (bridge.resolution - 1);
   const lower = Math.floor(samplePosition);
   const upper = Math.min(bridge.resolution - 1, lower + 1);
   const mix = samplePosition - lower;
-  const coordinateMatches = (actual: number, expected: number): boolean =>
-    Math.abs(actual - expected) <=
-    Math.max(
-      BRIDGE_COORDINATE_EPSILON,
-      Math.max(1, Math.abs(actual), Math.abs(expected)) * BRIDGE_COORDINATE_RELATIVE_EPSILON,
-    );
-  const height = (
-    sample: number,
-    endpoint: number,
-    tile: IResidentTile,
-    side: keyof IEdgeSamples,
-  ): number => {
-    const vertex = sample * 2 + endpoint;
-    const localX = position.getX(vertex);
-    const localY = position.getY(vertex);
-    const localZ = position.getZ(vertex);
-    if (!Number.isFinite(localX) || !Number.isFinite(localY) || !Number.isFinite(localZ))
-      throw new Error("TerrainTiles seam diagnostic bridge coordinates must be finite.");
-    worldPosition.set(localX, localY, localZ).applyMatrix4(bridge.mesh.matrixWorld);
-    if (
-      !Number.isFinite(worldPosition.x) ||
-      !Number.isFinite(worldPosition.y) ||
-      !Number.isFinite(worldPosition.z)
-    )
-      throw new Error("TerrainTiles seam diagnostic bridge world coordinates must be finite.");
-    const sampleNormalized = sample / (bridge.resolution - 1);
-    const [expectedX, , expectedZ] = edgeWorldPoint(tile.field, side, sampleNormalized, 0);
-    if (
-      !Number.isFinite(expectedX) ||
-      !Number.isFinite(expectedZ) ||
-      !coordinateMatches(worldPosition.x, expectedX) ||
-      !coordinateMatches(worldPosition.z, expectedZ)
-    )
-      throw new Error(
-        "TerrainTiles seam diagnostic bridge topology does not match current neighboring edges.",
-      );
-    return worldPosition.y;
-  };
-  const fine = height(lower, 0, a, aSide) * (1 - mix) + height(upper, 0, a, aSide) * mix;
-  const coarse = height(lower, 1, b, bSide) * (1 - mix) + height(upper, 1, b, bSide) * mix;
+  const fine =
+    bridgeEndpointHeight(
+      bridge,
+      position,
+      lower,
+      0,
+      finer.tile,
+      finer.side,
+      finer.level,
+      worldPosition,
+      expectedWorldPosition,
+    ) *
+      (1 - mix) +
+    bridgeEndpointHeight(
+      bridge,
+      position,
+      upper,
+      0,
+      finer.tile,
+      finer.side,
+      finer.level,
+      worldPosition,
+      expectedWorldPosition,
+    ) *
+      mix;
+  const coarse =
+    bridgeEndpointHeight(
+      bridge,
+      position,
+      lower,
+      1,
+      coarser.tile,
+      coarser.side,
+      coarser.level,
+      worldPosition,
+      expectedWorldPosition,
+    ) *
+      (1 - mix) +
+    bridgeEndpointHeight(
+      bridge,
+      position,
+      upper,
+      1,
+      coarser.tile,
+      coarser.side,
+      coarser.level,
+      worldPosition,
+      expectedWorldPosition,
+    ) *
+      mix;
   const coverage = Math.abs(fine - coarse);
   if (!Number.isFinite(coverage))
     throw new Error("TerrainTiles seam diagnostic bridge coverage must be finite.");
@@ -923,6 +1067,7 @@ function seamObservation(
   b: IResidentTile,
   bridge: IStitchBridge | undefined,
   owner: Object3D,
+  includeBridgeCoverage: boolean,
 ): { gap: number; visualGap: number } {
   const [aSide, bSide] = opposingEdge(a, b);
   const aLevel = renderedLevel(a);
@@ -931,7 +1076,10 @@ function seamObservation(
     throw new Error("TerrainTiles seam diagnostic observation has no rendered level.");
   const samples = Math.max(aLevel.resolution, bLevel.resolution);
   const bridgeAttached =
-    bridge !== undefined && bridge.mesh.parent === owner && bridge.mesh.visible === true;
+    includeBridgeCoverage &&
+    bridge !== undefined &&
+    bridge.mesh.parent === owner &&
+    bridge.mesh.visible === true;
   let gap = 0;
   let visualGap = 0;
   for (let index = 0; index < samples; index += 1) {
@@ -1268,7 +1416,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
     this.#recordPeaks();
     this.#coordinateNeighborLods(hadFocus);
-    this.#recordSeamDiagnostics();
+    this.#recordSeamDiagnostics(false);
     this.#reconcileNeighbors();
     this.#recordSeamDiagnostics();
     this.#recordPeaks();
@@ -1305,7 +1453,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tile.field.process(renderer);
       }
     }
-    this.#recordSeamDiagnostics();
+    this.#recordSeamDiagnostics(false);
     this.#reconcileNeighbors();
     this.#recordSeamDiagnostics();
     this.#recordLodPopAfterReconciliation(lodFrame);
@@ -1654,7 +1802,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
   }
 
-  #recordSeamDiagnostics(): void {
+  #recordSeamDiagnostics(includeBridgeCoverage = true): void {
     const tiles = [...this.#resident.values()];
     for (const tile of tiles) {
       for (const neighbor of tiles) {
@@ -1664,6 +1812,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           neighbor,
           this.#stitches.get(neighborPairKey([tile, neighbor])),
           this,
+          includeBridgeCoverage,
         );
         this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
         this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
