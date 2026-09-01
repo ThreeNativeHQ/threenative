@@ -70,6 +70,12 @@ export async function encodeLinearRgbaKtx2(
   return Buffer.from(encoded);
 }
 
+/**
+ * Encodes source textures as mipmapped KTX2/Basis data and declares their runtime transcode targets.
+ * @constraint every compressed source width and height must be divisible by 4 because BC7, BC1, ETC2, and ASTC 4x4 use 4x4 blocks; WebGPU rejects an unaligned texture at draw time
+ * @constraint use a matching codec "none" override when an intentionally unaligned source cannot be resized
+ * @example const pass = texturePass({ overrides: [{ glob: "ui/*", codec: "none" }] });
+ */
 export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
   return {
     configuration: {

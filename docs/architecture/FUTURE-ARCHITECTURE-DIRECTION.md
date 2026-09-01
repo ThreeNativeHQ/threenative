@@ -167,7 +167,7 @@ The actual reasons:
 | Presets / genres / recipes | **0 of 7 ever reproduced their genre** |
 | Forking three.js or optimising its internals in our host | Graveyard #15. Fixes belong upstream, where both arms get them |
 | Fixed-shape wrapper objects as a speed fix | Tried, **worse than doing nothing** (graveyard #12). The cost is three.js's material system and **Chrome pays it too** |
-| Bevy / compile-to-IR / QuickJS-as-control-plane (`TMP-IDEA.md`, since deleted) | Describes a codebase we do not have. Three of its ideas are already in the graveyard; four it proposes already shipped. Its one good idea — *a table of who owns each runtime property and what writing to it does* — is worth writing |
+| Bevy / compile-to-IR / QuickJS-as-control-plane (an untracked scratch proposal, never committed here) | Describes a codebase we do not have. Three of its ideas are already in the graveyard; four it proposes already shipped. Its one good idea — *a table of who owns each runtime property and what writing to it does* — is worth writing |
 
 ---
 

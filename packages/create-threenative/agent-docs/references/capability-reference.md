@@ -3,10 +3,177 @@
 
 # Capability reference
 
-Every public class and function export of `@threenative/core` and `@threenative/physics`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/physics`, `@threenative/playtest`, `@threenative/ui`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
+
+## `@threenative/assets`
+
+### `compileAssets`
+
+`function` — Compiles a project's source assets into content-addressed runtime files and a manifest.
+
+```ts
+export async function compileAssets( options: IAssetCompileOptions = { … }
+```
+
+- **Use when:** compile game assets before a web or native build · optimize textures for the GPU · produce a manifest for runtime asset loading
+- **Constraints:** source and output directories must be disjoint; a pass failure stops the build with the asset path
+
+```ts
+const result = await compileAssets({ source: "assets", output: "public" });
+```
+
+### `formatHealthReport`
+
+`function` — Formats asset health findings and their summary for human-readable output.
+
+```ts
+export function formatHealthReport(report: IAssetHealthReport): readonly string[] { … }
+```
+
+- **Use when:** print asset size, license, and target findings after compilation · show why an asset health check is warning or failing
+- **Constraints:** the returned lines describe findings; target enforcement happens in runHealthReport
+
+```ts
+const lines = formatHealthReport(report);
+```
+
+### `formatModelSizes`
+
+`function` — Formats model byte, geometry, and embedded-texture measurements for a build report.
+
+```ts
+export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly string[] { … }
+```
+
+- **Use when:** inspect how model optimization changed file and GPU sizes · print model compression results after an asset build
+- **Constraints:** rows must use bytes before and after from the same compiled input
+
+```ts
+const lines = formatModelSizes(modelRows);
+```
+
+### `formatTextureSizes`
+
+`function` — Formats standalone texture byte measurements for a build report.
+
+```ts
+export function formatTextureSizes(rows: readonly ITextureSizeRow[]): readonly string[] { … }
+```
+
+- **Use when:** inspect texture compression savings · print which codec a compiled texture uses
+- **Constraints:** an empty row list produces no report lines
+
+```ts
+const lines = formatTextureSizes(textureRows);
+```
+
+### `lightmapPass`
+
+`function` — Generates lightmap UVs and bakes a static GLB's lightmap atlas.
+
+```ts
+export function lightmapPass(options: ILightmapPassOptions): IAssetPass { … }
+```
+
+- **Use when:** add baked static lighting to a model · generate TEXCOORD_1 data for a lightmapped scene
+- **Constraints:** the input must be a static self-contained GLB with at least one punctual light
+
+```ts
+const pass = lightmapPass({ atlasSize: 1024, padding: 2 });
+```
+
+### `modelPass`
+
+`function` — Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.
+
+```ts
+export function modelPass(options: IModelPassOptions = { … }
+```
+
+- **Use when:** reduce a model's download and GPU footprint · optimize a GLB before shipping it with a game
+- **Constraints:** the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output
+
+```ts
+const pass = modelPass({ simplify: { ratio: 0.5 } });
+```
+
+### `parsePng`
+
+`function` — Reads dimensions and alpha metadata from a PNG signature and IHDR header.
+
+```ts
+export function parsePng(value: Buffer): IPngInfo | undefined { … }
+```
+
+- **Use when:** inspect a PNG before choosing a texture codec · read source texture dimensions in an asset health check
+- **Constraints:** non-PNG or truncated bytes return undefined instead of being treated as a valid image
+
+```ts
+const png = parsePng(bytes); if (png !== undefined) console.log(png.width, png.height);
+```
+
+### `resolveBasisTranscoder`
+
+`function` — Finds Three.js's Basis Universal transcoder files for the runtime KTX2 loader.
+
+```ts
+export function resolveBasisTranscoder(cwd: string): IBasisTranscoder { … }
+```
+
+- **Use when:** prepare compressed textures for runtime loading · copy the Basis transcoder into a compiled asset output
+- **Constraints:** the supplied working directory must resolve both basis_transcoder.js and basis_transcoder.wasm from its Three.js installation
+
+```ts
+const transcoder = resolveBasisTranscoder(process.cwd());
+```
+
+### `runHealthReport`
+
+`function` — Measures compiled assets and grades them against declared project targets.
+
+```ts
+export async function runHealthReport( inputs: readonly IAssetHealthInput[], targets: IAssetTargets = { … }
+```
+
+- **Use when:** check asset dimensions, triangles, materials, and licenses · enforce asset budgets during a build
+- **Constraints:** a finding is fail-grade only when the corresponding project target was declared
+
+```ts
+const report = await runHealthReport(inputs, { maxTextureDimension: 2048 });
+```
+
+### `texturePass`
+
+`function` — Encodes standalone textures as mipmapped KTX2/Basis assets for GPU storage.
+
+```ts
+export function texturePass(options: ITexturePassOptions = { … }
+```
+
+- **Use when:** optimize textures for the GPU · compress PNG or JPEG files before runtime loading
+- **Constraints:** compressed source width and height must each be divisible by 4; use a codec "none" override for an intentionally unaligned texture · every compressed source width and height must be divisible by 4 because BC7, BC1, ETC2, and ASTC 4x4 use 4x4 blocks; WebGPU rejects an unaligned texture at draw time · use a matching codec "none" override when an intentionally unaligned source cannot be resized
+
+```ts
+const pass = texturePass({ quality: 150 });
+```
+
+### `watchAssets`
+
+`function` — Watches an asset source directory and recompiles settled changes during development.
+
+```ts
+export function watchAssets(options: IAssetWatchOptions = { … }
+```
+
+- **Use when:** recompile a changed texture without restarting the dev server · see asset pipeline failures as files are saved
+- **Constraints:** call close on the returned handle; initial and burst failures are reported without stopping the dev server
+
+```ts
+const watcher = watchAssets({ cwd: process.cwd() });
+```
 
 ## `@threenative/core`
 
