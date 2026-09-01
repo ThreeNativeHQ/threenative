@@ -374,10 +374,17 @@ function messageOf(error: unknown): string {
  * declares `KHR_texture_basisu` as required — a loader without a transcoder cannot read the
  * result, and saying so is the honest declaration.
  */
+/** An image the shared store supplied already encoded, with what its source measured. */
+export interface IRecalledTexture {
+  readonly codec: string;
+  readonly sourceBytes: number;
+}
+
 export async function compressEmbeddedTextures(
   document: Document,
   logicalPath: string,
   options: IModelTexturesOptions = {},
+  recalled: ReadonlyMap<number, IRecalledTexture> = new Map(),
 ): Promise<IEmbeddedTextureSummary | undefined> {
   const root = document.getRoot();
   const textures = root.listTextures();
@@ -405,6 +412,19 @@ export async function compressEmbeddedTextures(
     // reported GPU total is the whole model rather than only the part this stage touched.
     if (texture.getMimeType() === "image/ktx2") {
       const shape = imageShape(image, "image/ktx2");
+      const fromStore = recalled.get(index);
+      if (fromStore !== undefined) {
+        // Recalled from the shared store: the summary reports what this model's source carried
+        // and what the store's encode saved, exactly as if the encode had run here — so the
+        // manifest entry is the same whether the image was encoded or found.
+        bytesBefore += fromStore.sourceBytes;
+        bytesAfter += image.byteLength;
+        gpuBytesBefore += gpuBytes(shape.width, shape.height, "none");
+        gpuBytesAfter += gpuBytes(shape.width, shape.height, fromStore.codec);
+        formats[key] = fromStore.codec;
+        compressed += 1;
+        continue;
+      }
       bytesBefore += image.byteLength;
       bytesAfter += image.byteLength;
       const already = gpuBytes(shape.width, shape.height, "uastc");

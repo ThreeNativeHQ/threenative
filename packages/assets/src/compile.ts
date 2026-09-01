@@ -26,6 +26,7 @@ import type {
   IModelTexturesOptions,
   IModelVirtualOptions,
 } from "./passes/model.js";
+import { createSharedImageStore } from "./passes/shared-images.js";
 import { texturePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
 import { formatModelSizes, formatTextureSizes } from "./report.js";
@@ -65,6 +66,12 @@ export interface IAssetAuxiliaryOutput {
   /** Manifest array receiving this output, for example `lightmaps`. */
   readonly manifestField: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /**
+   * An output the pass already content-addressed itself, relative to the output root — the
+   * shared image several models reference by the same relative URL. Absent means the compile
+   * names it `<stem>.<role>.<digest><extension>` beside the input's own output.
+   */
+  readonly outputPath?: string;
   /** Stable filename segment, for example `lightmap`. */
   readonly role: string;
 }
@@ -107,6 +114,13 @@ export interface IModelsConfig {
   readonly lightmap?: ILightmapPassOptions;
   readonly passes?: IModelPassesOptions;
   readonly quantize?: IModelQuantizeOptions;
+  /**
+   * Write each distinct embedded image once under `shared/images/` and reference it from every
+   * model that carries it, instead of embedding a copy in each. A marketplace pack's eight pines
+   * stop shipping eight copies of the same bark map, and a rebuild reuses last build's encodes.
+   * Default false: the served GLB then references files beside it, which a host must serve.
+   */
+  readonly sharedImages?: boolean;
   /** LOD simplification. Absent means none: it is the one lossy stage, and it is opt-in. */
   readonly simplify?: IModelSimplifyOptions;
   /**
@@ -425,13 +439,25 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
 }
 
 /** `"none"` disables the built-in model pass; an object configures it; absent means defaults. */
-function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
+type ParsedModelsConfig = Omit<IModelPassOptions, "sharedImages"> & {
+  readonly sharedImages?: boolean;
+};
+
+function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   if (raw === undefined) return {};
   if (raw === "none") return undefined;
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = ["lightmap", "passes", "quantize", "simplify", "textures", "virtual"];
+  const allowed = [
+    "lightmap",
+    "passes",
+    "quantize",
+    "sharedImages",
+    "simplify",
+    "textures",
+    "virtual",
+  ];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
@@ -445,7 +471,11 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   const simplify = raw.simplify === undefined ? undefined : parseModelSimplify(raw.simplify);
   const textures = raw.textures === undefined ? undefined : parseModelTextures(raw.textures);
   const virtual = raw.virtual === undefined ? undefined : parseModelVirtual(raw.virtual);
+  if (raw.sharedImages !== undefined && typeof raw.sharedImages !== "boolean") {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.sharedImages must be a boolean.");
+  }
   return {
+    ...(raw.sharedImages === true ? { sharedImages: true } : {}),
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
@@ -702,7 +732,16 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           ...(textures !== undefined ? [texturePass(textures)] : []),
           ...(lightmap !== undefined ? [lightmapPass(lightmap)] : []),
           ...(models !== undefined
-            ? [modelPass({ ...models, preserveLightmapUv: lightmap !== undefined })]
+            ? [
+                modelPass({
+                  ...models,
+                  preserveLightmapUv: lightmap !== undefined,
+                  // Bound to the output root so a second build finds last build's encodes on
+                  // disk instead of paying for them again.
+                  sharedImages:
+                    models.sharedImages === true ? createSharedImageStore(outputRoot) : undefined,
+                }),
+              ]
             : []),
         ]
       : [];
@@ -815,6 +854,8 @@ interface IResolvedAuxiliaryOutput {
   readonly manifestField: string;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly output: string;
+  /** Named by the pass and possibly referenced by several inputs. */
+  readonly shared: boolean;
   /** The producer's own name for this output — `lightmap` for the lightmap pass's atlas. */
   readonly role: string;
 }
@@ -827,11 +868,9 @@ function resolveAuxiliaryOutputs(
   const stem = logical.slice(0, -sourceExtension.length);
   return outputs.map((auxiliary) => {
     const digest = createHash("sha256").update(auxiliary.buffer).digest("hex").slice(0, 8);
-    const output = outputNameFor(
-      `${stem}.${auxiliary.role}${auxiliary.extension}`,
-      digest,
-      auxiliary.extension,
-    );
+    const output =
+      auxiliary.outputPath ??
+      outputNameFor(`${stem}.${auxiliary.role}${auxiliary.extension}`, digest, auxiliary.extension);
     return {
       buffer: auxiliary.buffer,
       manifestField: auxiliary.manifestField,
@@ -842,6 +881,7 @@ function resolveAuxiliaryOutputs(
       },
       output,
       role: auxiliary.role,
+      shared: auxiliary.outputPath !== undefined,
     };
   });
 }
@@ -856,6 +896,66 @@ function auxiliaryManifestFields(
     fields[output.manifestField] = field;
   }
   return fields;
+}
+
+/**
+ * The files a manifest entry declares beyond its own output: every array field whose records
+ * carry an `output` path (lightmaps, shared images), as the receipt records them.
+ */
+function declaredAuxiliaryOutputs(
+  entry: IAssetManifestEntry,
+): { readonly bytes: number; readonly path: string; readonly producer: string }[] {
+  const outputs: { bytes: number; path: string; producer: string }[] = [];
+  for (const [field, value] of Object.entries(entry)) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      if (!isRecord(item) || typeof item.output !== "string") continue;
+      outputs.push({
+        bytes: typeof item.bytes === "number" ? item.bytes : 0,
+        path: item.output,
+        producer: field === "lightmaps" ? "lightmap" : field === "sharedImages" ? "image" : field,
+      });
+    }
+  }
+  return outputs;
+}
+
+/**
+ * The previous entry, when it is exactly what this build would produce and every file it
+ * declares still exists — or `undefined`, in which case the passes run.
+ */
+async function reusableEntry(
+  outputRoot: string,
+  logical: string,
+  digest: string,
+  existing: IAssetManifestEntry,
+): Promise<
+  { readonly bytes: number; readonly path: string; readonly producer: string }[] | undefined
+> {
+  const expected = outputNameFor(logical, digest, path.extname(existing.output));
+  if (existing.output !== expected) return undefined;
+  const auxiliary = declaredAuxiliaryOutputs(existing);
+  const present = await Promise.all(
+    [existing.output, ...auxiliary.map((output) => output.path)].map((relative) =>
+      outputExists(path.join(outputRoot, relative)),
+    ),
+  );
+  return present.every(Boolean) ? auxiliary : undefined;
+}
+
+/** The paths the previous bake's receipt declared, or none when there is no readable receipt. */
+async function readPreviousReceiptPaths(receiptPath: string): Promise<ReadonlySet<string>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
+    if (!isRecord(parsed) || !Array.isArray(parsed.outputs)) return new Set();
+    return new Set(
+      parsed.outputs.flatMap((output) =>
+        isRecord(output) && typeof output.path === "string" ? [output.path] : [],
+      ),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 async function readExistingManifest(
@@ -1012,11 +1112,16 @@ async function assertNoUndeclaredOutputs(
   outputRoot: string,
   declared: ReadonlySet<string>,
   since: number,
+  writtenBefore: ReadonlySet<string>,
 ): Promise<void> {
   const undeclared: string[] = [];
   for (const relative of await walkOutputFiles(outputRoot)) {
     if (relative === MANIFEST_NAME || relative === RECEIPT_NAME) continue;
     if (declared.has(relative)) continue;
+    // A file the previous receipt lists was written by an earlier bake, however close its mtime
+    // is to this run's start: with the cache skipping unchanged inputs, two bakes can be one
+    // millisecond apart, and the previous bake's now-stale output is not this bake's leak.
+    if (writtenBefore.has(relative)) continue;
     const info = await stat(path.join(outputRoot, relative));
     if (info.mtimeMs + 1 >= since) undeclared.push(relative);
   }
@@ -1098,6 +1203,7 @@ export async function compileAssets(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const layout = resolveLayout(cwd, options);
   const receiptPath = path.join(layout.outputRoot, RECEIPT_NAME);
+  const writtenBefore = await readPreviousReceiptPaths(receiptPath);
   if (!(await hasSourceDirectory(layout.sourceRoot))) {
     // No bake ran, so no receipt describes this output root. A stale one from a previous build
     // would have the delete-test remove files nothing produces any more.
@@ -1141,15 +1247,84 @@ export async function compileAssets(
       : { skipped: 0, written: 0 };
   }
 
+  /** Everything one entry contributes to the receipt, the health report and the size report. */
+  const bookkeep = (
+    logical: string,
+    input: Buffer,
+    entry: IAssetManifestEntry,
+    auxiliary: readonly {
+      readonly bytes: number;
+      readonly path: string;
+      readonly producer: string;
+    }[],
+    lightmap: IModelSizeRow["lightmap"] | undefined,
+  ): void => {
+    // Declared from the entry rather than from the write below, because a cache hit skips the
+    // write and the file is still this bake's output: the delete-test has to remove it too.
+    receiptOutputs.push({
+      bytes: entry.bytes,
+      path: entry.output,
+      producer: passNames.join("+"),
+      source: logical,
+    });
+    for (const output of auxiliary) receiptOutputs.push({ ...output, source: logical });
+    if (entry.extensions?.includes(BASISU_EXTENSION) === true) compressedModelCount += 1;
+    // The health report measures the source, not the compiled bytes — deliberately for both
+    // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
+    // output hides; model triangles and materials are the counts targets are declared
+    // against, and the pass's self-verification guarantees they survive compilation within
+    // tolerance. Byte savings are reported per kind below instead.
+    healthInputs.push({ data: input, logicalPath: logical });
+    if (entry.bytesBefore === undefined) return;
+    if (entry.triangles !== undefined) {
+      modelRows.push({
+        after: entry.bytes,
+        before: entry.bytesBefore,
+        ...(entry.embeddedTextures === undefined
+          ? {}
+          : { embeddedTextures: entry.embeddedTextures }),
+        ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
+        extensions: entry.extensions,
+        logicalPath: logical,
+        ...(lightmap === undefined ? {} : { lightmap }),
+        triangles: entry.triangles,
+      });
+    } else {
+      textureRows.push({
+        after: entry.bytes,
+        before: entry.bytesBefore,
+        format: entry.format,
+        logicalPath: logical,
+      });
+      textureCount += 1;
+    }
+  };
+
   for (const logical of logicals) {
     const input = await readInput(layout.sourceRoot, logical);
-    const applied = await applyPasses(layout.passes, input, logical);
-    const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
-    const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
     const digest = createHash("sha256")
       .update(input)
       .update(passConfiguration, "utf8")
       .digest("hex");
+    // The output name carries the digest of the input bytes and the whole pass configuration,
+    // so a previous entry under that exact name, with every file it declares still on disk, is
+    // this build's answer already: the passes are not run again. A build once applied every
+    // pass to every input and only then compared — minutes of texture encoding per `pnpm dev`
+    // for bytes that already existed.
+    const previousEntry = previous.entries[logical];
+    const reusable =
+      previousEntry === undefined
+        ? undefined
+        : await reusableEntry(layout.outputRoot, logical, digest.slice(0, 8), previousEntry);
+    if (previousEntry !== undefined && reusable !== undefined) {
+      entries[logical] = previousEntry;
+      bookkeep(logical, input, previousEntry, reusable, undefined);
+      skipped += 1;
+      continue;
+    }
+    const applied = await applyPasses(layout.passes, input, logical);
+    const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
+    const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
     const entry: IAssetManifestEntry = {
       bytes: applied.buffer.length,
       kind: classify(logical),
@@ -1180,74 +1355,36 @@ export async function compileAssets(
           }),
     };
     entries[logical] = entry;
-    // Declared from the entry rather than from the write below, because a cache hit skips the
-    // write and the file is still this bake's output: the delete-test has to remove it too.
-    receiptOutputs.push({
-      bytes: entry.bytes,
-      path: entry.output,
-      producer: passNames.join("+"),
-      source: logical,
-    });
-    for (const auxiliary of auxiliaryOutputs) {
-      receiptOutputs.push({
-        bytes: auxiliary.buffer.length,
-        path: auxiliary.output,
-        producer: auxiliary.role,
-        source: logical,
-      });
-    }
-    if (entry.extensions?.includes(BASISU_EXTENSION) === true) compressedModelCount += 1;
-    // The health report measures the source, not the compiled bytes — deliberately for both
-    // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
-    // output hides; model triangles and materials are the counts targets are declared
-    // against, and the pass's self-verification guarantees they survive compilation within
-    // tolerance. Byte savings are reported per kind below instead.
-    healthInputs.push({ data: input, logicalPath: logical });
-    if (entry.bytesBefore !== undefined) {
-      if (entry.triangles !== undefined) {
-        const lightmapOutput = auxiliaryOutputs.find(
-          (output) => output.manifestField === "lightmaps",
-        );
-        const lightmapMetadata = lightmapOutput?.metadata;
-        const lightmapAtlas = applied.entry?.lightmapAtlas;
-        const lightmap =
-          lightmapOutput !== undefined &&
-          isRecord(lightmapMetadata) &&
-          isRecord(lightmapAtlas) &&
-          typeof applied.entry?.lightmapBakeMs === "number"
-            ? {
-                atlasHeight: Number(lightmapAtlas.height),
-                atlasWidth: Number(lightmapAtlas.width),
-                bakeMs: applied.entry.lightmapBakeMs,
-                bytesAfter: lightmapOutput.buffer.length,
-                bytesBefore: Number(lightmapMetadata.bytesBefore),
-                dilatedTexels: Number(lightmapMetadata.dilatedTexels),
-                occludedTexels: Number(lightmapMetadata.occludedTexels),
-                validTexels: Number(lightmapMetadata.validTexels),
-              }
-            : undefined;
-        modelRows.push({
-          after: entry.bytes,
-          before: entry.bytesBefore,
-          ...(entry.embeddedTextures === undefined
-            ? {}
-            : { embeddedTextures: entry.embeddedTextures }),
-          ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
-          extensions: entry.extensions,
-          logicalPath: logical,
-          ...(lightmap === undefined ? {} : { lightmap }),
-          triangles: entry.triangles,
-        });
-      } else {
-        textureRows.push({
-          after: entry.bytes,
-          before: entry.bytesBefore,
-          format: entry.format,
-          logicalPath: logical,
-        });
-        textureCount += 1;
-      }
-    }
+    const lightmapOutput = auxiliaryOutputs.find((output) => output.manifestField === "lightmaps");
+    const lightmapMetadata = lightmapOutput?.metadata;
+    const lightmapAtlas = applied.entry?.lightmapAtlas;
+    const lightmap =
+      lightmapOutput !== undefined &&
+      isRecord(lightmapMetadata) &&
+      isRecord(lightmapAtlas) &&
+      typeof applied.entry?.lightmapBakeMs === "number"
+        ? {
+            atlasHeight: Number(lightmapAtlas.height),
+            atlasWidth: Number(lightmapAtlas.width),
+            bakeMs: applied.entry.lightmapBakeMs,
+            bytesAfter: lightmapOutput.buffer.length,
+            bytesBefore: Number(lightmapMetadata.bytesBefore),
+            dilatedTexels: Number(lightmapMetadata.dilatedTexels),
+            occludedTexels: Number(lightmapMetadata.occludedTexels),
+            validTexels: Number(lightmapMetadata.validTexels),
+          }
+        : undefined;
+    bookkeep(
+      logical,
+      input,
+      entry,
+      auxiliaryOutputs.map((output) => ({
+        bytes: output.buffer.length,
+        path: output.output,
+        producer: output.role,
+      })),
+      lightmap,
+    );
     const existing = previous.entries[logical];
     if (
       existing !== undefined &&
@@ -1266,8 +1403,12 @@ export async function compileAssets(
     }
     await writeOutput(layout.outputRoot, entry, applied.buffer);
     for (const output of auxiliaryOutputs) {
-      await mkdir(path.dirname(path.join(layout.outputRoot, output.output)), { recursive: true });
-      await writeFile(path.join(layout.outputRoot, output.output), output.buffer);
+      const absolute = path.join(layout.outputRoot, output.output);
+      // A shared image is content-addressed and may already have been written by another model
+      // in this run or a previous one; identical bytes are not written twice.
+      if (output.shared && (await outputExists(absolute))) continue;
+      await mkdir(path.dirname(absolute), { recursive: true });
+      await writeFile(absolute, output.buffer);
     }
     written += 1;
   }
@@ -1319,6 +1460,7 @@ export async function compileAssets(
     layout.outputRoot,
     new Set(receiptOutputs.map((output) => output.path)),
     runStart,
+    writtenBefore,
   );
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
   return options.health === true

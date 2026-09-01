@@ -574,3 +574,65 @@ describe("compileAssets and assets.models.virtual", () => {
     );
   });
 });
+
+describe("compile cache", () => {
+  it("should not run a pass again for an input whose bytes and pass configuration are unchanged", async () => {
+    // Every build applied every pass to every input and only then compared the result with the
+    // manifest to decide whether to write. For a valley of 58 textured models that is minutes of
+    // KTX2 encoding on every `pnpm dev`, all of it producing bytes that already exist.
+    const root = await makeTempDir("threenative-compile-skip-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 16, width: 16 }));
+    await writeFile(
+      path.join(root, "assets", "moss.png"),
+      rgbaPng({ green: () => 200, height: 16, width: 16 }),
+    );
+    let applied = 0;
+    const counting = {
+      apply: (input: Buffer) => {
+        applied += 1;
+        return Buffer.concat([input, Buffer.from("!")]);
+      },
+      configuration: { salt: 1 },
+      name: "counting",
+    };
+
+    const first = await compileAssets({ cwd: root, passes: [counting] });
+    expect(first.written).toBe(2);
+    expect(applied).toBe(2);
+
+    const second = await compileAssets({ cwd: root, passes: [counting] });
+    expect(second.written).toBe(0);
+    expect(second.skipped).toBe(2);
+    expect(applied).toBe(2);
+
+    // Negative controls: a changed input or a changed configuration runs the pass again.
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({ height: 16, red: () => 9, width: 16 }),
+    );
+    const third = await compileAssets({ cwd: root, passes: [counting] });
+    expect(third.written).toBe(1);
+    expect(applied).toBe(3);
+    const fourth = await compileAssets({
+      cwd: root,
+      passes: [{ ...counting, configuration: { salt: 2 } }],
+    });
+    expect(fourth.written).toBe(2);
+    expect(applied).toBe(5);
+
+    // A deleted output is rebuilt even though the manifest still describes it.
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as {
+      entries: Record<string, { output: string }>;
+    };
+    await rm(path.join(root, "public", manifest.entries["moss.png"]?.output ?? ""));
+    const fifth = await compileAssets({
+      cwd: root,
+      passes: [{ ...counting, configuration: { salt: 2 } }],
+    });
+    expect(fifth.written).toBe(1);
+    expect(applied).toBe(6);
+  });
+});
