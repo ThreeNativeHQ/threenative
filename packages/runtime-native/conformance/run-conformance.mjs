@@ -464,7 +464,7 @@ export function validateReport(report, registry) {
   return errors;
 }
 
-function makeEntry(test, target, port, entryRoot) {
+export function makeEntry(test, target, port, entryRoot) {
   const sceneAbs = join(runtimeRoot, test.scene);
   const entryAbs = join(entryRoot, `${target}-${test.id}.js`);
   const sceneRelative = `./${relative(dirname(entryAbs), sceneAbs).replaceAll("\\", "/")}`;
@@ -493,11 +493,14 @@ function makeEntry(test, target, port, entryRoot) {
 });
 console.info(${JSON.stringify(`TN_MULTITOUCH_PROOF_PASS:${test.id}`)});`
     : "";
-  const finalCapture = `const screenshot = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
+  const waitForSubmittedWork = "if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();";
+  const finalCapture = `${waitForSubmittedWork}
+const screenshot = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
 const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'image/png' }, body: screenshot });
 if (!response.ok) throw new Error('completion upload failed: ' + response.status);`;
   const browserCapture = test.temporal
     ? `const captureFrame = async (label) => {
+  ${waitForSubmittedWork}
   const frame = await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('canvas.toBlob returned null')), 'image/png'));
   const frameResponse = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}/' + label, { method: 'POST', headers: { 'content-type': 'image/png' }, body: frame });
   if (!frameResponse.ok) throw new Error('temporal capture upload failed: ' + frameResponse.status);
@@ -515,7 +518,6 @@ ${finalCapture}`;
       ? `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
 ${proofWait}
 ${browserCapture}
-if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();
 `
       : `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
 ${proofWait}`;
