@@ -12,7 +12,7 @@ producing something a build machine could have handed it — and the phone frame
 amount, or this PRD closes as refuted with the number that refuted it.
 
 **Depends on:** nothing to start. Lands with
-[PRD-306](PRD-306-the-delete-test-is-a-gate.md), which must gate this pass the day it exists: the
+[PRD-306](../done/PRD-306-the-delete-test-is-a-gate.md), which must gate this pass the day it exists: the
 one rule separating a baking pass from v1's IR is that deleting the baked output leaves the game
 running, just slower.
 

@@ -84,13 +84,13 @@ Sorted by impact against effort. **🟢 a day or two · 🟡 days to a week · �
 | --- | --- | --- | --- | --- |
 | 1 | **Ship `src/render/quality.ts` in all 8 templates** — platform-aware, with the measured cost of each effect in a comment beside it | 🟢 | **Every game built from a template gets a cheap-vs-pretty switch for free**, on by default, deletable. Allowed under §5b today and **missing from all 8 templates**. The numbers it needs are already measured | nothing |
 | 2 | ✅ **Confirm `gpuMs` actually reports on Android** — done, PRD-305, [`gpu-meter-on-android-2026-09-01`](../verification/gpu-meter-on-android-2026-09-01.md). A Pixel 8 (Mali-G715) grants `timestamp-query` and reports **`gpuMs 0.19`**; the host now prints `TN_WEBGPU_FEATURES` on every backend branch. **Unblocks #5 and #8** | 🟢 | Tiny, and it unblocks #4. The meter is already portable and honest — it reports *nothing* rather than zero when it cannot measure — but has never been tried on Android | nothing |
-| 3 | **CI check: delete every baked file, prove the game is identical** — built, PRD-306, [`bake-delete-test-2026-08-31`](../verification/bake-delete-test-2026-08-31.md). **The gate exists and it is red**, so it is not in CI yet, and it **stop-gates #4** (see below) | 🟢 | Makes the delete-test a gate before there is a second baking pass to get it wrong. Cheap now, expensive to retrofit | best landed with #5 |
+| 3 | ✅ **CI check: delete every baked file, prove the game is identical** — done, PRD-306, [`delete-test-passes-2026-09-01`](../verification/delete-test-passes-2026-09-01.md). Green, and chained onto `pnpm test:templates` — the lane that has hardware. Not a CI job: the delete-test compares captured frames and CI's template runner has no GPU, which it reports as `frames: 0`. It landed **red** and the red was the finding: the loader's no-manifest fallback resolved the *base* path, not the *source* path, so no compiled game survived losing its bake | 🟢 | Makes the delete-test a gate before there is a second baking pass to get it wrong. Cheap now, expensive to retrofit | best landed with #5 |
 
 ### Band 2 — best value for the effort
 
 | # | Task | | Impact | Depends on |
 | --- | --- | --- | --- | --- |
-| 4 | **Bake prefiltered reflections into `@threenative/assets`** — **stop-gated by #3**: no template survives losing its bake today, so a second baking pass must not land | 🟡 | **~6.3 ms of an 18–19 ms GPU frame — about a third of it.** The single biggest measured win available, and it needs no new instrument. The cheap alternative was tried and **made shaded faces visibly darker at two attempts**; baking changes *when* the work happens, not what it produces | nothing |
+| 4 | **Bake prefiltered reflections into `@threenative/assets`** — **un-stop-gated 2026-09-01**: #3 is green, so the existing pass passes the delete-test and a second one may be built against a gate that works | 🟡 | **~6.3 ms of an 18–19 ms GPU frame — about a third of it.** The single biggest measured win available, and it needs no new instrument. The cheap alternative was tried and **made shaded faces visibly darker at two attempts**; baking changes *when* the work happens, not what it produces | nothing |
 | 5 | **Measure GPU time per pass, on the phone** — **unblocked**: #2 landed and the meter reports on device | 🟡 | Turns days into minutes. Three separate sessions worked out GPU cost by rebuilding the app once per experiment and pushing a settings file through `run-as`. **Unblocks #8 and #9** — the town pass (9–11 ms) is our biggest cost and is still unattributed | #2 |
 | 6 | **Get Android conformance running on every commit** | 🟡 | It last executed **0 of 74 rows** — it stopped before Gradle on a stale dependency pin. Every "runs everywhere" claim rests on a lane that is not running | nothing |
 | 7 | **Scene projection that works on moving objects** | 🟡 | Extends a lever already worth **780 → 315 draws** (34.6 → 53 fps, zero pixels changed). Today it only covers meshes that never move | nothing |
@@ -155,7 +155,9 @@ The actual reasons:
 4. The render thread lands and the frame is flat: then the GPU wait is not overlappable and P2.1
    goes back to being only a correctness fix.
 5. A baking pass cannot pass the delete-test — then it is an IR and it does not ship.
-   **Triggered, 2026-08-31.** `pnpm bake:delete-test` now runs, and the starter does not survive
+   **Triggered 2026-08-31, cleared 2026-09-01** — the fallback was fixed and the gate is green
+   ([`delete-test-passes-2026-09-01`](../verification/delete-test-passes-2026-09-01.md)); #4 may
+   start. The account of what fired it, kept because the false green is the lesson: `pnpm bake:delete-test` now runs, and the starter does not survive
    losing its bake: the loader's no-manifest fallback resolves `<basePath>/<logical path>`, which
    in a compiled project points at nothing. The first version of the gate reported a green because
    the dev server re-baked what it had just deleted. Record:
