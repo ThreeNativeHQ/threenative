@@ -4,10 +4,24 @@ prd_contract: v1
 
 # PRD-304 — Every template ships a quality switch, with the cost of each effect written beside it
 
-**Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only. Every file:line below is a
-read of this tree on that date; the millisecond costs quoted are the ablation table in
+**Status:** PARTIAL, filed 2026-08-31 against `2e014460`, built 2026-08-31. Evidence:
+[`template-quality-tiers-2026-08-31`](../../verification/template-quality-tiers-2026-08-31.md).
+The millisecond costs quoted are the ablation table in
 [`FUTURE-ARCHITECTURE-DIRECTION.md`](../../architecture/FUTURE-ARCHITECTURE-DIRECTION.md) and
 [`runtime-perf-state`](../../verification/runtime-perf-state.md), not new measurements.
+
+**What is not done.** One acceptance criterion is unmet: *a game renders visibly cheaper at
+`tier: "low"` than at `tier: "high"`*. The `low` capture on this machine is **blank** — the canvas
+renders nothing behind the HUD. That is not this change: a control run against `origin/main`'s
+templates, forcing the incumbent `mobilePreset` with `mobile: true` and no PRD-304 code, produces
+the same blank frame with the same four capture statistics, and the chain reports `sharpen` and
+`bloom` as applied while WebGPU refuses the pipeline (*"Color target has no corresponding fragment
+stage output … while validating targets[1]"*). **The shipped mobile look of the starter draws
+nothing on this desktop WebGPU path, and did so before this PRD** — that defect needs its own lane,
+and until it is fixed or shown to be adapter-specific this PRD does not archive. Everything else in
+section 7 is met and pasted in the verification file, including a stronger form of *"the default
+look is unchanged"*: every template's `high` and `low` presets are byte-identical to
+`origin/main`'s `desktopPreset` and `mobilePreset`.
 
 **Outcome:** a game scaffolded from any of the 8 templates has one generated file,
 `src/render/quality.ts`, that names the quality tiers, says in a comment what each effect measured,
