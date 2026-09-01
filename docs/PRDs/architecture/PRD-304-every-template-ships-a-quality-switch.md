@@ -10,6 +10,14 @@ The millisecond costs quoted are the ablation table in
 [`FUTURE-ARCHITECTURE-DIRECTION.md`](../../architecture/FUTURE-ARCHITECTURE-DIRECTION.md) and
 [`runtime-perf-state`](../../verification/runtime-perf-state.md), not new measurements.
 
+**Attempted 2026-09-01 and still open.** A phone runs `low` by itself — `isMobile()` is true there —
+so a scaffolded starter on a Pixel 8 was the cleanest way to tell the tier apart from this desktop's
+adapter. It did not answer the question: **the scaffolded starter is black on the device and emits
+no game marker at all**, so it never reached `setupPost`. The same phone ran the in-repo Android
+first proof minutes earlier with a rendered frame and `gpuMs 0.19`, so it is not the device. Record:
+[`starter-on-pixel8-2026-09-01`](../../verification/starter-on-pixel8-2026-09-01.md). That is a
+bigger problem than this PRD and needs its own lane.
+
 **What is not done.** One acceptance criterion is unmet: *a game renders visibly cheaper at
 `tier: "low"` than at `tier: "high"`*. The `low` capture on this machine is **blank** — the canvas
 renders nothing behind the HUD. That is not this change: a control run against `origin/main`'s
