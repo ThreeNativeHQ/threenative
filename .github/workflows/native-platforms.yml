@@ -212,7 +212,7 @@ jobs:
     name: Desktop web/native parity
     if: inputs.ios_only != true
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
       # never existed. The save skipped every time, `gh cache list` held no native-ccache entry

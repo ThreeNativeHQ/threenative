@@ -186,6 +186,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     const desktop = requiredJob(native, "desktop-parity");
+    expect(desktop).toContain("timeout-minutes: 75");
     const capture = desktop.indexOf("--target web --out artifacts/conformance/web");
     const comparison = desktop.indexOf(
       "--target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop",
