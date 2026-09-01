@@ -370,7 +370,9 @@ jobs:
         uses: ./.github/actions/cancel-run-on-failure
 
   template-nonvisual:
-    if: github.event_name == 'push' || github.event_name == 'schedule'
+    # Ran only on push/schedule until 2026-09-01 (owner call): every template now proves itself
+    # non-visually on every PR too, so a template regression is reported by the PR that caused it
+    # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: build
     strategy:
       fail-fast: false
@@ -540,13 +542,10 @@ jobs:
       - if: failure()
         uses: ./.github/actions/cancel-run-on-failure
 
-  # The native lane guards targets that any package change can break, so it is gated on the event
-  # rather than on paths — see native-platforms.yml. It costs ~24 minutes on free public-repo
-  # runners, which is why it runs on main rather than on every feature-branch push.
-  #
-  # native-platforms is NOT called from here any more, and its own file now triggers on pushes to
-  # main. It is the same lane on the same commits; what changed is that its result no longer decides
-  # this workflow's conclusion.
+  # The native lane guards targets that any package change can break. native-platforms is NOT
+  # called from here — its own file triggers on pushes to main, pull requests, and the nightly
+  # cron, and since 2026-09-01 every leg of it runs on every one of those events (owner call:
+  # a leg that is skipped on the branch where the work happens is a leg nobody is watching).
   #
   # Why: it has never passed. It ran only on main behind `needs: test`, and `test` was red on every
   # run before 2026-08-31, so it was skipped every single time until the day `test` went green — then
@@ -567,7 +566,11 @@ jobs:
   # docs/PRDs/native/PRD-295-the-native-platform-lane-has-never-been-green.md, which requires the
   # call to come back here in the same commit that fixes them.
   supply-chain:
-    if: github.event_name == 'pull_request'
+    # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
+    # read a skip where the secrets scan should have been. Pushes now scan the repository's full
+    # git history — gitleaks' default git mode — which is strictly stronger than the incremental
+    # PR range and immune to force-push SHAs the checkout may not have.
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -578,6 +581,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify the PR commit range is present
+        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -587,6 +591,7 @@ jobs:
           test "$(git rev-list --count "$range")" -gt 0
           echo "TN_GITLEAKS_RANGE=$range" >> "$GITHUB_ENV"
       - name: Scan PR commits for leaked secrets
+        if: github.event_name == 'pull_request'
         run: >-
           docker run --rm
           -e GIT_CONFIG_COUNT=1
@@ -596,6 +601,17 @@ jobs:
           ghcr.io/gitleaks/gitleaks@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
           git --redact --verbose
           --log-opts="$TN_GITLEAKS_RANGE"
+          /repo
+      - name: Scan the full git history for leaked secrets
+        if: github.event_name == 'push'
+        run: >-
+          docker run --rm
+          -e GIT_CONFIG_COUNT=1
+          -e GIT_CONFIG_KEY_0=safe.directory
+          -e GIT_CONFIG_VALUE_0=/repo
+          -v "$GITHUB_WORKSPACE:/repo"
+          ghcr.io/gitleaks/gitleaks@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          git --redact --verbose
           /repo
       - uses: actions/dependency-review-action@v4
         with:
