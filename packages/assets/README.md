@@ -33,11 +33,14 @@ receipt names plus the manifest and the receipt, run the same scenario again, an
 comparison is against a same-code band measured in the same run — captures are not
 bit-deterministic — not against an assumed zero.
 
-**It is red today, and that is the point.** The starter does not survive losing its bake: the
-loader's documented no-manifest fallback resolves `<basePath>/<logical path>`, which in a compiled
-project points at nothing — the sources live in `assets/` and the outputs are content-addressed.
-The gate is therefore not wired into CI yet; it goes in with the change that makes it pass. See
-`docs/verification/bake-delete-test-2026-08-31.md`.
+It went in **red**, and the red was the finding: the loader's no-manifest fallback resolved
+`<basePath>/<logical path>`, which in a compiled project points at nothing, because the sources live
+in `assets/` and the outputs are content-addressed. A logical path now resolves against an ordered
+candidate list — verbatim first, then the source directory — and the gate is green. It runs as part
+of `pnpm test:templates`, not in CI: the delete-test compares captured frames, and the CI job that
+scaffolds templates deliberately runs only non-visual scenarios because its runner has no GPU. A run
+there reports `frames: 0`, which is the runner, not the game. The account is in
+`docs/verification/bake-delete-test-2026-08-31.md` and `delete-test-passes-2026-09-01.md`.
 
 ## Embedded model textures
 

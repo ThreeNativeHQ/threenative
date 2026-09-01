@@ -186,6 +186,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     const desktop = requiredJob(native, "desktop-parity");
+    expect(desktop).toContain("timeout-minutes: 75");
     const capture = desktop.indexOf("--target web --out artifacts/conformance/web");
     const comparison = desktop.indexOf(
       "--target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop",
@@ -193,9 +194,13 @@ describe("CI pipeline structure", () => {
     expect(capture).toBeGreaterThanOrEqual(0);
     expect(comparison).toBeGreaterThan(capture);
     expect(capture).toBeLessThan(desktop.indexOf("Install Linux desktop build dependencies"));
+    expect(desktop).toMatch(
+      /sh scripts\/xvfb\.sh \\\n\s+node packages\/runtime-native\/conformance\/run-conformance\.mjs \\\n\s+--target desktop/u,
+    );
     expect(occurrences(desktop, /test "\$status" -eq 0 -o "\$status" -eq 2/gu)).toBe(2);
     expect(occurrences(desktop, /check-lane-blocks\.mjs/gu)).toBe(2);
     expect(desktop).toContain("TN_PARITY_DESKTOP_REPORT_MISSING");
+    expect(desktop).toContain('"## Target results"');
     expect(desktop).toContain("pnpm parity:ledger");
     expect(desktop).toContain("if-no-files-found: error");
   });
@@ -357,6 +362,37 @@ describe("CI pipeline structure", () => {
     expect(goldenPath).toMatch(/template:\s*\n\s+- starter\s*\n\s+- platformer/u);
     expect(goldenPath).toContain("TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}");
     expect(goldenPath).toContain("pnpm verify:golden-path");
+  });
+
+  it("the golden-path proof cache cannot record a run that failed", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "golden-path-template");
+
+    // The combined `actions/cache` writes its entry in a post step whatever the job did, which
+    // would stamp a passing proof onto a failed run and then skip the lane for every later tree
+    // that hashes the same. Split restore/save with `if: success()` is the whole safety property.
+    expect(job).toContain("actions/cache/restore@v4");
+    expect(job).toContain("actions/cache/save@v4");
+    expect(job).not.toMatch(/uses: actions\/cache@v4/u);
+    const save = job.slice(job.indexOf("Save the proof for this tree"));
+    expect(save).toContain("if: success() && steps.proof.outputs.cache-hit != 'true'");
+
+    // A key that names only the "related" inputs is one forgotten file away from a gate that
+    // passes because nothing ran — which is how the native-platforms path filters let core,
+    // playtest and create-threenative changes through unproven. Keep it broad.
+    for (const input of ["pnpm-lock.yaml", "packages/**", "scripts/**", ".github/**"]) {
+      expect(job, input).toContain(input);
+    }
+
+    // Every step that does work must be behind the hit check. One that is not runs against a
+    // scaffold the cache hit never created.
+    const steps = job.split(/^ {6}- /mu).slice(1);
+    const unguarded = steps.filter(
+      (step) =>
+        /(?:pnpm |threenative-playtest|scaffold-from-tarballs|playwright)/u.test(step) &&
+        !step.includes("steps.proof.outputs.cache-hit"),
+    );
+    expect(unguarded, "steps that would run without a scaffold on a cache hit").toEqual([]);
   });
 
   it("the golden-path required context is still reported by a job of that exact name", async () => {

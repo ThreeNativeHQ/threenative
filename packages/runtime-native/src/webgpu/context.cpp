@@ -8,6 +8,7 @@
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/bindings.h"
 #include <iostream>
+#include <iterator>
 #include <cstring>
 #include <vector>
 #include <thread>
@@ -245,6 +246,45 @@ static void onWgpuLog(WGPULogLevel level, char const* message, void* userdata) {
 }
 #endif
 
+/**
+ * Names every feature the device was actually granted, once per device creation.
+ *
+ * Dawn and wgpu both report only features that were *requested*, and this file asks for them in
+ * six separate hand-written arrays across three backends and two entry points. A branch that
+ * forgets one — or whose bound stops the array short — loses `timestamp-query` and with it the GPU
+ * meter, silently, invisibly from JavaScript. Nobody knew whether the meter could work on Android
+ * until it was tried on a phone, which is exactly the state this line ends.
+ *
+ * Asked per feature rather than enumerated, because the enumeration call differs across the header
+ * versions this host builds against while `wgpuDeviceHasFeature` does not.
+ */
+static void reportGrantedFeatures(WGPUDevice device) {
+    if (device == nullptr) return;
+    struct NamedFeature {
+        WGPUFeatureName feature;
+        char const* name;
+    };
+    static NamedFeature const kFeatures[] = {
+        {WGPUFeatureName_TimestampQuery, "timestamp-query"},
+        {WGPUFeatureName_TextureCompressionBC, "texture-compression-bc"},
+        {WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2"},
+        {WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc"},
+        {WGPUFeatureName_IndirectFirstInstance, "indirect-first-instance"},
+        {WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable"},
+#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
+        {WGPUFeatureName_CoreFeaturesAndLimits, "core-features-and-limits"},
+#endif
+    };
+    std::cout << "[WebGPU] TN_WEBGPU_FEATURES:{";
+    bool first = true;
+    for (NamedFeature const& entry : kFeatures) {
+        std::cout << (first ? "" : ",") << "\"" << entry.name
+                  << "\":" << (wgpuDeviceHasFeature(device, entry.feature) ? "true" : "false");
+        first = false;
+    }
+    std::cout << "}" << std::endl;
+}
+
 Context::Context() = default;
 
 Context::~Context() {
@@ -423,9 +463,10 @@ bool Context::initializeHeadless() {
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
     std::cout << "[WebGPU] adapter feature probe timestamp-query: "
               << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
-    if (hasTimestampQuery_ && featureCount < 4) requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
+    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesAndroid))
+        requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
+    if (featureCount < std::size(requiredFeaturesAndroid) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
         requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
 #endif
     deviceDesc.requiredFeatureCount = featureCount;
@@ -450,7 +491,7 @@ bool Context::initializeHeadless() {
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
                                         WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= 4) break;
+        if (featureCount >= std::size(requiredFeaturesDawn)) break;
         std::cout << "[WebGPU] adapter feature probe " << compression << ": "
                   << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
         if (wgpuAdapterHasFeature(adapter_, compression)) {
@@ -463,7 +504,8 @@ bool Context::initializeHeadless() {
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
     std::cout << "[WebGPU] adapter feature probe timestamp-query: "
               << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
-    if (hasTimestampQuery_ && featureCount < 5) requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
+    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesDawn))
+        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
     // `rg11b10ufloat-renderable`, when the adapter advertises it. Three's SSGI builds its GI
     // target as an rg11b10ufloat texture with RENDER_ATTACHMENT usage and no fallback, so a
     // device without this feature cannot run that stage at all — Dawn rejects the render pass
@@ -504,7 +546,7 @@ bool Context::initializeHeadless() {
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
                                         WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= 4) break;
+        if (featureCount >= std::size(requiredFeaturesWGPU)) break;
         // The Dawn branch has always printed this; the wgpu branch did not, and wgpu is the
         // Android and iOS backend. When a device reported no compressed format at all, the log
         // said only that the renderer supported none — never whether the adapter advertised one
@@ -521,7 +563,8 @@ bool Context::initializeHeadless() {
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
     std::cout << "[WebGPU] adapter feature probe timestamp-query: "
               << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
-    if (hasTimestampQuery_ && featureCount < 5) requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
+    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesWGPU))
+        requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
     deviceDesc.requiredFeatureCount = featureCount;
     deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesWGPU : nullptr;
 #endif
@@ -558,6 +601,7 @@ bool Context::initializeHeadless() {
         return false;
     }
     device_ = deviceData.device;
+    reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);
     if (!queue_) {
@@ -798,10 +842,10 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // compatibility device. Dawn reports only features that were *requested*, so every
     // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < 6)
+    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesAndroid))
         requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
+    if (featureCount < std::size(requiredFeaturesAndroid) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
         requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
 #endif
     deviceDesc.requiredFeatureCount = featureCount;
@@ -841,7 +885,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
                                         WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= 4) break;
+        if (featureCount >= std::size(requiredFeaturesDawn)) break;
         if (wgpuAdapterHasFeature(adapter_, compression)) {
             requiredFeaturesDawn[featureCount++] = compression;
             std::cout << "[WebGPU] Requesting texture compression feature " << compression << std::endl;
@@ -912,10 +956,10 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // compatibility device. Dawn reports only features that were *requested*, so every
     // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < 6)
+    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesWGPU))
         requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
+    if (featureCount < std::size(requiredFeaturesWGPU) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
         requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
 #endif
     deviceDesc.requiredFeatureCount = featureCount;
@@ -957,6 +1001,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
         return false;
     }
     device_ = deviceData.device;
+    reportGrantedFeatures(device_);
 
     // Get queue
     queue_ = wgpuDeviceGetQueue(device_);
@@ -1095,10 +1140,10 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // compatibility device. Dawn reports only features that were *requested*, so every
     // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
     hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < 6)
+    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesAndroid))
         requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 6 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
+    if (featureCount < std::size(requiredFeaturesAndroid) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
         requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
 #endif
     deviceDesc.requiredFeatureCount = featureCount;
@@ -1127,7 +1172,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
                                         WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= 4) break;
+        if (featureCount >= std::size(requiredFeaturesDawn)) break;
         if (wgpuAdapterHasFeature(adapter_, compression)) {
             requiredFeaturesDawn[featureCount++] = compression;
         }
@@ -1218,6 +1263,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         return false;
     }
     device_ = deviceData.device;
+    reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);
     if (!queue_) {

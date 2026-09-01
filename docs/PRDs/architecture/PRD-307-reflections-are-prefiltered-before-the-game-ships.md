@@ -12,7 +12,7 @@ producing something a build machine could have handed it — and the phone frame
 amount, or this PRD closes as refuted with the number that refuted it.
 
 **Depends on:** nothing to start. Lands with
-[PRD-306](PRD-306-the-delete-test-is-a-gate.md), which must gate this pass the day it exists: the
+[PRD-306](../done/PRD-306-the-delete-test-is-a-gate.md), which must gate this pass the day it exists: the
 one rule separating a baking pass from v1's IR is that deleting the baked output leaves the game
 running, just slower.
 
@@ -90,7 +90,7 @@ transform of the same bytes.
 **Approach:**
 
 - **Phase 1 — attribute.** On the phone, with the meter from
-  [PRD-305](PRD-305-the-gpu-meter-reports-on-android.md), separate the one-time prefilter from the
+  [PRD-305](../done/PRD-305-the-gpu-meter-reports-on-android.md), separate the one-time prefilter from the
   per-frame sampling: (a) baked-vs-runtime is not yet buildable, so instead measure the frame with
   the environment set and static, (b) the frame with `needsPMREMUpdate` forced every frame, and
   (c) the frame with `scene.environment = null`. The gap between (a) and (c) is the sampling cost

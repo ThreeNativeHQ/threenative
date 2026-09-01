@@ -189,6 +189,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // reads. Claude Code and Codex already had theirs; Cursor, VS Code, the Gemini CLI, opencode and
   // Zed each gained a project-scoped file, and the shared asset-MCP instructions now name all
   // seven instead of `.mcp.json` alone. Five new files and one paragraph move all eight trees.
+  // Recomputed 2026-09-01 for PRD-301: the capability manifest and the reference generated
+  // from it now walk @threenative/assets, so the authoring surface those bytes describe grew
+  // in every scaffold tree.
+  // Recomputed 2026-09-01 for the main-sync merge of the two capability-manifest lineages
+  // (local 8c158a56 and origin #29): values measured from the committed merge tree.
   "action-rpg": "a3348807eff125c2640cd32dd80839585eb7a63810b69a4c114d7ae564f73022",
   defense: "869e651b6c1dfa4abfd9a31398282ba182376196e5102a363e5b1467ab968ae3",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual

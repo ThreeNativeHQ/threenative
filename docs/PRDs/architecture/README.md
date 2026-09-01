@@ -26,8 +26,8 @@ verification file is worse — that is a claimed gate nobody ran.
 | Doc task | PRD | Band |
 | --- | --- | --- |
 | 1 — `quality.ts` in all 8 templates | [PRD-304](PRD-304-every-template-ships-a-quality-switch.md) | 1 |
-| 2 — confirm `gpuMs` reports on Android | [PRD-305](PRD-305-the-gpu-meter-reports-on-android.md) | 1 |
-| 3 — CI deletes every baked file and proves the game is identical | [PRD-306](PRD-306-the-delete-test-is-a-gate.md) | 1 |
+| 2 — confirm `gpuMs` reports on Android | ✅ [PRD-305](../done/PRD-305-the-gpu-meter-reports-on-android.md) — **done**, `gpuMs 0.19` from a Pixel 8 ([record](../../verification/gpu-meter-on-android-2026-09-01.md)) | 1 |
+| 3 — CI deletes every baked file and proves the game is identical | ✅ [PRD-306](../done/PRD-306-the-delete-test-is-a-gate.md) — **done**, green in `pnpm test:templates` ([record](../../verification/delete-test-passes-2026-09-01.md)) | 1 |
 | 4 — bake prefiltered reflections into `@threenative/assets` | [PRD-307](PRD-307-reflections-are-prefiltered-before-the-game-ships.md) | 2 |
 | 5 — GPU time per pass, on the phone | [PRD-308](PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) | 2 |
 | 6 — Android conformance on every commit | [PRD-309](PRD-309-android-conformance-runs-on-every-commit.md) | 2 |

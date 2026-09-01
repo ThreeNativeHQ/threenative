@@ -4,7 +4,22 @@ prd_contract: v1
 
 # PRD-310 — The projection covers what moves, and the exact lane is measured before it is extended
 
-**Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only.
+**Status:** PARTIAL, filed 2026-08-31 against `2e014460`, phase 1 instrument built 2026-08-31.
+Evidence: [`projection-exact-lane-2026-08-31`](../../verification/projection-exact-lane-2026-08-31.md).
+
+**Phase 1's instrument landed; Phase 1's measurement did not.** `TN_PROJECTION` is now printed on
+every frame-budget window with the exact lane broken down by reason, `drawsPlanned` beside the draw
+count the renderer actually counted, and the playtest `perf` command ranks the reasons. What has
+not happened is the run: **no subject reachable from this repository exercises the projection with
+characters in it.** `examples/abyss-framework` declines at `belowMeshFloor` and emits no budget
+window at all; `examples/engine-load-test` folds 65,536 instanced anchors and has no characters;
+and Bayview — the game the 780 → 315 figure came from — is a sandbox checkout whose engine symlinks
+are broken and whose tree holds another session's uncommitted work.
+
+**Phase 2 stays unstarted until that table exists.** Choosing which reason to fold without it is
+choosing by intuition, which is the mistake this phase was inserted to prevent. The one-line next
+action: point a Bayview-class subject at a build carrying this marker and read
+`perf --file <log>`.
 
 **Outcome:** the draws a real game leaves on the projection's exact lane are **counted by reason**
 first, and then the largest reason is folded — so the lever already worth **780 → 315 draws**

@@ -91,6 +91,15 @@ export interface IRenderProjectionReport {
   /** Sources that kept a draw of their own, with the reason each one did. */
   readonly exactObjects: number;
   readonly exact: Partial<Record<ProjectionExactReason, number>>;
+  /**
+   * What the plan believes this frame costs: one draw per batch plus one per exact-lane object.
+   *
+   * **A plan, not a measurement.** On WebGPU a `BatchedMesh` is one render object that issues one
+   * `drawIndexed` per visible member, so a batch is not reliably one draw and this number can be
+   * optimistic. The measured count comes from the renderer and is reported beside this one; a
+   * divergence between them is a finding, not a rounding error.
+   */
+  readonly drawsPlanned: number;
   readonly timings: {
     readonly compileMs: number;
     readonly reconcileMs: number;
@@ -307,6 +316,8 @@ export class SceneRenderProjection {
     this.root.traverse((object) => {
       if (isRenderable(object)) resultDrawCandidates += 1;
     });
+    const batches = this.#deoptimized ? 0 : this.#mirror.batchCount;
+    const exactObjects = this.#deoptimized ? 0 : this.#mirror.proxyCount;
     return {
       schemaVersion: 1,
       projecting: !this.#deoptimized,
@@ -315,10 +326,13 @@ export class SceneRenderProjection {
       sourceRenderables: this.#sourceRenderables,
       resultDrawCandidates,
       projectedObjects: this.#deoptimized ? 0 : this.#mirror.projectedObjects,
-      batches: this.#deoptimized ? 0 : this.#mirror.batchCount,
+      batches,
       instancedBatches: this.#deoptimized ? 0 : this.#mirror.instancedBatchCount,
       materialBatches: this.#deoptimized ? 0 : this.#mirror.materialBatchCount,
-      exactObjects: this.#deoptimized ? 0 : this.#mirror.proxyCount,
+      exactObjects,
+      // A declined frame renders the authored scene, so its plan is one draw per authored
+      // renderable — the number the projection is trying to beat, not zero.
+      drawsPlanned: this.#deoptimized ? this.#sourceRenderables : batches + exactObjects,
       exact,
       timings: {
         compileMs: this.#mirror.compileMs,
