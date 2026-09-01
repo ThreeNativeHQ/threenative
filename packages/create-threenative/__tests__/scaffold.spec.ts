@@ -186,15 +186,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // reads. Claude Code and Codex already had theirs; Cursor, VS Code, the Gemini CLI, opencode and
   // Zed each gained a project-scoped file, and the shared asset-MCP instructions now name all
   // seven instead of `.mcp.json` alone. Five new files and one paragraph move all eight trees.
-  "action-rpg": "63b81536ce3834ee38cc05bb05c1171b67761acea1cb2eb1e4771c215630886a",
-  defense: "4a715bf1d14f75b8b624a78433e9f6562e6c542d7da96e43c4f2842d5ca144fa",
+  "action-rpg": "a04bd36f1ea5d17c9e0d757dba048c8df5a61648f8b0c20568860d0da4fc602b",
+  defense: "50ec833a0129186a4dbd90ec20ba47d5f0605f2790a1569c1a3dcd5e1340f8d4",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "af32024ce9559bf101fd8edac1a03d9740b6a6068edf0f641d83fd43f0ae4d06",
-  platformer: "96217516efa72d08ca2268a8ffcdcc68ca0adbc344e02508ff33eb6c255709b7",
-  racing: "d84c6ac3d18606f034eb4e971f38776c16b5d1fb9e02f624f94175242ebbaf59",
-  shooter: "4d0f203a698e307c8f0540fafb52b9b9302c0ddd52538c3b5f75ec76b4b36971",
-  starter: "397e4c97f3b3963f2babe180356ceda151d4a7dad8bd3afc38d885c061bda60a",
+  minimal: "2e61cbfb8aab2815e946010679357d794d6fcf332d46cc6bc4242a4d482089e0",
+  platformer: "ce11c4e262fe82ffb084973ad2a26be3823702601d7e0fc51049cde6423a5e00",
+  racing: "20bbbf4bf76cbfb7e33db95bffc7442d1ebb819d6a1b0ef061b32453514d52da",
+  shooter: "3d0a868947ea9a16d4d5b69d9a84615874649b93c0337ef2b694211dc01e9da2",
+  starter: "17fa28d2286806442b7187e9d59cc1bf0ff17521d2ff793f751f752276799dd8",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -1117,14 +1117,28 @@ describe("create-threenative", () => {
     const namespaces = new Set(surface.tools.map((tool) => tool.split("_")[0]));
     for (const template of ALL_TEMPLATES) {
       const agents = await readFile(path.join(TEMPLATE_ROOT, template, "AGENTS.md"), "utf8");
-      const mentioned = [...agents.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/gu)]
+      const assetSkill = await readFile(
+        path.join(
+          TEMPLATE_ROOT,
+          "..",
+          "agent-files",
+          ".agents",
+          "skills",
+          "threenative-assets",
+          "SKILL.md",
+        ),
+        "utf8",
+      );
+      const authoringText = `${agents}\n${assetSkill}`;
+      const mentioned = [...authoringText.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/gu)]
         .map((match) => match[1] as string)
         .filter((name) => namespaces.has(name.split("_")[0] as string));
       expect(
         mentioned.filter((name) => !served.has(name)),
         template,
       ).toEqual([]);
-      for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
+      for (const name of surface.recommended)
+        expect(authoringText, `${template}/${name}`).toContain(name);
     }
   });
 

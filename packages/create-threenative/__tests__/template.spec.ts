@@ -43,24 +43,14 @@ async function typecheckTemplates(): Promise<string[]> {
 // numbers twice, and in shooter the overlap was unreadable.
 const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
-const agentDocsRoot = path.resolve("packages/create-threenative/agent-docs");
-const requiredSharedFragments = [
-  "framework-blocks-you",
-  "asset-mcp-loop",
-  "sculpt-loop",
-  "look-at-it-and-budget-the-look",
-  "ctx-surface",
-  "engine-capabilities",
-  "playtest-fail-closed",
-  "performance-default",
-  // PRD-228: the shipped resolutionScale convention. Its own fragment rather than a paragraph
-  // in performance-default, which carries an executable 130-word cap and a different subject.
-  "pixel-budget",
-  // Landed 2026-08-30 (e5d64b5f) but not registered here — the spec was red on main before
-  // the next fragment arrived.
-  "see-it-in-numbers",
-  // The upstream engine-bug-filing rule, paired with the shipped file-engine-bug skill.
-  "engine-bug-report",
+const authoringSkills = [
+  ["threenative-capabilities", "engine_search_capabilities", "@threenative/physics/navigation"],
+  ["threenative-playtest", "TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING", "doctor"],
+  ["threenative-assets", "asset_search_sources", "sculpt_spec_gate"],
+  ["threenative-visuals", "Budget real time for the look", "--browser-recipe webgpu"],
+  ["threenative-performance", "TN_FRAME_BUDGET", "Unexecuted platforms stay unverified"],
+  ["threenative-ui", "data-tn-interactive", "useUiState"],
+  ["threenative-context", "ctx.pointer", "ctx.raycastAll"],
 ] as const;
 // The frame-time ceiling stays mandatory; PRD-214 added an fps floor and per-phase ceilings
 // beside it, so the pattern bounds the opening of the object rather than its whole shape.
@@ -596,21 +586,26 @@ describe("template contracts", () => {
       path: "entityCount",
     });
 
+    const contextSkill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md",
+      ),
+      "utf8",
+    );
+    expect(contextSkill).toContain("# ThreeNative context surface");
+    expect(contextSkill).toContain('| `ctx.goto("<scene-name>")` |');
+    expect(contextSkill).toContain("`ctx.goto(name)` rebuilds the scene without resetting state");
+    expect(contextSkill).toContain("ctx.state.set({ /* copy this game's initial-state shape */ })");
+    expect(contextSkill).toContain(
+      '`game.goto("<scene-name>")` from React resets declared initial state first',
+    );
+    expect(contextSkill).toContain("deterministic only when `defineGame({ seed })` is configured");
+    expect(contextSkill).toContain("goto` and then `return`");
+    expect(contextSkill).not.toContain("That is your entire restart button");
+    expect(contextSkill).not.toContain("probably does not exist");
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents).toContain(
-        "## The `ctx` surface — you already have these, do not rebuild them",
-      );
-      expect(agents).toContain('| `ctx.goto("<scene-name>")` |');
-      expect(agents).toContain("`ctx.goto(name)` rebuilds the scene without resetting game state");
-      expect(agents).toContain("ctx.state.set({ /* copy this game's initial-state shape */ })");
-      expect(agents).toContain(
-        '`game.goto("<scene-name>")` also rebuilds the scene, but it resets the game\'s state',
-      );
-      expect(agents).toContain("deterministic only when `defineGame({ seed })` is configured");
-      expect(agents).toContain("goto` and then `return`");
-      expect(agents).not.toContain("That is your entire restart button");
-      expect(agents).not.toContain("probably does not exist");
+      expect(agents).toContain(".agents/skills/threenative-context/SKILL.md");
     }
   });
 
@@ -703,33 +698,59 @@ describe("template contracts", () => {
     }
   });
 
-  it("should require every shared agent fragment in every template", async () => {
-    const names = await templateNames();
-    expect(names.length).toBeGreaterThanOrEqual(7);
-    const fragmentFiles = (await readdir(agentDocsRoot))
-      .filter((file) => file.endsWith(".md"))
-      .map((file) => file.slice(0, -3))
-      .sort();
-    expect(fragmentFiles).toEqual([...requiredSharedFragments].sort());
-    for (const template of names) {
+  it("should keep the root instructions under 100 lines and move workflows into skills", async () => {
+    const packageAgents = await readFile(
+      path.resolve("packages/create-threenative/AGENTS.md"),
+      "utf8",
+    );
+    expect(
+      packageAgents.split(/\r?\n/u).length,
+      "packages/create-threenative/AGENTS.md",
+    ).toBeLessThan(100);
+    for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      for (const fragment of requiredSharedFragments) {
-        expect(agents, `${template}/${fragment}`).toContain(`<!-- shared: ${fragment} -->`);
+      expect(agents.split(/\r?\n/u).length, `${template}/AGENTS.md`).toBeLessThan(100);
+      for (const [skill, ...markers] of authoringSkills) {
+        expect(agents, `${template}/${skill} Codex link`).toContain(
+          `.agents/skills/${skill}/SKILL.md`,
+        );
+        expect(agents, `${template}/${skill} Claude link`).toContain(
+          `.claude/skills/${skill}/SKILL.md`,
+        );
       }
+    }
+
+    for (const [skill, ...markers] of authoringSkills) {
+      const bodies = await Promise.all(
+        [".agents/skills", ".claude/skills"].map(async (host) => {
+          const body = await readFile(
+            path.resolve("packages/create-threenative/agent-files", host, skill, "SKILL.md"),
+            "utf8",
+          );
+          for (const marker of markers)
+            expect(body, `${host}/${skill}/${marker}`).toContain(marker);
+          return body;
+        }),
+      );
+      expect(new Set(bodies).size, `${skill} host adapters drifted`).toBe(1);
     }
   });
 
   it("should document a bounded performance assertion in every template", async () => {
-    const fragment = await readFile(path.join(agentDocsRoot, "performance-default.md"), "utf8");
-    expect(fragment.split(/\s+/u).filter(Boolean).length).toBeLessThan(130);
-    expect(fragment).toContain("agent-docs/assertion-reference.md#performance");
-    expect(fragment).toMatch(performanceBoundPattern);
+    const skill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-performance/SKILL.md",
+      ),
+      "utf8",
+    );
+    expect(skill.split(/\s+/u).filter(Boolean).length).toBeLessThan(260);
+    expect(skill).toContain("agent-docs/assertion-reference.md#performance");
+    expect(skill).toMatch(performanceBoundPattern);
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents, `${template}/performance-default`).toContain(
-        "agent-docs/assertion-reference.md#performance",
+      expect(agents, `${template}/threenative-performance`).toContain(
+        ".agents/skills/threenative-performance/SKILL.md",
       );
-      expect(agents, `${template}/performance-default`).toMatch(performanceBoundPattern);
     }
   });
 
@@ -756,21 +777,23 @@ describe("template contracts", () => {
       "|4|Thermal-status|≤2|≤1|",
       "|4|Whole-device-current|—|report;not-gated|",
     ] as const;
-    const fragment = await readFile(path.join(agentDocsRoot, "performance-default.md"), "utf8");
-    expect(fragment).toContain("Unexecuted platforms stay unverified");
-    expect(fragment).toContain(
+    const skill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-performance/SKILL.md",
+      ),
+      "utf8",
+    );
+    expect(skill).toContain("Unexecuted platforms stay unverified");
+    expect(skill).toContain(
       "Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4",
     );
-    for (const target of expectedTargets) expect(fragment).toContain(target);
+    for (const target of expectedTargets) expect(skill).toContain(target);
 
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents, `${template}/unexecuted`).toContain("Unexecuted platforms stay unverified");
-      expect(agents, `${template}/thermal-confound`).toContain(
-        "Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4",
+      expect(agents, `${template}/unexecuted`).toContain(
+        ".agents/skills/threenative-performance/SKILL.md",
       );
-      for (const target of expectedTargets)
-        expect(agents, `${template}/${target}`).toContain(target);
     }
   });
 
@@ -796,15 +819,10 @@ describe("template contracts", () => {
 
   it("should scaffold flat agent docs without shared marker comments", async () => {
     const root = await makeTempDir("threenative-shared-agent-scaffold-");
-    const sharedBodies = await Promise.all(
-      requiredSharedFragments.map(
-        async (fragment) =>
-          [
-            fragment,
-            (await readFile(path.join(agentDocsRoot, `${fragment}.md`), "utf8")).trim(),
-          ] as const,
-      ),
-    );
+    const skillPaths = authoringSkills.flatMap(([skill]) => [
+      `.agents/skills/${skill}/SKILL.md`,
+      `.claude/skills/${skill}/SKILL.md`,
+    ]);
     try {
       for (const template of await templateNames()) {
         const result = await createProject(
@@ -814,10 +832,12 @@ describe("template contracts", () => {
         for (const file of ["AGENTS.md", "CLAUDE.md"]) {
           const docs = await readFile(path.join(result.target, file), "utf8");
           expect(docs, `${template}/${file}`).not.toMatch(/<!--\s*(?:shared:|\/shared)/u);
-          for (const [fragment, body] of sharedBodies) {
-            expect(docs, `${template}/${file}/${fragment}`).toContain(body);
-          }
+          expect(docs.split(/\r?\n/u).length, `${template}/${file}`).toBeLessThan(100);
         }
+        for (const relativePath of skillPaths)
+          await expect(readFile(path.join(result.target, relativePath), "utf8")).resolves.toContain(
+            "name:",
+          );
       }
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -829,16 +849,22 @@ describe("template contracts", () => {
       await readFile(path.resolve("packages/create-threenative/sculpt-mcp-tools.json"), "utf8"),
     ) as { recommended: string[]; tools: string[]; version: string };
     const served = new Set(surface.tools);
+    const skill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-assets/SKILL.md",
+      ),
+      "utf8",
+    );
+    const mentioned = [...skill.matchAll(/`(sculpt_[a-z0-9_]+)`/gu)].map(
+      (match) => match[1] as string,
+    );
+    expect(mentioned.filter((name) => !served.has(name))).toEqual([]);
+    for (const name of surface.recommended) expect(skill, name).toContain(name);
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      const mentioned = [...agents.matchAll(/`(sculpt_[a-z0-9_]+)`/gu)].map(
-        (match) => match[1] as string,
+      expect(agents, `${template}/threenative-assets`).toContain(
+        ".agents/skills/threenative-assets/SKILL.md",
       );
-      expect(
-        mentioned.filter((name) => !served.has(name)),
-        template,
-      ).toEqual([]);
-      for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
     }
     const coreManifest = JSON.parse(
       await readFile(path.resolve("packages/core/package.json"), "utf8"),

@@ -3,10 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Generates the supersession half of `agent-docs/ctx-surface.md` from `capabilities.json`, so the
- * table an agent reads and the constructs the reinvention gate enforces are the same fact
- * (PRD-187 phase 3). The hand-maintained part of the fragment keeps documenting `ctx` property
- * signatures — a different job; this region owns every construct `pnpm budgets` will fail on.
+ * Generates the supersession half of the context skill from `capabilities.json`, so the table an
+ * agent reads and the constructs the reinvention gate enforces are the same fact (PRD-187 phase
+ * 3). The hand-maintained part of the skill keeps documenting `ctx` property signatures — a
+ * different job; this region owns every construct `pnpm budgets` will fail on.
  *
  * Runs inside `pnpm build` after the manifest is generated; `--check` turns a hand-edit of the
  * region into a red gate instead of silent drift.
@@ -17,9 +17,22 @@ const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capa
 const TARGET_RELATIVE_PATH = path.join(
   "packages",
   "create-threenative",
-  "agent-docs",
-  "ctx-surface.md",
+  "agent-files",
+  ".agents",
+  "skills",
+  "threenative-context",
+  "SKILL.md",
 );
+const MIRROR_TARGET_RELATIVE_PATH = path.join(
+  "packages",
+  "create-threenative",
+  "agent-files",
+  ".claude",
+  "skills",
+  "threenative-context",
+  "SKILL.md",
+);
+const TARGET_RELATIVE_PATHS = [TARGET_RELATIVE_PATH, MIRROR_TARGET_RELATIVE_PATH] as const;
 
 export const GENERATED_REGION_START = "<!-- generated: superseded-constructs -->";
 const GENERATED_REGION_END = "<!-- /generated -->";
@@ -48,9 +61,9 @@ export function buildSupersessionRows(entries: readonly IManifestEntry[]): strin
   return [...rows].join("\n");
 }
 
-/** Replace (or append) the generated region in the fragment body. */
-export function applyRegion(fragment: string, entries: readonly IManifestEntry[]): string {
-  const start = fragment.indexOf(GENERATED_REGION_START);
+/** Replace (or append) the generated region in the skill body. */
+export function applyRegion(skill: string, entries: readonly IManifestEntry[]): string {
+  const start = skill.indexOf(GENERATED_REGION_START);
   const section = [
     GENERATED_REGION_START,
     "",
@@ -72,37 +85,43 @@ export function applyRegion(fragment: string, entries: readonly IManifestEntry[]
     GENERATED_REGION_END,
   ].join("\n");
 
-  if (start === -1) return `${fragment.trimEnd()}\n\n${section}\n`;
-  const end = fragment.indexOf(GENERATED_REGION_END, start);
+  if (start === -1) return `${skill.trimEnd()}\n\n${section}\n`;
+  const end = skill.indexOf(GENERATED_REGION_END, start);
   if (end === -1) throw new Error("generated region is missing its close marker");
-  return `${fragment.slice(0, start)}${section}${fragment.slice(end + GENERATED_REGION_END.length)}`;
+  return `${skill.slice(0, start)}${section}${skill.slice(end + GENERATED_REGION_END.length)}`;
 }
 
 async function main(): Promise<void> {
   const check = process.argv.includes("--check");
   const manifestFile = path.join(repoRoot, MANIFEST_RELATIVE_PATH);
-  const targetFile = path.join(repoRoot, TARGET_RELATIVE_PATH);
   const manifest = JSON.parse(await readFile(manifestFile, "utf8")) as {
     entries: IManifestEntry[];
   };
-  const expected = applyRegion(await readFile(targetFile, "utf8"), manifest.entries);
-  const actual = await readFile(targetFile, "utf8");
+  const canonicalPath = path.join(repoRoot, TARGET_RELATIVE_PATH);
+  const canonical = await readFile(canonicalPath, "utf8");
+  const expected = applyRegion(canonical, manifest.entries);
+  const actuals = await Promise.all(
+    TARGET_RELATIVE_PATHS.map((relativePath) =>
+      readFile(path.join(repoRoot, relativePath), "utf8"),
+    ),
+  );
+  const stale = TARGET_RELATIVE_PATHS.filter((_, index) => actuals[index] !== expected);
   if (check) {
-    if (actual !== expected) {
+    if (stale.length > 0) {
       console.error(
-        `RED observed: ${TARGET_RELATIVE_PATH} disagrees with capabilities.json; run pnpm build`,
+        `RED observed: ${stale.join(", ")} disagrees with capabilities.json; run pnpm build`,
       );
       process.exitCode = 1;
       return;
     }
-    console.log("ctx-surface supersession table in sync with capabilities.json");
+    console.log("threenative-context supersession table in sync with capabilities.json");
     return;
   }
-  if (actual !== expected) {
-    await writeFile(targetFile, expected);
-    console.log(`ctx-surface supersession table regenerated at ${TARGET_RELATIVE_PATH}`);
+  if (stale.length > 0) {
+    for (const relativePath of stale) await writeFile(path.join(repoRoot, relativePath), expected);
+    console.log(`threenative-context supersession table regenerated in ${stale.join(", ")}`);
   } else {
-    console.log("ctx-surface supersession table already in sync");
+    console.log("threenative-context supersession table already in sync");
   }
 }
 
