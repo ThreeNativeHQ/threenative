@@ -380,6 +380,12 @@ if (missingMarkers.length > 0) {
       `the broader system log tail follows.\n${tail}`,
   );
 }
+if (!logs.includes('TN_NATIVE_WORKER_PROOF_PASS:')) {
+  throw new Error(
+    'iOS native worker proof did not pass: expected TN_NATIVE_WORKER_PROOF_PASS; ' +
+      'inspect artifacts/ios/simulator-console.log for the worker phase marker or failure.',
+  );
+}
 if (/GPUValidationError|Validation Error|TN_IOS_PROOF_FAILED|TypeError|ReferenceError|FATAL/u.test(logs)) {
   throw new Error('iOS unified logs contain a native, JavaScript, or WebGPU failure.');
 }

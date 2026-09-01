@@ -209,3 +209,17 @@ test('the iOS bundle identifier is declared once and read everywhere else', () =
   const launched = /const bundleId = '([^']+)'/u.exec(verifier)?.[1];
   assert.equal(launched, declared, 'the verifier must launch the identifier CMake builds');
 });
+
+test('iOS native smoke requires a bounded worker proof with an explicit frame handshake', () => {
+  const workerProof = readFileSync(
+    join(root, '../../examples/native-smoke/src/worker-proof.ts'),
+    'utf8',
+  );
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+
+  assert.match(workerProof, /const WORKER_ITERATIONS = 20_000_000;/u);
+  assert.match(workerProof, /kind: "started"/u);
+  assert.match(workerProof, /kind: "compute"/u);
+  assert.match(workerProof, /frame - startedFrame >= WORKER_MINIMUM_FRAMES/u);
+  assert.match(verifier, /'TN_NATIVE_WORKER_PROOF_PASS:'/u);
+});
