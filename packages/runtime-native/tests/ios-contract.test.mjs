@@ -231,5 +231,8 @@ test('iOS launch retries once and records simulator process telemetry on timeout
   assert.match(verifier, /simulator-launch-attempt-\$\{attempt\}\.log/u);
   assert.match(verifier, /simctl', 'spawn', device, 'ps'/u);
   assert.match(verifier, /simulator-process-timeout\.log/u);
+  assert.match(verifier, /simulator-reboot-attempt-\$\{attempt\}\.log/u);
+  assert.match(verifier, /simctl', 'shutdown', device/u);
+  assert.match(verifier, /simctl', 'bootstatus', device, '-b'/u);
   assert.match(verifier, /attempt < SIMULATOR_LAUNCH_ATTEMPTS/u);
 });

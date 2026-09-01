@@ -215,24 +215,27 @@ function launchDiagnostics(device, since) {
   return `${result.stdout || ''}\n${result.stderr || ''}`.trim();
 }
 
-function simulatorDiagnostic(label, args) {
+function simulatorDiagnostic(label, args, timeout = 15_000) {
   const result = spawnSync('xcrun', args, {
     cwd: workspaceRoot,
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
-    timeout: 15_000,
+    timeout,
   });
-  return [
-    `---- ${label} ----`,
-    `command: xcrun ${args.join(' ')}`,
-    `status: ${result.status ?? 'not-started'}`,
-    `signal: ${result.signal ?? 'none'}`,
-    `error: ${result.error?.message ?? 'none'}`,
-    'stdout:',
-    result.stdout || '',
-    'stderr:',
-    result.stderr || '',
-  ].join('\n');
+  return {
+    status: result.status,
+    text: [
+      `---- ${label} ----`,
+      `command: xcrun ${args.join(' ')}`,
+      `status: ${result.status ?? 'not-started'}`,
+      `signal: ${result.signal ?? 'none'}`,
+      `error: ${result.error?.message ?? 'none'}`,
+      'stdout:',
+      result.stdout || '',
+      'stderr:',
+      result.stderr || '',
+    ].join('\n'),
+  };
 }
 
 function simulatorProcessTelemetry(device) {
@@ -244,7 +247,22 @@ function simulatorProcessTelemetry(device) {
     simulatorDiagnostic('launchd system', [
       'simctl', 'spawn', device, 'launchctl', 'print', 'system',
     ]),
-  ].join('\n');
+    simulatorDiagnostic('launchd user', [
+      'simctl', 'spawn', device, 'launchctl', 'print', 'user/501',
+    ]),
+  ].map((probe) => probe.text).join('\n');
+}
+
+function restartSimulator(device) {
+  const steps = [
+    simulatorDiagnostic('simulator shutdown', ['simctl', 'shutdown', device]),
+    simulatorDiagnostic('simulator boot', ['simctl', 'boot', device]),
+    simulatorDiagnostic('simulator bootstatus', ['simctl', 'bootstatus', device, '-b'], 120_000),
+  ];
+  return {
+    ready: steps.at(-1).status === 0,
+    text: steps.map((step) => step.text).join('\n'),
+  };
 }
 
 function validateScreenshot(path) {
@@ -399,19 +417,37 @@ for (let attempt = 1; attempt <= SIMULATOR_LAUNCH_ATTEMPTS; attempt += 1) {
     writeFileSync(join(artifactRoot, `simulator-process-timeout-attempt-${attempt}.log`), processTelemetry);
     writeFileSync(join(artifactRoot, 'simulator-process-timeout.log'), processTelemetry);
   }
-  launchAttempts.push({
+  const attemptRecord = {
     attempt,
     consoleBytes: consoleOutput.length,
     exit: launched.status ?? launched.error?.code ?? null,
     missingMarkers,
     startedAt,
-  });
+  };
+  launchAttempts.push(attemptRecord);
   writeFileSync(
     join(artifactRoot, 'simulator-launch-attempts.json'),
     `${JSON.stringify({ attempts: launchAttempts, maxAttempts: SIMULATOR_LAUNCH_ATTEMPTS }, null, 2)}\n`,
   );
   if (missingMarkers.length === 0) break;
   if (attempt < SIMULATOR_LAUNCH_ATTEMPTS) {
+    const reboot = restartSimulator(simulator.udid);
+    attemptRecord.rebootReady = reboot.ready;
+    writeFileSync(join(artifactRoot, `simulator-reboot-attempt-${attempt}.log`), reboot.text);
+    writeFileSync(
+      join(artifactRoot, 'simulator-launch-attempts.json'),
+      `${JSON.stringify({ attempts: launchAttempts, maxAttempts: SIMULATOR_LAUNCH_ATTEMPTS }, null, 2)}\n`,
+    );
+    if (!reboot.ready) {
+      throw new Error(
+        `iOS simulator reboot did not reach bootstatus before launch attempt ${attempt + 1}; ` +
+          'inspect artifacts/ios/simulator-reboot-attempt-1.log.',
+      );
+    }
+    awaitBundleRegistration(simulator.udid, bundleId);
+    console.log(
+      `TN_IOS_SIMULATOR_REBOOT:${JSON.stringify({ attempt, nextAttempt: attempt + 1, ready: reboot.ready })}`,
+    );
     console.log(
       `TN_IOS_SIMULATOR_LAUNCH_RETRY:${JSON.stringify({ attempt, missingMarkers, nextAttempt: attempt + 1 })}`,
     );
