@@ -4,9 +4,36 @@ prd_contract: v1
 
 # PRD-305 — The GPU meter reports on Android, or says on the record why it cannot
 
-**Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only; every file:line is a read of
-this tree on that date. **No Android run has been executed for this PRD** — that absence is the
-whole reason it exists.
+**Status:** BLOCKED — `requires-physical-device`, filed 2026-08-31 against `2e014460`, probed
+2026-09-01. Evidence:
+[`gpu-meter-android-probe-2026-09-01`](../../../verification/gpu-meter-android-probe-2026-09-01.md).
+
+**What is missing is a phone, and nothing else.** Every file:line below is a read of this tree, and
+no Android run has been executed — that absence is the whole reason this PRD exists, and it stays
+unexecuted because no device is attached:
+
+```
+$ adb devices -l
+List of devices attached
+
+```
+
+`adb` itself is fine (1.0.41 / 37.0.0-14910828, on disk at `~/Android/Sdk/platform-tools/`), and
+four emulator images are installed. **The emulator cannot answer this question.** `--target android`
+in the conformance runner is the emulator lane and refuses a physical serial, so the two are
+different targets by construction; and an emulator's WebGPU adapter is software, so whether *it*
+grants `timestamp-query` says nothing about what a Pixel 8's driver grants. A green from there
+would be a claim about the wrong hardware — which is the failure mode this PRD was written to end,
+not to repeat.
+
+**Unblocked by:** a Pixel 8 (or any physical Android device) attached over `adb`, cool enough to
+pass preflight. The run itself is Phase 1 below and is a measurement, not an edit.
+
+**Blocks:** [PRD-308](../../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md)
+and through it
+[PRD-311](../../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Both stay OPEN in
+their batch rather than blocked — a dependency that is not ready is not the same as a missing
+capability.
 
 **Outcome:** a `TN_FRAME_BUDGET` line captured from a Pixel 8 carries a real `gpuMs`, and the
 repository holds the logcat that proves it. If the device does not grant `timestamp-query`, the
@@ -16,10 +43,10 @@ silence that reads identically to "we never tried".
 **Depends on:** nothing. Every piece of plumbing already exists; none of it has been executed on a
 phone.
 
-**Unblocks:** [PRD-308](PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) (per-pass GPU
+**Unblocks:** [PRD-308](../../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) (per-pass GPU
 attribution on the phone) and through it
-[PRD-311](PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Task 2 of Band 1; see
-[README](README.md) for the tick-back rule.
+[PRD-311](../../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Task 2 of Band 1; see
+[README](../../architecture/README.md) for the tick-back rule.
 
 **Complexity: 4 → MEDIUM mode.** +1 (1–5 files), +2 (multi-package: `core`, `playtest`, and a
 device lane), +1 (a physical-device measurement whose outcome may be "the device says no").
