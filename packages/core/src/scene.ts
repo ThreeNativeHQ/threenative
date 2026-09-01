@@ -46,6 +46,24 @@ export type SceneEnterResult<
 > = // biome-ignore lint/suspicious/noConfusingVoidType: void preserves existing Scene.enter overrides.
 void | SceneFrame<TState, TPhysics>;
 
+/**
+ * When the framework's startup milestones happened, in milliseconds on the host's monotonic
+ * clock (`performance.now()`: since navigation on the web, since process start on native).
+ *
+ * Absent members have not happened yet. Published to the playtest bridge so a scenario asserts
+ * startup time as an observation rather than reading it off a console log.
+ */
+export interface IStartupTimeline {
+  /** The start scene's `load()` began. */
+  readonly loadStartedMs?: number;
+  /** The start scene's `enter()` returned: the world is built and the loop can move. */
+  readonly enteredMs?: number;
+  /** First-use compilation settled or its budget expired. */
+  readonly compileSettledMs?: number;
+  /** `whenReady()` resolved: the world is safe to show. */
+  readonly readyMs?: number;
+}
+
 export interface IStartupStatus {
   /**
    * True once first-use compilation has settled — earlier than `phase === "ready"`, which also
@@ -65,6 +83,8 @@ export interface IStartupStatus {
   readonly phase: "observing" | "collapsing" | "ready";
   /** 0 while first-use work or the sustained frame window is pending, then 1. */
   readonly progress: number;
+  /** When each milestone happened; members appear as they are reached. */
+  readonly timeline: IStartupTimeline;
   /** Resolves after first-use work and the sustained frame window, so it is always awaitable. */
   whenReady(): Promise<void>;
 }

@@ -628,6 +628,28 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 }
 ```
 
+### `startup`
+
+Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** runtime.startup
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `maxEnteredMs` | number | no |
+| `maxCompileSettledMs` | number | no |
+| `maxReadyMs` | number | no |
+
+
+```json
+{
+  "startup": {
+    "maxEnteredMs": 2500,
+    "maxReadyMs": 8000
+  }
+}
+```
+
 ### `renderChain`
 
 Proves the render chain reports the requested quality tier and, when asserted, a bounded temporal-history rejection fraction. **Use when** that is the thing the scenario must prove.

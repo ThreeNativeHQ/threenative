@@ -1,6 +1,6 @@
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
-import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
+import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
@@ -758,6 +758,9 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   const renderChain = value.renderChain === undefined
     ? undefined
     : validateRenderChainAssertion(value.renderChain, scenarioPath, "assert.renderChain");
+  const startup = value.startup === undefined
+    ? undefined
+    : validateStartupAssertion(value.startup, scenarioPath, "assert.startup");
   const world = isRecord(value.world) ? value.world : undefined;
   const optOuts = [
     ["noConsoleErrors", "consoleErrorsOptOutReason"],
@@ -815,6 +818,7 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
       : {}),
     ...(performance === undefined ? {} : { performance }),
     ...(renderChain === undefined ? {} : { renderChain }),
+    ...(startup === undefined ? {} : { startup }),
     ...(deviceMetrics === undefined ? {} : { deviceMetrics }),
     ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
     ...(movement === undefined

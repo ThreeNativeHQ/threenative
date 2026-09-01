@@ -54,7 +54,13 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
    * measurement and must not be read as one, so the report says which rule applied rather than
    * leaving a reader to assume the stricter one.
    */
-  startup?: { compileSettled?: boolean; phase: string; progress: number; rule: string };
+  startup?: {
+    compileSettled?: boolean;
+    phase: string;
+    progress: number;
+    rule: string;
+    timeline?: { loadStartedMs?: number; enteredMs?: number; compileSettledMs?: number; readyMs?: number };
+  };
   debugColliders?: boolean;
   input?: string;
   movementThreshold?: number;

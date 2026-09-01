@@ -83,6 +83,11 @@ export function playtest<
           ...(runtime?.startupCompileSettled === undefined
             ? {}
             : { compileSettled: runtime.startupCompileSettled() }),
+          // Wall-clock milestones, so a scenario asserts startup time as an observation instead
+          // of reading it off a console marker after the fact.
+          ...(runtime?.startupTimeline === undefined
+            ? {}
+            : { timeline: runtime.startupTimeline() }),
         }),
       });
       installRuntimeChannels(installation.bridge, runtime);

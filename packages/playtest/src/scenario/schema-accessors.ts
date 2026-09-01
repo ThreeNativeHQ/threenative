@@ -2,7 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
-import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion } from "./schema-base.js";
+import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -288,6 +288,29 @@ export function validateRenderChainAssertion(
     throw invalidScenario(scenarioPath, `'${objectPath}' must assert tier or velocity.maxRejectionFraction; an empty render-chain assertion observes nothing.`);
   }
   return { tier };
+}
+
+const STARTUP_CEILINGS = ["maxEnteredMs", "maxCompileSettledMs", "maxReadyMs"] as const;
+
+export function validateStartupAssertion(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestStartupAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  const result: { -readonly [K in keyof IPlaytestStartupAssertion]: number } = {};
+  for (const key of STARTUP_CEILINGS) {
+    const ceiling = record[key];
+    if (ceiling === undefined) continue;
+    if (typeof ceiling !== "number" || !Number.isFinite(ceiling) || ceiling <= 0) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a positive finite number of milliseconds, received ${describeValue(ceiling)}.`);
+    }
+    result[key] = ceiling;
+  }
+  if (Object.keys(result).length === 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${STARTUP_CEILINGS.join(", ")}; an empty startup assertion observes nothing.`);
+  }
+  return result;
 }
 
 /** Re-exported so a scenario author and the protocol never disagree about the phase names. */

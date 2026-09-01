@@ -636,7 +636,7 @@ export type { ITweenOptions, ScheduleHandle } from "./schedule.js";
  * @example class Play extends Scene { update(ctx, dt) {} }
  */
 export { Scene } from "./scene.js";
-export type { ICtx, SceneFrame } from "./scene.js";
+export type { ICtx, IStartupTimeline, SceneFrame } from "./scene.js";
 /**
  * Advance a game-owned non-uniform sprite atlas on the fixed step.
  * @situation play an animated pickup or sprite-sheet effect
