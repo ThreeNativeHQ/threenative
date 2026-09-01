@@ -14,6 +14,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   # Every job below checks out and installs for itself, so nothing gains from a shared `install`
   # job that discards its own node_modules — it only added a serial edge in front of the run.
@@ -32,6 +36,8 @@ jobs:
       - name: Build workspace packages consumed through export maps
         run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm typecheck
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   lint:
     runs-on: ubuntu-latest
@@ -45,6 +51,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
@@ -129,6 +137,8 @@ jobs:
           cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
             --target threenative-rg11b10-renderable-test --parallel "$(nproc)"
       - run: pnpm test
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   test-browser:
     runs-on: ubuntu-latest
@@ -157,6 +167,8 @@ jobs:
           name: starter-look-frame
           path: test-results/starter-look
           if-no-files-found: ignore
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   test-playtest:
     runs-on: ubuntu-latest
@@ -173,6 +185,8 @@ jobs:
         run: pnpm tsx scripts/workspace-packages.ts build
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   golden-path:
     needs: build
@@ -281,6 +295,8 @@ jobs:
           await browser.close();
           NODE
       - run: pnpm verify:golden-path
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   template-nonvisual:
     if: github.event_name == 'push' || github.event_name == 'schedule'
@@ -339,6 +355,8 @@ jobs:
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   benchmark:
     needs: build
@@ -362,6 +380,8 @@ jobs:
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on
@@ -396,6 +416,8 @@ jobs:
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
         run: pnpm exec tsx scripts/check-core-boundary.ts
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   budgets:
     needs: build
@@ -412,6 +434,8 @@ jobs:
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   # The native lane guards targets that any package change can break, so it is gated on the event
   # rather than on paths — see native-platforms.yml. It costs ~24 minutes on free public-repo
@@ -444,6 +468,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: read
     steps:
       - uses: actions/checkout@v7
@@ -472,3 +497,5 @@ jobs:
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure

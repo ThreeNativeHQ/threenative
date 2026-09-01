@@ -1,0 +1,13 @@
+name: Cancel workflow run after failure
+description: Stop sibling jobs in this workflow run after one job has already failed.
+runs:
+  using: composite
+  steps:
+    - name: Cancel the current workflow run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        gh api --method POST \
+          "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel"

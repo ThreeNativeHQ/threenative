@@ -65,6 +65,26 @@ const expectedTemplates = [
 ] as const;
 
 describe("CI pipeline structure", () => {
+  it("a failed job cancels the remaining work in its own workflow run", async () => {
+    const action = await readFile(
+      path.join(repo, ".github/actions/cancel-run-on-failure/action.yml"),
+      "utf8",
+    );
+    expect(action).toContain("GH_TOKEN: ${{ github.token }}");
+    expect(action).toContain("repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel");
+
+    for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
+      const source = await readFile(path.join(repo, relative), "utf8");
+      expect(triggerSection(source), relative).toContain("actions: write");
+      for (const [job, section] of jobSections(source)) {
+        expect(section, `${relative} ${job}`).toContain("if: failure()");
+        expect(section, `${relative} ${job}`).toContain(
+          "uses: ./.github/actions/cancel-run-on-failure",
+        );
+      }
+    }
+  });
+
   it("bounds every runner job with an explicit timeout", async () => {
     for (const relative of workflows) {
       const source = await readFile(path.join(repo, relative), "utf8");
