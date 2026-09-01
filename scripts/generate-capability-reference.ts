@@ -29,11 +29,19 @@ interface IManifestEntry {
   readonly importPath: string;
   readonly kind: string;
   readonly overrides: readonly string[];
+  readonly package: string;
   readonly signature: string;
   readonly situations: readonly string[];
   readonly summary: string;
   readonly supersedes: readonly string[];
   readonly symbol: string;
+}
+
+function inlineCodeList(items: readonly string[]): string {
+  const formatted = items.map((item) => `\`${item}\``);
+  if (formatted.length <= 1) return formatted[0] ?? "no packages";
+  if (formatted.length === 2) return formatted.join(" and ");
+  return `${formatted.slice(0, -1).join(", ")}, and ${formatted.at(-1)}`;
 }
 
 function bulletList(items: readonly string[], label: string): string[] {
@@ -63,6 +71,11 @@ function section(entry: IManifestEntry): string {
 }
 
 export function renderCapabilityReference(entries: readonly IManifestEntry[]): string {
+  const packages = inlineCodeList(
+    [...new Set(entries.map((entry) => entry.package))].sort((left, right) =>
+      left.localeCompare(right),
+    ),
+  );
   const byImportPath = new Map<string, IManifestEntry[]>();
   for (const entry of entries) {
     const group = byImportPath.get(entry.importPath) ?? [];
@@ -84,7 +97,7 @@ export function renderCapabilityReference(entries: readonly IManifestEntry[]): s
     "",
     "# Capability reference",
     "",
-    "Every public class and function export of `@threenative/core` and `@threenative/physics`,",
+    `Every public class and function export represented by this manifest across ${packages},`,
     "generated from the doc tags the engine itself compiles, so this page cannot disagree with",
     "the code. Look here before writing a replacement; ask `engine_search_capabilities` when an",
     "MCP server is available.",
