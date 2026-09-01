@@ -38,6 +38,7 @@ import {
   androidSystemDialog,
   buildProvenance,
   hardwareAdapterBlocker,
+  runCommand,
   unexpectedBlockedRows,
   expiredExclusions,
   reportExitCode,
@@ -113,6 +114,30 @@ test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () 
   assert.deepEqual(unexpectedBlockedRows(mislabelled, registry), [
     { id: "realism-ssr", reason: "bundle failed" },
   ]);
+});
+
+test("allowFailure survives a spawn error, not just a non-zero exit", () => {
+  // An Android run finished its conformance work at 74 passed, 0 failed, and was then discarded by
+  // `spawnSync adb ETIMEDOUT` raised from the display-size restore — a teardown command the caller
+  // had already marked allowFailure. A timeout is not the caller changing its mind about whether
+  // that command matters.
+  const slow = runCommand(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], {
+    allowFailure: true,
+    timeout: 100,
+  });
+  assert.equal(slow.timedOut, true);
+  assert.notEqual(slow.status, 0);
+
+  // Without allowFailure the same timeout still stops the run.
+  assert.throws(
+    () => runCommand(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], { timeout: 100 }),
+    /ETIMEDOUT|timed out/iu,
+  );
+
+  // And a plain non-zero exit under allowFailure is unchanged: returned, not thrown, not timedOut.
+  const failed = runCommand(process.execPath, ["-e", "process.exit(3)"], { allowFailure: true });
+  assert.equal(failed.status, 3);
+  assert.equal(failed.timedOut, undefined);
 });
 
 test("the workspace test lane stays runtime-free and runs the native contract suite", () => {

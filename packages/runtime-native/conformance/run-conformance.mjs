@@ -1100,7 +1100,7 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
   }
 }
 
-function runCommand(command, args, options = {}) {
+export function runCommand(command, args, options = {}) {
   const proc = spawnSync(command, args, {
     cwd: options.cwd || runtimeRoot,
     env: options.env || process.env,
@@ -1108,7 +1108,17 @@ function runCommand(command, args, options = {}) {
     timeout: options.timeout || 180_000,
     maxBuffer: 64 * 1024 * 1024,
   });
-  if (proc.error) throw proc.error;
+  // `allowFailure` has to cover a spawn error too, not only a non-zero exit. A cleanup command —
+  // the display-size restore, a stray `rm` — is marked allowFailure precisely because the caller
+  // has decided its failure is not fatal, and then `spawnSync adb ETIMEDOUT` was thrown straight
+  // past that decision. It killed an Android run whose conformance work had already finished at
+  // 74 passed, 0 failed: an emulator too loaded to answer a teardown command in time discarded the
+  // result it had just produced. The error is surfaced on the returned object so a caller that
+  // cares can still read it.
+  if (proc.error) {
+    if (!options.allowFailure) throw proc.error;
+    return { ...proc, status: proc.status ?? 1, timedOut: true };
+  }
   if (proc.status !== 0 && !options.allowFailure) {
     throw new Error(
       `${command} ${args.join(" ")} failed (${proc.status}): ${proc.stderr || proc.stdout || ""}`,
