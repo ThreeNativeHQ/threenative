@@ -77,6 +77,40 @@ it**. No such subject is reachable from this repository:
   session's uncommitted work in a sibling game, and this lane does not make it. **The symlinks were
   put back exactly as they were found.**
 
+## Run 2026-09-01: the marker works in a real game, and every template declines
+
+The `shooter` — the busiest template — was scaffolded, built and driven for 35 seconds. The marker
+printed on **every one of six frame-budget windows**, and it declined every time:
+
+```
+TN_PROJECTION:{"drawsActual":116,"drawsPlanned":52,"exact":{},"exactObjects":0,
+  "projecting":false,"reasonCode":"belowMeshFloor",
+  "reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves",
+  "sourceRenderables":52,"window":1}
+```
+
+Two things this settles.
+
+**The instrument works end to end.** Per-window, in a scaffolded game, with the decline and its
+reason on every line — which is the shape Phase 2 needs and the shape `TN_RENDER_PROJECTION` alone
+could not give.
+
+**The exact lane is empty because nothing is folded at all.** 52 authored renderables against a
+floor of 200. The shooter is the largest template scene, so *no* in-repo template can produce the
+ranked table; that is now measured rather than assumed.
+
+### And the divergence is not what it looks like
+
+`drawsPlanned 52` against `drawsActual 116` is a 2.2× gap on a **declined** frame, where the plan is
+simply "one draw per authored renderable". It is not a projection defect. The shooter's key light
+casts shadows (`renderer.shadowMap.enabled = true`), so the renderer walks the same objects again
+for the shadow map, and `info.render.drawCalls` counts every pass while the plan counts the colour
+pass only.
+
+That is worth stating plainly here, because the field was added precisely so a divergence would be
+visible — and the first divergence it surfaced has an innocent explanation. **A reader comparing the
+two numbers must know the plan is colour-pass draws and the measurement is all draws.**
+
 The honest consequence: **Phase 2's target reason is still unchosen**, and this PRD stays PARTIAL
 until a run produces the ranked table. The instrument is what makes that run a one-command read
 instead of a rebuild-per-experiment, which was the whole point.

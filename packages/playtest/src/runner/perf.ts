@@ -467,7 +467,7 @@ function formatProjection(windows: readonly IProjectionWindowJson[]): string[] {
   const measured =
     last.drawsActual === undefined
       ? "unmeasured"
-      : `${last.drawsActual}${last.drawsActual === last.drawsPlanned ? "" : " — the renderer and the plan disagree"}`;
+      : `${last.drawsActual}${last.drawsActual === last.drawsPlanned ? "" : " (all passes; the plan counts the colour pass only)"}`;
   const lines = [
     last.projecting
       ? `scene projection: on (${last.reasonCode}); ${last.sourceRenderables} authored renderables, ` +

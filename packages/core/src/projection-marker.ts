@@ -12,7 +12,14 @@ import type { IRenderProjectionReport, ProjectionExactReason } from "./renderPro
 export const PROJECTION_MARKER = "TN_PROJECTION";
 
 export interface IProjectionWindowJson {
-  /** Draw calls the renderer counted for the world pass, or absent when nothing measured them. */
+  /**
+   * Draw calls the renderer counted, or absent when nothing measured them.
+   *
+   * **Not comparable to `drawsPlanned` one-for-one.** The plan counts colour-pass draws; this
+   * counts every pass the renderer made, so a scene whose light casts shadows walks its objects
+   * twice and reads about double. Measured on the shooter template: 52 planned, 116 actual, on a
+   * frame where the projection had declined and folded nothing at all.
+   */
   readonly drawsActual?: number;
   /** One per batch plus one per exact-lane object; the plan, which WebGPU need not honour. */
   readonly drawsPlanned: number;
