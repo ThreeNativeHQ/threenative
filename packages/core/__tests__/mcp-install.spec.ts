@@ -16,9 +16,12 @@ import { MCP_SERVERS, mergeMcpServers } from "../mcp/servers.mjs";
 
 const packageRoot = path.resolve(fileURLToPath(import.meta.url), "..", "..");
 
-function project(name = "game"): string {
+function project(
+  name = "game",
+  dependencies: Record<string, string> = { "@threenative/core": "0.3.0" },
+): string {
   const directory = makeTempDirSync("tn-mcp-");
-  writeFileSync(path.join(directory, "package.json"), JSON.stringify({ name }));
+  writeFileSync(path.join(directory, "package.json"), JSON.stringify({ dependencies, name }));
   return directory;
 }
 
@@ -97,8 +100,19 @@ describe("installTarget", () => {
     expect(installTarget({ INIT_CWD: project("@threenative/core") })).toBeUndefined();
   });
 
+  it("skips a workspace root that does not depend on core", () => {
+    expect(installTarget({ INIT_CWD: project("threenative", {}) })).toBeUndefined();
+  });
+
   it("skips a directory that is not a project", () => {
     expect(installTarget({ INIT_CWD: makeTempDirSync("tn-bare-") })).toBeUndefined();
+  });
+
+  it("skips a package manifest whose JSON root is not an object", () => {
+    const directory = makeTempDirSync("tn-invalid-manifest-");
+    writeFileSync(path.join(directory, "package.json"), "null");
+
+    expect(installTarget({ INIT_CWD: directory })).toBeUndefined();
   });
 });
 

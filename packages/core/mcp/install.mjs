@@ -9,13 +9,28 @@ export function installTarget(environment = process.env, cwd = process.cwd()) {
   if (target.split(path.sep).includes("node_modules")) return undefined;
   const manifestPath = path.join(target, "package.json");
   if (!existsSync(manifestPath)) return undefined;
-  let name;
+  let manifest;
   try {
-    name = JSON.parse(readFileSync(manifestPath, "utf8")).name;
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   } catch {
     return undefined;
   }
-  return name === "@threenative/core" ? undefined : target;
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest))
+    return undefined;
+  if (manifest.name === "@threenative/core") return undefined;
+  const dependencyGroups = [
+    manifest.dependencies,
+    manifest.devDependencies,
+    manifest.optionalDependencies,
+    manifest.peerDependencies,
+  ];
+  const declaresCore = dependencyGroups.some(
+    (dependencies) =>
+      typeof dependencies === "object" &&
+      dependencies !== null &&
+      Object.hasOwn(dependencies, "@threenative/core"),
+  );
+  return declaresCore ? target : undefined;
 }
 
 /** Every agent host that reads a **project-scoped** MCP config, and the file each one reads.
