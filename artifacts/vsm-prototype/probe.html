@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ThreeNative Virtual Shadow Maps — footprint probe</title>
+  <style>
+    body { margin: 0; background: #202020; display: flex; gap: 8px; }
+    canvas { width: 800px; height: 800px; }
+  </style>
+</head>
+<body>
+  <canvas id="virtual-canvas" width="800" height="800"></canvas>
+  <canvas id="stock-canvas" width="800" height="800"></canvas>
+  <script type="module">
+    import * as THREE from './vendor/three.module.js';
+    import { runProbe } from './src/demo/probe.js';
+
+    runProbe(THREE).catch((error) => console.error(error));
+  </script>
+</body>
+</html>

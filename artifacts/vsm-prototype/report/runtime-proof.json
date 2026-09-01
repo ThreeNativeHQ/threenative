@@ -1,0 +1,163 @@
+{
+  "feature": "ThreeNative Virtual Shadow Maps",
+  "verifiedAt": "2026-09-01T21:01:30.850337+00:00",
+  "result": "pass",
+  "captures": {
+    "comparison": {
+      "mode": "comparison",
+      "frame": 24,
+      "stats": {
+        "frame": 24,
+        "requested": 141,
+        "resident": 141,
+        "rendered": 0,
+        "cached": 141,
+        "invalidated": 0,
+        "evicted": 0,
+        "overflow": 0,
+        "reuseRatio": 1,
+        "dirtyResident": 0,
+        "pageSize": 128,
+        "atlasPagesPerAxis": 12,
+        "atlasTextureSize": 1536,
+        "virtualPagesPerAxis": 8,
+        "clipLevels": 4,
+        "virtualAddressPages": 256,
+        "physicalCapacity": 144,
+        "cumulative": {
+          "rendered": 141,
+          "cached": 2999,
+          "invalidated": 0,
+          "evicted": 0,
+          "overflow": 0
+        }
+      },
+      "assertions": {
+        "boundedPhysicalPool": true,
+        "validPageTable": true,
+        "renderedVirtualPages": true,
+        "cacheReuseObserved": true,
+        "noOverflow": true
+      },
+      "invalidationProof": {
+        "moved": false,
+        "invalidatedPages": 0,
+        "renderedAfterMove": 0,
+        "moveDistance": 0
+      },
+      "image": {
+        "path": "report/comparison.png",
+        "size": [
+          1600,
+          900
+        ],
+        "luminanceSpread": 42.82919772763457
+      },
+      "consoleWarnings": []
+    },
+    "debug": {
+      "mode": "debug",
+      "frame": 24,
+      "stats": {
+        "frame": 24,
+        "requested": 144,
+        "resident": 144,
+        "rendered": 0,
+        "cached": 144,
+        "invalidated": 0,
+        "evicted": 0,
+        "overflow": 0,
+        "reuseRatio": 1,
+        "dirtyResident": 0,
+        "pageSize": 128,
+        "atlasPagesPerAxis": 12,
+        "atlasTextureSize": 1536,
+        "virtualPagesPerAxis": 8,
+        "clipLevels": 4,
+        "virtualAddressPages": 256,
+        "physicalCapacity": 144,
+        "cumulative": {
+          "rendered": 144,
+          "cached": 3120,
+          "invalidated": 0,
+          "evicted": 0,
+          "overflow": 0
+        }
+      },
+      "assertions": {
+        "boundedPhysicalPool": true,
+        "validPageTable": true,
+        "renderedVirtualPages": true,
+        "cacheReuseObserved": true,
+        "noOverflow": true
+      },
+      "invalidationProof": {
+        "moved": false,
+        "invalidatedPages": 0,
+        "renderedAfterMove": 0,
+        "moveDistance": 0
+      },
+      "image": {
+        "path": "report/virtual-pages-debug.png",
+        "size": [
+          1600,
+          900
+        ],
+        "luminanceSpread": 42.028705235388784
+      },
+      "consoleWarnings": []
+    },
+    "invalidation": {
+      "mode": "invalidation",
+      "frame": 6,
+      "stats": {
+        "frame": 6,
+        "requested": 144,
+        "resident": 144,
+        "rendered": 3,
+        "cached": 141,
+        "invalidated": 3,
+        "evicted": 0,
+        "overflow": 0,
+        "reuseRatio": 0.9791666666666666,
+        "dirtyResident": 0,
+        "pageSize": 128,
+        "atlasPagesPerAxis": 12,
+        "atlasTextureSize": 1536,
+        "virtualPagesPerAxis": 8,
+        "clipLevels": 4,
+        "virtualAddressPages": 256,
+        "physicalCapacity": 144,
+        "cumulative": {
+          "rendered": 147,
+          "cached": 525,
+          "invalidated": 3,
+          "evicted": 0,
+          "overflow": 0
+        }
+      },
+      "assertions": {
+        "boundedPhysicalPool": true,
+        "validPageTable": true,
+        "renderedVirtualPages": true,
+        "cacheReuseObserved": true,
+        "noOverflow": true
+      },
+      "invalidationProof": {
+        "moved": true,
+        "invalidatedPages": 3,
+        "renderedAfterMove": 3,
+        "moveDistance": 15.297058540778355
+      },
+      "image": {
+        "path": "report/cache-invalidation.png",
+        "size": [
+          1600,
+          900
+        ],
+        "luminanceSpread": 44.598573728513514
+      },
+      "consoleWarnings": []
+    }
+  }
+}
