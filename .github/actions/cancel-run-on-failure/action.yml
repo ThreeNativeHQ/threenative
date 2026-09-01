@@ -1,13 +1,32 @@
-name: Cancel workflow run after failure
-description: Stop sibling jobs in this workflow run after one job has already failed.
+name: Cancel PRD workflows after failure
+description: Stop the failed run and queued or running work on other PRD branches.
 runs:
   using: composite
   steps:
-    - name: Cancel the current workflow run
+    - name: Cancel current and competing PRD workflow runs
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
+
+        for status in in_progress queued; do
+          while IFS=$'\t' read -r run_id head_branch; do
+            if [[ "$run_id" == "$GITHUB_RUN_ID" ]]; then
+              continue
+            fi
+            case "$head_branch" in
+              linchpin/*|feat/prd-*|feat/ci-prd-*|fix/prd-*|fix/ci-prd-*|ci-prd-*) ;;
+              *) continue ;;
+            esac
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel" >/dev/null 2>&1 || true
+          done < <(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/actions/runs?status=$status&per_page=100" \
+              --jq '.workflow_runs[] | [.id, .head_branch] | @tsv'
+          )
+        done
+
         gh api --method POST \
           "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel"

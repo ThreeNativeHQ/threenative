@@ -65,13 +65,20 @@ const expectedTemplates = [
 ] as const;
 
 describe("CI pipeline structure", () => {
-  it("a failed job cancels the remaining work in its own workflow run", async () => {
+  it("a failed PRD job cancels current and competing PRD workflow runs", async () => {
     const action = await readFile(
       path.join(repo, ".github/actions/cancel-run-on-failure/action.yml"),
       "utf8",
     );
     expect(action).toContain("GH_TOKEN: ${{ github.token }}");
     expect(action).toContain("repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel");
+    expect(action).toContain("for status in in_progress queued");
+    expect(action).toContain("status=$status");
+    expect(action).toContain("linchpin/*");
+    expect(action).toContain("feat/prd-*");
+    expect(action).toContain("feat/ci-prd-*");
+    expect(action).toContain('if [[ "$run_id" == "$GITHUB_RUN_ID" ]]');
+    expect(action).not.toContain("main|release");
 
     for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
       const source = await readFile(path.join(repo, relative), "utf8");
