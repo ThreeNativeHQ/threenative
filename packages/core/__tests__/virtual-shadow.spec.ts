@@ -80,14 +80,16 @@ describe("VirtualShadowNode", () => {
     camera.position.set(0.02, 5, 0.02);
     node.updateBefore(frameFor(camera));
     const targets = node.levelLights.map((level) =>
-      (level as { target: { position: { clone(): unknown } } }).target.position.clone(),
+      (level as unknown as { target: { position: { clone(): unknown } } }).target.position.clone(),
     );
     // A texel of the finest level is 2 * 8 / 64 = 0.25 world units; 0.1 stays inside it.
     camera.position.set(0.12, 5, 0.12);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, moved: 0, rendered: 0 });
     node.levelLights.forEach((level, index) => {
-      expect((level as { target: { position: unknown } }).target.position).toEqual(targets[index]);
+      expect((level as unknown as { target: { position: unknown } }).target.position).toEqual(
+        targets[index],
+      );
     });
   });
 
