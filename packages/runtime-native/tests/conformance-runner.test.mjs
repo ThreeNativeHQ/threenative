@@ -37,6 +37,7 @@ import {
   androidFocusedWindowOwner,
   androidSystemDialog,
   buildProvenance,
+  captureBrowserCanvas,
   hardwareAdapterBlocker,
   makeEntry,
   runCommand,
@@ -117,7 +118,7 @@ test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () 
   ]);
 });
 
-test("browser capture waits for submitted WebGPU work before reading the canvas", () => {
+test("browser capture waits for submitted WebGPU work before requesting a compositor screenshot", async () => {
   const dir = makeTempDirSync("threenative-browser-queue-drain-");
   try {
     const scene = "conformance/scenes/shared/first-proof-game.js";
@@ -130,9 +131,10 @@ test("browser capture waits for submitted WebGPU work before reading the canvas"
     const ordinary = readFileSync(ordinaryPath, "utf8");
     assert.match(
       ordinary,
-      /onSubmittedWorkDone[\s\S]*canvas\.toBlob/u,
-      "a software WebGPU queue must finish before its pixels are read",
+      /onSubmittedWorkDone[\s\S]*__tn_conformance__\/complete/u,
+      "a software WebGPU queue must finish before its compositor capture is requested",
     );
+    assert.doesNotMatch(ordinary, /canvas\.toBlob/u);
 
     const temporalPath = makeEntry(
       { id: "queue-drain-temporal", scene, temporal: { settledFrame: 2 } },
@@ -143,9 +145,26 @@ test("browser capture waits for submitted WebGPU work before reading the canvas"
     const temporal = readFileSync(temporalPath, "utf8");
     assert.match(
       temporal,
-      /captureFrame = async[\s\S]*onSubmittedWorkDone[\s\S]*canvas\.toBlob/u,
+      /captureFrame = async[\s\S]*onSubmittedWorkDone[\s\S]*__tn_conformance__\/complete/u,
       "every temporal frame must drain its queue before capture",
     );
+
+    const calls = [];
+    const page = {
+      locator(selector) {
+        calls.push(["locator", selector]);
+        return {
+          async screenshot(options) {
+            calls.push(["screenshot", options]);
+          },
+        };
+      },
+    };
+    await captureBrowserCanvas(page, "/tmp/composited.png");
+    assert.deepEqual(calls, [
+      ["locator", "#c"],
+      ["screenshot", { path: "/tmp/composited.png", timeout: 90_000 }],
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
