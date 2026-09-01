@@ -1,6 +1,7 @@
 /** WebGPU presentation, acquisition, and surface lifecycle. */
 
 #include "ablation.h"
+#include "bindings_frame_stream.h"
 #include "bindings_presentation.h"
 #include "bindings_state.h"
 #include "mystral/cold_start.h"
@@ -163,6 +164,10 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
     // (state->presentation.currentTexture is an offscreen linear texture there), so it keeps the immediate
     // reconfigure it always had.
     if (state->presentation.currentTexture != nullptr && !state->presentation.requiresSrgbPresentationBridge) {
+        // setSize can be called between two submits in one JavaScript turn. Replay the safe
+        // prefix before dropping view ids that the deferred stream still names, or its later
+        // frame-boundary replay fails closed with an opaque "unknown texture view id".
+        if (!flushRecordedFrameOps(state)) return false;
         state->presentation.framePresentPending = false;
         releaseCurrentSurfaceTextureViews(state);
         if (state->presentation.currentSurfaceTextureId != 0) {

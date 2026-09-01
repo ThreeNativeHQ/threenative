@@ -16,7 +16,7 @@ export function absoluteErrorRatio(rawValue, pixels, imageMagickVersion) {
   return value / (2 ** quantumBits - 1) / pixels;
 }
 
-export function inspectCapture(contents) {
+export function inspectCapture(contents, options = {}) {
   let png;
   try {
     png = PNG.sync.read(contents);
@@ -41,8 +41,10 @@ export function inspectCapture(contents) {
     }
   }
   if (opaquePixels === 0) throw new Error("capture is blank: it has no opaque pixels");
-  if (uniform) throw new Error("capture is uniform: expected more than one RGBA color");
-  return { width: png.width, height: png.height, opaquePixels, uniform: false, png };
+  if (uniform && options.allowUniform !== true) {
+    throw new Error("capture is uniform: expected more than one RGBA color");
+  }
+  return { width: png.width, height: png.height, opaquePixels, uniform, png };
 }
 
 function linearChannel(value) {

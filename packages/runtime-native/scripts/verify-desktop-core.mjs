@@ -58,9 +58,9 @@ export function analyzeWorkerProof(log) {
     proof.workerIdentity !== 'dedicated-worker' ||
     proof.sourceForm !== 'classic-blob' ||
     !Number.isInteger(proof.framesAdvanced) ||
-    proof.framesAdvanced < 1 ||
+    proof.framesAdvanced < 2 ||
     proof.callbacksAfterTerminate !== 0 ||
-    JSON.stringify(proof.completionOrder) !== '[1]' ||
+    JSON.stringify(proof.completionOrder) !== '[2]' ||
     !Number.isInteger(proof.inputChecksum) ||
     !Number.isInteger(proof.outputChecksum)
   ) {
