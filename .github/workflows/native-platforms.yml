@@ -46,7 +46,13 @@ on:
 
 concurrency:
   group: native-platforms-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs are dead weight — cancel them. A push to main is not supersession: this
+  # lane exists to produce platform evidence, and at this repository's push cadence (~20 minutes)
+  # against this lane's runtime (27-45 minutes) cancel-in-progress killed every main run before
+  # it finished — 37 of the last 100 cancelled, none of the platform legs ever reported on the
+  # branch that claims them. Main runs queue instead; a queued evidence run is late, a cancelled
+  # one is absent.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   actions: write
