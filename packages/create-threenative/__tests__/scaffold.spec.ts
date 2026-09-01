@@ -90,6 +90,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-08-31 for PRD-314: every template's AGENTS.md/CLAUDE.md pair gained the clip
 // conformance paragraph (clipPoseError, clipTrackBindings, clipBoneCoverage, boneContact), and the
 // generated capability reference embedded in every scaffold gained their four entries.
+// Recomputed 2026-09-01 for PRD-304's repair: seven templates' `worldEnvironment.ts` now
+// requests its normal/metalness/roughness texture nodes lazily, because asking for them is
+// what created the extra render target that made the mobile look a black screen. `sailing`
+// never had those lines, so its tree is unchanged and its hash does not move.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -198,15 +202,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and expanded Fab authentication and Unreal conversion instructions.
   // Recomputed 2026-09-01 after capability discovery became a critical pre-PRD planning gate in
   // every generated AGENTS.md/CLAUDE.md pair and both shipped host skill adapters.
-  "action-rpg": "ece5e8123e9f84722ca3e5901d5e1967120a5faa2f8571bdab693b25a33618f8",
-  defense: "60d6ebfde736e831ffa51267af8cbfd932ccd38108a99097f0dd348e2a7443df",
+  // Recomputed 2026-09-01 for the main-sync merge carrying #40's lazy MRT texture nodes: values
+  // measured from the committed merge tree, per the clean-checkout rule above.
+  "action-rpg": "c352bc0ba63ffa8e9550b57beb36f74bdb7a52b2cc1449a9f6ab67bc894e79fa",
+  defense: "68a12adbe94bf0ad475d26ae1477452a2bb0a90b57143f2c6852dc4c5113a48d",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "9163eea3544905a00c94a5039c46624405bec053f5fbbdec5ce9e7ffc920458e",
-  platformer: "718da2fb891fe9fff59d75cdb8089147b6e784b36759af8fc7f7f21814bfb166",
-  racing: "6054c7a32bb0df7fe1662dca8e69b2dc70ba87f54f89865fa796f58f5ff4ec5a",
-  shooter: "882e202ed6312314676d30341fd4c5b580eed88c2dbbba348a76b832563d3867",
-  starter: "016bf852dec835e618af9062b62bab0939766a1a989ba09c9d018b1ce1b12bf9",
+  minimal: "eb0e0be7e7503932bcf06689ffbe736f6eb14468224b6038cf1be64a723e46fa",
+  platformer: "c883810aa8c9ddfc764a88573de5d8dbc4fa6d60df5133a057004056089dd1f0",
+  racing: "4334ecdeda3530e4e4095f22121e0d3ed00b3d11bf081ee29be89f68b48b09f7",
+  shooter: "9adc74aa94027495652beb840586da1382761695f32bbf7c60eb7749d074ed31",
+  starter: "bc10f3b29f0af1e6d02b6eac4f9894294111b63a177e4e54177e4182b41c87df",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
