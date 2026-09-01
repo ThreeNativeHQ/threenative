@@ -44,7 +44,7 @@ describe("context skill supersession table", () => {
     expect(twice).toBe(once);
   });
 
-  it("appends the region to a fragment that never had one", () => {
+  it("appends the region to a skill that never had one", () => {
     const applied = applyRegion("# skill\n", []);
     expect(applied).toContain(GENERATED_REGION_START);
     expect(applied).toContain("|---|---|---|");

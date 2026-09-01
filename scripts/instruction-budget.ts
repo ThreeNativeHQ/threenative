@@ -36,8 +36,8 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // Every number carries a uniform +60 re-measured on 2026-08-22 (PRD-187): the generated
   // superseded-constructs region became mandatory inline content in all seven templates, and
   // survives the triplication cut that paid for most of it (the same override rule had been
-  // stated in the ctx-surface prose, the generated trailer, and the engine-capabilities
-  // fragment). See docs/verification/instruction-budgets-2026-08-22.md.
+  // stated in the context-surface prose, the generated trailer, and the engine-capabilities
+  // instructions). See docs/verification/instruction-budgets-2026-08-22.md.
   // `minimal` and `starter` each carry a further re-measured increment from PRD-209
   // (2026-08-23): +53 and +65 rendered words for the portable-HUD convention. Both templates
   // had under 25 words of headroom, so stating the convention at all needed the override the
@@ -49,12 +49,12 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // docs/verification/prd-209-2026-08-23.md; the before/after table is
   // docs/verification/instruction-budgets-2026-08-23.md.
   // A second uniform bump, +22, re-measured on 2026-08-23 (PRD-214): the frame budget ships on
-  // by default and prints `TN_FRAME_BUDGET` on every platform, so the performance-default
-  // fragment now has to name the marker, its five phases and the `frameBudget: false` override
+  // by default and prints `TN_FRAME_BUDGET` on every platform, so the performance instructions
+  // now have to name the marker, its five phases and the `frameBudget: false` override
   // — a convention missing from the templates' AGENTS.md does not exist. Measured worst case was
   // platformer at 2981 against 2960. See docs/verification/prd-214-2026-08-23.md.
   //
-  // And a uniform +34 on 2026-08-23 (PRD-213): the `performance-default` fragment gained a
+  // And a uniform +34 on 2026-08-23 (PRD-213): the performance instructions gained a
   // three-line mobile-memory pointer. It is the smallest form that survives — the table, the
   // arithmetic and the fix all live in `agent-docs/mobile-memory-budget.md`, so only the hook is
   // charged. It buys the one number a cold agent cannot derive and pays 48 MiB the first time it
@@ -83,7 +83,7 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // `defense`, the template sitting exactly at the default cap, renders 2930 against 2753.
   // It is its own performance skill section: the lightmap and frame-budget guidance carries an
   // executable 130-word cap of its own, and this is a different subject from the target table.
-  // And a uniform +82 on 2026-08-28 (PRD-237 + PRD-241): the shared ctx-surface table gained the
+  // And a uniform +82 on 2026-08-28 (PRD-237 + PRD-241): the shared context table gained the
   // `ctx.pointer` row and paragraph (PRD-237's portable 3D pointer events) and the tween row grew
   // an `ease` option (PRD-241). Both are conventions a game cannot discover by grep, so they must
   // render inline; twelve redundant words were trimmed first (`optional fourth options argument`,
@@ -97,7 +97,7 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // red on main before this change: template-growth commits since that cap — the PRD-268 probe
   // volumes, the godrays refusal, and the see-it-in-numbers section (e5d64b5f) — added +530
   // (minimal, platformer, starter) or +569 (action-rpg, defense, racing, shooter) rendered
-  // words without moving a limit. This change then adds the shared engine-bug-report fragment,
+  // words without moving a limit. This change then adds the shared engine-bug-report instructions,
   // a uniform +104 measured everywhere. Caps now sit on the measured values; the per-template
   // table is docs/verification/instruction-budgets-2026-08-31.md.
   // And a uniform +134 on 2026-08-31 (PRD-304): every template now ships
