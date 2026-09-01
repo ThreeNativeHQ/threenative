@@ -60,7 +60,7 @@ describe("MCP_SERVERS", () => {
       dependencies?: Record<string, string>;
     };
     expect(manifest.dependencies).toMatchObject({
-      "threenative-asset-mcp": "0.6.0",
+      "threenative-asset-mcp": "0.7.0",
       "threenative-sculpt-mcp": "0.1.1",
     });
   });
