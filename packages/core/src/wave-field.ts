@@ -446,6 +446,7 @@ export class WaveField {
 
   /** Surface height at a point, as a graph. The scalar half of what `sample` returns. */
   heightNode(options: IWaveFieldGraphOptions = {}): Node<"float"> {
+    // quality-allow: Three's Fn invocation loses the concrete float node type.
     return Fn(() => this.#evaluate(options, false).height)() as unknown as Node<"float">;
   }
 
@@ -467,6 +468,7 @@ export class WaveField {
       if (gradientX === undefined || gradientZ === undefined)
         throw new Error("WaveField.normalNode lost its gradient.");
       return normalize(vec3(gradientX.negate(), 1, gradientZ.negate()));
+      // quality-allow: Three's Fn invocation loses the concrete vec3 node type.
     })() as unknown as Node<"vec3">;
   }
 
