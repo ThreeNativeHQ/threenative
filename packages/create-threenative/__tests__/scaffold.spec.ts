@@ -194,15 +194,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // in every scaffold tree.
   // Recomputed 2026-09-01 for the main-sync merge of the two capability-manifest lineages
   // (local 8c158a56 and origin #29): values measured from the committed merge tree.
-  "action-rpg": "a3348807eff125c2640cd32dd80839585eb7a63810b69a4c114d7ae564f73022",
-  defense: "869e651b6c1dfa4abfd9a31398282ba182376196e5102a363e5b1467ab968ae3",
+  // Recomputed 2026-09-01 after every game gained the bundled prd-creator skill, approval gate,
+  // and expanded Fab authentication and Unreal conversion instructions.
+  "action-rpg": "2ce55cb4802b7d3579bb660abd85ceb0db7d268ef5dfdf785a0eb7d1c18dbdb0",
+  defense: "dbd63519607a002c4cd34fe2bcb43a683946b366f206db8cc16ec7ffd019f00d",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "1701bf582fc35ca5b3654e2332f796fe82be53b573bfda215170532417b5a576",
-  platformer: "9d324e2e33f30084773ca8959682b4da47cbdafadfb00638af18108771f67f7b",
-  racing: "717dd6d8e68e74d204704cd9fec5d9db4d8ceba1f3410eed89ffc327a9eb7026",
-  shooter: "1cff59d4e7dfe87ba3f3a3915097f6d8dff597b3fc8c888c57133d3aed54da3c",
-  starter: "037008f5ccac429f56ca2c98c16afb30ac3cf331817be83352b6551a9fac887e",
+  minimal: "3951c6ab221da36ab0e7fe0d91d4d6d72cd8ffd6dd3354d8b5cc33f7ce67cb61",
+  platformer: "92e9654b760b21999d40a923168e697fde5db7bd4c16528e6d8e861cbbd2685a",
+  racing: "97a1378133287d8d82e575eb2938effb0571b36d31a07dab6ae64ce079488e82",
+  shooter: "f5be5c5c45d5d3bff11087b5ddfd70096381cd84a90c5b9fcc42797eadd47d8f",
+  starter: "0aca11cc7dc76198aa4969d24aa349d79eb2db68e3044bf0773ffb3c4766c085",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -213,7 +215,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "64bfa72ffd49d57328274478c9caa5271641df3b79f8380c87265fb34dd8d303",
+  sailing: "39ad11762c0ab5748dff9fbed2dc8486a71a88427e07812ead85595eb4a6e043",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

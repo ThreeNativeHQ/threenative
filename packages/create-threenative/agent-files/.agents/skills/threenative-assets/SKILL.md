@@ -16,9 +16,16 @@ in `src/render/`. Start the session from the game root so the project-scoped MCP
    write to the configured project directory.
 4. Add file, source, license, and URL to `CREDITS.md`. Never state a license not returned by a tool.
 
-Fab is `fab_search_assets`, then `fab_list_owned`, then `fab_import_asset`; it checks entitlement,
-downloads through the user's existing FabCLI session, writes textured `.glb` files under `assets/`,
-and accepts only Fab Standard or CC-BY. It never logs in, claims, or buys. Full arguments:
+Many Fab listings are Unreal-only rather than ready-to-load GLBs. Search with `fab_search_assets`,
+check owned listings with `fab_list_owned`, then use `fab_import_asset` to download and convert an
+owned listing; use `asset_import_unreal` for an already-downloaded local pack. Both write textured
+`.glb` files under `assets/`. If they report `UNREAL_SOURCE_UNCOOKED`, stop: source editor assets
+need Unreal Editor export and cannot be recovered by retrying the converter.
+
+If FabCLI needs a session, proactively run `fabcli auth login`. Use Claude browser, or Codex's
+`chrome:control-chrome`, to complete the login with the user's active browser session, then retry
+the MCP call. Never read, copy, print, or persist browser cookies or tokens. The MCP checks
+entitlement and accepts only Fab Standard or CC-BY; it never claims or buys. Full arguments:
 `agent-docs/finding-assets.md`.
 
 Choose the sculpt branch before coding: conventional → asset tools; trivial → portable geometry;

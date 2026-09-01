@@ -135,14 +135,17 @@ What the import will and will not do:
   a likely dead end before you spend the bandwidth.
 - **A free listing still has to be in the library first.** `fab_import_asset` refuses with
   `FABCLI_NOT_OWNED` until the listing is claimed, and it never claims — by design. Run
-  `fabcli claim <uid>` yourself, which needs the interactive `fabcli auth login` session rather
+  `fabcli claim <uid>`, which needs the interactive `fabcli auth login` session rather
   than the API token `fabcli auth status` reports as authenticated. Note also that `fab_get_asset`
   reports a free CC-BY offer as `isFree: false` with an empty `freeLicenseSlugs`; the listing
   appearing in `fab_search_assets` with `priceMode: "free"` at `startingPrice.amount: 0` is the
   reliable signal, so check the search before concluding a listing costs money.
 - **Only assets you already own**, and only under **Fab Standard (Personal or Professional) or
   CC-BY**. Unreal-Engine-only and legacy entitlements are refused, and a licence it cannot read is
-  refused too. It never logs in, claims, or purchases — run `fabcli auth login` yourself once.
+  refused too. The MCP never logs in, claims, or purchases. If FabCLI needs a session, the agent
+  must proactively run `fabcli auth login` and complete it through Claude browser or Codex's
+  `chrome:control-chrome`, reusing the user's active signed-in browser session. Never inspect,
+  copy, print, or persist cookies or tokens; interact with the login page instead.
   Searching and `fab_get_asset` stay anonymous, so the licence check never depends on the
   authenticated path it is guarding.
 - **Two external tools install themselves on first use** (FabCLI and UE Viewer). Set

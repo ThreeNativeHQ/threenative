@@ -44,6 +44,7 @@ async function typecheckTemplates(): Promise<string[]> {
 const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
 const authoringSkills = [
+  ["prd-creator", ".agent/prd/PRD.md", "explicit approval"],
   ["threenative-capabilities", "engine_search_capabilities", "@threenative/physics/navigation"],
   ["threenative-playtest", "TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING", "doctor"],
   ["threenative-assets", "asset_search_sources", "sculpt_spec_gate"],
@@ -734,6 +735,36 @@ describe("template contracts", () => {
       );
       expect(new Set(bodies).size, `${skill} host adapters drifted`).toBe(1);
     }
+  });
+
+  it("should gate game implementation on an approved prd-creator plan", async () => {
+    for (const template of await templateNames()) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents, `${template}/prd-creator`).toContain("`prd-creator`");
+      expect(agents, `${template}/approval gate`).toMatch(/explicit approval/iu);
+      expect(agents, `${template}/execution handoff`).toMatch(/execute|implement/iu);
+      expect(agents.indexOf("`prd-creator`"), `${template}/plan before capabilities`).toBeLessThan(
+        agents.indexOf("engine_search_capabilities"),
+      );
+    }
+  });
+
+  it("should proactively reuse the active browser session for Fab CLI authentication", async () => {
+    const skill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-assets/SKILL.md",
+      ),
+      "utf8",
+    );
+    expect(skill).toContain("fabcli auth login");
+    expect(skill).toContain("Claude browser");
+    expect(skill).toContain("chrome:control-chrome");
+    expect(skill).toMatch(/active.*session/iu);
+    expect(skill).toMatch(/never.*(?:cookie|token)|(?:cookie|token).*never/iu);
+    expect(skill).toMatch(/Unreal-only/iu);
+    expect(skill).toContain("`fab_import_asset`");
+    expect(skill).toContain("`asset_import_unreal`");
+    expect(skill).toContain("UNREAL_SOURCE_UNCOOKED");
   });
 
   it("should document a bounded performance assertion in every template", async () => {
