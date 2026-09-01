@@ -194,13 +194,20 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("PR CI carries a moderate-and-up dependency review", async () => {
+  it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
     expect(supplyChain).toContain("if: github.event_name == 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     expect(supplyChain).toContain("fail-on-severity: moderate");
     expect(supplyChain).not.toContain("allow-licenses");
+    expect(supplyChain).toContain("fetch-depth: 0");
+    expect(supplyChain).toContain("ghcr.io/gitleaks/gitleaks@sha256:");
+    expect(supplyChain).toContain("github.event.pull_request.base.sha");
+    expect(supplyChain).toContain("github.event.pull_request.head.sha");
+    expect(supplyChain).toContain('git rev-list --count "$range"');
+    expect(supplyChain).toContain("git --redact --verbose");
+    expect(supplyChain).toContain('--log-opts="$TN_GITLEAKS_RANGE"');
   });
 
   it("a nightly run exists on both gated workflows", async () => {

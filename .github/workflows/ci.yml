@@ -446,6 +446,29 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify the PR commit range is present
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          range="$BASE_SHA..$HEAD_SHA"
+          test "$(git rev-list --count "$range")" -gt 0
+          echo "TN_GITLEAKS_RANGE=$range" >> "$GITHUB_ENV"
+      - name: Scan PR commits for leaked secrets
+        run: >-
+          docker run --rm
+          -e GIT_CONFIG_COUNT=1
+          -e GIT_CONFIG_KEY_0=safe.directory
+          -e GIT_CONFIG_VALUE_0=/repo
+          -v "$GITHUB_WORKSPACE:/repo"
+          ghcr.io/gitleaks/gitleaks@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          git --redact --verbose
+          --log-opts="$TN_GITLEAKS_RANGE"
+          /repo
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
