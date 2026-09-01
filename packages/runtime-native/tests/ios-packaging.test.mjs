@@ -208,6 +208,9 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     output,
     templateApp,
     compileIcon: (catalog, compiled) => {
+      assert.deepEqual(JSON.parse(readFileSync(join(catalog, 'Contents.json'), 'utf8')), {
+        info: { author: 'xcode', version: 1 },
+      });
       assert.equal(readFileSync(join(catalog, 'AppIcon.appiconset/AppIcon-1024.png')).equals(VALID_PNG), true);
       assert.equal(readFileSync(join(catalog, 'AppIcon.appiconset/AppIcon-1024-dark.png')).equals(VALID_PNG), true);
       assert.equal(readFileSync(join(catalog, 'AppIcon.appiconset/AppIcon-1024-tinted.png')).equals(VALID_PNG), true);

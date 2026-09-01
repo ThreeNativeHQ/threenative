@@ -293,6 +293,13 @@ function writeLaunchColor(catalog, value) {
   );
 }
 
+function writeAssetCatalogContents(catalog) {
+  writeFileSync(
+    join(catalog, 'Contents.json'),
+    `${JSON.stringify({ info: { author: 'xcode', version: 1 } }, null, 2)}\n`,
+  );
+}
+
 function stageIosIcon(output, icon, compileIcon = compileIosIcon, options = {}) {
   if (!existsSync(icon) || !statSync(icon).isFile()) {
     throw new Error(`TN_CONFIG_ICON_MISSING: app.icon does not exist: ${icon}`);
@@ -305,6 +312,7 @@ function stageIosIcon(output, icon, compileIcon = compileIosIcon, options = {}) 
     const compiled = join(temporary, 'compiled');
     mkdirSync(appIcon, { recursive: true });
     mkdirSync(compiled, { recursive: true });
+    writeAssetCatalogContents(catalog);
     copyFileSync(icon, join(appIcon, 'AppIcon-1024.png'));
     const appearances = options.variants ?? {};
     const images = [
@@ -363,6 +371,8 @@ function stageIosLaunchAssets(output, backgroundColor, compileAssets = compileIo
     const catalog = join(temporary, 'Assets.xcassets');
     const compiled = join(temporary, 'compiled');
     mkdirSync(compiled, { recursive: true });
+    mkdirSync(catalog, { recursive: true });
+    writeAssetCatalogContents(catalog);
     writeLaunchColor(catalog, backgroundColor);
     compileAssets(catalog, compiled);
     const assetsCar = join(compiled, 'Assets.car');
