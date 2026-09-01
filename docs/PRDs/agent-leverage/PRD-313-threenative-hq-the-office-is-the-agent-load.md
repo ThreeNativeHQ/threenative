@@ -4,10 +4,11 @@ prd_contract: v1
 
 # PRD-313 — ThreeNative HQ: the office population *is* this machine's agent load
 
-**Status:** PARTIAL. Filed 2026-08-31 against `4e1e1166`; phases 0–3 and the hook lane landed the
-same day in `sandbox/threenative-hq` (`ae8cb7e`, pushed to `ThreeNativeHQ/examples`). Evidence:
+**Status:** PHASES 0–5 COMPLETE, 2026-08-31, in `sandbox/threenative-hq` (`dc84ec8`, pushed to
+`ThreeNativeHQ/examples`). Three proof lanes green in one `pnpm test`. Evidence:
 [docs/verification/prd313-threenative-hq-2026-08-31.md](../../verification/prd313-threenative-hq-2026-08-31.md).
-Phases 4 (walked arrivals) and 5 (worker card) are open.
+Two engine bugs the game found are fixed in `d114c509`. Open: inbound messaging and the native
+target, both listed as out of scope below.
 
 **Outcome:** a sandbox game at `/home/joao/projects/threenative/sandbox/threenative-hq` that renders
 an office in which **every worker at a desk is a live Claude Code or Codex session on this machine**.
