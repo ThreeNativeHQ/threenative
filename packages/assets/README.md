@@ -36,8 +36,10 @@ bit-deterministic — not against an assumed zero.
 It went in **red**, and the red was the finding: the loader's no-manifest fallback resolved
 `<basePath>/<logical path>`, which in a compiled project points at nothing, because the sources live
 in `assets/` and the outputs are content-addressed. A logical path now resolves against an ordered
-candidate list — verbatim first, then the source directory — and the gate is green and runs in CI's
-`golden-path-template` job on every commit. The account is in
+candidate list — verbatim first, then the source directory — and the gate is green. It runs as part
+of `pnpm test:templates`, not in CI: the delete-test compares captured frames, and the CI job that
+scaffolds templates deliberately runs only non-visual scenarios because its runner has no GPU. A run
+there reports `frames: 0`, which is the runner, not the game. The account is in
 `docs/verification/bake-delete-test-2026-08-31.md` and `delete-test-passes-2026-09-01.md`.
 
 ## Embedded model textures

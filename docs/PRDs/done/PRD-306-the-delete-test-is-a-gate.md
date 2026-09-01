@@ -15,7 +15,10 @@ went in red — no template survived losing its bake — and the reason turned o
 did not do what it was documented to do: `resolveUrl` fell back to the **base** path, not the
 **source** path, so a compiled project asked for `/rock.png`, which exists nowhere in it. A logical
 path now resolves against an ordered candidate list — verbatim first, then the source directory —
-and the gate is green and wired into CI's `golden-path-template` job.
+and the gate is green. It is chained onto `pnpm test:templates` rather than a CI job: the
+delete-test compares captured frames, and the CI job that scaffolds templates runs only non-visual
+scenarios because its runner has no GPU — wired there, its *baked* run reported `frames: 0` twice,
+which is the runner and not the game.
 
 ```
 # fallback as it shipped

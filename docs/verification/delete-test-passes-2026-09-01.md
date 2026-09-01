@@ -78,12 +78,26 @@ the verbatim path not paying for it, a project that moved its sources, the combi
 every url, and — the one that keeps the fix honest — **a manifest miss staying an error rather than
 becoming a search**.
 
-## Now in CI
+## Where the gate runs, and why not in CI
 
-The gate is wired into the `golden-path-template` job, starter only, against the project that job
-has already scaffolded and built. Starter only for the same reason the HUD smoke is: the property is
-the same for every template, and a platformer scenario nobody has run here is a red waiting to
-happen. `--template` and `--scenario` drive the others locally.
+It is chained onto **`pnpm test:templates`** — the repository's hardware lane — not into a CI job.
+
+That was decided by two runs, not by preference. The gate was first wired into
+`golden-path-template`, where the scaffold it needs already exists, and the starter half failed
+twice with the same signature:
+
+```
+"frames": 0, "pass": false, "scenario": "play"
+##[error]Process completed with exit code 1.
+```
+
+The **baked** run failed — before any deletion — because that job runs only the scenarios
+`non-visual-scenarios.mjs` selects, and its own comment says why: *a runner with no GPU cannot serve
+the scenarios that capture frames*. The delete-test compares captures, so it needs frames by
+construction. A green there would have been impossible and a red there is the runner, not the game.
+
+So it lives beside `pnpm test:templates`, which the repository already documents as the gate "which
+has hardware". `--template` and `--scenario` drive any other template.
 
 ## A note on the harness, recorded because it cost time
 

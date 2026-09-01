@@ -322,19 +322,6 @@ jobs:
           await browser.close();
           NODE
       - run: pnpm verify:golden-path
-      # The delete-test, against the project this job already scaffolded and built: switch off the
-      # asset watcher, delete every file the bake produced, and require the same scenario to pass
-      # again on the same pixels. It runs here rather than in its own job because the expensive
-      # half — a scaffold installed from local tarballs — is already done.
-      # Starter only, like the HUD smoke above and for the same reason: this proves the property,
-      # and the property is the same one for every template. The platformer half would need a
-      # scenario chosen for it, and a scenario nobody has run here is a red waiting to happen.
-      # `--template`/`--scenario` drive any other template locally.
-      - name: Delete every baked file and prove the game is identical
-        if: matrix.template == 'starter'
-        run: |
-          sh scripts/xvfb.sh pnpm tsx scripts/bake-delete-test.ts \
-            --project "$RUNNER_TEMP/threenative-starter" --template starter
       - if: failure()
         uses: ./.github/actions/cancel-run-on-failure
 
