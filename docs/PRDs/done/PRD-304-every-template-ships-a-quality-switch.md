@@ -4,24 +4,31 @@ prd_contract: v1
 
 # PRD-304 — Every template ships a quality switch, with the cost of each effect written beside it
 
-**Status:** PARTIAL, filed 2026-08-31 against `2e014460`, built 2026-08-31. Evidence:
-[`template-quality-tiers-2026-08-31`](../../verification/template-quality-tiers-2026-08-31.md).
-The millisecond costs quoted are the ablation table in
-[`FUTURE-ARCHITECTURE-DIRECTION.md`](../../architecture/FUTURE-ARCHITECTURE-DIRECTION.md) and
-[`runtime-perf-state`](../../verification/runtime-perf-state.md), not new measurements.
+**Status:** DONE, 2026-09-01. Evidence:
+[`template-quality-tiers-2026-08-31`](../../verification/template-quality-tiers-2026-08-31.md) (the
+switch, the gate and its negative controls) and
+[`mobile-look-was-black-2026-09-01`](../../verification/mobile-look-was-black-2026-09-01.md) (the
+last criterion, and the defect that was blocking it).
 
-**What is not done.** One acceptance criterion is unmet: *a game renders visibly cheaper at
-`tier: "low"` than at `tier: "high"`*. The `low` capture on this machine is **blank** — the canvas
-renders nothing behind the HUD. That is not this change: a control run against `origin/main`'s
-templates, forcing the incumbent `mobilePreset` with `mobile: true` and no PRD-304 code, produces
-the same blank frame with the same four capture statistics, and the chain reports `sharpen` and
-`bloom` as applied while WebGPU refuses the pipeline (*"Color target has no corresponding fragment
-stage output … while validating targets[1]"*). **The shipped mobile look of the starter draws
-nothing on this desktop WebGPU path, and did so before this PRD** — that defect needs its own lane,
-and until it is fixed or shown to be adapter-specific this PRD does not archive. Everything else in
-section 7 is met and pasted in the verification file, including a stronger form of *"the default
-look is unchanged"*: every template's `high` and `low` presets are byte-identical to
-`origin/main`'s `desktopPreset` and `mobilePreset`.
+**Every template ships the switch, and `low` now draws a picture.** The last open criterion — *a
+game renders visibly cheaper at `tier: "low"` than at `tier: "high"`* — was blocked by a defect the
+switch made visible rather than caused: `worldEnvironment.ts` asked the scene pass for `normal`,
+`metalness` and `roughness` **unconditionally**, and asking is what creates the extra render target.
+At `low` nothing needs one, so the pass carried a colour attachment no fragment shader writes,
+WebGPU refused the pipeline, and the frame came out black while the chain reported every stage as
+applied.
+
+That made **the shipped mobile look of seven templates a black screen on real phones.** `sailing`,
+the one template that never had those four lines because it runs no SSGI or SSR, is the one whose
+mobile look was never black. The four nodes are now requested lazily; no preset, stage list or
+strength moved.
+
+```
+desktop, same scaffold:   noise band 0.283/255   ·   high → low 2.903/255   (10x the band)
+                          low: distinctColors 637 → 16,312, stdDev 0.0181 → 0.0710
+Pixel 8, scaffolded:      TN_QUALITY_TIER low mobile=true source=platform, gpuMs 0.35,
+                          full scene — where the same APK path had shown black and logged nothing
+```
 
 **Outcome:** a game scaffolded from any of the 8 templates has one generated file,
 `src/render/quality.ts`, that names the quality tiers, says in a comment what each effect measured,
@@ -34,7 +41,7 @@ template from nothing.
 
 **Task 1 of the Band 1 quick wins.** Slice of
 [`FUTURE-ARCHITECTURE-DIRECTION.md`](../../architecture/FUTURE-ARCHITECTURE-DIRECTION.md) — see
-[README](README.md) for the tick-back rule.
+[README](../architecture/README.md) for the tick-back rule.
 
 **Complexity: 8 → HIGH mode.** +3 (10+ files: 8 templates × 2, plus a gate and template docs),
 +2 (multi-package: `create-threenative` templates and `scripts/`), +2 (this is generated user

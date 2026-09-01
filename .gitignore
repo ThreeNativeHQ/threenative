@@ -59,3 +59,7 @@ packages/core/mcp/engine-server.mjs
 
 # Sandbox mini-game captures, left at the root for inspection. Not part of the repo.
 screenshot-*.png
+
+# `pnpm pack` output. Several gates pack the workspace into `packages/*.tgz` to install a
+# scaffold the way a stranger's machine would; three of them were committed by accident in #37.
+*.tgz

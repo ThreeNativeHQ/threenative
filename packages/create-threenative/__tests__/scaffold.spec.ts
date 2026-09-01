@@ -80,6 +80,10 @@ const AGENT_ROLE_PATHS = [
 // `postprocessing.ts` was rewritten to read it, and its AGENTS.md/CLAUDE.md pair gained the
 // quality-tier section — three files per scaffold, so all eight trees move. Computed from a
 // committed lane worktree rebased onto origin/main, with no sibling edits in it.
+// Recomputed 2026-09-01 for PRD-304's repair: seven templates' `worldEnvironment.ts` now
+// requests its normal/metalness/roughness texture nodes lazily, because asking for them is
+// what created the extra render target that made the mobile look a black screen. `sailing`
+// never had those lines, so its tree is unchanged and its hash does not move.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -175,15 +179,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-01 for PRD-301: the capability manifest and the reference generated
   // from it now walk @threenative/assets, so the authoring surface those bytes describe grew
   // in every scaffold tree.
-  "action-rpg": "0009bd9306b8110121e473185c552165ebe5e2129a47e83ea4083df9b5d996da",
-  defense: "65d2a70b9b83d72a3c8ce47bcd8e3d0ed3aa57144ecd75c3764595a388a13bb5",
+  "action-rpg": "90b45a1c792ddae0a6b06ad0ee342b2e91a5ebafc81a682494347e8796a4203d",
+  defense: "905171f849349d7084155b9ed36e0da4441b514dc8c8a9abbb3a03af2358a3df",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "931f515040f1abe3a8e27927872ea87492874885012cf1fc491a3767c4b3ad92",
-  platformer: "3372c70eca6ff39cd093d26d3227841b2672d1594b77391c01e52b84524f7503",
-  racing: "203582112789f2c7abafe8f19e18459def4adff2fe85f7d56ded4422d9f0cd81",
-  shooter: "e589d0b10c92532449ccfe2ee5cabf2ef0e7de6083f7db694757b84dec246f7b",
-  starter: "f7fd8628562aad95b6fa9d7e416a3a0c852dec32dfd6883b2f2df2e44fcd8b6a",
+  minimal: "da60e5bfcb389774fa887a67794a60cc19039c5002ac221c619e29f2d2f1d078",
+  platformer: "bcac08b2b9024fcbc329933f2286129e7c3136f024c568a34ca5f539e80a6390",
+  racing: "5782023a294d4cda5045f046334ad7b61e8604eda65e3097cc66f1c153b13bf4",
+  shooter: "8778212362ebbbb056afa25feb936489a9d1b79471856de6c7ab85e01b35b825",
+  starter: "9d800848ad4e0021fff71e819fd79b7850b36e1949f3b93ca7b203fa66915a4e",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
