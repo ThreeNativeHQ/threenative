@@ -24,8 +24,45 @@ const infoPlist = `<plist><dict>
     <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
 </dict></plist>`;
+const binaryInfoPlist = Buffer.from(
+  [
+    'YnBsaXN0MDDfEBkBAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fHSAhIiQlJicoJikqKywtLjE0Nl8QE0J1aWxkTWFjaGluZU9TQnVpbGRfEBlDRkJ1bmRsZURldmVsb3BtZW50UmVnaW9uXxATQ0ZCdW5kbGVEaXNwbGF5TmFtZV8QEkNGQnVuZGxlRXhlY3V0YWJsZV8QEkNGQnVuZGxlSWRlbnRpZmllcl8QHUNGQnVuZGxlSW5mb0RpY3Rpb25hcnlWZXJzaW9uXENGQnVuZGxlTmFtZV8QE0NGQnVuZGxlUGFja2FnZVR5cGVfEBpDRkJ1bmRsZVNob3J0VmVyc2lvblN0cmluZ18QGkNGQnVuZGxlU3VwcG9ydGVkUGxhdGZvcm1zXxAPQ0ZCdW5kbGVWZXJzaW9uWkRUQ29tcGlsZXJfEA9EVFBsYXRmb3JtQnVpbGReRFRQbGF0Zm9ybU5hbWVfEBFEVFBsYXRmb3JtVmVyc2lvblpEVFNES0J1aWxkWURUU0RLTmFtZVdEVFhjb2RlXERUWGNvZGVCdWlsZF8QEkxTUmVxdWlyZXNJUGhvbmVPU18QEE1pbmltaW1PU1ZlcnNpb25eVUlEZXZpY2VGYW1pbHleVUlMYXVuY2hTY3JlZW5fEBxVSVJlcXVpcmVkRGV2aWNlQ2FwYWJpbGl0aWVzXxAgVUlTdXBwb3J0ZWRJbnRlcmZhY2VPcmllbnRhdGlvbnNWMjRHNzIwUmVuW1RocmVlTmF0aXZlXxAPdGhyZWVuYXRpdmUtaW9zXxAXZGV2LnRocmVlbmF0aXZlLnJ1bnRpbWVTNi4wVEFQUExWMC4xLjEzoSNfEA9pUGhvbmVTaW11bGF0b3JRMV8QImNvbS5hcHBsZS5jb21waWxlcnMubGx2bS5jbGFuZy4xXzBVMjJGNzZfEA9pcGhvbmVzaW11bGF0b3JUMTguNV8QE2lwaG9uZXNpbXVsYXRvcjE4LjVUMTY0MFQxNkY2CVQxNC4woi8wEAEQAtEyM1tVSUNvbG9yTmFtZV8QElROTGF1bmNoQmFja2dyb3VuZKE1VW1ldGFsojc4XxAjVUlJbnRlcmZhY2VPcmllbnRhdGlvbkxhbmRzY2FwZUxlZnRfECRVSUludGVyZmFjZU9yaWVudGF0aW9uTGFuZHNjYXBlUmlnaHQACAA9AFMAbwCFAJoArwDPANwA8gEPASwBPgFJAVsBagF+AYkBkwGbAagBvQHQAd8B7gINAjACNwI6AkYCWAJyAnYCewKCAoQClgKYAr0CwwLVAtoC8AL1AvoC+wMAAwMDBQMHAwoDFgMrAy0DMwM2A1wAAAAAAAACAQAAAAAAAAA5AAAAAAAAAAAAAAAAAAADgw==',
+  ].join(''),
+  'base64',
+);
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
+});
+
+test('iOS staging converts Xcode binary Info.plist archives before applying metadata', () => {
+  const root = makeTempDirSync('threenative-ios-binary-plist-');
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'Info.plist'), binaryInfoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+
+  let convertedPath;
+  const report = stageIosSimulatorApp({
+    bundle,
+    orientation: 'portrait',
+    output,
+    templateApp,
+    convertInfoPlist: (path, source) => {
+      convertedPath = { path, source };
+      return infoPlist;
+    },
+  });
+
+  assert.equal(convertedPath.path, join(output, 'Info.plist'));
+  assert.equal(convertedPath.source.subarray(0, 8).toString('ascii'), 'bplist00');
+  assert.equal(report.infoPlistFormat, 'binary');
+  assert.equal(report.orientation, 'portrait');
+  assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'), /UIInterfaceOrientationPortrait/u);
 });
 
 test('staging replaces the bundle and records every packaged game asset checksum', () => {
@@ -54,6 +91,7 @@ test('staging replaces the bundle and records every packaged game asset checksum
   assert.equal(readFileSync(join(output, 'game', 'textures', 'x.png'), 'utf8'), 'texture');
   assert.equal(existsSync(join(output, 'game', 'stale.bin')), false);
   assert.equal(report.host, 'ios-simulator-arm64');
+  assert.equal(report.infoPlistFormat, 'xml');
   assert.equal(report.orientation, 'portrait');
   assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'), /UIInterfaceOrientationPortrait/u);
   assert.doesNotMatch(
