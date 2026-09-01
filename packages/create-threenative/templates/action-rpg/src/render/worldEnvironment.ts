@@ -364,10 +364,25 @@ export class WorldEnvironment {
     if (options.ssgiEnabled || options.ssrEnabled || options.gtaoEnabled) {
       scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
     }
-    const depth = scenePass.getTextureNode("depth");
-    const normal = scenePass.getTextureNode("normal");
-    const metal = scenePass.getTextureNode("metalness");
-    const rough = scenePass.getTextureNode("roughness");
+    // Requested lazily, and this is not a micro-optimisation. **Asking a pass for `normal`,
+    // `metalness` or `roughness` is what creates the extra render target.** A tier that runs none
+    // of the stages needing them — the mobile look is bloom and the tone curve — must not ask, or
+    // the pass carries a colour target no fragment shader writes and WebGPU refuses the pipeline:
+    // *"Color target has no corresponding fragment stage output but writeMask … is not zero.
+    // While validating targets[1]"*. The frame then comes out **black** while the chain still
+    // reports every stage as applied, which is the worst shape a failure can take here.
+    const nodes = new Map<string, ReturnType<typeof scenePass.getTextureNode>>();
+    const textureNode = (name: string): ReturnType<typeof scenePass.getTextureNode> => {
+      const cached = nodes.get(name);
+      if (cached !== undefined) return cached;
+      const node = scenePass.getTextureNode(name);
+      nodes.set(name, node);
+      return node;
+    };
+    const depth = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("depth");
+    const normal = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("normal");
+    const metal = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("metalness");
+    const rough = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("roughness");
     // Every stage here is perspective-camera maths — view-space reconstruction from depth,
     // and a projection matrix inverse. The scene's camera is the one the pass rendered with.
     const view = camera as PerspectiveCamera;
@@ -375,13 +390,13 @@ export class WorldEnvironment {
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
     const exposed = convertToTexture(base).mul(options.exposure);
     const giDenoise = (node: ChainNode): ChainNode =>
-      options.denoiseEnabled ? denoised(denoise(node, depth, normal, view)) : node;
+      options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
 
     const stages: ChainStage[] = [
       stage({
         name: "ssgi",
         build: (input) => {
-          const gi = ssgi(input, depth, normal, view);
+          const gi = ssgi(input, depth(), normal(), view);
           const tier = SSGI_QUALITY[options.ssgiQuality];
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
@@ -405,7 +420,7 @@ export class WorldEnvironment {
       stage({
         name: "ambientOcclusion",
         build: (input) => {
-          const contact = ao(depth, normal, view);
+          const contact = ao(depth(), normal(), view);
           contact.radius.value = options.gtaoRadius;
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
@@ -440,7 +455,7 @@ export class WorldEnvironment {
         },
         build: (input) => {
           const light = target.godraysLight as DirectionalLight;
-          const shafts = godrays(depth, view, light);
+          const shafts = godrays(depth(), view, light);
           shafts.density.value = options.godraysDensity;
           shafts.maxDensity.value = options.godraysMaxDensity;
           shafts.raymarchSteps.value = options.godraysSteps;
@@ -451,7 +466,7 @@ export class WorldEnvironment {
           // silhouettes the depth term owns. Denoise before the floor: the floor's
           // subtraction amplifies relative noise on near-floor values.
           let shaft: ChainNode = convertToTexture(shafts);
-          if (options.denoiseEnabled) shaft = denoised(denoise(shaft, depth, normal, view));
+          if (options.denoiseEnabled) shaft = denoised(denoise(shaft, depth(), normal(), view));
           // Floor, then scale, then tint. The floor is what turns this from a whole-frame
           // brightener into a shaft renderer; the tint by the light's own colour is what
           // stops a warm sun throwing a white beam.
@@ -477,10 +492,10 @@ export class WorldEnvironment {
           // reflections onto a second copy builds two parallel graphs, and the frame comes
           // out as the bare background colour.
           const base = convertToTexture(input);
-          const reflections = ssr(base, depth, normal as unknown as Parameters<typeof ssr>[2], {
+          const reflections = ssr(base, depth(), normal() as unknown as Parameters<typeof ssr>[2], {
             camera: view,
-            metalnessNode: metal.r,
-            roughnessNode: rough.g,
+            metalnessNode: metal().r,
+            roughnessNode: rough().g,
             reflectNonMetals: true,
           });
           reflections.maxDistance.value = options.ssrMaxDistance;
