@@ -10,10 +10,11 @@ and look; `src/game.ts` is portable and React mounts from `src/main.ts`.
 
 ## Start every change
 
-1. For any game request, invoke `prd-creator` first. Present its concise game plan, direct the user
-   to review it, and wait for explicit approval plus an instruction to execute or implement it.
-2. Then search `engine_search_capabilities` for the full request and each
-   concrete mechanic; record a capability or no-match before writing a replacement.
+1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search
+   `engine_search_capabilities` for the full request and each concrete mechanic, inspect relevant
+   matches with `engine_capability_detail`, and record a capability or no-match for the plan.
+2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
+   direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;
    the chasers use editable routes so desktop/native remains honest.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and

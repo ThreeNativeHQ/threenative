@@ -737,15 +737,29 @@ describe("template contracts", () => {
     }
   });
 
-  it("should gate game implementation on an approved prd-creator plan", async () => {
+  it("should make capability discovery a critical gate before PRD planning", async () => {
     for (const template of await templateNames()) {
-      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents, `${template}/prd-creator`).toContain("`prd-creator`");
-      expect(agents, `${template}/approval gate`).toMatch(/explicit approval/iu);
-      expect(agents, `${template}/execution handoff`).toMatch(/execute|implement/iu);
-      expect(agents.indexOf("`prd-creator`"), `${template}/plan before capabilities`).toBeLessThan(
-        agents.indexOf("engine_search_capabilities"),
-      );
+      for (const file of ["AGENTS.md", "CLAUDE.md"]) {
+        const instructions = await readFile(path.join(templateRoot, template, file), "utf8");
+        expect(instructions, `${template}/${file}/critical gate`).toMatch(
+          /critical.*(?:step|gate)/iu,
+        );
+        expect(instructions, `${template}/${file}/capability skill`).toContain(
+          "`threenative-capabilities`",
+        );
+        expect(instructions, `${template}/${file}/prd skill`).toContain("`prd-creator`");
+        expect(instructions, `${template}/${file}/full request`).toContain(
+          "engine_search_capabilities",
+        );
+        expect(
+          instructions.indexOf("`threenative-capabilities`"),
+          `${template}/${file}/capabilities before PRD`,
+        ).toBeLessThan(instructions.indexOf("`prd-creator`"));
+        expect(instructions, `${template}/${file}/approval gate`).toMatch(/explicit approval/iu);
+        expect(instructions, `${template}/${file}/execution handoff`).toMatch(
+          /execute|implement/iu,
+        );
+      }
     }
   });
 
@@ -864,11 +878,24 @@ describe("template contracts", () => {
           const docs = await readFile(path.join(result.target, file), "utf8");
           expect(docs, `${template}/${file}`).not.toMatch(/<!--\s*(?:shared:|\/shared)/u);
           expect(docs.split(/\r?\n/u).length, `${template}/${file}`).toBeLessThan(100);
-        }
-        for (const relativePath of skillPaths)
-          await expect(readFile(path.join(result.target, relativePath), "utf8")).resolves.toContain(
-            "name:",
+          expect(docs, `${template}/${file}/critical capability gate`).toMatch(
+            /critical.*(?:step|gate)/iu,
           );
+          expect(
+            docs.indexOf("`threenative-capabilities`"),
+            `${template}/${file}/capabilities before PRD`,
+          ).toBeLessThan(docs.indexOf("`prd-creator`"));
+        }
+        for (const relativePath of skillPaths) {
+          const skill = await readFile(path.join(result.target, relativePath), "utf8");
+          expect(skill, `${template}/${relativePath}`).toContain("name:");
+          if (relativePath.includes("threenative-capabilities")) {
+            expect(skill, `${template}/${relativePath}/planning prerequisite`).toContain(
+              "critical planning prerequisite",
+            );
+            expect(skill, `${template}/${relativePath}/PRD handoff`).toContain("`prd-creator`");
+          }
+        }
       }
     } finally {
       await rm(root, { force: true, recursive: true });
