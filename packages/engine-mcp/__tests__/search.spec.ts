@@ -35,6 +35,23 @@ describe("threenative-engine-mcp", () => {
     ).toMatch(/hand-written A\*/u);
   });
 
+  it("finds the texture pass for a GPU texture-optimisation request", () => {
+    const results = searchCapabilities("optimize textures for the GPU", workspaceManifest);
+    const texture = results.find((result) => result.symbol === "texturePass");
+
+    expect(texture).toBeDefined();
+    expect(texture?.importPath).toBe("@threenative/assets");
+    expect(texture?.matchedSituation).toBe("optimize textures for the GPU");
+  });
+
+  it("states the BC7 block constraint in capability detail", () => {
+    const detail = capabilityDetail("texturePass", workspaceManifest);
+
+    expect(detail.constraints.join(" ")).toMatch(
+      /BC7.*4x4 blocks.*WebGPU rejects an unaligned texture/u,
+    );
+  });
+
   it("ranks NavigationAgent3D for the exact patrol and line-of-sight task", () => {
     const results = searchCapabilities(
       "enemy walks around a patrol path and chases the player when it sees them",

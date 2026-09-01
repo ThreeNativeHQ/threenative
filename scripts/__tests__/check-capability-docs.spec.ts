@@ -1,15 +1,26 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
+  capabilityPackageSpecs,
   checkCapabilityDocs,
+  checkCapabilityPackageCensus,
   collectPublicExports,
   findDocTagGaps,
   formatCapabilityReport,
   missingDocTags,
+  validateCapabilityPackageAllowlist,
   validateInternalAllowlist,
 } from "../check-capability-docs.js";
+
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
+  );
+});
 
 async function writePackage(
   root: string,
@@ -26,9 +37,38 @@ async function writePackage(
   await writeFile(path.join(packageRoot, "src", "index.ts"), source);
 }
 
+async function writeExportedPackage(
+  root: string,
+  directory: string,
+  name: string,
+  source: string,
+): Promise<void> {
+  const packageRoot = path.join(root, "packages", directory);
+  await mkdir(path.join(packageRoot, "src"), { recursive: true });
+  await writeFile(
+    path.join(packageRoot, "package.json"),
+    JSON.stringify({
+      exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
+      name,
+      version: "0.3.0",
+    }),
+  );
+  await writeFile(path.join(packageRoot, "src", "index.ts"), source);
+}
+
+async function writeCapabilityManifest(root: string, packages: readonly string[]): Promise<void> {
+  const manifestRoot = path.join(root, "packages", "create-threenative");
+  await mkdir(manifestRoot, { recursive: true });
+  await writeFile(
+    path.join(manifestRoot, "capabilities.json"),
+    JSON.stringify({ entries: packages.map((packageName) => ({ package: packageName })) }),
+  );
+}
+
 /** A two-package tree whose capabilities are written in every callable form TypeScript allows. */
 async function arrowExportFixture(): Promise<string> {
   const root = await makeTempDir("threenative-capability-arrow-");
+  temporaryRoots.push(root);
   const sources: Record<string, string> = {
     core: [
       "export const steerAroundWall = (): void => undefined;",
@@ -151,6 +191,16 @@ describe("capability documentation gate", () => {
           packageName: "@threenative/core",
           subpath: "./ui-layer",
         }),
+        expect.objectContaining({
+          name: "compileAssets",
+          packageName: "@threenative/assets",
+          subpath: ".",
+        }),
+        expect.objectContaining({
+          name: "texturePass",
+          packageName: "@threenative/assets",
+          subpath: ".",
+        }),
       ]),
     );
   }, 15_000);
@@ -176,4 +226,63 @@ describe("capability documentation gate", () => {
 
     expect(report.gaps).toEqual([]);
   }, 30_000);
+
+  it("should fail for a public package with no capability coverage", async () => {
+    const root = await makeTempDir("threenative-capability-census-uncovered-");
+    temporaryRoots.push(root);
+    await writeExportedPackage(
+      root,
+      "zzz-probe",
+      "@threenative/zzz-probe",
+      "export function probe() {}\n",
+    );
+    await writeCapabilityManifest(root, []);
+
+    await expect(checkCapabilityPackageCensus(root, {})).rejects.toThrow(
+      /@threenative\/zzz-probe.*public exports map.*no capability coverage/u,
+    );
+  });
+
+  it("should pass when a public package is allowlisted with a reason", async () => {
+    const root = await makeTempDir("threenative-capability-census-allowlisted-");
+    temporaryRoots.push(root);
+    await writeExportedPackage(
+      root,
+      "zzz-probe",
+      "@threenative/zzz-probe",
+      "export function probe() {}\n",
+    );
+    await writeCapabilityManifest(root, []);
+
+    await expect(
+      checkCapabilityPackageCensus(root, {
+        "@threenative/zzz-probe": "Probe package is test-only infrastructure.",
+      }),
+    ).resolves.toMatchObject({ allowlisted: ["@threenative/zzz-probe"], walked: [] });
+  });
+
+  it("should reject an empty or multi-line package allowlist reason", () => {
+    expect(() => validateCapabilityPackageAllowlist({ "@threenative/zzz-probe": "" })).toThrow(
+      "CAPABILITY_PACKAGE_ALLOWLIST_INVALID",
+    );
+    expect(() =>
+      validateCapabilityPackageAllowlist({ "@threenative/zzz-probe": "first\nsecond" }),
+    ).toThrow("CAPABILITY_PACKAGE_ALLOWLIST_INVALID");
+  });
+
+  it("should derive the capability package set from public workspace export maps", () => {
+    const names = capabilityPackageSpecs(process.cwd()).map(({ name }) => name);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "@threenative/assets",
+        "@threenative/core",
+        "@threenative/physics",
+        "@threenative/playtest",
+        "@threenative/ui",
+      ]),
+    );
+    expect(names).not.toContain("create-threenative");
+    expect(names).not.toContain("threenative-engine-mcp");
+  });
 });

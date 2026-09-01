@@ -172,15 +172,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "63778b06c443c284e6b91de574158fb74a2770634fae620bcf37a0c2ff5e985f",
-  defense: "f4e85d875a7089cafff4cef4db171ae422f1e7593cee84928442ceef53cc1760",
+  // Recomputed 2026-09-01 for PRD-301: the capability manifest and the reference generated
+  // from it now walk @threenative/assets, so the authoring surface those bytes describe grew
+  // in every scaffold tree.
+  "action-rpg": "0009bd9306b8110121e473185c552165ebe5e2129a47e83ea4083df9b5d996da",
+  defense: "65d2a70b9b83d72a3c8ce47bcd8e3d0ed3aa57144ecd75c3764595a388a13bb5",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "c1a7479d8c278fcf3822505d37f2f4d29a80783ded397be7070fa2ff47bb8082",
-  platformer: "158628a077b28c015922a28b122372652d2bcfe044a3ba9317f947dc60fd9c3f",
-  racing: "5134e7652b4cafe2020072e8569d2434dd85a8c35b65d193fad26427bf50c403",
-  shooter: "1a9ddfe47d8e042e5ceba4d69e0a8f4d493f28ce792ed4f3bd41ff3ce50d336d",
-  starter: "611a8ec8209b97cf859be9e53d4c58a69aff188e2a6f7a08f880d05ab02d159e",
+  minimal: "931f515040f1abe3a8e27927872ea87492874885012cf1fc491a3767c4b3ad92",
+  platformer: "3372c70eca6ff39cd093d26d3227841b2672d1594b77391c01e52b84524f7503",
+  racing: "203582112789f2c7abafe8f19e18459def4adff2fe85f7d56ded4422d9f0cd81",
+  shooter: "e589d0b10c92532449ccfe2ee5cabf2ef0e7de6083f7db694757b84dec246f7b",
+  starter: "f7fd8628562aad95b6fa9d7e416a3a0c852dec32dfd6883b2f2df2e44fcd8b6a",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -191,7 +194,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "7b7416615d7e838af2f1dbb7d9c84e43091b397f5de430a0b0b8055c56acdfc4",
+  sailing: "b0bfedcd9714313bc30a6c40aa382a286df187dbd870fdbef48b046e1db27333",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

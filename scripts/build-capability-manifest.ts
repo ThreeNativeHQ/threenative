@@ -3,19 +3,20 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
+import { CAPABILITY_PACKAGE_ALLOWLIST } from "./check-capability-docs.js";
 import {
   REALISM_EFFECTS_COVERAGE,
   REALISM_EFFECTS_MANIFEST_ENTRIES,
   validateRealismEffectsCoverage,
 } from "./realism-effects-coverage.js";
 import { RENDER_CHAIN_MANIFEST_ENTRIES } from "./render-chain-capabilities.js";
+import { publicWorkspacePackagesWithExports } from "./workspace-packages.js";
 
 export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/capabilities.json";
 // `@threenative/core` ships the same manifest so the capability MCP server still answers in a
 // project that was not scaffolded and therefore has no committed copy of its own.
 export const CAPABILITY_MANIFEST_MIRROR_PATH = "packages/core/capabilities.json";
 
-const CAPABILITY_PACKAGE_DIRECTORIES = ["core", "physics", "playtest", "ui"] as const;
 const MANIFEST_VERSION = 1 as const;
 
 export type CapabilityKind = "class" | "function";
@@ -408,32 +409,42 @@ function importPath(packageNameValue: string, subpath: string): string {
   return subpath === "." ? packageNameValue : `${packageNameValue}${subpath.slice(1)}`;
 }
 
-function packageExportCandidates(root: string): ICapabilityCandidate[] {
+/** Derive the walked package directories from public workspace export maps. */
+function capabilityPackageDirectories(root: string): readonly string[] {
+  return publicWorkspacePackagesWithExports(root, { requireVersion: false })
+    .filter(({ name }) => CAPABILITY_PACKAGE_ALLOWLIST[name] === undefined)
+    .map(({ directory }) => directory);
+}
+
+function packageExportCandidatesForDirectory(packageDirectory: string): ICapabilityCandidate[] {
+  const packageFile = path.join(packageDirectory, "package.json");
+  if (!existsSync(packageFile)) return [];
+  const manifest = JSON.parse(readFileSync(packageFile)) as { exports?: unknown };
+  if (manifest.exports === undefined) return [];
+  const name = packageName(packageDirectory);
   const candidates: ICapabilityCandidate[] = [];
-  for (const directory of CAPABILITY_PACKAGE_DIRECTORIES) {
-    const packageDirectory = path.join(root, "packages", directory);
-    const packageFile = path.join(packageDirectory, "package.json");
-    if (!existsSync(packageFile)) continue;
-    const manifest = JSON.parse(readFileSync(packageFile)) as { exports?: unknown };
-    if (manifest.exports === undefined) continue;
-    const name = packageName(packageDirectory);
-    for (const [subpath, target] of exportMapEntries(manifest.exports)) {
-      if (subpath === "./package.json") continue;
-      const source = sourceFileForTarget(packageDirectory, target);
-      const exports = collectModuleExports(source);
-      for (const entry of exports) {
-        const kind = classifyDeclaration(entry.declaration);
-        if (kind === undefined) continue;
-        candidates.push({
-          ...entry,
-          importPath: importPath(name, subpath),
-          kind,
-          packageName: name,
-        });
-      }
+  for (const [subpath, target] of exportMapEntries(manifest.exports)) {
+    if (subpath === "./package.json") continue;
+    const source = sourceFileForTarget(packageDirectory, target);
+    const exports = collectModuleExports(source);
+    for (const entry of exports) {
+      const kind = classifyDeclaration(entry.declaration);
+      if (kind === undefined) continue;
+      candidates.push({
+        ...entry,
+        importPath: importPath(name, subpath),
+        kind,
+        packageName: name,
+      });
     }
   }
   return candidates;
+}
+
+function packageExportCandidates(root: string): ICapabilityCandidate[] {
+  return capabilityPackageDirectories(root).flatMap((packageDirectory) =>
+    packageExportCandidatesForDirectory(packageDirectory),
+  );
 }
 
 function validateDocumentation(candidates: readonly ICapabilityCandidate[]): void {
