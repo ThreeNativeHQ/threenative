@@ -84,6 +84,11 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
 });
 
+test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
+  expect(workflow).toContain('ios_only:');
+  expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(4);
+});
+
 test('Android release lane installs both Rust cross-compilation targets before Gradle', () => {
   const rustTargets = 'rustup target add aarch64-linux-android x86_64-linux-android';
   expect(releaseWorkflow).toContain(rustTargets);

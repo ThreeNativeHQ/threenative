@@ -36,6 +36,12 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      ios_only:
+        description: "Run only the iOS simulator and consumer handoff job"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
 
 concurrency:
@@ -62,8 +68,9 @@ jobs:
     # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
     # and Linux desktop is the only desktop target ROADMAP licenses.
     if: >-
-      github.event_name != 'pull_request'
-      || contains(github.event.pull_request.labels.*.name, 'native')
+      (github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native'))
+      && inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -203,6 +210,7 @@ jobs:
 
   desktop-parity:
     name: Desktop web/native parity
+    if: inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -342,8 +350,9 @@ jobs:
     # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
     # and Linux desktop is the only desktop target ROADMAP licenses.
     if: >-
-      github.event_name != 'pull_request'
-      || contains(github.event.pull_request.labels.*.name, 'native')
+      (github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native'))
+      && inputs.ios_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -468,6 +477,7 @@ jobs:
 
   starter-linux:
     name: Scaffolded starter desktop artifact
+    if: inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
