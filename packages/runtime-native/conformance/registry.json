@@ -703,6 +703,19 @@
       "required": true
     },
     {
+      "id": "100-world-field-hash",
+      "title": "procedural world field hash parity",
+      "category": "world",
+      "status": "planned",
+      "availability": "source-contract-only",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 5.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "76-gpu-scene-bvh",
       "title": "GPU scene BVH trace",
       "category": "webgpu-tsl",
