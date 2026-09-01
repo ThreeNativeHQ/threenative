@@ -90,6 +90,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-08-31 for PRD-314: every template's AGENTS.md/CLAUDE.md pair gained the clip
 // conformance paragraph (clipPoseError, clipTrackBindings, clipBoneCoverage, boneContact), and the
 // generated capability reference embedded in every scaffold gained their four entries.
+// Recomputed 2026-09-01 for PRD-304's repair: seven templates' `worldEnvironment.ts` now
+// requests its normal/metalness/roughness texture nodes lazily, because asking for them is
+// what created the extra render target that made the mobile look a black screen. `sailing`
+// never had those lines, so its tree is unchanged and its hash does not move.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -189,15 +193,26 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // reads. Claude Code and Codex already had theirs; Cursor, VS Code, the Gemini CLI, opencode and
   // Zed each gained a project-scoped file, and the shared asset-MCP instructions now name all
   // seven instead of `.mcp.json` alone. Five new files and one paragraph move all eight trees.
-  "action-rpg": "a3348807eff125c2640cd32dd80839585eb7a63810b69a4c114d7ae564f73022",
-  defense: "869e651b6c1dfa4abfd9a31398282ba182376196e5102a363e5b1467ab968ae3",
+  // Recomputed 2026-09-01 for PRD-301: the capability manifest and the reference generated
+  // from it now walk @threenative/assets, so the authoring surface those bytes describe grew
+  // in every scaffold tree.
+  // Recomputed 2026-09-01 for the main-sync merge of the two capability-manifest lineages
+  // (local 8c158a56 and origin #29): values measured from the committed merge tree.
+  // Recomputed 2026-09-01 after every game gained the bundled prd-creator skill, approval gate,
+  // and expanded Fab authentication and Unreal conversion instructions.
+  // Recomputed 2026-09-01 after capability discovery became a critical pre-PRD planning gate in
+  // every generated AGENTS.md/CLAUDE.md pair and both shipped host skill adapters.
+  // Recomputed 2026-09-01 for the main-sync merge carrying #40's lazy MRT texture nodes: values
+  // measured from the committed merge tree, per the clean-checkout rule above.
+  "action-rpg": "c352bc0ba63ffa8e9550b57beb36f74bdb7a52b2cc1449a9f6ab67bc894e79fa",
+  defense: "68a12adbe94bf0ad475d26ae1477452a2bb0a90b57143f2c6852dc4c5113a48d",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "1701bf582fc35ca5b3654e2332f796fe82be53b573bfda215170532417b5a576",
-  platformer: "9d324e2e33f30084773ca8959682b4da47cbdafadfb00638af18108771f67f7b",
-  racing: "717dd6d8e68e74d204704cd9fec5d9db4d8ceba1f3410eed89ffc327a9eb7026",
-  shooter: "1cff59d4e7dfe87ba3f3a3915097f6d8dff597b3fc8c888c57133d3aed54da3c",
-  starter: "037008f5ccac429f56ca2c98c16afb30ac3cf331817be83352b6551a9fac887e",
+  minimal: "eb0e0be7e7503932bcf06689ffbe736f6eb14468224b6038cf1be64a723e46fa",
+  platformer: "c883810aa8c9ddfc764a88573de5d8dbc4fa6d60df5133a057004056089dd1f0",
+  racing: "4334ecdeda3530e4e4095f22121e0d3ed00b3d11bf081ee29be89f68b48b09f7",
+  shooter: "9adc74aa94027495652beb840586da1382761695f32bbf7c60eb7749d074ed31",
+  starter: "bc10f3b29f0af1e6d02b6eac4f9894294111b63a177e4e54177e4182b41c87df",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -208,7 +223,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "64bfa72ffd49d57328274478c9caa5271641df3b79f8380c87265fb34dd8d303",
+  sailing: "60f1e296319ec4ec2d486bc0ea80346aa9a3c673f1254b0713f37b6eeef93bb1",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

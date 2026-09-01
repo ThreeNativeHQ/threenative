@@ -44,6 +44,7 @@ async function typecheckTemplates(): Promise<string[]> {
 const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
 const authoringSkills = [
+  ["prd-creator", ".agent/prd/PRD.md", "explicit approval"],
   ["threenative-capabilities", "engine_search_capabilities", "@threenative/physics/navigation"],
   ["threenative-playtest", "TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING", "doctor"],
   ["threenative-assets", "asset_search_sources", "sculpt_spec_gate"],
@@ -736,6 +737,50 @@ describe("template contracts", () => {
     }
   });
 
+  it("should make capability discovery a critical gate before PRD planning", async () => {
+    for (const template of await templateNames()) {
+      for (const file of ["AGENTS.md", "CLAUDE.md"]) {
+        const instructions = await readFile(path.join(templateRoot, template, file), "utf8");
+        expect(instructions, `${template}/${file}/critical gate`).toMatch(
+          /critical.*(?:step|gate)/iu,
+        );
+        expect(instructions, `${template}/${file}/capability skill`).toContain(
+          "`threenative-capabilities`",
+        );
+        expect(instructions, `${template}/${file}/prd skill`).toContain("`prd-creator`");
+        expect(instructions, `${template}/${file}/full request`).toContain(
+          "engine_search_capabilities",
+        );
+        expect(
+          instructions.indexOf("`threenative-capabilities`"),
+          `${template}/${file}/capabilities before PRD`,
+        ).toBeLessThan(instructions.indexOf("`prd-creator`"));
+        expect(instructions, `${template}/${file}/approval gate`).toMatch(/explicit approval/iu);
+        expect(instructions, `${template}/${file}/execution handoff`).toMatch(
+          /execute|implement/iu,
+        );
+      }
+    }
+  });
+
+  it("should proactively reuse the active browser session for Fab CLI authentication", async () => {
+    const skill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-assets/SKILL.md",
+      ),
+      "utf8",
+    );
+    expect(skill).toContain("fabcli auth login");
+    expect(skill).toContain("Claude browser");
+    expect(skill).toContain("chrome:control-chrome");
+    expect(skill).toMatch(/active.*session/iu);
+    expect(skill).toMatch(/never.*(?:cookie|token)|(?:cookie|token).*never/iu);
+    expect(skill).toMatch(/Unreal-only/iu);
+    expect(skill).toContain("`fab_import_asset`");
+    expect(skill).toContain("`asset_import_unreal`");
+    expect(skill).toContain("UNREAL_SOURCE_UNCOOKED");
+  });
+
   it("should document a bounded performance assertion in every template", async () => {
     const skill = await readFile(
       path.resolve(
@@ -833,11 +878,24 @@ describe("template contracts", () => {
           const docs = await readFile(path.join(result.target, file), "utf8");
           expect(docs, `${template}/${file}`).not.toMatch(/<!--\s*(?:shared:|\/shared)/u);
           expect(docs.split(/\r?\n/u).length, `${template}/${file}`).toBeLessThan(100);
-        }
-        for (const relativePath of skillPaths)
-          await expect(readFile(path.join(result.target, relativePath), "utf8")).resolves.toContain(
-            "name:",
+          expect(docs, `${template}/${file}/critical capability gate`).toMatch(
+            /critical.*(?:step|gate)/iu,
           );
+          expect(
+            docs.indexOf("`threenative-capabilities`"),
+            `${template}/${file}/capabilities before PRD`,
+          ).toBeLessThan(docs.indexOf("`prd-creator`"));
+        }
+        for (const relativePath of skillPaths) {
+          const skill = await readFile(path.join(result.target, relativePath), "utf8");
+          expect(skill, `${template}/${relativePath}`).toContain("name:");
+          if (relativePath.includes("threenative-capabilities")) {
+            expect(skill, `${template}/${relativePath}/planning prerequisite`).toContain(
+              "critical planning prerequisite",
+            );
+            expect(skill, `${template}/${relativePath}/PRD handoff`).toContain("`prd-creator`");
+          }
+        }
       }
     } finally {
       await rm(root, { force: true, recursive: true });

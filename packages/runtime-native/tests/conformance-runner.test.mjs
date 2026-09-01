@@ -41,6 +41,7 @@ import {
   hardwareAdapterBlocker,
   makeEntry,
   runCommand,
+  temporalCaptureLabel,
   unexpectedBlockedRows,
   expiredExclusions,
   reportExitCode,
@@ -116,6 +117,30 @@ test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () 
   assert.deepEqual(unexpectedBlockedRows(mislabelled, registry), [
     { id: "realism-ssr", reason: "bundle failed" },
   ]);
+
+  const missingHardwareReference = {
+    ...report,
+    results: [{
+      id: "realism-ssr",
+      status: "blocked",
+      blockedReason: "Missing browser reference capture: /tmp/realism-ssr.png",
+    }],
+  };
+  assert.deepEqual(unexpectedBlockedRows(missingHardwareReference, registry), []);
+});
+
+test("velocity conformance captures the motion window instead of the settled frame", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const velocity = registry.tests.find(({ id }) => id === "realism-velocity");
+  assert.deepEqual(velocity?.temporal, {
+    settledFrame: 8,
+    nextFrame: 9,
+    assertsDifferenceFromFrameZero: true,
+    capture: "settled",
+  });
+  assert.equal(velocity?.captureFrames, 12);
+  assert.equal(temporalCaptureLabel(velocity), "settled");
+  assert.equal(temporalCaptureLabel({}), "next");
 });
 
 test("browser capture waits for submitted WebGPU work before requesting a compositor screenshot", async () => {

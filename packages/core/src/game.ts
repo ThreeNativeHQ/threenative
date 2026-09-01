@@ -22,6 +22,7 @@ import {
 import { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
+import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import { resolveRendererAntialias, resolveRendererScaleSetting } from "./renderer-config.js";
@@ -901,6 +902,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       renderer.surface().scaleSource === "auto"
         ? new ResolutionScaler({ targetFps: this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS })
         : undefined;
+    // The world pass's own draw-call count, kept from the last frame of the window so the
+    // projection line can report what the renderer was handed beside what the plan predicted.
+    // A plan and a measurement that disagree is the finding; one number pretending to be both
+    // is how an optimizer reports a win it did not deliver.
+    let lastWorldDrawCalls: number | undefined;
     // Built here rather than inside the loop so `frameBudget: false` is a single decision with a
     // single owner, and so the render phases below feed the same instrument the loop feeds.
     const frameBudget =
@@ -912,6 +918,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // the record shows are the same measurement rather than two sampling paths.
             onWindow: (reported) => {
               renderer.observeRenderChainBudget?.(reported);
+              const projection = this.#projection;
+              // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
+              // whether the optimizer engaged; this says, repeatedly, what it is still leaving on
+              // the exact lane and whether the renderer agrees with the plan.
+              if (projection !== undefined) {
+                console.info(
+                  formatProjectionWindow(projection.report, reported.window, lastWorldDrawCalls),
+                );
+              }
               if (this.#config.frameBudget !== false)
                 this.#config.frameBudget?.onWindow?.(reported);
               if (scaler === undefined) return;
@@ -1026,6 +1041,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             worldRendered = true;
           }
           if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
+          // Read whether or not the game asked for render metrics: the projection line reports
+          // the measured draw count, and a convention's measurement does not switch off with the
+          // convention that happens to sit beside it.
+          lastWorldDrawCalls = rendererPerformanceMetrics(renderer.raw).drawCalls;
         }
         if (mustPresentLoader) loadingFramePresented = true;
         if (canvasLayer.scene.children.length > 0) {

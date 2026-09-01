@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/physics`, `@threenative/playtest`, `@threenative/ui`, `template:starter`, and `three`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/physics`, `@threenative/playtest`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
@@ -3216,6 +3216,98 @@ function sparkle
 
 ```ts
 sparkle(...)
+```
+
+## `@threenative/ueformat`
+
+### `createThreeGeometry`
+
+`function` — Converts one parsed Unreal mesh LOD into a `THREE.BufferGeometry` — coordinates, scale, winding, normals, tangents, UVs, vertex colours, morphs, skin weights, and material groups.
+
+```ts
+export function createThreeGeometry( lod: IUEModelLOD, adapterOptions: IThreeAdapterOptions = { … }
+```
+
+- **Use when:** convert one Unreal mesh LOD into a three.js BufferGeometry by hand · build custom scene objects from Unreal mesh data instead of a whole model
+- **Constraints:** rejects indices, channels, or material sections that disagree with the vertex count before any geometry is constructed
+
+```ts
+const geometry = createThreeGeometry(model.lods[0]);
+```
+
+### `createThreeObject`
+
+`function` — Builds a renderable Three.js object — a `Group` for single-LOD models, a `THREE.LOD` for multi-LOD ones — from parsed `.uemodel` data, with collision geometry on `userData`.
+
+```ts
+export function createThreeObject( model: IUEModelData, adapterOptions: IThreeAdapterOptions = { … }
+```
+
+- **Use when:** put a mesh exported from an Unreal package on screen · load an Unreal static or skeletal mesh with LODs, sockets, and collision geometry
+- **Constraints:** every material comes from the game through `materialFactory`; the fallback is three.js's own GLTFLoader default, a plain MeshStandardMaterial · parsed bones are exposed on `userData` but never bound into a THREE.SkinnedMesh — skeletal rendering is the game's job
+
+```ts
+const hero = createThreeObject(parseUEModel(buffer), { lodDistances: [0, 25, 50] });
+```
+
+### `parseUEModel`
+
+`function` — Parses a UEFormat v10 `.uemodel` body — the interchange format CUE4Parse and FModel export from Unreal packages — into validated, plain mesh data without building any Three.js objects.
+
+```ts
+export function parseUEModel( input: ArrayBuffer | ArrayBufferView, options: IParseUEModelOptions = { … }
+```
+
+- **Use when:** parse a mesh exported from an Unreal package without Unreal installed · inspect the LODs, skeleton, sockets, and collision inside a .uemodel file
+- **Constraints:** only UEFormat v10 UEMODEL files are accepted; anything else throws UEFormatError with the byte offset · ZSTD-compressed bodies require an injected `zstdDecoder`; the package never bundles a ZSTD implementation
+
+```ts
+const model = parseUEModel(await file.arrayBuffer());
+```
+
+### `summarizeUEModel`
+
+`function` — Summarizes a parsed `.uemodel` — LOD, material, skeleton, collision, and unknown-attribute counts — without dumping vertex arrays, for logs, validation, and build reports.
+
+```ts
+export function summarizeUEModel(model: IUEModelData): IUEModelSummary { … }
+```
+
+- **Use when:** report what a UEFormat model contains without dumping its vertex data · validate a .uemodel file before building geometry from it
+- **Constraints:** the summary reflects one already-parsed model; it does not read files itself
+
+```ts
+const summary = summarizeUEModel(parseUEModel(buffer));
+```
+
+### `UEFormatError`
+
+`class` — The error thrown for every malformed, truncated, or unsupported `.uemodel` input, carrying a stable `code` and the byte offset where validation stopped.
+
+```ts
+export class UEFormatError extends Error { … }
+```
+
+- **Use when:** tell why a .uemodel file failed to load · report a malformed Unreal export with its byte offset instead of a generic error
+- **Constraints:** every parse and geometry failure surfaces as this error; nothing malformed is silently skipped
+
+```ts
+catch (error) { if (error instanceof UEFormatError) log(error.code, error.offset); }
+```
+
+### `UEFormatLoader`
+
+`class` — Loads a `.uemodel` file as a Three.js loader — `load(url)` for the browser, `parse(data)` for bytes you already hold — with the parser and three-adapter options passed straight through.
+
+```ts
+export class UEFormatLoader extends Loader { … }
+```
+
+- **Use when:** load a .uemodel asset in the browser with the standard three.js loader protocol · hand a game's Unreal-exported meshes to the framework's asset loading
+- **Constraints:** ZSTD-compressed bodies require an injected `zstdDecoder` in the parse options
+
+```ts
+const model = new UEFormatLoader(manager).parse(data);
 ```
 
 ## `@threenative/ui`

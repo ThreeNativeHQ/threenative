@@ -10,6 +10,7 @@ import {
   parsePerformanceMarkers,
   parsePerfArgs,
   perfCommand,
+  rankExactReasons,
   type IFrameBudgetWindowJson,
 } from "../src/runner/perf.js";
 import { PlaytestCliUsageError } from "../src/runner/config.js";
@@ -241,5 +242,93 @@ describe("formatPerfReport", () => {
     const report = assessPerfMarkers(parsed, { minFps: 30, requireWindows: 2 }, "test");
     const text = formatPerfReport(report);
     expect(text).toMatch(/FAIL TN_PERF_MIN_FPS: window [23] observed 20\.\d+ against bound 30/u);
+  });
+});
+
+const projectionLine =
+  'TN_PROJECTION:{"drawsActual":315,"drawsPlanned":118,' +
+  '"exact":{"skinned":96,"multiMaterial":12,"lod":4,"instanced":6},' +
+  '"exactObjects":118,"projecting":true,"reasonCode":"projected","sourceRenderables":780,"window":2}';
+
+const declinedProjectionLine =
+  'TN_PROJECTION:{"drawsActual":40,"drawsPlanned":40,"exact":{},"exactObjects":0,' +
+  '"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more ' +
+  'than it saves","reasonCode":"belowMeshFloor","sourceRenderables":40,"window":2}';
+
+describe("projection markers in the perf report", () => {
+  it("should rank reasons by draw count", () => {
+    expect(rankExactReasons({ instanced: 6, lod: 4, multiMaterial: 12, skinned: 96 })).toEqual([
+      { count: 96, reason: "skinned" },
+      { count: 12, reason: "multiMaterial" },
+      { count: 6, reason: "instanced" },
+      { count: 4, reason: "lod" },
+    ]);
+  });
+
+  it("should print the exact lane ranked, largest reason first", () => {
+    const parsed = parsePerformanceMarkers(
+      `${budgetLine(1, 30, 40, 20)}\n${budgetLine(2, 53, 20, 10)}\n${projectionLine}\n`,
+    );
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 1 }, "log"));
+
+    expect(text).toContain("780 authored renderables, 118 draws planned");
+    expect(text).toContain("the renderer and the plan disagree");
+    const skinned = text.indexOf("skinned");
+    const lod = text.indexOf("lod ");
+    expect(skinned).toBeGreaterThan(0);
+    expect(skinned).toBeLessThan(lod);
+  });
+
+  it("should print the decline and its reason rather than an empty table", () => {
+    const parsed = parsePerformanceMarkers(
+      `${budgetLine(1, 30, 40, 20)}\n${declinedProjectionLine}\n`,
+    );
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("scene projection: DECLINED (belowMeshFloor)");
+    expect(text).toContain("fewer than 200 batchable meshes");
+  });
+
+  it("should say the projection was not reported rather than imply an empty lane", () => {
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("scene projection: not reported");
+    expect(text).not.toContain("exact lane");
+  });
+
+  it("should count a mirrored Android projection line once", () => {
+    const parsed = parsePerformanceMarkers(`${projectionLine}\n${projectionLine}\n`);
+    expect(parsed.projections).toHaveLength(1);
+  });
+
+  it("should throw on a malformed projection line rather than skip it", () => {
+    expect(() => parsePerformanceMarkers('ok\nTN_PROJECTION:{"window":1,')).toThrow(
+      /TN_PERF_MARKER_MALFORMED/u,
+    );
+  });
+});
+
+describe("the GPU column never reads as a measured zero", () => {
+  it("should name the reason when no window carries gpuMs", () => {
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("gpu: not reported");
+    expect(text).toContain("timestamp-query");
+    expect(text).toContain("TN_WEBGPU_FEATURES");
+    // No column at all rather than a column of dashes a reader would total.
+    expect(text).not.toContain("gpu ms");
+  });
+
+  it("should say unmeasured for a single window the device refused", () => {
+    const withGpu = budgetLine(1, 30, 40, 20).replace('"window":1', '"window":1,"gpuMs":4.5');
+    const parsed = parsePerformanceMarkers(`${withGpu}\n${budgetLine(2, 30, 40, 20)}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("gpu ms");
+    expect(text).toContain("4.50");
+    expect(text).toContain("unmeasured");
+    expect(text).not.toContain("gpu: not reported");
   });
 });

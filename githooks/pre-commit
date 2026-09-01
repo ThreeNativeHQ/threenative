@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Keep the agent-facing capability inventory synchronized with staged public engine changes.
+# This intentionally does nothing for docs, examples, tests, and ordinary game/template edits.
+set -euo pipefail
+
+cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+if [[ "${TN_SKIP_CAPABILITY_SYNC:-}" == "1" ]]; then
+  echo "pre-commit: capability sync skipped (TN_SKIP_CAPABILITY_SYNC=1)"
+  exit 0
+fi
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+if ! grep -Eq '^(packages/[^/]+/(src/.*|package\.json)|scripts/(build-capability-manifest|check-capability-docs|realism-effects-coverage|render-chain-capabilities)\.ts|pnpm-workspace\.yaml)$' <<<"$staged"; then
+  exit 0
+fi
+
+echo "pre-commit: syncing engine capabilities"
+pnpm capabilities:sync
+
+# Stage only deterministic capability artifacts. Never sweep unrelated work into the commit.
+git add -- \
+  packages/create-threenative/capabilities.json \
+  packages/core/capabilities.json \
+  packages/create-threenative/agent-docs/references/capability-reference.md \
+  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md \
+  packages/create-threenative/agent-files/.claude/skills/threenative-context/SKILL.md

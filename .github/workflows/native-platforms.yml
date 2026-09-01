@@ -36,11 +36,23 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      ios_only:
+        description: "Run only the iOS simulator and consumer handoff job"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
 
 concurrency:
   group: native-platforms-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs are dead weight — cancel them. A push to main is not supersession: this
+  # lane exists to produce platform evidence, and at this repository's push cadence (~20 minutes)
+  # against this lane's runtime (27-45 minutes) cancel-in-progress killed every main run before
+  # it finished — 37 of the last 100 cancelled, none of the platform legs ever reported on the
+  # branch that claims them. Main runs queue instead; a queued evidence run is late, a cancelled
+  # one is absent.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   actions: write
@@ -49,21 +61,13 @@ permissions:
 jobs:
   android-emulator-parity:
     name: Android emulator visual parity
-    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
-    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
-    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
-    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
-    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
-    # because a competing push cancels them. What it does buy is six runners held per PR while the
-    # gates people actually read sit queued behind them.
-    #
-    # So the platform legs report where their result is read — pushes to main, the nightly cron,
-    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
-    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
-    # and Linux desktop is the only desktop target ROADMAP licenses.
-    if: >-
-      github.event_name != 'pull_request'
-      || contains(github.event.pull_request.labels.*.name, 'native')
+    # Runs on every event since 2026-09-01 (owner call): the earlier narrowing held the expensive
+    # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
+    # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
+    # branch where the work happens is a leg nobody is watching. This lane is advisory by PRD-295
+    # and still not a required check, but advisory means "its red does not block", never "it does
+    # not run". If it is red, it reports red and PRD-295 owns the fix.
+    if: inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -203,8 +207,9 @@ jobs:
 
   desktop-parity:
     name: Desktop web/native parity
+    if: inputs.ios_only != true
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
       # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
@@ -282,7 +287,9 @@ jobs:
       - name: Compare the desktop host with browser references
         run: |
           set +e
-          node packages/runtime-native/conformance/run-conformance.mjs --target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop
+          sh scripts/xvfb.sh \
+            node packages/runtime-native/conformance/run-conformance.mjs \
+            --target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop
           status=$?
           set -e
           test "$status" -eq 0 -o "$status" -eq 2
@@ -308,9 +315,11 @@ jobs:
           const ledger = [
             "# PRD-303 desktop parity ledger",
             "",
-            "| Target | Pass | Fail | Blocked | Exit |",
-            "| --- | ---: | ---: | ---: | ---: |",
-            `| Desktop | ${summary.pass} | ${summary.fail} | ${summary.blocked} | ${exit} |`,
+            "## Target results",
+            "",
+            "| Target | Command | Pass | Fail | Blocked | Exit | Outcome |",
+            "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+            `| Desktop | \`node packages/runtime-native/conformance/run-conformance.mjs --target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop\` | ${summary.pass} | ${summary.fail} | ${summary.blocked} | ${exit} | captured report |`,
             "",
           ].join("\n");
           await writeFile(`${process.env.RUNNER_TEMP}/prd-303-desktop-parity-ledger.md`, ledger);
@@ -329,21 +338,10 @@ jobs:
 
   desktop:
     name: ${{ matrix.platform }} desktop core
-    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
-    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
-    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
-    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
-    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
-    # because a competing push cancels them. What it does buy is six runners held per PR while the
-    # gates people actually read sit queued behind them.
-    #
-    # So the platform legs report where their result is read — pushes to main, the nightly cron,
-    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
-    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
-    # and Linux desktop is the only desktop target ROADMAP licenses.
-    if: >-
-      github.event_name != 'pull_request'
-      || contains(github.event.pull_request.labels.*.name, 'native')
+    # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity. The only
+    # remaining gate is the manual `ios_only` dispatch toggle, which exists to run the iOS lane
+    # alone; it is not a skip of the default flow.
+    if: inputs.ios_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -468,6 +466,7 @@ jobs:
 
   starter-linux:
     name: Scaffolded starter desktop artifact
+    if: inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -577,24 +576,13 @@ jobs:
     # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
     # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
     # because a competing push cancels them. What it does buy is six runners held per PR while the
-    # gates people actually read sit queued behind them.
-    #
-    # So the platform legs report where their result is read — pushes to main, the nightly cron,
-    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
-    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
-    # and Linux desktop is the only desktop target ROADMAP licenses.
-    if: >-
-      github.event_name != 'pull_request'
-      || contains(github.event.pull_request.labels.*.name, 'native')
+    # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60
-    # Advisory while the simulator's worker proof is unresolved: the app reaches
-    # TN_NATIVE_SMOKE_READY and TN_NATIVE_SMOKE_FIRST_FRAME, then fails
-    # TN_NATIVE_WORKER_PROOF_FAIL "worker result was not delivered", so it never reaches 300
-    # frames. That is real iOS behaviour and needs a Mac to diagnose; it must not hold every other
-    # lane's merge hostage. The job still runs and its artifacts still upload — PRD-295 is explicit
-    # that an advisory lane which stays advisory becomes noise, so this comes off with the fix.
-    continue-on-error: true
+    # The simulator verifier and the exact no-Xcode consumer handoff passed in isolated run
+    # 33498394620 on 2026-09-01, including the worker proof, package telemetry, and consumer
+    # physics scenarios. The job is fail-closed: a later regression is visible immediately on
+    # every PR and every push, with no label to remember and no lane to opt into.
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -661,7 +649,7 @@ jobs:
             scenario=$1
             artifacts=$2
             node packages/playtest/dist/runner/cli.js "$scenario" \
-              --target ios --app "$app" --bundle-id dev.threenative.runtime \
+              --target ios --app "$app" --bundle-id "$bundle_id" \
               --artifacts "$artifacts"
           }
           expect_ios_failure() {
@@ -679,6 +667,9 @@ jobs:
 
           THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=normal \
             pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios
+          report="$app.json"
+          bundle_id=$(node -e 'const report = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof report.appId !== "string" || report.appId.length === 0) throw new Error("TN_IOS_CONSUMER_BUNDLE_ID_MISSING"); process.stdout.write(report.appId);' "$report")
+          echo "TN_IOS_CONSUMER_BUNDLE_ID:$bundle_id"
           test -d "$app"
           run_ios examples/native-smoke/playtests/physics.playtest.json \
             packages/runtime-native/artifacts/ios/consumer-physics-pass
@@ -700,6 +691,20 @@ jobs:
             packages/runtime-native/artifacts/ios/consumer-physics-wrong-gravity \
             TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-consumer-wrong-gravity.log"
           test ! -e "$TN_IOS_TOOLCHAIN_LOG"
+      - name: Collect iOS consumer packaging telemetry
+        if: always()
+        run: |
+          telemetry="packages/runtime-native/artifacts/ios/consumer-package"
+          mkdir -p "$telemetry"
+          report="$RUNNER_TEMP/threenative-ios-consumer/dist-native/threenative-ios-consumer.app.json"
+          if [ -f "$report" ]; then
+            cp "$report" "$telemetry/package-report.json"
+            node -e 'const report = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`TN_IOS_PACKAGE_PLIST_FORMAT:${report.infoPlistFormat ?? "missing"}`);' "$report"
+          else
+            echo '{"available":false,"reason":"consumer packager did not produce a report"}' \
+              > "$telemetry/package-report.json"
+            echo "TN_IOS_PACKAGE_PLIST_FORMAT:unavailable"
+          fi
       - run: >-
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts

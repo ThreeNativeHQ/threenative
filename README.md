@@ -75,6 +75,7 @@ export default game;
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | Owned C++ host for desktop, Android, and iOS |
 | `@threenative/ui` | React bindings for HUD and game state |
+| `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
 
 ## Status

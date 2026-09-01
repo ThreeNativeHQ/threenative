@@ -28,13 +28,13 @@
       },
       {
         "allowTrivial": "The proof publishes the input checksum only after the Worker response matches it.",
-        "equals": 353589368,
+        "equals": 319126392,
         "id": "state",
         "path": "workerInputChecksum"
       },
       {
         "allowTrivial": "The proof publishes the output checksum only after deterministic computation matches.",
-        "equals": 2624713848,
+        "equals": 2110598008,
         "id": "state",
         "path": "workerOutputChecksum"
       },

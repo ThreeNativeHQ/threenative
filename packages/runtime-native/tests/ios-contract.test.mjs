@@ -209,3 +209,30 @@ test('the iOS bundle identifier is declared once and read everywhere else', () =
   const launched = /const bundleId = '([^']+)'/u.exec(verifier)?.[1];
   assert.equal(launched, declared, 'the verifier must launch the identifier CMake builds');
 });
+
+test('iOS native smoke requires a bounded worker proof with an explicit frame handshake', () => {
+  const workerProof = readFileSync(
+    join(root, '../../examples/native-smoke/src/worker-proof.ts'),
+    'utf8',
+  );
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+
+  assert.match(workerProof, /const WORKER_ITERATIONS = 20_000_000;/u);
+  assert.match(workerProof, /kind: "started"/u);
+  assert.match(workerProof, /kind: "compute"/u);
+  assert.match(workerProof, /frame - startedFrame >= WORKER_MINIMUM_FRAMES/u);
+  assert.match(verifier, /'TN_NATIVE_WORKER_PROOF_PASS:'/u);
+});
+
+test('iOS launch retries once and records simulator process telemetry on timeout', () => {
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+
+  assert.match(verifier, /const SIMULATOR_LAUNCH_ATTEMPTS = 2;/u);
+  assert.match(verifier, /simulator-launch-attempt-\$\{attempt\}\.log/u);
+  assert.match(verifier, /simctl', 'spawn', device, 'ps'/u);
+  assert.match(verifier, /simulator-process-timeout\.log/u);
+  assert.match(verifier, /simulator-reboot-attempt-\$\{attempt\}\.log/u);
+  assert.match(verifier, /simctl', 'shutdown', device/u);
+  assert.match(verifier, /simctl', 'bootstatus', device, '-b'/u);
+  assert.match(verifier, /attempt < SIMULATOR_LAUNCH_ATTEMPTS/u);
+});

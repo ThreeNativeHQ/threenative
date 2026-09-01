@@ -65,6 +65,26 @@ const expectedTemplates = [
 ] as const;
 
 describe("CI pipeline structure", () => {
+  it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
+    const packageJson = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const hook = await readFile(path.join(repo, "githooks/pre-commit"), "utf8");
+
+    expect(packageJson.scripts["capabilities:sync"]).toContain("build-capability-manifest.ts");
+    expect(packageJson.scripts["capabilities:sync"]).toContain("generate-capability-reference.ts");
+    expect(packageJson.scripts["capabilities:check"]).toContain(
+      "build-capability-manifest.ts --check",
+    );
+    expect(packageJson.scripts.budgets).toContain("pnpm capabilities:check");
+    expect(hook).toContain("git diff --cached --name-only");
+    expect(hook).toContain("packages/[^/]+/(src/.*|package\\.json)");
+    expect(hook).toContain("pnpm capabilities:sync");
+    expect(hook).toContain("git add --");
+    expect(hook).not.toContain("git add -A");
+    expect(hook).not.toContain("git add .");
+  });
+
   it("a failed job cancels its own run and nothing on another branch", async () => {
     const action = await readFile(
       path.join(repo, ".github/actions/cancel-run-on-failure/action.yml"),
@@ -186,6 +206,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     const desktop = requiredJob(native, "desktop-parity");
+    expect(desktop).toContain("timeout-minutes: 75");
     const capture = desktop.indexOf("--target web --out artifacts/conformance/web");
     const comparison = desktop.indexOf(
       "--target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop",
@@ -193,9 +214,13 @@ describe("CI pipeline structure", () => {
     expect(capture).toBeGreaterThanOrEqual(0);
     expect(comparison).toBeGreaterThan(capture);
     expect(capture).toBeLessThan(desktop.indexOf("Install Linux desktop build dependencies"));
+    expect(desktop).toMatch(
+      /sh scripts\/xvfb\.sh \\\n\s+node packages\/runtime-native\/conformance\/run-conformance\.mjs \\\n\s+--target desktop/u,
+    );
     expect(occurrences(desktop, /test "\$status" -eq 0 -o "\$status" -eq 2/gu)).toBe(2);
     expect(occurrences(desktop, /check-lane-blocks\.mjs/gu)).toBe(2);
     expect(desktop).toContain("TN_PARITY_DESKTOP_REPORT_MISSING");
+    expect(desktop).toContain('"## Target results"');
     expect(desktop).toContain("pnpm parity:ledger");
     expect(desktop).toContain("if-no-files-found: error");
   });
@@ -203,7 +228,9 @@ describe("CI pipeline structure", () => {
   it("every template's non-visual scenarios run on main pushes and nightly", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "template-nonvisual");
-    expect(job).toContain("if: github.event_name == 'push' || github.event_name == 'schedule'");
+    // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
+    // branch where the regression was written, and the merge that shipped it reported too late.
+    expect(job).not.toContain("github.event_name == 'push'");
     expect(job).not.toContain("pull_request");
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
@@ -230,13 +257,17 @@ describe("CI pipeline structure", () => {
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
-    expect(supplyChain).toContain("if: github.event_name == 'pull_request'");
+    // Runs on pushes too since 2026-09-01 (owner call): a skipped job on main read as a pass.
+    expect(supplyChain).toContain(
+      "if: github.event_name == 'pull_request' || github.event_name == 'push'",
+    );
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     expect(supplyChain).toContain("fail-on-severity: moderate");
     expect(supplyChain).not.toContain("allow-licenses");
     expect(supplyChain).toContain("fetch-depth: 0");
     expect(supplyChain).toContain("ghcr.io/gitleaks/gitleaks@sha256:");
     expect(supplyChain).toContain("github.event.pull_request.base.sha");
+    expect(supplyChain).toContain("Scan the full git history for leaked secrets");
     expect(supplyChain).toContain("github.event.pull_request.head.sha");
     expect(supplyChain).toContain('git rev-list --count "$range"');
     expect(supplyChain).toContain("git --redact --verbose");
@@ -316,24 +347,27 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("only the Linux native legs run on a pull request", async () => {
-    // 100 runs of this workflow: 37 failed, 37 cancelled by a competing push, none succeeded. The
-    // four platform legs reported the same red every time while holding six runners per PR ahead
-    // of the gates people read. They report on main, on the nightly cron, and on a PR that opts in
-    // with the `native` label. The Linux legs keep running on every PR — that is where a core or
-    // playtest change breaking the native bundle shows up, on the target ROADMAP licenses.
+  it("every native leg runs on every event", async () => {
+    // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
+    // carrying the `native` label; a PR read skips where the legs should have reported, and on
+    // main the lane cancelled itself before finishing anyway (owner call: run everything,
+    // everywhere, and let a red be a red). The only condition any leg may still carry is the
+    // manual `ios_only` dispatch toggle, which runs the iOS lane alone on demand.
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const guarded = ["android-emulator-parity", "desktop", "ios-simulator"] as const;
-    for (const name of guarded) {
+    const legs = [
+      "android-emulator-parity",
+      "desktop",
+      "ios-simulator",
+      "desktop-parity",
+      "starter-linux",
+    ] as const;
+    for (const name of legs) {
       const job = requiredJob(native, name);
-      expect(job, name).toContain("github.event_name != 'pull_request'");
-      expect(job, name).toContain("contains(github.event.pull_request.labels.*.name, 'native')");
-    }
-    for (const name of ["desktop-parity", "starter-linux"] as const) {
-      expect(requiredJob(native, name), name).not.toContain("github.event_name != 'pull_request'");
+      expect(job, name).not.toContain("github.event_name != 'pull_request'");
+      expect(job, name).not.toContain("contains(github.event.pull_request.labels");
     }
   });
 
@@ -357,6 +391,37 @@ describe("CI pipeline structure", () => {
     expect(goldenPath).toMatch(/template:\s*\n\s+- starter\s*\n\s+- platformer/u);
     expect(goldenPath).toContain("TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}");
     expect(goldenPath).toContain("pnpm verify:golden-path");
+  });
+
+  it("the golden-path proof cache cannot record a run that failed", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "golden-path-template");
+
+    // The combined `actions/cache` writes its entry in a post step whatever the job did, which
+    // would stamp a passing proof onto a failed run and then skip the lane for every later tree
+    // that hashes the same. Split restore/save with `if: success()` is the whole safety property.
+    expect(job).toContain("actions/cache/restore@v4");
+    expect(job).toContain("actions/cache/save@v4");
+    expect(job).not.toMatch(/uses: actions\/cache@v4/u);
+    const save = job.slice(job.indexOf("Save the proof for this tree"));
+    expect(save).toContain("if: success() && steps.proof.outputs.cache-hit != 'true'");
+
+    // A key that names only the "related" inputs is one forgotten file away from a gate that
+    // passes because nothing ran — which is how the native-platforms path filters let core,
+    // playtest and create-threenative changes through unproven. Keep it broad.
+    for (const input of ["pnpm-lock.yaml", "packages/**", "scripts/**", ".github/**"]) {
+      expect(job, input).toContain(input);
+    }
+
+    // Every step that does work must be behind the hit check. One that is not runs against a
+    // scaffold the cache hit never created.
+    const steps = job.split(/^ {6}- /mu).slice(1);
+    const unguarded = steps.filter(
+      (step) =>
+        /(?:pnpm |threenative-playtest|scaffold-from-tarballs|playwright)/u.test(step) &&
+        !step.includes("steps.proof.outputs.cache-hit"),
+    );
+    expect(unguarded, "steps that would run without a scaffold on a cache hit").toEqual([]);
   });
 
   it("the golden-path required context is still reported by a job of that exact name", async () => {
