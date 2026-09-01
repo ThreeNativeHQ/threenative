@@ -19,11 +19,22 @@ name: Native platform evidence
 # the path filters used to cause does not come back. Reporting on a PR is not the same as blocking
 # one: this lane is not a required status check while it is still red, and PRD-295 is explicit that
 # a lane which has never been green must not gate a release.
+#
+# Narrowed 2026-09-01: on a pull request only the two Linux jobs run. Reporting before a merge is
+# worth paying for when the report can change; the macOS, Windows, Android-emulator and iOS legs
+# reported the same red on every one of the last 100 runs, of which 37 failed and 37 were cancelled
+# by a competing push before finishing. Those four carry an `if` that lets a pull request opt in
+# with the `native` label, and they still run on every push to main and on the nightly cron. The
+# Linux legs stayed because Linux desktop is the target ROADMAP licenses and they are the cheapest
+# here — 5.8 min for the starter — so the "a core or playtest change broke the native bundle"
+# signal survives on every PR.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
   workflow_call:
 
@@ -31,9 +42,28 @@ concurrency:
   group: native-platforms-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   android-emulator-parity:
     name: Android emulator visual parity
+    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
+    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
+    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
+    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
+    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
+    # because a competing push cancels them. What it does buy is six runners held per PR while the
+    # gates people actually read sit queued behind them.
+    #
+    # So the platform legs report where their result is read — pushes to main, the nightly cron,
+    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
+    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
+    # and Linux desktop is the only desktop target ROADMAP licenses.
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -168,9 +198,152 @@ jobs:
           name: native-android-emulator-parity
           path: packages/runtime-native/artifacts/conformance/
           if-no-files-found: error
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
+
+  desktop-parity:
+    name: Desktop web/native parity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
+      # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
+      # after five runs, and every job recompiled from scratch while the workflow read as though
+      # it were cached. This value and the cache step's `path` must stay the same path — and it
+      # has to be spelled with `github.workspace`, because job-level `env` cannot see the
+      # `runner` context at all: `${{ runner.temp }}` here is what GitHub rejects outright with
+      # "This run likely failed because of a workflow file issue" and zero jobs started.
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_MAXSIZE: 900M
+      CCACHE_COMPRESS: "1"
+      # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
+      # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
+      # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
+      # zero ccache references in the generated build, while these two put `ccache /usr/bin/cc` on
+      # the compile line. Job-level env also reaches the QuickJS configure and the MSVC steps,
+      # which a preset-only fix would miss.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Restore native compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ccache
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - name: Build browser reference workspace imports
+        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/playwright-chromium
+      # Capture before the native Vulkan packages are installed. On the same ubuntu-24.04 image,
+      # Chromium's SwiftShader compositor produces 74/0 here (as the Android lane proves) but a
+      # uniform white surface after mesa-vulkan-drivers changes the runner's Vulkan stack.
+      - name: Capture browser references
+        run: |
+          set +e
+          sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs --target web --out artifacts/conformance/web
+          status=$?
+          set -e
+          test "$status" -eq 0 -o "$status" -eq 2
+          node packages/runtime-native/conformance/check-lane-blocks.mjs \
+            packages/runtime-native/artifacts/conformance/web "web reference"
+      - name: Install Linux desktop build dependencies and ccache
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          ccache
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
+          libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      - name: Zero the compiler cache counters
+        shell: bash
+        run: ccache --zero-stats
+      - name: Build the native host
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Report the compiler cache hit rate
+        if: always()
+        shell: bash
+        run: ccache --show-stats
+      - name: Compare the desktop host with browser references
+        run: |
+          set +e
+          node packages/runtime-native/conformance/run-conformance.mjs --target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop
+          status=$?
+          set -e
+          test "$status" -eq 0 -o "$status" -eq 2
+      - name: Verify captured desktop parity ledger
+        if: always()
+        run: |
+          node --input-type=module - <<'NODE'
+          import { readFile, writeFile } from "node:fs/promises";
+
+          const reportPath = "packages/runtime-native/artifacts/conformance/desktop/report.json";
+          const report = await readFile(reportPath, "utf8").then(JSON.parse, (error) => {
+            if (error?.code !== "ENOENT") throw error;
+            throw new Error(
+              `TN_PARITY_DESKTOP_REPORT_MISSING: ${reportPath} was never written, so the desktop ` +
+                "lane did not run. Read the first failing step in this job, not this one.",
+            );
+          });
+          const summary = report.summary;
+          for (const key of ["pass", "fail", "blocked"]) {
+            if (!Number.isInteger(summary?.[key])) throw new Error(`Missing integer summary.${key}`);
+          }
+          const exit = summary.fail > 0 ? 1 : summary.blocked > 0 ? 2 : 0;
+          const ledger = [
+            "# PRD-303 desktop parity ledger",
+            "",
+            "| Target | Pass | Fail | Blocked | Exit |",
+            "| --- | ---: | ---: | ---: | ---: |",
+            `| Desktop | ${summary.pass} | ${summary.fail} | ${summary.blocked} | ${exit} |`,
+            "",
+          ].join("\n");
+          await writeFile(`${process.env.RUNNER_TEMP}/prd-303-desktop-parity-ledger.md`, ledger);
+          NODE
+          pnpm parity:ledger "$RUNNER_TEMP/prd-303-desktop-parity-ledger.md"
+          node packages/runtime-native/conformance/check-lane-blocks.mjs \
+            packages/runtime-native/artifacts/conformance/desktop "desktop parity"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-desktop-parity
+          path: packages/runtime-native/artifacts/conformance/
+          if-no-files-found: error
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   desktop:
     name: ${{ matrix.platform }} desktop core
+    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
+    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
+    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
+    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
+    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
+    # because a competing push cancels them. What it does buy is six runners held per PR while the
+    # gates people actually read sit queued behind them.
+    #
+    # So the platform legs report where their result is read — pushes to main, the nightly cron,
+    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
+    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
+    # and Linux desktop is the only desktop target ROADMAP licenses.
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native')
     strategy:
       fail-fast: false
       matrix:
@@ -181,8 +354,38 @@ jobs:
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    env:
+      # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
+      # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
+      # after five runs, and every job recompiled from scratch while the workflow read as though
+      # it were cached. This value and the cache step's `path` must stay the same path — and it
+      # has to be spelled with `github.workspace`, because job-level `env` cannot see the
+      # `runner` context at all: `${{ runner.temp }}` here is what GitHub rejects outright with
+      # "This run likely failed because of a workflow file issue" and zero jobs started.
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_MAXSIZE: 900M
+      CCACHE_COMPRESS: "1"
+      # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
+      # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
+      # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
+      # zero ccache references in the generated build, while these two put `ccache /usr/bin/cc` on
+      # the compile line. Job-level env also reaches the QuickJS configure and the MSVC steps,
+      # which a preset-only fix would miss.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Restore native compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ccache
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -200,6 +403,16 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
           done < <(pnpm tsx scripts/workspace-packages.ts --archives)
       - run: pnpm --filter threenative-native-smoke build
+      - name: Install ccache on macOS
+        if: runner.os == 'macOS'
+        run: brew install ccache
+      - name: Install ccache on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ccache --yes --no-progress
+      - name: Zero the compiler cache counters
+        shell: bash
+        run: ccache --zero-stats
       - name: Install Windows HTTP build dependencies
         if: runner.os == 'Windows'
         run: >-
@@ -219,6 +432,10 @@ jobs:
           pnpm --filter @threenative/runtime-native native:build
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Report the compiler cache hit rate
+        if: always()
+        shell: bash
+        run: ccache --show-stats
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
       # the step. So this ran without INCLUDE, LIB or a usable `cl`, and the first thing inside it
       # that *configures* a build directory — the physics contract lane — got "the C compiler is
@@ -246,13 +463,45 @@ jobs:
           name: native-desktop-${{ matrix.platform }}
           path: packages/runtime-native/artifacts/
           if-no-files-found: error
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   starter-linux:
     name: Scaffolded starter desktop artifact
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    env:
+      # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
+      # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
+      # after five runs, and every job recompiled from scratch while the workflow read as though
+      # it were cached. This value and the cache step's `path` must stay the same path — and it
+      # has to be spelled with `github.workspace`, because job-level `env` cannot see the
+      # `runner` context at all: `${{ runner.temp }}` here is what GitHub rejects outright with
+      # "This run likely failed because of a workflow file issue" and zero jobs started.
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_MAXSIZE: 900M
+      CCACHE_COMPRESS: "1"
+      # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
+      # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
+      # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
+      # zero ccache references in the generated build, while these two put `ccache /usr/bin/cc` on
+      # the compile line. Job-level env also reaches the QuickJS configure and the MSVC steps,
+      # which a preset-only fix would miss.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Restore native compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ccache
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -265,11 +514,15 @@ jobs:
       - name: Install Linux desktop build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
+          ccache
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      - name: Zero the compiler cache counters
+        shell: bash
+        run: ccache --zero-stats
       - name: Build and pack the scaffold dependencies
         run: |
           pnpm --filter @threenative/runtime-native native:build
@@ -280,24 +533,20 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Report the compiler cache hit rate
+        if: always()
+        shell: bash
+        run: ccache --show-stats
+      - name: Scaffold the native starter from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-starter-native
+          template: starter
       - name: Build and verify the scaffolded starter
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
-          package_args=()
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
-          done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            "${package_args[@]}"
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
             pnpm --dir "$target" test:native
@@ -317,9 +566,26 @@ jobs:
           name: native-starter-linux
           path: packages/runtime-native/artifacts/starter-linux/
           if-no-files-found: error
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
+    # Measured on this repository, not assumed: of the last 100 runs of this workflow, 37 failed,
+    # 37 were cancelled, and none succeeded. The two legs that fail every time are this one and the
+    # iOS simulator, and they are also the two slowest — 27.3 min and 9 min in run 33458967334,
+    # against 8.9 for macOS and 5.8 for the Linux starter. On a pull request that buys nothing: the
+    # lane is advisory by PRD-295, it is not a required check, and half its runs never finish
+    # because a competing push cancels them. What it does buy is six runners held per PR while the
+    # gates people actually read sit queued behind them.
+    #
+    # So the platform legs report where their result is read — pushes to main, the nightly cron,
+    # and any PR that asks for them with the `native` label. The Linux legs below still run on every
+    # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
+    # and Linux desktop is the only desktop target ROADMAP licenses.
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native')
     runs-on: macos-15
     timeout-minutes: 60
     # Advisory while the simulator's worker proof is unresolved: the app reaches
@@ -355,7 +621,7 @@ jobs:
           echo "THREENATIVE_IOS_SIMULATOR_ARCHIVE=$archive" >> "$GITHUB_ENV"
           echo "THREENATIVE_IOS_SIMULATOR_SHA256=$sha" >> "$GITHUB_ENV"
           cp "$archive" packages/runtime-native/artifacts/ios/
-      - name: Pack and install the exact consumer packages without lifecycle compilation
+      - name: Pack the exact consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/ios-packages"
           pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
@@ -364,22 +630,16 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/ios-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Scaffold the iOS consumer from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/ios-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-ios-consumer
+          template: minimal
+      - name: Install the exact consumer packages without lifecycle compilation
+        run: |
           target="$RUNNER_TEMP/threenative-ios-consumer"
-          package_args=()
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/ios-packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
-          done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
-            "${package_args[@]}"
           cp examples/native-smoke/src/physics.ts "$target/src/game.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
@@ -452,3 +712,5 @@ jobs:
             packages/runtime-native/artifacts/ios/
             ${{ runner.temp }}/ios-consumer-*.log
           if-no-files-found: error
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure

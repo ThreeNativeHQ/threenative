@@ -7,10 +7,16 @@ on:
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: "17 3 * * *"
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
 
 jobs:
   # Every job below checks out and installs for itself, so nothing gains from a shared `install`
@@ -30,6 +36,8 @@ jobs:
       - name: Build workspace packages consumed through export maps
         run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm typecheck
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   lint:
     runs-on: ubuntu-latest
@@ -43,6 +51,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
@@ -51,6 +61,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
+      # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
+      # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
+      # after five runs, and every job recompiled from scratch while the workflow read as though
+      # it were cached. This value and the cache step's `path` must stay the same path — and it
+      # has to be spelled with `github.workspace`, because job-level `env` cannot see the
+      # `runner` context at all: `${{ runner.temp }}` here is what GitHub rejects outright with
+      # "This run likely failed because of a workflow file issue" and zero jobs started.
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_MAXSIZE: 900M
+      CCACHE_COMPRESS: "1"
+      # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
+      # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
+      # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
+      # zero ccache references in the generated build, while these two put `ccache /usr/bin/cc` on
+      # the compile line. Job-level env also reaches the QuickJS configure and the MSVC steps,
+      # which a preset-only fix would miss.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
       # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
       # settles. Its 30s default is a quiet-machine number: this job also compiles the native host,
       # and on a two-core runner the same gate passed one run and failed the next on a profile
@@ -59,6 +87,17 @@ jobs:
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
       - uses: actions/checkout@v7
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Restore native compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ccache
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -73,11 +112,15 @@ jobs:
       - name: Install Linux desktop build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
+          ccache
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      - name: Zero the compiler cache counters
+        shell: bash
+        run: ccache --zero-stats
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       # The target names are discovered from CMakeLists.txt rather than listed here: a
@@ -90,10 +133,20 @@ jobs:
           targets=$(grep -oE 'add_executable\(\s*threenative-[a-z0-9-]+-test' CMakeLists.txt \
             | sed -E 's/.*\(\s*//' | sort -u)
           echo "contract targets: $targets"
-          for target in $targets; do
-            cmake --build build/tn-linux --target "$target" --parallel "$(nproc)" || \
-              echo "target $target is not buildable in build/tn-linux"
-          done
+          # One ninja invocation over every target, not one per target. Ninja schedules the whole
+          # set against a single dependency graph, so the objects these executables share are
+          # compiled once instead of being re-checked by each of ~20 sequential builds. The loop
+          # survives as the fallback: a combined build reports only that something failed, and the
+          # per-target pass is what names which target cannot build while letting the rest through.
+          target_args=()
+          for target in $targets; do target_args+=(--target "$target"); done
+          if ! cmake --build build/tn-linux "${target_args[@]}" --parallel "$(nproc)"; then
+            echo "combined contract build failed; rebuilding per target to name the one that broke"
+            for target in $targets; do
+              cmake --build build/tn-linux --target "$target" --parallel "$(nproc)" || \
+                echo "target $target is not buildable in build/tn-linux"
+            done
+          fi
       # timestamp-query and rg11b10-renderable are cross-engine contracts and the JS engine is
       # a build-time choice, so QuickJS needs its own configured build directory. Without it
       # those tests fail closed on CI naming build/tn-linux-quickjs, exactly as happened to
@@ -106,7 +159,13 @@ jobs:
           cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF
           cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
             --target threenative-rg11b10-renderable-test --parallel "$(nproc)"
+      - name: Report the compiler cache hit rate
+        if: always()
+        shell: bash
+        run: ccache --show-stats
       - run: pnpm test
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   test-browser:
     runs-on: ubuntu-latest
@@ -135,6 +194,8 @@ jobs:
           name: starter-look-frame
           path: test-results/starter-look
           if-no-files-found: ignore
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   test-playtest:
     runs-on: ubuntu-latest
@@ -151,9 +212,17 @@ jobs:
         run: pnpm tsx scripts/workspace-packages.ts build
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
-  golden-path:
+  golden-path-template:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - starter
+          - platformer
     runs-on: ubuntu-latest
     # 30 was a guess from when a page load cost seconds, and it is now measurably too small. Run
     # 33355317922 completed twelve scenarios 65s apart on this lane; at 13 non-visual scenarios for
@@ -171,12 +240,7 @@ jobs:
       # acceptance is stated here, out loud, around an unmodified project. The runs still report
       # the adapter they got; what is proven here is the golden path, not the pixels.
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"
-      # One template, not all of them. This lane proves that a stranger can scaffold, install,
-      # build and play — one template proves that chain, and driving all of them re-proves it N
-      # times while running every template's scenario suite on a runner with no GPU. That is where
-      # this lane spent hours failing on scenario facts rather than golden-path facts. Per-template
-      # scenarios keep their gate in `pnpm test:templates`, which has hardware.
-      TN_GOLDEN_PATH_TEMPLATES: starter
+      TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -194,39 +258,37 @@ jobs:
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
-      - name: Generate starter scaffold
+      - name: Scaffold the golden-path template from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-${{ matrix.template }}
+          template: ${{ matrix.template }}
+      - uses: ./.github/actions/playwright-chromium
+      - name: Run the scaffold's GPU-free assertions
         run: |
-          target="$RUNNER_TEMP/threenative-starter"
-          package_args=()
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
-          done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template starter --no-install \
-            "${package_args[@]}"
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
           # The template advertises this script, so a stranger runs it on day one. `vite build`
           # does not typecheck, so nothing else in this job would notice it going red.
           pnpm --dir "$target" run typecheck
           # MCP surface validation is centralized in verify-golden-path.ts below.
-          pnpm exec playwright install --with-deps chromium
           # This job proves the golden path, not the pixels: a runner with no GPU cannot serve the
           # scenarios that capture frames, and test-browser and visuals already cover those. The
           # split is computed from the scenario files, and the script prints what it left out.
-          mapfile -t scenarios < <(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          mapfile -t scenarios <<< "$scenario_list"
+          test "${#scenarios[@]}" -gt 0
           scenario_args=()
           for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+      - name: Drive the starter's interactive HUD smoke
+        if: matrix.template == 'starter'
+        run: |
+          target="$RUNNER_TEMP/threenative-starter"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
@@ -259,37 +321,101 @@ jobs:
           }
           await browser.close();
           NODE
-      - name: Generate platformer scaffold
+      - run: pnpm verify:golden-path
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
+
+  template-nonvisual:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - action-rpg
+          - defense
+          - minimal
+          - platformer
+          - racing
+          - sailing
+          - shooter
+          - starter
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pack local framework packages
         run: |
-          target="$RUNNER_TEMP/threenative-platformer"
-          package_args=()
+          mkdir -p "$RUNNER_TEMP/threenative-packages"
+          pnpm tsx scripts/workspace-packages.ts build
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
           while IFS=$'\t' read -r package_name archive_prefix; do
             [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/threenative-packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template platformer --no-install \
-            "${package_args[@]}"
+      - name: Scaffold the template from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-${{ matrix.template }}
+          template: ${{ matrix.template }}
+      - uses: ./.github/actions/playwright-chromium
+      - name: Run the template's GPU-free scenarios
+        run: |
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
-          # The template advertises this script, so a stranger runs it on day one. `vite build`
-          # does not typecheck, so nothing else in this job would notice it going red.
           pnpm --dir "$target" run typecheck
-          pnpm exec playwright install chromium
-          mapfile -t scenarios < <(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          mapfile -t scenarios <<< "$scenario_list"
+          test "${#scenarios[@]}" -gt 0
           scenario_args=()
           for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
-          sh scripts/xvfb.sh pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
+          pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
-      - uses: ./.github/actions/playwright-chromium
-      - run: pnpm verify:golden-path
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
+
+  # `golden-path` is a required status check in the `main protection` ruleset, and required checks
+  # match the reported context by exact string. A matrix job does not report its own name — it
+  # reports `golden-path (starter)` and `golden-path (platformer)` — so the moment this lane became
+  # a matrix, the context the ruleset waits for stopped existing and every PR would sit on
+  # "Expected — waiting for status to be reported" forever.
+  #
+  # This job is that context. It runs no work; it reads the matrix result and fails when any leg
+  # failed. `if: always()` matters: without it a failed matrix leaves this skipped, and a skipped
+  # required check counts as satisfied, which would turn the ruleset into decoration. Adding a
+  # template to the matrix above needs no ruleset change, which is the point of the indirection.
+  golden-path:
+    needs: golden-path-template
+    # `!cancelled()` rather than `always()`. Both run this job when a matrix leg fails, which is the
+    # point. `always()` also runs it when the whole run was cancelled — a superseding push, someone
+    # hitting the button — where the matrix result is `cancelled`, this job reported *failure*, and
+    # its own cancel step fired on a run already dying. Run 33468531605 is that: every leg cancelled
+    # by the next push, and `golden-path` the only red check on the board. A cancelled run must read
+    # as cancelled, so the skip is correct there; it still cannot be mistaken for a pass, because a
+    # cancelled run has no passing checks to merge on.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every golden-path template to have passed
+        run: |
+          set -euo pipefail
+          result='${{ needs.golden-path-template.result }}'
+          echo "golden-path templates: $result"
+          test "$result" = "success"
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   benchmark:
     needs: build
@@ -313,6 +439,8 @@ jobs:
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on
@@ -347,6 +475,8 @@ jobs:
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
         run: pnpm exec tsx scripts/check-core-boundary.ts
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   budgets:
     needs: build
@@ -363,6 +493,8 @@ jobs:
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   # The native lane guards targets that any package change can break, so it is gated on the event
   # rather than on paths — see native-platforms.yml. It costs ~24 minutes on free public-repo
@@ -390,3 +522,39 @@ jobs:
   # This is not permission to ignore it. The failures are filed in
   # docs/PRDs/native/PRD-295-the-native-platform-lane-has-never-been-green.md, which requires the
   # call to come back here in the same commit that fixes them.
+  supply-chain:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify the PR commit range is present
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          range="$BASE_SHA..$HEAD_SHA"
+          test "$(git rev-list --count "$range")" -gt 0
+          echo "TN_GITLEAKS_RANGE=$range" >> "$GITHUB_ENV"
+      - name: Scan PR commits for leaked secrets
+        run: >-
+          docker run --rm
+          -e GIT_CONFIG_COUNT=1
+          -e GIT_CONFIG_KEY_0=safe.directory
+          -e GIT_CONFIG_VALUE_0=/repo
+          -v "$GITHUB_WORKSPACE:/repo"
+          ghcr.io/gitleaks/gitleaks@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          git --redact --verbose
+          --log-opts="$TN_GITLEAKS_RANGE"
+          /repo
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure

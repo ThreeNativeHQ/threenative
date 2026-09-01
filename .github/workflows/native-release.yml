@@ -399,23 +399,15 @@ jobs:
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Scaffold from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-consumer-proof
+          template: minimal
+      - name: Prepare the scaffolded consumer proof
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"
-          package_args=()
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
-          done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
-            "${package_args[@]}"
           CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
           import { copyFileSync } from "node:fs";
           copyFileSync("examples/native-smoke/src/game.ts", `${process.env.CONSUMER_TARGET}/src/game.ts`);
@@ -542,7 +534,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Pack and install the exact iOS consumer packages
+      - name: Pack the exact iOS consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/ios-packages"
           pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
@@ -551,22 +543,16 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/ios-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Scaffold the iOS release consumer from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/ios-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-ios-release-consumer
+          template: minimal
+      - name: Install the exact iOS consumer packages
+        run: |
           target="$RUNNER_TEMP/threenative-ios-release-consumer"
-          package_args=()
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            archive=$(find "$RUNNER_TEMP/ios-packages" -name "${archive_prefix}*.tgz" -print -quit)
-            [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
-            case "$package_name" in
-              create-threenative) package_flag="--cli-package" ;;
-              threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
-              @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;
-              *) echo "unsupported workspace package $package_name"; exit 1 ;;
-            esac
-            package_args+=("$package_flag" "$archive")
-          done < "$RUNNER_TEMP/threenative-package-specs"
-          node packages/create-threenative/dist/index.js "$target" --template minimal --no-install \
-            "${package_args[@]}"
           cp examples/native-smoke/src/game.ts "$target/src/game.ts"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \

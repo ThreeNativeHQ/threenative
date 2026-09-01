@@ -174,7 +174,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
   "action-rpg": "63778b06c443c284e6b91de574158fb74a2770634fae620bcf37a0c2ff5e985f",
   defense: "f4e85d875a7089cafff4cef4db171ae422f1e7593cee84928442ceef53cc1760",
-  minimal: "5b868327ae90236ea4ed65414aa0c715d71247c8f255a5ad5fe6824b41ad8701",
+  // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
+  // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
+  minimal: "c1a7479d8c278fcf3822505d37f2f4d29a80783ded397be7070fa2ff47bb8082",
   platformer: "158628a077b28c015922a28b122372652d2bcfe044a3ba9317f947dc60fd9c3f",
   racing: "5134e7652b4cafe2020072e8569d2434dd85a8c35b65d193fad26427bf50c403",
   shooter: "1a9ddfe47d8e042e5ceba4d69e0a8f4d493f28ce792ed4f3bd41ff3ce50d336d",
