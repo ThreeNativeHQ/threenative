@@ -139,4 +139,30 @@ describe("CI pipeline structure", () => {
     expect(guard).toContain("stylesOverlay");
     expect(guard).toContain("expect(unstyled).toEqual([])");
   });
+
+  it("boots the Android parity emulator on KVM, like the release lane already does", async () => {
+    // `-accel auto` finds no writable /dev/kvm and falls back to software emulation without
+    // saying so. That lane logged a 474-second boot and then lost a run that had already passed
+    // 74/0 to `adb ETIMEDOUT`. native-release.yml carried the udev rule all along; the parity
+    // lane did not, and nothing noticed because the symptom reads as a slow runner.
+    const parity = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const release = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
+    const rule = 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"';
+    for (const [name, workflow] of [
+      ["parity", parity],
+      ["release", release],
+    ] as const) {
+      expect(workflow, `${name} lane must install the KVM udev rule`).toContain(rule);
+      expect(workflow, `${name} lane must prove /dev/kvm is writable`).toContain(
+        "test -w /dev/kvm",
+      );
+    }
+    // And it has to happen before the emulator starts, not after.
+    expect(parity.indexOf("test -w /dev/kvm")).toBeLessThan(
+      parity.indexOf("reactivecircus/android-emulator-runner"),
+    );
+  });
 });
