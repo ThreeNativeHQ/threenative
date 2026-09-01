@@ -368,9 +368,12 @@ describe("CI pipeline structure", () => {
     const aggregate = requiredJob(ci, "golden-path");
     expect(aggregate).toContain("needs: golden-path-template");
     expect(aggregate).not.toContain("strategy:");
-    // Without always(), a failed matrix leaves this skipped, and a skipped required check counts
-    // as satisfied — the ruleset would pass on exactly the runs it exists to stop.
-    expect(aggregate).toContain("if: always()");
+    // Without this, a failed matrix leaves the job skipped, and a skipped required check counts as
+    // satisfied — the ruleset would pass on exactly the runs it exists to stop. `always()` is the
+    // wrong spelling: it also fires when the run was cancelled, where the matrix result is
+    // `cancelled` and this job then reported failure on a run nobody had broken.
+    expect(aggregate).toContain("if: ${{ !cancelled() }}");
+    expect(aggregate).not.toMatch(/if: always\(\)/u);
     expect(aggregate).toContain("needs.golden-path-template.result");
     expect(aggregate).toMatch(/test "\$result" = "success"/u);
   });

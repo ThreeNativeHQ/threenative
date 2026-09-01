@@ -397,7 +397,14 @@ jobs:
   # template to the matrix above needs no ruleset change, which is the point of the indirection.
   golden-path:
     needs: golden-path-template
-    if: always()
+    # `!cancelled()` rather than `always()`. Both run this job when a matrix leg fails, which is the
+    # point. `always()` also runs it when the whole run was cancelled — a superseding push, someone
+    # hitting the button — where the matrix result is `cancelled`, this job reported *failure*, and
+    # its own cancel step fired on a run already dying. Run 33468531605 is that: every leg cancelled
+    # by the next push, and `golden-path` the only red check on the board. A cancelled run must read
+    # as cancelled, so the skip is correct there; it still cannot be mistaken for a pass, because a
+    # cancelled run has no passing checks to merge on.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
