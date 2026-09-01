@@ -64,3 +64,12 @@ test("every entity a native-smoke scenario asserts on is one the scene registers
   }
   expect(offenders).toEqual([]);
 });
+
+test("native smoke startup gate preserves the declared startup observation", () => {
+  const source = readFileSync(join(smoke, "src", "physics.ts"), "utf8");
+  const gateStart = source.indexOf("function gatedPlaytest");
+  expect(gateStart).toBeGreaterThanOrEqual(0);
+  const gate = source.slice(gateStart);
+  expect(gate).toContain("const originalReady = bridge.ready;");
+  expect(gate).toContain("return originalReady();");
+});
