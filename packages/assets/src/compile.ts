@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -148,9 +149,32 @@ export interface IBasisTranscoder {
 }
 
 export interface IAssetCompileResult {
+  readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
   readonly skipped: number;
   readonly written: number;
+}
+
+/** One file this bake owns, and where it came from. */
+export interface IBakeReceiptOutput {
+  readonly bytes: number;
+  /** Path relative to the output root, with `/` separators on every platform. */
+  readonly path: string;
+  /** The producer: the pass chain for a compiled input, or the auxiliary output's own role. */
+  readonly producer: string;
+  /** The source asset this came from, or `null` for a file the bake ships on its own behalf. */
+  readonly source: string | null;
+}
+
+/**
+ * Everything the bake wrote, so the delete-test can remove exactly that and nothing else.
+ *
+ * Deterministic given the same inputs — no wall-clock field — because this repository proves a
+ * change is neutral by diffing emitted output, and a timestamp makes every such diff dirty.
+ */
+export interface IBakeReceipt {
+  readonly outputs: readonly IBakeReceiptOutput[];
+  readonly pipelineVersion: number;
 }
 
 interface IAssetManifestEntry {
@@ -196,6 +220,16 @@ interface IDirectoryScan {
 }
 
 const MANIFEST_NAME = "assets.manifest.json";
+/**
+ * What this bake produced, written by the producer so nothing downstream has to guess.
+ *
+ * The delete-test — remove every baked file and the game still runs, just slower — is the rule
+ * that separates a baking pass from a compiler of game meaning. A test driven by a directory glob
+ * would either miss an output or delete a source asset, and both failures look like a pass, so the
+ * step that wrote the files is the one that lists them. **Nothing in the shipped runtime reads
+ * this file**; deleting it is part of the test.
+ */
+const RECEIPT_NAME = "bake.receipt.json";
 const DEFAULT_SOURCE = "assets";
 const DEFAULT_OUTPUT = "public";
 const BASIS_DIRECTORY = "basis";
@@ -207,8 +241,10 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
  * v2: textures encode to KTX2 instead of passing through byte-identical.
  * v3: models run dedup/prune/reorder/quantize/meshopt instead of passing through byte-identical.
  * v7: the images embedded in a model are transcoded to KTX2 and capped in resolution.
+ * v8: every compile writes `bake.receipt.json` beside the manifest, so the run has one additional
+ * output and a cached `public/` from v7 has no receipt to delete.
  */
-const PIPELINE_VERSION = 7;
+const PIPELINE_VERSION = 8;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
   glb: "model",
@@ -779,6 +815,8 @@ interface IResolvedAuxiliaryOutput {
   readonly manifestField: string;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly output: string;
+  /** The producer's own name for this output — `lightmap` for the lightmap pass's atlas. */
+  readonly role: string;
 }
 
 function resolveAuxiliaryOutputs(
@@ -803,6 +841,7 @@ function resolveAuxiliaryOutputs(
         output,
       },
       output,
+      role: auxiliary.role,
     };
   });
 }
@@ -944,6 +983,81 @@ async function writeManifest(
   await writeFile(manifestPath, serialized, "utf8");
 }
 
+/** Every file under `root`, as paths relative to it with `/` separators on every platform. */
+async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(path.join(root, prefix), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files: string[] = [];
+  for (const entry of entries) {
+    const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) files.push(...(await walkOutputFiles(root, relative)));
+    else files.push(relative);
+  }
+  return files;
+}
+
+/**
+ * Fails the build when this run created a file under the output root that no pass declared.
+ *
+ * Without this, a pass that writes a file it does not report is invisible: the delete-test would
+ * delete less than the bake produced, the second run would still find the undeleted file, and the
+ * gate would pass while proving nothing. Only files touched during this run are considered — a
+ * project's own hand-authored `public/icon.png` is not a bake output and is left alone.
+ */
+async function assertNoUndeclaredOutputs(
+  outputRoot: string,
+  declared: ReadonlySet<string>,
+  since: number,
+): Promise<void> {
+  const undeclared: string[] = [];
+  for (const relative of await walkOutputFiles(outputRoot)) {
+    if (relative === MANIFEST_NAME || relative === RECEIPT_NAME) continue;
+    if (declared.has(relative)) continue;
+    const info = await stat(path.join(outputRoot, relative));
+    if (info.mtimeMs + 1 >= since) undeclared.push(relative);
+  }
+  if (undeclared.length > 0) {
+    throw new Error(
+      `TN_ASSETS_UNDECLARED_OUTPUT: this bake wrote ${undeclared.length} file(s) under '${outputRoot}' that no pass declared, so the delete-test cannot remove them: ${undeclared.sort().join(", ")}`,
+    );
+  }
+}
+
+/**
+ * Writes the receipt, sorted by path so two builds of the same inputs are byte-identical.
+ *
+ * Throws rather than writing an empty list: a bake that produced nothing and said so in a green
+ * receipt is exactly the shape of the v1 harness failure this repository already paid for — a
+ * gate that reports success over an empty set.
+ */
+async function writeReceipt(
+  outputRoot: string,
+  outputs: readonly IBakeReceiptOutput[],
+): Promise<IBakeReceipt> {
+  if (outputs.length === 0) {
+    throw new Error(
+      `TN_ASSETS_EMPTY_RECEIPT: the compile step produced no outputs for '${outputRoot}', so there is nothing a delete-test could remove.`,
+    );
+  }
+  const seen = new Map<string, IBakeReceiptOutput>();
+  for (const output of outputs) seen.set(output.path, output);
+  const receipt: IBakeReceipt = {
+    outputs: [...seen.values()].sort((left, right) => (left.path < right.path ? -1 : 1)),
+    pipelineVersion: PIPELINE_VERSION,
+  };
+  await mkdir(outputRoot, { recursive: true });
+  await writeFile(
+    path.join(outputRoot, RECEIPT_NAME),
+    `${JSON.stringify(receipt, null, 2)}\n`,
+    "utf8",
+  );
+  return receipt;
+}
+
 /**
  * Resolves three's Basis transcoder through the project's own `three` install so a path that
  * moved between three versions fails the build here, as a named error, instead of 404ing at
@@ -983,7 +1097,13 @@ export async function compileAssets(
 ): Promise<IAssetCompileResult> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const layout = resolveLayout(cwd, options);
-  if (!(await hasSourceDirectory(layout.sourceRoot))) return { skipped: 0, written: 0 };
+  const receiptPath = path.join(layout.outputRoot, RECEIPT_NAME);
+  if (!(await hasSourceDirectory(layout.sourceRoot))) {
+    // No bake ran, so no receipt describes this output root. A stale one from a previous build
+    // would have the delete-test remove files nothing produces any more.
+    await rm(receiptPath, { force: true });
+    return { skipped: 0, written: 0 };
+  }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
   const passNames = layout.passes.map((pass) => pass.name);
@@ -995,6 +1115,10 @@ export async function compileAssets(
     options: layout.passes.map((pass) => pass.configuration ?? null),
   });
   const entries: Record<string, IAssetManifestEntry> = {};
+  const receiptOutputs: IBakeReceiptOutput[] = [];
+  // Read before the first write, so the undeclared-output guard can tell this run's files from
+  // the project's own static ones. It never reaches the receipt: that stays deterministic.
+  const runStart = Date.now();
   const healthInputs: IAssetHealthInput[] = [];
   const textureRows: ITextureSizeRow[] = [];
   const modelRows: IModelSizeRow[] = [];
@@ -1010,6 +1134,7 @@ export async function compileAssets(
   // held inputs last build drops its stale manifest here, restoring the no-manifest fallback.
   if (logicals.length === 0) {
     if (previous.raw !== undefined) await rm(manifestPath, { force: true });
+    await rm(receiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
     return options.health === true
       ? { report, skipped: 0, written: 0 }
@@ -1055,6 +1180,22 @@ export async function compileAssets(
           }),
     };
     entries[logical] = entry;
+    // Declared from the entry rather than from the write below, because a cache hit skips the
+    // write and the file is still this bake's output: the delete-test has to remove it too.
+    receiptOutputs.push({
+      bytes: entry.bytes,
+      path: entry.output,
+      producer: passNames.join("+"),
+      source: logical,
+    });
+    for (const auxiliary of auxiliaryOutputs) {
+      receiptOutputs.push({
+        bytes: auxiliary.buffer.length,
+        path: auxiliary.output,
+        producer: auxiliary.role,
+        source: logical,
+      });
+    }
     if (entry.extensions?.includes(BASISU_EXTENSION) === true) compressedModelCount += 1;
     // The health report measures the source, not the compiled bytes — deliberately for both
     // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
@@ -1144,6 +1285,19 @@ export async function compileAssets(
         options.transcoder ?? resolveBasisTranscoder(cwd),
       );
     }
+    // Copied on this run or restored from a previous one, the transcoder is still a file the
+    // bake put there and the game must survive losing.
+    for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"]) {
+      const relative = `${BASIS_DIRECTORY}/${name}`;
+      const absolute = path.join(layout.outputRoot, BASIS_DIRECTORY, name);
+      if (!(await outputExists(absolute))) continue;
+      receiptOutputs.push({
+        bytes: (await stat(absolute)).size,
+        path: relative,
+        producer: "basis-transcoder",
+        source: null,
+      });
+    }
   }
 
   // The report runs unconditionally — it is the one place a user learns why their game is
@@ -1161,5 +1315,13 @@ export async function compileAssets(
     );
   }
   await writeManifest(manifestPath, layout.outputRoot, previous.raw, entries);
-  return options.health === true ? { report, skipped, written } : { skipped, written };
+  await assertNoUndeclaredOutputs(
+    layout.outputRoot,
+    new Set(receiptOutputs.map((output) => output.path)),
+    runStart,
+  );
+  const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
+  return options.health === true
+    ? { receipt, report, skipped, written }
+    : { receipt, skipped, written };
 }
