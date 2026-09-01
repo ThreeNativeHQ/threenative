@@ -22,6 +22,13 @@ import { PlaytestCliUsageError } from "./config.js";
  */
 
 export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET:";
+/**
+ * The per-window scene-projection line. Read here rather than in the game so an agent can rank
+ * what the optimizer is still leaving on its one-draw-each lane without owning the device it ran
+ * on. The literal is duplicated from `@threenative/core` deliberately: this module parses a log,
+ * it does not import the runtime that wrote it.
+ */
+export const PROJECTION_MARKER = "TN_PROJECTION:";
 export const HOST_GAP_MARKER = "TN_HOST_GAP:";
 
 export interface IPerfSummary {
@@ -77,10 +84,23 @@ export interface IPerfViolation {
   readonly window: number;
 }
 
+export interface IProjectionWindowJson {
+  readonly drawsActual?: number;
+  readonly drawsPlanned: number;
+  readonly exact: Readonly<Record<string, number>>;
+  readonly exactObjects: number;
+  readonly projecting: boolean;
+  readonly reason?: string;
+  readonly reasonCode: string;
+  readonly sourceRenderables: number;
+  readonly window: number;
+}
+
 export interface IPerfMarkerParse {
   readonly budgets: readonly IFrameBudgetWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly presentMode: string | undefined;
+  readonly projections: readonly IProjectionWindowJson[];
 }
 
 export interface IPerfReport {
@@ -89,8 +109,24 @@ export interface IPerfReport {
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pass: boolean;
   readonly presentMode: string | undefined;
+  readonly projections: readonly IProjectionWindowJson[];
   readonly source: string;
   readonly violations: readonly IPerfViolation[];
+}
+
+/**
+ * Orders the exact lane by the draws each reason costs, largest first.
+ *
+ * The next population worth folding is whichever reason tops this list in a game that is actually
+ * slow. Picking it any other way is picking it by intuition.
+ */
+export function rankExactReasons(
+  exact: Readonly<Record<string, number>>,
+): { count: number; reason: string }[] {
+  return Object.entries(exact)
+    .filter(([, count]) => typeof count === "number" && count > 0)
+    .map(([reason, count]) => ({ count, reason }))
+    .sort((left, right) => right.count - left.count || (left.reason < right.reason ? -1 : 1));
 }
 
 export interface IPerfBounds {
@@ -120,6 +156,8 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const budgets: IFrameBudgetWindowJson[] = [];
   const budgetPayloads = new Set<string>();
   const hostGaps: IHostGapWindowJson[] = [];
+  const projections: IProjectionWindowJson[] = [];
+  const projectionPayloads = new Set<string>();
   let presentMode: string | undefined;
   for (const line of text.split("\n")) {
     const budget = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
@@ -135,10 +173,19 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     }
     const hostGap = parseMarkerLine<IHostGapWindowJson>(line, HOST_GAP_MARKER);
     if (hostGap !== undefined) hostGaps.push(hostGap);
+    const projection = parseMarkerLine<IProjectionWindowJson>(line, PROJECTION_MARKER);
+    if (projection !== undefined) {
+      // Same reason the budget lines are de-duplicated: Android mirrors console output twice.
+      const payload = JSON.stringify(projection);
+      if (!projectionPayloads.has(payload)) {
+        projectionPayloads.add(payload);
+        projections.push(projection);
+      }
+    }
     const mode = PRESENT_MODE_PATTERN.exec(line);
     if (mode?.[1] !== undefined) presentMode = mode[1];
   }
-  return { budgets, hostGaps, presentMode };
+  return { budgets, hostGaps, presentMode, projections };
 }
 
 function parseMarkerLine<T>(line: string, marker: string): T | undefined {
@@ -189,6 +236,7 @@ export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, 
     hostGaps: parse.hostGaps,
     pass: violations.length === 0 && parse.budgets.length > 0,
     presentMode: parse.presentMode,
+    projections: parse.projections,
     source,
     violations,
   };
@@ -375,6 +423,7 @@ export function formatPerfReport(report: IPerfReport): string {
     );
   }
   if (report.discardedWindows.length > 0) lines.push("* discarded as startup (window 1 always lies)");
+  lines.push(...formatProjection(report.projections));
   const lastGap = report.hostGaps.at(-1);
   if (lastGap !== undefined) {
     lines.push(`host gap segments (${lastGap.frames}-frame window, p50 ms):`);
@@ -388,6 +437,42 @@ export function formatPerfReport(report: IPerfReport): string {
   }
   if (report.pass) lines.push("PASS");
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * The scene projection, from the last window, ranked by what each exact-lane reason costs.
+ *
+ * Says "not reported" rather than printing an empty table when the marker is absent: a reader who
+ * sees no projection section must not conclude the exact lane was empty, which is how an
+ * unmeasured lane comes to be described as a measured zero.
+ */
+function formatProjection(windows: readonly IProjectionWindowJson[]): string[] {
+  const last = windows.at(-1);
+  if (last === undefined) {
+    return ["scene projection: not reported — this run does not say what it drew one-at-a-time"];
+  }
+  const measured =
+    last.drawsActual === undefined
+      ? "unmeasured"
+      : `${last.drawsActual}${last.drawsActual === last.drawsPlanned ? "" : " — the renderer and the plan disagree"}`;
+  const lines = [
+    last.projecting
+      ? `scene projection: on (${last.reasonCode}); ${last.sourceRenderables} authored renderables, ` +
+        `${last.drawsPlanned} draws planned, ${measured} actual`
+      : `scene projection: DECLINED (${last.reasonCode})${last.reason === undefined ? "" : ` — ${last.reason}`}; ` +
+        `${last.sourceRenderables} authored renderables drawn one at a time`,
+  ];
+  const ranked = rankExactReasons(last.exact);
+  if (last.exactObjects > 0 && ranked.length === 0) {
+    lines.push(
+      `  ${last.exactObjects} object(s) on the exact lane with no reason recorded — that is a bug in the reporter, not an empty lane`,
+    );
+    return lines;
+  }
+  if (ranked.length === 0) return lines;
+  lines.push(`  exact lane, ${last.exactObjects} draw(s), by reason:`);
+  for (const { count, reason } of ranked) lines.push(`    ${reason.padEnd(22)}${count}`);
+  return lines;
 }
 
 function summary(summaryValue: IPerfSummary | undefined): string {

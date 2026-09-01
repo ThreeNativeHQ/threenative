@@ -38,6 +38,7 @@ describe("perf reports the surface each window was drawn at", () => {
       hostGaps: parsed.hostGaps,
       pass: true,
       presentMode: undefined,
+      projections: [],
       source: "logcat",
       violations: [],
     });
@@ -53,6 +54,7 @@ describe("perf reports the surface each window was drawn at", () => {
       hostGaps: parsed.hostGaps,
       pass: true,
       presentMode: undefined,
+      projections: [],
       source: "logcat",
       violations: [],
     });
