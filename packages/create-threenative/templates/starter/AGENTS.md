@@ -89,6 +89,23 @@ the source. The bridge flushes about 100 ms; keep state human-readable and frame
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario
 with no assertions or missing observations fails; open a real capture after visual changes.
 
+## One shadow for a big outdoor level
+
+When one directional light must shadow a whole valley and a 2048² map spread over it reads as a
+smudge, set `sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] })`
+from `@threenative/core`. It renders camera-centred clip levels, snapped to their own texel grid
+and cached until the window moves; every material receives it through three's own slot. Bias,
+normal bias, intensity, radius, blur samples, map type and filter stay on `sun.shadow`; map sizes
+are configured by the virtual-shadow options. Call `trackCaster(object)` for movers: tracking or
+untracking refreshes the cached levels once, then movement draws through a small per-level mover
+map every frame without invalidating them. Use `invalidateAll()` when static scene geometry
+changes. `TN_VIRTUAL_SHADOW` reports rendered, mover-map and cached-level work.
+
+This is static-lighting-first, not fully dynamic GI: moving lights and relighting require another
+explicit bake. `TN_PROBE_VOLUME` reports the unbaked/stale state, probe count, atlas bytes,
+progress, and last render-phase bake cost; keep those measurements visible while tuning bounds,
+density, and `bakeBudgetMs`.
+
 ## Budget real time for the look
 
 The performance skill carries `TN_FRAME_BUDGET`, platform targets, and the `display.maxFps` rule.
