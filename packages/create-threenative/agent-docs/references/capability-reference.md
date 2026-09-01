@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export of `@threenative/core` and `@threenative/physics`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/physics`, `@threenative/playtest`, `@threenative/ui`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
