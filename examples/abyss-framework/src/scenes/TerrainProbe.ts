@@ -1,5 +1,10 @@
 import { type ICtx, Scene } from "@threenative/core";
-import { Heightfield } from "@threenative/core/world";
+import {
+  type IWorldCapabilities,
+  type IWorldTileColliderInput,
+  TerrainTiles,
+  getWorldCapabilities,
+} from "@threenative/core/world";
 import {
   CharacterBody3D,
   CollisionShape3D,
@@ -7,27 +12,12 @@ import {
   RigidBody3D,
 } from "@threenative/physics";
 import * as THREE from "three";
+import { terrainMaterial } from "../render/terrain.js";
+import { TERRAIN_SEED, terrainHeight } from "../world/terrainSampler.js";
 
-const CHUNK_SIZE = 64;
-const CHUNK_RESOLUTION = 65;
-const STREAM_RADIUS = 1;
+const TILE_SIZE = 64;
+const TILE_RESOLUTION = 65;
 const PLAYER_SPEED = 150;
-const WORLD_SEED = 251;
-const WORLD_HALF_EXTENT = 1_000;
-
-function terrainHeight(x: number, z: number): number {
-  if (Math.abs(x) > WORLD_HALF_EXTENT || Math.abs(z) > WORLD_HALF_EXTENT)
-    throw new Error(`Terrain sample (${x}, ${z}) is outside the 2 km by 2 km proof region.`);
-  const phase = WORLD_SEED * 0.013;
-  const warpX = Math.sin(z * 0.006 + phase) * 40;
-  const warpZ = Math.cos(x * 0.005 - phase) * 36;
-  return (
-    Math.sin((x + warpX) * 0.0025 + phase) * 14 +
-    Math.cos((z + warpZ) * 0.003 - phase) * 8 +
-    Math.sin((x + z) * 0.012 + phase * 3) * 3 +
-    Math.cos((x - z) * 0.019 - phase * 2) * 1.5
-  );
-}
 
 const initialState = {
   chunks: 0,
@@ -37,60 +27,11 @@ const initialState = {
 export type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
 
-class TerrainChunk {
-  readonly mesh: THREE.Mesh;
-  readonly #body: RigidBody3D;
-  readonly #assetPath: string;
-  readonly #releaseAsset: () => boolean;
-  readonly #geometry: THREE.BufferGeometry;
-  readonly #material: THREE.MeshBasicMaterial;
-
-  constructor(ctx: TerrainCtx, chunkX: number) {
-    this.#assetPath = `terrain/chunk-${chunkX}.glb`;
-    void ctx.assets.model<THREE.Group>(this.#assetPath);
-    this.#releaseAsset = () => ctx.assets.release("model", this.#assetPath);
-
-    const field = Heightfield.fromSampler({
-      columns: CHUNK_RESOLUTION,
-      depth: CHUNK_SIZE,
-      origin: { x: chunkX * CHUNK_SIZE, z: 0 },
-      rows: CHUNK_RESOLUTION,
-      sampleHeight: terrainHeight,
-      width: CHUNK_SIZE,
-    });
-    const geometry = field.toGeometry();
-    this.#geometry = geometry;
-    this.#material = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(0.31, 0.35, 0.22 + (((chunkX % 3) + 3) % 3) * 0.03),
-      wireframe: true,
-    });
-    this.mesh = new THREE.Mesh(geometry, this.#material);
-    this.mesh.position.set(chunkX * CHUNK_SIZE, 0, 0);
-    ctx.add(this.mesh);
-    this.#body = new RigidBody3D({
-      object: this.mesh,
-      physics: ctx.physics,
-      shape: CollisionShape3D.heightfield(
-        CHUNK_RESOLUTION,
-        CHUNK_RESOLUTION,
-        field.toColliderHeights(),
-        { x: CHUNK_SIZE, y: 1, z: CHUNK_SIZE },
-      ),
-      type: "fixed",
-    });
-  }
-
-  debug(): Record<string, unknown> {
-    return { chunk: this.mesh.position.x / CHUNK_SIZE };
-  }
-
-  dispose(): void {
-    this.#body.dispose();
-    this.mesh.removeFromParent();
-    this.#geometry.dispose();
-    this.#material.dispose();
-    this.#releaseAsset();
-  }
+function rendererLimits(ctx: TerrainCtx): Record<string, number> | undefined {
+  const raw = ctx.renderer.raw as {
+    backend?: { device?: { limits?: Record<string, number> } };
+  };
+  return raw.backend?.device?.limits;
 }
 
 class TerrainPlayer {
@@ -130,63 +71,121 @@ class TerrainPlayer {
 export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
   static override readonly initialState = initialState;
 
-  #chunks = new Map<number, TerrainChunk>();
   #player: TerrainPlayer | undefined;
+  #tiles: TerrainTiles | undefined;
+  #capabilities: IWorldCapabilities | undefined;
 
   override enter(ctx: TerrainCtx): void {
     this.#player = new TerrainPlayer(ctx);
+    this.#capabilities = getWorldCapabilities({
+      cpuFallbackIterations: 4,
+      gpuAvailable: ctx.renderer.kind === "webgpu",
+      limits: rendererLimits(ctx),
+    });
+    const worldPasses =
+      this.#capabilities.generation === "unsupported"
+        ? undefined
+        : {
+            dispatchBudget: 4,
+            erosion: {
+              depositionRate: 0.35,
+              erosionRate: 0.22,
+              evaporation: 0.04,
+              iterations:
+                this.#capabilities.generation === "cpu-fallback"
+                  ? this.#capabilities.cpuFallbackIterations
+                  : 8,
+              rainfall: 0.08,
+              sedimentCapacity: 0.7,
+              timeStep: 0.05,
+            },
+            gpu: this.#capabilities.generation === "gpu",
+          };
+    const tiles = new TerrainTiles({
+      createCollider: ({ field, key, object, tileX, tileZ }: IWorldTileColliderInput) =>
+        new RigidBody3D({
+          object,
+          physics: ctx.physics,
+          shape: CollisionShape3D.heightfield(
+            field.rows,
+            field.columns,
+            field.toColliderHeights(),
+            { x: TILE_SIZE, y: 1, z: TILE_SIZE },
+          ),
+          type: "fixed",
+          entity: `terrain.${key}.${String(tileX)}.${String(tileZ)}`,
+        }),
+      surface: terrainMaterial(),
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 9,
+      sampleHeight: terrainHeight,
+      streamRadius: 1,
+      tileResolution: TILE_RESOLUTION,
+      tileSize: TILE_SIZE,
+      lodDistances: [48, 96],
+      topologyObservation: {
+        columns: 1025,
+        depth: 1024,
+        origin: { x: 0, z: 0 },
+        rows: 1025,
+        width: 1024,
+      },
+      ...(worldPasses === undefined ? {} : { worldPasses }),
+    });
+    // Populate the initial resident set before registration so compute warm-up sees every
+    // field's kernels, including fields created during the first follow operation.
+    tiles.follow({ x: 0, z: 0 });
+    this.#tiles = ctx.add(tiles);
+    ctx.entities.add("terrain", {
+      debug: () => ({
+        ...(this.#tiles?.debug() ?? {}),
+        cpuFallbackIterations: this.#capabilities?.cpuFallbackIterations ?? 0,
+        generation: this.#capabilities?.generation ?? "unsupported",
+        gpu: this.#capabilities?.gpu ?? false,
+        seed: TERRAIN_SEED,
+      }),
+      dispose: () => this.#tiles?.dispose(),
+      object: this.#tiles,
+    });
     ctx.entities.add("player", {
       debug: () => ({ position: this.#player?.mesh.position.toArray() ?? [] }),
       dispose: () => this.#player?.dispose(),
       mesh: this.#player.mesh,
     });
-    this.#stream(ctx, 0);
     this.#publish(ctx);
     this.#camera(ctx);
   }
 
   override update(ctx: TerrainCtx, dt: number): void {
     const player = this.#player;
-    if (player === undefined) return;
+    const tiles = this.#tiles;
+    if (player === undefined || tiles === undefined) return;
     const move = ctx.input.vector("move");
-    const velocityX = move.x * PLAYER_SPEED;
-    player.move({ x: velocityX, z: move.y * PLAYER_SPEED }, dt);
-    this.#stream(ctx, player.mesh.position.x + velocityX * dt);
+    player.move({ x: move.x * PLAYER_SPEED, z: move.y * PLAYER_SPEED }, dt);
+    tiles.follow(player.mesh.position);
     this.#publish(ctx);
     this.#camera(ctx);
   }
 
   override exit(): void {
-    this.#chunks.clear();
+    this.#tiles = undefined;
     this.#player = undefined;
-  }
-
-  #stream(ctx: TerrainCtx, playerX: number): void {
-    const center = Math.floor((playerX + CHUNK_SIZE / 2) / CHUNK_SIZE);
-    const wanted = new Set<number>();
-    for (let offset = -STREAM_RADIUS; offset <= STREAM_RADIUS; offset += 1)
-      wanted.add(center + offset);
-
-    for (const [chunkX] of this.#chunks) {
-      if (wanted.has(chunkX)) continue;
-      ctx.entities.remove(`chunk.${chunkX}`);
-      this.#chunks.delete(chunkX);
-    }
-    for (const chunkX of wanted) {
-      if (this.#chunks.has(chunkX)) continue;
-      const chunk = new TerrainChunk(ctx, chunkX);
-      this.#chunks.set(chunkX, chunk);
-      ctx.entities.add(`chunk.${chunkX}`, chunk);
-    }
+    this.#capabilities = undefined;
   }
 
   #publish(ctx: TerrainCtx): void {
-    ctx.state.set({ chunks: this.#chunks.size, playerX: this.#player?.mesh.position.x ?? 0 });
+    const tiles = this.#tiles;
+    ctx.state.set({
+      chunks: tiles?.residentTileCount ?? 0,
+      playerX: this.#player?.mesh.position.x ?? 0,
+    });
   }
 
   #camera(ctx: TerrainCtx): void {
-    const x = this.#player?.mesh.position.x ?? 0;
-    ctx.camera.position.set(x, 180, 180);
-    ctx.camera.lookAt(x, 0, 0);
+    const player = this.#player?.mesh.position;
+    const x = player?.x ?? 0;
+    const z = player?.z ?? 0;
+    ctx.camera.position.set(x, 180, z + 180);
+    ctx.camera.lookAt(x, 0, z);
   }
 }

@@ -257,4 +257,12 @@ describe("primary documentation agrees with the shipped surfaces", () => {
     );
     expect(workload).not.toMatch(/heaviest|source LOC/iu);
   });
+
+  it("should distinguish an assertion frame from visual inspection", async () => {
+    const quality = await readRepoFile(path.join("docs", "verification", "PRD-251-quality.md"));
+    expect(quality).toContain("--no-screenshots");
+    expect(quality).toContain("captureMethod: page.screenshot");
+    expect(quality).toContain("No visual inspection was performed");
+    expect(quality).not.toMatch(/\binspected\b/iu);
+  });
 });

@@ -168,13 +168,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  "action-rpg": "0c0f1b152fba3cd16ce936339a13fd5824095a4583e1af38ba3ceab0651ec396",
-  defense: "437939e91656d44c7fbc14312c3ceb2dc9334df8d83735d08addb4ac85db0217",
-  minimal: "02a4078a8fcc3db233340ac4c66e78bf86a7f54ed6c4fdb0d9a8a6c738a8a88c",
-  platformer: "35d620d7633f3a20293785ed0789019e96520e97008cac79e6d28a1a14478e9d",
-  racing: "e196de18dafdb0c0c0c09d86fb2db59d588a1f4d80feb869e607be9c39ed98cd",
-  shooter: "237c10bd369dd71e985cc5f2ca8af20c033f8241d2c69a8f35f8f5d6a254aeec",
-  starter: "457e182b6b1a00e0f8a96367b3a707e39cc18f3ea8f17ef81be4a526b0c355a3",
+  "action-rpg": "153207b38497ab133bfe1b3cd3c9345a42d9eecad5de1322138926b4488e4b74",
+  defense: "00d8eab35f48dd15391b3205556a64bcc72f44c6366723b50214126f1ac4610e",
+  minimal: "d8c9c77d0561b9e799983b3bfcd9fa8b13a2fac4dfefa1265ca853e8aef66fa1",
+  platformer: "73e9e64eaa7d33f1f24a51f1efcf651575ff90805e91756ee8bfd85738384742",
+  racing: "a04e0180b9a870d58b5f0bd1693d33f22cdbc6676f8f340e0eaab235a25bec28",
+  shooter: "9688837666413b04fdcfa17b77848c872a915f4379c2950d6d8584f472273793",
+  starter: "72400d3bfcc8ed48d8e411c92649f5fa1184ea339245d2aeaf2ca928e1891c79",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -185,8 +185,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "a7e6b702bd1236a8784d4a37715a7441dc384c8ef107217baea0a3f88a315dfd",
+  sailing: "c19248019059467a0a99916e6539862230d1c121fde21685574063378a57ef12",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
+  // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
+  // terrain fields, bounded tile residency, and the three plain-language world situations.
+  // Recomputed 2026-08-31 for the PRD-251 review repair: the generated world capability
+  // reference now states that GPU generation fails closed until canonical readback is supported.
   // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
   // (PRD-239), which is copied into every scaffold.
   // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
