@@ -36,6 +36,12 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      ios_only:
+        description: "Run only the iOS simulator and consumer handoff job"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
 
 concurrency:
@@ -62,8 +68,9 @@ jobs:
     # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
     # and Linux desktop is the only desktop target ROADMAP licenses.
     if: >-
-      github.event_name != 'pull_request'
-      || contains(github.event.pull_request.labels.*.name, 'native')
+      (github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native'))
+      && inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -203,8 +210,9 @@ jobs:
 
   desktop-parity:
     name: Desktop web/native parity
+    if: inputs.ios_only != true
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
       # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
@@ -282,7 +290,9 @@ jobs:
       - name: Compare the desktop host with browser references
         run: |
           set +e
-          node packages/runtime-native/conformance/run-conformance.mjs --target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop
+          sh scripts/xvfb.sh \
+            node packages/runtime-native/conformance/run-conformance.mjs \
+            --target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop
           status=$?
           set -e
           test "$status" -eq 0 -o "$status" -eq 2
@@ -308,9 +318,11 @@ jobs:
           const ledger = [
             "# PRD-303 desktop parity ledger",
             "",
-            "| Target | Pass | Fail | Blocked | Exit |",
-            "| --- | ---: | ---: | ---: | ---: |",
-            `| Desktop | ${summary.pass} | ${summary.fail} | ${summary.blocked} | ${exit} |`,
+            "## Target results",
+            "",
+            "| Target | Command | Pass | Fail | Blocked | Exit | Outcome |",
+            "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+            `| Desktop | \`node packages/runtime-native/conformance/run-conformance.mjs --target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop\` | ${summary.pass} | ${summary.fail} | ${summary.blocked} | ${exit} | captured report |`,
             "",
           ].join("\n");
           await writeFile(`${process.env.RUNNER_TEMP}/prd-303-desktop-parity-ledger.md`, ledger);
@@ -342,8 +354,9 @@ jobs:
     # PR, which is where the "did a core or playtest change break the native bundle" signal lives,
     # and Linux desktop is the only desktop target ROADMAP licenses.
     if: >-
-      github.event_name != 'pull_request'
-      || contains(github.event.pull_request.labels.*.name, 'native')
+      (github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native'))
+      && inputs.ios_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -468,6 +481,7 @@ jobs:
 
   starter-linux:
     name: Scaffolded starter desktop artifact
+    if: inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -588,13 +602,10 @@ jobs:
       || contains(github.event.pull_request.labels.*.name, 'native')
     runs-on: macos-15
     timeout-minutes: 60
-    # Advisory while the simulator's worker proof is unresolved: the app reaches
-    # TN_NATIVE_SMOKE_READY and TN_NATIVE_SMOKE_FIRST_FRAME, then fails
-    # TN_NATIVE_WORKER_PROOF_FAIL "worker result was not delivered", so it never reaches 300
-    # frames. That is real iOS behaviour and needs a Mac to diagnose; it must not hold every other
-    # lane's merge hostage. The job still runs and its artifacts still upload — PRD-295 is explicit
-    # that an advisory lane which stays advisory becomes noise, so this comes off with the fix.
-    continue-on-error: true
+    # The simulator verifier and the exact no-Xcode consumer handoff passed in isolated run
+    # 33498394620 on 2026-09-01, including the worker proof, package telemetry, and consumer
+    # physics scenarios. Keep this job fail-closed so a later regression is visible immediately;
+    # pull requests opt into the platform lane with the `native` label while the lane is advisory.
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -661,7 +672,7 @@ jobs:
             scenario=$1
             artifacts=$2
             node packages/playtest/dist/runner/cli.js "$scenario" \
-              --target ios --app "$app" --bundle-id dev.threenative.runtime \
+              --target ios --app "$app" --bundle-id "$bundle_id" \
               --artifacts "$artifacts"
           }
           expect_ios_failure() {
@@ -679,6 +690,9 @@ jobs:
 
           THREENATIVE_PHYSICS_PROOF=enabled THREENATIVE_PHYSICS_CONTROL=normal \
             pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios
+          report="$app.json"
+          bundle_id=$(node -e 'const report = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); if (typeof report.appId !== "string" || report.appId.length === 0) throw new Error("TN_IOS_CONSUMER_BUNDLE_ID_MISSING"); process.stdout.write(report.appId);' "$report")
+          echo "TN_IOS_CONSUMER_BUNDLE_ID:$bundle_id"
           test -d "$app"
           run_ios examples/native-smoke/playtests/physics.playtest.json \
             packages/runtime-native/artifacts/ios/consumer-physics-pass
@@ -700,6 +714,20 @@ jobs:
             packages/runtime-native/artifacts/ios/consumer-physics-wrong-gravity \
             TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/ios-consumer-wrong-gravity.log"
           test ! -e "$TN_IOS_TOOLCHAIN_LOG"
+      - name: Collect iOS consumer packaging telemetry
+        if: always()
+        run: |
+          telemetry="packages/runtime-native/artifacts/ios/consumer-package"
+          mkdir -p "$telemetry"
+          report="$RUNNER_TEMP/threenative-ios-consumer/dist-native/threenative-ios-consumer.app.json"
+          if [ -f "$report" ]; then
+            cp "$report" "$telemetry/package-report.json"
+            node -e 'const report = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`TN_IOS_PACKAGE_PLIST_FORMAT:${report.infoPlistFormat ?? "missing"}`);' "$report"
+          else
+            echo '{"available":false,"reason":"consumer packager did not produce a report"}' \
+              > "$telemetry/package-report.json"
+            echo "TN_IOS_PACKAGE_PLIST_FORMAT:unavailable"
+          fi
       - run: >-
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts

@@ -29,6 +29,11 @@ function assertResizeAttachmentContract(definitions) {
     "the shared canvas binding must synchronize before it obtains the color attachment",
   );
   assert.match(
+    definitions.syncSize,
+    /if \(!flushRecordedFrameOps\(state\)\) return false;[\s\S]*?releaseCurrentSurfaceTextureViews\(state\)/u,
+    "surface resize must replay recorded work before releasing views still named by that work",
+  );
+  assert.match(
     definitions.capture,
     /state->screenshot\.screenshotBufferSize = requiredSize;[\s\S]*?\}\s*state->screenshot\.screenshotBytesPerRow = bytesPerRow;/u,
     "screenshot readback must refresh its row stride for every canvas size",

@@ -208,6 +208,91 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(requests).toEqual(["/assets/rock.png"]);
   });
 
+  it("should fall back to the source directory when the compiled output is gone", async () => {
+    // The delete-test: the bake produced `rock.a1b2c3.png` and the manifest that named it, both
+    // were deleted, and only `assets/rock.png` is left. Before this the loader asked for
+    // `/rock.png`, which exists nowhere in a compiled project, and the game did not boot.
+    const fetchAsset = vi.fn(async () => manifestResponse("gone", 404));
+    vi.stubGlobal("fetch", fetchAsset);
+    const requests: string[] = [];
+    const assets = createAssetLoader({
+      model: async (url) => {
+        requests.push(url);
+        if (url === "assets/rock.png") return { url };
+        throw new Error(`404: ${url}`);
+      },
+    });
+
+    await expect(assets.model("rock.png")).resolves.toEqual({ url: "assets/rock.png" });
+    // Verbatim first: a project with no pipeline at all keeps working, and pays nothing.
+    expect(requests).toEqual(["rock.png", "assets/rock.png"]);
+  });
+
+  it("should not reach for the source directory when the verbatim path works", async () => {
+    const fetchAsset = vi.fn(async () => manifestResponse("gone", 404));
+    vi.stubGlobal("fetch", fetchAsset);
+    const requests: string[] = [];
+    const assets = createAssetLoader({
+      model: async (url) => {
+        requests.push(url);
+        return { url };
+      },
+    });
+
+    await expect(assets.model("rock.png")).resolves.toEqual({ url: "rock.png" });
+    expect(requests).toEqual(["rock.png"]);
+  });
+
+  it("should honour a project that moved its sources", async () => {
+    const fetchAsset = vi.fn(async () => manifestResponse("gone", 404));
+    vi.stubGlobal("fetch", fetchAsset);
+    const requests: string[] = [];
+    const assets = createAssetLoader({
+      sourcePath: "art",
+      model: async (url) => {
+        requests.push(url);
+        if (url === "art/rock.png") return { url };
+        throw new Error(`404: ${url}`);
+      },
+    });
+
+    await expect(assets.model("rock.png")).resolves.toEqual({ url: "art/rock.png" });
+    expect(requests).toEqual(["rock.png", "art/rock.png"]);
+  });
+
+  it("should name every url it tried when none of them load", async () => {
+    const fetchAsset = vi.fn(async () => manifestResponse("gone", 404));
+    vi.stubGlobal("fetch", fetchAsset);
+    const assets = createAssetLoader({
+      model: async (url) => {
+        throw new Error(`404: ${url}`);
+      },
+    });
+
+    // One error naming both places, not a single last-url message that reads as one missing file.
+    await expect(assets.model("rock.png")).rejects.toThrow(/TN_ASSETS_UNRESOLVED/u);
+    await expect(assets.model("rock.png")).rejects.toThrow(/rock\.png.*assets\/rock\.png/su);
+  });
+
+  it("should keep a manifest miss an error rather than a search", async () => {
+    const fetchAsset = vi.fn(async () =>
+      manifestResponse({ version: 1, entries: { "other.png": { output: "other.a1b2c3.png" } } }),
+    );
+    vi.stubGlobal("fetch", fetchAsset);
+    const requests: string[] = [];
+    const assets = createAssetLoader({
+      model: async (url) => {
+        requests.push(url);
+        return { url };
+      },
+    });
+
+    // A served manifest is authoritative: a path it does not list is a build mistake, and probing
+    // the source directory behind its back would hide it.
+    await expect(assets.model("rock.png")).rejects.toThrow(/is not listed in the asset manifest/u);
+    expect(requests).toEqual([]);
+  });
+
   it("should treat an SPA fallback page as an absent manifest", async () => {
     const fetchAsset = vi.fn(
       async () =>

@@ -406,6 +406,15 @@ export function formatPerfReport(report: IPerfReport): string {
         (surface.atFloor === true ? " — AT FLOOR, budget not met" : ""),
   );
   const anyGpu = report.budgets.some((window) => window.gpuMs !== undefined);
+  // The meter reports nothing rather than zero when it cannot measure, so a missing GPU column has
+  // to say *why*. A blank one reads as "the GPU cost nothing", which is the opposite of the truth
+  // and is how a phone's GPU time went unattributed for months.
+  if (!anyGpu && report.budgets.length > 0) {
+    lines.push(
+      "gpu: not reported — the meter emits nothing rather than zero when the device did not grant " +
+        "'timestamp-query'. Check the TN_WEBGPU_FEATURES line in the same log for what it did grant.",
+    );
+  }
   lines.push(
     `window  fps     frame p50/p95    render p50/p95   hostGap p50/p95${anyGpu ? "  gpu ms" : ""}`,
   );
@@ -418,7 +427,11 @@ export function formatPerfReport(report: IPerfReport): string {
         summary(window.frame).padEnd(16),
         summary(window.phases?.render).padEnd(16),
         summary(window.phases?.hostGap),
-        ...(anyGpu ? [` ${window.gpuMs === undefined ? "—" : window.gpuMs.toFixed(2)}`] : []),
+        // "unmeasured" rather than a dash: a dash in a column of numbers reads as a zero, and this
+        // one window may be the only one the device refused.
+        ...(anyGpu
+          ? [` ${window.gpuMs === undefined ? "unmeasured" : window.gpuMs.toFixed(2)}`]
+          : []),
       ].join(" "),
     );
   }

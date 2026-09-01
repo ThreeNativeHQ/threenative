@@ -27,6 +27,7 @@ export const DEFAULT_IOS_CONFIG = {
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
   window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
 };
+const BINARY_PLIST_MAGIC = Buffer.from('bplist00', 'ascii');
 const IOS_ORIENTATIONS = {
   landscape: ['UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
   portrait: ['UIInterfaceOrientationPortrait'],
@@ -63,6 +64,31 @@ function readConfig(configPath) {
   } catch (error) {
     throw new Error(`TN_CONFIG_FILE_INVALID: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function convertBinaryInfoPlist(path) {
+  const result = spawnSync('plutil', ['-convert', 'xml1', '-o', '-', path], {
+    encoding: 'utf8',
+  });
+  if (result.error) {
+    throw new Error(
+      `TN_IOS_INFO_PLIST_CONVERT_FAILED: plutil could not convert ${path}: ${result.error.message}`,
+    );
+  }
+  if (result.status !== 0 || !result.stdout?.includes('<plist')) {
+    throw new Error(
+      `TN_IOS_INFO_PLIST_CONVERT_FAILED: plutil exited with code ${result.status ?? 'unknown'} for ${path}: ${result.stderr || 'no XML output'}`,
+    );
+  }
+  return result.stdout;
+}
+
+function readIosInfoPlist(path, convertInfoPlist = convertBinaryInfoPlist) {
+  const source = readFileSync(path);
+  if (!source.subarray(0, BINARY_PLIST_MAGIC.length).equals(BINARY_PLIST_MAGIC)) {
+    return { format: 'xml', source: source.toString('utf8') };
+  }
+  return { format: 'binary', source: convertInfoPlist(path, source) };
 }
 
 function xmlEscape(value) {
@@ -180,15 +206,17 @@ function findApp(directory) {
   return undefined;
 }
 
-function compileIosAssets(catalog, output, includeAppIcon = false) {
+export function compileIosAssets(catalog, output, includeAppIcon = false, execute = spawnSync) {
   const iconArguments = includeAppIcon ? ['--app-icon', 'AppIcon'] : [];
-  const result = spawnSync(
+  const result = execute(
     'xcrun',
     [
       'actool',
       '--compile',
       output,
       ...iconArguments,
+      '--output-partial-info-plist',
+      '/dev/null',
       '--platform',
       'iphonesimulator',
       '--minimum-deployment-target',
@@ -267,6 +295,13 @@ function writeLaunchColor(catalog, value) {
   );
 }
 
+function writeAssetCatalogContents(catalog) {
+  writeFileSync(
+    join(catalog, 'Contents.json'),
+    `${JSON.stringify({ info: { author: 'xcode', version: 1 } }, null, 2)}\n`,
+  );
+}
+
 function stageIosIcon(output, icon, compileIcon = compileIosIcon, options = {}) {
   if (!existsSync(icon) || !statSync(icon).isFile()) {
     throw new Error(`TN_CONFIG_ICON_MISSING: app.icon does not exist: ${icon}`);
@@ -279,6 +314,7 @@ function stageIosIcon(output, icon, compileIcon = compileIosIcon, options = {}) 
     const compiled = join(temporary, 'compiled');
     mkdirSync(appIcon, { recursive: true });
     mkdirSync(compiled, { recursive: true });
+    writeAssetCatalogContents(catalog);
     copyFileSync(icon, join(appIcon, 'AppIcon-1024.png'));
     const appearances = options.variants ?? {};
     const images = [
@@ -337,6 +373,8 @@ function stageIosLaunchAssets(output, backgroundColor, compileAssets = compileIo
     const catalog = join(temporary, 'Assets.xcassets');
     const compiled = join(temporary, 'compiled');
     mkdirSync(compiled, { recursive: true });
+    mkdirSync(catalog, { recursive: true });
+    writeAssetCatalogContents(catalog);
     writeLaunchColor(catalog, backgroundColor);
     compileAssets(catalog, compiled);
     const assetsCar = join(compiled, 'Assets.car');
@@ -396,6 +434,7 @@ export function stageIosSimulatorApp({
   config = undefined,
   compileIcon = compileIosIcon,
   compileAssets = compileIosAssets,
+  convertInfoPlist = convertBinaryInfoPlist,
 }) {
   const declared = configValue(config, orientation);
   const declaredOrientation = orientationValue(declared.display.orientation);
@@ -419,7 +458,8 @@ export function stageIosSimulatorApp({
   mkdirSync(game, { recursive: true });
   stageIosUi(ui, declared.ui?.renderer === 'web' ? 'web' : 'native', join(output, 'ui'));
   const plist = join(output, 'Info.plist');
-  writeFileSync(plist, renderIosInfoPlist(readFileSync(plist, 'utf8'), declared));
+  const infoPlist = readIosInfoPlist(plist, convertInfoPlist);
+  writeFileSync(plist, renderIosInfoPlist(infoPlist.source, declared));
   const iosVariants = declared.app.icons?.ios ?? {};
   const icon = declared.app.icon ?? iosVariants.dark ?? iosVariants.tinted;
   if (icon !== undefined) {
@@ -463,6 +503,7 @@ export function stageIosSimulatorApp({
     assets: assetFiles.map((path) => ({ path, sha256: checksum(join(game, path)) })),
     bundleSha256: checksum(bundle),
     host: 'ios-simulator-arm64',
+    infoPlistFormat: infoPlist.format,
     orientation: declaredOrientation,
     appId: declared.app.id,
     appName: declared.app.name,
