@@ -513,8 +513,8 @@ importers:
         specifier: 'catalog:'
         version: 0.9.14(three@0.185.1(patch_hash=baf077414020ff2399cac6cf7bf0e4079aef27f79b16ffed5eeec31d58906043))
       threenative-asset-mcp:
-        specifier: 0.6.0
-        version: 0.6.0(@types/node@20.19.43)
+        specifier: 0.7.0
+        version: 0.7.0(@types/node@20.19.43)
       threenative-sculpt-mcp:
         specifier: 0.1.1
         version: 0.1.1(@types/node@20.19.43)
@@ -2997,8 +2997,8 @@ packages:
   three@0.185.1:
     resolution: {integrity: sha512-5aojFCXKwnjBRZvUnt3WFfEcvUJgkN5LlijRFN95hMy8WVkG4I0QNcJE+OuWvuJ0bOdStrbfXn0pkd6/QyiAlg==}
 
-  threenative-asset-mcp@0.6.0:
-    resolution: {integrity: sha512-r7X7ZxaZr9kb0rJRPKlN8oeBYbw4nY8YqtfBYuJas5wOyCerULZCXrXnezs/q6JQWg3cCQk0jMHuL5Ys5rBvpg==}
+  threenative-asset-mcp@0.7.0:
+    resolution: {integrity: sha512-OFbGNaCwJmsJMYTpqOCPg/Z0El/RKsiZ1Z4eBb4kgDY4sEmRYIxVZCdUYIDxhEatjPtt7fEPhUkFdxgK0PTJsg==}
     engines: {node: '>=20.19.0'}
     hasBin: true
 
@@ -5188,9 +5188,11 @@ snapshots:
 
   three@0.185.1(patch_hash=baf077414020ff2399cac6cf7bf0e4079aef27f79b16ffed5eeec31d58906043): {}
 
-  threenative-asset-mcp@0.6.0(@types/node@20.19.43):
+  threenative-asset-mcp@0.7.0(@types/node@20.19.43):
     dependencies:
       '@gltf-transform/core': 4.4.2
+      '@gltf-transform/extensions': 4.4.2
+      '@gltf-transform/functions': 4.4.2(@types/node@20.19.43)
       '@modelcontextprotocol/server': 2.0.0
       '@zip.js/zip.js': 2.8.34
       playwright: 1.62.0

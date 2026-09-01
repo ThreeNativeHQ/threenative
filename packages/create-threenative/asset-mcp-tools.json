@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.6.0 into a clean directory and driving it over stdio - not copied from its docs. `profile` is null because the published 0.6.0 has no --profile selector: a bounded 8-tool profile exists upstream but is unpublished, so every generated project sees all 35 tools today. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. `fab_import_asset` and `asset_import_unreal` are deliberately not recommended: they convert an Unreal pack the user already owns, which is a route a game takes on purpose rather than a step in the ordinary asset loop.",
-  "version": "0.6.0",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.7.0 into a clean directory and driving it over stdio - not copied from its docs. `profile` is null because the published 0.7.0 has no --profile selector: a bounded 8-tool profile exists upstream but is unpublished, so every generated project sees all 35 tools today. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. `fab_import_asset` and `asset_import_unreal` are deliberately not recommended: they convert an Unreal pack the user already owns, which is a route a game takes on purpose rather than a step in the ordinary asset loop.",
+  "version": "0.7.0",
   "profile": null,
   "recommended": [
     "ambientcg_list_files",
