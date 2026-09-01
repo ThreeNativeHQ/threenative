@@ -820,6 +820,11 @@ interface ISharedImagePlan {
   readonly recalled: ReadonlyMap<number, IRecalledTexture>;
 }
 
+interface ISharedImageCandidate {
+  readonly image: ISharedImage;
+  readonly key: string;
+}
+
 function sharedSettings(
   texture: Texture,
   textureOptions: IModelTexturesOptions | undefined,
@@ -898,6 +903,37 @@ async function rememberSharedImages(
   }
 }
 
+function declareSharedImage(
+  store: ISharedImageStore,
+  logicalPath: string,
+  auxiliaryOutputs: Map<string, IAssetAuxiliaryOutput>,
+  candidate: ISharedImageCandidate,
+): string {
+  const outputPath = store.outputPath(candidate.key, candidate.image);
+  auxiliaryOutputs.set(outputPath, {
+    buffer: candidate.image.buffer,
+    extension: path.extname(outputPath),
+    manifestField: "sharedImages",
+    metadata: { codec: candidate.image.codec, key: candidate.key },
+    outputPath,
+    role: "image",
+  });
+  return sharedImageUri(logicalPath, outputPath);
+}
+
+function declareSharedImageCandidates(
+  byDigest: ReadonlyMap<string, readonly ISharedImageCandidate[]>,
+  store: ISharedImageStore,
+  logicalPath: string,
+  auxiliaryOutputs: Map<string, IAssetAuxiliaryOutput>,
+): void {
+  for (const candidates of byDigest.values()) {
+    for (const candidate of candidates) {
+      declareSharedImage(store, logicalPath, auxiliaryOutputs, candidate);
+    }
+  }
+}
+
 /**
  * Writes the model with its images outside it, one shared file per distinct image, then re-reads
  * the output through the same store to verify it exactly as the runtime will resolve it.
@@ -920,7 +956,7 @@ async function writeAndVerifyShared(
   // Encoded bytes → every store key they were filed under. Equal encoded bytes can come from
   // distinct source keys, so each writer callback consumes one deterministic candidate rather
   // than letting the last source key overwrite the earlier ones.
-  const byDigest = new Map<string, { key: string; image: ISharedImage }[]>();
+  const byDigest = new Map<string, ISharedImageCandidate[]>();
   const textures = document.getRoot().listTextures();
   for (const [index, texture] of textures.entries()) {
     const key = plan.keys[index];
@@ -938,6 +974,10 @@ async function writeAndVerifyShared(
     byDigest.set(digest, candidates);
   }
   const auxiliaryOutputs = new Map<string, IAssetAuxiliaryOutput>();
+  // Store writes happen before this point. Declare every candidate now, rather than only the
+  // ones the writer happens to request: a writer may collapse equal resources into fewer
+  // callbacks, but that must not leave a source-keyed file undeclared for the output guard.
+  declareSharedImageCandidates(byDigest, store, logicalPath, auxiliaryOutputs);
   let written: Awaited<ReturnType<typeof writeSharedGlb>>;
   try {
     written = await writeSharedGlb(io, document, logicalPath, (bytes) => {
@@ -945,16 +985,7 @@ async function writeAndVerifyShared(
       if (found === undefined) {
         throw new Error("the writer emitted an image the pass did not file in the shared store");
       }
-      const outputPath = store.outputPath(found.key, found.image);
-      auxiliaryOutputs.set(outputPath, {
-        buffer: found.image.buffer,
-        extension: path.extname(outputPath),
-        manifestField: "sharedImages",
-        metadata: { codec: found.image.codec, key: found.key },
-        outputPath,
-        role: "image",
-      });
-      return sharedImageUri(logicalPath, outputPath);
+      return declareSharedImage(store, logicalPath, auxiliaryOutputs, found);
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -979,9 +1010,11 @@ async function writeAndVerifyShared(
     );
   }
   return {
-    auxiliaryOutputs: [...auxiliaryOutputs.values()].sort((left, right) =>
-      (left.outputPath ?? "") < (right.outputPath ?? "") ? -1 : 1,
-    ),
+    auxiliaryOutputs: [...auxiliaryOutputs.values()].sort((left, right) => {
+      const leftPath = left.outputPath ?? "";
+      const rightPath = right.outputPath ?? "";
+      return leftPath < rightPath ? -1 : leftPath > rightPath ? 1 : 0;
+    }),
     buffer: written.buffer,
     extensions: written.extensionsUsed,
     verified: verified.getRoot(),

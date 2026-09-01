@@ -10,7 +10,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { compileAssets } from "../src/index.js";
-import { modelPass } from "../src/passes/model.js";
+import { type IModelPassOptions, modelPass } from "../src/passes/model.js";
 import {
   type ISharedImageStore,
   createSharedImageStore,
@@ -93,6 +93,28 @@ async function encodedImageCollisionFixture(): Promise<{
   };
 }
 
+/** Two reachable textures with the same source key, retained independently of model dedup. */
+async function repeatedSourceKeyFixture(): Promise<Buffer> {
+  const document = buildFixtureDocument();
+  const image = rgbaPng({
+    blue: (x, y) => (x * 19 + y * 23) % 256,
+    green: (x, y) => (x * 29 + y * 31) % 256,
+    height: 32,
+    red: (x, y) => (x * 37 + y * 41) % 256,
+    width: 32,
+  });
+  const [first, second] = document.getRoot().listTextures();
+  const [cloth, skin] = document.getRoot().listMaterials();
+  if (first === undefined || second === undefined || cloth === undefined || skin === undefined) {
+    throw new Error("repeated-source fixture requires the textured character materials");
+  }
+  first.setImage(image).setMimeType("image/png");
+  second.setImage(image).setMimeType("image/png");
+  cloth.setNormalTexture(null);
+  skin.setBaseColorTexture(second);
+  return Buffer.from(await new NodeIO().writeBinary(document));
+}
+
 function countingStore(
   inner: ISharedImageStore,
 ): ISharedImageStore & { puts: number; hits: number } {
@@ -118,13 +140,34 @@ async function applyShared(
   store: ISharedImageStore,
   input: Buffer,
   logical: string,
+  options: IModelPassOptions = {},
 ): Promise<{ buffer: Buffer; auxiliaryOutputs: readonly { outputPath?: string }[] }> {
-  const result = await modelPass({ sharedImages: store }).apply(input, logical);
+  const result = await modelPass({ ...options, sharedImages: store }).apply(input, logical);
   if (Buffer.isBuffer(result)) throw new Error("the model pass returned the input unchanged");
   return { auxiliaryOutputs: result.auxiliaryOutputs ?? [], buffer: result.buffer };
 }
 
 describe("shared model images", () => {
+  it("should declare one repeated source key when model dedup is disabled", async () => {
+    const result = await applyShared(
+      createSharedImageStore(),
+      await repeatedSourceKeyFixture(),
+      "props/repeated.glb",
+      {
+        passes: {
+          dedup: false,
+          meshopt: false,
+          prune: false,
+          quantize: false,
+          reorder: false,
+        },
+        virtual: "none",
+      },
+    );
+
+    expect(result.auxiliaryOutputs.map((output) => output.outputPath)).toHaveLength(1);
+  });
+
   it("should retain one shared output per distinct source key when encoded bytes collide", async () => {
     const fixture = await encodedImageCollisionFixture();
     expect(fixture.rewrittenPng).not.toEqual(fixture.sourcePng);
