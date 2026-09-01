@@ -1,19 +1,12 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import * as ts from "typescript";
-import { workspacePackages } from "./workspace-packages.js";
+import { publicWorkspacePackagesWithExports, workspacePackages } from "./workspace-packages.js";
 
 export interface ICapabilityExport {
-  readonly packageName: "@threenative/core" | "@threenative/physics";
-  readonly subpath:
-    | "."
-    | "./hot"
-    | "./navigation"
-    | "./playtest"
-    | "./react"
-    | "./ui-layer"
-    | "./world";
+  readonly packageName: string;
+  readonly subpath: string;
   readonly name: string;
   readonly entry: string;
 }
@@ -35,6 +28,12 @@ export interface ICapabilityDocReport {
   readonly gaps: readonly ICapabilityTagGap[];
 }
 
+export interface ICapabilityPackageCensusReport {
+  readonly allowlisted: readonly string[];
+  readonly inScope: readonly string[];
+  readonly walked: readonly string[];
+}
+
 /**
  * Public helpers that are intentionally not game-authoring capabilities.
  *
@@ -46,27 +45,58 @@ export const INTERNAL_ALLOWLIST: Readonly<Record<string, string>> = {
     "Hot-update implementation detail; game code calls acceptHotUpdate instead.",
 };
 
+/**
+ * Public packages whose exports are tooling or platform plumbing rather than game-authoring
+ * capabilities. Each omission is explicit so adding a new public package cannot disappear from
+ * the manifest without a reason.
+ */
+export const CAPABILITY_PACKAGE_ALLOWLIST: Readonly<Record<string, string>> = {
+  "@threenative/runtime-native":
+    "Native C++ host and platform packaging; it has no TypeScript game-authoring surface.",
+  "create-threenative":
+    "Scaffold CLI implementation; game authors consume the generated project, not its helpers.",
+  "threenative-engine-mcp":
+    "MCP transport implementation; the generated capability manifest is the authoring surface.",
+};
+
 interface IPackageSpec {
-  readonly name: "@threenative/core" | "@threenative/physics";
+  readonly name: string;
   readonly directory: string;
 }
 
 interface IPackageManifest {
-  readonly exports?: Record<string, unknown>;
+  readonly exports?: unknown;
 }
 
 const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
 
-function isCapabilityPackage(name: string): name is IPackageSpec["name"] {
-  return name === "@threenative/core" || name === "@threenative/physics";
+export function validateCapabilityPackageAllowlist(
+  allowlist: Readonly<Record<string, string>> = CAPABILITY_PACKAGE_ALLOWLIST,
+): void {
+  const invalid = Object.entries(allowlist).filter(
+    ([name, reason]) =>
+      name.trim().length === 0 ||
+      typeof reason !== "string" ||
+      reason.trim().length === 0 ||
+      /[\r\n]/u.test(reason),
+  );
+  if (invalid.length === 0) return;
+  throw new Error(
+    `CAPABILITY_PACKAGE_ALLOWLIST_INVALID: every entry needs a non-empty one-line reason: ${invalid
+      .map(([name]) => name)
+      .join(", ")}`,
+  );
 }
 
-function capabilityPackageSpecs(root: string): readonly IPackageSpec[] {
-  // Capability docs intentionally cover only the two authoring packages; their package names
-  // and directories still come from workspace manifests so this scan cannot go stale silently.
-  return workspacePackages(path.join(root, "packages")).flatMap(({ name, directory }) =>
-    isCapabilityPackage(name) ? [{ name, directory: path.relative(root, directory) }] : [],
-  );
+/** Derive the packages whose public code exports must carry capability documentation. */
+export function capabilityPackageSpecs(
+  root: string,
+  allowlist: Readonly<Record<string, string>> = CAPABILITY_PACKAGE_ALLOWLIST,
+): readonly IPackageSpec[] {
+  validateCapabilityPackageAllowlist(allowlist);
+  return publicWorkspacePackagesWithExports(root)
+    .filter(({ name }) => allowlist[name] === undefined)
+    .map(({ name, directory }) => ({ name, directory: path.relative(root, directory) }));
 }
 
 interface IManifestEntry {
@@ -89,7 +119,8 @@ export function validateInternalAllowlist(
   allowlist: Readonly<Record<string, string>> = INTERNAL_ALLOWLIST,
 ): void {
   const invalid = Object.entries(allowlist).filter(
-    ([, reason]) => reason.trim().length === 0 || reason.includes("\n"),
+    ([, reason]) =>
+      typeof reason !== "string" || reason.trim().length === 0 || /[\r\n]/u.test(reason),
   );
   if (invalid.length > 0) {
     throw new Error(
@@ -102,6 +133,13 @@ export function validateInternalAllowlist(
 
 function exportTarget(value: unknown): string | undefined {
   if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const target = exportTarget(item);
+      if (target !== undefined) return target;
+    }
+    return undefined;
+  }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const conditions = value as Record<string, unknown>;
   for (const condition of ["import", "default", "types"]) {
@@ -109,6 +147,15 @@ function exportTarget(value: unknown): string | undefined {
     if (target !== undefined) return target;
   }
   return undefined;
+}
+
+function exportMapEntries(value: unknown): readonly [string, unknown][] {
+  if (typeof value === "string" || Array.isArray(value)) return [[".", value]];
+  if (typeof value !== "object" || value === null) return [];
+  const record = value as Record<string, unknown>;
+  const subpaths = Object.keys(record).filter((key) => key.startsWith("."));
+  if (subpaths.length === 0) return [[".", value]];
+  return subpaths.map((subpath) => [subpath, record[subpath]] as [string, unknown]);
 }
 
 function sourceEntry(packageRoot: string, target: string): string {
@@ -135,22 +182,9 @@ async function packageEntries(
     throw new Error(`CAPABILITY_DOCS_EXPORTS_MISSING: ${manifestPath}`);
   }
 
-  const entries: { subpath: ICapabilityExport["subpath"]; entry: string }[] = [];
-  for (const [subpath, targetDefinition] of Object.entries(manifest.exports)) {
+  const entries: { subpath: string; entry: string }[] = [];
+  for (const [subpath, targetDefinition] of exportMapEntries(manifest.exports)) {
     if (subpath === "./package.json") continue;
-    // Named rather than accepted wholesale: a new subpath is a new public surface, and this list
-    // is where someone has to notice it and decide the export deserves capability docs.
-    if (
-      subpath !== "." &&
-      subpath !== "./hot" &&
-      subpath !== "./navigation" &&
-      subpath !== "./playtest" &&
-      subpath !== "./react" &&
-      subpath !== "./ui-layer" &&
-      subpath !== "./world"
-    ) {
-      throw new Error(`CAPABILITY_DOCS_UNSUPPORTED_SUBPATH: ${spec.name}${subpath}`);
-    }
     const target = exportTarget(targetDefinition);
     if (target === undefined) {
       throw new Error(`CAPABILITY_DOCS_TARGET_MISSING: ${spec.name}${subpath}`);
@@ -164,7 +198,17 @@ async function packageEntries(
   return entries;
 }
 
-function sourceProgram(root: string, entries: readonly string[]): ts.Program {
+function sourceProgram(
+  root: string,
+  entries: readonly string[],
+  specs: readonly IPackageSpec[],
+): ts.Program {
+  const paths: Record<string, string[]> = {};
+  for (const spec of specs) {
+    const sourceDirectory = path.join(spec.directory, "src").replaceAll(path.sep, "/");
+    paths[spec.name] = [`${sourceDirectory}/index.ts`];
+    paths[`${spec.name}/*`] = [`${sourceDirectory}/*`];
+  }
   return ts.createProgram({
     rootNames: entries,
     options: {
@@ -173,11 +217,7 @@ function sourceProgram(root: string, entries: readonly string[]): ts.Program {
       module: ts.ModuleKind.ESNext,
       moduleResolution: ts.ModuleResolutionKind.Bundler,
       noEmit: true,
-      paths: {
-        "@threenative/core": ["packages/core/src/index.ts"],
-        "@threenative/physics": ["packages/physics/src/index.ts"],
-        "@threenative/playtest": ["packages/playtest/src/index.ts"],
-      },
+      paths,
       skipLibCheck: true,
       target: ts.ScriptTarget.ES2022,
     },
@@ -219,12 +259,13 @@ function exportedValueNames(checker: ts.TypeChecker, entry: ts.SourceFile): read
     .sort();
 }
 
-/** Walk the main entry and every code subpath in the core and physics export maps. */
+/** Walk the main entry and every code subpath in each non-allowlisted public package. */
 export async function collectPublicExports(root: string): Promise<readonly ICapabilityExport[]> {
   const discovered: ICapabilityExport[] = [];
+  const specs = capabilityPackageSpecs(root);
   const entryRecords = (
     await Promise.all(
-      capabilityPackageSpecs(root).map(async (spec) => ({
+      specs.map(async (spec) => ({
         spec,
         entries: await packageEntries(root, spec),
       })),
@@ -233,6 +274,7 @@ export async function collectPublicExports(root: string): Promise<readonly ICapa
   const program = sourceProgram(
     root,
     entryRecords.map(({ entry }) => entry),
+    specs,
   );
   const checker = program.getTypeChecker();
   for (const { packageName, subpath, entry } of entryRecords) {
@@ -258,6 +300,81 @@ export function missingDocTags(entry: IManifestEntry | undefined): readonly DocT
   if (entry.situations.length === 0) missing.push("@situation");
   if (entry.example.trim().length === 0) missing.push("@example");
   return missing;
+}
+
+interface ICapabilityManifestPackageEntry {
+  readonly package?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function manifestPackageNames(root: string): Promise<ReadonlySet<string>> {
+  const manifestFile = path.join(root, MANIFEST_RELATIVE_PATH);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(manifestFile, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(
+      `CAPABILITY_PACKAGE_CENSUS_MANIFEST_INVALID: ${manifestFile}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.entries)) {
+    throw new Error(
+      `CAPABILITY_PACKAGE_CENSUS_MANIFEST_INVALID: ${manifestFile} must contain an entries array.`,
+    );
+  }
+  const packages = new Set<string>();
+  for (const [index, rawEntry] of parsed.entries.entries()) {
+    if (!isRecord(rawEntry)) {
+      throw new Error(
+        `CAPABILITY_PACKAGE_CENSUS_MANIFEST_INVALID: ${manifestFile} entry ${String(index)} is not an object.`,
+      );
+    }
+    const packageName = (rawEntry as ICapabilityManifestPackageEntry).package;
+    if (typeof packageName !== "string" || packageName.trim().length === 0) {
+      throw new Error(
+        `CAPABILITY_PACKAGE_CENSUS_MANIFEST_INVALID: ${manifestFile} entry ${String(index)} has no package name.`,
+      );
+    }
+    packages.add(packageName);
+  }
+  return packages;
+}
+
+/**
+ * Ensure every public workspace package with code exports is either represented in the generated
+ * manifest or explicitly omitted with a reason. The manifest is the observable walked set: this
+ * catches a stale or reverted package walk as well as a newly added package.
+ */
+export async function checkCapabilityPackageCensus(
+  root: string,
+  allowlist: Readonly<Record<string, string>> = CAPABILITY_PACKAGE_ALLOWLIST,
+): Promise<ICapabilityPackageCensusReport> {
+  validateCapabilityPackageAllowlist(allowlist);
+  const allPackages = workspacePackages(root);
+  const inScope = publicWorkspacePackagesWithExports(root)
+    .map(({ name }) => name)
+    .sort();
+  const allowlisted = Object.keys(allowlist)
+    .filter((name) => allPackages.some((item) => item.name === name))
+    .sort();
+  const manifestPackages = await manifestPackageNames(root);
+  const walked = inScope.filter((name) => manifestPackages.has(name));
+  const uncovered = inScope.filter(
+    (name) => !manifestPackages.has(name) && allowlist[name] === undefined,
+  );
+  if (uncovered.length > 0) {
+    throw new Error(
+      `CAPABILITY_PACKAGE_CENSUS_UNCOVERED: ${uncovered.join(", ")} has a public exports map and no capability coverage; add the package to the derived manifest walk or allowlist it with a non-empty one-line reason.`,
+    );
+  }
+  return { allowlisted, inScope, walked };
+}
+
+export function formatCapabilityPackageCensus(report: ICapabilityPackageCensusReport): string {
+  return `capability package census: ${report.walked.length} walked, ${report.allowlisted.length} allowlisted, ${report.inScope.length} public packages with code exports`;
 }
 
 /**
@@ -312,18 +429,24 @@ if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)
 ) {
-  checkCapabilityDocs(process.cwd())
-    .then((report) => {
-      const output = formatCapabilityReport(report);
-      if (report.gaps.length > 0) {
-        console.error(output);
+  if (process.argv.slice(2).some((argument) => argument !== "--census")) {
+    console.error("usage: check-capability-docs.ts [--census]");
+    process.exitCode = 1;
+  } else {
+    Promise.all([checkCapabilityPackageCensus(process.cwd()), checkCapabilityDocs(process.cwd())])
+      .then(([census, report]) => {
+        console.log(formatCapabilityPackageCensus(census));
+        const output = formatCapabilityReport(report);
+        if (report.gaps.length > 0) {
+          console.error(output);
+          process.exitCode = 1;
+        } else {
+          console.log(output);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;
-      } else {
-        console.log(output);
-      }
-    })
-    .catch((error: unknown) => {
-      console.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
-    });
+      });
+  }
 }
