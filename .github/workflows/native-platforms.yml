@@ -64,10 +64,18 @@ jobs:
     # Runs on every event since 2026-09-01 (owner call): the earlier narrowing held the expensive
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
-    # branch where the work happens is a leg nobody is watching. This lane is advisory by PRD-295
-    # and still not a required check, but advisory means "its red does not block", never "it does
-    # not run". If it is red, it reports red and PRD-295 owns the fix.
+    # branch where the work happens is a leg nobody is watching.
+    #
+    # Advisory (owner-approved 2026-09-01) until PRD-295 lands: the lane reports 88/88 conformance
+    # failures at the emulator's GPU layer — "bad color buffer handle", every row, both with and
+    # without the template fixes — which is the emulator's GPU emulation, not anything a render
+    # commit fixes. continue-on-error means the leg still runs on every event, its ledger and
+    # captures still upload, and its red is still readable in the job log; it only stops the red
+    # from failing the run and cancelling its siblings (which killed desktop-parity twice while it
+    # was mid-run). This comes OFF in the commit that fixes the lane — an advisory that stays
+    # advisory becomes noise, and the fail-closed iOS leg is the model to return to.
     if: inputs.ios_only != true
+    continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -202,8 +210,10 @@ jobs:
           name: native-android-emulator-parity
           path: packages/runtime-native/artifacts/conformance/
           if-no-files-found: error
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
+      # No cancel-run-on-failure here, and that is deliberate: this job is advisory, and
+      # `failure()` still reads a failed step even under job-level continue-on-error — an advisory
+      # job that cancelled its own run on its known red would take desktop-parity down with it
+      # every single time, which is exactly what happened on 2026-09-01 (twice).
 
   desktop-parity:
     name: Desktop web/native parity

@@ -89,6 +89,12 @@ describe("CI pipeline structure", () => {
       const source = await readFile(path.join(repo, relative), "utf8");
       expect(triggerSection(source), relative).toContain("actions: write");
       for (const [job, section] of jobSections(source)) {
+        // The one exemption is android-emulator-parity, asserted explicitly below: an advisory
+        // job must not cancel its own run on its known red — that cancel step killed
+        // desktop-parity twice on 2026-09-01 while desktop-parity was mid-run.
+        if (relative.endsWith("native-platforms.yml") && job === "android-emulator-parity") {
+          continue;
+        }
         expect(section, `${relative} ${job}`).toContain("if: failure()");
         expect(section, `${relative} ${job}`).toContain(
           "uses: ./.github/actions/cancel-run-on-failure",
@@ -349,6 +355,14 @@ describe("CI pipeline structure", () => {
       expect(job, name).not.toContain("github.event_name != 'pull_request'");
       expect(job, name).not.toContain("contains(github.event.pull_request.labels");
     }
+    // Advisory until PRD-295 (owner-approved 2026-09-01): the leg runs and reports everywhere,
+    // but its known red — 88/88 conformance failures at the emulator's GPU layer — must neither
+    // fail the run nor cancel its siblings. The advisory must be explicit and removable: when
+    // the lane is fixed, continue-on-error comes off in the same commit and this assertion flips
+    // with it.
+    const android = requiredJob(native, "android-emulator-parity");
+    expect(android).toContain("continue-on-error: true");
+    expect(android).not.toContain("uses: ./.github/actions/cancel-run-on-failure");
   });
 
   it("job-level env never reads the runner context", async () => {
