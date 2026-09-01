@@ -466,27 +466,21 @@ the same seam — a scaled buffer is upscaled, magnifying every aliased edge. Pa
 
 ## Quality tiers — one file decides how expensive this game looks
 
-`src/render/quality.ts` is the switch. It names three tiers — `low`, `medium` and `high` — and
-holds the whole preset for each, with **what every enabled stage measured written on the line
-above it** and `unmeasured` where nobody has measured it. `src/render/postprocessing.ts` reads
-that file and decides nothing itself, so "make this run on a phone" is one file to edit.
+`src/render/quality.ts` names three tiers — `low`, `medium`, `high` — and holds the whole preset
+for each, with **what each enabled stage measured written on the line above it**, or `unmeasured`.
+`src/render/postprocessing.ts` reads that file and decides nothing itself, so "make this run on a
+phone" is one file to edit.
 
-The tier is chosen for you: `isMobile()` gives `low`, anything else gives `high`. `medium` is the
-rung for a machine that is neither — a laptop iGPU, a handheld, a desktop dropping frames.
-
-Override it by name on the call that already exists in this template's scene:
+`isMobile()` selects `low` and anything else `high`; `medium` is the rung for a machine that is
+neither. Override by name on the call the scene already makes:
 
 ```ts
 setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, tier: "low" });
 ```
 
-An unknown name throws with the value it was handed; it never falls back to the default look
-quietly. **Overriding does not silence the report** — `TN_QUALITY_TIER <tier> mobile=<bool>
-source=<platform|override>` is printed once per `setupPost`, beside `TN_WORLD_ENVIRONMENT`, so a
-capture always says which look produced it.
-
-Changing what a tier *contains* is editing `quality.ts`, which is yours. Deleting the file is not:
-the game stops compiling, and the engine repository's `pnpm budgets` fails naming this template.
+An unknown name throws with the value it was handed rather than rendering the default quietly, and
+overriding does not silence the report: `TN_QUALITY_TIER <tier> mobile=<bool>
+source=<platform|override>` prints once per `setupPost`, so a capture says which look produced it.
 
 <!-- shared: performance-default -->
 # Lightmaps

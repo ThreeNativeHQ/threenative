@@ -38,8 +38,11 @@ export type QualityTier = "low" | "medium" | "high";
 
 const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
 
-/** Narrows an arbitrary string — a URL parameter, a saved setting — to a tier name. */
-export function isQualityTier(value: string): value is QualityTier {
+/**
+ * Narrows an arbitrary string — a URL parameter, a saved setting — to a tier name. Not exported:
+ * `resolveQualityTier` is the one door in, so an unknown name cannot be waved past the throw.
+ */
+function isQualityTier(value: string): value is QualityTier {
   return (QUALITY_TIERS as readonly string[]).includes(value);
 }
 

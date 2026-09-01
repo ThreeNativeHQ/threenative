@@ -16,7 +16,6 @@ const templatesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const names = await templateNames(templatesDir);
 
 interface IQualityModule {
-  readonly isQualityTier: (value: string) => boolean;
   readonly qualityPreset: (tier: string) => Record<string, unknown>;
   readonly resolveQualityTier: (request?: { mobile?: boolean; tier?: string }) => string;
 }
@@ -87,14 +86,6 @@ describe("template quality tiers", () => {
     const { resolveQualityTier } = await load("starter");
     expect(resolveQualityTier({ mobile: true, tier: "high" })).toBe("high");
     expect(resolveQualityTier({ mobile: false, tier: "low" })).toBe("low");
-  });
-
-  it("should name every tier from every template's isQualityTier", async () => {
-    for (const name of names) {
-      const { isQualityTier } = await load(name);
-      for (const tier of QUALITY_TIERS) expect(isQualityTier(tier)).toBe(true);
-      expect(isQualityTier("ultra")).toBe(false);
-    }
   });
 
   it("should differ between low and high in at least one enabled stage", async () => {
