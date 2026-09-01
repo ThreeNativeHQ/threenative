@@ -76,6 +76,11 @@ caught where a bone-direction check reads zero. `clipTrackBindings` names tracks
 clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
 supposed to be touching.
 
+One directional shadow over a big outdoor level: `sun.shadow.shadowNode = new VirtualShadowNode(sun,
+{ clipExtents: [12, 40, 120] })` from `@threenative/core` gives every material camera-centred,
+texel-snapped, cached clip levels; bias and map size stay on `sun.shadow`, `trackCaster(object)`
+refreshes a mover in place, and `TN_VIRTUAL_SHADOW` reports rendered against cached levels.
+
 ## Quality and proof
 
 `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`;
