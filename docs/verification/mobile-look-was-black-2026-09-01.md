@@ -53,9 +53,17 @@ const rough = scenePass.getTextureNode("roughness");   // ←
 no fragment shader writes, and WebGPU refuses that pipeline outright. The frame comes out black
 while every report says the chain is fine, which is the worst shape a failure can take.
 
-The corroborating detail: **`sailing` is the one template that never had those four lines**, because
-it runs no SSGI and no SSR at any tier. It is also the one template whose mobile look was never
-black.
+**`sailing` already carried this fix, and the reasoning, in a comment** — added 2026-08-31 in
+`326c053f`:
+
+> `PassNode` adds every named colour texture requested through `getTextureNode()` to its
+> framebuffer. Keep the surface-data attachments lazy: a bloom-only outdoor scene does not need MRT,
+> and asking for `normal`/`metalness`/`roughness` here would give ordinary materials extra targets
+> with no fragment outputs.
+
+So this defect was found once, understood exactly, fixed in **one** template — and the other seven
+kept it. That is the whole argument for a gate rather than a fix: the knowledge existed, written
+down, in this repository, and did not travel.
 
 ## The fix
 
@@ -111,6 +119,29 @@ of those three lines.
   that worked print it too.
 - One trap worth knowing when grepping a device log: `TN_COLD_START`, `TN_UI_OVERLAY` and friends
   are **Android's own**, a prefix collision with ours.
+
+## The gate
+
+A fix that lived in one template's comment did not travel, so this is now checked. The
+`template quality` gate — already in the `budgets` chain — refuses a `worldEnvironment.ts` that
+requests `normal`, `metalness` or `roughness` outside a deferred accessor:
+
+```
+### the exact regression: shooter asks for normal eagerly again
+- shooter: worldEnvironment.ts requests normal (line 383) eagerly — that attaches a colour target
+  no fragment shader writes, and the frame renders black while the chain reports success
+(exit 1)
+
+### the wrapped form too: sailing's metalness accessor un-deferred
+- sailing: worldEnvironment.ts requests metalness (line 374) eagerly — …
+(exit 1)
+```
+
+Both reds observed. The check is index-based rather than line-based on purpose: the accessors wrap
+across two lines, so a line-based match reads the `=>` as absent and calls the fix a defect — the
+first version of this gate did exactly that and failed `sailing`, the one template that was already
+correct. `depth` and `output` are deliberately not checked: the pass carries them either way, so
+requesting them eagerly costs nothing.
 
 ## Gates
 
