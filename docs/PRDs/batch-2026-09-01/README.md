@@ -42,9 +42,9 @@ flowchart LR
 
 | PRD | Theme | Blocked by | Estimated |
 |---|---|---|---|
-| [PRD-318](PRD-318-the-asset-compile-says-what-each-pass-cost.md) | asset pipeline | — | ~2h |
-| [PRD-319](PRD-319-the-asset-compile-runs-independent-work-concurrently.md) | asset pipeline | 318 | ~4h |
-| [PRD-320](PRD-320-the-fab-import-replays-without-a-fab-account.md) | asset pipeline | — | ~3h |
+| [PRD-318](../done/PRD-318-the-asset-compile-says-what-each-pass-cost.md) (archived 2026-09-02) | asset pipeline | — | ~2h |
+| [PRD-319](../done/PRD-319-the-asset-compile-runs-independent-work-concurrently.md) (archived 2026-09-02) | asset pipeline | 318 | ~4h |
+| [PRD-320](../done/PRD-320-the-fab-import-replays-without-a-fab-account.md) (archived 2026-09-02) | asset pipeline | — | ~3h |
 | [PRD-321](PRD-321-the-animal-state-machine-is-mechanism-the-animals-are-the-game.md) | Wildwood extraction | — | ~4h |
 | [PRD-322](PRD-322-quality-tier-resolution-is-a-platform-seam.md) | Wildwood extraction | — | ~2h |
 | [PRD-323](PRD-323-evidence-has-a-retention-policy-and-a-gate.md) | doc and evidence bloat | — | ~5h |
