@@ -446,7 +446,7 @@ export class WaveField {
 
   /** Surface height at a point, as a graph. The scalar half of what `sample` returns. */
   heightNode(options: IWaveFieldGraphOptions = {}): Node<"float"> {
-    return Fn(() => this.#evaluate(options, false).height)() as unknown as Node<"float">;
+    return Fn(() => this.#evaluate(options, false).height)() as unknown as Node<"float">; // quality-allow: TSL result shape is set by construction; three 0.185 types swizzles and Fn loosely
   }
 
   /**
@@ -467,7 +467,7 @@ export class WaveField {
       if (gradientX === undefined || gradientZ === undefined)
         throw new Error("WaveField.normalNode lost its gradient.");
       return normalize(vec3(gradientX.negate(), 1, gradientZ.negate()));
-    })() as unknown as Node<"vec3">;
+    })() as unknown as Node<"vec3">; // quality-allow: TSL result shape is set by construction; three 0.185 types swizzles and Fn loosely
   }
 
   /** Return a TSL node that displaces local vertices using the same packed values as `sample`. */

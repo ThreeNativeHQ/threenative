@@ -186,7 +186,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** The stock shadow nodes behind each level, for diagnostics. */
   get levelNodes(): readonly Node[] {
-    return this.#levels.map((level) => level.node as unknown as Node);
+    return this.#levels.map((level) => level.node);
   }
 
   /** The placeholder lights, one per level; exposed for tests and debug views. */
@@ -243,7 +243,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
         light,
         minX: Number.NaN,
         minY: Number.NaN,
-        node: shadow(light as unknown as DirectionalLight, levelShadow),
+        // A placeholder Object3D stands in for a light, exactly as three's own CSMShadowNode does.
+        node: shadow(light as unknown as DirectionalLight, levelShadow), // quality-allow: the stock shadow node reads only position, target and shadow off its light
         shadow: levelShadow,
       });
     });
@@ -280,7 +281,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         );
       }
       return result;
-    })() as unknown as Node;
+    })();
   }
 
   override updateBefore(frame: NodeFrame): undefined {
