@@ -156,6 +156,14 @@ export interface IAssetCompileOptions {
    * registry (the KTX2 texture pass) runs unless `config.textures` is `"none"`.
    */
   readonly passes?: readonly IAssetPass[];
+  /**
+   * The order inputs are processed in, which under a scheduler is the order their work
+   * completes. `"sorted"` (the default) is the documented behaviour; `"reversed"` exists for
+   * the determinism gate, which must be able to run the same inputs through the driver in a
+   * different completion order and compare every emitted byte. It is a test seam, not a
+   * project setting, and a game config never carries it.
+   */
+  readonly processingOrder?: "reversed" | "sorted";
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
@@ -1252,7 +1260,17 @@ async function writeReceipt(
     );
   }
   const seen = new Map<string, IBakeReceiptOutput>();
-  for (const output of outputs) seen.set(output.path, output);
+  for (const output of outputs) {
+    // Several inputs can declare one shared output (an image two models embed). The survivor is
+    // chosen by the lexicographically smallest source, not by arrival: under a scheduler whose
+    // completion order is not input order, a last-writer-wins merge would make the receipt's
+    // provenance depend on which worker finished first. The path, bytes and producer are
+    // identical across the contenders; only this tie-break needs a stable rule.
+    const existing = seen.get(output.path);
+    if (existing === undefined || (output.source ?? "") < (existing.source ?? "")) {
+      seen.set(output.path, output);
+    }
+  }
   const receipt: IBakeReceipt = {
     outputs: [...seen.values()].sort((left, right) => (left.path < right.path ? -1 : 1)),
     pipelineVersion: PIPELINE_VERSION,
@@ -1340,6 +1358,9 @@ export async function compileAssets(
   let compressedModelCount = 0;
 
   const logicals = await walkSources(layout.sourceRoot);
+  // The determinism gate's seam: reversed processing order reverses which input's work completes
+  // first, so the gate can prove the emitted bytes do not depend on it.
+  if (options.processingOrder === "reversed") logicals.reverse();
 
   // An empty (or dotfile-only) source must never publish an empty manifest: the runtime treats
   // a served manifest as authoritative and would reject every load against it. A source that
