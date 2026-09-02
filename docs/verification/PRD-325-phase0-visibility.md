@@ -2,49 +2,73 @@
 
 Date: 2026-09-02
 
-This is the verification-only review-round update. No source code or source PRD was edited.
+This receipt includes the final-review correction. The source PRD remains absent/legacy and was not
+edited. Shared lifecycle source changed in the engine, and a bounded visibility meter plus its
+scenario changed in the linked Bayview sandbox lane.
 
 ## Phase 0 decision — no new visibility surface
 
-Finding 3 closes without a new visibility export. The shipped
-`PhysicsDirectSpaceState3D.intersectRay` query is within the 16.3 ms frame budget in the real
-bayview round, so Phase 3 is not run. `BoxOccluders` remains game-owned code; this phase did not
-change `sandbox/prd259-bayview-current-20260830/src/render/occlusion.ts`.
+Finding 3 closes without a new visibility export, now on the delivered algorithm rather than a
+different physics query. Bayview uses `BoxOccluders.clear`; only a box-blocked segment falls back to
+`ctx.raycastAll` against the town's hittable solids. `PhysicsDirectSpaceState3D.intersectRay` is not
+on that path, and its earlier numbers are withdrawn as evidence for this decision.
 
-Proof subject: bayview's `five-soldiers.playtest.json`, with the real town scene, five soldiers and
-143 town colliders. The temporary measurement ran one box test and one direct-space query for each
-soldier on each of 200 fixed frames: 1,000 paired observations at 60 Hz.
+Proof subject: `playtests/visibility-path-cost.playtest.json` in sandbox commit `6eed88e`, with the
+real town scene, five soldiers, 143 town colliders, and setup applied before `Play.enter()`. The
+scenario places the player and first soldier on opposite sides of a building so the exact fallback
+must run; it then measures 200 fixed ticks. Its fail-closed assertions require the visibility call
+count and actual `raycastAll` fallback count to increase, require 143 boxes, and bound the existing
+five-soldier `squad.canSee` peak to 16.3 ms.
 
-| Tester | Total across 200 frames | Per 60 Hz frame | Share of 16.3 ms |
-| --- | ---: | ---: | ---: |
-| `BoxOccluders.clear` | 3.6 ms | 0.018 ms | 0.11% |
-| `PhysicsDirectSpaceState3D.intersectRay` | 16.5 ms | 0.083 ms | 0.51% |
+| Delivered-path observation | Measured value |
+| --- | ---: |
+| Fixed ticks | 200 |
+| `BoxOccluders.clear` calls | 72 |
+| Box-blocked calls | 72 |
+| Actual `ctx.raycastAll` fallbacks | 72 |
+| Fallbacks reporting a solid blocker | 72 |
+| Total exact-path time | 41.2 ms |
+| Amortized exact-path time per measured tick | 0.206 ms |
+| Mean per invoked exact-path call | 0.572 ms |
+| Worst exact-path call | 12.2 ms |
+| Worst five-soldier `canSee` frame | 12.4 ms (76.1% of 16.3 ms) |
 
-The query therefore uses 0.083 ms of the 16.3 ms budget for the five-agent sight workload. The
-measurement command was:
+The worst measured five-soldier visibility frame stayed below the 16.3 ms Phase 0 bound, while the
+200-tick amortized cost was 0.206 ms/tick. Phase 3 is therefore not run and `BoxOccluders` remains
+game-owned. The meter is bounded aggregate state (counters, total, mean and peak); it stores no
+per-frame series.
+
+Before the meter existed, the committed scenario failed closed:
 
 ```text
-node packages/playtest/dist/runner/cli.js /tmp/prd325-bayview-measure-PdWZnz/bayview/playtests/five-soldiers.playtest.json --url http://127.0.0.1:5173 --browser-recipe webgpu --headed
+FAIL component.visibility.calls.value
+observed before=undefined after=undefined
+FAIL component.visibility.raycastFallbacks.value
+observed before=undefined after=undefined
 ```
 
-Observed marker:
+After the meter and pre-entry placement, the focused run was:
 
 ```text
-TN_PRD325_VISIBILITY:{"agents":5,"boxes":143,"boxMs":3.6000000089406967,"frames":200,"queryMs":16.5,"queries":1000}
+tools/capture-lock.sh node <engine-worktree>/packages/playtest/dist/runner/cli.js \
+  playtests/visibility-path-cost.playtest.json --target browser \
+  --url http://127.0.0.1:4175 --browser-recipe webgpu --headed \
+  --server-command "node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4175 --strictPort" \
+  --artifacts artifacts/prd325-visibility-green --timeout 60000
 ```
 
-The fail-closed unit control was observed red when the query call was removed:
+Observed result:
 
 ```text
-FAIL packages/physics/__tests__/direct-space-state.spec.ts
-Error: TN_PRD325_VISIBILITY_MISSING_QUERY_OBSERVATION
-Tests: 1 failed
+pass=true target=web runtime=web
+setup requested/applied player=(12,1.9,15.7), enemy=(0,0,12)
+boxes=143 calls=72 boxBlocked=72 raycastFallbacks=72 raycastBlocked=72
+totalMs=41.2 averageMs=0.572 peakMs=12.2 squad.canSee=12.4
+rendererKind=webgpu adapter.architecture=turing adapter.vendor=nvidia
+diagnostics consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
 ```
 
-The restored focused unit run reported 1 passing test. Because the shipped query is within budget,
-the Phase 0 gate records “no new surface” for Integration Ledger row 4 and stops Phase 3.
-
-## Final staircase proof — web and desktop
+## Final staircase proof — fresh web and historical desktop
 
 The final scenario is:
 
@@ -52,21 +76,25 @@ The final scenario is:
 /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json
 ```
 
-Web manager receipt:
+Fresh post-correction web receipt:
 
 ```text
-node packages/playtest/dist/runner/cli.js /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json --target browser --url http://127.0.0.1:5173 --browser-recipe webgpu --headed --project /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830 --artifacts /tmp/prd325-camera-web-after-timing --timeout 60000
+tools/capture-lock.sh node <engine-worktree>/packages/playtest/dist/runner/cli.js \
+  playtests/camera-tracks-body-vertically.playtest.json --target browser \
+  --url http://127.0.0.1:4175 --browser-recipe webgpu --headed \
+  --server-command "node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4175 --strictPort" \
+  --artifacts artifacts/prd325-camera-lifecycle-green --timeout 60000
 
 pass=true target=web runtime=web
-positionY 1.8995753526687622 -> 2.364098310470581
-targetsHit 0 -> 1; shots=1; cameraLagPeak=0
+positionY 1.899275302886963 -> 2.364098310470581
+cameraLagPeak 0 -> 0
 diagnostics consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
 rendererKind=webgpu adapter.architecture=turing adapter.vendor=nvidia
 setup requested/applied spawn={x:25,y:1.9,z:-4.4} aim={yaw:pi,pitch:0.82}
-climb-shot step tick=36
 ```
 
-Desktop manager receipt:
+Earlier desktop receipt (it predates the final lifecycle correction and is not a post-correction
+native scenario proof):
 
 ```text
 SDL_AUDIO_DRIVER=dummy sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json --target desktop --executable /home/joao/projects/threenative/prd325-desktop-proof-corrected --no-screenshots --timeout 60000
@@ -79,16 +107,44 @@ setup requested/applied spawn={x:25,y:1.9,z:-4.4} aim={yaw:pi,pitch:0.82}
 climb-shot step tick=25
 ```
 
-Both manager-run target receipts passed with the shared setup applied before the scene release.
+The fresh web scenario passed with setup applied before the authoritative body transfer. A fresh
+desktop/device scenario remains unverified; native endpoint hold behavior is covered by the focused
+shared lifecycle test below, not by relabeling the older desktop receipt.
 
 ## Setup ordering and manager gates
 
-Commit `acf622e8` applies scenario setup through the shared browser/native transport before
-`describe()` releases a held scene. Red/green evidence is in
-`packages/playtest/__tests__/setup-ordering.spec.ts:15`: red before the fix; green with 3 tests
-after the fix.
+Commit `2e2cff2b` moves the shared core gate before real `Scene.enter()`. Successful `applySetup()`
+releases the gate; no-setup `describe()` also releases it, but its returned description waits for
+the scene-entered promise so entity-derived `runtime.components` is complete. An apply failure
+rejects the held start immediately. Default hold detection accepts both the browser runner global
+and native/device `TN_PLAYTEST_ENDPOINT`; explicit `holdUntilAttached` remains authoritative.
 
-The manager reran the repository gates with these results:
+The red regression used a real `defineGame()` and `playtest()` bridge. `Scene.load()` registered a
+placeholder, `Scene.enter()` copied it into an authoritative body, and before the fix the observed
+event list was already `['load', 'enter']` while attachment was still held:
+
+```text
+FAIL packages/core/__tests__/playtest.spec.ts
+expected [ 'load', 'enter' ] to deeply equal [ 'load' ]
+Tests: 1 failed | 15 passed
+```
+
+Focused green after the fix:
+
+```text
+pnpm exec vitest run packages/core/__tests__/playtest.spec.ts \
+  packages/playtest/__tests__/setup-ordering.spec.ts
+Test Files 2 passed (2)
+Tests 21 passed (21)
+```
+
+The core suite records real scene entry for setup and no-setup paths, checks post-entry component
+capabilities, checks immediate fail-closed setup rejection, and checks native endpoint auto-hold.
+The playtest transport suite separately checks setup-before-describe on web and desktop transports
+without treating `describe` itself as scene entry.
+
+The manager ran these gates before the final lifecycle correction; they are historical and were not
+rerun for commit `2e2cff2b`:
 
 ```text
 pnpm typecheck && pnpm lint && pnpm test — exit 0
@@ -110,7 +166,7 @@ new export. Row 4 is resolved as a measured no-new-surface decision rather than 
 | 1 | `afterPhysics` in `@threenative/core` | `packages/create-threenative/templates/shooter/src/scenes/Play.ts:357`; sandbox `prd259-bayview-current-20260830/src/scenes/Play.ts:366` | bayview's private `src/postPhysics.ts` plugin slot; old path removed | shipped and wired; engine-ordered callback reads the solved body before draw |
 | 2 | `buildStaticColliders` in `@threenative/physics` | `packages/create-threenative/templates/shooter/src/scenes/Play.ts:139`; sandbox `lumen-hall/src/scenes/Play.ts:263` | lumen-hall's hand-written `src/collision.ts`; old path removed | shipped and wired; the game supplies only its scene and predicate |
 | 3 | Instance-carrier handling inside `buildStaticColliders` | same non-test callers as row 2; exercised by lumen-hall's instanced piers | hand-written proxy loop | resolved inside row 2; world-space instance transforms are premultiplied |
-| 4 | Visibility answer | no new exported caller; existing sandbox `BoxOccluders` construction is `prd259-bayview-current-20260830/src/scenes/Play.ts:510`; the temporary Phase 0 query probe was `Play.ts:379` outside the delivered sandbox | `BoxOccluders` remains the game-owned answer; no duplicate framework surface | Phase 0 measured `intersectRay` at 0.083 ms/frame, so “no new surface” is the recorded decision |
+| 4 | Visibility answer | no new exported caller; sandbox `BoxOccluders` plus `ctx.raycastAll` is measured by `prd259-bayview-current-20260830/playtests/visibility-path-cost.playtest.json` | `BoxOccluders` remains the game-owned answer; no duplicate framework surface | Phase 0 forced 72 real fallbacks: 0.206 ms/tick amortized and 12.4 ms worst five-soldier frame against the 16.3 ms bound |
 
 Caller census for the two new exports is therefore complete: `afterPhysics` has the template and
 bayview callers above, and `buildStaticColliders` has the template and lumen-hall callers above.
