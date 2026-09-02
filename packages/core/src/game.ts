@@ -814,6 +814,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             ? { failed: failure ?? "unknown" }
             : {
                 compiled: report.compiled,
+                pipelines: report.pipelines,
                 slices: report.slices,
                 elapsedMs: Math.round(report.elapsedMs),
                 unsupported: report.unsupported,

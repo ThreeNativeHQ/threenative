@@ -84,6 +84,12 @@ export interface IWarmUpOptions {
 export interface IWarmUpReport {
   /** Distinct pipelines warmed — one representative object each, not one per renderable. */
   readonly compiled: number;
+  /**
+   * Distinct pipelines the scene holds — one representative per material, skinning, instancing
+   * and vertex-layout combination — whether they were compiled one call or one object at a time.
+   * The number an elapsed time has to be read against.
+   */
+  readonly pipelines: number;
   /** Slices the work was cut into, and therefore the frames the loop got to present. */
   readonly slices: number;
   /** Wall-clock milliseconds the warm-up took, compiling and yielding together. */
@@ -332,7 +338,8 @@ function collectRenderables(root: Object3D): Object3D[] {
         found.push(object);
       }
     }
-    const children = object.children;
+    // A structural stand-in for a scene may carry no children at all; count what is there.
+    const children = object.children ?? [];
     for (let index = children.length - 1; index >= 0; index -= 1) {
       stack.push(children[index] as Object3D);
     }
@@ -386,6 +393,7 @@ export async function warmUpScene(
   if (typeof renderer.compileAsync !== "function") {
     const report: IWarmUpReport = {
       compiled: 0,
+      pipelines: collectRenderables(scene).length,
       slices: 0,
       elapsedMs: now() - startedAt,
       unsupported: true,
@@ -402,11 +410,13 @@ export async function warmUpScene(
   // for its duration. What it does buy is that the cost is paid here, before the loop is released,
   // rather than inside the first frame the player is watching.
   if ((options.granularity ?? "scene") === "scene") {
+    const pipelines = collectRenderables(scene).length;
     if (compute === undefined) {
       const finished = await within(compileAsync(scene, camera), budgetMs);
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
       return {
         compiled: finished ? 1 : 0,
+        pipelines,
         slices: 1,
         elapsedMs: now() - startedAt,
         unsupported: false,
@@ -420,6 +430,7 @@ export async function warmUpScene(
     return withComputeReport(
       {
         compiled: finished ? 1 : 0,
+        pipelines,
         slices: 1,
         elapsedMs: now() - startedAt,
         unsupported: false,
@@ -437,6 +448,7 @@ export async function warmUpScene(
     options.onProgress?.({ done: 0, total: 0 });
     const report: IWarmUpReport = {
       compiled: 0,
+      pipelines: collectRenderables(scene).length,
       slices: 0,
       elapsedMs: now() - startedAt,
       unsupported: false,
@@ -485,6 +497,7 @@ export async function warmUpScene(
 
   const report: IWarmUpReport = {
     compiled,
+    pipelines: total,
     slices,
     elapsedMs: now() - startedAt,
     unsupported: false,
