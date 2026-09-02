@@ -414,7 +414,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (invalidateAll) invalidated += 1;
       if (windowMoved || invalidateAll || source.shadow.needsUpdate) {
         // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
-        if (canRender) (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
+        if (canRender) (level.node as unknown as IRenderingShadowNode).updateShadow(frame); // quality-allow: every node here is built by this file and always exposes updateShadow
         rendered += 1;
       }
     });
@@ -424,7 +424,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // it is undefined, and a level must never read one.
     let moverRenders = 0;
     for (const level of this.#levels) {
-      if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame);
+      if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame); // quality-allow: the mover node is built by this file and always exposes updateShadow
       moverRenders += 1;
     }
     this.#frame += 1;

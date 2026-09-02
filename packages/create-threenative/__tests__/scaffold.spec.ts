@@ -211,15 +211,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // capability manifest and the reference generated from it gained the raw .uasset loader
   // entries (parseUAssetStaticMesh, UAssetLoader, the FRawMesh and FMeshDescription readers),
   // and those bytes are embedded in every scaffold.
-  "action-rpg": "91e9c12a3c1e6dfe10477ac32fbe7f87e1855239896dd108e6db7d196fb940c0",
-  defense: "895fffc768bb0e7a2340e95509a2f26b12201be448664e7982491ca4bdd24d51",
+  // Recomputed 2026-09-01 for PRD-318: formatPassCosts entered the public surface, so the
+  // capability manifest and the reference generated from it both grew, and those bytes are
+  // copied into every scaffold.
+  "action-rpg": "b19ab438d08fb73c95e59bdbdfd0d9cd1aaa9a02115eed9444316bda8a87ecca",
+  defense: "8e74d036da396a5cdd2de5f9cfabe3d7a550edc4979f5fbada9193087d0bbacf",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "90b7864d8cd1bf52c5aaf12d38d1687c3fe86ece6dd18c24b7746911c52278e1",
-  platformer: "2b7025deacb5fafdbe093d66cc7a0c6d6516f3341373a47253b569ab228a6e71",
-  racing: "5aeb87d458069b1c4a09c13d7bc32eb90a8b072b2be7875f9d75fc5e6c8cd588",
-  shooter: "50e36ce7be3506d4e1414a9b07e64d4d609d367478a0e819f586dd0e5dc0cb5e",
-  starter: "7dac3e8d5aa5760cef36669398bc07c2a40f7309897333dde5bd6b9d554cc2e9",
+  minimal: "191aa46383d75fcb2b29066cb970701342a19c8ea96ff14f9bbc623cdc13610f",
+  platformer: "e90c351add2501283540a234378f01b760f88e636681439dc0f83f3e0f787e03",
+  racing: "308c90d443e075837aa34ec94730330e0bbb8e9c1c4e704ee2aba9bef7fd8469",
+  shooter: "5fc700a538b2389a072fac8bf472e07026669599056ca2f2bafed899ca429672",
+  starter: "295b02caa7501d093b8c37c9d077642be9427958c012f9c8b10f9bcbb0b70501",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -230,7 +233,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "836d173b73be875c97ec1d6a4bae9835e67b5a742487e19008801913e8cda71e",
+  // PRD-318 recomputation also moves this key: formatPassCosts entered the manifest.
+  sailing: "02dcd303404f02fc815502848234e74097940731c588df43c1a1eb9e030d75c3",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

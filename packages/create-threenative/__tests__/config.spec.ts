@@ -483,6 +483,7 @@ describe("threenative.config.ts", () => {
     // No assets/ directory, so the pipeline returns early — but only after it has parsed the
     // config, which is the step that used to throw.
     await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      passCosts: [],
       skipped: 0,
       written: 0,
     });
@@ -497,6 +498,7 @@ describe("threenative.config.ts", () => {
     const resolved = await loadConfig(root);
     expect(resolved.assets).toMatchObject({ models: { sharedImages: true } });
     await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      passCosts: [],
       skipped: 0,
       written: 0,
     });
