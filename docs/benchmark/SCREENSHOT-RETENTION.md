@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 5361 | 213142943 | 781 |
-| `docs/verification` | 800 | 75608390 | 242 |
+| `docs/verification` | 784 | 75511809 | 226 |
 
-**1023 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**1007 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -37,23 +37,15 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 
 | Artifact | Bytes |
 |---|---:|
-| `docs/verification/PRD-020.md` | 3652 |
 | `docs/verification/PRD-032-asset-proof/with-mcp.png` | 317045 |
 | `docs/verification/PRD-032-asset-proof/without-mcp.png` | 325188 |
-| `docs/verification/PRD-041.md` | 2285 |
-| `docs/verification/PRD-042.md` | 2066 |
 | `docs/verification/PRD-050-android.png` | 562867 |
 | `docs/verification/PRD-050-desktop.png` | 433641 |
 | `docs/verification/PRD-051-native.png` | 36129 |
 | `docs/verification/PRD-051-web.png` | 280467 |
 | `docs/verification/PRD-052-android.png` | 213137 |
 | `docs/verification/PRD-052-desktop.png` | 230619 |
-| `docs/verification/PRD-092.md` | 14130 |
-| `docs/verification/PRD-093.md` | 13358 |
-| `docs/verification/PRD-110-repair-1-2026-08-15.md` | 1518 |
-| `docs/verification/PRD-111-proof-survives-a-real-game-r2-2026-08-15.md` | 4780 |
 | `docs/verification/PRD-218-cold-agent-menu-settings-playtest-2026-08-24.md` | 2709 |
-| `docs/verification/PRD-218-final-2026-08-24.md` | 2645 |
 | `docs/verification/PRD-248-web-verified.png` | 175170 |
 | `docs/verification/PRD-251-phase2.md` | 3006 |
 | `docs/verification/PRD-251-phase3.md` | 3826 |
@@ -65,13 +57,7 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/PRD-315-phase5-animals.md` | 3381 |
 | `docs/verification/PRD-315-vsm-proof-2026-09-02.json` | 5628 |
 | `docs/verification/PRD-315-vsm-proof-2026-09-02.md` | 1582 |
-| `docs/verification/PRD-325-phase0-visibility.md` | 10792 |
-| `docs/verification/abstraction-mining-2026-08-16.md` | 19762 |
-| `docs/verification/android-16kb-alignment-2026-08-24.md` | 3710 |
-| `docs/verification/android-js-engine-spike-2026-08-10.md` | 4965 |
-| `docs/verification/anonymous-proofs-are-unpairable-2026-08-15.md` | 3448 |
-| `docs/verification/artifacts/prd-222-phase0-browser-console.txt` | 1799 |
-| `docs/verification/artifacts/prd-222-phase0-native-logcat.txt` | 11097 |
+| `docs/verification/PRD-325-phase0-visibility.md` | 10845 |
 | `docs/verification/artifacts/prd-222-resume/emulator/fontscale-evidence.txt` | 3811 |
 | `docs/verification/artifacts/prd-222-resume/emulator/lock-exit-info.txt` | 142 |
 | `docs/verification/artifacts/prd-222-resume/pixel8/10min-interfered-exit-info.txt` | 7067 |
@@ -82,9 +68,23 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/artifacts/prd-222-resume/pixel8/lock-exit-info.txt` | 7115 |
 | `docs/verification/artifacts/prd-222-resume/pixel8/lock-screen.png` | 602661 |
 | `docs/verification/artifacts/prd-224-gpubench-2026-08-28.js` | 1761 |
-| `docs/verification/artifacts/prd-226-a5-chrome-2026-08-27.mjs` | 1851 |
-| `docs/verification/asset-pipeline-android-emulator-2026-08-12.md` | 2546 |
 | `docs/verification/assets/prd-316-vfx-gallery/page-1.png` | 165583 |
 | `docs/verification/assets/prd-316-vfx-gallery/page-2.png` | 125071 |
 | `docs/verification/assets/prd-316-vfx-gallery/page-3.png` | 133289 |
-| …and 192 more | |
+| `docs/verification/assets/prd-316-vfx-gallery/page-4.png` | 133184 |
+| `docs/verification/assets/prd-316-vfx-gallery/page-5.png` | 141180 |
+| `docs/verification/assets/prd-316-vfx-gallery/page-6.png` | 80437 |
+| `docs/verification/capability-discovery-after-final-run-1.jsonl` | 533680 |
+| `docs/verification/capability-discovery-after-repair-4-valid-run-1.jsonl` | 653673 |
+| `docs/verification/capability-discovery-after-repair-4-valid-run-2.jsonl` | 659369 |
+| `docs/verification/capability-discovery-after-repair-4-valid-run-3.jsonl` | 574347 |
+| `docs/verification/capability-discovery-after-repair-valid-run-1.jsonl` | 484333 |
+| `docs/verification/capability-discovery-after-repair-valid-run-2.jsonl` | 464758 |
+| `docs/verification/capability-discovery-after-repair-valid-run-3.jsonl` | 618795 |
+| `docs/verification/capability-discovery-after-run-1.jsonl` | 515074 |
+| `docs/verification/capability-discovery-after-run-2.jsonl` | 2496943 |
+| `docs/verification/capability-discovery-after-run-3.jsonl` | 412544 |
+| `docs/verification/capability-discovery-after-run-4.jsonl` | 704557 |
+| `docs/verification/capability-discovery-after-run-5-sonnet.jsonl` | 320374 |
+| `docs/verification/capability-discovery-after-valid-run-1.jsonl` | 621439 |
+| …and 176 more | |

@@ -63,7 +63,7 @@ The state bridge flushes about 100 ms, so per-frame feedback stays in scene-owne
 
 ## Portable authoring contracts
 
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact, `normaliseToMetres` for authored model scale, and `attachToBone` for held props.
 Register testable entities with `ctx.entities`; `input.vector("move").y` is +up, so forward uses one
 explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.

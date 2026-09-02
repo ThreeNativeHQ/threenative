@@ -214,7 +214,7 @@ const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
   // Recomputed 2026-09-02 from the clean post-rebase scaffold output.
-  "action-rpg": "3b20ebd11c2ff43a5703ba3dafa813f67665edcca200b84348ee0bb4d537a7a4",
+  "action-rpg": "648694390e5603010c180d3f737a2c741f8208376acf5ab5cc625081fa6e7ecb",
   // Recomputed 2026-09-02 after the defense survival route's third default tower moved to the
   // final route segment; three authored towers now cover the full ten-wave proof reliably.
   // The clean post-rebase scaffold also removes duplicate generated guidance from this tree.
@@ -232,7 +232,7 @@ const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "0dc95453b0f87f4ba9c7ef90b42fb7887c91c8dd34db601d5b0c3b337063acea",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "446a568212e96a572342126b58fe98a7a8606bcfaa6514aade7d65647c3179b0",
+  starter: "e9826339dcaf626b869f16b1c38e3581c043aa135ade98017a168445ff83801b",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.

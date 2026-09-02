@@ -61,7 +61,7 @@ On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), local `src
 
 ## Portable authoring contracts
 
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 React never touches the scene graph. Native UI reads published state and sends intents; mark every
 touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.
