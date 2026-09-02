@@ -153,6 +153,73 @@ test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () 
   assert.deepEqual(unexpectedBlockedRows(missingHardwareReference, registry), []);
 });
 
+test("a registered, unexpired exclusion is an expected block; anything else is not", () => {
+  // The desktop parity lane failed on every run before this: `desktop-multitouch-input` has been
+  // registered, owned by PRD-077 and dated since 2026-08-15, the runner blocks the row with a
+  // TN_PARITY_ROW_EXCLUDED reason that names it — and this gate had never heard of the exclusion
+  // list, so it reported the row as an unexpected lane defect and `check-lane-blocks.mjs` exited 1.
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const exclusion = registry.exclusions.find(({ id }) => id === "desktop-multitouch-input");
+  assert.equal(exclusion?.target, "desktop");
+  assert.equal(exclusion?.row, "90-multitouch-input");
+
+  const blockedReason = `TN_PARITY_ROW_EXCLUDED: ${exclusion.id} — host constraint.`;
+  const report = {
+    target: "desktop",
+    results: [{ id: exclusion.row, status: "blocked", blockedReason }],
+    summary: { blocked: 1, fail: 0, pass: 0 },
+  };
+  const before = Date.parse(`${exclusion.expires}T00:00:00.000Z`) - 1;
+  assert.deepEqual(unexpectedBlockedRows(report, registry, before), []);
+
+  // Expiry still bites. `expiredExclusions` exits 2 for a lapsed entry; forgiving it here as well
+  // would leave the date enforcing nothing at all.
+  const after = Date.parse(`${exclusion.expires}T00:00:00.000Z`);
+  assert.deepEqual(unexpectedBlockedRows(report, registry, after), [
+    { id: exclusion.row, reason: blockedReason },
+  ]);
+
+  // The marker is not a free pass: the same row on a lane the exclusion does not name is a defect.
+  assert.deepEqual(
+    unexpectedBlockedRows({ ...report, target: "android" }, registry, before),
+    [{ id: exclusion.row, reason: blockedReason }],
+  );
+
+  // And a marker with no registry entry behind it stays a defect too.
+  const unregistered = {
+    ...report,
+    results: [{
+      id: "01-basic-cube",
+      status: "blocked",
+      blockedReason: "TN_PARITY_ROW_EXCLUDED: invented-on-the-spot",
+    }],
+  };
+  assert.deepEqual(unexpectedBlockedRows(unregistered, registry, before), [
+    { id: "01-basic-cube", reason: "TN_PARITY_ROW_EXCLUDED: invented-on-the-spot" },
+  ]);
+});
+
+test("both parity ledgers compute their exit cell with the runner's own rule", async () => {
+  // The workflow used to restate the rule inline, and the copy knew only `fail` and `blocked`. A
+  // report whose Android multitouch proof failed was therefore written down as exit 2 while the
+  // runner emits 1, and `parity:ledger` — which recomputes the cell precisely to catch a
+  // hand-written number — reported the contradiction on top of the real failure.
+  const workflow = readFileSync(
+    join(root, "../../.github/workflows/native-platforms.yml"),
+    "utf8",
+  );
+  assert.equal(workflow.includes("summary.fail > 0 ? 1 : summary.blocked > 0 ? 2 : 0"), false);
+  assert.equal(workflow.split("reportExitCode(report)").length - 1, 2);
+
+  const { reportExitCode } = await import("../conformance/run-conformance.mjs");
+  const summary = { blocked: 18, fail: 0, pass: 74 };
+  assert.equal(reportExitCode({ summary }), 2);
+  assert.equal(
+    reportExitCode({ summary, supplemental: { androidMultitouch: { status: "fail" } } }),
+    1,
+  );
+});
+
 test("velocity conformance captures the motion window instead of the settled frame", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const velocity = registry.tests.find(({ id }) => id === "realism-velocity");
