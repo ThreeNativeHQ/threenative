@@ -4,8 +4,14 @@ prd_contract: v1
 
 # PRD-324 — an imported rig instances and poses correctly, once
 
-**Status: PROPOSED, 2026-09-02.** Driven by a live, unsolved rendering defect in
-`sandbox/wildwood` at `d64fc78`. Sibling of PRD-321; see §7 for the split.
+**Status: PARTIAL, 2026-09-02.** Driven by a live, unsolved rendering defect in
+`sandbox/wildwood` at `d64fc78`. Sibling of PRD-321; see §7 for the split. **Phases 0–2 are
+done and proven: the pose defect is found and fixed in the engine loader
+(`reconcileMirroredClips`, clips z-mirrored against their own bind), with the instrument
+(`boneLengths`/`boneLengthDeviations`) and the framed harness view landed. Evidence:
+`docs/verification/PRD-324-phase1-phase2.md`.** Phases 3–7 (`SkeletalMesh3D`, second consumer,
+manifest, native) remain open. PRD-321 has since **DECLINED** in its Phase 0 (no second
+consumer), so this PRD now owns the shared surface whenever it is picked up.
 
 **Complexity:** +2 proposes new core exports, +2 must hold the rule-3 look boundary, +1 needs a
 second consumer, +1 crosses core and the templates, +1 needs web and native proof, +1 opens with an
