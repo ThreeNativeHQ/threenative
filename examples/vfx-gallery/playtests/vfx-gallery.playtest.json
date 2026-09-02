@@ -7,20 +7,86 @@
   "subject": "godot-portal-vortex",
   "artifacts": { "screenshots": "before-after" },
   "steps": [
-    { "kind": "wait", "label": "gallery-warm", "waitTicks": 18, "release": true },
-    { "kind": "wait", "label": "page-one", "waitTicks": 8, "release": true, "screenshot": "page-1" },
+    { "kind": "wait", "label": "gallery-warm", "waitTicks": 3, "release": true },
+    {
+      "kind": "wait",
+      "label": "page-one",
+      "waitTicks": 2,
+      "release": true,
+      "screenshot": "page-1"
+    },
     { "kind": "input", "label": "advance-page", "press": "KeyN", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "page-two", "waitTicks": 8, "release": true, "screenshot": "page-2" },
-    { "kind": "input", "label": "advance-page-3", "press": "KeyN", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "page-three", "waitTicks": 8, "release": true, "screenshot": "page-3" },
-    { "kind": "input", "label": "advance-page-4", "press": "KeyN", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "page-four", "waitTicks": 8, "release": true, "screenshot": "page-4" },
-    { "kind": "input", "label": "advance-page-5", "press": "KeyN", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "page-five", "waitTicks": 8, "release": true, "screenshot": "page-5" },
-    { "kind": "input", "label": "advance-page-6", "press": "KeyN", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "page-six", "waitTicks": 8, "release": true, "screenshot": "page-6" },
-    { "kind": "input", "label": "return-page-one", "press": "KeyN", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "gallery-evaluated", "waitTicks": 12, "release": true }
+    {
+      "kind": "wait",
+      "label": "page-two",
+      "waitTicks": 2,
+      "release": true,
+      "screenshot": "page-2"
+    },
+    {
+      "kind": "input",
+      "label": "advance-page-3",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "page-three",
+      "waitTicks": 2,
+      "release": true,
+      "screenshot": "page-3"
+    },
+    {
+      "kind": "input",
+      "label": "advance-page-4",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "page-four",
+      "waitTicks": 2,
+      "release": true,
+      "screenshot": "page-4"
+    },
+    {
+      "kind": "input",
+      "label": "advance-page-5",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "page-five",
+      "waitTicks": 2,
+      "release": true,
+      "screenshot": "page-5"
+    },
+    {
+      "kind": "input",
+      "label": "advance-page-6",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "page-six",
+      "waitTicks": 2,
+      "release": true,
+      "screenshot": "page-6"
+    },
+    {
+      "kind": "input",
+      "label": "return-page-one",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    { "kind": "wait", "label": "gallery-evaluated", "waitTicks": 4, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
@@ -29,10 +95,52 @@
         "id": "state",
         "path": "appliedIds",
         "equals": [
-          "fire", "jet-flame", "burst-flash", "muzzle-flash", "smoke", "dust-cloud", "steam-plume", "ash-plume", "explosion-cloud",
-          "impact-dust", "ground-mist", "poison-cloud", "rain", "snow", "spark-streaks", "impact-sparks", "ember-fountain", "magic-wisp", "magic-orb", "magic-beam", "healing-aura",
-          "effekseer-fire01", "effekseer-fire02", "effekseer-fire03", "effekseer-lightning01", "effekseer-lightning02", "effekseer-lightning03", "effekseer-ice01", "effekseer-ice02", "effekseer-ice03", "effekseer-holy01", "effekseer-hit01", "effekseer-hit02", "effekseer-wind01", "effekseer-wind02", "effekseer-wind03",
-          "kenney-slash-arc", "kenney-confetti-burst", "kenney-leaf-swirl", "pixi-bubble-stream", "pixi-cartoon-smoke-blast", "godot-fireflies", "godot-portal-vortex", "godot-blood-splash", "godot-shield-break", "godot-waterfall-mist"
+          "fire",
+          "jet-flame",
+          "burst-flash",
+          "muzzle-flash",
+          "smoke",
+          "dust-cloud",
+          "steam-plume",
+          "ash-plume",
+          "explosion-cloud",
+          "impact-dust",
+          "ground-mist",
+          "poison-cloud",
+          "rain",
+          "snow",
+          "spark-streaks",
+          "impact-sparks",
+          "ember-fountain",
+          "magic-wisp",
+          "magic-orb",
+          "magic-beam",
+          "healing-aura",
+          "effekseer-fire01",
+          "effekseer-fire02",
+          "effekseer-fire03",
+          "effekseer-lightning01",
+          "effekseer-lightning02",
+          "effekseer-lightning03",
+          "effekseer-ice01",
+          "effekseer-ice02",
+          "effekseer-ice03",
+          "effekseer-holy01",
+          "effekseer-hit01",
+          "effekseer-hit02",
+          "effekseer-wind01",
+          "effekseer-wind02",
+          "effekseer-wind03",
+          "kenney-slash-arc",
+          "kenney-confetti-burst",
+          "kenney-leaf-swirl",
+          "pixi-bubble-stream",
+          "pixi-cartoon-smoke-blast",
+          "godot-fireflies",
+          "godot-portal-vortex",
+          "godot-blood-splash",
+          "godot-shield-break",
+          "godot-waterfall-mist"
         ]
       },
       { "id": "state", "path": "evaluatedTiles", "equals": 46, "changed": true },
@@ -45,19 +153,96 @@
     ],
     "signals": [
       { "name": "coverage", "entity": "gallery", "minCount": 1, "atStep": "advance-page" },
-      { "name": "compute-updated", "entity": "godot-portal-vortex", "minCount": 1, "atStep": "advance-page" }
+      {
+        "name": "compute-updated",
+        "entity": "godot-portal-vortex",
+        "minCount": 1,
+        "atStep": "advance-page-6"
+      }
     ],
     "visual": [
       { "frameDiff": { "minChangedPixelRatio": 0.0001 } },
-      { "region": { "x": 350, "y": 170, "width": 280, "height": 210, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 590, "y": 170, "width": 280, "height": 210, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 830, "y": 170, "width": 280, "height": 210, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 350, "y": 350, "width": 280, "height": 180, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 590, "y": 350, "width": 280, "height": 180, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 830, "y": 350, "width": 280, "height": 180, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 350, "y": 510, "width": 280, "height": 190, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 590, "y": 510, "width": 280, "height": 190, "minNonblankPixelRatio": 0.0001 } },
-      { "region": { "x": 830, "y": 510, "width": 280, "height": 190, "minNonblankPixelRatio": 0.0001 } }
+      {
+        "region": {
+          "x": 350,
+          "y": 170,
+          "width": 280,
+          "height": 210,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 590,
+          "y": 170,
+          "width": 280,
+          "height": 210,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 830,
+          "y": 170,
+          "width": 280,
+          "height": 210,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 350,
+          "y": 350,
+          "width": 280,
+          "height": 180,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 590,
+          "y": 350,
+          "width": 280,
+          "height": 180,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 830,
+          "y": 350,
+          "width": 280,
+          "height": 180,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 350,
+          "y": 510,
+          "width": 280,
+          "height": 190,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 590,
+          "y": 510,
+          "width": 280,
+          "height": 190,
+          "minNonblankPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 830,
+          "y": 510,
+          "width": 280,
+          "height": 190,
+          "minNonblankPixelRatio": 0.0001
+        }
+      }
     ]
   }
 }

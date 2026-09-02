@@ -256,7 +256,14 @@ function wrapRenderer(
     resolveGpuFrame: () => {
       // Fire and forget: a rejected resolve means this adapter has no timestamps, which is a
       // reported absence rather than a frame-time error.
-      void raw.resolveTimestampsAsync?.()?.catch(() => undefined);
+      const resolveTimestampsAsync = raw.resolveTimestampsAsync;
+      if (resolveTimestampsAsync === undefined) return;
+      void resolveTimestampsAsync()?.catch(() => undefined);
+      // Three maintains independent 2,048-query pools for render and compute passes. Resolving
+      // only the default render pool lets GPU simulations exhaust the compute pool even when the
+      // render pool is healthy, after which the adapter can be lost instead of merely reporting
+      // an absent timestamp.
+      void resolveTimestampsAsync("compute")?.catch(() => undefined);
     },
     setResolutionScale: (scale, scaleSource) => {
       state.resolutionScale = scale;

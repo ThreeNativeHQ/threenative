@@ -5,7 +5,7 @@ import {
   GridHelper,
   Mesh,
   MeshBasicMaterial,
-  type Object3D,
+  Object3D,
   type PerspectiveCamera,
   PlaneGeometry,
   Vector3,
@@ -203,28 +203,50 @@ export function drainGalleryEvents(): GalleryEvent[] {
 }
 
 class GalleryEffectEntity {
-  readonly mesh: Object3D;
-  readonly objects: readonly Object3D[];
   readonly effectId: string;
   readonly page: number;
-  readonly spawnCommands: number;
-  readonly gpuCapacity: number;
+  #objects: readonly Object3D[] = [];
+  #spawnCommands = 0;
+  #gpuCapacity = 0;
+  #activated = false;
+  readonly #placeholder = new Object3D();
 
-  constructor(
-    objects: readonly Object3D[],
-    effectId: string,
-    page: number,
-    gpuCapacity: number,
-    spawnCommands = 1,
-  ) {
-    const mesh = objects[0];
-    if (mesh === undefined) throw new Error(`VFX gallery effect has no objects: ${effectId}`);
-    this.mesh = mesh;
-    this.objects = objects;
+  constructor(effectId: string, page: number) {
     this.effectId = effectId;
     this.page = page;
-    this.gpuCapacity = gpuCapacity;
-    this.spawnCommands = spawnCommands;
+  }
+
+  get mesh(): Object3D {
+    return this.#objects[0] ?? this.#placeholder;
+  }
+
+  get objects(): readonly Object3D[] {
+    return this.#objects;
+  }
+
+  get spawnCommands(): number {
+    return this.#spawnCommands;
+  }
+
+  get gpuCapacity(): number {
+    return this.#gpuCapacity;
+  }
+
+  setObjects(objects: readonly Object3D[], gpuCapacity: number, spawnCommands: number): void {
+    this.deactivate();
+    this.#objects = objects;
+    this.#gpuCapacity = gpuCapacity;
+    this.#spawnCommands = spawnCommands;
+    this.#activated = true;
+    for (const object of objects) object.visible = true;
+    for (const object of objects) {
+      if (object instanceof GPUParticles3D) object.emitting = true;
+    }
+  }
+
+  deactivate(): void {
+    for (const object of this.#objects) object.removeFromParent();
+    this.#objects = [];
   }
 
   setVisible(page: number): void {
@@ -240,10 +262,67 @@ class GalleryEffectEntity {
       effectId: this.effectId,
       gpuCapacity: this.gpuCapacity,
       spawnCommands: this.spawnCommands,
-      evaluated: true,
+      evaluated: this.#activated,
     };
   }
 }
+
+type GalleryParticleOptions = ConstructorParameters<typeof GPUParticles3D>[0];
+type GalleryEffectFactory = (seed: number) => readonly GalleryParticleOptions[];
+type GalleryEffectDefinition = {
+  readonly id: string;
+  readonly index: number;
+  readonly factory: GalleryEffectFactory;
+  readonly seed: number;
+};
+
+const EFFECT_DEFINITIONS: readonly GalleryEffectDefinition[] = [
+  { id: "fire", index: 0, factory: createFire, seed: 11 },
+  { id: "jet-flame", index: 1, factory: createJetFlame, seed: 13 },
+  { id: "burst-flash", index: 2, factory: createBurstFlash, seed: 71 },
+  { id: "muzzle-flash", index: 3, factory: createMuzzleFlash, seed: 73 },
+  { id: "smoke", index: 4, factory: createSmoke, seed: 17 },
+  { id: "dust-cloud", index: 5, factory: createDustCloud, seed: 19 },
+  { id: "steam-plume", index: 6, factory: createSteamPlume, seed: 23 },
+  { id: "ash-plume", index: 7, factory: createAshPlume, seed: 29 },
+  { id: "explosion-cloud", index: 8, factory: createExplosionCloud, seed: 31 },
+  { id: "impact-dust", index: 9, factory: createImpactDust, seed: 37 },
+  { id: "ground-mist", index: 10, factory: createGroundMist, seed: 41 },
+  { id: "poison-cloud", index: 11, factory: createPoisonCloud, seed: 43 },
+  { id: "rain", index: 12, factory: createRain, seed: 47 },
+  { id: "snow", index: 13, factory: createSnow, seed: 53 },
+  { id: "spark-streaks", index: 14, factory: createSparkStreaks, seed: 79 },
+  { id: "impact-sparks", index: 15, factory: createImpactSparks, seed: 83 },
+  { id: "ember-fountain", index: 16, factory: createEmberFountain, seed: 89 },
+  { id: "magic-wisp", index: 17, factory: createMagicWisp, seed: 103 },
+  { id: "magic-orb", index: 18, factory: createMagicOrb, seed: 107 },
+  { id: "magic-beam", index: 19, factory: createMagicBeam, seed: 109 },
+  { id: "healing-aura", index: 20, factory: createHealingAura, seed: 113 },
+  { id: "effekseer-fire01", index: 21, factory: createEffekseerFire01, seed: 127 },
+  { id: "effekseer-fire02", index: 22, factory: createEffekseerFire02, seed: 131 },
+  { id: "effekseer-fire03", index: 23, factory: createEffekseerFire03, seed: 137 },
+  { id: "effekseer-lightning01", index: 24, factory: createEffekseerLightning01, seed: 139 },
+  { id: "effekseer-lightning02", index: 25, factory: createEffekseerLightning02, seed: 149 },
+  { id: "effekseer-lightning03", index: 26, factory: createEffekseerLightning03, seed: 151 },
+  { id: "effekseer-ice01", index: 27, factory: createEffekseerIce01, seed: 157 },
+  { id: "effekseer-ice02", index: 28, factory: createEffekseerIce02, seed: 163 },
+  { id: "effekseer-ice03", index: 29, factory: createEffekseerIce03, seed: 167 },
+  { id: "effekseer-holy01", index: 30, factory: createEffekseerHoly01, seed: 173 },
+  { id: "effekseer-hit01", index: 31, factory: createEffekseerHit01, seed: 97 },
+  { id: "effekseer-hit02", index: 32, factory: createEffekseerHit02, seed: 101 },
+  { id: "effekseer-wind01", index: 33, factory: createEffekseerWind01, seed: 59 },
+  { id: "effekseer-wind02", index: 34, factory: createEffekseerWind02, seed: 61 },
+  { id: "effekseer-wind03", index: 35, factory: createEffekseerWind03, seed: 67 },
+  { id: "kenney-slash-arc", index: 36, factory: createKenneySlashArc, seed: 179 },
+  { id: "kenney-confetti-burst", index: 37, factory: createKenneyConfettiBurst, seed: 181 },
+  { id: "kenney-leaf-swirl", index: 38, factory: createKenneyLeafSwirl, seed: 191 },
+  { id: "pixi-bubble-stream", index: 39, factory: createPixiBubbleStream, seed: 193 },
+  { id: "pixi-cartoon-smoke-blast", index: 40, factory: createPixiCartoonSmokeBlast, seed: 197 },
+  { id: "godot-fireflies", index: 41, factory: createGodotFireflies, seed: 199 },
+  { id: "godot-blood-splash", index: 43, factory: createGodotBloodSplash, seed: 211 },
+  { id: "godot-shield-break", index: 44, factory: createGodotShieldBreak, seed: 223 },
+  { id: "godot-waterfall-mist", index: 45, factory: createGodotWaterfallMist, seed: 227 },
+];
 
 function tilePosition(index: number): Vector3 {
   const slot = index % PAGE_SIZE;
@@ -290,92 +369,61 @@ export class Gallery extends Scene<GalleryState> {
     createGalleryStage(ctx);
 
     const effectEntities = new Map<string, GalleryEffectEntity>();
+    for (const [index, id] of EFFECT_IDS.entries()) {
+      const entity = new GalleryEffectEntity(id, Math.floor(index / PAGE_SIZE));
+      effectEntities.set(id, entity);
+      ctx.entities.add(id, entity);
+    }
 
-    const register = (
-      ctx: GalleryCtx,
-      id: string,
-      options: readonly ConstructorParameters<typeof GPUParticles3D>[0][],
-      index: number,
-    ): void => {
-      const position = tilePosition(index);
-      const particles = options.map((option, layerIndex) => {
+    let portal: IPortalVortex | undefined;
+    const entityFor = (id: string): GalleryEffectEntity => {
+      const entity = effectEntities.get(id);
+      if (entity === undefined) throw new Error(`VFX gallery effect was not registered: ${id}`);
+      return entity;
+    };
+
+    const mountParticles = (definition: GalleryEffectDefinition): void => {
+      const position = tilePosition(definition.index);
+      const particles = definition.factory(definition.seed).map((option, layerIndex) => {
         const particle = ctx.add(new GPUParticles3D(option));
-        particle.name = `vfx-${id}-${layerIndex}`;
+        particle.name = `vfx-${definition.id}-${layerIndex}`;
         particle.position.copy(position);
         return particle;
       });
-      const entity = new GalleryEffectEntity(
+      entityFor(definition.id).setObjects(
         particles,
-        id,
-        Math.floor(index / PAGE_SIZE),
         particles.reduce((total, particle) => total + particle.amount, 0),
         particles.length,
       );
-      entity.setVisible(Math.floor(index / PAGE_SIZE));
-      effectEntities.set(id, entity);
-      ctx.entities.add(id, entity);
     };
 
-    register(ctx, "fire", createFire(11), 0);
-    register(ctx, "jet-flame", createJetFlame(13), 1);
-    register(ctx, "burst-flash", createBurstFlash(71), 2);
-    register(ctx, "muzzle-flash", createMuzzleFlash(73), 3);
-    register(ctx, "smoke", createSmoke(17), 4);
-    register(ctx, "dust-cloud", createDustCloud(19), 5);
-    register(ctx, "steam-plume", createSteamPlume(23), 6);
-    register(ctx, "ash-plume", createAshPlume(29), 7);
-    register(ctx, "explosion-cloud", createExplosionCloud(31), 8);
-    register(ctx, "impact-dust", createImpactDust(37), 9);
-    register(ctx, "ground-mist", createGroundMist(41), 10);
-    register(ctx, "poison-cloud", createPoisonCloud(43), 11);
-    register(ctx, "rain", createRain(47), 12);
-    register(ctx, "snow", createSnow(53), 13);
-    register(ctx, "spark-streaks", createSparkStreaks(79), 14);
-    register(ctx, "impact-sparks", createImpactSparks(83), 15);
-    register(ctx, "ember-fountain", createEmberFountain(89), 16);
-    register(ctx, "magic-wisp", createMagicWisp(103), 17);
-    register(ctx, "magic-orb", createMagicOrb(107), 18);
-    register(ctx, "magic-beam", createMagicBeam(109), 19);
-    register(ctx, "healing-aura", createHealingAura(113), 20);
-    register(ctx, "effekseer-fire01", createEffekseerFire01(127), 21);
-    register(ctx, "effekseer-fire02", createEffekseerFire02(131), 22);
-    register(ctx, "effekseer-fire03", createEffekseerFire03(137), 23);
-    register(ctx, "effekseer-lightning01", createEffekseerLightning01(139), 24);
-    register(ctx, "effekseer-lightning02", createEffekseerLightning02(149), 25);
-    register(ctx, "effekseer-lightning03", createEffekseerLightning03(151), 26);
-    register(ctx, "effekseer-ice01", createEffekseerIce01(157), 27);
-    register(ctx, "effekseer-ice02", createEffekseerIce02(163), 28);
-    register(ctx, "effekseer-ice03", createEffekseerIce03(167), 29);
-    register(ctx, "effekseer-holy01", createEffekseerHoly01(173), 30);
-    register(ctx, "effekseer-hit01", createEffekseerHit01(97), 31);
-    register(ctx, "effekseer-hit02", createEffekseerHit02(101), 32);
-    register(ctx, "effekseer-wind01", createEffekseerWind01(59), 33);
-    register(ctx, "effekseer-wind02", createEffekseerWind02(61), 34);
-    register(ctx, "effekseer-wind03", createEffekseerWind03(67), 35);
-    register(ctx, "kenney-slash-arc", createKenneySlashArc(179), 36);
-    register(ctx, "kenney-confetti-burst", createKenneyConfettiBurst(181), 37);
-    register(ctx, "kenney-leaf-swirl", createKenneyLeafSwirl(191), 38);
-    register(ctx, "pixi-bubble-stream", createPixiBubbleStream(193), 39);
-    register(ctx, "pixi-cartoon-smoke-blast", createPixiCartoonSmokeBlast(197), 40);
-    register(ctx, "godot-fireflies", createGodotFireflies(199), 41);
+    const mountPortal = (): void => {
+      const nextPortal = createPortalVortex(229);
+      const portalRing = ctx.add(new GPUParticles3D(nextPortal.ring));
+      portalRing.name = "vfx-godot-portal-vortex-ring";
+      portalRing.position.copy(tilePosition(42));
+      const portalRibbons = ctx.add(nextPortal.ribbons);
+      portalRibbons.name = "vfx-godot-portal-vortex-ribbons";
+      portalRibbons.position.copy(tilePosition(42));
+      entityFor("godot-portal-vortex").setObjects(
+        [portalRing, portalRibbons],
+        nextPortal.gpuCapacity,
+        nextPortal.spawnCommands,
+      );
+      portal = nextPortal;
+    };
 
-    const portal: IPortalVortex = createPortalVortex(229);
-    const portalRing = ctx.add(new GPUParticles3D(portal.ring));
-    portalRing.name = "vfx-godot-portal-vortex-ring";
-    portalRing.position.copy(tilePosition(42));
-    const portalRibbons = ctx.add(portal.ribbons);
-    portalRibbons.name = "vfx-godot-portal-vortex-ribbons";
-    portalRibbons.position.copy(tilePosition(42));
-    const portalEntity = new GalleryEffectEntity(
-      [portalRing, portalRibbons],
-      "godot-portal-vortex",
-      Math.floor(42 / PAGE_SIZE),
-      portal.gpuCapacity,
-      portal.spawnCommands,
-    );
-    portalEntity.setVisible(Math.floor(42 / PAGE_SIZE));
-    effectEntities.set("godot-portal-vortex", portalEntity);
-    ctx.entities.add("godot-portal-vortex", portalEntity);
+    const visitedPages = new Set<number>([0]);
+    const mountPage = (page: number): void => {
+      for (const entity of effectEntities.values()) entity.deactivate();
+      for (const definition of EFFECT_DEFINITIONS) {
+        if (Math.floor(definition.index / PAGE_SIZE) === page) mountParticles(definition);
+      }
+      if (page === Math.floor(42 / PAGE_SIZE)) mountPortal();
+      visitedPages.add(page);
+    };
+
+    mountPage(0);
 
     if (typeof window !== "undefined") {
       window.addEventListener("threenative-gallery-retrigger", () => {
@@ -389,27 +437,20 @@ export class Gallery extends Scene<GalleryState> {
       });
     }
 
-    register(ctx, "godot-blood-splash", createGodotBloodSplash(211), 43);
-    register(ctx, "godot-shield-break", createGodotShieldBreak(223), 44);
-    register(ctx, "godot-waterfall-mist", createGodotWaterfallMist(227), 45);
-
     return (frameCtx) => {
       if (frameCtx.input.justPressed("nextPage")) {
         const page = (frameCtx.state.getState().page + 1) % PAGE_COUNT;
-        for (const entity of effectEntities.values()) entity.setVisible(page);
-        const portalDispatches = portalRibbons.dispatches;
+        mountPage(page);
+        const portalDispatches = portal?.ribbons.dispatches ?? 0;
+        const complete = visitedPages.size === PAGE_COUNT;
         frameCtx.state.set({
-          appliedIds: [...EFFECT_IDS],
-          evaluatedTiles: EFFECT_IDS.length,
-          missingTiles: [],
+          appliedIds: complete ? [...EFFECT_IDS] : [],
+          evaluatedTiles: complete ? EFFECT_IDS.length : 0,
+          missingTiles: complete ? [] : [...EFFECT_IDS],
           page,
           pagesVisited: frameCtx.state.getState().pagesVisited + 1,
-          burstCommands: EFFECT_IDS.length,
-          gpuCapacity:
-            EFFECT_IDS.reduce(
-              (total, id) => total + (ctx.entities.get<GalleryEffectEntity>(id)?.gpuCapacity ?? 0),
-              0,
-            ) + portal.gpuCapacity,
+          burstCommands: complete ? EFFECT_IDS.length : 0,
+          gpuCapacity: EFFECT_IDS.reduce((total, id) => total + entityFor(id).gpuCapacity, 0),
           portalRingDispatches: portalDispatches > 0 ? 1 : 0,
           portalRibbonDispatches: portalDispatches,
         });

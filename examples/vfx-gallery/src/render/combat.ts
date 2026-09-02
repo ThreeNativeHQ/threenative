@@ -1,23 +1,32 @@
-import { type IParticleOptions, createArchivedEffect } from "./fireSmokeWeather.js";
+import {
+  burstFlashLayers,
+  effekseerHit01Layers,
+  effekseerHit02Layers,
+  emberFountainLayers,
+  impactSparksLayers,
+  muzzleFlashLayers,
+  sparkStreaksLayers,
+} from "./archivePresets.js";
+import { type IParticleOptions, createDonorEffect } from "./fireSmokeWeather.js";
 
 export function createBurstFlash(seed = 71): readonly IParticleOptions[] {
-  return createArchivedEffect("burst-flash", seed);
+  return createDonorEffect(burstFlashLayers, seed);
 }
 export function createMuzzleFlash(seed = 73): readonly IParticleOptions[] {
-  return createArchivedEffect("muzzle-flash", seed);
+  return createDonorEffect(muzzleFlashLayers, seed);
 }
 export function createSparkStreaks(seed = 79): readonly IParticleOptions[] {
-  return createArchivedEffect("spark-streaks", seed);
+  return createDonorEffect(sparkStreaksLayers, seed);
 }
 export function createImpactSparks(seed = 83): readonly IParticleOptions[] {
-  return createArchivedEffect("impact-sparks", seed);
+  return createDonorEffect(impactSparksLayers, seed);
 }
 export function createEmberFountain(seed = 89): readonly IParticleOptions[] {
-  return createArchivedEffect("ember-fountain", seed);
+  return createDonorEffect(emberFountainLayers, seed);
 }
 export function createEffekseerHit01(seed = 97): readonly IParticleOptions[] {
-  return createArchivedEffect("effekseer-hit01", seed);
+  return createDonorEffect(effekseerHit01Layers, seed);
 }
 export function createEffekseerHit02(seed = 101): readonly IParticleOptions[] {
-  return createArchivedEffect("effekseer-hit02", seed);
+  return createDonorEffect(effekseerHit02Layers, seed);
 }

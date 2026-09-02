@@ -37,6 +37,7 @@ describe("GPU timestamp queries are resolved often enough to stay readable", () 
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;
     let resolves = 0;
+    const resolveTypes: string[] = [];
     class Empty extends Scene {
       static override readonly initialState = {};
     }
@@ -51,8 +52,9 @@ describe("GPU timestamp queries are resolved often enough to stay readable", () 
           domElement: canvas,
           info: { render: { timestamp: 0 } },
           render: () => undefined,
-          resolveTimestampsAsync: () => {
+          resolveTimestampsAsync: (type = "render") => {
             resolves += 1;
+            resolveTypes.push(type);
             return Promise.resolve(undefined);
           },
           setSize: () => undefined,
@@ -82,7 +84,13 @@ describe("GPU timestamp queries are resolved often enough to stay readable", () 
       expect(
         resolves,
         `resolveTimestampsAsync ran ${resolves} times across ${frames} frames; the query pool fills in ~38`,
-      ).toBeGreaterThanOrEqual(frames - 2);
+      ).toBeGreaterThanOrEqual((frames - 2) * 2);
+      expect(resolveTypes.filter((type) => type === "render").length).toBeGreaterThanOrEqual(
+        frames - 2,
+      );
+      expect(resolveTypes.filter((type) => type === "compute").length).toBeGreaterThanOrEqual(
+        frames - 2,
+      );
     } finally {
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,

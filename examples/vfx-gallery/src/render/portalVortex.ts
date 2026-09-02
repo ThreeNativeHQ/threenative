@@ -19,8 +19,8 @@ import {
 } from "three/tsl";
 import { type ComputeNode, MeshBasicNodeMaterial, type StorageBufferNode } from "three/webgpu";
 import * as THREE from "three/webgpu";
-import { type ArchiveLayer, createArchiveLayers } from "./archivePresets.js";
-import { type IParticleOptions, createArchivedParticle } from "./fireSmokeWeather.js";
+import { type ArchiveLayer, godotPortalVortexLayers } from "./archivePresets.js";
+import { type IParticleOptions, createDonorParticle } from "./fireSmokeWeather.js";
 
 type ComputeRenderer = Parameters<IComputeDriven["process"]>[0];
 
@@ -152,13 +152,13 @@ export interface IPortalVortex {
 }
 
 export function createPortalVortex(seed = 229): IPortalVortex {
-  const layers = createArchiveLayers("godot-portal-vortex");
+  const layers = godotPortalVortexLayers([0, 0, 0]);
   const ringLayer = layers[0];
   const ribbonLayer = layers[1];
   if (ringLayer === undefined || ribbonLayer === undefined) {
-    throw new Error("Archived godot-portal-vortex must contain ring and ribbon layers.");
+    throw new Error("Donor godot-portal-vortex must contain ring and ribbon layers.");
   }
-  const ring = createArchivedParticle(ringLayer, seed);
+  const ring = createDonorParticle(ringLayer, seed);
   const ribbons = new RibbonField(ribbonLayer, seed + 1);
   return {
     ring,

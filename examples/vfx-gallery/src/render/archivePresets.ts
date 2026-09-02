@@ -926,12 +926,20 @@ const holyColor: readonly ColorPoint[] = [
   [1, [0.2, 0.35, 0.72]],
 ];
 
+function getWebFactory(id: string): PresetFactory {
+  const factory = webFactories[id];
+  if (factory === undefined) {
+    throw new Error(`Missing donor factory: ${id}`);
+  }
+  return factory;
+}
+
 function effekseerFactories(): Record<string, PresetFactory> {
-  const fire = webFactories.fire!,
-    sparks = webFactories["ember-fountain"]!,
-    smoke = webFactories.smoke!,
-    impact = webFactories["impact-sparks"]!,
-    dust = webFactories["impact-dust"]!;
+  const fire = getWebFactory("fire");
+  const sparks = getWebFactory("ember-fountain");
+  const smoke = getWebFactory("smoke");
+  const impact = getWebFactory("impact-sparks");
+  const dust = getWebFactory("impact-dust");
   return {
     "effekseer-fire01": (b) =>
       fire(b).map((x, i) => ({
@@ -1892,19 +1900,62 @@ function additionalDonorFactories(): Record<string, PresetFactory> {
   };
 }
 const extraFactories = additionalDonorFactories();
-const ARCHIVE_FACTORIES: Readonly<Record<string, PresetFactory>> = Object.freeze({
-  ...webFactories,
-  ...effFactories,
-  ...extraFactories,
-});
 
-export const ARCHIVE_EFFECT_IDS = Object.freeze(Object.keys(ARCHIVE_FACTORIES));
-
-export function createArchiveLayers(
+function donorFactory(
+  factories: Readonly<Record<string, PresetFactory>>,
   id: string,
-  position: ArchiveVec3 = [0, 0, 0],
-): readonly ArchiveLayer[] {
-  const factory = ARCHIVE_FACTORIES[id];
-  if (factory === undefined) throw new Error(`Unknown archived VFX effect: ${id}`);
-  return factory(position);
+): PresetFactory {
+  const factory = factories[id];
+  if (factory === undefined) throw new Error(`Missing donor recipe: ${id}`);
+  return factory;
 }
+
+// Named source functions keep the gallery's render modules explicit. There is deliberately no
+// runtime string-keyed catalog: each effect module chooses the donor recipe it owns and supplies
+// its seed to the shared GPU particle mechanism.
+export const fireLayers = donorFactory(webFactories, "fire");
+export const jetFlameLayers = donorFactory(webFactories, "jet-flame");
+export const burstFlashLayers = donorFactory(webFactories, "burst-flash");
+export const muzzleFlashLayers = donorFactory(webFactories, "muzzle-flash");
+export const smokeLayers = donorFactory(webFactories, "smoke");
+export const dustCloudLayers = donorFactory(webFactories, "dust-cloud");
+export const steamPlumeLayers = donorFactory(webFactories, "steam-plume");
+export const ashPlumeLayers = donorFactory(webFactories, "ash-plume");
+export const explosionCloudLayers = donorFactory(webFactories, "explosion-cloud");
+export const impactDustLayers = donorFactory(webFactories, "impact-dust");
+export const groundMistLayers = donorFactory(webFactories, "ground-mist");
+export const poisonCloudLayers = donorFactory(webFactories, "poison-cloud");
+export const rainLayers = donorFactory(webFactories, "rain");
+export const snowLayers = donorFactory(webFactories, "snow");
+export const sparkStreaksLayers = donorFactory(webFactories, "spark-streaks");
+export const impactSparksLayers = donorFactory(webFactories, "impact-sparks");
+export const emberFountainLayers = donorFactory(webFactories, "ember-fountain");
+export const magicWispLayers = donorFactory(webFactories, "magic-wisp");
+export const magicOrbLayers = donorFactory(webFactories, "magic-orb");
+export const magicBeamLayers = donorFactory(webFactories, "magic-beam");
+export const healingAuraLayers = donorFactory(webFactories, "healing-aura");
+export const effekseerFire01Layers = donorFactory(effFactories, "effekseer-fire01");
+export const effekseerFire02Layers = donorFactory(effFactories, "effekseer-fire02");
+export const effekseerFire03Layers = donorFactory(effFactories, "effekseer-fire03");
+export const effekseerLightning01Layers = donorFactory(effFactories, "effekseer-lightning01");
+export const effekseerLightning02Layers = donorFactory(effFactories, "effekseer-lightning02");
+export const effekseerLightning03Layers = donorFactory(effFactories, "effekseer-lightning03");
+export const effekseerIce01Layers = donorFactory(effFactories, "effekseer-ice01");
+export const effekseerIce02Layers = donorFactory(effFactories, "effekseer-ice02");
+export const effekseerIce03Layers = donorFactory(effFactories, "effekseer-ice03");
+export const effekseerHoly01Layers = donorFactory(effFactories, "effekseer-holy01");
+export const effekseerHit01Layers = donorFactory(effFactories, "effekseer-hit01");
+export const effekseerHit02Layers = donorFactory(effFactories, "effekseer-hit02");
+export const effekseerWind01Layers = donorFactory(effFactories, "effekseer-wind01");
+export const effekseerWind02Layers = donorFactory(effFactories, "effekseer-wind02");
+export const effekseerWind03Layers = donorFactory(effFactories, "effekseer-wind03");
+export const kenneySlashArcLayers = donorFactory(extraFactories, "kenney-slash-arc");
+export const kenneyConfettiBurstLayers = donorFactory(extraFactories, "kenney-confetti-burst");
+export const kenneyLeafSwirlLayers = donorFactory(extraFactories, "kenney-leaf-swirl");
+export const pixiBubbleStreamLayers = donorFactory(extraFactories, "pixi-bubble-stream");
+export const pixiCartoonSmokeBlastLayers = donorFactory(extraFactories, "pixi-cartoon-smoke-blast");
+export const godotFirefliesLayers = donorFactory(extraFactories, "godot-fireflies");
+export const godotPortalVortexLayers = donorFactory(extraFactories, "godot-portal-vortex");
+export const godotBloodSplashLayers = donorFactory(extraFactories, "godot-blood-splash");
+export const godotShieldBreakLayers = donorFactory(extraFactories, "godot-shield-break");
+export const godotWaterfallMistLayers = donorFactory(extraFactories, "godot-waterfall-mist");

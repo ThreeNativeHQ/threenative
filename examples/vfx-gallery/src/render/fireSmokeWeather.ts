@@ -31,7 +31,25 @@ import {
   type StorageBufferNode,
 } from "three/webgpu";
 import * as THREE from "three/webgpu";
-import { type ArchiveLayer, type ArchiveVec3, createArchiveLayers } from "./archivePresets.js";
+import {
+  type ArchiveLayer,
+  type ArchiveVec3,
+  ashPlumeLayers,
+  dustCloudLayers,
+  effekseerWind01Layers,
+  effekseerWind02Layers,
+  effekseerWind03Layers,
+  explosionCloudLayers,
+  fireLayers,
+  groundMistLayers,
+  impactDustLayers,
+  jetFlameLayers,
+  poisonCloudLayers,
+  rainLayers,
+  smokeLayers,
+  snowLayers,
+  steamPlumeLayers,
+} from "./archivePresets.js";
 
 export interface IParticleBuffers {
   readonly positions: StorageBufferNode<"vec3">;
@@ -380,7 +398,7 @@ function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial
   return material;
 }
 
-export function createArchivedParticle(layer: ArchiveLayer, seed: number): IParticleOptions {
+export function createDonorParticle(layer: ArchiveLayer, seed: number): IParticleOptions {
   const amount = particleAmount(layer);
   const material = particleMaterial(layer, seed);
   const start = ({ positions, velocities }: IParticleBuffers): ComputeNode =>
@@ -402,54 +420,55 @@ export function createArchivedParticle(layer: ArchiveLayer, seed: number): IPart
   return { amount, material, start, process };
 }
 
-export function createArchivedEffect(id: string, seed: number): readonly IParticleOptions[] {
-  return createArchiveLayers(id).map((layer, index) =>
-    createArchivedParticle(layer, seed + index * 97),
-  );
+export function createDonorEffect(
+  layers: (position: ArchiveVec3) => ArchiveLayer[],
+  seed: number,
+): readonly IParticleOptions[] {
+  return layers([0, 0, 0]).map((layer, index) => createDonorParticle(layer, seed + index * 97));
 }
 
 export function createFire(seed = 11): readonly IParticleOptions[] {
-  return createArchivedEffect("fire", seed);
+  return createDonorEffect(fireLayers, seed);
 }
 export function createJetFlame(seed = 13): readonly IParticleOptions[] {
-  return createArchivedEffect("jet-flame", seed);
+  return createDonorEffect(jetFlameLayers, seed);
 }
 export function createSmoke(seed = 17): readonly IParticleOptions[] {
-  return createArchivedEffect("smoke", seed);
+  return createDonorEffect(smokeLayers, seed);
 }
 export function createDustCloud(seed = 19): readonly IParticleOptions[] {
-  return createArchivedEffect("dust-cloud", seed);
+  return createDonorEffect(dustCloudLayers, seed);
 }
 export function createSteamPlume(seed = 23): readonly IParticleOptions[] {
-  return createArchivedEffect("steam-plume", seed);
+  return createDonorEffect(steamPlumeLayers, seed);
 }
 export function createAshPlume(seed = 29): readonly IParticleOptions[] {
-  return createArchivedEffect("ash-plume", seed);
+  return createDonorEffect(ashPlumeLayers, seed);
 }
 export function createExplosionCloud(seed = 31): readonly IParticleOptions[] {
-  return createArchivedEffect("explosion-cloud", seed);
+  return createDonorEffect(explosionCloudLayers, seed);
 }
 export function createImpactDust(seed = 37): readonly IParticleOptions[] {
-  return createArchivedEffect("impact-dust", seed);
+  return createDonorEffect(impactDustLayers, seed);
 }
 export function createGroundMist(seed = 41): readonly IParticleOptions[] {
-  return createArchivedEffect("ground-mist", seed);
+  return createDonorEffect(groundMistLayers, seed);
 }
 export function createPoisonCloud(seed = 43): readonly IParticleOptions[] {
-  return createArchivedEffect("poison-cloud", seed);
+  return createDonorEffect(poisonCloudLayers, seed);
 }
 export function createRain(seed = 47): readonly IParticleOptions[] {
-  return createArchivedEffect("rain", seed);
+  return createDonorEffect(rainLayers, seed);
 }
 export function createSnow(seed = 53): readonly IParticleOptions[] {
-  return createArchivedEffect("snow", seed);
+  return createDonorEffect(snowLayers, seed);
 }
 export function createEffekseerWind01(seed = 59): readonly IParticleOptions[] {
-  return createArchivedEffect("effekseer-wind01", seed);
+  return createDonorEffect(effekseerWind01Layers, seed);
 }
 export function createEffekseerWind02(seed = 61): readonly IParticleOptions[] {
-  return createArchivedEffect("effekseer-wind02", seed);
+  return createDonorEffect(effekseerWind02Layers, seed);
 }
 export function createEffekseerWind03(seed = 67): readonly IParticleOptions[] {
-  return createArchivedEffect("effekseer-wind03", seed);
+  return createDonorEffect(effekseerWind03Layers, seed);
 }
