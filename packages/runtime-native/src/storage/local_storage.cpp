@@ -314,12 +314,15 @@ bool LocalStorage::flush() {
         std::ofstream file(tmpPath, std::ios::trunc);
         if (!file.is_open()) {
             std::cerr << "[Storage] Failed to write to " << tmpPath << std::endl;
+            std::remove(tmpPath.c_str());
             return false;
         }
         file << json;
         file.flush();
         if (!file) {
             std::cerr << "[Storage] Failed to flush " << tmpPath << std::endl;
+            file.close();
+            std::remove(tmpPath.c_str());
             return false;
         }
     }
@@ -328,6 +331,7 @@ bool LocalStorage::flush() {
     if (!MoveFileExA(tmpPath.c_str(), filePath_.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         std::cerr << "[Storage] Failed to atomically replace " << filePath_ << std::endl;
+        std::remove(tmpPath.c_str());
         return false;
     }
 #else
@@ -361,6 +365,32 @@ bool LocalStorage::flush() {
     std::filesystem::rename(tmpPath, filePath_, ec);
     if (ec) {
         std::cerr << "[Storage] Failed to rename " << tmpPath << " -> " << filePath_ << ": " << ec.message() << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+
+    const std::filesystem::path parentPath = std::filesystem::path(filePath_).parent_path();
+    const std::string directoryPath = parentPath.empty() ? "." : parentPath.string();
+    const int directoryFd = ::open(directoryPath.c_str(), O_RDONLY);
+    if (directoryFd == -1) {
+        const int openError = errno;
+        std::cerr << "[Storage] Failed to open containing directory " << directoryPath
+                  << " for synchronization: " << std::strerror(openError) << std::endl;
+        return false;
+    }
+
+    const int directorySyncResult = ::fsync(directoryFd);
+    const int directorySyncError = directorySyncResult == 0 ? 0 : errno;
+    const int directoryCloseResult = ::close(directoryFd);
+    const int directoryCloseError = directoryCloseResult == 0 ? 0 : errno;
+    if (directorySyncResult != 0) {
+        std::cerr << "[Storage] Failed to synchronize containing directory " << directoryPath
+                  << ": " << std::strerror(directorySyncError) << std::endl;
+        return false;
+    }
+    if (directoryCloseResult != 0) {
+        std::cerr << "[Storage] Failed to close containing directory " << directoryPath
+                  << " after synchronization: " << std::strerror(directoryCloseError) << std::endl;
         return false;
     }
 #endif

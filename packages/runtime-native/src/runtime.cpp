@@ -199,6 +199,7 @@ struct HostGapMeter {
         kGpuDrain,       // diagnostic post-present blocking poll; adds to period/next hostGap
         kDevicePoll,     // endDawnFrame: wgpuDevicePoll(false) / wgpuDeviceTick
         kEndFrameOther,  // endDawnFrame remainder: profile emission, 2D composite, pacing
+        kStorage,        // synchronous localStorage serialize/sync/rename
         kHandles,        // clearFrameHandles
         kScreenshot,     // playtest screenshot mailbox file polling
         kSegmentCount
@@ -207,7 +208,7 @@ struct HostGapMeter {
     static constexpr std::array<const char*, kSegmentCount> kNames = {
         "events", "io", "audio", "timers", "microtasks", "preFrame",
         "frameDrain", "frameReplay", "present", "gpuDrain", "devicePoll", "endFrameOther",
-        "handles", "screenshot",
+        "storage", "handles", "screenshot",
     };
 
     struct Sample {
@@ -997,6 +998,7 @@ public:
     void run() override {
         // Check if script already called process.exit() during loading
         if (!running_) {
+            localStorage_.flushIfDirty();
             std::cout << "[Mystral] Skipping main loop (process.exit already called)" << std::endl;
             return;
         }
@@ -1333,8 +1335,10 @@ public:
         processPlaytestScreenshotRequest();
         hostGapMeter_.end(HostGapMeter::kScreenshot);
 
-        hostGapMeter_.closeFrame();
+        hostGapMeter_.begin(HostGapMeter::kStorage);
         localStorage_.flushIfDirty();
+        hostGapMeter_.end(HostGapMeter::kStorage);
+        hostGapMeter_.closeFrame();
 
         return running_;
     }
