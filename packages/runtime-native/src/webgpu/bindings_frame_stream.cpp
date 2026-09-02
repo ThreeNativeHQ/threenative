@@ -189,6 +189,10 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
             const uint32_t id = r.u32();
             const double off = r.f64();
             const uint32_t n = r.u32();
+            if (!r.ok) {
+                fail("truncated writeBuffer record");
+                break;
+            }
             const auto info = state->registries.bufferRegistry.find(id);
             if (!std::isfinite(off) || off < 0 || std::floor(off) != off || static_cast<uint64_t>(off) % 4 || (n & 3) ||
                 r.cursor + n > r.recordEnd || info == state->registries.bufferRegistry.end() ||
@@ -198,6 +202,8 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                 break;
             }
             WGPUBuffer b = info->second.buffer;
+            if (state->profiling.frameOpStreamNativeCallObserver)
+                state->profiling.frameOpStreamNativeCallObserver("writeBuffer");
             if (!stageWriteInUploadStaging(state, b, static_cast<uint64_t>(off), data + r.cursor, n, n))
                 wgpuQueueWriteBuffer(state->queue, b, static_cast<uint64_t>(off), data + r.cursor, n);
 #if TN_ANDROID_JS_PROFILE

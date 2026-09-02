@@ -1213,6 +1213,10 @@ public:
             // that came due are counted and dropped rather than replayed all at once on resume;
             // `FixedStepLoop` clamps the elapsed time on the TypeScript side either way.
             countAndDropDueTimers();
+            // Input callbacks run inside platform::pollEvents(), so they can dirty localStorage
+            // immediately before a lifecycle event pauses the loop. Persist that snapshot at this
+            // boundary before the paused process can be reclaimed by a mobile OS.
+            localStorage_.flushIfDirty();
             // A paused stretch is not a frame and must not leak into the next one's sample.
             hostGapMeter_.dropPartialFrame();
             // Desktop does not block its pump the way Android does, so without this the paused

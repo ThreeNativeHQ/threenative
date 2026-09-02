@@ -11,6 +11,9 @@
 #include <windows.h>
 #include <shlobj.h>
 #else
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
 #include <unistd.h>
 #include <pwd.h>
 #endif
@@ -328,6 +331,32 @@ bool LocalStorage::flush() {
         return false;
     }
 #else
+    const int syncFd = ::open(tmpPath.c_str(), O_WRONLY);
+    if (syncFd == -1) {
+        const int openError = errno;
+        std::cerr << "[Storage] Failed to open " << tmpPath
+                  << " for synchronization: " << std::strerror(openError) << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+
+    const int syncResult = ::fsync(syncFd);
+    const int syncError = syncResult == 0 ? 0 : errno;
+    const int closeResult = ::close(syncFd);
+    const int closeError = closeResult == 0 ? 0 : errno;
+    if (syncResult != 0) {
+        std::cerr << "[Storage] Failed to synchronize " << tmpPath
+                  << ": " << std::strerror(syncError) << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+    if (closeResult != 0) {
+        std::cerr << "[Storage] Failed to close " << tmpPath
+                  << " after synchronization: " << std::strerror(closeError) << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+
     std::error_code ec;
     std::filesystem::rename(tmpPath, filePath_, ec);
     if (ec) {

@@ -2005,6 +2005,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_include_directories(threenative-local-storage-test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(threenative-local-storage-test PRIVATE mystral-runtime)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_definitions(threenative-local-storage-test PRIVATE
+            TN_TEST_WRAP_STORAGE_SYNC=1)
+        target_link_options(threenative-local-storage-test PRIVATE
+            "-Wl,--wrap=fsync"
+            "-Wl,--wrap=close")
+    endif()
 
     # Same lane for the embedded-bundle VFS: synthesizes real container files
     # and proves the loader accepts the documented format and rejects damage.

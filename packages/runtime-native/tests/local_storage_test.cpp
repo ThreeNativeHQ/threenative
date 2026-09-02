@@ -15,6 +15,10 @@
 #include <sstream>
 #include <string>
 
+#if defined(TN_TEST_WRAP_STORAGE_SYNC)
+#include <cerrno>
+#endif
+
 #ifdef _WIN32
 #include <process.h>
 #define TN_TEST_GETPID _getpid
@@ -24,6 +28,37 @@
 #endif
 
 using mystral::storage::LocalStorage;
+
+#if defined(TN_TEST_WRAP_STORAGE_SYNC)
+namespace {
+
+bool failNextFsync = false;
+bool failNextClose = false;
+
+}  // namespace
+
+extern "C" int __real_close(int fd);
+extern "C" int __real_fsync(int fd);
+
+extern "C" int __wrap_fsync(int fd) {
+    if (failNextFsync) {
+        failNextFsync = false;
+        errno = EIO;
+        return -1;
+    }
+    return __real_fsync(fd);
+}
+
+extern "C" int __wrap_close(int fd) {
+    if (failNextClose) {
+        failNextClose = false;
+        const int result = __real_close(fd);
+        errno = EIO;
+        return result == 0 ? -1 : result;
+    }
+    return __real_close(fd);
+}
+#endif
 
 namespace {
 
@@ -203,6 +238,34 @@ int main() {
         expect(!std::filesystem::exists(storePath + ".tmp"),
                "atomic rename consumed the tmp file");
     }
+
+#if defined(TN_TEST_WRAP_STORAGE_SYNC)
+    // --- POSIX sync failures: close every descriptor and remove the uncommitted temp file ----
+    {
+        const std::string storePath = temp.file("fsync-failure/store.json");
+        LocalStorage storage;
+        storage.init(storePath);
+        storage.setItem("k", "v");
+        failNextFsync = true;
+        storage.flushIfDirty();
+        expect(!std::filesystem::exists(storePath),
+               "fsync failure does not publish the temp file");
+        expect(!std::filesystem::exists(storePath + ".tmp"),
+               "fsync failure removes the temp file");
+    }
+    {
+        const std::string storePath = temp.file("close-failure/store.json");
+        LocalStorage storage;
+        storage.init(storePath);
+        storage.setItem("k", "v");
+        failNextClose = true;
+        storage.flushIfDirty();
+        expect(!std::filesystem::exists(storePath),
+               "close failure does not publish the temp file");
+        expect(!std::filesystem::exists(storePath + ".tmp"),
+               "close failure removes the temp file");
+    }
+#endif
 
     // --- Corrupt file: fail soft, start fresh ------------------------------
     {

@@ -4,6 +4,7 @@
 #include "../src/webgpu/bindings_state.h"
 
 #include <iostream>
+#include <sstream>
 #include <string>
 
 namespace {
@@ -22,12 +23,13 @@ void expect(bool condition, const std::string& what) {
     }
 }
 
-void expectMalformed(mystral::webgpu::BindingsState* state, const char* expression,
+void expectMalformed(mystral::webgpu::BindingsState* state, const std::string& expression,
                      const std::string& expected, const std::string& what,
                      int expectedBackendEntries = 0) {
     auto* engine = state->engine;
     const int backendEntriesBefore = frameReplayBackendEntries;
-    state->profiling.frameOpStreamDrain = engine->evalScriptWithResult(expression, "tn-malformed-frame.js");
+    state->profiling.frameOpStreamDrain =
+        engine->evalScriptWithResult(expression.c_str(), "tn-malformed-frame.js");
     mystral::webgpu::endDawnFrame(state);
     const std::string exception = engine->hasException() ? engine->getException() : "";
     expect(exception.find(expected) != std::string::npos, what + ": " + exception);
@@ -253,6 +255,20 @@ void runContract(bool disableStreamControl) {
     expectMalformed(state,
         "() => { const b=new ArrayBuffer(40),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,1,true); v.setUint32(8,40,true); v.setUint32(12,1,true); v.setUint32(16,1,true); v.setUint32(20,24,true); v.setUint32(24,0xffffffff,true); return b; }",
         "unknown buffer id", "native parser rejects an unknown resource id");
+    if (!state->registries.bufferRegistry.empty()) {
+        const uint64_t validBufferId = state->registries.bufferRegistry.begin()->first;
+        std::ostringstream truncatedWriteBuffer;
+        truncatedWriteBuffer
+            << "() => { const b=new ArrayBuffer(32),v=new DataView(b); "
+               "v.setUint32(0,0x544e4652,true); v.setUint32(4,2,true); "
+               "v.setUint32(8,32,true); v.setUint32(12,1,true); "
+               "v.setUint32(16,1,true); v.setUint32(20,16,true); "
+            << "v.setUint32(24," << validBufferId << ",true); return b; }";
+        expectMalformed(state, truncatedWriteBuffer.str(), "truncated writeBuffer record",
+                        "native parser rejects a truncated writeBuffer with a valid buffer id");
+    } else {
+        expect(false, "malformed writeBuffer test found a valid buffer registry entry");
+    }
     expectMalformed(state,
         "() => { const b=new ArrayBuffer(40),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,2,true); v.setUint32(8,40,true); v.setUint32(12,1,true); v.setUint32(16,18,true); v.setUint32(20,24,true); v.setUint32(24,0xffffffff,true); v.setUint32(28,1,true); return b; }",
         "unknown command encoder id", "native parser rejects an unknown compute encoder");
