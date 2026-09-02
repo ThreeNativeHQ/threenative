@@ -1,6 +1,8 @@
 import {
   BoxGeometry,
   DirectionalLight,
+  FloatType,
+  HalfFloatType,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -122,6 +124,93 @@ describe("VirtualShadowNode", () => {
     });
   });
 
+  it("should invalidate cached levels when a caster is tracked or untracked", () => {
+    const { camera, light, scene } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    node.updateBefore(frameFor(camera));
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
+
+    const caster = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    scene.add(caster);
+    node.trackCaster(caster);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({
+      cached: 0,
+      invalidated: 2,
+      movers: 1,
+      moverRenders: 2,
+      rendered: 2,
+    });
+
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
+
+    expect(node.untrackCaster(caster)).toBe(true);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({
+      cached: 0,
+      invalidated: 2,
+      movers: 0,
+      moverRenders: 0,
+      rendered: 2,
+    });
+  });
+
+  it("should copy source shadow settings to cached and mover shadow nodes", () => {
+    const { camera, light } = world();
+    const filterNode = vi.fn();
+    light.shadow.bias = -0.003;
+    light.shadow.normalBias = 0.17;
+    light.shadow.intensity = 0.35;
+    light.shadow.radius = 3;
+    light.shadow.blurSamples = 5;
+    light.shadow.mapType = HalfFloatType;
+    light.shadow.biasNode = float(0.01);
+    (light.shadow as unknown as { filterNode: unknown }).filterNode = filterNode;
+    const node = setupNode(light, { clipExtents: [8], mapSize: 64 });
+
+    const shadowNodes = [...node.levelNodes, ...node.moverNodes];
+    for (const shadowNode of shadowNodes) {
+      const shadow = (shadowNode as unknown as { shadow: DirectionalLight["shadow"] }).shadow;
+      expect(shadow).toMatchObject({
+        bias: -0.003,
+        blurSamples: 5,
+        intensity: 0.35,
+        mapType: HalfFloatType,
+        normalBias: 0.17,
+        radius: 3,
+      });
+      expect(shadow.biasNode).toBe(light.shadow.biasNode);
+      expect((shadow as unknown as { filterNode: unknown }).filterNode).toBe(filterNode);
+    }
+
+    light.shadow.bias = 0.004;
+    light.shadow.normalBias = 0.23;
+    light.shadow.intensity = 0.62;
+    light.shadow.radius = 6;
+    light.shadow.blurSamples = 11;
+    light.shadow.mapType = FloatType;
+    const updatedFilterNode = vi.fn();
+    light.shadow.biasNode = float(0.02);
+    (light.shadow as unknown as { filterNode: unknown }).filterNode = updatedFilterNode;
+    node.updateBefore(frameFor(camera));
+
+    for (const shadowNode of shadowNodes) {
+      const shadow = (shadowNode as unknown as { shadow: DirectionalLight["shadow"] }).shadow;
+      expect(shadow).toMatchObject({
+        bias: 0.004,
+        blurSamples: 11,
+        intensity: 0.62,
+        mapType: FloatType,
+        normalBias: 0.23,
+        radius: 6,
+      });
+      expect(shadow.biasNode).toBe(light.shadow.biasNode);
+      expect((shadow as unknown as { filterNode: unknown }).filterNode).toBe(updatedFilterNode);
+    }
+  });
+
   it("should combine stock intensity-adjusted shadow factors by the darker result", () => {
     const { light } = world();
     light.shadow.intensity = 0.35;
@@ -211,7 +300,13 @@ describe("VirtualShadowNode", () => {
     expect(node.untrackCaster(mover)).toBe(true);
     expect(hoof.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ movers: 0, rendered: 0 });
+    expect(node.stats).toMatchObject({
+      cached: 0,
+      invalidated: 2,
+      moverRenders: 0,
+      movers: 0,
+      rendered: 2,
+    });
   });
 
   it("should restore a mover's pre-existing layer when it is untracked", () => {
@@ -287,6 +382,38 @@ describe("VirtualShadowNode", () => {
         rendered: 0,
       });
       expect(readVirtualShadowMarker("TN_FRAME_BUDGET:{}")).toBeUndefined();
+      expect(readVirtualShadowMarker(`${VIRTUAL_SHADOW_MARKER}:{bad`)).toBeUndefined();
+      expect(readVirtualShadowMarker(`${VIRTUAL_SHADOW_MARKER}:null`)).toBeUndefined();
+      expect(readVirtualShadowMarker(`${VIRTUAL_SHADOW_MARKER}:{}`)).toBeUndefined();
+      expect(
+        readVirtualShadowMarker(
+          `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
+            cached: 0,
+            frame: "2",
+            invalidated: 0,
+            levels: 1,
+            moved: 1,
+            moverRenders: 1,
+            movers: 1,
+            rendered: 1,
+            reuseRatio: 0,
+          })}`,
+        ),
+      ).toBeUndefined();
+      expect(
+        readVirtualShadowMarker(
+          `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
+            cached: 0,
+            frame: 2,
+            invalidated: 0,
+            levels: 1,
+            moved: 1,
+            moverRenders: 1,
+            movers: 1,
+            rendered: 1,
+          })}`,
+        ),
+      ).toBeUndefined();
     } finally {
       info.mockRestore();
     }

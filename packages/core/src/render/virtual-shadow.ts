@@ -107,8 +107,35 @@ interface ILevel {
   minY: number;
 }
 
+type ShadowWithFilter = DirectionalLight["shadow"] & { filterNode?: unknown };
+
 const _direction = new Vector3();
 const _center = new Vector3();
+
+/** Keep each stock node's source-owned settings aligned with the public light shadow. */
+function syncShadowSettings(
+  source: DirectionalLight["shadow"],
+  target: DirectionalLight["shadow"],
+): void {
+  target.bias = source.bias;
+  target.biasNode = source.biasNode;
+  target.blurSamples = source.blurSamples;
+  target.intensity = source.intensity;
+  target.mapType = source.mapType;
+  target.normalBias = source.normalBias;
+  target.radius = source.radius;
+  (target as ShadowWithFilter).filterNode = (source as ShadowWithFilter).filterNode;
+}
+
+function syncLevelShadowSettings(
+  source: DirectionalLight["shadow"],
+  levels: readonly ILevel[],
+): void {
+  for (const level of levels) {
+    syncShadowSettings(source, level.shadow);
+    syncShadowSettings(source, level.moverShadow);
+  }
+}
 
 /** The stock node's render entry, called here so the mover exclusion brackets exactly one render. */
 interface IRenderingShadowNode {
@@ -126,8 +153,10 @@ interface IRenderingShadowNode {
  *
  * What it owns is mechanism: level windows, texel snapping, per-level caching, invalidation,
  * level selection and the statistics. The light's `shadow` keeps bias, normal bias, intensity,
- * map type and filter, and each level is rendered by the stock {@link ShadowNode} through the
- * renderer's shadow-map type, so the look is the same code path a plain shadow uses.
+ * map type and filter, and those source settings are mirrored into each stock level node before
+ * rendering. Per-level map sizes, cameras, `autoUpdate` and `needsUpdate` are owned by this node.
+ * Each level is rendered by the stock {@link ShadowNode} through the renderer's shadow-map type,
+ * so the look is the same code path a plain shadow uses.
  *
  * Ported from the virtual-shadow-map prototype's clipmap and invalidation; the sparse page atlas
  * is deliberately not the first cut — a page needs the scene rendered once per page, and on a
@@ -140,8 +169,8 @@ interface IRenderingShadowNode {
  * @situation shadows shimmer when the camera moves
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
- * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves
- * @override bias, normalBias, intensity and mapSize stay on `light.shadow`; every option here has a default
+ * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+ * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
  * sun.castShadow = true;
@@ -298,9 +327,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
    */
   trackCaster(object: Object3D): string {
     const previous = this.#casters.get(object.uuid);
+    if (previous === object) {
+      this.#rememberMoverChildren(object);
+      return object.uuid;
+    }
     if (previous !== undefined && previous !== object) this.#restoreMoverChildren(object.uuid);
     this.#casters.set(object.uuid, object);
     this.#rememberMoverChildren(object);
+    this.invalidateAll();
     return object.uuid;
   }
 
@@ -310,7 +344,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (object === undefined) return false;
     this.#restoreMoverChildren(id);
     this.tracker.remove(id);
-    return this.#casters.delete(id);
+    const removed = this.#casters.delete(id);
+    if (removed) this.invalidateAll();
+    return removed;
   }
 
   /** Force every level to re-render on the next frame — a tree fell, a door opened. */
@@ -325,6 +361,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const source = this.light as DirectionalLight;
     this.options.clipExtents.forEach((extent, index) => {
       const levelShadow = source.shadow.clone();
+      syncShadowSettings(source.shadow, levelShadow);
       levelShadow.mapSize.set(this.options.mapSize, this.options.mapSize);
       levelShadow.camera.left = -extent;
       levelShadow.camera.right = extent;
@@ -340,6 +377,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       levelShadow.autoUpdate = false;
       levelShadow.needsUpdate = false;
       const moverShadow = levelShadow.clone();
+      syncShadowSettings(source.shadow, moverShadow);
       moverShadow.mapSize.set(this.options.moverMapSize, this.options.moverMapSize);
       moverShadow.camera.updateProjectionMatrix();
       moverShadow.autoUpdate = false;
@@ -408,6 +446,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const camera = frame.camera as Camera | null;
     if (camera === null) return undefined;
     const source = this.light as DirectionalLight;
+    syncLevelShadowSettings(source.shadow, this.#levels);
     this.#moversActive.value = this.#casters.size > 0 ? 1 : 0;
     const parent = source.parent;
     for (const level of this.#levels) {
@@ -556,11 +595,52 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 }
 
-/** Parse a `TN_VIRTUAL_SHADOW` console line back into its stats, or `undefined`. */
+const VIRTUAL_SHADOW_STAT_FIELDS = [
+  "cached",
+  "frame",
+  "invalidated",
+  "levels",
+  "moved",
+  "moverRenders",
+  "movers",
+  "rendered",
+  "reuseRatio",
+] as const;
+
+function isVirtualShadowStats(value: unknown): value is IVirtualShadowStats {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const stats = value as Record<string, unknown>;
+  if (
+    VIRTUAL_SHADOW_STAT_FIELDS.some(
+      (field) => typeof stats[field] !== "number" || !Number.isFinite(stats[field]),
+    )
+  ) {
+    return false;
+  }
+  const countFields = VIRTUAL_SHADOW_STAT_FIELDS.filter((field) => field !== "reuseRatio");
+  if (
+    countFields.some((field) => !Number.isInteger(stats[field]) || (stats[field] as number) < 0)
+  ) {
+    return false;
+  }
+  const reuseRatio = stats.reuseRatio as number;
+  return reuseRatio >= 0 && reuseRatio <= 1;
+}
+
+/**
+ * Parse a `TN_VIRTUAL_SHADOW` console line back into its complete stats, or `undefined`.
+ *
+ * @situation inspect virtual shadow cache and mover counters from a renderer log
+ * @constraint non-marker lines and markers with incomplete or non-numeric stats return `undefined`
+ * @example
+ * const stats = readVirtualShadowMarker(line);
+ * if (stats !== undefined) console.log(stats.reuseRatio);
+ */
 export function readVirtualShadowMarker(line: string): IVirtualShadowStats | undefined {
   if (!line.startsWith(`${VIRTUAL_SHADOW_MARKER}:`)) return undefined;
   try {
-    return JSON.parse(line.slice(VIRTUAL_SHADOW_MARKER.length + 1)) as IVirtualShadowStats;
+    const value: unknown = JSON.parse(line.slice(VIRTUAL_SHADOW_MARKER.length + 1));
+    return isVirtualShadowStats(value) ? value : undefined;
   } catch {
     return undefined;
   }

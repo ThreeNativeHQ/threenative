@@ -953,20 +953,18 @@ tracker.commit(scene);
 
 ### `readVirtualShadowMarker`
 
-`function` — One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
+`function` — Parse a `TN_VIRTUAL_SHADOW` console line back into its complete stats, or `undefined`.
 
 ```ts
 export function readVirtualShadowMarker(line: string): IVirtualShadowStats | undefined { … }
 ```
 
-- **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
-- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves
-- **Overrides:** bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement
+- **Use when:** inspect virtual shadow cache and mover counters from a renderer log
+- **Constraints:** non-marker lines and markers with incomplete or non-numeric stats return `undefined`
 
 ```ts
-const sun = new DirectionalLight(0xffffff, 3);
-sun.castShadow = true;
-sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });
+const stats = readVirtualShadowMarker(line);
+if (stats !== undefined) console.log(stats.reuseRatio);
 ```
 
 ### `RenderChain`
@@ -1270,15 +1268,15 @@ tracker.commit(scene);
 
 ### `VirtualShadowNode`
 
-`class` — One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
+`class` — One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels after the one refresh caused by tracking or untracking them. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
 
 ```ts
 export class VirtualShadowNode extends ShadowBaseNode { … }
 ```
 
 - **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
-- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves
-- **Overrides:** bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, normalBias, intensity and mapSize stay on `light.shadow`; every option here has a default
+- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
 
 ```ts
 const sun = new DirectionalLight(0xffffff, 3);
