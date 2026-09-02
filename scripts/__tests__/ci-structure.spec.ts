@@ -518,6 +518,19 @@ describe("CI pipeline structure", () => {
         "pnpm tsx scripts/workspace-packages.ts build",
       );
     }
+
+    // The first attempt shipped only `packages/create-threenative/dist` and every scaffold died:
+    // the CLI's `dist/index.js` imports `@threenative/assets`, pnpm resolves that through a
+    // workspace symlink into `packages/assets/dist/index.js`, and the leg no longer builds the
+    // workspace. What the legs need is the whole compiled workspace, so the artifact carries it
+    // and this asserts the glob rather than any one package's name.
+    const uploaded = build.slice(build.indexOf("actions/upload-artifact"));
+    expect(uploaded, "the shared artifact does not carry the compiled workspace").toMatch(
+      /^\s+packages\/\*\/dist$/mu,
+    );
+    expect(uploaded).toMatch(/^\s+artifacts\/workspace-packages$/mu);
+    // An empty upload must fail the job rather than hand every downstream leg a silent nothing.
+    expect(uploaded).toContain("if-no-files-found: error");
   });
 
   it("every native leg runs on every event", async () => {

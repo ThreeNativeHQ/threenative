@@ -522,15 +522,19 @@ jobs:
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" pack --pack-destination artifacts/workspace-packages
           done < artifacts/workspace-packages/specs
-      # `create-threenative/dist` rides along because the scaffold action runs the CLI from it.
-      # One day of retention: nothing outside this run ever reads these.
+      # Every `packages/*/dist` rides along, not just the CLI's. The scaffold action runs
+      # `create-threenative` from `dist/index.js`, and that file imports `@threenative/assets`,
+      # which pnpm resolves through a workspace symlink to `packages/assets/dist/index.js`. Ship
+      # only the CLI's own output and the first scaffold dies on ERR_MODULE_NOT_FOUND for a
+      # sibling it never mentions. 4.3 MB for the set. One day of retention: nothing outside this
+      # run ever reads these.
       - name: Publish the packed workspace
         uses: actions/upload-artifact@v4
         with:
           name: workspace-packages
           path: |
             artifacts/workspace-packages
-            packages/create-threenative/dist
+            packages/*/dist
           retention-days: 1
           if-no-files-found: error
 
