@@ -83,6 +83,25 @@ describe("pass cost records", () => {
     expect(row.assets.every((asset) => asset.durationMs >= 0)).toBe(true);
   });
 
+  it("should attribute cost per model, not one fused row, when two models bake together", async () => {
+    // AC3's literal subject: two models in one bake produce two rows under the model pass —
+    // the attribution a 274-file pack needs to name its expensive members.
+    const { buildFixtureGlb } = await import("../../../test-support/generate-fixture-model.js");
+    const root = await makeTempDir("threenative-pass-cost-models-");
+    await mkdir(path.join(root, "assets"));
+    const glb = await buildFixtureGlb();
+    await writeFile(path.join(root, "assets", "elm.glb"), glb);
+    await writeFile(path.join(root, "assets", "rock.glb"), glb);
+    const result = await compileAssets({ cwd: root, config: { textures: "none" } });
+
+    const row = result.passCosts.find((pass) => pass.pass === "model");
+    if (row === undefined) throw new Error("the bake emitted no model cost row");
+    expect(row.status).toBe("ran");
+    expect(row.ranInputs).toBe(2);
+    expect(row.assets.map((asset) => asset.logicalPath)).toEqual(["elm.glb", "rock.glb"]);
+    expect(row.assets.every((asset) => asset.durationMs >= 0)).toBe(true);
+  });
+
   it("should format cost lines stable, one per pass then one per asset", () => {
     const lines = formatPassCosts([
       {

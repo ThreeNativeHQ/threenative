@@ -52,11 +52,11 @@ phase boundary fails that phase.
 
 | # | New thing | Live caller and reachability | Replaces or rejects | Negative control |
 |---|---|---|---|---|
-| 1 | Per-pass cost record on the compile result | `packages/assets/src/compile.ts:193` (`IAssetCompileResult.passCosts`), populated by the driver at `compile.ts:1427`/`1437`, never by each pass reporting itself | Rejects a per-pass opt-in — a pass that forgets to report must be a failure, not a silence | Delete the record for one pass; the completeness assertion fails |
+| 1 | Per-pass cost record on the compile result | `packages/assets/src/compile.ts:193` (`IAssetCompileResult.passCosts`), populated by the driver at `compile.ts:1437`/`1445`, never by each pass reporting itself | Rejects a per-pass opt-in — a pass that forgets to report must be a failure, not a silence | Delete the record for one pass; the completeness assertion fails |
 | 2 | Cost rows in the emitted report | `packages/assets/src/report.ts:71` (`IPassCostRow`), formatted by `formatPassCosts` at `report.ts:86` and printed at `compile.ts:1594` | Rejects a second sidecar artifact; the bake report is the one place | Emit a report with a pass missing its row; the schema test fails |
 | 3 | `cached` vs `ran` distinction per pass | `packages/assets/src/compile.ts:1090` (`recordCachedInputs`, driven by the cache decision at `compile.ts:1437`) and `1114` (`assertCompletePassCosts` at `compile.ts:1588`) | Rejects inferring "cached" from a low duration | Force a cache hit; a row claiming `ran` fails |
 | 4 | Cost reporting on the incremental path | `packages/assets/src/watch.ts:34` (`IAssetWatchSummary.passCosts`), folded from the scratch compiles at `watch.ts:215` | Rejects instrumenting the full bake only | Trigger a watch rebuild; a missing cost record fails |
-| 5 | Per-asset attribution inside the model pass | attribution is driver-level per input: `compile.ts:1105` (`recordRanTimings`) records one `IPassCostAssetRow` per input per pass — the model pass is named by its rows in the wildwood baseline record | Rejects one aggregate number for 274 assets | Bake two models; a single fused row fails |
+| 5 | Per-asset attribution inside the model pass | attribution is driver-level per input: `compile.ts:1100` (`recordRanTimings`) records one `IPassCostAssetRow` per input per pass. **Deviation recorded at the checkpoint review:** `passes/model.ts` was never touched — the capability landed generically in the driver, broader than this row named and consistent with driver-owns-the-clock; AC3's two-model proof lives in the wildwood baseline record and the two-model assertion added to `pass-cost.spec.ts` | Rejects one aggregate number for 274 assets | Bake two models; a single fused row fails |
 
 ### Reachability
 
@@ -113,8 +113,8 @@ the machine and the input; a cost with no named input is not a measurement.
 - [x] **AC8 — the baseline exists.** `docs/verification/` carries the pre-PRD-319 numbers with
       the machine and the input named.
 - [x] **AC9 — gates.** `pnpm typecheck && pnpm lint && pnpm test` green, output pasted. No new
-      `noExcessiveCognitiveComplexity` warning is added to `compile.ts`, which already carries
-      one.
+      `noExcessiveCognitiveComplexity` warning is added to `compile.ts` (measured 2026-09-02:
+      the file carries none, and the repo-wide count stayed at the batch baseline of 20).
 
 ## 5. Decline conditions
 
@@ -129,6 +129,11 @@ happens to measure, and this repository has retired one of those already.
 **Delete the new code. Does something pre-existing break?** Yes: the bake report formatter loses
 a row type it renders, and the Phase 5 baseline assertion in `docs/verification/` no longer has
 an input. If PRD-319 has landed, its speedup gate loses its comparison entirely.
+
+*Checkpoint-review note (2026-09-02):* at the instrument's own commit this check is structural —
+every consumer of the new symbols was added in the same commits, so nothing *pre-existing*
+breaks until the Phase 5 baseline and PRD-319's speedup gate consume the numbers. That
+consumption now exists, which is what makes the check real.
 
 **Have I watched this gate fail?** Phase 0 requires the completeness assertion pasted red on
 `HEAD` before any instrument exists.
