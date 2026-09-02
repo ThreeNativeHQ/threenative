@@ -1,5 +1,7 @@
 import {
+  type AnimationClip,
   type AudioLoader,
+  type Bone,
   BufferAttribute,
   type BufferGeometry,
   Mesh,
@@ -408,6 +410,93 @@ function modelRoot(value: unknown): Object3D | undefined {
   return scene instanceof Object3D ? scene : undefined;
 }
 
+/** The `{ animations }` a GLTF result carries, when it carries well-formed ones. */
+function modelClips(value: unknown): readonly AnimationClip[] {
+  if (typeof value !== "object" || value === null) return [];
+  const animations = (value as { animations?: unknown }).animations;
+  return Array.isArray(animations) ? (animations as AnimationClip[]) : [];
+}
+
+/** Below this a bone's bind translation along Z carries no vote: there is nothing to negate. */
+const MIRROR_VOTE_FLOOR = 1e-6;
+/** A translation track must actually hold the offset for its vote to count, not pass through zero. */
+const MIRROR_VOTE_HOLD = 0.25;
+/** The share of voting bones that must read mirrored before the loader repairs the clips. */
+const MIRROR_VOTE_SHARE = 0.8;
+/** Fewer voting bones than this cannot carry the decision, whatever they read. */
+const MIRROR_VOTE_MINIMUM = 4;
+
+/**
+ * Repair an exported rig whose clips are Z-mirrored against its own bind pose, in place.
+ *
+ * The signature (PRD-324, the whole Wildwood animal pack): the file's bind faces its own +Z, but
+ * every animation track is expressed in a Z-mirrored frame — position tracks hold `(x, y, −z)`
+ * where the bind holds `(x, y, z)`, and quaternion tracks hold `(−x, −y, z, w)`, the conjugation
+ * of the same mirror. Played as authored, every animal faces backwards with its spine folded:
+ * head behind pelvis, healthy bone lengths, zero errors anywhere.
+ *
+ * An exporter writes exactly this when it converts a rig's bind to one convention and forgets its
+ * animation tracks. The loader repairs it before the game ever sees it: detection votes per
+ * tracked bone on whether the clip's translation Z sits negated against the bind, and only an
+ * overwhelming vote (at least `MIRROR_VOTE_MINIMUM` bones, `MIRROR_VOTE_SHARE` of them) converts
+ * every track — positions negate Z, quaternions negate X and Y, once, across all clips. A file
+ * that does not carry the signature is left byte-identical.
+ */
+export function reconcileMirroredClips(root: Object3D, clips: readonly AnimationClip[]): boolean {
+  if (clips.length === 0) return false;
+  const bones = new Map<string, Bone>();
+  root.traverse((object) => {
+    if ((object as Bone).isBone === true) bones.set(object.name, object as Bone);
+  });
+  if (bones.size === 0) return false;
+
+  let voters = 0;
+  let mirrored = 0;
+  for (const clip of clips) {
+    for (const track of clip.tracks) {
+      const dot = track.name.lastIndexOf(".");
+      if (track.name.slice(dot + 1) !== "position") continue;
+      const bone = bones.get(track.name.slice(0, dot));
+      if (bone === undefined) continue;
+      const bindZ = bone.position.z;
+      if (Math.abs(bindZ) < MIRROR_VOTE_FLOOR) continue;
+      const values = track.values;
+      let sum = 0;
+      let count = 0;
+      for (let index = 2; index < values.length; index += 3) {
+        sum += values[index] ?? 0;
+        count += 1;
+      }
+      if (count === 0) continue;
+      const meanZ = sum / count;
+      // A track that never holds the offset votes neither way.
+      if (Math.abs(meanZ) < Math.abs(bindZ) * MIRROR_VOTE_HOLD) continue;
+      voters += 1;
+      if (Math.abs(meanZ + bindZ) < Math.abs(meanZ - bindZ)) mirrored += 1;
+    }
+  }
+  if (voters < MIRROR_VOTE_MINIMUM || mirrored / voters < MIRROR_VOTE_SHARE) return false;
+
+  for (const clip of clips) {
+    for (const track of clip.tracks) {
+      const dot = track.name.lastIndexOf(".");
+      const property = track.name.slice(dot + 1);
+      const values = track.values;
+      if (property === "position") {
+        for (let index = 2; index < values.length; index += 3) {
+          values[index] = -(values[index] ?? 0);
+        }
+      } else if (property === "quaternion") {
+        for (let index = 0; index < values.length; index += 4) {
+          values[index] = -(values[index] ?? 0);
+          values[index + 1] = -(values[index + 1] ?? 0);
+        }
+      }
+    }
+  }
+  return true;
+}
+
 export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoader {
   const basePath = options.basePath ?? "";
   // `assets` is what `@threenative/assets` compiles from unless a project says otherwise, so it is
@@ -652,6 +741,12 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // three.js geometry call. See `widenQuantizedPositions`.
         const root = modelRoot(value);
         if (root !== undefined) widenQuantizedPositions(root);
+        // Before the game ever sees it: clips z-mirrored against their own bind pose play every
+        // animal backwards, silently. See `reconcileMirroredClips`.
+        const clips = modelClips(value);
+        if (root !== undefined && clips.length > 0 && reconcileMirroredClips(root, clips)) {
+          console.info(`TN_ASSETS_MIRRORED_CLIPS_REPAIRED ${path}`);
+        }
         await attachCompiledLightmaps(path, value);
         return value;
       }),
