@@ -52,43 +52,53 @@ The final scenario is:
 /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json
 ```
 
-Web command and concise raw result:
+Web manager receipt:
 
 ```text
-timeout 180s node packages/playtest/dist/runner/cli.js /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json --project /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830 --target browser --url http://127.0.0.1:4183 --server-command 'pnpm dev --host 127.0.0.1 --port 4183 --strictPort' --browser-recipe webgpu --headed --timeout 120000 --no-screenshots
+node packages/playtest/dist/runner/cli.js /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json --target browser --url http://127.0.0.1:5173 --browser-recipe webgpu --headed --project /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830 --artifacts /tmp/prd325-camera-web-after-timing --timeout 60000
 
-pass=true target=web runtime=web scenario=camera-tracks-body-vertically frames=1603
-positionY before=0.8994753360748291 after=3.2998392581939697 pass=true
-targetsHit before=0 after=1; cameraLagPeak before=0 after=0
-diagnostics pass=true consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
+pass=true target=web runtime=web
+positionY 1.8995753526687622 -> 2.364098310470581
+targetsHit 0 -> 1; shots=1; cameraLagPeak=0
+diagnostics consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
 rendererKind=webgpu adapter.architecture=turing adapter.vendor=nvidia
+setup requested/applied spawn={x:25,y:1.9,z:-4.4} aim={yaw:pi,pitch:0.82}
+climb-shot step tick=36
 ```
 
-Desktop command and concise raw result, using the known-good native executable:
+Desktop manager receipt:
 
 ```text
-SDL_AUDIO_DRIVER=dummy node packages/playtest/dist/runner/cli.js /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json --project /tmp/prd325-bayview-measure-PdWZnz/bayview --target desktop --executable /tmp/prd325-bayview-measure-PdWZnz/bayview/dist-native/fps-framework --timeout 120000 --no-screenshots
+SDL_AUDIO_DRIVER=dummy sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js /tmp/prd325-camera-desktop-scenario.QP0lRb.playtest.json --target desktop --executable /home/joao/projects/threenative/prd325-desktop-proof-corrected --no-screenshots --timeout 60000
 
-pass=true target=desktop runtime=native frames=1603
-positionY before=0.8979750871658325 after=3.299940347671509 pass=true
-targetsHit before=0 after=1; score=400; shots=1
-cameraLagPeak before=0.011824870109558017 after=0.011824870109558017; bound=0.02 pass=true
-diagnostics pass=true consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
+pass=true target=desktop runtime=native
+positionY 1.8985751867294312 -> 2.3630950450897217
+targetsHit 0 -> 1; score=250; shots=1; cameraLagPeak=0
+diagnostics consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
+setup requested/applied spawn={x:25,y:1.9,z:-4.4} aim={yaw:pi,pitch:0.82}
+climb-shot step tick=25
 ```
 
-The first desktop attempt against the original negative-coordinate/rotation setup was the real
-scenario red that required a scenario-only correction:
+Both manager-run target receipts passed with the shared setup applied before the scene release.
+
+## Setup ordering and manager gates
+
+Commit `acf622e8` applies scenario setup through the shared browser/native transport before
+`describe()` releases a held scene. Red/green evidence is in
+`packages/playtest/__tests__/setup-ordering.spec.ts:15`: red before the fix; green with 3 tests
+after the fix.
+
+The manager reran the repository gates with these results:
 
 ```text
-pass=false target=desktop runtime=native frames=113
-positionY before=0.8994686603546143 after=0.8994708061218262
-targetsHit before=0 after=0; cameraLagPeak before=0 after=0
-diagnostics TN_PLAYTEST_RESOURCE_STATE_STAGNATED; TN_PLAYTEST_COMPONENT_ASSERTION_FAILED
+pnpm typecheck && pnpm lint && pnpm test — exit 0
+typecheck passed; lint exit 0 with existing warnings; 3308 tests passed and 4 skipped
+pnpm budgets — exit 0
+pnpm test:templates — exit 0; all scaffolded template playtests passed
 ```
 
-The final scenario starts in the reliable authored target lane, then moves to the proven north
-corridor before entering the authored staircase flight. No engine source changed for this
-correction. Both final targets passed after it.
+The source PRD's legacy parser check remains separately recorded as a parser limitation in
+`.linchpin/prd-325-gates.md`; this receipt does not claim that parser check passed.
 
 ## Caller census and Integration Ledger rows 1–4
 
