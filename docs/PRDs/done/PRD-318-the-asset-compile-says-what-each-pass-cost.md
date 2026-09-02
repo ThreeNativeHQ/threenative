@@ -4,7 +4,12 @@ prd_contract: v1
 
 # PRD-318 — the asset compile says what each pass cost
 
-**Status: PROPOSED, 2026-09-01.** Evaluated against engine `HEAD` bedbcb80.
+**Status: IMPLEMENTED 2026-09-02.** Phases 0-5 landed (`5d24bb49`, follow-ups through
+`5f571bde`); the baseline record is
+[docs/verification/prd-318-baseline-2026-09-02.md](../../verification/prd-318-baseline-2026-09-02.md).
+Phase 0's red was pasted in-session (4/4 tests failing on `HEAD` before the instrument existed);
+the four negative controls were each applied and observed red, then reverted. PRD-319's number
+to beat was 2374.2 s; it beat it with byte-identical output. Archived to `done/` 2026-09-02.
 
 **Complexity:** +1 touches fewer than 10 files, +1 changes a reported artifact schema,
 +1 crosses the assets package and its CLI surface = **3 → STANDARD mode.** One automated
@@ -47,11 +52,11 @@ phase boundary fails that phase.
 
 | # | New thing | Live caller and reachability | Replaces or rejects | Negative control |
 |---|---|---|---|---|
-| 1 | Per-pass cost record on the compile result | `compile.ts:→impl`, populated by the pass driver, not by each pass reporting itself | Rejects a per-pass opt-in — a pass that forgets to report must be a failure, not a silence | Delete the record for one pass; the completeness assertion fails |
-| 2 | Cost rows in the emitted report | `report.ts:→impl`, rendered by the existing report formatter | Rejects a second sidecar artifact; the bake report is the one place | Emit a report with a pass missing its row; the schema test fails |
-| 3 | `cached` vs `ran` distinction per pass | `compile.ts:→impl`, read from the existing compile-cache decision | Rejects inferring "cached" from a low duration | Force a cache hit; a row claiming `ran` fails |
-| 4 | Cost reporting on the incremental path | `watch.ts:→impl` | Rejects instrumenting the full bake only | Trigger a watch rebuild; a missing cost record fails |
-| 5 | Per-asset attribution inside the model pass | `passes/model.ts:→impl` | Rejects one aggregate number for 274 assets | Bake two models; a single fused row fails |
+| 1 | Per-pass cost record on the compile result | `packages/assets/src/compile.ts:193` (`IAssetCompileResult.passCosts`), populated by the driver at `compile.ts:1427`/`1437`, never by each pass reporting itself | Rejects a per-pass opt-in — a pass that forgets to report must be a failure, not a silence | Delete the record for one pass; the completeness assertion fails |
+| 2 | Cost rows in the emitted report | `packages/assets/src/report.ts:71` (`IPassCostRow`), formatted by `formatPassCosts` at `report.ts:86` and printed at `compile.ts:1594` | Rejects a second sidecar artifact; the bake report is the one place | Emit a report with a pass missing its row; the schema test fails |
+| 3 | `cached` vs `ran` distinction per pass | `packages/assets/src/compile.ts:1090` (`recordCachedInputs`, driven by the cache decision at `compile.ts:1437`) and `1114` (`assertCompletePassCosts` at `compile.ts:1588`) | Rejects inferring "cached" from a low duration | Force a cache hit; a row claiming `ran` fails |
+| 4 | Cost reporting on the incremental path | `packages/assets/src/watch.ts:34` (`IAssetWatchSummary.passCosts`), folded from the scratch compiles at `watch.ts:215` | Rejects instrumenting the full bake only | Trigger a watch rebuild; a missing cost record fails |
+| 5 | Per-asset attribution inside the model pass | attribution is driver-level per input: `compile.ts:1105` (`recordRanTimings`) records one `IPassCostAssetRow` per input per pass — the model pass is named by its rows in the wildwood baseline record | Rejects one aggregate number for 274 assets | Bake two models; a single fused row fails |
 
 ### Reachability
 
@@ -91,23 +96,23 @@ the machine and the input; a cost with no named input is not a measurement.
 
 ## 4. Acceptance criteria
 
-- [ ] **AC1 — every pass reports.** A bake emits exactly one cost record per pass, each marked
+- [x] **AC1 — every pass reports.** A bake emits exactly one cost record per pass, each marked
       `ran` or `cached`. Deleting one pass's record fails the completeness assertion, and that
       red is pasted.
-- [ ] **AC2 — cached is not inferred.** A forced cache hit reports `cached` with the cache's own
+- [x] **AC2 — cached is not inferred.** A forced cache hit reports `cached` with the cache's own
       decision as the source. A row that derives `cached` from a duration threshold fails review.
-- [ ] **AC3 — per-asset, not per-pass, inside the model pass.** Two models in one bake produce
+- [x] **AC3 — per-asset, not per-pass, inside the model pass.** Two models in one bake produce
       two rows.
-- [ ] **AC4 — the watch loop reports too.** An incremental rebuild emits the same record shape.
-- [ ] **AC5 — the report is stable.** Two bakes of unchanged input produce byte-identical cost
+- [x] **AC4 — the watch loop reports too.** An incremental rebuild emits the same record shape.
+- [x] **AC5 — the report is stable.** Two bakes of unchanged input produce byte-identical cost
       rows apart from the duration fields; ordering does not float.
-- [ ] **AC6 — fail closed.** A pass that ends without a closed record throws; the compile does
+- [x] **AC6 — fail closed.** A pass that ends without a closed record throws; the compile does
       not emit a report with a hole in it. Red pasted.
-- [ ] **AC7 — nothing got slower.** The instrumented bake's total wall clock is within noise of
+- [x] **AC7 — nothing got slower.** The instrumented bake's total wall clock is within noise of
       the uninstrumented one on the same input, and the noise band is named.
-- [ ] **AC8 — the baseline exists.** `docs/verification/` carries the pre-PRD-319 numbers with
+- [x] **AC8 — the baseline exists.** `docs/verification/` carries the pre-PRD-319 numbers with
       the machine and the input named.
-- [ ] **AC9 — gates.** `pnpm typecheck && pnpm lint && pnpm test` green, output pasted. No new
+- [x] **AC9 — gates.** `pnpm typecheck && pnpm lint && pnpm test` green, output pasted. No new
       `noExcessiveCognitiveComplexity` warning is added to `compile.ts`, which already carries
       one.
 
@@ -150,9 +155,9 @@ self-report.
 
 ## 7. Done gates
 
-- [ ] Integration Ledger has zero `→impl` cells
-- [ ] Every new exported symbol has a non-test consumer (caller census pasted)
-- [ ] Revert check passed: removing the records breaks the report formatter
-- [ ] Every gate has an observed red, pasted
-- [ ] Proved on the real subject: the largest asset pack available on this machine, not the
+- [x] Integration Ledger has zero `→impl` cells
+- [x] Every new exported symbol has a non-test consumer (caller census pasted)
+- [x] Revert check passed: removing the records breaks the report formatter
+- [x] Every gate has an observed red, pasted
+- [x] Proved on the real subject: the largest asset pack available on this machine, not the
       three-file fixture set

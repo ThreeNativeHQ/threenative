@@ -4,7 +4,12 @@ prd_contract: v1
 
 # PRD-320 — the Fab import replays without a Fab account, and PRD-295's stale claim is retired
 
-**Status: PROPOSED, 2026-09-01.**
+**Status: IMPLEMENTED 2026-09-02.** Phase 0 re-ran both gates PRD-295's stale status named
+(`cb4d3586`); PRD-295 is archived with its ten criteria ticked. Phases 1-3 landed (`0acee6b2`,
+`0558c1d3`); the run record is
+[docs/verification/PRD-320.md](../../verification/PRD-320.md). The corpus already existed — the
+missing piece was the end-to-end offline replay, which now runs in `pnpm test`. Archived to
+`done/` 2026-09-02.
 
 **Complexity:** +2 crosses this workspace and the external asset-MCP repository, +1 introduces a
 fixture corpus, +1 changes a CI-visible test lane, +1 touches an external toolchain that
@@ -51,10 +56,10 @@ testable offline from a checked-in fixture.
 
 | # | New thing | Live caller and reachability | Replaces or rejects | Negative control |
 |---|---|---|---|---|
-| 1 | A small checked-in `.uasset` fixture corpus with a licence that permits redistribution | `packages/raw-unreal/__tests__/→impl` | Rejects committing any Fab Standard asset — the licence gate PRD-295 added exists for a reason and applies to this repo too | Corrupt a fixture header; the decode assertion fails |
-| 2 | An offline replay of decode → convert → compile | `→impl` spec, run by `pnpm test` | Rejects a test that needs network or a Fab login | Break the UE5 header path; replay fails |
-| 3 | Golden GLB comparison, structural not byte | `→impl` | Rejects byte comparison, which `gltf-transform` version bumps break for no real reason | Drop a material; the structural gate fails |
-| 4 | An account-gated lane, clearly separated and skipped by default | `→impl` | Rejects mixing account-gated and offline proof in one lane, which is how a lane becomes unrunnable | Run it without credentials; it must skip loudly, not pass quietly |
+| 1 | A small checked-in `.uasset` fixture corpus with a licence that permits redistribution | `packages/raw-unreal/fixtures/SM_cube.uasset` + `PROVENANCE.md` (MIT, SHA-256-pinned); `packages/ueformat/fixtures/PROVENANCE.md` added by this PRD; asserted before every use at `packages/assets/__tests__/unreal-replay.spec.ts:43` | Rejects committing any Fab Standard asset — the licence gate PRD-295 added exists for a reason and applies to this repo too | Corrupt a fixture header; the decode assertion fails |
+| 2 | An offline replay of decode → convert → compile | `packages/assets/__tests__/unreal-replay.spec.ts:148` — decodes with the Oodle codec, converts through `createThreeGeometry`, writes a non-interleaved GLB, compiles through `compileAssets` | Rejects a test that needs network or a Fab login | Break the UE5 header path; replay fails |
+| 3 | Golden GLB comparison, structural not byte | `GOLDEN_STRUCTURE` at `packages/assets/__tests__/unreal-replay.spec.ts:31`, read back through `structureOf` at `:58` — meshes, primitives, component type, accessor bounds, triangle and vertex counts | Rejects byte comparison, which `gltf-transform` version bumps break for no real reason | Drop a material; the structural gate fails |
+| 4 | An account-gated lane, clearly separated and skipped by default | `packages/assets/__tests__/fab-account-lane.spec.ts` — `describe.skipIf` on `THREENATIVE_FAB_E2E_LISTING`; the skip is visible in the runner count, set-but-empty fails with a named error | Rejects mixing account-gated and offline proof in one lane, which is how a lane becomes unrunnable | Run it without credentials; it must skip loudly, not pass quietly |
 | 5 | A refreshed PRD-295 status from a real run | `docs/PRDs/tooling/PRD-295...md` and `docs/verification/` | Rejects inheriting the stale two-gates claim | — |
 
 ### Reachability
@@ -93,19 +98,19 @@ has landed first.
 
 ## 4. Acceptance criteria
 
-- [ ] **AC1 — PRD-295's status is true.** Its status block reflects a run performed in this PRD,
+- [x] **AC1 — PRD-295's status is true.** Its status block reflects a run performed in this PRD,
       with output pasted, not the 2026-08-31 claim.
-- [ ] **AC2 — the offline replay runs in `pnpm test`.** No network, no credentials, no
+- [x] **AC2 — the offline replay runs in `pnpm test`.** No network, no credentials, no
       auto-installed executable required for the offline half.
-- [ ] **AC3 — the replay goes red for the right reason.** Breaking the UE5 header path fails it;
+- [x] **AC3 — the replay goes red for the right reason.** Breaking the UE5 header path fails it;
       that red is pasted. A replay that survives the decoder's removal proves nothing.
-- [ ] **AC4 — structural, not byte.** A `gltf-transform` patch bump does not fail the gate; a
+- [x] **AC4 — structural, not byte.** A `gltf-transform` patch bump does not fail the gate; a
       dropped material does.
-- [ ] **AC5 — the account lane skips loudly.** Without credentials it reports a named skip and
+- [x] **AC5 — the account lane skips loudly.** Without credentials it reports a named skip and
       does not report a pass.
-- [ ] **AC6 — the fixture corpus is licence-clean and small.** Every fixture's licence is named
+- [x] **AC6 — the fixture corpus is licence-clean and small.** Every fixture's licence is named
       in the corpus README; total size is recorded and justified.
-- [ ] **AC7 — gates.** `pnpm typecheck && pnpm lint && pnpm test` green, output pasted.
+- [x] **AC7 — gates.** `pnpm typecheck && pnpm lint && pnpm test` green, output pasted.
 
 ## 5. Decline conditions
 
@@ -150,9 +155,9 @@ the decoder's real branches — the corpus README must name which branch each fi
 
 ## 7. Done gates
 
-- [ ] Integration Ledger has zero `→impl` cells
-- [ ] The replay appears in the runner's collected test count, verified by inserting a
+- [x] Integration Ledger has zero `→impl` cells
+- [x] The replay appears in the runner's collected test count, verified by inserting a
       deliberate failure and seeing it reported
-- [ ] PRD-295 is either archived to `done/` with a fresh gate run pasted, or its real blocker is
+- [x] PRD-295 is either archived to `done/` with a fresh gate run pasted, or its real blocker is
       named — the 2026-08-31 claim does not survive this PRD
-- [ ] Every gate has an observed red, pasted
+- [x] Every gate has an observed red, pasted

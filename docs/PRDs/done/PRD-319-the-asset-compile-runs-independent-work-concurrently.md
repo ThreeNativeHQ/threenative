@@ -4,7 +4,14 @@ prd_contract: v1
 
 # PRD-319 — the asset compile runs independent work concurrently, and proves the output did not move
 
-**Status: PROPOSED, 2026-09-01. Blocked by PRD-318** — an unmeasured speedup is not a result.
+**Status: IMPLEMENTED 2026-09-02.** Phases 0-4 landed (`01463f55` through `140b76fc`); the
+measurement is
+[docs/verification/prd-319-measurement-2026-09-02.md](../../verification/prd-319-measurement-2026-09-02.md):
+**3.13x** on the wildwood pack (2374.2 s -> 757.5 s at bound 4) with **zero differing bytes**
+across all 169 emitted files. The determinism gate caught a real order dependency on `HEAD` —
+the receipt's last-writer-wins shared-output merge — which is fixed. AC5 (peak RSS) is recorded
+UNVERIFIED in the measurement record with the probe's failure story; every other criterion holds
+or is ticked with its pasted red.
 
 **Complexity:** +2 changes the pass driver's execution model, +2 introduces worker or bounded
 async concurrency, +1 risks output nondeterminism, +1 crosses the watch path, +1 crosses the
@@ -42,12 +49,12 @@ acceptance criterion, and speed is the secondary one.
 
 | # | New thing | Live caller and reachability | Replaces or rejects | Negative control |
 |---|---|---|---|---|
-| 1 | Declared dependency edges between passes | `compile.ts:→impl`, the driver reads them | Rejects "run everything at once and hope"; `shared-images` genuinely depends on model discovery | Remove an edge; the determinism gate fails |
-| 2 | Bounded concurrent execution of independent work | `compile.ts:→impl` | Rejects unbounded fan-out, which on a 274-file pack exhausts memory before it exhausts cores | Set concurrency to 1; results must be byte-identical to the concurrent run |
-| 3 | Order-independent shared-image resolution | `passes/shared-images.ts:→impl` | Rejects first-writer-wins | Reverse the completion order; a differing chosen image fails |
-| 4 | Concurrency-safe compile cache writes | `compile.ts:→impl` | Rejects a torn or interleaved cache entry | Two workers touching one key; a corrupt entry fails |
-| 5 | The same execution model on the watch path | `watch.ts:→impl` | Rejects a fast full bake and a slow incremental one | An incremental rebuild that stays sequential fails |
-| 6 | Concurrency setting reachable from game config | `create-threenative` asset config `→impl` | Rejects a hardcoded core count; CI boxes and laptops differ | Config key unread by the driver fails the seam test |
+| 1 | Declared dependency edges between passes | the per-input chain is the declared edge set: `packages/assets/src/pass-chain.ts:20` (`applyPasses`) sequences the registry per input; the serialisable mirror `packages/assets/src/worker-protocol.ts` (`PassSpec`) is what a worker rebuilds, and the determinism gate's `processingOrder` hook at `compile.ts:1341,178` is the documented completion-order seam | Rejects "run everything at once and hope"; `shared-images` genuinely depends on model discovery | Remove an edge; the determinism gate fails |
+| 2 | Bounded concurrent execution of independent work | `packages/assets/src/worker-pool.ts:56` (`createPassPool`, exactly `concurrency` workers), scheduled by the pump at `compile.ts:1540-1560`; `resolveConcurrency` at `worker-pool.ts:27` validates and defaults to `min(4, cores-1)` | Rejects unbounded fan-out, which on a 274-file pack exhausts memory before it exhausts cores | Set concurrency to 1; results must be byte-identical to the concurrent run |
+| 3 | Order-independent shared-image resolution | content-addressed keys make identical encodes converge: `packages/assets/src/passes/shared-images.ts:79` (`sharedImageKey` on source bytes + settings); writes are temp-then-rename at `shared-images.ts:151`; the receipt's provenance merge was made arrival-independent at `compile.ts`'s `writeReceipt` (smallest source wins), which the gate caught red on HEAD | Rejects first-writer-wins | Reverse the completion order; a differing chosen image fails |
+| 4 | Concurrency-safe compile cache writes | the manifest and receipt are written only by the driver thread after the pump joins (`compile.ts` `writeManifest`/`writeReceipt`); auxiliary and shared-image writes are temp-then-rename at `compile.ts:1526-1531`; two workers contending on one key produce identical bytes or one winner, never a torn file | Rejects a torn or interleaved cache entry | Two workers touching one key; a corrupt entry fails |
+| 5 | The same execution model on the watch path | `packages/assets/src/watch.ts:336` — a burst's per-file scratch compiles run through the same bound (`DEFAULT_CONCURRENCY`) with results merged on the watch thread | Rejects a fast full bake and a slow incremental one | An incremental rebuild that stays sequential fails |
+| 6 | Concurrency setting reachable from game config | `packages/create-threenative/src/config.ts:1194` admits `assets.concurrency`, `:1212` validates it, and the driver reads it at `compile.ts` (`resolveConcurrency(options.concurrency ?? layout.concurrency)`); the config spec proves the producer→consumer seam both ways | Rejects a hardcoded core count; CI boxes and laptops differ | Config key unread by the driver fails the seam test |
 
 ### Reachability
 
@@ -87,23 +94,23 @@ and its scope becomes a question for the owner rather than a claim.
 
 ## 4. Acceptance criteria
 
-- [ ] **AC1 — byte-identical output.** Concurrency 1 and concurrency N produce identical bytes
+- [x] **AC1 — byte-identical output.** Concurrency 1 and concurrency N produce identical bytes
       for every emitted artifact across the repo fixture set and the largest available pack.
-- [ ] **AC2 — the determinism gate has been red.** An order-dependent shared-image choice is
+- [x] **AC2 — the determinism gate has been red.** An order-dependent shared-image choice is
       introduced deliberately and the gate fails; that failure is pasted.
-- [ ] **AC3 — shuffled completion changes nothing.** With a test hook that reverses completion
+- [x] **AC3 — shuffled completion changes nothing.** With a test hook that reverses completion
       order, output bytes are unchanged.
-- [ ] **AC4 — the cache survives concurrency.** Two workers contending on one cache key produce
+- [x] **AC4 — the cache survives concurrency.** Two workers contending on one cache key produce
       a valid entry or no entry, never a partial one. Red pasted.
 - [ ] **AC5 — bounded.** Peak RSS during the large-pack bake is recorded and does not scale with
-      asset count.
-- [ ] **AC6 — the watch path uses the same model.**
-- [ ] **AC7 — the game can set it.** The concurrency setting travels from generated project
+      asset count. UNVERIFIED — the probe attempts failed; see the measurement record.
+- [x] **AC6 — the watch path uses the same model.**
+- [x] **AC7 — the game can set it.** The concurrency setting travels from generated project
       config to the driver; a config key the driver ignores fails, per the config-seam lesson
       that `assets.models.virtual` already taught this repository.
-- [ ] **AC8 — the speedup is a number with a machine on it.** Reported against PRD-318's
+- [x] **AC8 — the speedup is a number with a machine on it.** Reported against PRD-318's
       baseline. A speedup under 1.3x is reported as such, not reframed.
-- [ ] **AC9 — gates.** `pnpm typecheck && pnpm lint && pnpm test` green, output pasted.
+- [x] **AC9 — gates.** `pnpm typecheck && pnpm lint && pnpm test` green, output pasted.
 
 ## 5. Decline conditions
 
@@ -149,8 +156,8 @@ subject does not exercise, and which phase closes each.
 
 ## 7. Done gates
 
-- [ ] Integration Ledger has zero `→impl` cells
-- [ ] Revert check: setting concurrency to 1 must still be a supported, tested path
-- [ ] The old sequential assumption is gone, not kept as a second live path
-- [ ] Every gate has an observed red, pasted
-- [ ] The speedup number names its machine and its input
+- [x] Integration Ledger has zero `→impl` cells
+- [x] Revert check: setting concurrency to 1 must still be a supported, tested path
+- [x] The old sequential assumption is gone, not kept as a second live path
+- [x] Every gate has an observed red, pasted
+- [x] The speedup number names its machine and its input
