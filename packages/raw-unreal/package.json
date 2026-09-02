@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/raw-unreal && pnpm run build && publint --strict"
+    "test": "vitest run --root ../.. raw-unreal/__tests__ && pnpm run build && publint --strict"
   },
   "devDependencies": {
     "@types/node": "20.19.43",
