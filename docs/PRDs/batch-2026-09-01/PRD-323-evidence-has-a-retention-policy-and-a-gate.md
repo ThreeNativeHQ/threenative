@@ -4,15 +4,18 @@ prd_contract: v1
 
 # PRD-323 — evidence has a retention policy, and the policy is a gate
 
-**Status: PARTIAL, 2026-09-02.** Phase 0 landed: the evidence budget gate
-(`scripts/check-evidence-budget.ts`, wired into `pnpm budgets`) with its red observed at a
-tight cap (71.2 MB over 50 MB, `OK: false`), the fixture tests pinning the failure shape, and
-the real-tree assertion holding under the shipped growth-stop caps. Fresh measurement: `docs`
-is **369 MB** (was 289 MB at filing), verification 71.2 MB / 779 files, benchmark 203.3 MB
-tracked / 5,362 files, packed history 194 MB. The citation scanner and the deletion phases
-(1-6) remain **open** and require the owner's manual checkpoint before any tracked bytes move;
-per the PRD's own decline rule, the shipped budget gate alone is a win — the bloat now fails
-the commit that causes it.
+**Status: PARTIAL, 2026-09-02 — every non-deletion phase landed.** Phase 0: the evidence
+budget gate (`scripts/check-evidence-budget.ts`, wired into `pnpm budgets`), red observed at a
+tight cap. Phase 1: the citation scanner (`scripts/evidence-citations.ts`) — total, fail-closed,
+its flip control observed. Phase 2: the retention index is generated
+(`scripts/generate-retention-index.ts` → `docs/benchmark/SCREENSHOT-RETENTION.md`), `--check`
+wired into `pnpm budgets`, hand-edit red observed. Phase 6: the history decision is recorded
+with the measured 194.01 MiB packed size behind it — declined. What remains open needs the
+owner's manual checkpoint by this PRD's own rule: **Phase 3** (deleting the uncited artifacts —
+1,793 named by the index) and **Phase 4** (untracking the 268 MB sweep tree), both of which
+move tracked bytes; Phase 5 (consolidating the 4,050-line record) is unblocked by the scanner
+but unstarted. Fresh measurement: `docs` 369 MB, benchmark 213 MB tracked / 781 uncited,
+verification 74.7 MB / 1,012 uncited.
 
 **Complexity score:** +3 touches 10+ files, +2 new gate/module from scratch, +2 multi-package
 (scripts, docs tooling, CI), +1 external integration (`git` history rewrite is evaluated and
