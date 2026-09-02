@@ -73,7 +73,8 @@ export class Player {
     this.#coyoteTime = Math.max(0, this.#coyoteTime - dt);
     this.#jumpBuffer = Math.max(0, this.#jumpBuffer - dt);
     if (grounded) this.#coyoteTime = COYOTE_TIME;
-    if (ctx.input.justPressed("jump") || touch?.jumpPressed === true) this.#jumpBuffer = JUMP_BUFFER;
+    if (ctx.input.justPressed("jump") || touch?.jumpPressed === true)
+      this.#jumpBuffer = JUMP_BUFFER;
     if (this.#jumpBuffer > 0 && this.#coyoteTime > 0) {
       this.body.velocity.y = JUMP_SPEED;
       this.#jumpBuffer = 0;

@@ -214,15 +214,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-01 for PRD-318: formatPassCosts entered the public surface, so the
   // capability manifest and the reference generated from it both grew, and those bytes are
   // copied into every scaffold.
-  "action-rpg": "b19ab438d08fb73c95e59bdbdfd0d9cd1aaa9a02115eed9444316bda8a87ecca",
-  defense: "8e74d036da396a5cdd2de5f9cfabe3d7a550edc4979f5fbada9193087d0bbacf",
+  // Recomputed 2026-09-02 for the PRD-292 recovery after the continuous-collision native source,
+  // benchmark, and generated convention guidance landed on the committed tree.
+  "action-rpg": "63d663262b7daaf69e8159d9bb25407a17d3bf4147657e8c1501446e786b1fec",
+  defense: "bd2eb2845d0074b60e8e4f553907fbbce363a48d5389d24fe3c4d8cfb3095cee",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "191aa46383d75fcb2b29066cb970701342a19c8ea96ff14f9bbc623cdc13610f",
-  platformer: "e90c351add2501283540a234378f01b760f88e636681439dc0f83f3e0f787e03",
-  racing: "308c90d443e075837aa34ec94730330e0bbb8e9c1c4e704ee2aba9bef7fd8469",
-  shooter: "5fc700a538b2389a072fac8bf472e07026669599056ca2f2bafed899ca429672",
-  starter: "295b02caa7501d093b8c37c9d077642be9427958c012f9c8b10f9bcbb0b70501",
+  minimal: "5168ac21948ed2b38121e96ab053eef5f37b98ae11ccffb17775852729d78208",
+  platformer: "b1403a5c29f59ba9250e2845f03f172f1dd9d2b9311aa4ae54d2fa8733ce2d50",
+  racing: "7f2a71d87c5c4370aa506ffefa7e53633600233c470b7af14aa08cf13f7deeaf",
+  shooter: "2e1b5e31348b112eeb5fe5c214572923c9c14e67e8e3d6032dfd2163136bd7b3",
+  starter: "99ff182c3bf44d0c6845041ce995fbcb659cfa153432001e35711ed146ef8b39",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -234,7 +236,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
   // PRD-318 recomputation also moves this key: formatPassCosts entered the manifest.
-  sailing: "02dcd303404f02fc815502848234e74097940731c588df43c1a1eb9e030d75c3",
+  sailing: "e272c8e2455e9c2c7775ef476e8c786edae7bf375d8b545081d69c4baca11fd2",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

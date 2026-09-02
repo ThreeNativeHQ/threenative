@@ -209,3 +209,60 @@ packages/runtime-native/.runtime/tools-venv/bin/cmake \
   --build packages/runtime-native/build/tn-linux-quickjs \
   --target threenative-rg11b10-renderable-test threenative-timestamp-query-test --parallel
 ```
+
+## Recovery verification — 2026-09-02
+
+The recovered physics implementation was rebuilt and rerun on both backends. The focused contract
+checks stayed green:
+
+```text
+pnpm exec vitest run packages/physics/__tests__/continuous-collision.spec.ts \
+  packages/physics/__tests__/native-contract.spec.ts --reporter=dot
+PASS, exit 0; 2 files and 22 tests passed.
+
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/continuous-collision-benchmark.test.mjs --reporter=dot
+PASS, exit 0; 1 file and 2 tests passed.
+
+cargo test --manifest-path packages/runtime-native/native/physics/Cargo.toml --lib -- --nocapture
+PASS, exit 0; 14 tests passed.
+```
+
+The refreshed measurement command reported the same geometric proof on both backends: wall at
+`x=0`, radius `0.05 m`, `dt=1/60`, 128 bodies, 600 measured steps after 120 warmup steps, and
+five samples. The fastest tunnelling speed was `67` in both runs; continuous collision reported
+no first tunnel. The measured continuous-minus-baseline step cost was `0.027006933333333337 ms`
+on WebGPU/Rapier `0.19.3` and `0.019935 ms` on native Rapier `0.30.0`.
+
+```text
+node packages/runtime-native/scripts/measure-continuous-collision.mjs
+PASS, exit 0; web continuousFirstTunnelSpeed=null, native continuousFirstTunnelSpeed=null.
+
+sh scripts/xvfb.sh packages/runtime-native/build/tn-linux/threenative-physics-actuation-bindings-test
+PASS, exit 0; native physics actuation bindings passed.
+```
+
+The browser proof used the NVIDIA/Turing WebGPU adapter and reported
+`continuousCollision.effectiveSetting=true` and `hit=true`, with no runtime or network
+diagnostics. The native desktop proof compiled with `mystral` and ran through the repository Xvfb
+wrapper; it reported Rapier `0.30.0`, `effectiveSetting=true`, `hit=true`, projectile x
+`-0.05665740743279457`, and no diagnostics. A first native invocation without the Xvfb wrapper
+failed at SDL window creation (`SDL_Init failed: No available video device`), so the successful
+native command explicitly includes the wrapper.
+
+## Recovery repository gates — 2026-09-02
+
+The required repository gates were rerun after all four recovery groups were integrated:
+
+| Command | Result |
+| --- | --- |
+| `pnpm sync:agents` and `pnpm sync:agents --check` | PASS; generated mirrors were refreshed, then all 17 `CLAUDE.md` mirrors were in sync. |
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS; typecheck and lint passed (522 warnings only); 340 test files passed, 1 skipped; 3406 tests passed, 2 skipped. |
+| `pnpm budgets` | PASS; all budget and freshness checks passed. The informational LOC triggers reported 51,192 framework lines and 117,105 native-runtime lines. |
+| `pnpm test:playtest` | PASS; movement, camera, movement-axis, zoom-input, and navigation scenarios passed on NVIDIA/Turing WebGPU with no diagnostics. |
+| `PLAYWRIGHT_BROWSERS_PATH=<isolated /home cache> pnpm test:templates` | PASS; 87 scenarios across all 8 templates passed. The first bare invocation waited on an unrelated global Playwright install; the isolated-cache invocation ran the same repository script successfully. |
+| `pnpm check:docs` | PASS; 1277 relative links across 944 Markdown files. |
+
+The physics proof remains green on both backends. The generated native census and coverage records
+were refreshed after the recovery: the census reports 117,105 native-runtime lines, and the
+coverage digest is `sha256:6514113644293758f595aa5d147110ae902d58c3fb97342db96814cc5011453d`.

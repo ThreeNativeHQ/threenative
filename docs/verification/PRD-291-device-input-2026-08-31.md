@@ -198,3 +198,46 @@ lines are accepted because the controls decide appearance and the repository's l
 those materials, geometry, palette use, placement, and interaction affordances in each template's
 `src/render/` source. The duplication is recorded rather than hidden; it is not a signal to move
 visual ownership into a package.
+
+## Recovery verification — 2026-09-02
+
+The recovered touch-input changes were rerun after rebuilding the playtest package, which cleared a
+stale platformer bridge artifact:
+
+```text
+pnpm exec vitest run packages/playtest/__tests__/schema-boundaries.spec.ts \
+  packages/playtest/__tests__/evidence-required.spec.ts \
+  packages/create-threenative/__tests__/touch-controls.spec.ts \
+  packages/create-threenative/__tests__/platformer.spec.ts \
+  packages/create-threenative/__tests__/playtest.spec.ts \
+  scripts/__tests__/count-loc.spec.ts
+PASS, exit 0; 6 files and 170 tests passed.
+
+TN_TEMPLATE_ONLY=action-rpg,minimal,platformer,racing,shooter,starter pnpm test:templates
+PASS for the recovered touch scenarios; each selected template's touch scenario passed.
+
+TN_TEMPLATE_ONLY=platformer pnpm test:templates
+PASS, exit 0; all 22 platformer scenarios passed, including keyboard survives and
+platformer-touch-controls-web.
+```
+
+The desktop forced-true predicate mutation remains red as recorded above. The physical-device
+criterion is `UNVERIFIED`: `adb devices` exposed no serial/emulator, `xcrun` and `emulator` were
+unavailable, and no native result is inferred from the browser run.
+
+## Recovery repository gates — 2026-09-02
+
+The required repository gates were rerun after all four recovery groups were integrated:
+
+| Command | Result |
+| --- | --- |
+| `pnpm sync:agents` and `pnpm sync:agents --check` | PASS; generated mirrors were refreshed, then all 17 `CLAUDE.md` mirrors were in sync. |
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS; typecheck and lint passed (522 warnings only); 340 test files passed, 1 skipped; 3406 tests passed, 2 skipped. |
+| `pnpm budgets` | PASS; all budget and freshness checks passed. The informational LOC triggers reported 51,192 framework lines and 117,105 native-runtime lines. |
+| `pnpm test:playtest` | PASS; movement, camera, movement-axis, zoom-input, and navigation scenarios passed on NVIDIA/Turing WebGPU with no diagnostics. |
+| `PLAYWRIGHT_BROWSERS_PATH=<isolated /home cache> pnpm test:templates` | PASS; 87 scenarios across all 8 templates passed. The first bare invocation waited on an unrelated global Playwright install; the isolated-cache invocation ran the same repository script successfully. |
+| `pnpm check:docs` | PASS; 1277 relative links across 944 Markdown files. |
+
+The physical-device criterion remains `UNVERIFIED`: no Android serial/emulator was available,
+and `xcrun`/the iOS simulator were unavailable. Browser and desktop evidence is not inferred as
+native touch-device evidence.

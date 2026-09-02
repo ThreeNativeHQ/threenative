@@ -22,9 +22,8 @@ and look; `src/game.ts` is portable and React mounts from `src/main.ts`.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
 
-For the situation *"a bullet passes through a wall"*, `RigidBody3D` enables continuous collision
-by default. Its `continuousCollision` option is the named per-body override, and
-`body.continuousCollision` reports the effective setting on web and native.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; use
+`continuousCollision` as the named per-body override and read `body.continuousCollision` on web/native.
 
 ## When the framework blocks you, write plain Three.js
 

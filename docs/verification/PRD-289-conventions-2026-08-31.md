@@ -392,3 +392,42 @@ FAIL, exit 1; TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing sailing; stale none.
 The eight regenerated PNGs were restored to their committed baselines. No platformer frame change
 was attributed to this post-jump measurement-only fix, and no visual baseline was re-baselined.
 `git diff --check` exited 0 after the record update.
+
+## Recovery verification — 2026-09-02
+
+The recovered commits were cherry-picked onto the current local `main` and the convention
+applicability/source-call checks were rerun:
+
+```text
+pnpm exec tsx scripts/check-template-conventions.ts
+PASS, exit 0; Template convention applicability and source-call checks passed.
+
+pnpm exec vitest run packages/create-threenative/__tests__/template-conventions.spec.ts \
+  scripts/__tests__/check-template-conventions.spec.ts --reporter=dot
+PASS, exit 0; 2 files and 14 tests passed.
+
+TN_TEMPLATE_ONLY=platformer pnpm test:templates
+PASS, exit 0; all 22 platformer scenarios passed, including the independent airborne support-plane
+and body-relative attachment measurements.
+```
+
+The generated scaffold stability hashes were refreshed after PRD-292's convention guidance landed;
+the focused scaffold suite then passed all 49 tests. The recovery did not change the visual
+baseline: the convention measurements are reported independently when a correction is disabled.
+
+## Recovery repository gates — 2026-09-02
+
+The required repository gates were rerun after all four recovery groups were integrated:
+
+| Command | Result |
+| --- | --- |
+| `pnpm sync:agents` and `pnpm sync:agents --check` | PASS; generated mirrors were refreshed, then all 17 `CLAUDE.md` mirrors were in sync. |
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS; typecheck and lint passed (522 warnings only); 340 test files passed, 1 skipped; 3406 tests passed, 2 skipped. |
+| `pnpm budgets` | PASS; all budget and freshness checks passed. The informational LOC triggers reported 51,192 framework lines and 117,105 native-runtime lines. |
+| `pnpm test:playtest` | PASS; movement, camera, movement-axis, zoom-input, and navigation scenarios passed on NVIDIA/Turing WebGPU with no diagnostics. |
+| `PLAYWRIGHT_BROWSERS_PATH=<isolated /home cache> pnpm test:templates` | PASS; 87 scenarios across all 8 templates passed. The first bare invocation waited on an unrelated global Playwright install; the isolated-cache invocation ran the same repository script successfully. |
+| `pnpm check:docs` | PASS; 1277 relative links across 944 Markdown files. |
+
+The full template run included the convention-bearing platformer scenarios and all generated
+`AGENTS.md`/`CLAUDE.md` guidance. No visual baseline was changed; convention measurements remain
+independent when a correction is disabled.

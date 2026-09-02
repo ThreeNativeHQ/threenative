@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-292 — a fast body does not pass through a wall
 
-**Status: OPEN — filed 2026-08-30 against `c064b6a0`. Nothing below has been executed.** Part of
-the [useful-defaults batch](./README.md).
+**Status: DONE — verified 2026-09-02; see the recovery evidence below.** Part of the
+[useful-defaults batch](../useful-defaults/README.md).
 
 **Goal: a game that fires a projectile, drops a body from height, or drives fast at a barrier gets
 the collision it obviously expects — and when the framework declines to pay for it, the game can
