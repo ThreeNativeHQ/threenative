@@ -42,7 +42,7 @@ Godot's ~5.3 — all inside three.js's own WebGPU submission path.
 | + fancy town materials | 24.22 ms | ≈ 3.3 ms |
 | + the whole town | 13.55 ms | ≈ 11.5 ms |
 | + sky and soldiers | 6.66 ms | ≈ 6.9 ms |
-| + reflections (`scene.environment`) | **0.35 ms** | **≈ 6.3 ms ablation upper bound; static bakeable delta below the 0.37 ms noise floor** |
+| + reflections (`scene.environment`) | **0.35 ms** | **6.31 ms staged nearly-empty ablation upper bound (`6.66 − 0.35`); the −0.37 ms static-versus-none inversion is the observed resolution/noise-floor control, not a bakeable delta. Environment sampling is not bakeable, and the bakeable steady-state benefit is unresolvable in this control** |
 
 Browser agrees: RTX 2080, five-stage post chain — **all on 14.7 ms GPU, all off 2.2 ms.** The post
 chain is 12.5 of the 14.7.
@@ -90,7 +90,7 @@ Sorted by impact against effort. **🟢 a day or two · 🟡 days to a week · �
 
 | # | Task | | Impact | Depends on |
 | --- | --- | --- | --- | --- |
-| 4 | ✅ **Bake prefiltered reflections into `@threenative/assets`** — **refuted 2026-09-01, PRD-307** ([record](../verification/environment-cost-attribution-2026-09-01.md)): the set-once environment delta was below the 0.37 ms noise floor; forcing PMREM every frame cost +1.61 ms, but Bayview never dirties it. The falsification test fired, so Phases 2–3 were skipped | 🟡 | The earlier **≈6.3 ms** environment ablation is an upper bound, not a bakeable steady-state win. The cheaper hemisphere alternative was also visibly darker | nothing |
+| 4 | ✅ **Bake prefiltered reflections into `@threenative/assets`** — **refuted 2026-09-01, PRD-307** ([record](../verification/environment-cost-attribution-2026-09-01.md)): the static-versus-none result was a −0.37 ms inversion, the observed resolution/noise-floor control; the bakeable steady-state benefit is unresolvable in this control. Forcing PMREM every frame cost +1.61 ms, but Bayview never dirties it. The falsification test fired, so Phases 2–3 were skipped | 🟡 | The earlier **≈6.3 ms** staged environment ablation is an upper bound, not a bakeable steady-state win. The cheaper hemisphere alternative was also visibly darker | nothing |
 | 5 | **Measure GPU time per pass, on the phone** — **unblocked**: #2 landed and the meter reports on device | 🟡 | Turns days into minutes. Three separate sessions worked out GPU cost by rebuilding the app once per experiment and pushing a settings file through `run-as`. **Unblocks #8 and #9** — the town pass (9–11 ms) is our biggest cost and is still unattributed | #2 |
 | 6 | **Get Android conformance running on every commit** | 🟡 | It last executed **0 of 74 rows** — it stopped before Gradle on a stale dependency pin. Every "runs everywhere" claim rests on a lane that is not running | nothing |
 | 7 | **Scene projection that works on moving objects** | 🟡 | Extends a lever already worth **780 → 315 draws** (34.6 → 53 fps, zero pixels changed). Today it only covers meshes that never move | nothing |
@@ -154,7 +154,7 @@ The actual reasons:
 1. P0.1 lands and the GPU numbers above do not reproduce.
 2. Baked reflections land and the phone frame does not move ≥2 ms (our standing threshold; five
    ideas have already died against it). **FIRED 2026-09-01 (PRD-307):** the set-once environment
-   delta was below the 0.37 ms noise floor, while the only resolved repeated-prefilter delta was
+   result was a −0.37 ms resolution/noise-floor inversion, while the only resolved repeated-prefilter delta was
    +1.61 ms on the named desktop adapter; Bayview has no per-frame dirty path. See the
    [attribution record](../verification/environment-cost-attribution-2026-09-01.md).
 3. A second real game turns out CPU-bound, not GPU-bound — one game and one template carry this

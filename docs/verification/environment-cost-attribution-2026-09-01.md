@@ -4,16 +4,16 @@
 
 **Decision: REFUTED for the standing ≥2 ms steady-state frame threshold.** The Bayview game sets
 its environment once and does not drive a per-frame PMREM update. Repeating the prefilter every
-frame costs **+1.61 ms**, but the set-once environment versus no environment is below the measured
-**0.37 ms noise floor**. Baking the set-once prefilter therefore cannot recover the ≈6.3 ms
-steady-state frame cost attributed to `scene.environment`.
+frame costs **+1.61 ms**. The static-versus-none result is a **−0.37 ms inversion**, the observed
+resolution/noise-floor control: differences smaller than **0.37 ms** are unreportable, but the control
+does not rule out differences larger than **0.37 ms**. Environment sampling is not bakeable; the bakeable steady-state benefit for Bayview's static path is unresolvable in this control.
 
 ## Measurement provenance
 
 The five-arm table below is the measured output recorded by the architecture follow-up on
 2026-09-01: NVIDIA Turing, named `nvidia/turing` adapter, 60 seconds per arm, vsync disabled. The
-refactored `scripts/env-cost-probe.ts` was **not re-executed in this closure lane**; the fixture and
-driver described by the follow-up are not present in this worktree. No new run is claimed here.
+refactored `scripts/env-cost-probe.ts` was **not re-executed in this closure lane**; no new run is
+claimed here.
 
 | Arm | `gpuMs` median | p10–p90 |
 | --- | ---: | --- |
@@ -27,7 +27,7 @@ The resolved deltas are:
 
 - `dirty/1 − static = 3.79 − 2.18 = +1.61 ms`: a per-frame prefilter is measurable and costly.
 - `static − none = 2.18 − 2.55 = −0.37 ms`: the expected causal ordering (`none ≤ static`) is
-  inverted, so **0.37 ms is the observed noise floor**. No smaller difference is reportable.
+  inverted: this inversion is the observed resolution/noise-floor control. Differences smaller than **0.37 ms** are unreportable, but the control does not rule out larger differences; for Bayview's static path, the bakeable steady-state benefit is unresolvable and environment sampling is not bakeable.
 
 The `dirty/1` control proves what a game that actually dirties its environment would pay. It does
 not describe Bayview: its source audit found no `needsPMREMUpdate`, `ProbeVolume`, or `CubeCamera`,
@@ -37,11 +37,11 @@ frame, not a repeated prefilter cost that baking could remove.
 
 ## What the original 6.3 ms number means
 
-The earlier Bayview ablation measured `gpuDrain p50` of **0.35 ms** with `scene.environment` nulled,
-against the full scene's roughly **6.3 ms** difference. That ablation removes both prefilter work
-and environment sampling, so **6.3 ms is an upper bound on the bakeable cost**, not a bakeable
-steady-state estimate. The static-versus-none comparison above cannot resolve any steady-state
-sampling difference beyond 0.37 ms.
+The staged nearly-empty ablation measured `gpuDrain p50` of **6.66 ms** before and **0.35 ms** after `scene.environment` was nulled:
+**6.66 − 0.35 = 6.31 ms**, the source of the approximate 6.3 ms number. The full-scene ablation is separate: **27.57 − 22.24 = 5.33 ms**, not the source of 6.3 ms.
+Both ablations remove prefilter work and environment sampling, so staged **6.31 ms** is an upper bound on what a build-time bake could recover, not a bakeable steady-state estimate.
+The static-versus-none inversion is the observed **0.37 ms** resolution/noise-floor control: differences smaller than 0.37 ms are unreportable, but the control does not rule out larger differences.
+For Bayview's static path, the bakeable steady-state benefit is unresolvable in this control; environment sampling is not bakeable.
 
 ## Phone launch-time arm — excluded
 
