@@ -4,7 +4,7 @@
 > 2026-08-30. It stays in the mining table below because that is where it was found.
 
 
-**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Fifteen are archived in
+**Status:** IN FLIGHT — twenty-three PRDs filed across seven rounds. **Fifteen are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -103,6 +103,7 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [258](../BLOCKED/requires-runnable-many-soldier-consumer/PRD-258-many-actors-share-one-animation-texture.md) **BLOCKED** | Consumer-gated GPU-instanced skeletal animation. The committed Bayview subject requests a missing asset manifest, so Phase 0 cannot reach its playtest bridge or measure the five required arms. No product code shipped. | upstream Three WebGPU instanced-skinning examples, MIT; `mbarbier/threejs-gpu-skinning`, ISC, as historical technique only | 8 → HIGH |
 | [259](../done/PRD-259-fewer-pixels-must-still-look-like-the-same-game.md) **DECLINED** | Current-main browser proof and the provenance-locked Android emulator comparison both rejected temporal reconstruction: TAAU softened Bayview and exceeded the 2.35 ms saved-pixel budget; the challenger ghosted moving geometry and then failed on `createView`. No product API or render source shipped. | upstream Three 0.185.1 `TAAUNode`, MIT; `pmndrs/upscaler`, MIT + AMD FSR notice | 8 → HIGH |
 | [260](../done/PRD-260-standard-navigation-reaches-native-without-webassembly.md) **DECLINED** | The opening consumer gate found no native navmesh caller; PRD-052's 31-line portable steering remains the measured Android answer. No navcat dependency, second backend/API, or synthetic benchmark was added. | [`isaac-mason/navcat`](https://github.com/isaac-mason/navcat) `bc9d3c3f372a`, MIT | 8 → HIGH |
+| [317](./PRD-317-watertight-rock-masses-are-generated-render-source.md) | Replace the default starter's block-built backdrop with one deterministic, watertight fused ridge as editable generated `src/render/` source. Mine extraction/audit invariants only: no `Rock3D`, geology presets, materials, editor or core export. | [`maxliebscher/threejs-procedural-rocks-cliffs`](https://github.com/maxliebscher/threejs-procedural-rocks-cliffs) `647839c88445`, MIT | 9 → HIGH |
 
 ## Later mechanism extraction
 
