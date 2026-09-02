@@ -11,6 +11,7 @@ import {
   type IPlaytestObservationSnapshot,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestScenario,
+  type IPlaytestSetupApplication,
   type PlaytestVec3,
 } from "../index.js";
 import {
@@ -38,6 +39,7 @@ import {
 import { withTargetAbortSignal } from "./deviceSignal.js";
 import { buildReport, playtestStepDrivesMovement, writeObservationArtifacts } from "./runner.js";
 import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
+import { applyScenarioSetup } from "./setup.js";
 import {
   accumulatedPathLength,
   appendPosition,
@@ -45,7 +47,6 @@ import {
   observedEntityIds,
   observedResourceIds,
   safePart,
-  setupRequest,
   targetLabel,
   throwIfAborted,
 } from "./shared.js";
@@ -181,6 +182,7 @@ async function runDevicePlaytestInternal(
     config.timeoutMs,
   );
   let bridge: IPlaytestBridgeClient | undefined;
+  let setupApplication: IPlaytestSetupApplication | undefined;
   let coverageRecordingStarted = false;
   let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
   const coverageVideoPath = join(config.artifactDirectory, "framebuffer-coverage.mp4");
@@ -212,7 +214,7 @@ async function runDevicePlaytestInternal(
       ), target.name);
     }
     await throwIfAborted(target);
-    if (scenario.setup !== undefined) await bridge.applySetup(setupRequest(scenario));
+    if (scenario.setup !== undefined) setupApplication = await applyScenarioSetup(bridge, scenario);
     await throwIfAborted(target);
     if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
     await throwIfAborted(target);
@@ -433,7 +435,7 @@ async function runDevicePlaytestInternal(
       undefined,
       undefined,
       movementSamples,
-      undefined,
+      setupApplication,
       metrics?.observation(),
     );
     // Same artifacts as the browser target: a diagnostic that names console.json must find it

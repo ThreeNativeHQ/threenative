@@ -1,4 +1,5 @@
-import { applyScenarioSetup, waitFrames, captureVisualSurface, runStep, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { waitFrames, captureVisualSurface, runStep, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { applyScenarioSetup } from "./setup.js";
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
