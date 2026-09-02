@@ -58,6 +58,11 @@ The game boots straight into `Play`: a ledge, pickup, crate, chasm, and flag pro
 gameplay, `src/render/` owns the look, `src/ui/Hud.tsx`/`Menu.tsx` own UI, and `state.ts` publishes
 JSON-safe values. Keep `playtests/survives.playtest.json` as smoke proof and update outcome tests.
 
+
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
+`src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
+passes its returned input to `Player`; keep the keyboard mapping as the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
