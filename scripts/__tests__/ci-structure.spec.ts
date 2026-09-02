@@ -114,6 +114,39 @@ describe("CI pipeline structure", () => {
     expect(ci).toContain("needs: build");
   });
 
+  it("hands the emulator action a one-line script, so the arguments survive", async () => {
+    // `android-emulator-runner` runs `script` through the emulator shell a line at a time. A
+    // `\`-continued command therefore loses everything after its first line, and from 2026-09-01
+    // this lane ran `run-conformance.mjs` with no arguments at all: `--target` defaulted to `all`,
+    // so one `--target android` invocation wrote web, desktop, android and ios reports under the
+    // default `artifacts/conformance`, overwrote the web reference the lane had just captured, and
+    // then compared the emulator against the wreckage. The step read as correct in the YAML the
+    // whole time — `>-` folds to one line and `|` does not, and only that character separates a
+    // working lane from a silent one.
+    const source = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const blocks = [...source.matchAll(/^(\s+)script: *(\||>-|>|\|-)\n/gmu)].map((match) => {
+      const indent = match[1]?.length ?? 0;
+      const rest = source.slice((match.index ?? 0) + match[0].length).split("\n");
+      const body: string[] = [];
+      for (const line of rest) {
+        if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
+        body.push(line);
+      }
+      return { body: body.join("\n"), style: match[2] ?? "" };
+    });
+    expect(blocks.length, "no emulator script block found to check").toBeGreaterThan(0);
+    for (const { body, style } of blocks) {
+      // `|` keeps every newline, which is exactly what the action cannot take.
+      expect(style, `script uses a literal block: ${body.trim().slice(0, 60)}`).not.toMatch(/^\|/u);
+      expect(body, "script continues with a backslash").not.toMatch(/\\\s*\n/u);
+      expect(body, "script lost its target").toContain("--target android");
+      expect(body, "script lost its output path").toContain("--out ");
+    }
+  });
+
   it("bounds every runner job with an explicit timeout", async () => {
     for (const relative of workflows) {
       const source = await readFile(path.join(repo, relative), "utf8");
@@ -233,8 +266,12 @@ describe("CI pipeline structure", () => {
       android.indexOf("- name: Verify captured parity ledger"),
     );
 
-    expect(emulator).toContain("set +e");
-    expect(emulator).toMatch(/run-conformance\.mjs \\\n\s+--target android/u);
+    // The tolerance stays; the line break that used to carry it does not. This assertion asked
+    // for `run-conformance.mjs \<newline> --target android` — it pinned the very shape that made
+    // the action drop every argument after the first line. See "hands the emulator action a
+    // one-line script": the whole invocation has to reach the emulator shell as one command.
+    expect(emulator).toMatch(/run-conformance\.mjs --target android\b/u);
+    expect(emulator).not.toMatch(/\\\s*\n/u);
     expect(emulator).toContain("status=$?");
     expect(emulator).toContain('test "$status" -eq 0 -o "$status" -eq 2');
     expect(android).toContain("check-lane-blocks.mjs");
