@@ -1,5 +1,4 @@
 # AGENTS.md — __PROJECT_NAME__ starter
-
 Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
 
 ## Ownership
@@ -19,6 +18,7 @@ state bridge. This repository owns gameplay and every visible choice in `src/ren
    use returned subpaths and `attachToBone` rather than rebuilding installed systems.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -59,6 +59,7 @@ JSON-safe values. Keep `playtests/survives.playtest.json` as smoke proof and upd
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 React never touches the scene graph. Native UI reads published state and sends intents; mark every
 touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.
@@ -92,3 +93,4 @@ When one directional light must shadow a whole valley and a 2048² map smudges, 
 
 The performance skill carries `TN_FRAME_BUDGET`, platform targets, and the `display.maxFps` rule.
 Long recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
+Touch-primary devices use the local `src/render/touch-controls.ts` for movement and jump; keyboard input remains the desktop fallback.

@@ -597,3 +597,26 @@ test("throughoutFrames fails without a captured frame series", async () => {
 
   expect(evaluated.assertions.find(({ id }) => id === "visual.0.entityVisible")?.pass).toBe(false);
 });
+
+test("visual region maxDarkPixelRatio distinguishes a clear control bound from an unexpected control", async () => {
+  const report = {
+    observations: {
+      ...EMPTY_OBSERVATIONS,
+      visual: {
+        nonblankRegions: [{ darkPixelRatio: 0.2, height: 20, nonblankPixelRatio: 0.4, width: 16, x: 1172, y: 552 }],
+      },
+    },
+  };
+  const evaluated = await evaluate(
+    { visual: [{ region: { height: 20, maxDarkPixelRatio: 0.25, width: 16, x: 1172, y: 552 } }] },
+    report,
+  );
+  expect(evaluated.assertions.find(({ id }) => id === "visual.0.region.maxDarkPixels")?.pass).toBe(true);
+
+  const exceeded = await evaluate(
+    { visual: [{ region: { height: 20, maxDarkPixelRatio: 0.1, width: 16, x: 1172, y: 552 } }] },
+    report,
+  );
+  expect(exceeded.assertions.find(({ id }) => id === "visual.0.region.maxDarkPixels")?.pass).toBe(false);
+  expect(exceeded.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_EXCEEDED");
+});

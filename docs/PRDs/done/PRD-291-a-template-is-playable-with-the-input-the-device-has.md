@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-291 — a template is playable with the input the device actually has
 
-**Status: OPEN — filed 2026-08-30 against `c064b6a0`. Nothing below has been executed.** Part of
-the [useful-defaults batch](./README.md).
+**Status: DONE — integrated 2026-09-01.** Part of the [useful-defaults batch](../useful-defaults/README.md).
+Evidence: [PRD-291 verification](../../verification/PRD-291-device-input-2026-08-31.md).
 
 **Goal: a scaffolded game opened on a phone can be played on that phone, whether the phone reached
 it through the native host or through a browser.** Six of seven templates bind movement to keys

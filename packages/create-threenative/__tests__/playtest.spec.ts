@@ -225,7 +225,7 @@ describe("starter playtest proof", () => {
     },
   );
 
-  it("should keep touch controls absent in the normal web platformer run", async () => {
+  it("should drive platformer movement and jumping with browser touch", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
@@ -238,7 +238,7 @@ describe("starter playtest proof", () => {
         diagnostics: { noConsoleErrors: boolean; noNetworkErrors: boolean; runtimeReady: boolean };
         visibility: Array<{ entity: string; present: boolean }>;
       };
-      steps: Array<{ press?: string }>;
+      steps: Array<{ pointers?: Array<{ id: number }> }>;
       target: string;
     };
     const level = await readFile(
@@ -247,24 +247,77 @@ describe("starter playtest proof", () => {
     );
 
     expect(scenario.target).toBe("web");
-    expect(scenario.steps).toContainEqual(expect.objectContaining({ press: "ArrowUp" }));
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
     expect(scenario.assert.diagnostics).toEqual({
       noConsoleErrors: true,
       noNetworkErrors: true,
       noRuntimeDiagnostics: true,
       runtimeReady: true,
     });
-    expect(scenario.assert.visibility).toEqual([
-      {
-        allowTrivial:
-          "Web targets intentionally omit the native touch-controls entity; keyboard movement proves the web path while this absence remains held.",
-        entity: "touch-controls",
-        present: false,
-      },
-    ]);
-    expect(level).toContain(
-      "const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();",
+    expect(
+      scenario.assert.visibility.some(
+        (entry) => entry.entity === "touch-controls" && entry.present === true,
+      ),
+    ).toBe(true);
+    expect(level).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(level).not.toContain("isNative() && isMobile()");
+  });
+
+  it("should drive sailing movement and render touch controls with browser touch", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/sailing/playtests/touch-controls.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert: {
+        diagnostics: {
+          noConsoleErrors: boolean;
+          noNetworkErrors: boolean;
+          noRuntimeDiagnostics: boolean;
+          runtimeReady: boolean;
+        };
+        resources: Array<{ changed?: boolean; id: string; lte?: number; path: string }>;
+        visibility: Array<{ allowTrivial?: string; entity: string; present: boolean }>;
+      };
+      steps: Array<{ pointers?: Array<{ id: number }>; kind?: string }>;
+      target: string;
+    };
+    const scene = await readFile(
+      path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
+      "utf8",
     );
+    const ship = await readFile(
+      path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
+      "utf8",
+    );
+
+    expect(scenario.target).toBe("web");
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
+    expect(scenario.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
+    });
+    expect(scenario.assert.resources).toContainEqual({
+      changed: true,
+      id: "state",
+      lte: expect.any(Number),
+      path: "shipZ",
+    });
+    expect(scenario.assert.resources.find(({ path }) => path === "shipZ")?.lte).toBeLessThan(7);
+    expect(scenario.assert.visibility).toContainEqual({
+      entity: "touch-controls",
+      present: true,
+      allowTrivial: expect.any(String),
+    });
+    expect(scene).toContain("isMobile() && isTouchscreenAvailable()");
+    expect(scene).toContain("touchControls?.update(frameCtx.input.raw.pointers");
+    expect(ship).toContain("ITouchInput");
+    expect(ship).toContain("touch.move");
   });
 
   it("should form the same native touch scenario for Android and iOS targets", async () => {

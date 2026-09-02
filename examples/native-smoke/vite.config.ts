@@ -64,7 +64,9 @@ const NATIVE_BUNDLE_URL = "file:///native-smoke.js";
 
 const physicsScene =
   process.env.THREENATIVE_PHYSICS_SCENE === "enabled" ||
-  process.env.THREENATIVE_PHYSICS_PROOF === "enabled";
+  process.env.THREENATIVE_PHYSICS_PROOF === "enabled" ||
+  process.env.THREENATIVE_CONTINUOUS_COLLISION_PROOF === "enabled";
+const continuousCollisionProof = process.env.THREENATIVE_CONTINUOUS_COLLISION_PROOF === "enabled";
 const nativeBackend =
   process.env.THREENATIVE_NATIVE_BACKEND === "enabled" ||
   process.env.THREENATIVE_PHYSICS_PROOF === "enabled";
@@ -98,6 +100,7 @@ export default defineConfig({
     __TN_PHYSICS_SCENARIO_SHA256__: JSON.stringify(
       createHash("sha256").update(fixture).digest("hex"),
     ),
+    __TN_CONTINUOUS_COLLISION_PROOF__: JSON.stringify(continuousCollisionProof),
     __TN_LOADING_PROOF__: JSON.stringify(loadingProof),
     __TN_PLAYTEST_ENABLED__: JSON.stringify(process.env.THREENATIVE_PLAYTEST_BRIDGE !== "disabled"),
     __TN_RUNTIME__: JSON.stringify(nativeBackend ? "native" : "web"),

@@ -166,6 +166,59 @@ describe("evaluator semantics (characterization)", () => {
     );
   });
 
+  test("evaluates element-bound raster evidence and fails for hidden or absent targets", () => {
+    const assertion = { visual: [{ region: { element: { id: "threenative-canvas-error" }, minNonblankPixelRatio: 0.5 } }] } as never;
+    const observed = {
+      elementRegions: [{
+        assertionIndex: 0,
+        bounds: { height: 10, width: 10, x: 0, y: 0 },
+        element: { id: "threenative-canvas-error" },
+        nonblankPixelRatio: 0.8,
+        rendered: true,
+      }],
+    };
+
+    const positive = evaluate(assertion, { observations: { ...base.observations, visual: observed } });
+    expect(positive.assertions.find(({ id }) => id === "visual.0.region")).toMatchObject({
+      details: expect.objectContaining({
+        bounds: { height: 10, width: 10, x: 0, y: 0 },
+        element: { id: "threenative-canvas-error" },
+        rendered: true,
+      }),
+      pass: true,
+    });
+
+    const hidden = evaluate(assertion, {
+      observations: {
+        ...base.observations,
+        visual: {
+          elementRegions: [{ ...observed.elementRegions[0], rendered: false }],
+        },
+      },
+    });
+    expect(hidden.assertions.find(({ id }) => id === "visual.0.region")).toMatchObject({
+      details: expect.objectContaining({ rendered: false }),
+      pass: false,
+    });
+
+    const absent = evaluate(assertion, {
+      observations: {
+        ...base.observations,
+        visual: {
+          elementRegions: [{
+            assertionIndex: 0,
+            element: { id: "threenative-canvas-error" },
+            rendered: false,
+          }],
+        },
+      },
+    });
+    expect(absent.assertions.find(({ id }) => id === "visual.0.region")).toMatchObject({
+      details: expect.objectContaining({ bounds: undefined, rendered: false }),
+      pass: false,
+    });
+  });
+
   test("empty assertion arrays register as not-evaluated per family, in family order", () => {
     const result = evaluate({ hud: [], resources: [], visual: [] } as never);
     const summary = result.assertions.map((entry) => ({ id: entry.id, pass: entry.pass }));

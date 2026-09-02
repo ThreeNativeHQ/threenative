@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-290 — a game that fails to start says why, on the screen, on every target
 
-**Status: OPEN — filed 2026-08-30 against `c064b6a0`. Nothing below has been executed.** Part of
-the [useful-defaults batch](./README.md).
+**Status: DONE — integrated 2026-09-01.** Part of the [useful-defaults batch](../useful-defaults/README.md).
+Evidence: [PRD-290 verification](../../verification/prd-290-2026-08-31.md).
 
 **Goal: when a scaffolded game cannot boot, the surface the player is looking at says what failed,
 instead of holding the launch card forever.** The framework already carries the message; it is

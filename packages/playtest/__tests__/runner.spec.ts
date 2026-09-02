@@ -2,6 +2,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer } from "node:http";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { PNG } from "pngjs";
 import { expect, test, vi } from "vitest";
 
 import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
@@ -22,6 +23,7 @@ import {
   STANDALONE_PLAYTEST_OBSERVATION_FIELDS,
   substituteManagedPort,
 } from "../src/runner/runner.js";
+import { sampleVisualElementBounds, screenshotObservations } from "../src/runner/steps.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 import type { Page } from "playwright";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../src/index.js";
@@ -36,6 +38,32 @@ const CONFIG: IStandalonePlaytestConfig = {
   trace: false,
   url: "http://127.0.0.1:5173",
 };
+
+function installGlobal(name: string, value: unknown): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, { configurable: true, value, writable: true });
+  return () => {
+    if (descriptor === undefined) delete (globalThis as Record<string, unknown>)[name];
+    else Object.defineProperty(globalThis, name, descriptor);
+  };
+}
+
+function brightScreenshot(): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  return PNG.sync.write(png);
+}
+
+function targetPaintScreenshot(hidden: boolean): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  if (!hidden) {
+    png.data[0] = 0;
+    png.data[1] = 0;
+    png.data[2] = 0;
+  }
+  return PNG.sync.write(png);
+}
 
 test("visual capture reads the largest canvas instead of composited page UI", async () => {
   const smallCanvas = { height: 1, width: 1 } as HTMLCanvasElement;
@@ -56,6 +84,237 @@ test("visual capture reads the largest canvas instead of composited page UI", as
   expect(nth).toHaveBeenCalledWith(1);
   expect(screenshot).toHaveBeenCalledWith();
   expect(page.screenshot).not.toHaveBeenCalled();
+});
+
+test("visual observations rasterize an element-bound region captured beside the screenshot", () => {
+  const png = new PNG({ height: 20, width: 30 });
+  png.data.fill(255);
+  const currentScenario = scenario({
+    visual: [{ region: { element: { id: "threenative-canvas-error" }, minNonblankPixelRatio: 0.5 } }],
+  });
+  const captureBounds = [{
+    assertionIndex: 0,
+    bounds: { height: 10, width: 12, x: 4, y: 3 },
+    element: { id: "threenative-canvas-error" },
+    rendered: true,
+  }];
+
+  const observations = (screenshotObservations as unknown as (...args: unknown[]) => unknown)(
+    undefined,
+    PNG.sync.write(png),
+    currentScenario,
+    undefined,
+    captureBounds,
+  ) as { elementRegions?: unknown[] };
+
+  expect(observations.elementRegions).toEqual([{
+    assertionIndex: 0,
+    bounds: { height: 10, width: 12, x: 4, y: 3 },
+    darkPixelRatio: 0,
+    element: { id: "threenative-canvas-error" },
+    nonblankPixelRatio: 1,
+    rendered: true,
+  }]);
+});
+
+test("browser visual capture records id or selector bounds and renderability", async () => {
+  let targetHidden = false;
+  let isolationActive = false;
+  let styleCount = 0;
+  const visible = {
+    contains: () => false,
+    getAttribute: () => null,
+    getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
+    parentElement: null,
+    removeAttribute: (name: string) => {
+      if (name === "style") targetHidden = false;
+    },
+    setAttribute: () => undefined,
+    style: {
+      setProperty: (name: string, value: string) => {
+        if (name === "opacity" && value === "0") targetHidden = true;
+      },
+    },
+  };
+  const transparent = {
+    contains: () => false,
+    getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
+    parentElement: null,
+  };
+  const pointerEventsStyle = { remove: () => undefined };
+  const isolationStyle = { remove: () => { isolationActive = false; } };
+  const probe = {
+    remove: () => undefined,
+    removeAttribute: () => undefined,
+    setAttribute: () => undefined,
+  };
+  const restoreDocument = installGlobal("document", {
+    createElement: (tagName: string) => {
+      if (tagName === "style") return styleCount++ === 0 ? pointerEventsStyle : isolationStyle;
+      return probe;
+    },
+    elementFromPoint: () => visible,
+    getElementById: (id: string) => id === "visible" ? visible : transparent,
+    head: { appendChild: (element: unknown) => { if (element === isolationStyle) isolationActive = true; } },
+    querySelector: () => visible,
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: (element: unknown) => ({
+      display: "block",
+      getPropertyValue: () => "",
+      opacity: element === transparent ? "0" : "1",
+      visibility: element === probe && isolationActive ? "hidden" : "visible",
+    }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  try {
+    const page = {
+      evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
+      screenshot: async () => targetPaintScreenshot(targetHidden),
+    } as unknown as Page;
+    await expect(sampleVisualElementBounds(page, [
+      { region: { element: { id: "visible" } } },
+      { region: { element: { selector: ".visible" } } },
+      { region: { element: { id: "transparent" } } },
+    ] as never)).resolves.toEqual([
+      {
+        assertionIndex: 0,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { id: "visible" },
+        rendered: true,
+      },
+      {
+        assertionIndex: 1,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { selector: ".visible" },
+        rendered: true,
+      },
+      {
+        assertionIndex: 2,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { id: "transparent" },
+        rendered: false,
+      },
+    ]);
+  } finally {
+    restoreWindow();
+    restoreDocument();
+  }
+});
+
+test("browser visual element regions accept painted noninteractive nodes", async () => {
+  const canvas = {};
+  let targetHidden = false;
+  let isolationActive = false;
+  let styleCount = 0;
+  const target = {
+    contains: () => false,
+    getAttribute: () => null,
+    getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
+    parentElement: null,
+    removeAttribute: (name: string) => {
+      if (name === "style") targetHidden = false;
+    },
+    setAttribute: () => undefined,
+    style: {
+      setProperty: (name: string, value: string) => {
+        if (name === "opacity" && value === "0") targetHidden = true;
+      },
+    },
+  };
+  let forcedPointerEvents = false;
+  const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+  const isolationStyle = { remove: () => { isolationActive = false; } };
+  const probe = {
+    remove: () => undefined,
+    removeAttribute: () => undefined,
+    setAttribute: () => undefined,
+  };
+  const restoreDocument = installGlobal("document", {
+    createElement: (tagName: string) => {
+      if (tagName === "style") return styleCount++ === 0 ? pointerEventsStyle : isolationStyle;
+      return probe;
+    },
+    elementFromPoint: () => forcedPointerEvents ? target : canvas,
+    getElementById: () => target,
+    head: {
+      appendChild: (element: unknown) => {
+        if (element === pointerEventsStyle) forcedPointerEvents = true;
+        if (element === isolationStyle) isolationActive = true;
+      },
+    },
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: (element: unknown) => ({
+      display: "block",
+      getPropertyValue: () => "",
+      opacity: "1",
+      visibility: element === probe && isolationActive ? "hidden" : "visible",
+    }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  try {
+    const page = {
+      evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
+      screenshot: async () => targetPaintScreenshot(targetHidden),
+    } as unknown as Page;
+    await expect(sampleVisualElementBounds(page, [
+      { region: { element: { id: "target" } } },
+    ] as never)).resolves.toEqual([
+      {
+        assertionIndex: 0,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { id: "target" },
+        rendered: true,
+      },
+    ]);
+  } finally {
+    restoreWindow();
+    restoreDocument();
+  }
+});
+
+test("browser visual element regions reject nodes hidden by a noninteractive overlay", async () => {
+  const target = {
+    contains: () => false,
+    getBoundingClientRect: () => ({ height: 720, left: 0, top: 0, width: 1280 }),
+    parentElement: null,
+  };
+  const overlay = {};
+  let forcedPointerEvents = false;
+  const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+  const restoreDocument = installGlobal("document", {
+    createElement: () => pointerEventsStyle,
+    elementFromPoint: () => forcedPointerEvents ? overlay : target,
+    getElementById: () => target,
+    head: { appendChild: () => { forcedPointerEvents = true; } },
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: () => ({ display: "block", getPropertyValue: () => "", opacity: "1", visibility: "visible" }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  try {
+    const page = {
+      evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
+      screenshot: async () => brightScreenshot(),
+    } as unknown as Page;
+    await expect(sampleVisualElementBounds(page, [
+      { region: { element: { id: "target" } } },
+    ] as never)).resolves.toEqual([
+      {
+        assertionIndex: 0,
+        bounds: { height: 720, width: 1280, x: 0, y: 0 },
+        element: { id: "target" },
+        rendered: false,
+      },
+    ]);
+  } finally {
+    restoreWindow();
+    restoreDocument();
+  }
 });
 
 test("fixed-step startup races retry without hiding a stopped loop", async () => {

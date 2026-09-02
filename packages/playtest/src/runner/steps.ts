@@ -14,12 +14,16 @@ import {
   type IPlaytestSampleRequest,
   type IPlaytestScenario,
   type IPlaytestTrivialityOptOut,
+  type IPlaytestVisualElementRegionObservation,
+  type IPlaytestVisualAssertion,
+  type IPlaytestVisualRegionBounds,
   type PlaytestVec3,
 } from "../index.js";
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
+import { sampleElementVisibility } from "./sampling.js";
 import {
   PERFORMANCE_BROWSER_ARGS,
   reconcileBrowserPointers,
@@ -81,6 +85,30 @@ export async function captureVisualSurface(
   return content;
 }
 
+export async function sampleVisualElementBounds(
+  page: Page,
+  assertions: readonly IPlaytestVisualAssertion[],
+): Promise<IPlaytestVisualElementRegionObservation[]> {
+  const requested = assertions.flatMap((assertion, assertionIndex) => {
+    const region = assertion.region;
+    return region !== undefined && "element" in region
+      ? [{ assertionIndex, element: region.element }]
+      : [];
+  });
+  if (requested.length === 0) return [];
+  const observations: IPlaytestVisualElementRegionObservation[] = [];
+  for (const { assertionIndex, element } of requested) {
+    const visibility = await sampleElementVisibility(page, element);
+    observations.push({
+      assertionIndex,
+      ...(visibility.bounds === undefined ? {} : { bounds: visibility.bounds }),
+      element,
+      rendered: visibility.rendered,
+    });
+  }
+  return observations;
+}
+
 export function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
   const observations = {} as IPlaytestObservations;
   for (const field of [...STANDALONE_PLAYTEST_OBSERVATION_FIELDS, ...HOST_PLAYTEST_OBSERVATION_FIELDS]) {
@@ -112,6 +140,7 @@ export function screenshotObservations(
   after: Buffer | undefined,
   scenario: IPlaytestScenario,
   captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined = undefined,
+  elementRegions: readonly IPlaytestVisualElementRegionObservation[] = [],
 ): IPlaytestObservations["visual"] | undefined {
   if (after === undefined) return captureFailure === undefined ? undefined : { captureFailure };
   const afterPng = PNG.sync.read(after);
@@ -132,11 +161,19 @@ export function screenshotObservations(
     changedPixelRatio = changed / pixels;
   }
   const regions = (scenario.assert?.visual ?? [])
-    .flatMap(({ region }) => region === undefined ? [] : [region])
+    .flatMap(({ region }) => region === undefined || "element" in region ? [] : [region])
     .map((region) => ({ ...region, ...regionMetrics(afterPng, region) }));
+  const capturedElementRegions = elementRegions.map((captured) => {
+    const region = scenario.assert?.visual?.[captured.assertionIndex]?.region;
+    const metrics = captured.bounds === undefined || region === undefined
+      ? {}
+      : regionMetrics(afterPng, { ...captured.bounds, maxLuminance: region.maxLuminance });
+    return { ...captured, ...metrics };
+  });
   return {
     ...(changedPixelRatio === undefined ? {} : { changedPixelRatio }),
     ...(sameSize ? { comparisonSource: "before-after" } : {}),
+    ...(capturedElementRegions.length === 0 ? {} : { elementRegions: capturedElementRegions }),
     ...(regions.length === 0 ? {} : { nonblankRegions: regions }),
     ...(captureFailure === undefined ? {} : { captureFailure }),
   };
@@ -144,7 +181,7 @@ export function screenshotObservations(
 
 export function regionMetrics(
   png: PNG,
-  region: { height: number; maxLuminance?: number; width: number; x: number; y: number },
+  region: IPlaytestVisualRegionBounds & { maxLuminance?: number },
 ): { darkPixelRatio: number; nonblankPixelRatio: number } {
   const x0 = Math.max(0, Math.floor(region.x));
   const y0 = Math.max(0, Math.floor(region.y));

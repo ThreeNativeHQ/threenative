@@ -44,6 +44,52 @@ function scenario(assert: unknown, steps: unknown[] = [{ label: "sample", waitTi
 }
 
 describe("scenario schema boundaries", () => {
+  it("accepts the deterministic browser renderer-failure seam and visible HUD assertion", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario({
+        hud: [{ id: "threenative-canvas-error", textIncludes: "Error creating WebGL context", visible: true }],
+        visual: [{ region: { element: { id: "threenative-canvas-error" }, maxDarkPixelRatio: 0.5, minNonblankPixelRatio: 0.002 } }],
+      }),
+      bootFailure: "renderer-no-adapter",
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    }, "boot-failure.playtest.json");
+
+    expect(parsed.bootFailure).toBe("renderer-no-adapter");
+    expect(parsed.assert?.hud?.[0]?.visible).toBe(true);
+    expect(parsed.assert?.visual?.[0]?.region).toEqual({
+      element: { id: "threenative-canvas-error" },
+      maxDarkPixelRatio: 0.5,
+      minNonblankPixelRatio: 0.002,
+    });
+  });
+
+  it.each(["desktop", "bevy"] as const)("rejects bootFailure on the non-web target %s", (target) => {
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      bootFailure: "renderer-no-adapter",
+      target,
+      viewport: { height: 720, width: 1280 },
+    }, `invalid-${target}-boot-failure.playtest.json`)).toThrow(/browser-only.*target|target.*web/u);
+  });
+
+  it("defaults an omitted boot-failure target to web deterministically", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario(undefined),
+      bootFailure: "renderer-no-adapter",
+      viewport: { height: 720, width: 1280 },
+    }, "omitted-target-boot-failure.playtest.json");
+
+    expect(parsed.target).toBe("web");
+  });
+
+  it("rejects an unknown boot-failure seam", () => {
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      bootFailure: "scene-load-throw",
+    }, "invalid-boot-failure.playtest.json")).toThrow(/bootFailure/u);
+  });
+
   it("accepts the portable runtime world field that its validator defines", () => {
     expect(() =>
       validatePlaytestScenario(
@@ -186,7 +232,7 @@ describe("scenario schema boundaries", () => {
           {
             entityVisible: { entity: "player", minProjectedPixels: 20, throughoutFrames: true },
             frameDiff: { baselineImage: "artifacts/base.png", maxChangedPixelRatio: 0.9, minChangedPixelRatio: 0.1 },
-            region: { height: 10, maxLuminance: 100, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
+            region: { height: 10, maxDarkPixelRatio: 0.8, maxLuminance: 100, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
           },
         ],
         world: {
@@ -425,6 +471,8 @@ describe("scenario schema boundaries", () => {
     expect(() => optionalTargetArray({ targets: "desktop" }, "targets", "invalid.json", "object")).toThrow(/array of targets/u);
 
     expect(() => validateVisualAssertion({ region: { height: "large", width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/height/u);
+    expect(() => validateVisualAssertion({ region: { height: 1, maxDarkPixelRatio: "dark", width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/maxDarkPixelRatio/u);
+    expect(() => validateVisualAssertion({ region: { height: 1, maxDarkPixelRatio: 2, width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/between 0 and 1/u);
     expect(() => validateVisualAssertion({ entityVisible: { entity: "player", minProjectedPixels: "many" } }, "invalid.json", "assert.visual[0]")).toThrow(/minProjectedPixels/u);
     expect(() => validateVisualAssertion({ frameDiff: { baselineImage: "/base.png" } }, "invalid.json", "assert.visual[0]")).toThrow(/baselineImage/u);
     expect(() => validateRenderChainAssertion({ tier: "ultra" }, "invalid.json", "assert.renderChain")).toThrow(/tier/u);

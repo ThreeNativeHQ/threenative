@@ -1,4 +1,11 @@
-import { GPUParticles3D, type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
+import {
+  GPUParticles3D,
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  isMobile,
+  isTouchscreenAvailable,
+} from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Object3D, type PerspectiveCamera, Vector3 } from "three";
 import { Ability } from "../abilities/Ability.js";
@@ -16,6 +23,7 @@ import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createDungeon, createLootVisual } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
 import { createArcaneSurge, createAttackArc, createHitBurst } from "../render/vfx.js";
 import type { GameState } from "../state.js";
 import { StatBlock } from "../stats/StatBlock.js";
@@ -91,6 +99,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.add(camera);
     const cameraRig = createDungeonCamera(camera);
     ctx.viewport.resize();
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(camera))
+      : undefined;
 
     const dungeon = createDungeon(materials);
     ctx.add(dungeon.group);
@@ -422,8 +434,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
       if (frameCtx.input.justPressed("lethal")) player.takeDamage(player.health + 1);
       if (frameCtx.input.justPressed("damage")) player.takeDamage(18);
-      if (frameCtx.input.justPressed("attack")) strike(Math.round(damageStats.value(elapsed)));
-      if (frameCtx.input.justPressed("ability")) ability.cast();
+      const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
+      if (frameCtx.input.justPressed("attack") || touch?.attackPressed === true)
+        strike(Math.round(damageStats.value(elapsed)));
+      if (frameCtx.input.justPressed("ability") || touch?.abilityPressed === true) ability.cast();
       if (frameCtx.input.justPressed("equip")) {
         if (inventory.equip("ember-blade")) {
           syncEquipmentStat();
@@ -443,7 +457,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (frameCtx.input.justPressed("dropProbe")) proveDrops();
       if (frameCtx.input.justPressed("save")) saveRequested = true;
 
-      player.update(frameCtx, dt);
+      player.update(frameCtx, dt, touch);
       ability.update(dt);
       // Enemies act only once first-use compilation has settled. They damage the player, and the
       // combat scenario asserts an exact health at a labelled step — so stepping them during the

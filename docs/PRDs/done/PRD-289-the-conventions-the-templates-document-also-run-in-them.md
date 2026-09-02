@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-289 — the conventions the templates document also run in them
 
-**Status: OPEN — filed 2026-08-30 against `c064b6a0`. Nothing below has been executed.** Part of
-the [useful-defaults batch](./README.md). Depends on nothing; the code it needs already ships.
+**Status: DONE — integrated 2026-09-01.** Part of the [useful-defaults batch](../useful-defaults/README.md).
+Evidence: [PRD-289 verification](../../verification/PRD-289-conventions-2026-08-31.md).
 
 **Goal: a scaffolded game arrives with the framework's conventions already running in its own
 source, so the first thing a cold agent reads is a working call site rather than a promise.** Feet

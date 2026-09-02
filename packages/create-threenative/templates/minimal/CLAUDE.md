@@ -22,6 +22,7 @@ ordinary user code, and nothing in `@threenative/*` reads or chooses their appea
    use portable `ctx`/Three.js for this cross-target template.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -59,6 +60,7 @@ add a second DOM readout. `playtests/survives.playtest.json` is the durable smok
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets:
 put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game state; from
@@ -85,3 +87,7 @@ supposed to be touching.
 Open a capture after visual changes. A scenario with no assertions or missing observations fails.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
+
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
+`src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
+passes its returned input to `Player`; keep the keyboard mapping as the desktop fallback.

@@ -5,6 +5,7 @@ import { prepareVehicleConventions } from "../conventions.js";
 import { Boost } from "../kart/boost.js";
 import { createMaterials } from "../render/materials.js";
 import { vehicle } from "../render/shapes.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -50,17 +51,23 @@ export class RacingCar {
     });
   }
 
-  update(ctx: GameCtx, dt: number): void {
+  update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     this.boost.update(dt);
-    if (ctx.input.justPressed("boost")) this.boost.activate();
+    if (ctx.input.justPressed("boost") || touch?.boostPressed === true) this.boost.activate();
     const move = ctx.input.vector("move");
+    if (touch !== undefined) {
+      move.x += touch.move.x;
+      move.y += touch.move.y;
+      move.clampLength(0, 1);
+    }
     const throttle = move.y;
     const target =
       throttle * RACING_FEEL.maxSpeed * (this.boost.active ? this.boost.multiplier : 1);
     const rate =
       Math.abs(target) > Math.abs(this.#speed) ? RACING_FEEL.acceleration : RACING_FEEL.drag;
     this.#speed = approach(this.#speed, target, rate * dt);
-    if (ctx.input.pressed("brake")) this.#speed = approach(this.#speed, 0, RACING_FEEL.brake * dt);
+    if (ctx.input.pressed("brake") || touch?.brakePressed === true)
+      this.#speed = approach(this.#speed, 0, RACING_FEEL.brake * dt);
     const steering =
       move.x * (Math.min(1, Math.abs(this.#speed) / RACING_FEEL.maxSpeed) * 0.65 + 0.35);
     this.#heading += steering * RACING_FEEL.turnRate * dt * (this.#speed < 0 ? -1 : 1);

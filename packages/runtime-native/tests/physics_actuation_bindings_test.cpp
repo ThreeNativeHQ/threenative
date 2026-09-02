@@ -124,6 +124,54 @@ constexpr const char *kScript = R"JS((() => {
     simulation.readBodyLinearVelocity(fixed),
   );
 
+  check("continuous collision reaches native Rapier", () => {
+    const ccdSimulation = host.physics.createSimulation({ gravity: { x: 0, y: 0, z: 0 } });
+    const ccdWall = ccdSimulation.createBody({
+      collisionLayer: 32,
+      collisionMask: 32,
+      continuousCollision: true,
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: { kind: "box", x: 0.05, y: 2, z: 2 },
+      type: "fixed",
+    });
+    const ccdProjectile = ccdSimulation.createBody({
+      collisionLayer: 32,
+      collisionMask: 32,
+      continuousCollision: true,
+      mass: 1,
+      position: { x: -1, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: { kind: "sphere", x: 0.05, y: 0, z: 0 },
+      type: "dynamic",
+    });
+    const discreteProjectile = ccdSimulation.createBody({
+      collisionLayer: 32,
+      collisionMask: 32,
+      continuousCollision: false,
+      mass: 1,
+      position: { x: -1, y: 0, z: 0.5 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: { kind: "sphere", x: 0.05, y: 0, z: 0 },
+      type: "dynamic",
+    });
+    ccdSimulation.setBodyLinearVelocity(ccdProjectile, { x: 120, y: 0, z: 0 });
+    ccdSimulation.setBodyLinearVelocity(discreteProjectile, { x: 120, y: 0, z: 0 });
+    ccdSimulation.step(1 / 60);
+    const ccdPosition = positionOf(ccdSimulation, ccdProjectile, 3);
+    const discretePosition = positionOf(ccdSimulation, discreteProjectile, 3);
+    if (ccdPosition === undefined || discretePosition === undefined)
+      return "one of the projectiles was not visible after the step";
+    if (!(ccdPosition[0] < 0)) return "continuous projectile passed the wall";
+    if (!(discretePosition[0] > 0.1)) return "discrete control did not pass the wall";
+    ccdSimulation.dispose();
+    return undefined;
+  });
+
   simulation.dispose();
   throws("actuation after dispose is refused", "disposed", () =>
     simulation.applyBodyImpulse(dynamic, { x: 1, y: 0, z: 0 }),

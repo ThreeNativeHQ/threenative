@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
-import type { Page } from "playwright";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { chromium, type Browser, type Page } from "playwright";
+import { PNG } from "pngjs";
 
 import type { IPlaytestObservationSnapshot, IPlaytestScenario } from "../src/index.js";
 import {
@@ -14,6 +15,7 @@ import {
   positiveFiniteDelta,
   readCaptureProvenance,
   resourceObservations,
+  sampleElementVisibility,
   sampleHud,
 } from "../src/runner/sampling.js";
 import type { IMovementSampleInterval } from "../src/runner/shared.js";
@@ -47,6 +49,197 @@ function installGlobal(name: string, value: unknown): () => void {
   };
 }
 
+function installVisibilitySamplingMock(
+  target: unknown,
+  topmost: (pointerEventsForced: boolean) => unknown,
+): { restore: () => void; restoreWindow: () => void } {
+  let forcedPointerEvents = false;
+  let isolationActive = false;
+  let styleCount = 0;
+  const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+  const isolationStyle = { remove: () => { isolationActive = false; } };
+  const probe = {
+    remove: () => undefined,
+    removeAttribute: () => undefined,
+    setAttribute: () => undefined,
+  };
+  const restore = installGlobal("document", {
+    createElement: (tagName: string) => {
+      if (tagName === "style") return styleCount++ === 0 ? pointerEventsStyle : isolationStyle;
+      return probe;
+    },
+    elementFromPoint: () => topmost(forcedPointerEvents),
+    getElementById: () => target,
+    head: {
+      appendChild: (element: unknown) => {
+        if (element === pointerEventsStyle) forcedPointerEvents = true;
+        if (element === isolationStyle) isolationActive = true;
+      },
+    },
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: (element: unknown) => ({
+      display: "block",
+      opacity: "1",
+      visibility: element === probe && isolationActive ? "hidden" : "visible",
+    }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  return { restore, restoreWindow };
+}
+
+function brightScreenshot(): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  return PNG.sync.write(png);
+}
+
+function targetPaintScreenshot(hidden: boolean): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  if (!hidden) {
+    png.data[0] = 0;
+    png.data[1] = 0;
+    png.data[2] = 0;
+  }
+  return PNG.sync.write(png);
+}
+
+function changingBackgroundScreenshot(value: number): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  for (let offset = 0; offset < png.data.length; offset += 4) {
+    png.data[offset] = value;
+    png.data[offset + 1] = value;
+    png.data[offset + 2] = value;
+    png.data[offset + 3] = 255;
+  }
+  return PNG.sync.write(png);
+}
+
+function transparentScreenshot(): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(0);
+  return PNG.sync.write(png);
+}
+
+const visibilityFixtureClip = { height: 80, width: 80, x: 0, y: 0 };
+
+async function installVisibilityFixture(page: Page, options: { csp: boolean; paintedTarget: boolean }): Promise<void> {
+  const csp = options.csp
+    ? `<meta http-equiv="Content-Security-Policy" content="style-src 'nonce-allowed'">`
+    : "";
+  const nonce = options.csp ? ` nonce="allowed"` : "";
+  const paintedTarget = options.paintedTarget ? `<span id="target-paint"></span>` : "";
+  await page.setContent(`<!doctype html>${csp}
+    <style${nonce}>
+      html, body { margin: 0; padding: 0; }
+      #background { position: absolute; inset: 0; }
+      #target { position: absolute; left: 0; top: 0; width: 80px; height: 80px; z-index: 1; }
+      #target-paint { display: block; width: 40px; height: 80px; background: rgb(240, 40, 40); }
+    </style>
+    <canvas id="background" width="160" height="120"></canvas>
+    <div id="target">${paintedTarget}</div>`);
+  await page.evaluate(() => {
+    const canvas = document.getElementById("background") as HTMLCanvasElement | null;
+    const context = canvas?.getContext("2d");
+    if (canvas === null || context === null || context === undefined) throw new Error("visibility fixture has no 2D context");
+    context.fillStyle = "rgb(17, 34, 51)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  });
+}
+
+async function installImportantNonTargetFixture(page: Page): Promise<void> {
+  await page.setContent(`<!doctype html>
+    <style>
+      html, body { margin: 0; padding: 0; }
+      #background { position: absolute; inset: 0; }
+      #target { position: absolute; left: 0; top: 0; width: 80px; height: 80px; z-index: 1; }
+      #control {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 20px;
+        height: 80px;
+        z-index: 2;
+        background: rgb(240, 40, 40);
+        visibility: visible !important;
+      }
+    </style>
+    <canvas id="background" width="160" height="120"></canvas>
+    <div id="target"></div>
+    <div id="control" style="outline: 1px solid rgb(1, 2, 3);"></div>`);
+  await page.evaluate(() => {
+    const canvas = document.getElementById("background") as HTMLCanvasElement | null;
+    const context = canvas?.getContext("2d");
+    if (canvas === null || context === null || context === undefined) throw new Error("visibility fixture has no 2D context");
+    context.fillStyle = "rgb(17, 34, 51)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  });
+}
+
+async function installFlexVisibilityFixture(page: Page): Promise<void> {
+  await page.setContent(`<!doctype html>
+    <style>
+      html, body { width: 160px; height: 120px; margin: 0; padding: 0; }
+      body { display: flex; align-items: flex-start; justify-content: flex-end; }
+      #target { flex: 0 0 80px; width: 80px; height: 80px; }
+      #target-paint { display: block; width: 80px; height: 80px; background: rgb(240, 40, 40); }
+      body > span { flex: 0 0 80px; width: 80px; height: 80px; }
+    </style>
+    <div id="target"><span id="target-paint"></span></div>`);
+}
+
+function pngPixel(screenshot: Buffer, x: number, y: number): [number, number, number, number] {
+  const png = PNG.sync.read(screenshot);
+  const offset = (y * png.width + x) * 4;
+  return [png.data[offset] ?? 0, png.data[offset + 1] ?? 0, png.data[offset + 2] ?? 0, png.data[offset + 3] ?? 0];
+}
+
+async function captureVisibilityScreenshots(
+  page: Page,
+  onScreenshotPending?: () => Promise<void>,
+): Promise<{ page: Page; screenshotOptions: Array<Parameters<Page["screenshot"]>[0]>; screenshots: Buffer[] }> {
+  const screenshots: Buffer[] = [];
+  const screenshotOptions: Array<Parameters<Page["screenshot"]>[0]> = [];
+  const observedPage = new Proxy(page, {
+    get(target, property) {
+      if (property === "screenshot") {
+        return async (options: Parameters<Page["screenshot"]>[0]) => {
+          screenshotOptions.push(options);
+          const screenshotPromise = target.screenshot(options);
+          await onScreenshotPending?.();
+          const screenshot = await screenshotPromise;
+          screenshots.push(screenshot);
+          return screenshot;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as Page;
+  return { page: observedPage, screenshotOptions, screenshots };
+}
+
+async function temporaryVisibilityArtifacts(page: Page): Promise<{ markers: number; styles: number }> {
+  return page.evaluate(() => {
+    const elements = [...document.querySelectorAll("*")];
+    return {
+      markers: elements.filter((element) => element.getAttributeNames().some((name) => name.startsWith("data-threenative-visibility-"))).length,
+      styles: [...document.querySelectorAll("style")].filter((style) => style.textContent?.includes("threenativePlaytestVisibilityIsolation") === true).length,
+    };
+  });
+}
+
+async function expectPendingVisibilityMutationToReject(page: Page, mutate: () => Promise<void>): Promise<void> {
+  const observed = await captureVisibilityScreenshots(page, mutate);
+  await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+    diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+  });
+  expect(observed.screenshots).toHaveLength(1);
+  await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+}
+
 describe("playtest sampling", () => {
   test("samples HUD values by id and selector without dropping absent nodes", async () => {
     const score = { getAttribute: () => "7", textContent: " Score " };
@@ -65,6 +258,262 @@ describe("playtest sampling", () => {
         start: { ".start": "not numeric" },
       });
     } finally {
+      restore();
+    }
+  });
+
+  test("samples a HUD node only when its rendered box is on top of the page", async () => {
+    let targetHidden = false;
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 720, height: 720, left: 0, right: 1280, top: 0, width: 1280 }),
+      parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") targetHidden = false;
+      },
+      setAttribute: () => undefined,
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
+      textContent: " TN_TEST: boot failed ",
+    };
+    const { restore, restoreWindow } = installVisibilitySamplingMock(error, () => error);
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+        screenshot: async () => targetPaintScreenshot(targetHidden),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", textIncludes: "TN_TEST", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: boot failed", visible: true },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("samples painted HUD content when the node is noninteractive", async () => {
+    const canvas = {};
+    let targetHidden = false;
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") targetHidden = false;
+      },
+      setAttribute: () => undefined,
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
+      textContent: " TN_TEST: visible ",
+    };
+    const { restore, restoreWindow } = installVisibilitySamplingMock(error, (forcedPointerEvents) => forcedPointerEvents ? error : canvas);
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+        screenshot: async () => targetPaintScreenshot(targetHidden),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: visible", visible: true },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects transparent content over a light page background when the target adds no paint", async () => {
+    const canvas = {};
+    let targetHidden = false;
+    const target = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") targetHidden = false;
+      },
+      setAttribute: () => undefined,
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
+    };
+    const { restore, restoreWindow } = installVisibilitySamplingMock(target, (forcedPointerEvents) => forcedPointerEvents ? target : canvas);
+    const clips: unknown[] = [];
+    try {
+      const page = {
+        evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
+        screenshot: async (options?: { clip?: unknown; omitBackground?: boolean }) => {
+          clips.push(options?.clip);
+          return options?.omitBackground === true ? transparentScreenshot() : brightScreenshot();
+        },
+      } as unknown as Page;
+      await expect(sampleElementVisibility(page, { id: "transparent" })).resolves.toEqual({
+        bounds: { height: 80, width: 200, x: 0, y: 0 },
+        rendered: false,
+      });
+      expect(clips).toHaveLength(1);
+      expect(targetHidden).toBe(false);
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects a transparent target when only the background changes between captures", async () => {
+    const canvas = {};
+    let targetHidden = false;
+    let styleAttribute: string | null = "color: red; opacity: 0.5;";
+    const target = {
+      contains: () => false,
+      getAttribute: (name: string) => name === "style" ? styleAttribute : null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") styleAttribute = null;
+      },
+      setAttribute: (name: string, value: string) => {
+        if (name === "style") styleAttribute = value;
+      },
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
+    };
+    const { restore, restoreWindow } = installVisibilitySamplingMock(target, (forcedPointerEvents) => forcedPointerEvents ? target : canvas);
+    const clips: unknown[] = [];
+    const screenshotOptions: Array<{ clip?: unknown; omitBackground?: boolean }> = [];
+    let screenshotCount = 0;
+    try {
+      const page = {
+        evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
+        screenshot: async (options?: { clip?: unknown; omitBackground?: boolean }) => {
+          clips.push(options?.clip);
+          screenshotOptions.push(options ?? {});
+          screenshotCount += 1;
+          return options?.omitBackground === true
+            ? transparentScreenshot()
+            : changingBackgroundScreenshot(screenshotCount === 1 ? 32 : 224);
+        },
+      } as unknown as Page;
+      await expect(sampleElementVisibility(page, { id: "transparent" })).resolves.toEqual({
+        bounds: { height: 80, width: 200, x: 0, y: 0 },
+        rendered: false,
+      });
+      expect(clips).toHaveLength(1);
+      expect(screenshotOptions).toEqual([{ clip: { height: 80, width: 200, x: 0, y: 0 }, omitBackground: true }]);
+      expect(targetHidden).toBe(false);
+      expect(styleAttribute).toBe("color: red; opacity: 0.5;");
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects HUD content hidden by an opaque noninteractive overlay", async () => {
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 720, height: 720, left: 0, right: 1280, top: 0, width: 1280 }),
+      parentElement: null,
+      textContent: " TN_TEST: boot failed ",
+    };
+    const overlay = {};
+    let forcedPointerEvents = false;
+    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+    const restore = installGlobal("document", {
+      createElement: () => pointerEventsStyle,
+      elementFromPoint: () => forcedPointerEvents ? overlay : error,
+      getElementById: () => error,
+      head: { appendChild: () => { forcedPointerEvents = true; } },
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+        screenshot: async () => brightScreenshot(),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: boot failed", visible: false },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects a HUD node with zero computed opacity even when its box is topmost", async () => {
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      textContent: " TN_TEST: transparent ",
+    };
+    const restore = installGlobal("document", {
+      elementFromPoint: () => error,
+      getElementById: () => error,
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "0", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: transparent", visible: false },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects a HUD node whose rendered ancestry is display none", async () => {
+    const parent = { parentElement: null };
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: parent,
+      textContent: " TN_TEST: hidden ",
+    };
+    const restore = installGlobal("document", {
+      elementFromPoint: () => error,
+      getElementById: () => error,
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: (element: unknown) => element === parent
+        ? { display: "none", opacity: "1", visibility: "visible" }
+        : { display: "block", opacity: "1", visibility: "visible" },
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: hidden", visible: false },
+      });
+    } finally {
+      restoreWindow();
       restore();
     }
   });
@@ -259,6 +708,380 @@ describe("playtest sampling", () => {
     } finally {
       restoreNavigator();
       restoreDocument();
+    }
+  });
+});
+
+describe("browser-backed DOM visibility isolation", () => {
+  let browser: Browser;
+
+  beforeAll(async () => {
+    browser = await chromium.launch({ headless: true });
+  });
+
+  afterAll(async () => {
+    await browser.close();
+  });
+
+  test("diagnoses when CSP blocks isolation over a painted target", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installVisibilityFixture(page, { csp: true, paintedTarget: true });
+      const blockedStyleState = await page.evaluate(() => {
+        const style = document.createElement("style");
+        style.textContent = "#target { visibility: hidden !important; }";
+        document.head.appendChild(style);
+        const visibility = getComputedStyle(document.getElementById("target")!).visibility;
+        style.remove();
+        return visibility;
+      });
+      expect(blockedStyleState).toBe("visible");
+
+      const backgroundScreenshot = await page.screenshot({ clip: visibilityFixtureClip, omitBackground: true });
+      expect(pngPixel(backgroundScreenshot, 20, 20)).toEqual([240, 40, 40, 255]);
+      expect(pngPixel(backgroundScreenshot, 60, 20)).toEqual([17, 34, 51, 255]);
+      await page.evaluate(() => {
+        const canvas = document.getElementById("background") as HTMLCanvasElement | null;
+        const context = canvas?.getContext("2d");
+        if (canvas === null || context === null || context === undefined) throw new Error("visibility fixture has no 2D context");
+        context.fillStyle = "rgb(68, 85, 102)";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      });
+      const changedBackgroundScreenshot = await page.screenshot({ clip: visibilityFixtureClip, omitBackground: true });
+      expect(pngPixel(changedBackgroundScreenshot, 20, 20)).toEqual([240, 40, 40, 255]);
+      expect(pngPixel(changedBackgroundScreenshot, 60, 20)).toEqual([68, 85, 102, 255]);
+
+      const observed = await captureVisibilityScreenshots(page);
+      await expect(sampleHud(observed.page, [{ id: "target", visible: false }])).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(0);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("does not report paint from a non-target with higher-specificity important visibility", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const originalControlStyle = await page.evaluate(() => document.getElementById("control")?.style.cssText);
+      const observed = await captureVisibilityScreenshots(page);
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: false,
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      expect(pngPixel(observed.screenshots[0]!, 10, 20)).toEqual([0, 0, 0, 0]);
+      expect(await page.evaluate(() => document.getElementById("control")?.style.cssText)).toBe(originalControlStyle);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when a visible important non-target is inserted while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installVisibilityFixture(page, { csp: false, paintedTarget: false });
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.createElement("div");
+          control.id = "pending-control";
+          control.style.cssText = [
+            "position: absolute",
+            "left: 0",
+            "top: 0",
+            "width: 20px",
+            "height: 80px",
+            "z-index: 2",
+            "background: rgb(240, 40, 40)",
+            "visibility: visible !important",
+          ].join("; ");
+          document.body.appendChild(control);
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      const screenshot = observed.screenshots[0];
+      if (screenshot === undefined) throw new Error("visibility regression captured no screenshot");
+      expect(pngPixel(screenshot, 10, 20)).toEqual([240, 40, 40, 255]);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when a visible important non-target replaces an element while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          const replacement = document.createElement("div");
+          replacement.style.cssText = [
+            "position: absolute",
+            "left: 0",
+            "top: 0",
+            "width: 20px",
+            "height: 80px",
+            "z-index: 2",
+            "background: rgb(240, 40, 40)",
+            "visibility: visible !important",
+          ].join("; ");
+          control.replaceWith(replacement);
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      const screenshot = observed.screenshots[0];
+      if (screenshot === undefined) throw new Error("visibility regression captured no screenshot");
+      expect(pngPixel(screenshot, 10, 20)).toEqual([240, 40, 40, 255]);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("preserves an unrelated inline update made while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          document.getElementById("control")?.style.setProperty("color", "rgb(4, 5, 6)");
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: false,
+      });
+      await expect(page.evaluate(() => document.getElementById("control")?.style.getPropertyValue("color"))).resolves.toBe("rgb(4, 5, 6)");
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("preserves an unrelated direct inline update made while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          control.style.color = "rgb(4, 5, 6)";
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: false,
+      });
+      await expect(page.evaluate(() => document.getElementById("control")?.style.color)).resolves.toBe("rgb(4, 5, 6)");
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when an isolation-owned inline update occurs while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          control.style.setProperty("visibility", "visible");
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      const screenshot = observed.screenshots[0];
+      if (screenshot === undefined) throw new Error("visibility regression captured no screenshot");
+      expect(pngPixel(screenshot, 10, 20)).toEqual([240, 40, 40, 255]);
+      await expect(page.evaluate(() => {
+        const control = document.getElementById("control");
+        return {
+          priority: control?.style.getPropertyPriority("visibility"),
+          value: control?.style.getPropertyValue("visibility"),
+        };
+      })).resolves.toEqual({ priority: "", value: "visible" });
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when an isolation-owned same-value write occurs while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          control.style.setProperty("visibility", "hidden", "important");
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      await expect(page.evaluate(() => {
+        const control = document.getElementById("control");
+        return {
+          priority: control?.style.getPropertyPriority("visibility"),
+          value: control?.style.getPropertyValue("visibility"),
+        };
+      })).resolves.toEqual({ priority: "important", value: "hidden" });
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("preserves an isolation-owned value changed away and back while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          control.style.setProperty("visibility", "visible", "important");
+          control.style.setProperty("visibility", "hidden", "important");
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      await expect(page.evaluate(() => {
+        const control = document.getElementById("control");
+        return {
+          priority: control?.style.getPropertyPriority("visibility"),
+          value: control?.style.getPropertyValue("visibility"),
+        };
+      })).resolves.toEqual({ priority: "important", value: "hidden" });
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test.each([
+    ["visibility", "control"],
+    ["background-color", "documentElement"],
+    ["background-image", "documentElement"],
+  ])("fails closed for an isolation-owned same-value %s direct setter", async (property, targetName) => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      await expectPendingVisibilityMutationToReject(page, async () => {
+        await page.evaluate(({ property, targetName }) => {
+          const target = targetName === "control" ? document.getElementById("control") : document.documentElement;
+          if (target === null) throw new Error("visibility fixture has no direct-setter target");
+          const style = (target as HTMLElement).style as unknown as Record<string, string>;
+          const propertyName = property === "background-color" ? "backgroundColor"
+            : property === "background-image" ? "backgroundImage" : "visibility";
+          style[propertyName] = style[propertyName] ?? "";
+        }, { property, targetName });
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when an isolation-owned cssText write occurs while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      await expectPendingVisibilityMutationToReject(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          const cssText = control.style.cssText;
+          control.style.cssText = cssText;
+        });
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when an isolation-owned style-attribute write occurs while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      await expectPendingVisibilityMutationToReject(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          const style = control.getAttribute("style");
+          if (style === null) throw new Error("visibility fixture has no style attribute");
+          control.setAttribute("style", style);
+        });
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("keeps a flex target's bounds and capture stable while probing isolation", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installFlexVisibilityFixture(page);
+      const initialBounds = await page.evaluate(() => {
+        const rect = document.getElementById("target")?.getBoundingClientRect();
+        if (rect === undefined) throw new Error("visibility fixture has no target bounds");
+        return { height: rect.height, width: rect.width, x: rect.left, y: rect.top };
+      });
+      expect(initialBounds).toEqual({ height: 80, width: 80, x: 80, y: 0 });
+
+      const observed = await captureVisibilityScreenshots(page);
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: initialBounds,
+        rendered: true,
+      });
+      expect(observed.screenshotOptions).toEqual([{ clip: { ...initialBounds }, omitBackground: true }]);
+      expect(pngPixel(observed.screenshots[0]!, 40, 40)).toEqual([240, 40, 40, 255]);
+      await expect(page.evaluate(() => {
+        const rect = document.getElementById("target")?.getBoundingClientRect();
+        if (rect === undefined) throw new Error("visibility fixture has no target bounds after sampling");
+        return { height: rect.height, width: rect.width, x: rect.left, y: rect.top };
+      })).resolves.toEqual(initialBounds);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("captures a painted target after isolation removes the background", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installVisibilityFixture(page, { csp: false, paintedTarget: true });
+      const observed = await captureVisibilityScreenshots(page);
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: true,
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      expect(pngPixel(observed.screenshots[0]!, 20, 20)).toEqual([240, 40, 40, 255]);
+      expect(pngPixel(observed.screenshots[0]!, 60, 20)).toEqual([0, 0, 0, 0]);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
     }
   });
 });

@@ -15,6 +15,7 @@ import type {
 } from "../simulation.js";
 import {
   PHYSICS_TRANSFORM_STRIDE,
+  effectiveContinuousCollision,
   requireFiniteRotation,
   requireFiniteVector,
   requirePhysicsBodySensor,
@@ -53,6 +54,7 @@ export interface INativeBodyOptions {
   readonly sensor: boolean;
   readonly shape: INativeShapeDescriptor;
   readonly type: "character" | "dynamic" | "fixed" | "kinematic";
+  readonly continuousCollision: boolean;
 }
 
 export type INativeJointOptions = IPhysicsJointCreateOptions;
@@ -382,6 +384,11 @@ export function createNativePhysicsSimulation(
       requireLive();
       if (!Number.isFinite(options.mass) || options.mass < 0)
         throw new Error("Physics body mass must be a finite non-negative number.");
+      if (
+        options.continuousCollision !== undefined &&
+        typeof options.continuousCollision !== "boolean"
+      )
+        throw new Error("Physics body continuousCollision must be a boolean.");
       // Same seam rule as web: a NaN placement corrupts the body for the rest of
       // the run instead of throwing, and a zero-length rotation normalizes to NaN.
       requireFiniteVector(options.position, "body position");
@@ -397,6 +404,10 @@ export function createNativePhysicsSimulation(
         sensor,
         shape,
         type: options.type,
+        continuousCollision: effectiveContinuousCollision(
+          options.type,
+          options.continuousCollision,
+        ),
       });
       if (!Number.isInteger(id) || id < 0)
         throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned an invalid body id");

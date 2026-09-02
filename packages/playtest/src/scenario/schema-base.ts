@@ -121,6 +121,8 @@ export interface IPlaytestPathAssertion {
   path?: string;
   textIncludes?: string;
   throughoutSteps?: boolean;
+  /** Require a DOM node to occupy pixels above the page at the sampled viewport centre. */
+  visible?: boolean;
 }
 
 export interface IPlaytestResourcePathAlternative {
@@ -286,10 +288,37 @@ export interface IPlaytestFramebufferCoverageAssertion {
   };
 }
 
+export interface IPlaytestVisualRegionTarget {
+  id?: string;
+  selector?: string;
+}
+
+export interface IPlaytestVisualRegionBounds {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}
+
+export interface IPlaytestVisualRegionThresholds {
+  maxDarkPixelRatio?: number;
+  maxLuminance?: number;
+  minDarkPixelRatio?: number;
+  minNonblankPixelRatio?: number;
+}
+
+export interface IPlaytestVisualStaticRegion extends IPlaytestVisualRegionBounds, IPlaytestVisualRegionThresholds {}
+
+export interface IPlaytestVisualElementRegion extends IPlaytestVisualRegionThresholds {
+  element: IPlaytestVisualRegionTarget;
+}
+
+export type IPlaytestVisualRegion = IPlaytestVisualStaticRegion | IPlaytestVisualElementRegion;
+
 export interface IPlaytestVisualAssertion {
   entityVisible?: { entity: string; minProjectedPixels: number; throughoutFrames?: boolean };
   frameDiff?: { baselineImage?: string; maxChangedPixelRatio?: number; minChangedPixelRatio?: number };
-  region?: { height: number; maxLuminance?: number; minDarkPixelRatio?: number; minNonblankPixelRatio?: number; width: number; x: number; y: number };
+  region?: IPlaytestVisualRegion;
 }
 
 export interface IPlaytestAerodynamicsAssertion {
@@ -440,6 +469,8 @@ export interface IPlaytestScenario {
   acceptanceId?: string;
   artifacts?: IPlaytestArtifactRequest;
   assert?: IPlaytestScenarioAssertions;
+  /** Test-only browser seam that makes the renderer's no-adapter boot path deterministic. */
+  bootFailure?: "renderer-no-adapter";
   /**
    * Wait for the application to finish its own startup before the first observation. Default
    * true, because a fixed-step run otherwise observes a game that has not finished loading.

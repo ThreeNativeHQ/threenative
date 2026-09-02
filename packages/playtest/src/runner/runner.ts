@@ -1,4 +1,4 @@
-import { waitFrames, captureVisualSurface, runStep, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
@@ -35,6 +35,7 @@ import {
   type IPlaytestFramebufferCoverageObservation,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
+  type IPlaytestVisualElementRegionObservation,
   type PlaytestVec3,
 } from "../index.js";
 import type { IPlaytestObservationSnapshot } from "../protocol.js";
@@ -79,6 +80,25 @@ import {
 
 /** How long a single screenshot may take before the runner calls it a failure. */
 const SCREENSHOT_TIMEOUT_MS = 120_000;
+const TOUCH_BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Linux; Android 13; Pixel 8) AppleWebKit/537.36 Chrome/151.0 Mobile Safari/537.36";
+
+function isTouchPrimaryBrowserScenario(scenario: IPlaytestScenario): boolean {
+  if (!scenario.steps.some(({ pointers }) => pointers !== undefined)) return false;
+  // Pointer steps also drive mouse placement and pinch assertions. The authored touch-control
+  // visibility assertion is the scenario's explicit declaration that this is the touch-primary
+  // browser lane, so those existing pointer scenarios keep their desktop platform signal.
+  return (
+    scenario.assert?.visibility?.some(
+      ({ entity, present }) => entity === "touch-controls" && present === true,
+    ) ?? false
+  );
+}
+
+interface IVisualPageCapture {
+  elementRegions?: IPlaytestVisualElementRegionObservation[];
+  image: Buffer;
+}
 
 export { preflightDisplay, buildReport } from './runner-support.js';
 export { captureVisualSurface } from './steps.js';
@@ -279,9 +299,28 @@ async function runStandalonePlaytestInternal(
     if (options.remoteBrowser === undefined && server !== undefined && options.managedServer === undefined) {
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
+    const touchBrowser = isTouchPrimaryBrowserScenario(scenario);
+    // Explicit touch-control scenarios expose the same mobile signal that core's portable
+    // predicate reads; keyboard and other pointer-only scenarios stay desktop.
     context = options.remoteBrowser === undefined
-      ? await browser.newContext({ viewport: scenario.viewport })
+      ? await browser.newContext({
+          viewport: scenario.viewport,
+          ...(touchBrowser
+            ? { hasTouch: true, userAgent: TOUCH_BROWSER_USER_AGENT }
+            : {}),
+        })
       : await options.remoteBrowser.context(browser);
+    if (touchBrowser && options.remoteBrowser === undefined) {
+      // Chromium keeps desktop `userAgentData.mobile` unless full mobile emulation is enabled.
+      // That emulation breaks the minimal template's WebGPU atmosphere path, so expose the one
+      // platform fact the touch lane is declaring without changing its viewport/render surface.
+      await context.addInitScript(() => {
+        Object.defineProperty(navigator, "userAgentData", {
+          configurable: true,
+          value: { mobile: true, platform: "Android" },
+        });
+      });
+    }
     if (activeConfig.trace) {
       await context.tracing.start({ screenshots: true, snapshots: true });
     }
@@ -393,11 +432,13 @@ async function runStandalonePlaytestInternal(
     const capturesMovementSamples = capturesAnonymousMovement || scenario.assert?.movement !== undefined;
     const movementSamples: IMovementSampleInterval[] = [];
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+    const visualAssertions = scenario.assert?.visual ?? [];
+    const hasElementBoundVisualRegion = visualAssertions.some(({ region }) => region !== undefined && "element" in region);
     const needsCapture = scenario.artifacts?.screenshots !== false
       || scenario.steps.some((step) => step.screenshot !== undefined)
       || wantsVisual;
     const requiresWebGpuProvenance = browserConfig.browserArgs?.includes("--enable-unsafe-webgpu") === true;
-    const captureProvenance = needsCapture || requiresWebGpuProvenance
+    const captureProvenance = scenario.bootFailure === undefined && (needsCapture || requiresWebGpuProvenance)
       ? await readCaptureProvenance(page, browserConfig, scenario)
       : undefined;
     if (captureProvenance !== undefined) {
@@ -429,7 +470,8 @@ async function runStandalonePlaytestInternal(
     const capturePage = async (
       label: string,
       requested: Parameters<Page["screenshot"]>[0],
-    ): Promise<Buffer | undefined> => {
+      captureElementBounds = false,
+    ): Promise<IVisualPageCapture | undefined> => {
       // Playwright's 30s default is sized for a machine with a GPU. A CPU rasteriser — SwiftShader
       // on a CI runner, llvmpipe on a headless box — composites the same frame one to two orders
       // of magnitude slower, and the shot times out with `page.screenshot: Timeout 30000ms
@@ -437,6 +479,9 @@ async function runStandalonePlaytestInternal(
       // one. The scenario's own timeout still bounds the run; this only stops a slow machine from
       // being reported as a failed capture.
       const options = { timeout: SCREENSHOT_TIMEOUT_MS, ...requested };
+      let elementRegions = captureElementBounds
+        ? await sampleVisualElementBounds(activePage, visualAssertions)
+        : undefined;
       let png: Buffer;
       try {
         png = await activePage.screenshot(options);
@@ -454,10 +499,11 @@ async function runStandalonePlaytestInternal(
       }
       try {
         assertCaptureNotBlank(png, label);
-        return png;
+        return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
         await presentationGrace();
+        if (captureElementBounds) elementRegions = await sampleVisualElementBounds(activePage, visualAssertions);
         try {
           png = await activePage.screenshot(options);
         } catch {
@@ -465,7 +511,7 @@ async function runStandalonePlaytestInternal(
         }
         try {
           assertCaptureNotBlank(png, label);
-          return png;
+          return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
           captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };
@@ -476,7 +522,14 @@ async function runStandalonePlaytestInternal(
     const captureVisualPage = async (
       label: string,
       artifactPath: string | undefined,
-    ): Promise<Buffer | undefined> => {
+    ): Promise<IVisualPageCapture | undefined> => {
+      if (scenario.bootFailure !== undefined || hasElementBoundVisualRegion) {
+        return capturePage(
+          label,
+          artifactPath === undefined ? {} : { path: artifactPath },
+          hasElementBoundVisualRegion,
+        );
+      }
       try {
         const png = await captureVisualSurface(activePage, artifactPath);
         if (png === undefined) {
@@ -488,7 +541,7 @@ async function runStandalonePlaytestInternal(
           return undefined;
         }
         assertCaptureNotBlank(png, label);
-        return png;
+        return { image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
         await presentationGrace();
@@ -496,7 +549,7 @@ async function runStandalonePlaytestInternal(
           const retry = await captureVisualSurface(activePage, artifactPath);
           if (retry !== undefined) {
             assertCaptureNotBlank(retry, label);
-            return retry;
+            return { image: retry };
           }
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
@@ -634,7 +687,13 @@ async function runStandalonePlaytestInternal(
           ? {}
           : { path: join(activeConfig.artifactDirectory, "after.png") })
       : undefined;
-    const visual = screenshotObservations(beforeScreenshot, afterScreenshot, scenario, captureFailure);
+    const visual = screenshotObservations(
+      beforeScreenshot?.image,
+      afterScreenshot?.image,
+      scenario,
+      captureFailure,
+      afterScreenshot?.elementRegions,
+    );
     if (activeConfig.trace) {
       await context.tracing.stop({ path: join(activeConfig.artifactDirectory, "trace.zip") });
     }

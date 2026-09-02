@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "continuous-collision-projectile-wall",
+  "target": "web",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitTicks": 2, "label": "hit" }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "continuousCollision.hit",
+        "equals": true,
+        "changed": true
+      }
+    ]
+  }
+}

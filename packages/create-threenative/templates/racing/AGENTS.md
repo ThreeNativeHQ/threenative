@@ -19,6 +19,7 @@ state bridge. This repository owns the car feel, track, race rules, rescue, HUD,
    this kit uses `PathFollow3D` and a measured route instead of a vehicle or navmesh abstraction.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -57,6 +58,7 @@ the last ray-probed road transform; `Ranking.ts` ranks route progress. `RacingCa
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `normaliseToMetres` for authored vehicle scale; suspension owns floor contact.
 `input.vector("move").y` is +up and means throttle here; forward still uses one explicit `-move.y`
 conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in
 `Scene.load()`, then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without
@@ -82,3 +84,6 @@ supposed to be touching.
 Open a capture after visual changes. A scenario with no assertions or missing observations fails.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
+
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left steering/throttle
+stick and right boost and brake buttons. Keyboard input remains the desktop fallback.

@@ -19,6 +19,7 @@ water, and look; `src/game.ts` is portable and React mounts from `src/main.ts`.
    this kit uses its analytic wave field and measured hull points instead.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -57,6 +58,7 @@ in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `normaliseToMetres` for authored ship scale; buoyancy owns water contact.
 `input.vector("move").y` is +up and means forward wind; use one explicit `-move.y` conversion.
 Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`,
 then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game
