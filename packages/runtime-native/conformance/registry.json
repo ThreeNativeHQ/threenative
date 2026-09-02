@@ -417,6 +417,19 @@
       "required": true
     },
     {
+      "id": "33-virtual-shadow",
+      "title": "virtual shadow node",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/virtual-shadow.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "40-texture-png",
       "title": "texture png",
       "category": "assets",
