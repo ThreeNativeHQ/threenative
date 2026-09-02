@@ -953,14 +953,14 @@ tracker.commit(scene);
 
 ### `readVirtualShadowMarker`
 
-`function` — One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves or a tracked caster changes inside it. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
+`function` — One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
 
 ```ts
 export function readVirtualShadowMarker(line: string): IVirtualShadowStats | undefined { … }
 ```
 
 - **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
-- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves
+- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves
 - **Overrides:** bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement
 
 ```ts
@@ -1270,14 +1270,14 @@ tracker.commit(scene);
 
 ### `VirtualShadowNode`
 
-`class` — One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves or a tracked caster changes inside it. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
+`class` — One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
 
 ```ts
 export class VirtualShadowNode extends ShadowBaseNode { … }
 ```
 
 - **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
-- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves
+- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves
 - **Overrides:** bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, normalBias, intensity and mapSize stay on `light.shadow`; every option here has a default
 
 ```ts

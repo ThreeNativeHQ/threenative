@@ -1108,7 +1108,7 @@
       "constraints": [
         "the light must be a DirectionalLight with `castShadow` and a target in the scene",
         "clipExtents are half-widths in world units, finest first, strictly increasing",
-        "call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves"
+        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves"
       ],
       "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
       "importPath": "@threenative/core",
@@ -1124,7 +1124,7 @@
         "one directional light shadow for a whole open world",
         "shadows shimmer when the camera moves"
       ],
-      "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves or a tracked caster changes inside it. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
+      "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
       "supersedes": [],
       "symbol": "readVirtualShadowMarker"
     },
@@ -1466,7 +1466,7 @@
       "constraints": [
         "the light must be a DirectionalLight with `castShadow` and a target in the scene",
         "clipExtents are half-widths in world units, finest first, strictly increasing",
-        "call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves"
+        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves"
       ],
       "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
       "importPath": "@threenative/core",
@@ -1483,7 +1483,7 @@
         "one directional light shadow for a whole open world",
         "shadows shimmer when the camera moves"
       ],
-      "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves or a tracked caster changes inside it. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
+      "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
       "supersedes": [],
       "symbol": "VirtualShadowNode"
     },
