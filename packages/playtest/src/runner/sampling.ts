@@ -24,10 +24,17 @@ interface IElementVisibilitySample {
 interface IDomElementVisibilitySample extends IElementVisibilitySample {
   clip?: { height: number; width: number; x: number; y: number };
   isolationKey?: string;
+  isolationFailure?: string;
+}
+
+interface IVisibilityIsolationElementState {
+  element: Element;
+  styleAttribute: string | null;
 }
 
 interface IVisibilityIsolationState {
   elements: Element[];
+  hiddenElements: IVisibilityIsolationElementState[];
   markerAttribute: string;
   probe: Element;
   probeAttribute: string;
@@ -103,8 +110,21 @@ export async function sampleElementVisibility(
     const markerAttribute = `data-threenative-visibility-${isolationKey}`;
     const probeAttribute = `data-threenative-visibility-probe-${isolationKey}`;
     const markedElements = [node];
+    const hiddenElements: IVisibilityIsolationElementState[] = [];
     let isolationStyle: HTMLStyleElement | undefined;
     let isolationProbe: Element | undefined;
+    const restoreHiddenElements = (): boolean => {
+      let cleaned = true;
+      for (const { element, styleAttribute } of hiddenElements) {
+        try {
+          if (styleAttribute === null) element.removeAttribute("style");
+          else element.setAttribute("style", styleAttribute);
+        } catch {
+          cleaned = false;
+        }
+      }
+      return cleaned;
+    };
     const cleanupIsolation = (): boolean => {
       let cleaned = true;
       try {
@@ -112,6 +132,7 @@ export async function sampleElementVisibility(
       } catch {
         cleaned = false;
       }
+      if (!restoreHiddenElements()) cleaned = false;
       for (const element of markedElements) {
         try {
           element.removeAttribute(markerAttribute);
@@ -121,6 +142,11 @@ export async function sampleElementVisibility(
       }
       try {
         isolationProbe?.removeAttribute(probeAttribute);
+      } catch {
+        cleaned = false;
+      }
+      try {
+        isolationProbe?.removeAttribute("style");
       } catch {
         cleaned = false;
       }
@@ -143,11 +169,37 @@ export async function sampleElementVisibility(
       if (document.head === null) throw new Error("Cannot isolate a visibility target without document.head");
       isolationProbe = document.createElement("span");
       isolationProbe.setAttribute(probeAttribute, "");
+      isolationProbe.setAttribute("style", [
+        "position: fixed !important",
+        "top: 0 !important",
+        "left: 0 !important",
+        "width: 0 !important",
+        "height: 0 !important",
+        "margin: 0 !important",
+        "padding: 0 !important",
+        "border: 0 !important",
+        "display: block !important",
+        "flex: none !important",
+      ].join("; "));
       const probeParent = targetContainsDocumentElement || targetContainsBody || body === null ? document.head : body;
       if (probeParent === null) throw new Error("Cannot isolate a visibility target without a probe parent");
       probeParent.appendChild(isolationProbe);
       if (window.getComputedStyle(isolationProbe).visibility !== "visible") {
         throw new Error("Cannot verify a visible visibility isolation probe");
+      }
+      const documentElements = documentElement === null
+        ? []
+        : [documentElement, ...documentElement.querySelectorAll("*")];
+      for (const element of documentElements) {
+        if (element === isolationProbe || element === node || node.contains(element)) continue;
+        const styleAttribute = element.getAttribute("style");
+        hiddenElements.push({ element, styleAttribute });
+        const inlineStyle = (element as HTMLElement).style;
+        inlineStyle.setProperty("visibility", "hidden", "important");
+        if (element === documentElement || element === body) {
+          inlineStyle.setProperty("background-color", "transparent", "important");
+          inlineStyle.setProperty("background-image", "none", "important");
+        }
       }
       isolationStyle = document.createElement("style");
       isolationStyle.textContent = [
@@ -170,11 +222,13 @@ export async function sampleElementVisibility(
       };
       const rootsAreTransparent = (targetContainsDocumentElement || transparentBackground(documentElement))
         && (targetContainsBody || transparentBackground(body));
-      if (targetVisibility !== "visible" || probeVisibility !== "hidden" || !rootsAreTransparent) {
+      const nonTargetElementsAreHidden = hiddenElements.every(({ element }) => window.getComputedStyle(element).visibility === "hidden");
+      if (targetVisibility !== "visible" || probeVisibility !== "hidden" || !rootsAreTransparent || !nonTargetElementsAreHidden) {
         throw new Error("Cannot verify active visibility isolation rules");
       }
       (window as unknown as Record<string, IVisibilityIsolationState>)[isolationKey] = {
         elements: markedElements,
+        hiddenElements,
         markerAttribute,
         probe: isolationProbe,
         probeAttribute,
@@ -186,12 +240,25 @@ export async function sampleElementVisibility(
         isolationKey,
         rendered: true,
       };
-    } catch {
-      cleanupIsolation();
-      return { bounds, rendered: false };
+    } catch (error) {
+      const cleaned = cleanupIsolation();
+      const reason = error instanceof Error ? error.message : "temporary visibility isolation could not be verified";
+      return {
+        bounds,
+        isolationFailure: cleaned ? reason : `${reason}; temporary isolation cleanup was incomplete`,
+        rendered: false,
+      };
     }
   }, { isolationKey, requestedTarget: target }).catch(() => undefined);
 
+  if (domSample?.isolationFailure !== undefined) {
+    const targetDescription = target.id === undefined ? `selector '${target.selector ?? ""}'` : `id '${target.id}'`;
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      `Could not verify DOM visibility isolation for ${targetDescription}: ${domSample.isolationFailure}.`,
+      "Allow the playtest's temporary visibility styles, or remove the page policy that blocks them, then rerun the playtest.",
+    ));
+  }
   if (domSample === undefined || !domSample.rendered || domSample.clip === undefined) {
     return { ...(domSample?.bounds === undefined ? {} : { bounds: domSample.bounds }), rendered: false };
   }
@@ -219,8 +286,21 @@ export async function sampleElementVisibility(
           cleaned = false;
         }
       }
+      for (const { element, styleAttribute } of state.hiddenElements) {
+        try {
+          if (styleAttribute === null) element.removeAttribute("style");
+          else element.setAttribute("style", styleAttribute);
+        } catch {
+          cleaned = false;
+        }
+      }
       try {
         state.probe.removeAttribute(state.probeAttribute);
+      } catch {
+        cleaned = false;
+      }
+      try {
+        state.probe.removeAttribute("style");
       } catch {
         cleaned = false;
       }
@@ -237,9 +317,16 @@ export async function sampleElementVisibility(
       return cleaned;
     }, domSample.isolationKey).catch(() => false);
   }
+  if (!restored) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      "Could not restore temporary DOM visibility isolation after sampling.",
+      "Rerun the playtest after ensuring the target page permits temporary DOM attribute and style restoration.",
+    ));
+  }
   return {
     bounds: domSample.bounds,
-    rendered: restored && screenshot !== undefined && containsPaintedPixels(screenshot),
+    rendered: screenshot !== undefined && containsPaintedPixels(screenshot),
   };
 }
 
