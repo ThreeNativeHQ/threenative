@@ -51,3 +51,24 @@ The audit script reads each served GLB with `readSharedGlb` and the source with 
 fewer than two of its vertices are inside. It was run from the engine repository root with
 `pnpm exec tsx` against the sandbox paths; it is reproducible from the table's inputs and takes
 under ten seconds.
+
+## Forward axis, bind pose
+
+Head and tail joint world positions in the served rigs (metres, x,y,z):
+
+| rig | head | tail | faces |
+|---|---|---|---|
+| SK_Fox | 0.00, 0.43, 0.32 | 0.00, 0.34, −0.56 | +Z |
+| SK_Wolf | 0.00, 0.78, 0.63 | 0.00, 0.43, −0.93 | +Z |
+| SK_DeerStag | 0.00, 1.29, 0.92 | 0.00, 1.07, −0.87 | +Z |
+| SK_DeerDoe | 0.00, 1.27, 0.72 | 0.00, 0.92, −0.81 | +Z |
+| SK_Pig | 0.00, 0.60, 0.82 (nose 1.10) | 0.00, 0.85, −0.77 | +Z |
+| SK_Crow | 0.00, 0.23, 0.11 | 0.00, 0.13, −0.10 | +Z |
+
+Every rig faces +Z in bind pose, and `Animal.update` moves along `(sin heading, cos heading)`
+with `rotation.y = heading + yawOffset`, so heading 0 is +Z and `yawOffset: 0` is the measured
+answer, not an assumption. If a fox still walks backwards in motion, the cause is in the clips
+(root motion the `strideRoot` split does not absorb) or in a steering sign, and the playtest's
+`movement.facesMovementWithinDegrees` is the observation that decides it — that run belongs to
+Phase 5 with the navigation change.
+
