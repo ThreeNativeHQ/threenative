@@ -26,7 +26,8 @@
       "kind": "wait",
       "label": "burst-settled",
       "waitTicks": 6,
-      "release": true
+      "release": true,
+      "screenshot": "hip-fire"
     },
     {
       "kind": "input",

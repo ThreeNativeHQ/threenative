@@ -162,7 +162,7 @@ function createTargetNameplate(): Group {
   const group = new Group();
   group.name = "target-nameplate";
   const mesh = new Mesh(
-    new PlaneGeometry(2.4, 0.6),
+    new PlaneGeometry(1.05, 0.26),
     new MeshBasicMaterial({
       depthWrite: false,
       map: createNameplateTexture(),
@@ -282,12 +282,12 @@ export function createArena(materials: ShooterMaterials) {
     { height: 0.9, position: [-2.4, 0, 2.4] as const, size: [1.4, 1.4] as const },
     { height: 0.9, position: [2.4, 0, 2.4] as const, size: [1.4, 1.4] as const },
   ].map(({ height, position, size }, index) => {
-    const crate = block(size[0], height, size[1], materials.arena);
+    const crate = block(size[0], height, size[1], materials.cover);
     crate.name = `arena-wall-cover-${index}`;
     crate.position.set(position[0], height / 2, position[2]);
     group.add(crate);
     // A lit lip along the top edge, so cover reads as cover at a glance in a dim arena.
-    const lip = new Mesh(compactBox(size[0] + 0.06, 0.05, size[1] + 0.06), materials.trim);
+    const lip = new Mesh(compactBox(size[0] + 0.06, 0.05, size[1] + 0.06), materials.edge);
     lip.position.set(position[0], height + 0.02, position[2]);
     lip.castShadow = false;
     lip.receiveShadow = false;
@@ -383,7 +383,7 @@ export function createViewmodelVisual(materials: ShooterMaterials): Group {
   const arms = new Group();
   arms.name = "viewmodel-arms";
   const forearm = (x: number, y: number, z: number, pitch: number, yaw: number): void => {
-    const mesh = new Mesh(compactBox(0.058, 0.055, 0.26), materials.glove);
+    const mesh = new Mesh(compactBox(0.048, 0.046, 0.3), materials.glove);
     mesh.position.set(x, y, z);
     mesh.rotation.set(pitch, yaw, 0);
     mesh.castShadow = false;
@@ -391,8 +391,8 @@ export function createViewmodelVisual(materials: ShooterMaterials): Group {
     mesh.frustumCulled = false;
     arms.add(mesh);
   };
-  forearm(0.06, -0.13, 0.16, 0.42, -0.3);
-  forearm(-0.07, -0.11, -0.11, 0.34, 0.36);
+  forearm(0.075, -0.15, 0.02, 0.5, -0.26);
+  forearm(-0.055, -0.12, -0.2, 0.36, 0.32);
   group.add(arms);
   return group;
 }
@@ -443,18 +443,23 @@ export function createTargetVisual(materials: ShooterMaterials): Group {
   crossbar.castShadow = true;
   group.add(crossbar);
   const nameplate = createTargetNameplate();
-  nameplate.position.y = 2.1;
+  nameplate.position.y = 2.05;
   group.add(nameplate);
   return group;
 }
 
 export function createFriendlyVisual(materials: ShooterMaterials): Group {
   const group = new Group();
-  const body = block(0.9, 1.4, 0.9, materials.player);
-  body.position.y = 0.7;
+  // Slim on purpose. It has to stand in the player's line of fire for the friendly-layer proof to
+  // mean anything, and at 0.9 m across that put a cyan wall two metres in front of the eye.
+  const body = block(0.34, 1.5, 0.34, materials.player);
+  body.position.y = 0.75;
   group.add(body);
-  const antenna = new Mesh(new CylinderGeometry(0.04, 0.04, 0.5, 8), materials.trim);
-  antenna.position.y = 1.65;
+  const collar = new Mesh(compactBox(0.5, 0.06, 0.5), materials.trim);
+  collar.position.y = 1.2;
+  group.add(collar);
+  const antenna = new Mesh(new CylinderGeometry(0.03, 0.03, 0.5, 6), materials.trim);
+  antenna.position.y = 1.72;
   group.add(antenna);
   return group;
 }

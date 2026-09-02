@@ -308,14 +308,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     registerTarget("scan-target", SCAN_POSITION, { health: 20, onFire: () => undefined });
     const friendly = createFriendlyVisual(materials);
     friendly.name = "friendly-drone";
-    friendly.position.set(0, 1, 2.2);
+    friendly.position.set(0, 1, 1.4);
     ctx.add(friendly);
     const friendlyBody = new RigidBody3D({
       collisionLayer: FRIENDLY_LAYER,
       collisionMask: 0,
       object: friendly,
       physics: ctx.physics,
-      shape: CollisionShape3D.box(0.9, 1.4, 0.9),
+      shape: CollisionShape3D.box(0.34, 1.5, 0.34),
       type: "fixed",
     });
 
@@ -351,10 +351,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       false,
     );
 
+    // Well clear of every respawn point. At 1.2 m the player landed inside the pack's trigger the
+    // instant they respawned, which handed back a full bar for dying — the opposite of what a
+    // health pickup is for.
     const pickup = new Pickup(
       ctx,
       materials,
-      new Vector3(-1.2, SPAWN.y, SPAWN.z),
+      new Vector3(-2.6, SPAWN.y, SPAWN.z),
       player.body.body.id,
       () => {
         player.health = Math.min(player.maxHealth, player.health + 60);
@@ -532,9 +535,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     const handleInput = (frameCtx: GameCtx, touch?: ITouchInput): void => {
       handleAimEdges(frameCtx);
-      // Held, not tapped. The weapon's cyclic cooldown decides which held frames send a round,
-      // so a single tap and a held trigger run exactly the same path.
-      if (frameCtx.input.pressed("fire") || touch?.firePressed === true) fireHitscan(player.aiming);
+      // Held *or* just pressed, and the weapon's cyclic cooldown decides which of those frames
+      // sends a round — so a tap and a held trigger run exactly the same path. The edge is not
+      // redundant: a mouse button that goes down and up between two fixed-step ticks leaves a
+      // latched edge and no held state, which is how a click can otherwise fire nothing at all.
+      const trigger =
+        frameCtx.input.pressed("fire") ||
+        frameCtx.input.justPressed("fire") ||
+        touch?.firePressed === true;
+      if (trigger) fireHitscan(player.aiming);
       if (frameCtx.input.justPressed("reload") || touch?.reloadPressed === true) reload();
       if (frameCtx.input.justPressed("projectile")) fireProjectile();
       if (frameCtx.input.justPressed("blast")) fireRadius();

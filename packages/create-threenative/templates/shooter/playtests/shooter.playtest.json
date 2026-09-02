@@ -25,8 +25,14 @@
     { "kind": "input", "label": "damage", "press": "KeyH", "holdTicks": 1, "release": true },
     { "kind": "input", "label": "death", "press": "KeyX", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "respawn", "waitTicks": 35, "release": true },
-    { "kind": "input", "label": "pickup", "press": "KeyA", "holdTicks": 8, "release": true },
-    { "kind": "input", "label": "pickup-return", "press": "KeyD", "holdTicks": 8, "release": true },
+    { "kind": "input", "label": "pickup", "press": "KeyA", "holdTicks": 30, "release": true },
+    {
+      "kind": "input",
+      "label": "pickup-return",
+      "press": "KeyD",
+      "holdTicks": 30,
+      "release": true
+    },
     { "kind": "input", "label": "wave-1-shot", "press": "KeyF", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "wave-2-ready", "waitTicks": 45, "release": true },
     { "kind": "input", "label": "wave-2-shot", "press": "KeyF", "holdTicks": 1, "release": true },

@@ -23,9 +23,16 @@ const RELOAD_SECONDS = 1.1;
 /** 600 rounds a minute. The trigger is held, not tapped; this cooldown is what makes a cadence. */
 const CYCLIC_SECONDS = 0.1;
 
-/** Rest poses in camera space. Hip is offset to the right hand; aim brings the optic to centre. */
-const HIP = { x: 0.16, y: -0.15, z: -0.28, pitch: -0.02, yaw: 0.1, roll: 0.03 };
-const AIM_Z = -0.24;
+/**
+ * Rest poses in camera space. Hip is offset to the right hand; aim brings the optic to centre.
+ *
+ * `z` is the number to touch first if the weapon reads wrong. At 72 degrees of vertical field of
+ * view the frame is only 0.41 m tall a quarter of a metre out, so a life-size carbine parked there
+ * covers half the screen as one dark slab. Held where a shouldered weapon actually sits — the
+ * receiver a bit over half a metre from the eye — the same model reads as a weapon.
+ */
+const HIP = { x: 0.2, y: -0.21, z: -0.72, pitch: -0.02, yaw: 0.09, roll: 0.03 };
+const AIM_Z = -0.56;
 /** Where the shot is zeroed. Closer than this the barrel and the crosshair disagree slightly. */
 const ZERO_DISTANCE = 22;
 /** The barrel is allowed to lean this far to meet the crosshair before the pose gives up. */
