@@ -287,8 +287,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.cache/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
+          # The lane name is part of the namespace on purpose: this job, native `starter-linux`
+          # and ci `test` compile different target sets, and while all three saved under
+          # `native-ccache-<os>-<arch>-gcc-` each restored whichever sibling finished last and
+          # recompiled its own objects against it. See the note in ci.yml's `test` job.
+          key: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -550,8 +554,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.cache/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
+          # The lane name is part of the namespace on purpose: this job, native `starter-linux`
+          # and ci `test` compile different target sets, and while all three saved under
+          # `native-ccache-<os>-<arch>-gcc-` each restored whichever sibling finished last and
+          # recompiled its own objects against it. See the note in ci.yml's `test` job.
+          key: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
