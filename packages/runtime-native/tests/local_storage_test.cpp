@@ -82,6 +82,24 @@ int main() {
         expect(!std::filesystem::exists(storePath), "init does not create the file");
     }
 
+    // --- Writes defer disk work until the storage owner reaches a boundary -------------
+    {
+        const std::string storePath = temp.file("deferred/store.json");
+        {
+            LocalStorage storage;
+            storage.init(storePath);
+            storage.setItem("progress", "in-memory-first");
+            expect(!std::filesystem::exists(storePath),
+                   "setItem updates memory without a synchronous disk round-trip");
+        }
+        expect(std::filesystem::exists(storePath),
+               "storage destructor flushes dirty data before shutdown");
+        LocalStorage reopened;
+        reopened.init(storePath);
+        expectEq(reopened.getItem("progress"), "in-memory-first",
+                 "deferred data survives the shutdown flush");
+    }
+
     // --- Round-trip + restart persistence ---------------------------------
     {
         const std::string storePath = temp.file("persist/store.json");
@@ -130,6 +148,9 @@ int main() {
         storage.removeItem("never-existed");  // no-op, no flush error
         expect(storage.length() == 3, "removing a missing key changes nothing");
 
+        // Runtime boundaries, rather than individual mutations, flush the dirty snapshot.
+        storage.flushIfDirty();
+
         // Order must survive restart too.
         LocalStorage reopened;
         reopened.init(storePath);
@@ -177,6 +198,7 @@ int main() {
         LocalStorage storage;
         storage.init(storePath);
         storage.setItem("k", "v");
+        storage.flushIfDirty();
         expect(std::filesystem::exists(storePath), "flush created the store file");
         expect(!std::filesystem::exists(storePath + ".tmp"),
                "atomic rename consumed the tmp file");

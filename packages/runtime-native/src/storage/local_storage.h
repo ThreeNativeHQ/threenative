@@ -24,6 +24,7 @@ namespace storage {
 class LocalStorage {
 public:
     LocalStorage() = default;
+    ~LocalStorage();
 
     /**
      * Initialize storage from a JSON file on disk.
@@ -45,17 +46,17 @@ public:
     bool has(const std::string& key) const;
 
     /**
-     * Set a key-value pair and flush to disk.
+     * Set a key-value pair in memory. The runtime flushes dirty storage at a host boundary.
      */
     void setItem(const std::string& key, const std::string& value);
 
     /**
-     * Remove a key and flush to disk.
+     * Remove a key in memory. The runtime flushes dirty storage at a host boundary.
      */
     void removeItem(const std::string& key);
 
     /**
-     * Remove all keys and flush to disk.
+     * Remove all keys in memory. The runtime flushes dirty storage at a host boundary.
      */
     void clear();
 
@@ -120,13 +121,17 @@ public:
      */
     static std::string deriveStorageFilename(const std::string& identifier);
 
+    /** Flush pending changes at a runtime boundary. Safe to call when storage is clean. */
+    void flushIfDirty();
+
 private:
     void load();
-    void flush();
+    bool flush();
 
     std::string filePath_;
     std::map<std::string, std::string> data_;
     std::vector<std::string> insertionOrder_;
+    bool dirty_ = false;
 };
 
 }  // namespace storage

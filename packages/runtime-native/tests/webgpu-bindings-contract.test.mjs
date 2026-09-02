@@ -546,7 +546,7 @@ test("all views created from one surface texture share the host-frame lifetime",
   );
   assert.throws(
     () => assertSurfaceViewLifetime(inputs[0], inputs[1], inputs[2], latestViewOnly, inputs[4]),
-    /currentTextureView/u,
+    /isCurrentSurfaceTextureView/u,
   );
 });
 
@@ -573,30 +573,18 @@ test("backend and canvas contexts do not use process-global ownership", () => {
     .join("\n");
   assert.doesNotMatch(canvas2d, /g_canvas2dContexts|g_jsEngine/u);
   assert.doesNotMatch(canvas2d, /engine->freezeHandle\(jsCtx\)/u);
-  assert.doesNotMatch(context, /static\s+WGPUFeatureName\s+requiredFeatures/u);
-
-  // The array is sized to the features actually requested; it grew to four when PRD-228 added
-  // timestamp-query. The literal is spelled out here on purpose — a stale one makes this
-  // negative control a no-op that passes while proving nothing.
-  const sharedFeatureMutation = context.replace(
-    "WGPUFeatureName requiredFeaturesAndroid[7];",
-    "static WGPUFeatureName requiredFeaturesAndroid[7];",
+  assert.match(context, /RequiredFeatures buildRequiredFeatures\(WGPUAdapter adapter/u);
+  assert.equal(
+    context.match(/buildRequiredFeatures\(adapter_/gu)?.length,
+    3,
+    "headless, windowed, and display-backed device creation must share the feature builder",
   );
-  assert.throws(
-    () =>
-      assert.doesNotMatch(sharedFeatureMutation, /static\s+WGPUFeatureName\s+requiredFeatures/u),
-    /static/u,
+  assert.match(
+    context,
+    /allowIndirectFirstInstance[\s\S]*MYSTRAL_WEBGPU_WGPU_MODERN[\s\S]*__ANDROID__/u,
+    "the Android emulator workaround must be an explicit feature-builder input",
   );
-});
-
-test("every Android device path enables adapter-specific storage texture formats", () => {
-  const context = read("src/webgpu/context.cpp");
-  const requests = context.match(/WGPUNativeFeature_TextureAdapterSpecificFormatFeatures/gu) ?? [];
-
-  // Headless, surface creation, and surface recreation each request their own device. Missing the
-  // feature from any one path lets three.js create read/write storage textures, but wgpu-native
-  // rejects the bind-group layout and aborts at queue submission.
-  assert.equal(requests.length, 3);
+  assert.doesNotMatch(context, /requiredFeatures(?:Android|Dawn|WGPU)\[/u);
 });
 
 test("GPU video fallback rejects missing binding state before callback registration", () => {

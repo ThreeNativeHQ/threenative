@@ -8,6 +8,11 @@ const source = readFileSync(
   join(import.meta.dirname, "..", "src", "runtime-scripts", "frame-op-stream.js"),
   "utf8",
 );
+const replay = nativeDefinition("replayPackedFrameOpStream").text;
+const bindingsState = readFileSync(
+  join(import.meta.dirname, "..", "src", "webgpu", "bindings_state.h"),
+  "utf8",
+);
 const factory = Function(`"use strict"; let factory; factory = ${source}\nreturn factory;`)();
 
 function harness() {
@@ -54,9 +59,107 @@ describe("packed frame op stream", () => {
   // out of that file indexOf returns -1, the slice is empty, and the assertion passes on nothing.
   // Looking the definition up by symbol survives the move and still reds on the regression.
   it("keeps native replay compatible with the runtime's C++17 toolchains", () => {
-    const replay = nativeDefinition("replayPackedFrameOpStream");
+    expect(replay).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
+  });
 
-    expect(replay.text).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
+  // Every native handle lookup has to stop its own record before the first backend call that uses
+  // that handle. A later, unrelated `if (!r.ok)` is not enough: it lets a malformed record parse
+  // arbitrary counts and descriptors first, and a future edit can move the later guard below the
+  // FFI call. Keep this table explicit so the contract reds when one guard is removed.
+  const replayLookupGuards = [
+    [3, "auto e = encoder(eid);", "wgpuCommandEncoderBeginRenderPass", "render encoder"],
+    [3, "c.view = viewFor(r.u32());", "wgpuCommandEncoderBeginRenderPass", "color attachment view"],
+    [3, "c.resolveTarget = resolve ? viewFor(resolve) : nullptr;", "wgpuCommandEncoderBeginRenderPass", "resolve view"],
+    [3, "depth.view = viewFor(r.u32());", "wgpuCommandEncoderBeginRenderPass", "depth view"],
+    [3, "rtw.querySet = querySetFor(r.u32());", "wgpuCommandEncoderBeginRenderPass", "render timestamp query set"],
+    [4, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetPipeline", "render pipeline pass"],
+    [5, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetBindGroup", "render bind group pass"],
+    [6, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetVertexBuffer", "vertex pass"],
+    [6, "auto b = buffer(r.u32());", "wgpuRenderPassEncoderSetVertexBuffer", "vertex buffer"],
+    [7, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetIndexBuffer", "index pass"],
+    [7, "auto b = buffer(r.u32());", "wgpuRenderPassEncoderSetIndexBuffer", "index buffer"],
+    [8, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderDraw", "draw pass"],
+    [9, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderDrawIndexed", "indexed draw pass"],
+    [10, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderDrawIndirect", "indirect draw pass"],
+    [10, "auto b = buffer(r.u32());", "wgpuRenderPassEncoderDrawIndirect", "indirect draw buffer"],
+    [11, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderDrawIndexedIndirect", "indexed indirect draw pass"],
+    [11, "auto b = buffer(r.u32());", "wgpuRenderPassEncoderDrawIndexedIndirect", "indexed indirect draw buffer"],
+    [12, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetViewport", "viewport pass"],
+    [13, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetScissorRect", "scissor pass"],
+    [14, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetBlendConstant", "blend pass"],
+    [15, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderSetStencilReference", "stencil pass"],
+    [16, "auto p = renderPass(r.u32());", "wgpuRenderPassEncoderExecuteBundles", "bundle pass"],
+    [17, "auto p = renderPass(id);", "wgpuRenderPassEncoderEnd", "end pass"],
+    [18, "auto e = encoder(eid);", "wgpuCommandEncoderBeginComputePass", "compute encoder"],
+    [19, "auto p = computePass(r.u32());", "wgpuComputePassEncoderSetPipeline", "compute pipeline pass"],
+    [20, "auto p = computePass(r.u32());", "wgpuComputePassEncoderSetBindGroup", "compute bind group pass"],
+    [21, "auto p = computePass(r.u32());", "wgpuComputePassEncoderDispatchWorkgroups", "dispatch pass"],
+    [22, "auto p = computePass(id);", "wgpuComputePassEncoderEnd", "compute end pass"],
+    [23, "auto e = encoder(r.u32());", "wgpuCommandEncoderCopyBufferToBuffer", "buffer copy encoder"],
+    [23, "auto s = buffer(r.u32());", "wgpuCommandEncoderCopyBufferToBuffer", "buffer copy source"],
+    [23, "auto d = buffer(r.u32());", "wgpuCommandEncoderCopyBufferToBuffer", "buffer copy destination"],
+    [24, "auto e = encoder(r.u32());", "wgpuCommandEncoderCopyBufferToTexture", "buffer-texture copy encoder"],
+    [24, "s.buffer = buffer(r.u32());", "wgpuCommandEncoderCopyBufferToTexture", "buffer-texture source"],
+    [24, "readTextureCopy(d);", "wgpuCommandEncoderCopyBufferToTexture", "buffer-texture destination"],
+    [25, "auto e = encoder(r.u32());", "wgpuCommandEncoderCopyTextureToBuffer", "texture-buffer copy encoder"],
+    [25, "readTextureCopy(s);", "wgpuCommandEncoderCopyTextureToBuffer", "texture-buffer source"],
+    [25, "d.buffer = buffer(r.u32());", "wgpuCommandEncoderCopyTextureToBuffer", "texture-buffer destination"],
+    [26, "auto e = encoder(r.u32());", "wgpuCommandEncoderCopyTextureToTexture", "texture copy encoder"],
+    [26, "readTextureCopy(s);", "wgpuCommandEncoderCopyTextureToTexture", "texture copy source"],
+    [26, "readTextureCopy(d);", "wgpuCommandEncoderCopyTextureToTexture", "texture copy destination"],
+    [27, "auto e = encoder(r.u32());", "wgpuCommandEncoderClearBuffer", "clear encoder"],
+    [27, "auto b = buffer(r.u32());", "wgpuCommandEncoderClearBuffer", "clear buffer"],
+    [28, "auto e = encoder(eid);", "wgpuCommandEncoderFinish", "finish encoder"],
+    [30, "readTextureCopy(d);", "wgpuQueueWriteTexture", "texture upload destination"],
+    [31, "readTextureCopy(d);", "wgpuQueueWriteTexture", "external texture destination"],
+    [34, "auto e = encoder(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve encoder"],
+    [34, "auto q = querySetFor(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve query set"],
+    [34, "auto dst = buffer(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve destination"],
+  ];
+
+  function assertReplayLookupGuards(replaySource) {
+    for (const [opcode, lookup, nativeCall, label] of replayLookupGuards) {
+      const start = replaySource.indexOf(`case ${opcode}:`);
+      expect(start, `native replay case ${opcode} exists`).toBeGreaterThanOrEqual(0);
+      const remainder = replaySource.slice(start + `case ${opcode}:`.length);
+      const nextCase = remainder.search(/\n\s*case \d+:/u);
+      const body = nextCase < 0 ? remainder : remainder.slice(0, nextCase);
+      const lookupIndex = body.indexOf(lookup);
+      expect(lookupIndex, `opcode ${opcode} has ${label} lookup`).toBeGreaterThanOrEqual(0);
+      const guardIndex = body.indexOf("if (!r.ok)", lookupIndex + lookup.length);
+      const nativeIndex = body.indexOf(nativeCall, lookupIndex + lookup.length);
+      expect(guardIndex, `opcode ${opcode} guards its ${label} lookup`).toBeGreaterThan(lookupIndex);
+      const betweenLookupAndGuard = body.slice(lookupIndex + lookup.length, guardIndex);
+      expect(
+        betweenLookupAndGuard,
+        `opcode ${opcode} does not defer its ${label} guard past another lookup`,
+      ).not.toMatch(/(?:encoder|renderPass|computePass|buffer|viewFor|querySetFor|readTextureCopy)\(/u);
+      expect(
+        guardIndex - lookupIndex,
+        `opcode ${opcode} guards its ${label} lookup promptly`,
+      ).toBeLessThan(160);
+      expect(nativeIndex, `opcode ${opcode} uses its ${label} lookup`).toBeGreaterThan(guardIndex);
+    }
+  }
+
+  it("guards every replay handle lookup in its own opcode before the backend call", () => {
+    assertReplayLookupGuards(replay);
+  });
+
+  it("rejects a replay source when an own native-handle guard is removed", () => {
+    const guardedLookup = "auto e = encoder(eid);\n                if (!r.ok)\n                    break;";
+    expect(replay).toContain(guardedLookup);
+    const withoutGuard = replay.replace(guardedLookup, "auto e = encoder(eid);");
+    expect(withoutGuard).not.toBe(replay);
+    expect(() => assertReplayLookupGuards(withoutGuard)).toThrow(/opcode 3 .*render encoder/u);
+  });
+
+  it("keeps frame replay registries and scratch vectors on the bindings state", () => {
+    expect(replay).not.toMatch(/std::unordered_map<uint32_t, WGPUCommandEncoder> encoders/u);
+    expect(replay).toMatch(/auto& encoders = state->frameReplay\.encoders/u);
+    expect(replay).toMatch(/state->frameReplay\.dynamicOffsets\.resize\(n\)/u);
+    expect(bindingsState).toMatch(/struct FrameReplayState[\s\S]*std::unordered_map<uint32_t, WGPUCommandEncoder> encoders/u);
+    expect(bindingsState).toMatch(/std::vector<uint32_t> dynamicOffsets;/u);
   });
 
   it("keeps resource id loads class-specific so V8 inline caches stay polymorphic", () => {

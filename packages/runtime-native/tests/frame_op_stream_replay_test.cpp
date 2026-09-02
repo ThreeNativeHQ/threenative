@@ -9,6 +9,11 @@
 namespace {
 
 int failures = 0;
+int frameReplayBackendEntries = 0;
+
+void observeFrameReplayBackendEntry(const char*) {
+    frameReplayBackendEntries += 1;
+}
 
 void expect(bool condition, const std::string& what) {
     if (!condition) {
@@ -18,12 +23,16 @@ void expect(bool condition, const std::string& what) {
 }
 
 void expectMalformed(mystral::webgpu::BindingsState* state, const char* expression,
-                     const std::string& expected, const std::string& what) {
+                     const std::string& expected, const std::string& what,
+                     int expectedBackendEntries = 0) {
     auto* engine = state->engine;
+    const int backendEntriesBefore = frameReplayBackendEntries;
     state->profiling.frameOpStreamDrain = engine->evalScriptWithResult(expression, "tn-malformed-frame.js");
     mystral::webgpu::endDawnFrame(state);
     const std::string exception = engine->hasException() ? engine->getException() : "";
     expect(exception.find(expected) != std::string::npos, what + ": " + exception);
+    expect(frameReplayBackendEntries - backendEntriesBefore == expectedBackendEntries,
+           what + ": malformed replay entered wgpu-native");
 }
 
 void runContract(bool disableStreamControl) {
@@ -227,6 +236,9 @@ void runContract(bool disableStreamControl) {
     expect(state->profiling.frameOpStreamLastOrder == expectedSplitTailOrder,
            "the half-recorded encoder stayed behind and drained whole at the frame boundary");
 
+    state->profiling.frameOpStreamNativeCallObserver = observeFrameReplayBackendEntry;
+    frameReplayBackendEntries = 0;
+
     expectMalformed(state, "() => new ArrayBuffer(8)", "truncated header",
                     "native parser rejects a truncated header");
     expectMalformed(state,
@@ -241,6 +253,13 @@ void runContract(bool disableStreamControl) {
     expectMalformed(state,
         "() => { const b=new ArrayBuffer(40),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,1,true); v.setUint32(8,40,true); v.setUint32(12,1,true); v.setUint32(16,1,true); v.setUint32(20,24,true); v.setUint32(24,0xffffffff,true); return b; }",
         "unknown buffer id", "native parser rejects an unknown resource id");
+    expectMalformed(state,
+        "() => { const b=new ArrayBuffer(40),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,2,true); v.setUint32(8,40,true); v.setUint32(12,1,true); v.setUint32(16,18,true); v.setUint32(20,24,true); v.setUint32(24,0xffffffff,true); v.setUint32(28,1,true); return b; }",
+        "unknown command encoder id", "native parser rejects an unknown compute encoder");
+    expectMalformed(state,
+        "() => { const b=new ArrayBuffer(112),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,2,true); v.setUint32(8,112,true); v.setUint32(12,2,true); v.setUint32(16,2,true); v.setUint32(20,16,true); v.setUint32(24,1,true); v.setUint32(32,3,true); v.setUint32(36,80,true); v.setUint32(40,1,true); v.setUint32(44,2,true); v.setUint32(48,1,true); v.setUint32(52,0xffffffff,true); return b; }",
+        "unknown texture view id", "native parser rejects an invalid texture-view id");
+    state->profiling.frameOpStreamNativeCallObserver = nullptr;
     state->profiling.frameOpStreamDrain = {};
 }
 

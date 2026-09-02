@@ -7,6 +7,7 @@
 
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/bindings.h"
+#include <array>
 #include <iostream>
 #include <iterator>
 #include <cstring>
@@ -285,6 +286,54 @@ static void reportGrantedFeatures(WGPUDevice device) {
     std::cout << "}" << std::endl;
 }
 
+struct RequiredFeatures {
+    std::array<WGPUFeatureName, 9> names{};
+    size_t count = 0;
+    bool hasIndirectFirstInstance = false;
+    bool hasTimestampQuery = false;
+};
+
+static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
+                                              bool allowIndirectFirstInstance) {
+    RequiredFeatures result;
+    const auto appendIfSupported = [&](WGPUFeatureName feature, const char* label) {
+        const bool supported = wgpuAdapterHasFeature(adapter, feature) != 0;
+        std::cout << "[WebGPU] adapter feature probe " << label << ": "
+                  << (supported ? "yes" : "no") << std::endl;
+        if (supported && result.count < result.names.size())
+            result.names[result.count++] = feature;
+        return supported;
+    };
+
+    if (allowIndirectFirstInstance) {
+        result.hasIndirectFirstInstance =
+            appendIfSupported(WGPUFeatureName_IndirectFirstInstance, "indirect-first-instance");
+        if (result.hasIndirectFirstInstance)
+            std::cout << "[WebGPU] Requesting IndirectFirstInstance feature (supported)"
+                      << std::endl;
+    } else {
+        std::cout << "[WebGPU] IndirectFirstInstance feature disabled for this Android backend"
+                  << std::endl;
+    }
+
+    // wgpu's own extension: without it an adapter that advertises a compressed format still
+    // refuses the adapter-specific format capabilities three's KTX2 path relies on. Requested
+    // here, once, so every device-creation path asks for the same set.
+    appendIfSupported(
+        static_cast<WGPUFeatureName>(WGPUNativeFeature_TextureAdapterSpecificFormatFeatures),
+        "texture-adapter-specific-format-features");
+    appendIfSupported(WGPUFeatureName_TextureCompressionBC, "texture-compression-bc");
+    appendIfSupported(WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2");
+    appendIfSupported(WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc");
+    result.hasTimestampQuery =
+        appendIfSupported(WGPUFeatureName_TimestampQuery, "timestamp-query");
+    appendIfSupported(WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable");
+#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
+    appendIfSupported(WGPUFeatureName_CoreFeaturesAndLimits, "core-features-and-limits");
+#endif
+    return result;
+}
+
 Context::Context() = default;
 
 Context::~Context() {
@@ -436,6 +485,9 @@ bool Context::initializeHeadless() {
     WGPULimits adapterLimits = {};
     wgpuAdapterGetLimits(adapter_, &adapterLimits);
     WGPULimits requiredLimits = adapterLimits;
+    const uint32_t neededBytesPerSample = 64;
+    if (adapterLimits.maxColorAttachmentBytesPerSample >= neededBytesPerSample)
+        requiredLimits.maxColorAttachmentBytesPerSample = neededBytesPerSample;
     deviceDesc.requiredLimits = &requiredLimits;
     // The emulator workaround stays scoped to the feature it names: Android
     // emulator Vulkan can advertise IndirectFirstInstance through WebGPU while
@@ -446,133 +498,35 @@ bool Context::initializeHeadless() {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[7];
-    size_t featureCount = 0;
-    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
-                                        WGPUFeatureName_TextureCompressionETC2,
-                                        WGPUFeatureName_TextureCompressionASTC}) {
-        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
-                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
-        if (wgpuAdapterHasFeature(adapter_, compression)) {
-            requiredFeaturesAndroid[featureCount++] = compression;
-        }
-    }
-    const auto adapterSpecificFormats = static_cast<WGPUFeatureName>(
-        WGPUNativeFeature_TextureAdapterSpecificFormatFeatures);
-    if (wgpuAdapterHasFeature(adapter_, adapterSpecificFormats)) {
-        requiredFeaturesAndroid[featureCount++] = adapterSpecificFormats;
-    }
-    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
-    // feature — never behind a diagnostic flag — so the same code path measures on device and in
-    // Chrome, and an adapter without it keeps today's behaviour.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
-              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
-    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesAndroid))
-        requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < std::size(requiredFeaturesAndroid) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
-        requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-#endif
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesAndroid : nullptr;
-    hasIndirectFirstInstance_ = false;
 #elif defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
     WGPULimits adapterLimits = {};
     wgpuAdapterGetLimits(adapter_, &adapterLimits);
     WGPULimits requiredLimits = adapterLimits;
+    const uint32_t neededBytesPerSample = 64;
+    if (adapterLimits.maxColorAttachmentBytesPerSample >= neededBytesPerSample)
+        requiredLimits.maxColorAttachmentBytesPerSample = neededBytesPerSample;
     deviceDesc.requiredLimits = &requiredLimits;
-
-    // Compression features are requested when the adapter supports them so JS-side
-    // consumers (three's KTX2Loader.detectSupport among them) see the formats this
-    // GPU can actually upload; a format the hardware lacks stays unrequested and
-    // therefore truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesDawn[8];
-    size_t featureCount = 0;
-    if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
-        hasIndirectFirstInstance_ = true;
-    }
-    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
-                                        WGPUFeatureName_TextureCompressionETC2,
-                                        WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= std::size(requiredFeaturesDawn)) break;
-        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
-                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
-        if (wgpuAdapterHasFeature(adapter_, compression)) {
-            requiredFeaturesDawn[featureCount++] = compression;
-        }
-    }
-    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
-    // feature — never behind a diagnostic flag — so the same code path measures on device and in
-    // Chrome, and an adapter without it keeps today's behaviour.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
-              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
-    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesDawn))
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
-    // `rg11b10ufloat-renderable`, when the adapter advertises it. Three's SSGI builds its GI
-    // target as an rg11b10ufloat texture with RENDER_ATTACHMENT usage and no fallback, so a
-    // device without this feature cannot run that stage at all — Dawn rejects the render pass
-    // and the device is lost. Requested as an ordinary optional feature for the same reason as
-    // timestamp-query: on a desktop Vulkan adapter it is effectively always there, and where it
-    // truly is not, the honest answer still reaches three.js through device.features.
-    const bool hasRG11B10UFloatRenderable =
-        wgpuAdapterHasFeature(adapter_, WGPUFeatureName_RG11B10UfloatRenderable) != 0;
-    std::cout << "[WebGPU] adapter feature probe rg11b10ufloat-renderable: "
-              << (hasRG11B10UFloatRenderable ? "yes" : "no") << std::endl;
-    if (hasRG11B10UFloatRenderable && featureCount < 7) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_RG11B10UfloatRenderable;
-    }
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    // `core-features-and-limits` is the single feature three.js reads to decide whether it is
-    // talking to a WebGPU *compatibility* device. Absent, it sets `renderer._samples = 0` — MSAA
-    // off outright — and switches the depth-texture, MRT-blending and shader texture paths.
-    // Dawn reports only features that were *requested*, so asking the adapter is not enough.
-    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-    }
-#endif
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesDawn : nullptr;
 #elif defined(MYSTRAL_WEBGPU_WGPU)
     WGPUSupportedLimits adapterLimits = {};
     wgpuAdapterGetLimits(adapter_, &adapterLimits);
     WGPURequiredLimits requiredLimits = {};
     requiredLimits.limits = adapterLimits.limits;
+    const uint32_t neededBytesPerSample = 64;
+    if (adapterLimits.limits.maxColorAttachmentBytesPerSample >= neededBytesPerSample)
+        requiredLimits.limits.maxColorAttachmentBytesPerSample = neededBytesPerSample;
     deviceDesc.requiredLimits = &requiredLimits;
-
-    WGPUFeatureName requiredFeaturesWGPU[6];
-    size_t featureCount = 0;
-    if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
-        hasIndirectFirstInstance_ = true;
-    }
-    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
-                                        WGPUFeatureName_TextureCompressionETC2,
-                                        WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= std::size(requiredFeaturesWGPU)) break;
-        // The Dawn branch has always printed this; the wgpu branch did not, and wgpu is the
-        // Android and iOS backend. When a device reported no compressed format at all, the log
-        // said only that the renderer supported none — never whether the adapter advertised one
-        // and the request dropped it, or the adapter never advertised it. Print it on both paths.
-        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
-                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
-        if (wgpuAdapterHasFeature(adapter_, compression)) {
-            requiredFeaturesWGPU[featureCount++] = compression;
-        }
-    }
-    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
-    // feature — never behind a diagnostic flag — so the same code path measures on device and in
-    // Chrome, and an adapter without it keeps today's behaviour.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
-              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
-    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesWGPU))
-        requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesWGPU : nullptr;
 #endif
+
+#if defined(MYSTRAL_WEBGPU_WGPU_MODERN) && defined(__ANDROID__)
+    const bool allowIndirectFirstInstance = false;
+#else
+    const bool allowIndirectFirstInstance = true;
+#endif
+    const auto requiredFeatures = buildRequiredFeatures(adapter_, allowIndirectFirstInstance);
+    hasIndirectFirstInstance_ = requiredFeatures.hasIndirectFirstInstance;
+    hasTimestampQuery_ = requiredFeatures.hasTimestampQuery;
+    deviceDesc.requiredFeatureCount = requiredFeatures.count;
+    deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
     WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
     errorCallbackInfo.callback = onDeviceError;
@@ -822,45 +776,6 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
         requiredLimits.maxColorAttachmentBytesPerSample = neededBytesPerSample;
     }
     deviceDesc.requiredLimits = &requiredLimits;
-    // The emulator workaround stays scoped to the feature it names: Android
-    // emulator Vulkan can advertise IndirectFirstInstance through WebGPU while
-    // rejecting it when the HAL opens the device. Dropping every feature was
-    // collateral damage — three's KTX2Loader saw no compressed format and
-    // createAssetLoader threw TN_ASSETS_KTX2_UNSUPPORTED at boot on physical
-    // devices too (docs/bugs/android-ktx2-unsupported-2026-08-23.md).
-    // Compression features are requested when the adapter advertises them,
-    // mirroring the non-Android branches below; a format the hardware lacks
-    // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[7];
-    size_t featureCount = 0;
-    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
-                                        WGPUFeatureName_TextureCompressionETC2,
-                                        WGPUFeatureName_TextureCompressionASTC}) {
-        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
-                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
-        if (wgpuAdapterHasFeature(adapter_, compression)) {
-            requiredFeaturesAndroid[featureCount++] = compression;
-        }
-    }
-    const auto adapterSpecificFormats = static_cast<WGPUFeatureName>(
-        WGPUNativeFeature_TextureAdapterSpecificFormatFeatures);
-    if (wgpuAdapterHasFeature(adapter_, adapterSpecificFormats)) {
-        requiredFeaturesAndroid[featureCount++] = adapterSpecificFormats;
-    }
-    // `timestamp-query`, when the adapter advertises it, and `core-features-and-limits`, which
-    // three.js reads to decide whether the whole renderer is on a reduced-capability
-    // compatibility device. Dawn reports only features that were *requested*, so every
-    // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesAndroid))
-        requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < std::size(requiredFeaturesAndroid) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
-        requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-#endif
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesAndroid : nullptr;
-    hasIndirectFirstInstance_ = false;
 #elif defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
     // Dawn uses WGPULimits directly
     WGPULimits adapterLimits = {};
@@ -878,59 +793,6 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
 
     deviceDesc.requiredLimits = &requiredLimits;
 
-    // Check if IndirectFirstInstance is supported before requesting it
-    // This feature allows instance_index in shaders to include firstInstance offset
-    // Compression features are likewise requested when supported so JS-side consumers
-    // (three's KTX2Loader.detectSupport among them) see what this GPU can upload.
-    WGPUFeatureName requiredFeaturesDawn[8];
-    size_t featureCount = 0;
-    if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
-        hasIndirectFirstInstance_ = true;
-        std::cout << "[WebGPU] Requesting IndirectFirstInstance feature (supported)" << std::endl;
-    } else {
-        hasIndirectFirstInstance_ = false;
-        std::cout << "[WebGPU] IndirectFirstInstance feature NOT supported (continuing without)" << std::endl;
-    }
-    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
-                                        WGPUFeatureName_TextureCompressionETC2,
-                                        WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= std::size(requiredFeaturesDawn)) break;
-        if (wgpuAdapterHasFeature(adapter_, compression)) {
-            requiredFeaturesDawn[featureCount++] = compression;
-            std::cout << "[WebGPU] Requesting texture compression feature " << compression << std::endl;
-        }
-    }
-    // `rg11b10ufloat-renderable`, the feature behind three's SSGI target format. Its absence
-    // costs the stage a device loss the first time a game enables GI, so it is requested like
-    // every other optional feature above.
-    if (featureCount < 7
-        && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_RG11B10UfloatRenderable)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_RG11B10UfloatRenderable;
-        std::cout << "[WebGPU] Requesting rg11b10ufloat-renderable feature (supported)" << std::endl;
-    }
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    // `core-features-and-limits` is the single feature three.js reads to decide whether it is
-    // talking to a WebGPU *compatibility* device. Absent, it sets `renderer._samples = 0` — MSAA
-    // off outright — and switches the depth-texture, MRT-blending and shader texture paths.
-    // Dawn reports only features that were *requested*, so asking the adapter is not enough.
-    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-    }
-#endif
-    // `timestamp-query`, when the adapter advertises it, and `core-features-and-limits`, which
-    // three.js reads to decide whether the whole renderer is on a reduced-capability
-    // compatibility device. Dawn reports only features that were *requested*, so every
-    // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < 8)
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-#endif
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesDawn : nullptr;
 #elif defined(MYSTRAL_WEBGPU_WGPU)
     // wgpu-native uses WGPURequiredLimits wrapper
     WGPUSupportedLimits adapterLimits = {};
@@ -948,33 +810,18 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
 
     deviceDesc.requiredLimits = &requiredLimits;
 
-    // Check if IndirectFirstInstance is supported before requesting it
-    // This feature allows instance_index in shaders to include firstInstance offset
-    WGPUFeatureName requiredFeaturesWGPU[6];
-    size_t featureCount = 0;
-    if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;
-        featureCount = 1;
-        hasIndirectFirstInstance_ = true;
-        std::cout << "[WebGPU] Requesting IndirectFirstInstance feature (supported)" << std::endl;
-    } else {
-        hasIndirectFirstInstance_ = false;
-        std::cout << "[WebGPU] IndirectFirstInstance feature NOT supported (continuing without)" << std::endl;
-    }
-    // `timestamp-query`, when the adapter advertises it, and `core-features-and-limits`, which
-    // three.js reads to decide whether the whole renderer is on a reduced-capability
-    // compatibility device. Dawn reports only features that were *requested*, so every
-    // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesWGPU))
-        requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < std::size(requiredFeaturesWGPU) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
-        requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
 #endif
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesWGPU : nullptr;
+
+#if defined(MYSTRAL_WEBGPU_WGPU_MODERN) && defined(__ANDROID__)
+    const bool allowIndirectFirstInstance = false;
+#else
+    const bool allowIndirectFirstInstance = true;
 #endif
+    const auto requiredFeatures = buildRequiredFeatures(adapter_, allowIndirectFirstInstance);
+    hasIndirectFirstInstance_ = requiredFeatures.hasIndirectFirstInstance;
+    hasTimestampQuery_ = requiredFeatures.hasTimestampQuery;
+    deviceDesc.requiredFeatureCount = requiredFeatures.count;
+    deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
     // Set up error callback
     WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
@@ -1125,45 +972,6 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         requiredLimits.maxColorAttachmentBytesPerSample = neededBytesPerSample;
     }
     deviceDesc.requiredLimits = &requiredLimits;
-    // The emulator workaround stays scoped to the feature it names: Android
-    // emulator Vulkan can advertise IndirectFirstInstance through WebGPU while
-    // rejecting it when the HAL opens the device. Dropping every feature was
-    // collateral damage — three's KTX2Loader saw no compressed format and
-    // createAssetLoader threw TN_ASSETS_KTX2_UNSUPPORTED at boot on physical
-    // devices too (docs/bugs/android-ktx2-unsupported-2026-08-23.md).
-    // Compression features are requested when the adapter advertises them,
-    // mirroring the non-Android branches below; a format the hardware lacks
-    // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[7];
-    size_t featureCount = 0;
-    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
-                                        WGPUFeatureName_TextureCompressionETC2,
-                                        WGPUFeatureName_TextureCompressionASTC}) {
-        std::cout << "[WebGPU] adapter feature probe " << compression << ": "
-                  << (wgpuAdapterHasFeature(adapter_, compression) ? "yes" : "no") << std::endl;
-        if (wgpuAdapterHasFeature(adapter_, compression)) {
-            requiredFeaturesAndroid[featureCount++] = compression;
-        }
-    }
-    const auto adapterSpecificFormats = static_cast<WGPUFeatureName>(
-        WGPUNativeFeature_TextureAdapterSpecificFormatFeatures);
-    if (wgpuAdapterHasFeature(adapter_, adapterSpecificFormats)) {
-        requiredFeaturesAndroid[featureCount++] = adapterSpecificFormats;
-    }
-    // `timestamp-query`, when the adapter advertises it, and `core-features-and-limits`, which
-    // three.js reads to decide whether the whole renderer is on a reduced-capability
-    // compatibility device. Dawn reports only features that were *requested*, so every
-    // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < std::size(requiredFeaturesAndroid))
-        requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_TimestampQuery;
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < std::size(requiredFeaturesAndroid) && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
-        requiredFeaturesAndroid[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-#endif
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesAndroid : nullptr;
-    hasIndirectFirstInstance_ = false;
 #elif defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
     WGPULimits adapterLimits = {};
     wgpuAdapterGetLimits(adapter_, &adapterLimits);
@@ -1174,53 +982,6 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     }
     deviceDesc.requiredLimits = &requiredLimits;
 
-    // Compression features are requested when the adapter supports them so JS-side
-    // consumers (three's KTX2Loader.detectSupport among them) see the formats this
-    // GPU can actually upload; a format the hardware lacks stays unrequested and
-    // therefore truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesDawn[8];
-    size_t featureCount = 0;
-    if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_IndirectFirstInstance;
-        hasIndirectFirstInstance_ = true;
-    }
-    for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
-                                        WGPUFeatureName_TextureCompressionETC2,
-                                        WGPUFeatureName_TextureCompressionASTC}) {
-        if (featureCount >= std::size(requiredFeaturesDawn)) break;
-        if (wgpuAdapterHasFeature(adapter_, compression)) {
-            requiredFeaturesDawn[featureCount++] = compression;
-        }
-    }
-    // `rg11b10ufloat-renderable`, the feature behind three's SSGI target format. Every
-    // device-creation path has to ask; one that forgets loses the stage to a device loss the
-    // first time a game enables GI.
-    if (featureCount < 7
-        && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_RG11B10UfloatRenderable)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_RG11B10UfloatRenderable;
-    }
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    // `core-features-and-limits` is the single feature three.js reads to decide whether it is
-    // talking to a WebGPU *compatibility* device. Absent, it sets `renderer._samples = 0` — MSAA
-    // off outright — and switches the depth-texture, MRT-blending and shader texture paths.
-    // Dawn reports only features that were *requested*, so asking the adapter is not enough.
-    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits)) {
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-    }
-#endif
-    // `timestamp-query`, when the adapter advertises it, and `core-features-and-limits`, which
-    // three.js reads to decide whether the whole renderer is on a reduced-capability
-    // compatibility device. Dawn reports only features that were *requested*, so every
-    // device-creation path has to ask — one that forgets silently loses MSAA and the GPU meter.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    if (hasTimestampQuery_ && featureCount < 8)
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_TimestampQuery;
-#if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
-    if (featureCount < 8 && wgpuAdapterHasFeature(adapter_, WGPUFeatureName_CoreFeaturesAndLimits))
-        requiredFeaturesDawn[featureCount++] = WGPUFeatureName_CoreFeaturesAndLimits;
-#endif
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesDawn : nullptr;
 #elif defined(MYSTRAL_WEBGPU_WGPU)
     WGPUSupportedLimits adapterLimits = {};
     wgpuAdapterGetLimits(adapter_, &adapterLimits);
@@ -1232,23 +993,18 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     }
     deviceDesc.requiredLimits = &requiredLimits;
 
-    WGPUFeatureName requiredFeaturesWGPU[6];
-    size_t featureCount = 0;
-    if (wgpuAdapterHasFeature(adapter_, WGPUFeatureName_IndirectFirstInstance)) {
-        requiredFeaturesWGPU[0] = WGPUFeatureName_IndirectFirstInstance;
-        featureCount = 1;
-        hasIndirectFirstInstance_ = true;
-    }
-    // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
-    // feature — never behind a diagnostic flag — so the same code path measures on device and in
-    // Chrome, and an adapter without it keeps today's behaviour.
-    hasTimestampQuery_ = wgpuAdapterHasFeature(adapter_, WGPUFeatureName_TimestampQuery) != 0;
-    std::cout << "[WebGPU] adapter feature probe timestamp-query: "
-              << (hasTimestampQuery_ ? "yes" : "no") << std::endl;
-    if (hasTimestampQuery_ && featureCount < 2) requiredFeaturesWGPU[featureCount++] = WGPUFeatureName_TimestampQuery;
-    deviceDesc.requiredFeatureCount = featureCount;
-    deviceDesc.requiredFeatures = featureCount > 0 ? requiredFeaturesWGPU : nullptr;
 #endif
+
+#if defined(MYSTRAL_WEBGPU_WGPU_MODERN) && defined(__ANDROID__)
+    const bool allowIndirectFirstInstance = false;
+#else
+    const bool allowIndirectFirstInstance = true;
+#endif
+    const auto requiredFeatures = buildRequiredFeatures(adapter_, allowIndirectFirstInstance);
+    hasIndirectFirstInstance_ = requiredFeatures.hasIndirectFirstInstance;
+    hasTimestampQuery_ = requiredFeatures.hasTimestampQuery;
+    deviceDesc.requiredFeatureCount = requiredFeatures.count;
+    deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
     WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
     errorCallbackInfo.callback = onDeviceError;

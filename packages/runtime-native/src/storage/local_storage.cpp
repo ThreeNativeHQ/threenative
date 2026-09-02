@@ -251,7 +251,12 @@ std::string LocalStorage::deriveStorageFilename(const std::string& identifier) {
 // LocalStorage implementation
 // ============================================================================
 
+LocalStorage::~LocalStorage() {
+    flushIfDirty();
+}
+
 void LocalStorage::init(const std::string& filePath) {
+    flushIfDirty();
     filePath_ = filePath;
 
     // Create parent directories if they don't exist
@@ -271,6 +276,7 @@ void LocalStorage::init(const std::string& filePath) {
 void LocalStorage::load() {
     data_.clear();
     insertionOrder_.clear();
+    dirty_ = false;
 
     std::ifstream file(filePath_);
     if (!file.is_open()) {
@@ -294,8 +300,8 @@ void LocalStorage::load() {
     std::cout << "[Storage] Loaded " << data_.size() << " entries from " << filePath_ << std::endl;
 }
 
-void LocalStorage::flush() {
-    if (filePath_.empty()) return;
+bool LocalStorage::flush() {
+    if (filePath_.empty()) return false;
 
     std::string json = toJson(data_, insertionOrder_);
 
@@ -305,22 +311,36 @@ void LocalStorage::flush() {
         std::ofstream file(tmpPath, std::ios::trunc);
         if (!file.is_open()) {
             std::cerr << "[Storage] Failed to write to " << tmpPath << std::endl;
-            return;
+            return false;
         }
         file << json;
         file.flush();
+        if (!file) {
+            std::cerr << "[Storage] Failed to flush " << tmpPath << std::endl;
+            return false;
+        }
     }
 
+#ifdef _WIN32
+    if (!MoveFileExA(tmpPath.c_str(), filePath_.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        std::cerr << "[Storage] Failed to atomically replace " << filePath_ << std::endl;
+        return false;
+    }
+#else
     std::error_code ec;
     std::filesystem::rename(tmpPath, filePath_, ec);
     if (ec) {
         std::cerr << "[Storage] Failed to rename " << tmpPath << " -> " << filePath_ << ": " << ec.message() << std::endl;
-        // Fallback: try direct write
-        std::ofstream file(filePath_, std::ios::trunc);
-        if (file.is_open()) {
-            file << json;
-        }
+        return false;
     }
+#endif
+    return true;
+}
+
+void LocalStorage::flushIfDirty() {
+    if (dirty_ && flush())
+        dirty_ = false;
 }
 
 std::string LocalStorage::getItem(const std::string& key) const {
@@ -336,11 +356,15 @@ bool LocalStorage::has(const std::string& key) const {
 }
 
 void LocalStorage::setItem(const std::string& key, const std::string& value) {
-    if (data_.find(key) == data_.end()) {
+    const auto it = data_.find(key);
+    if (it == data_.end()) {
         insertionOrder_.push_back(key);
+        data_[key] = value;
+        dirty_ = true;
+    } else if (it->second != value) {
+        it->second = value;
+        dirty_ = true;
     }
-    data_[key] = value;
-    flush();
 }
 
 void LocalStorage::removeItem(const std::string& key) {
@@ -349,7 +373,7 @@ void LocalStorage::removeItem(const std::string& key) {
             std::remove(insertionOrder_.begin(), insertionOrder_.end(), key),
             insertionOrder_.end()
         );
-        flush();
+        dirty_ = true;
     }
 }
 
@@ -357,7 +381,7 @@ void LocalStorage::clear() {
     if (!data_.empty()) {
         data_.clear();
         insertionOrder_.clear();
-        flush();
+        dirty_ = true;
     }
 }
 
