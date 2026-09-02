@@ -23,14 +23,24 @@ interface IElementVisibilitySample {
 
 interface IDomElementVisibilitySample extends IElementVisibilitySample {
   clip?: { height: number; width: number; x: number; y: number };
+  isolationKey?: string;
 }
+
+interface IVisibilityIsolationState {
+  elements: Element[];
+  markerAttribute: string;
+  style: HTMLStyleElement;
+}
+
+let visibilityIsolationSequence = 0;
 
 /** Proves a DOM target contributes visible pixels and is not hidden by another painted node. */
 export async function sampleElementVisibility(
   page: Page,
   target: IPlaytestVisualRegionTarget,
 ): Promise<IElementVisibilitySample> {
-  const domSample = await page.evaluate((requestedTarget): IDomElementVisibilitySample => {
+  const isolationKey = `__threenativePlaytestVisibilityIsolation${visibilityIsolationSequence++}`;
+  const domSample = await page.evaluate(({ requestedTarget, isolationKey }): IDomElementVisibilitySample => {
     const node = requestedTarget.id === undefined
       ? (() => {
           try {
@@ -82,76 +92,90 @@ export async function sampleElementVisibility(
       pointerEventsStyle.remove();
     }
 
-    return {
-      bounds,
-      clip: { height: bottom - top, width: right - left, x: left, y: top },
-      rendered,
-    };
-  }, target).catch(() => undefined);
+    if (!rendered) return { bounds, rendered: false };
+
+    const markerAttribute = `data-threenative-visibility-${isolationKey}`;
+    const markedElements = [node];
+    let isolationStyle: HTMLStyleElement | undefined;
+    try {
+      node.setAttribute(markerAttribute, "");
+
+      const targetContainsDocumentElement = document.documentElement !== null
+        && (node === document.documentElement || node.contains(document.documentElement));
+      const targetContainsBody = document.body !== null
+        && (node === document.body || node.contains(document.body));
+      isolationStyle = document.createElement("style");
+      isolationStyle.textContent = [
+        targetContainsDocumentElement ? "" : "html { background: transparent !important; visibility: hidden !important; }",
+        targetContainsBody ? "" : "body { background: transparent !important; visibility: hidden !important; }",
+        `body *:not([${markerAttribute}]):not([${markerAttribute}] *) { visibility: hidden !important; }`,
+        `[${markerAttribute}] { visibility: visible !important; }`,
+      ].filter(Boolean).join("\n");
+      if (document.head === null) throw new Error("Cannot isolate a visibility target without document.head");
+      document.head.appendChild(isolationStyle);
+      (window as unknown as Record<string, IVisibilityIsolationState>)[isolationKey] = {
+        elements: markedElements,
+        markerAttribute,
+        style: isolationStyle,
+      };
+      return {
+        bounds,
+        clip: { height: bottom - top, width: right - left, x: left, y: top },
+        isolationKey,
+        rendered: true,
+      };
+    } catch {
+      try {
+        isolationStyle?.remove();
+      } catch {
+        // The sample fails closed below if the temporary isolation cannot be removed.
+      }
+      for (const element of markedElements) {
+        try {
+          element.removeAttribute(markerAttribute);
+        } catch {
+          // The sample fails closed when target restoration is incomplete.
+        }
+      }
+      return { bounds, rendered: false };
+    }
+  }, { isolationKey, requestedTarget: target }).catch(() => undefined);
 
   if (domSample === undefined || !domSample.rendered || domSample.clip === undefined) {
     return { ...(domSample?.bounds === undefined ? {} : { bounds: domSample.bounds }), rendered: false };
   }
-  const screenshot = await page.screenshot({ clip: domSample.clip }).catch(() => undefined);
-  if (screenshot === undefined) return { bounds: domSample.bounds, rendered: false };
-  const originalStyle = await page.evaluate((requestedTarget): string | null | undefined => {
-    const node = requestedTarget.id === undefined
-      ? (() => {
-          try {
-            return requestedTarget.selector === undefined ? null : document.querySelector(requestedTarget.selector);
-          } catch {
-            return null;
-          }
-        })()
-      : document.getElementById(requestedTarget.id);
-    if (node === null) return undefined;
-    const style = node as HTMLElement;
-    const previousStyle = style.getAttribute("style");
-    style.style.setProperty("opacity", "0", "important");
-    return previousStyle;
-  }, target).catch(() => undefined);
-  if (originalStyle === undefined) return { bounds: domSample.bounds, rendered: false };
-
-  let hiddenScreenshot: Buffer | undefined;
+  if (domSample.isolationKey === undefined) return { bounds: domSample.bounds, rendered: false };
+  let screenshot: Buffer | undefined;
   let restored = false;
   try {
-    hiddenScreenshot = await page.screenshot({ clip: domSample.clip }).catch(() => undefined);
+    screenshot = await page.screenshot({ clip: domSample.clip, omitBackground: true });
+  } catch {
+    screenshot = undefined;
   } finally {
-    restored = await page.evaluate(({ requestedTarget, previousStyle }) => {
-      const node = requestedTarget.id === undefined
-        ? (() => {
-            try {
-              return requestedTarget.selector === undefined ? null : document.querySelector(requestedTarget.selector);
-            } catch {
-              return null;
-            }
-          })()
-        : document.getElementById(requestedTarget.id);
-      if (node === null) return false;
-      if (previousStyle === null) node.removeAttribute("style");
-      else node.setAttribute("style", previousStyle);
-      return true;
-    }, { requestedTarget: target, previousStyle: originalStyle }).catch(() => false);
+    restored = await page.evaluate((key): boolean => {
+      const state = (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
+      if (state === undefined) return false;
+      try {
+        state.style.remove();
+        for (const element of state.elements) element.removeAttribute(state.markerAttribute);
+        delete (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
+        return true;
+      } catch {
+        return false;
+      }
+    }, domSample.isolationKey).catch(() => false);
   }
   return {
     bounds: domSample.bounds,
-    rendered: restored && hiddenScreenshot !== undefined && hasTargetPaintDelta(screenshot, hiddenScreenshot),
+    rendered: restored && screenshot !== undefined && containsPaintedPixels(screenshot),
   };
 }
 
-function hasTargetPaintDelta(visibleScreenshot: Buffer, hiddenScreenshot: Buffer): boolean {
+function containsPaintedPixels(screenshot: Buffer): boolean {
   try {
-    const visible = PNG.sync.read(visibleScreenshot);
-    const hidden = PNG.sync.read(hiddenScreenshot);
-    if (visible.width !== hidden.width || visible.height !== hidden.height || visible.data.length !== hidden.data.length) return false;
-    for (let offset = 0; offset < visible.data.length; offset += 4) {
-      const difference = Math.max(
-        Math.abs((visible.data[offset] ?? 0) - (hidden.data[offset] ?? 0)),
-        Math.abs((visible.data[offset + 1] ?? 0) - (hidden.data[offset + 1] ?? 0)),
-        Math.abs((visible.data[offset + 2] ?? 0) - (hidden.data[offset + 2] ?? 0)),
-        Math.abs((visible.data[offset + 3] ?? 0) - (hidden.data[offset + 3] ?? 0)),
-      );
-      if (difference > 8) return true;
+    const png = PNG.sync.read(screenshot);
+    for (let offset = 0; offset < png.data.length; offset += 4) {
+      if ((png.data[offset + 3] ?? 0) > 0) return true;
     }
   } catch {
     return false;

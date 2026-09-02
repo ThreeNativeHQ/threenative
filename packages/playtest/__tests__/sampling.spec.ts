@@ -66,6 +66,23 @@ function targetPaintScreenshot(hidden: boolean): Buffer {
   return PNG.sync.write(png);
 }
 
+function changingBackgroundScreenshot(value: number): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  for (let offset = 0; offset < png.data.length; offset += 4) {
+    png.data[offset] = value;
+    png.data[offset + 1] = value;
+    png.data[offset + 2] = value;
+    png.data[offset + 3] = 255;
+  }
+  return PNG.sync.write(png);
+}
+
+function transparentScreenshot(): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(0);
+  return PNG.sync.write(png);
+}
+
 describe("playtest sampling", () => {
   test("samples HUD values by id and selector without dropping absent nodes", async () => {
     const score = { getAttribute: () => "7", textContent: " Score " };
@@ -212,18 +229,80 @@ describe("playtest sampling", () => {
     try {
       const page = {
         evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
-        screenshot: async (options?: { clip?: unknown }) => {
+        screenshot: async (options?: { clip?: unknown; omitBackground?: boolean }) => {
           clips.push(options?.clip);
-          return brightScreenshot();
+          return options?.omitBackground === true ? transparentScreenshot() : brightScreenshot();
         },
       } as unknown as Page;
       await expect(sampleElementVisibility(page, { id: "transparent" })).resolves.toEqual({
         bounds: { height: 80, width: 200, x: 0, y: 0 },
         rendered: false,
       });
-      expect(clips).toHaveLength(2);
-      expect(clips[0]).toEqual(clips[1]);
+      expect(clips).toHaveLength(1);
       expect(targetHidden).toBe(false);
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects a transparent target when only the background changes between captures", async () => {
+    const canvas = {};
+    let targetHidden = false;
+    let styleAttribute: string | null = "color: red; opacity: 0.5;";
+    const target = {
+      contains: () => false,
+      getAttribute: (name: string) => name === "style" ? styleAttribute : null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") styleAttribute = null;
+      },
+      setAttribute: (name: string, value: string) => {
+        if (name === "style") styleAttribute = value;
+      },
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
+    };
+    let forcedPointerEvents = false;
+    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+    const restore = installGlobal("document", {
+      createElement: () => pointerEventsStyle,
+      elementFromPoint: () => forcedPointerEvents ? target : canvas,
+      getElementById: () => target,
+      head: { appendChild: () => { forcedPointerEvents = true; } },
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    const clips: unknown[] = [];
+    const screenshotOptions: Array<{ clip?: unknown; omitBackground?: boolean }> = [];
+    let screenshotCount = 0;
+    try {
+      const page = {
+        evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
+        screenshot: async (options?: { clip?: unknown; omitBackground?: boolean }) => {
+          clips.push(options?.clip);
+          screenshotOptions.push(options ?? {});
+          screenshotCount += 1;
+          return options?.omitBackground === true
+            ? transparentScreenshot()
+            : changingBackgroundScreenshot(screenshotCount === 1 ? 32 : 224);
+        },
+      } as unknown as Page;
+      await expect(sampleElementVisibility(page, { id: "transparent" })).resolves.toEqual({
+        bounds: { height: 80, width: 200, x: 0, y: 0 },
+        rendered: false,
+      });
+      expect(clips).toHaveLength(1);
+      expect(screenshotOptions).toEqual([{ clip: { height: 80, width: 200, x: 0, y: 0 }, omitBackground: true }]);
+      expect(targetHidden).toBe(false);
+      expect(styleAttribute).toBe("color: red; opacity: 0.5;");
     } finally {
       restoreWindow();
       restore();
