@@ -50,6 +50,9 @@
     "signals": [
       { "name": "attack", "entity": "player", "minCount": 1 },
       { "name": "ability", "entity": "player", "minCount": 1 },
+      { "name": "vfx-attack", "entity": "player", "minCount": 2 },
+      { "name": "vfx-hit", "entity": "player", "minCount": 1 },
+      { "name": "vfx-surge", "entity": "player", "minCount": 1, "atStep": "surge" },
       { "name": "ability-expired", "entity": "player", "minCount": 1, "atStep": "surge-expired" }
     ],
     "components": [
@@ -69,6 +72,12 @@
         "allowTrivial": "The action RPG scene begins with the visible enemy in frame; this held visibility row accompanies the combat assertions.",
         "entity": "enemy.visible",
         "minProjectedPixels": 1
+      }
+    ],
+    "visual": [
+      { "frameDiff": { "minChangedPixelRatio": 0.0001 } },
+      {
+        "region": { "x": 0, "y": 0, "width": 1280, "height": 720, "minNonblankPixelRatio": 0.0001 }
       }
     ]
   }

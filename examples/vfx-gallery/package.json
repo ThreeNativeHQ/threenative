@@ -1,0 +1,27 @@
+{
+  "name": "vfx-gallery",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/vfx-gallery-native.js",
+    "build:android": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target android --output dist/vfx-gallery-native.js",
+    "build:ios": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target ios --output dist/vfx-gallery-native.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/playtest": "workspace:*",
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  },
+  "optionalDependencies": {
+    "@threenative/runtime-native": "workspace:*"
+  }
+}

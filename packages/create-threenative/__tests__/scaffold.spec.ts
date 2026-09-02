@@ -211,14 +211,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // capability manifest and the reference generated from it gained the raw .uasset loader
   // entries (parseUAssetStaticMesh, UAssetLoader, the FRawMesh and FMeshDescription readers),
   // and those bytes are embedded in every scaffold.
-  "action-rpg": "da5a9bd14b0b51d6652334e999ca770cf5f4b6f036b9b94a9919805e0354ea3e",
+  // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
+  // source VFX and combat playtests, so only those two scaffold trees move.
+  "action-rpg": "a269d9529a414c6f06c747d59ff1fc4ae06f6a5ab8c379e4a721f486c7111c90",
   defense: "4fc8ff88638c462039ba18e682ce7b67341afa074874c1e931b45d66146302aa",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
   minimal: "67fee7bec043f9da1c54d683e9cc5f6c598d87da774ce556f1554539c415266b",
   platformer: "e434f030496f5b4238d53f258f467da08ccafbb9bf0a2769b2ccd9b511cffd6b",
   racing: "9b7a6d856abfea5074ca17a29b83c105868edf22a039f20de1e46618b13b2db7",
-  shooter: "208b9087addcf69fe2e8a4a45b426442922aae4a76aa279e22b9e4b24d3f57a6",
+  shooter: "063fdb18e95073517603b27c25f56b2e077dfdcda4b2bfed36305b76bb481e60",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
   starter: "bf63e92deb36a3efdfbb51e262e997f8a82f7457ec12d5382355462c199eca80",
