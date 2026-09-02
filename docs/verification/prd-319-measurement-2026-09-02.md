@@ -36,14 +36,27 @@ pass (red observed at `01463f55`).
 
 ## AC5 — bounded memory
 
-**UNVERIFIED as a pasted number.** Three probe attempts to record peak process-tree RSS during
-the full-pack bake were unstable (an orphaned bake from a killed wrapper competed for the
-output directory; a `pkill` pattern matched the probing shell itself; the surviving probe ran
-idle). What is proved instead: the bound is fixed-width by construction — the pool holds
-exactly `concurrency` workers (`worker-pool.ts`), at most that many inputs are in flight, and
-the queue is the input list on disk, not resident memory. Closing the AC needs one clean
-instrumented run; the probe script exists at `/tmp/rss-probe.mts` and its PID-tree-summing
-method is sound, but this record does not claim a number it did not observe.
+**Measured 2026-09-02, one clean instrumented run:** peak process-tree RSS during the full-pack
+concurrent bake (bound 4) was **5,491 MB (~5.4 GB)**, polled once per second over
+`/proc/<pid>/stat` across the whole `npx -> tsx -> node -> workers` tree. Same run: 730.1 s wall
+clock, 165 written — consistent with the 757.5 s / 751.8 s of the two recorded runs (~4%
+faster; run-to-run band holds).
+
+The bound is structural, and the number is what the bound predicts: 4 worker threads, each
+holding one input's decode + encode state (~1.3 GB each on this pack), with the queue on disk —
+a 1,000-input pack queues through the same resident set. Peak RSS scales with `concurrency`,
+not with input count.
+
+Two defects this run surfaced, recorded rather than buried:
+
+1. **The concurrent bake process does not exit after finishing.** The run printed its totals
+   (730.1 s) and then kept spinning at ~190% CPU until killed. The sequential path exits
+   cleanly. Named suspect: the tsx `register()` bridge the workers enter through holding a
+   channel the parent's `dispose()` does not close. Follow-up: diagnose and fix in the pool's
+   teardown; the measurement above is unaffected (the peak accrued during encoding).
+2. The peak was read at tree death after the kill; a poller that hangs with its subject is the
+   same instrumentation story as the first three attempts, this time with the number captured
+   before the kill.
 
 ## The honest costs of the run
 

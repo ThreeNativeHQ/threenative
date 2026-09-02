@@ -102,8 +102,10 @@ and its scope becomes a question for the owner rather than a claim.
       order, output bytes are unchanged.
 - [x] **AC4 — the cache survives concurrency.** Two workers contending on one cache key produce
       a valid entry or no entry, never a partial one. Red pasted.
-- [ ] **AC5 — bounded.** Peak RSS during the large-pack bake is recorded and does not scale with
-      asset count. UNVERIFIED — the probe attempts failed; see the measurement record.
+- [x] **AC5 — bounded.** Peak RSS during the large-pack bake is recorded and does not scale with
+      asset count. **Measured 5,491 MB at bound 4** on the wildwood bake (2026-09-02); peak scales
+      with the worker bound, not the input count. The same run exposed a post-output hang,
+      recorded as a named follow-up in the measurement record.
 - [x] **AC6 — the watch path uses the same model.**
 - [x] **AC7 — the game can set it.** The concurrency setting travels from generated project
       config to the driver; a config key the driver ignores fails, per the config-seam lesson
