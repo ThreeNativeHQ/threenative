@@ -69,7 +69,7 @@ climb-shot step tick=36
 Desktop manager receipt:
 
 ```text
-SDL_AUDIO_DRIVER=dummy sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js /tmp/prd325-camera-desktop-scenario.QP0lRb.playtest.json --target desktop --executable /home/joao/projects/threenative/prd325-desktop-proof-corrected --no-screenshots --timeout 60000
+SDL_AUDIO_DRIVER=dummy sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json --target desktop --executable /home/joao/projects/threenative/prd325-desktop-proof-corrected --no-screenshots --timeout 60000
 
 pass=true target=desktop runtime=native
 positionY 1.8985751867294312 -> 2.3630950450897217
