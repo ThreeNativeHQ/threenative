@@ -105,7 +105,7 @@ async function buildIndex(root: string): Promise<string> {
     }
   }
   lines.push("");
-  return `${lines.join("\n")}\n`;
+  return lines.join("\n");
 }
 
 async function main(): Promise<void> {
