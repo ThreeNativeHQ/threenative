@@ -431,3 +431,33 @@ The required repository gates were rerun after all four recovery groups were int
 The full template run included the convention-bearing platformer scenarios and all generated
 `AGENTS.md`/`CLAUDE.md` guidance. No visual baseline was changed; convention measurements remain
 independent when a correction is disabled.
+
+## Repair evidence — boot-error mutation control — 2026-09-02
+
+The generated-source look test now extracts the `[data-threenative-canvas-error="true"]` rule and
+checks its concrete full-screen, centered-layout, wrapping, background, and text-colour
+declarations in every current template. This keeps the visual proof template-owned while making an
+empty or missing rule fail independently of the nonblank-pixel scenario assertion.
+
+The required mutation emptied the starter rule body. The focused test went red:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts --reporter=dot
+FAIL, exit 1; 1 test failed, 11 passed. The failure was
+starter boot-error position: expected undefined to be 'fixed'.
+```
+
+After restoring the generated declaration block, the focused generated-source and scaffold suites
+went green:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts \
+  packages/create-threenative/__tests__/template.spec.ts \
+  packages/create-threenative/__tests__/scaffold.spec.ts --reporter=dot
+PASS, exit 0; 3 test files and 96 tests passed.
+```
+
+This repair does not change the visual score manifest. `pnpm visuals` remains unresolved for this
+PRD because it requires eight template scores and `docs/verification/visuals/scores.json` still has
+seven: `TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing sailing; stale none`. No human score or visual
+baseline was invented.

@@ -5,6 +5,17 @@ import { describe, expect, it } from "vitest";
 const starter = path.resolve("packages/create-threenative/templates/starter");
 const minimal = path.resolve("packages/create-threenative/templates/minimal");
 const platformer = path.resolve("packages/create-threenative/templates/platformer");
+const templatesRoot = path.resolve("packages/create-threenative/templates");
+const bootErrorSelector = '[data-threenative-canvas-error="true"]';
+const requiredBootErrorDeclarations = [
+  ["position", "fixed"],
+  ["inset", "0"],
+  ["z-index", "1000"],
+  ["display", "grid"],
+  ["place-items", "center"],
+  ["overflow-wrap", "anywhere"],
+] as const;
+const bootErrorColour = /^(?:#[\da-f]{6}|var\(--[\w-]+\))$/iu;
 
 describe("starter visual floor", () => {
   it("should provide readable dynamic-range defaults without framework imports", async () => {
@@ -189,6 +200,29 @@ describe("starter visual floor", () => {
     expect(css).toContain("@theme");
   });
 
+  it("should keep concrete boot-error defaults in every generated template", async () => {
+    const templates = (await readdir(templatesRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(templates.length).toBeGreaterThan(0);
+
+    for (const template of templates) {
+      const style = await readFile(path.join(templatesRoot, template, "src/style.css"), "utf8");
+      const rule = cssRule(style, bootErrorSelector);
+      expect(rule, `${template} boot-error rule`).toBeDefined();
+      for (const [property, value] of requiredBootErrorDeclarations) {
+        expect(cssDeclaration(rule, property), `${template} boot-error ${property}`).toBe(value);
+      }
+      expect(cssDeclaration(rule, "background"), `${template} boot-error background`).toMatch(
+        bootErrorColour,
+      );
+      expect(cssDeclaration(rule, "color"), `${template} boot-error color`).toMatch(
+        bootErrorColour,
+      );
+    }
+  });
+
   it("should host the canvas in a container rather than appending it to body", async () => {
     // An unpositioned canvas appended after a full-height wrapper renders
     // below the fold: a black page with nothing logged anywhere.
@@ -208,4 +242,17 @@ async function renderFiles(directory: string): Promise<string[]> {
     else files.push(file);
   }
   return files;
+}
+
+function cssRule(source: string, selector: string): string | undefined {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`${escapedSelector}\\s*\\{([^{}]*)\\}`, "u").exec(source)?.[1];
+}
+
+function cssDeclaration(rule: string | undefined, property: string): string | undefined {
+  if (rule === undefined) return undefined;
+  const escapedProperty = property.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`(?:^|;)\\s*${escapedProperty}\\s*:\\s*([^;]+?)(?:\\s*;|\\s*$)`, "mu")
+    .exec(rule)?.[1]
+    ?.trim();
 }

@@ -1,15 +1,18 @@
 # Batch — useful defaults: value a developer gets without asking for it
 
-**Status: OPEN — assembled 2026-08-30 against `c064b6a0`. PRD-289 through PRD-292 were recovered
-and archived on 2026-09-02; the other fifteen keep the status they arrived with.**
+**Status: OPEN — assembled 2026-08-30 against `c064b6a0`. PRD-289 remains PARTIAL because its
+visual score manifest is missing `sailing`; PRD-290 through PRD-292 were recovered and archived on
+2026-09-02. The other fifteen keep the status they arrived with.**
 
 Every PRD in this folder pays out to somebody who never read it. That is the whole admission test:
 a game that asks for nothing still ends up better because the work was done. A gate that keeps this
 repository honest is valuable and does not belong here. An instrument that measures a frame is
 valuable and does not belong here. **Value that arrives at a stranger's `pnpm dev` belongs here.**
 
-PRD-289 through PRD-292 were inventoried, recovered in one integration worktree, and archived;
-the procedure and run history remain in [RESUME-2026-09-01.md](./RESUME-2026-09-01.md).
+PRD-289 through PRD-292 were inventoried and recovered in one integration worktree. PRD-289 stays
+here as `PARTIAL` until the eight-template visual score manifest is complete; PRD-290 through
+PRD-292 remain archived. The procedure and run history remain in
+[RESUME-2026-09-01.md](./RESUME-2026-09-01.md).
 
 ## What earns a place in this folder
 
@@ -41,11 +44,11 @@ another lane.
 measured argument for rows 3 through 8 below and the owner ruling that unblocked PRD-266. Read it
 before touching the visual half.
 
-## The four new PRDs, and the tree fact behind each
+## The recovered PRDs, and the tree fact behind each
 
 | PRD | The fact it was filed on |
 | --- | --- |
-| [289 — the conventions the templates document also run in them](../done/PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | `GroundSnap`, `normaliseToMetres`, `attachToBone` and `AnimationPlayer` appear in **7 of 7** templates' `AGENTS.md` and **0 of 7** templates' `src/`. `CharacterBody3D`, which a template cannot run without, appears in 8 source files. **DONE — 2026-09-02.** |
+| [289 — the conventions the templates document also run in them](./PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | `GroundSnap`, `normaliseToMetres`, `attachToBone` and `AnimationPlayer` appear in **7 of 7** templates' `AGENTS.md` and **0 of 7** templates' `src/`. `CharacterBody3D`, which a template cannot run without, appears in 8 source files. **PARTIAL — AC4 remains open: the eight-template visual score manifest is missing `sailing`.** |
 | [290 — a game that fails to start says why, on the screen](../done/PRD-290-a-game-that-fails-to-start-says-why-on-the-screen.md) | `GameCanvas.tsx:38` catches a rejected boot and writes the message to the DOM. `style.css:58` puts the launch card over it at `z-index: 9999`, and `main.ts` only removes that card once a `<canvas>` appears — which a pre-renderer failure never produces. **DONE — 2026-09-02.** |
 | [291 — a template is playable with the input the device has](../done/PRD-291-a-template-is-playable-with-the-input-the-device-has.md) | One template ships 238 lines of touch controls and gates them on `isNative() && isMobile() && isTouchscreenAvailable()`, so no mobile **browser** ever sees them. The other six bind movement to keys only. **DONE — 2026-09-02.** |
 | [292 — a fast body does not pass through a wall](../done/PRD-292-a-fast-body-does-not-pass-through-a-wall.md) | `grep -rn 'ccd\|continuous' packages/physics/src/` returns nothing. A game cannot enable continuous collision on either backend without editing package code. **DONE — 2026-09-02.** |
@@ -66,7 +69,7 @@ flowchart TD
 
 | # | PRD | Status it arrived with | Why here |
 | --- | --- | --- | --- |
-| 1 | [289 — the conventions the templates document also run in them](../done/PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | DONE — 2026-09-02 | Cheapest row on the table and the widest promise gap. Nothing to build; the exports exist and are tested. |
+| 1 | [289 — the conventions the templates document also run in them](./PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | PARTIAL — visual score gap | Cheapest row on the table and the widest promise gap. Nothing to build; the exports exist and are tested. |
 | 2 | [290 — a game that fails to start says why](../done/PRD-290-a-game-that-fails-to-start-says-why-on-the-screen.md) | DONE — 2026-09-02 | An invisible boot failure poisons every other row's evidence: a stuck launch card and a working game look identical in a capture. |
 | 3 | [278 — every template ships the render chain, and says which stages ran](./PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) | SCOPING | The largest visual-default delta available, and charter-safe: it ships as generated source. Six templates, six integration problems. |
 | 4 | [266 — the render chain names the tier it actually ran](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | PROPOSED | Unblocked by the owner ruling recorded in the origin memo. The spine of rows 5 and 6. |
