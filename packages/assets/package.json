@@ -30,7 +30,8 @@
     "@types/three": "0.185.3",
     "publint": "0.3.22",
     "tsup": "8.5.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "ooz-wasm": "2.0.0"
   },
   "dependencies": {
     "@gltf-transform/core": "catalog:",
