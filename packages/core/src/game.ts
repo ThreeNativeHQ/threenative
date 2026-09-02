@@ -79,14 +79,13 @@ export interface IGamePluginRuntime {
   /** The frame's cost attribution so far, or undefined when the game turned the budget off. */
   readonly frameBudgetWindow?: () => IFrameBudgetWindow | undefined;
   /**
-   * Hold the frame loop until `gate` settles, after the start scene has entered.
+   * Hold start-scene entry until `gate` settles.
    *
-   * A plugin that blocks its own `setup` blocks it too early: entity-derived capabilities are
-   * registered by the scene, which runs after plugin setup, so a runner reading `describe()`
-   * during that hold sees a description missing them. Handing the gate here instead holds the
-   * loop at the last possible moment — everything is registered, nothing has stepped.
+   * The returned promise settles after `Scene.enter()` has run. A runner can therefore release
+   * the gate after applying pre-entry setup, then await the returned promise before describing
+   * entity-derived capabilities. The frame loop remains held throughout.
    */
-  readonly holdStart?: (gate: Promise<void>) => void;
+  readonly holdStart?: (gate: Promise<void>) => Promise<void>;
   readonly observations: IGameRuntimeObservations;
   readonly tick: () => number;
   readonly runtimeDiagnosticsSeries?: () => readonly IRenderPerformanceSample[];
@@ -1119,7 +1118,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     });
     loopState.current = gameLoop;
     this.#loop = gameLoop;
-    const startGates: Promise<void>[] = [];
+    const startGates: Array<{
+      readonly gate: Promise<void>;
+      readonly rejectEntered: (error: unknown) => void;
+      readonly resolveEntered: () => void;
+    }> = [];
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
       frameBudgetWindow: () => this.#frameBudget?.window(),
@@ -1127,7 +1130,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);
       },
-      holdStart: (gate) => startGates.push(gate),
+      holdStart: (gate) => {
+        let rejectEntered: (error: unknown) => void = () => undefined;
+        let resolveEntered: () => void = () => undefined;
+        const entered = new Promise<void>((resolve, reject) => {
+          rejectEntered = reject;
+          resolveEntered = resolve;
+        });
+        startGates.push({ gate, rejectEntered, resolveEntered });
+        return entered;
+      },
       observations: createRuntimeObservations(),
       tick: gameLoop.tick,
       random,
@@ -1180,10 +1192,29 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       this.#teardown(ctx);
       return;
     }
+    // Plugins that need to mutate scene-load placeholders hold here. Setup must land before
+    // Scene.enter() transfers those values into authoritative physics/gameplay state.
+    if (startGates.length > 0) {
+      try {
+        await Promise.all(startGates.map(({ gate }) => gate));
+      } catch (error) {
+        for (const startGate of startGates) startGate.rejectEntered(error);
+        this.#teardown(ctx);
+        throw error;
+      }
+      if (this.#aborted) {
+        const error = new Error("Game start was aborted before the start scene entered.");
+        for (const startGate of startGates) startGate.rejectEntered(error);
+        this.#teardown(ctx);
+        return;
+      }
+    }
     try {
       this.#enterScene(scene, ctx);
       timeline.enteredMs ??= now();
+      for (const startGate of startGates) startGate.resolveEntered();
     } catch (error) {
+      for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);
       throw error;
     }
@@ -1240,20 +1271,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               },
         )}`,
       );
-      if (this.#aborted) {
-        this.#teardown(ctx);
-        return;
-      }
-    }
-    // Plugins that must not let the game step before something external arrives wait here, with
-    // the scene entered and every capability registered, and with the loop still stopped.
-    if (startGates.length > 0) {
-      try {
-        await Promise.all(startGates);
-      } catch (error) {
-        this.#teardown(ctx);
-        throw error;
-      }
       if (this.#aborted) {
         this.#teardown(ctx);
         return;

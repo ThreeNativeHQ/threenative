@@ -524,6 +524,128 @@ function stubRenderer(canvas: HTMLCanvasElement) {
 }
 
 describe("playtest holdUntilAttached", () => {
+  it("applies runner setup before the real start scene enters", async () => {
+    const canvas = testCanvas();
+    const authoritativeBody = { position: [0, 1.6, 0] as [number, number, number] };
+    const events: string[] = [];
+    class SetupScene extends Scene {
+      override load(ctx: ICtx): void {
+        const placeholder = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        placeholder.position.set(0, 1.6, 0);
+        ctx.add(placeholder);
+        ctx.entities.add("player", placeholder);
+        events.push("load");
+      }
+
+      override enter(ctx: ICtx): void {
+        const placeholder = ctx.entities.get<Mesh>("player");
+        if (placeholder === undefined) throw new Error("Player placeholder was not registered.");
+        authoritativeBody.position = placeholder.position.toArray() as [number, number, number];
+        events.push("enter");
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(canvas),
+      scenes: { main: SetupScene },
+      start: "main",
+    });
+    const started = game.start();
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(events).toEqual(["load"]);
+      const installed = bridge();
+      if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
+      await installed.applySetup({
+        entities: [{ entity: "player", transform: { position: [7, 2.5, -3] } }],
+      });
+      const description = await installed.describe();
+      events.push("describe returned");
+      await started;
+
+      expect(authoritativeBody.position).toEqual([7, 2.5, -3]);
+      expect(events).toEqual(["load", "enter", "describe returned"]);
+      expect(description.capabilities).toContain("runtime.components");
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("holds a native endpoint run until its no-setup describe handshake", async () => {
+    const host = globalThis as Record<string, unknown>;
+    const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
+    host.TN_PLAYTEST_ENDPOINT = "native://test-mailbox";
+    const events: string[] = [];
+    class NativeScene extends Scene {
+      override load(): void {
+        events.push("load");
+      }
+
+      override enter(ctx: ICtx): void {
+        ctx.entities.add("native-player", {
+          health: 100,
+          mesh: new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()),
+        });
+        events.push("enter");
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { main: NativeScene },
+      start: "main",
+    });
+    const started = game.start();
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(events).toEqual(["load"]);
+      const description = await bridge().describe();
+      events.push("describe returned");
+      await started;
+
+      expect(events).toEqual(["load", "enter", "describe returned"]);
+      expect(description.capabilities).toContain("runtime.components");
+    } finally {
+      game.stop();
+      if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
+      else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
+  it("fails the held start immediately when setup application fails", async () => {
+    let entered = false;
+    class FailingSetupScene extends Scene {
+      override enter(): void {
+        entered = true;
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { main: FailingSetupScene },
+      start: "main",
+    });
+    const started = game.start();
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const installed = bridge();
+      if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
+      await expect(installed.applySetup({
+        entities: [{ entity: "missing", transform: { position: [1, 2, 3] } }],
+      })).rejects.toThrow(/missing/u);
+      await expect(started).rejects.toThrow(/missing/u);
+      expect(entered).toBe(false);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("does not start the loop until a runner calls describe", async () => {
     const canvas = testCanvas();
     let steps = 0;

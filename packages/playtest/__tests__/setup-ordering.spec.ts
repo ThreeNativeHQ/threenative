@@ -13,10 +13,8 @@ import { yawPitchToQuaternion } from "../src/scenario/orientation.js";
 import { connectPlaytestBridgeTransport, type IBridgeTransport } from "../src/runner/bridgeClient.js";
 
 test.each(["web", "desktop"] as const)(
-  "%s setup reaches the authoritative body before describe releases the scene transition",
+  "%s requests scenario setup before the bridge description handshake",
   async (target) => {
-    let sceneEntered = false;
-    const authoritativeBody = { position: [0, 1.6, 0] as [number, number, number] };
     let appliedSetup: IPlaytestSetupRequest | undefined;
     const calls: string[] = [];
     const description: IPlaytestBridgeDescription = {
@@ -47,21 +45,10 @@ test.each(["web", "desktop"] as const)(
       call: async <T>(method: string, argument?: unknown): Promise<T> => {
         calls.push(method);
         if (method === "applySetup") {
-          // The setup contract transfers this placeholder state into the authoritative body.
-          // Once the scene has entered, the live body is already authoritative and this fake
-          // deliberately ignores a late render-object-only mutation.
           appliedSetup = argument as IPlaytestSetupRequest;
-          if (!sceneEntered) {
-            const request = argument as IPlaytestSetupRequest;
-            const position = request.entities?.find(({ entity }) => entity === "player")?.transform.position;
-            if (position !== undefined) authoritativeBody.position = [...position];
-          }
           return undefined as T;
         }
-        if (method === "describe") {
-          sceneEntered = true;
-          return description as T;
-        }
+        if (method === "describe") return description as T;
         if (method === "ready") return { ready: true } satisfies IPlaytestBridgeReady as T;
         if (method === "sample") {
           return {
@@ -78,7 +65,6 @@ test.each(["web", "desktop"] as const)(
     const bridge = await connectPlaytestBridgeTransport(transport, scenario);
 
     expect(calls.slice(0, 2)).toEqual(["applySetup", "describe"]);
-    expect(authoritativeBody.position).toEqual([7, 2.5, -3]);
     expect(appliedSetup).toEqual({
       entities: [
         { entity: "crate", transform: { position: [1, 2, 3] } },
