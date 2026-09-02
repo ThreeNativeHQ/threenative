@@ -369,6 +369,7 @@ export async function sampleElementVisibility(
         names: Set<string>,
         methodName: "removeProperty" | "setProperty",
       ): void => {
+        // quality-allow: CSSStyleDeclaration is indexed by name here to patch it in the page.
         const styleRecord = style as unknown as Record<string, unknown>;
         const originalDescriptor = Object.getOwnPropertyDescriptor(style, methodName);
         const originalMethod = styleRecord[methodName];
@@ -462,6 +463,7 @@ export async function sampleElementVisibility(
         methodName: string,
         shouldTrack: (args: unknown[]) => boolean,
       ): void => {
+        // quality-allow: the element is indexed by method name to wrap it inside the page.
         const elementRecord = element as unknown as Record<string, unknown>;
         const originalDescriptor = Object.getOwnPropertyDescriptor(element, methodName);
         const originalMethod = elementRecord[methodName];
@@ -535,7 +537,9 @@ export async function sampleElementVisibility(
       for (const { element, properties } of hiddenElements) {
         const names = new Set(properties.map(({ name }) => name));
         const style = (element as HTMLElement).style;
+        // quality-allow: the original is stored and re-invoked positionally, not re-typed.
         const originalSetProperty = style.setProperty as unknown as (...args: unknown[]) => unknown;
+        // quality-allow: the original is stored and re-invoked positionally, not re-typed.
         const originalGetPropertyValue = style.getPropertyValue as unknown as (...args: unknown[]) => unknown;
         instrumentStyleMethod(style, names, "setProperty");
         instrumentStyleMethod(style, names, "removeProperty");
@@ -588,6 +592,7 @@ export async function sampleElementVisibility(
         for (const propertyName of domProperties) instrumentNodeProperty(domNode, propertyName);
       }
       mutationTracker.stop = stop;
+      // quality-allow: the isolation state is parked on the page's window under a private key.
       (window as unknown as Record<string, IVisibilityIsolationState>)[isolationKey] = {
         domSnapshot,
         elements: markedElements,
@@ -635,6 +640,7 @@ export async function sampleElementVisibility(
     screenshot = undefined;
   } finally {
     cleanupResult = await page.evaluate((key): IVisibilityIsolationCleanupResult => {
+      // quality-allow: reads the state parked on the page's window under a private key.
       const state = (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
       if (state === undefined) return { cleaned: false, isolationIntact: false };
       let isolationIntact = true;
@@ -737,6 +743,7 @@ export async function sampleElementVisibility(
         cleaned = false;
       }
       try {
+        // quality-allow: removes the state parked on the page's window under a private key.
         delete (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
       } catch {
         cleaned = false;

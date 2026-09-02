@@ -73,14 +73,10 @@ explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded
 randomness is deterministic only when `defineGame({ seed })` is configured.
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
-retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
-own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
-caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
-(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
-`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
-clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
-supposed to be touching.
+When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a retargeted clip against its source per bone in degrees — whole quaternions relative to each
+rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is caught where a bone-direction check reads zero. `clipTrackBindings` names
+tracks that bind nothing (the `<bone>.undefined` failure that plays the bind pose instead of the animation), `clipBoneCoverage` names bones the clip does not drive and which
+therefore keep the previous clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is supposed to be touching.
 
 ## Look and evidence
 
@@ -98,5 +94,4 @@ with no assertions or missing observations fails; keep the durable smoke proof a
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
 
-On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick,
-an attack button and an Arcane Surge button. Keyboard controls remain available on desktop.
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick, an attack button and an Arcane Surge button. Keyboard controls remain available on desktop.
