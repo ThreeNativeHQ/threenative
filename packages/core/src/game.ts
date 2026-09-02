@@ -81,8 +81,8 @@ export interface IGamePluginRuntime {
   /**
    * Hold start-scene entry until `gate` settles.
    *
-   * The returned promise settles after `Scene.enter()` has run. A runner can therefore release
-   * the gate after applying pre-entry setup, then await the returned promise before describing
+   * The returned promise settles after `Scene.enter()` has run. A runner can therefore release the
+   * gate after applying pre-entry setup, then await the returned promise before describing
    * entity-derived capabilities. The frame loop remains held throughout.
    */
   readonly holdStart?: (gate: Promise<void>) => Promise<void>;
@@ -408,6 +408,14 @@ function rendererPerformanceMetrics(raw: unknown): {
       ? { triangles }
       : {}),
   };
+}
+
+function resetRendererPerformanceMetrics(raw: unknown): void {
+  if (typeof raw !== "object" || raw === null) return;
+  const info = (raw as { info?: unknown }).info;
+  if (typeof info !== "object" || info === null) return;
+  const reset = (info as { reset?: unknown }).reset;
+  if (typeof reset === "function") reset.call(info);
 }
 
 function addRenderPerformanceMetrics(
@@ -975,6 +983,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
+        // The engine owns this requestAnimationFrame loop instead of delegating to Three's
+        // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
+        // a concurrent internal renderer callback can otherwise leave stale work in the first
+        // sample after a held playtest start.
+        resetRendererPerformanceMetrics(renderer.raw);
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
         // before the render, inside the same frame, so a change the game made this tick reaches
@@ -1175,15 +1188,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       return;
     }
     // Held: the loop renders every frame from here but steps nothing. On native the render loop
-    // is the only thing that can put pixels on the screen, so starting it after `load()` resolved
-    // meant a black screen for the entire asset load and a HUD's `!ready` branch was unreachable.
-    // Holding rather than simply starting keeps the determinism contract intact: no tick advances
-    // and no elapsed time is banked before the release below.
-    gameLoop.setHeld(true);
-    gameLoop.start();
-    timeline.loadStartedMs ??= now();
+    // is the only thing that can put pixels on the screen, so an async load starts it before the
+    // await; a synchronous load has already completed and starts it after the call. Holding rather
+    // than simply starting keeps the determinism contract intact: no tick advances and no elapsed
+    // time is banked before the release below.
+    const startHeldLoop = (): void => {
+      gameLoop.setHeld(true);
+      gameLoop.start();
+    };
     try {
-      await scene.load(ctx);
+      timeline.loadStartedMs ??= now();
+      const loaded = scene.load(ctx);
+      startHeldLoop();
+      if (loaded !== undefined) await loaded;
     } catch (error) {
       this.#teardown(ctx);
       throw error;
