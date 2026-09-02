@@ -16,12 +16,15 @@ import {
   type IPlaytestProtocolDiagnostic,
   type IPlaytestSampleRequest,
   type IPlaytestScenario,
+  type IPlaytestSetupApplication,
   type IPlaytestSetupRequest,
   requiredPlaytestCapabilities,
 } from "../index.js";
 import type { Page } from "playwright";
 
 import { HOST_PLAYTEST_OBSERVATION_FIELDS, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
+import { composeScenarioSetupRequest } from "./setup-request.js";
+import { requestedSetupRecords } from "./shared.js";
 
 const STANDALONE_OBSERVATION_FIELD_SET: readonly string[] = STANDALONE_PLAYTEST_OBSERVATION_FIELDS;
 const HOST_OBSERVATION_FIELD_SET: readonly string[] = HOST_PLAYTEST_OBSERVATION_FIELDS;
@@ -84,6 +87,8 @@ export interface IPlaytestBridgeClient {
   close(): Promise<void>;
   drainEvents(limit?: number): Promise<import("../protocol.js").JsonValue[]>;
   description: IPlaytestBridgeDescription;
+  /** Setup applied before the handshake released a held game, when the scenario declared setup. */
+  setupApplication?: IPlaytestSetupApplication;
   /** Re-reads the bridge's readiness, including startup progress when it reports any. */
   readiness(): Promise<IPlaytestBridgeReady>;
   sample(request: IPlaytestSampleRequest): Promise<IPlaytestObservationSnapshot>;
@@ -165,6 +170,9 @@ export async function connectPlaytestBridgeTransport(
       "Install an adapter before application startup and register the asserted entities.",
     ));
   }
+  const setupApplication = scenario.setup === undefined
+    ? undefined
+    : await applySetupBeforeDescribe(transport, scenario);
   const description = await transport.call<IPlaytestBridgeDescription>("describe");
   const unknown = unknownPlaytestCapabilities(description.capabilities);
   if (unknown.length > 0) {
@@ -228,6 +236,7 @@ export async function connectPlaytestBridgeTransport(
       return events;
     },
     description,
+    ...(setupApplication === undefined ? {} : { setupApplication }),
     readiness: () => transport.call<IPlaytestBridgeReady>("ready"),
     sample: async (request) => {
       assertBoundedPayload(request);
@@ -236,6 +245,33 @@ export async function connectPlaytestBridgeTransport(
       return snapshot;
     },
   };
+}
+
+async function applySetupBeforeDescribe(
+  transport: IBridgeTransport,
+  scenario: IPlaytestScenario,
+): Promise<IPlaytestSetupApplication> {
+  const requested = requestedSetupRecords(scenario);
+  try {
+    const request = await composeScenarioSetupRequest({
+      sample: async (sampleRequest) => {
+        assertBoundedPayload(sampleRequest);
+        const snapshot = await transport.call<IPlaytestObservationSnapshot>("sample", sampleRequest);
+        assertBoundedPayload(snapshot);
+        return snapshot;
+      },
+    }, scenario);
+    assertBoundedPayload(request);
+    await transport.call("applySetup", request);
+    return { applied: requested, requested };
+  } catch (error) {
+    if (error instanceof PlaytestBridgeError) throw error;
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_SETUP_UNAPPLIED",
+      `Scenario setup could not apply: ${error instanceof Error ? error.message : String(error)}`,
+      "Register every placed entity with the playtest bridge before the run, or correct the placement.",
+    ));
+  }
 }
 
 function unavailableObservation(

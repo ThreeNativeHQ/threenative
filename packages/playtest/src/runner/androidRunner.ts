@@ -11,6 +11,7 @@ import {
   type IPlaytestObservationSnapshot,
   type IPlaytestProtocolDiagnostic,
   type IPlaytestScenario,
+  type IPlaytestSetupApplication,
   type PlaytestVec3,
 } from "../index.js";
 import {
@@ -45,7 +46,6 @@ import {
   observedEntityIds,
   observedResourceIds,
   safePart,
-  setupRequest,
   targetLabel,
   throwIfAborted,
 } from "./shared.js";
@@ -181,6 +181,7 @@ async function runDevicePlaytestInternal(
     config.timeoutMs,
   );
   let bridge: IPlaytestBridgeClient | undefined;
+  let setupApplication: IPlaytestSetupApplication | undefined;
   let coverageRecordingStarted = false;
   let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
   const coverageVideoPath = join(config.artifactDirectory, "framebuffer-coverage.mp4");
@@ -212,7 +213,7 @@ async function runDevicePlaytestInternal(
       ), target.name);
     }
     await throwIfAborted(target);
-    if (scenario.setup !== undefined) await bridge.applySetup(setupRequest(scenario));
+    setupApplication = bridge.setupApplication;
     await throwIfAborted(target);
     if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
     await throwIfAborted(target);
@@ -433,7 +434,7 @@ async function runDevicePlaytestInternal(
       undefined,
       undefined,
       movementSamples,
-      undefined,
+      setupApplication,
       metrics?.observation(),
     );
     // Same artifacts as the browser target: a diagnostic that names console.json must find it

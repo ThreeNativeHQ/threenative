@@ -34,6 +34,7 @@ export function playtest<
 >(options: IPlaytestOptions = {}): IGamePluginHooks<TState, TPhysics> {
   let dispose: (() => void) | undefined;
   let attached: Promise<void> | undefined;
+  let startSceneEntered: Promise<void> | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
   return {
     setup: async (ctx, runtime) => {
@@ -97,25 +98,30 @@ export function playtest<
       if ((globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true)
         runtime?.enableRuntimeDiagnostics?.();
       dispose = installation.dispose;
-      attached = holdUntilAttached(installation.bridge, options);
+      attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
         dispose?.();
         dispose = undefined;
         attached = undefined;
+        startSceneEntered = undefined;
         contactHistory = [];
       };
-      // Hand the hold to the game rather than blocking this plugin's setup. Blocking here stops
-      // the sequence before the start scene enters, so entity-derived capabilities are not yet
-      // registered and a runner reading describe() during the hold sees a description missing
-      // them -- observed as TN_PLAYTEST_CAPABILITY_MISSING. runtime.holdStart waits at the last
-      // point before the loop moves, with everything registered.
+      // Hand the hold to the game rather than blocking this plugin's setup. The game waits after
+      // load() has registered setup placeholders but before enter() transfers them into live state.
+      // describe() releases a no-setup run and waits for the returned scene-enter signal before it
+      // reads entity-derived capabilities.
       if (attached !== undefined) {
         const gate = attached.catch((error: unknown) => {
           cleanup();
           throw error;
         });
         if (runtime?.holdStart === undefined) await gate;
-        else runtime.holdStart(gate);
+        else {
+          startSceneEntered = runtime.holdStart(gate);
+          // describe() awaits the same promise when called. Attach a rejection handler now so a
+          // setup failure cannot become an unhandled rejection when the runner stops at applySetup.
+          void startSceneEntered.catch(() => undefined);
+        }
       }
       return cleanup;
     },
@@ -141,23 +147,26 @@ export const PLAYTEST_ATTACH_TIMEOUT_MS = 30_000;
 export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EXPECTED__";
 
 /**
- * Hold when told to, and by default whenever a runner announced itself.
+ * Hold when told to, and by default whenever a browser or native runner announced itself.
  *
  * Without it a scenario races the boot, and how much simulation elapses before the first
  * observation depends on how fast the machine renders — measured on action-rpg's combat
  * scenario, player health 90 on SwiftShader and 95 on a real GPU from the same build. Keyed off
  * the runner rather than off the plugin being installed, because every template installs
  * `playtest()` unconditionally and a game that holds for a runner who never arrives is broken
- * for whoever ran `pnpm dev`.
+ * for whoever ran `pnpm dev`. Browser runners set the expected global before navigation; native
+ * hosts expose `TN_PLAYTEST_ENDPOINT` when a device/desktop transport is attached.
  */
 function shouldHoldUntilAttached(options: IPlaytestOptions): boolean {
   if (options.holdUntilAttached !== undefined) return options.holdUntilAttached;
-  return (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
+  const host = globalThis as Record<string, unknown>;
+  return host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true || host.TN_PLAYTEST_ENDPOINT !== undefined;
 }
 
 function holdUntilAttached(
   bridge: IPlaytestBridgeV1,
   options: IPlaytestOptions,
+  startSceneEntered: () => Promise<void> | undefined,
 ): Promise<void> | undefined {
   if (!shouldHoldUntilAttached(options)) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
@@ -165,19 +174,45 @@ function holdUntilAttached(
     throw new Error(`TN_PLAYTEST_ATTACH_TIMEOUT_INVALID: ${String(options.attachTimeoutMs)}`);
   }
   const describe = bridge.describe;
+  const applySetup = bridge.applySetup;
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
     const timer = setTimeout(() => {
+      settled = true;
       reject(
         new Error(
-          `TN_PLAYTEST_ATTACH_TIMEOUT: no playtest runner called describe() within ${timeoutMs}ms.`,
+          `TN_PLAYTEST_ATTACH_TIMEOUT: no playtest runner applied setup or called describe() within ${timeoutMs}ms.`,
         ),
       );
     }, timeoutMs);
     // Node keeps the process alive for a pending timer; a held game must not outlive its host.
     (timer as unknown as { unref?: () => void }).unref?.();
-    bridge.describe = () => {
+    const release = () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       resolve();
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    if (applySetup !== undefined) {
+      bridge.applySetup = async (request) => {
+        try {
+          await applySetup(request);
+          release();
+        } catch (error) {
+          fail(error);
+          throw error;
+        }
+      };
+    }
+    bridge.describe = async () => {
+      release();
+      await startSceneEntered();
       return describe();
     };
   });
@@ -186,7 +221,7 @@ function holdUntilAttached(
 export interface IPlaytestOptions {
   readonly events?: () => JsonValue[];
   /**
-   * Hold the frame loop until a runner attaches. Default false.
+   * Hold start-scene entry until a runner attaches. Defaults on for an announced runner.
    */
   readonly holdUntilAttached?: boolean;
   /** Milliseconds to wait when `holdUntilAttached` is set. Default {@link PLAYTEST_ATTACH_TIMEOUT_MS}. */

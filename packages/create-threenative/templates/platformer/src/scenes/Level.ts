@@ -8,7 +8,7 @@ import {
 } from "@threenative/core";
 import { CollisionShape3D, RigidBody3D } from "@threenative/physics";
 import type { IPhysicsContext } from "@threenative/physics";
-import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
+import { BoxGeometry, Group, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { Character, PLATFORMER_FEEL } from "../entities/Character.js";
 import { Chaser } from "../entities/Chaser.js";
 import { Patrol } from "../entities/Patrol.js";
@@ -27,6 +27,8 @@ import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, TERMINAL, type TerminalState } from "../state.js";
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 const SPAWN = new Vector3(0, 0.75, 0);
+const PATROL_FROM = new Vector3(5.2, 0.66, 0);
+const PATROL_TO = new Vector3(7.4, 0.66, 0);
 const KILL_PLANE = -8;
 const GOAL_X = 21.5;
 export class Level extends Scene<GameState, IPhysicsContext> {
@@ -47,6 +49,16 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     terminal: TERMINAL.playing,
     topSpeed: 0,
   };
+
+  override load(ctx: GameCtx): void {
+    // A runner applies setup after load() but before enter(). Keep a transform-bearing placeholder
+    // for the patrol so a setup can position/freeze it before Patrol creates its authoritative
+    // trigger in enter(). The placeholder is never rendered or stepped.
+    const patrol = new Group();
+    patrol.position.copy(PATROL_FROM);
+    ctx.entities.add("patrol", patrol);
+  }
+
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
@@ -127,17 +139,29 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     addPickup(new Vector3(3.2, 1.05, 0));
     addPickup(new Vector3(4.4, 1.05, 0));
     for (const point of coinArc(new Vector3(11, 1.05, 0), 4, 3.6, 1.4)) addPickup(point);
+    const patrolSetup = ctx.entities.get<Group>("patrol");
+    const patrolPosition = patrolSetup?.position.clone() ?? PATROL_FROM.clone();
+    const patrolQuaternion = patrolSetup?.quaternion.clone();
+    const patrolScale = patrolSetup?.scale.clone();
+    const patrolUserData = patrolSetup === undefined ? undefined : { ...patrolSetup.userData };
+    if (patrolSetup !== undefined) ctx.entities.remove("patrol");
     const patrol = new Patrol(
       ctx,
       character,
-      new Vector3(5.2, 0.66, 0),
-      new Vector3(7.4, 0.66, 0),
+      PATROL_FROM,
+      PATROL_TO,
       () => {
         defeated += 1;
       },
       (fromX) => checkpoints.hurt(character, fromX),
       PLATFORMER_FEEL,
     );
+    patrol.mesh.position.copy(patrolPosition);
+    if (patrolQuaternion !== undefined) patrol.mesh.quaternion.copy(patrolQuaternion);
+    if (patrolScale !== undefined) patrol.mesh.scale.copy(patrolScale);
+    if (patrolUserData !== undefined) Object.assign(patrol.mesh.userData, patrolUserData);
+    patrol.mesh.updateMatrix();
+    patrol.area.setPosition(patrol.mesh.position);
     ctx.entities.add("patrol", patrol);
     const chaser = new Chaser(ctx, new Vector3(7.5, 0.66, 0));
     const avoidanceChaser = new Chaser(ctx, new Vector3(8.2, 0.66, 0.7));

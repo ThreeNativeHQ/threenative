@@ -10,6 +10,7 @@ import {
   PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestBridgeV1,
   type IPlaytestSampleRequest,
+  type IPlaytestSetupRequest,
 } from "../src/index.js";
 import type { IAndroidDriver } from "../src/runner/android.js";
 import { AdbAndroidDriver, androidTouchBatches } from "../src/runner/android.js";
@@ -95,6 +96,47 @@ test("the existing device-smoke scenario reaches its visibility assertion on And
   expect(result.target).toBe("android");
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "visibility.cube", pass: true }));
   expect(exitCodeForReport(result)).toBe(0);
+});
+
+test("the native lane composes setup overrides and reports the applied receipt", async () => {
+  const moving = movingBridge({ height: 1.6, setup: true });
+  const setup = {
+    aim: { pitch: -Math.PI / 6, yaw: Math.PI / 2 },
+    place: [
+      { at: { x: 1, y: 2, z: 3 }, entity: "sentry", frozen: true, lookAt: { x: 1, y: 2, z: 0 } },
+      { at: { x: -2, y: 4, z: 1 }, entity: "beacon", facing: { yaw: Math.PI / 2 } },
+    ],
+    spawn: { x: 3, z: -4 },
+  };
+
+  const result = await runDevice(
+    { diagnostics: deviceDiagnosticsOptOut },
+    new FakeAndroidDriver(moving.bridge),
+    1_000,
+    [{ waitTicks: 1 }],
+    "player",
+    false,
+    setup,
+  );
+
+  expect(moving.setupRequests).toEqual([{
+    entities: [
+      { entity: "player", transform: { position: [3, 1.6, -4] } },
+      { entity: "player", transform: { rotation: [-0.18301270189221933, 0.6830127018922193, 0.1830127018922193, 0.6830127018922194] } },
+      { entity: "sentry", frozen: true, transform: { position: [1, 2, 3], rotation: [0, 0, 0, 1] } },
+      { entity: "beacon", transform: { position: [-2, 4, 1], rotation: [0, Math.sin(Math.PI / 4), 0, Math.cos(Math.PI / 4)] } },
+    ],
+  }]);
+  const expectedSetupRecords = [
+    { entity: "player", kind: "spawn" as const, value: { x: 3, z: -4 } },
+    { entity: "player", kind: "aim" as const, value: { pitch: -Math.PI / 6, yaw: Math.PI / 2 } },
+    { entity: "sentry", kind: "place" as const, value: { at: { x: 1, y: 2, z: 3 }, frozen: true, lookAt: { x: 1, y: 2, z: 0 } } },
+    { entity: "beacon", kind: "place" as const, value: { at: { x: -2, y: 4, z: 1 }, facing: { yaw: Math.PI / 2 } } },
+  ];
+  expect(result.setup).toEqual({
+    applied: expectedSetupRecords,
+    requested: expectedSetupRecords,
+  });
 });
 
 test("native screenshot evidence fails closed when the driver does not produce a frame", async () => {
@@ -573,6 +615,7 @@ async function runDevice(
   steps: unknown[] = [{ holdFrames: 3, press: "KeyW", release: true }],
   subject: string | null = "player",
   screenshots: "after" | false = false,
+  setup?: unknown,
 ) {
   const projectPath = await makeTempDir("playtest-device-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
@@ -582,6 +625,7 @@ async function runDevice(
     schemaVersion: 1,
     steps,
     ...(subject === null ? {} : { subject }),
+    ...(setup === undefined ? {} : { setup }),
     target: "web",
     viewport: { height: 360, width: 640 },
     warmupFrames: 0,
@@ -647,9 +691,10 @@ const deviceDiagnosticsOptOut = {
   networkErrorsOptOutReason: "The Android transport has no network observer in this scenario.",
 };
 
-function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: string } = {}): {
+function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: string; height?: number; setup?: boolean } = {}): {
   bridge: IPlaytestBridgeV1;
   sampleRequests: IPlaytestSampleRequest[];
+  setupRequests: IPlaytestSetupRequest[];
   setHeld(value: boolean): void;
   tick(): number;
 } {
@@ -657,6 +702,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
   let tick = 0;
   let x = 0;
   const sampleRequests: IPlaytestSampleRequest[] = [];
+  const setupRequests: IPlaytestSetupRequest[] = [];
   return {
     bridge: {
       advance: async (ticks) => {
@@ -666,11 +712,20 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
         return { clock: { mode: "fixed-step", tick }, ticks };
       },
       describe: () => ({
-        capabilities: ["entity.bounds", "entity.observe", "runtime.fixedStep", "runtime.diagnostics"],
+        capabilities: [
+          "entity.bounds",
+          "entity.observe",
+          ...(options.setup === true ? ["entity.setup"] : []),
+          "runtime.fixedStep",
+          "runtime.diagnostics",
+        ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
         name: "device-test",
         protocolVersion: PLAYTEST_PROTOCOL_VERSION,
       }),
+      ...(options.setup === true
+        ? { applySetup: async (request: IPlaytestSetupRequest) => { setupRequests.push(request); } }
+        : {}),
       ready: () => ({ ready: true }),
       sample: (request) => {
         sampleRequests.push(request);
@@ -678,7 +733,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
           clock: { mode: "fixed-step", tick },
           diagnostics: [],
           entities: [
-            { id: options.entity ?? "player", transform: { position: [x, 0, 0] }, visible: true },
+            { id: options.entity ?? "player", transform: { position: [x, options.height ?? 0, 0] }, visible: true },
             { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },
           ],
           resources: {},
@@ -686,6 +741,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
       },
     },
     sampleRequests,
+    setupRequests,
     setHeld: (value) => { held = value; },
     tick: () => tick,
   };

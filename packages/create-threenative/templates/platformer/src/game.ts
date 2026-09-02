@@ -24,7 +24,9 @@ const game = defineGame<GameState, IPhysicsContext>({
   display: config.display,
   render: config.renderer,
   scenes: { boot: Boot, level: Level },
-  start: "boot",
+  // Start at the playable scene so runner setup can reach Level.load() before Level.enter().
+  // Boot remains available as a simple transition scene for callers that want one explicitly.
+  start: "level",
 });
 
 export default game;

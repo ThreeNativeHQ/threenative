@@ -5,6 +5,9 @@
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 10,
   "subject": "player",
+  "setup": {
+    "place": [{ "entity": "patrol", "at": { "x": 6.5, "y": 0.66, "z": 0 }, "frozen": true }]
+  },
   "steps": [
     { "kind": "input", "press": "ArrowRight", "holdTicks": 45, "release": true },
     { "kind": "wait", "waitTicks": 80, "release": true },

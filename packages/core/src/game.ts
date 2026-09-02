@@ -16,8 +16,10 @@ import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
+  type IAfterPhysicsPhase,
   type IRenderPerformanceMetrics,
   type IRenderPerformanceSample,
+  createAfterPhysicsPhase,
 } from "./loop.js";
 import { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
@@ -77,14 +79,13 @@ export interface IGamePluginRuntime {
   /** The frame's cost attribution so far, or undefined when the game turned the budget off. */
   readonly frameBudgetWindow?: () => IFrameBudgetWindow | undefined;
   /**
-   * Hold the frame loop until `gate` settles, after the start scene has entered.
+   * Hold start-scene entry until `gate` settles.
    *
-   * A plugin that blocks its own `setup` blocks it too early: entity-derived capabilities are
-   * registered by the scene, which runs after plugin setup, so a runner reading `describe()`
-   * during that hold sees a description missing them. Handing the gate here instead holds the
-   * loop at the last possible moment — everything is registered, nothing has stepped.
+   * The returned promise settles after `Scene.enter()` has run. A runner can therefore release the
+   * gate after applying pre-entry setup, then await the returned promise before describing
+   * entity-derived capabilities. The frame loop remains held throughout.
    */
-  readonly holdStart?: (gate: Promise<void>) => void;
+  readonly holdStart?: (gate: Promise<void>) => Promise<void>;
   readonly observations: IGameRuntimeObservations;
   readonly tick: () => number;
   readonly runtimeDiagnosticsSeries?: () => readonly IRenderPerformanceSample[];
@@ -409,6 +410,14 @@ function rendererPerformanceMetrics(raw: unknown): {
   };
 }
 
+function resetRendererPerformanceMetrics(raw: unknown): void {
+  if (typeof raw !== "object" || raw === null) return;
+  const info = (raw as { info?: unknown }).info;
+  if (typeof info !== "object" || info === null) return;
+  const reset = (info as { reset?: unknown }).reset;
+  if (typeof reset === "function") reset.call(info);
+}
+
 function addRenderPerformanceMetrics(
   world: IRenderPerformanceMetrics,
   overlay: IRenderPerformanceMetrics,
@@ -459,6 +468,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #picker: ScenePicker | undefined;
   #pointerEvents: PointerEvents3D | undefined;
   #scheduler: Scheduler | undefined;
+  #afterPhysicsPhase: IAfterPhysicsPhase | undefined;
   #frameBudget: FrameBudget | undefined;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
@@ -579,6 +589,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
     this.#hasDepthCoupledOutput = false;
     this.#sceneFrame = undefined;
+    this.#afterPhysicsPhase?.clear();
     this.#scene?.exit(ctx);
     this.#pointerEvents?.clear();
     this.#sceneEntered = false;
@@ -736,6 +747,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const entities = new Registry();
     const random = createRandom(this.#config.seed);
     const scheduler = new Scheduler();
+    const afterPhysicsPhase = createAfterPhysicsPhase();
     const input = this.#input;
     const picker = new ScenePicker({
       camera,
@@ -851,6 +863,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       assets,
       after: (delay, callback) => scheduler.after(delay, callback),
+      afterPhysics: (callback) => afterPhysicsPhase.register(callback),
       camera,
       canvasLayer,
       entities,
@@ -908,6 +921,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#entities = entities;
     this.#random = random;
     this.#scheduler = scheduler;
+    this.#afterPhysicsPhase = afterPhysicsPhase;
     const devToolsHost =
       platform === undefined
         ? typeof window === "undefined"
@@ -969,6 +983,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
+        // The engine owns this requestAnimationFrame loop instead of delegating to Three's
+        // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
+        // a concurrent internal renderer callback can otherwise leave stale work in the first
+        // sample after a held playtest start.
+        resetRendererPerformanceMetrics(renderer.raw);
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
         // before the render, inside the same frame, so a change the game made this tick reaches
@@ -1080,6 +1099,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         return this.#renderMetricsEnabled ? worldMetrics : undefined;
       },
+      onAfterPhysics: (dt) => {
+        if (this.#paused) return;
+        afterPhysicsPhase.run(dt);
+      },
       onUpdate: (dt) => {
         if (this.#paused) return;
         this.#input?.tick();
@@ -1108,7 +1131,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     });
     loopState.current = gameLoop;
     this.#loop = gameLoop;
-    const startGates: Promise<void>[] = [];
+    const startGates: Array<{
+      readonly gate: Promise<void>;
+      readonly rejectEntered: (error: unknown) => void;
+      readonly resolveEntered: () => void;
+    }> = [];
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
       frameBudgetWindow: () => this.#frameBudget?.window(),
@@ -1116,7 +1143,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);
       },
-      holdStart: (gate) => startGates.push(gate),
+      holdStart: (gate) => {
+        let rejectEntered: (error: unknown) => void = () => undefined;
+        let resolveEntered: () => void = () => undefined;
+        const entered = new Promise<void>((resolve, reject) => {
+          rejectEntered = reject;
+          resolveEntered = resolve;
+        });
+        startGates.push({ gate, rejectEntered, resolveEntered });
+        return entered;
+      },
       observations: createRuntimeObservations(),
       tick: gameLoop.tick,
       random,
@@ -1152,15 +1188,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       return;
     }
     // Held: the loop renders every frame from here but steps nothing. On native the render loop
-    // is the only thing that can put pixels on the screen, so starting it after `load()` resolved
-    // meant a black screen for the entire asset load and a HUD's `!ready` branch was unreachable.
-    // Holding rather than simply starting keeps the determinism contract intact: no tick advances
-    // and no elapsed time is banked before the release below.
-    gameLoop.setHeld(true);
-    gameLoop.start();
-    timeline.loadStartedMs ??= now();
+    // is the only thing that can put pixels on the screen, so an async load starts it before the
+    // await; a synchronous load has already completed and starts it after the call. Holding rather
+    // than simply starting keeps the determinism contract intact: no tick advances and no elapsed
+    // time is banked before the release below.
+    const startHeldLoop = (): void => {
+      gameLoop.setHeld(true);
+      gameLoop.start();
+    };
     try {
-      await scene.load(ctx);
+      timeline.loadStartedMs ??= now();
+      const loaded = scene.load(ctx);
+      startHeldLoop();
+      if (loaded !== undefined) await loaded;
     } catch (error) {
       this.#teardown(ctx);
       throw error;
@@ -1169,10 +1209,29 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       this.#teardown(ctx);
       return;
     }
+    // Plugins that need to mutate scene-load placeholders hold here. Setup must land before
+    // Scene.enter() transfers those values into authoritative physics/gameplay state.
+    if (startGates.length > 0) {
+      try {
+        await Promise.all(startGates.map(({ gate }) => gate));
+      } catch (error) {
+        for (const startGate of startGates) startGate.rejectEntered(error);
+        this.#teardown(ctx);
+        throw error;
+      }
+      if (this.#aborted) {
+        const error = new Error("Game start was aborted before the start scene entered.");
+        for (const startGate of startGates) startGate.rejectEntered(error);
+        this.#teardown(ctx);
+        return;
+      }
+    }
     try {
       this.#enterScene(scene, ctx);
       timeline.enteredMs ??= now();
+      for (const startGate of startGates) startGate.resolveEntered();
     } catch (error) {
+      for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);
       throw error;
     }
@@ -1234,20 +1293,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         return;
       }
     }
-    // Plugins that must not let the game step before something external arrives wait here, with
-    // the scene entered and every capability registered, and with the loop still stopped.
-    if (startGates.length > 0) {
-      try {
-        await Promise.all(startGates);
-      } catch (error) {
-        this.#teardown(ctx);
-        throw error;
-      }
-      if (this.#aborted) {
-        this.#teardown(ctx);
-        return;
-      }
-    }
     this.#started = true;
     // Every gate has resolved and the scene has entered, so the simulation may move. The first
     // tick after this reads a single frame's dt, not one spanning the load.
@@ -1285,6 +1330,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#uiBridge?.close();
     this.#uiBridge = undefined;
     this.#loop?.stop();
+    this.#afterPhysicsPhase?.clear();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
     this.#sceneFrame = undefined;
     this.#sceneEntered = false;
@@ -1331,6 +1377,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#picker?.dispose();
     this.#picker = undefined;
     this.#scheduler = undefined;
+    this.#afterPhysicsPhase = undefined;
     this.#disposedPlugins.clear();
     this.#paused = false;
     this.#started = false;

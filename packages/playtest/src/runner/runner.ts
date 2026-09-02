@@ -1,4 +1,4 @@
-import { applyScenarioSetup, waitFrames, captureVisualSurface, runStep, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { waitFrames, captureVisualSurface, runStep, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
@@ -331,7 +331,7 @@ async function runStandalonePlaytestInternal(
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
-    let setupApplication: IPlaytestSetupApplication | undefined;
+    const setupApplication = bridge?.setupApplication;
     if (scenario.setup !== undefined) {
       // The capability handshake already failed the run when the page has no bridge but
       // setup requires one; this guard keeps that promise explicit instead of relying on
@@ -343,9 +343,6 @@ async function runStandalonePlaytestInternal(
           "Install the playtest bridge before application startup.",
         ));
       }
-      // A placement that cannot apply throws a named diagnostic; requested vs applied
-      // rides into the report either way.
-      setupApplication = await applyScenarioSetup(bridge, scenario);
     }
     await waitFrames(page, scenario.warmupFrames);
     // `warmupFrames` is a fixed count, so whether it covers the application's launch depends on

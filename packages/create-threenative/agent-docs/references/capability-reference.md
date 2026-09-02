@@ -192,6 +192,21 @@ const watcher = watchAssets({ cwd: process.cwd() });
 
 ## `@threenative/core`
 
+### `afterPhysics`
+
+`function` — Register work that reads a body or camera after physics has moved it and before this frame draws. The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
+
+```ts
+export function afterPhysics( context: IAfterPhysicsContext, callback: AfterPhysicsCallback, ): () => void { … }
+```
+
+- **Use when:** read a body after physics has moved it · place a camera or aim from the solved character transform
+- **Constraints:** register from a scene context; callbacks are cleared when that scene exits
+
+```ts
+afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));
+```
+
 ### `AnimationPlayer`
 
 `class` — Play a skinned or sprite animation from game code. A travelling clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it.
@@ -1723,6 +1738,21 @@ export class Area3D { … }
 
 ```ts
 const area = new Area3D({ context, shape });
+```
+
+### `buildStaticColliders`
+
+`function` — Build fixed trimesh bodies from the meshes a game authored in a scene root.
+
+```ts
+export function buildStaticColliders( context: IStaticColliderContext, root: Object3D, filter?: StaticColliderFilter, ): readonly RigidBody3D[] { … }
+```
+
+- **Use when:** make the level I built stop the player · turn a cathedral or map scene into static collision
+- **Constraints:** supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing · generated bodies use trimesh geometry and world-space instance transforms
+
+```ts
+const colliders = buildStaticColliders(ctx, level, { predicate: (object) => object.name.startsWith("wall") });
 ```
 
 ### `Buoyancy3D`

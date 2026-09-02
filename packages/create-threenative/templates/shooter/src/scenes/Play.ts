@@ -6,9 +6,15 @@ import {
   Scene,
   type SceneFrame,
   SpriteAnimator3D,
+  afterPhysics,
   isMobile,
 } from "@threenative/core";
-import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
+import {
+  CollisionShape3D,
+  type IPhysicsContext,
+  RigidBody3D,
+  buildStaticColliders,
+} from "@threenative/physics";
 import { Mesh, MeshBasicMaterial, type PerspectiveCamera, Quaternion, Vector3 } from "three";
 import { applyDirectDamage, applyRadiusDamage } from "../combat/damage.js";
 import { Pickup } from "../entities/Pickup.js";
@@ -132,17 +138,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     const arena = createArena(materials);
     ctx.add(arena.group);
-    const arenaBody = (object: Mesh, shape: CollisionShape3D): RigidBody3D =>
-      new RigidBody3D({
-        collisionLayer: WORLD_LAYER,
-        collisionMask: PLAYER_LAYER | HOSTILE_LAYER | FRIENDLY_LAYER,
-        object,
-        physics: ctx.physics,
-        shape,
-        type: "fixed",
-      });
-    arenaBody(arena.floor, CollisionShape3D.box(22, 0.4, 20));
-    for (const wall of arena.walls) arenaBody(wall, CollisionShape3D.fromMesh(wall));
+    buildStaticColliders(ctx, arena.group, {
+      collisionLayer: WORLD_LAYER,
+      collisionMask: PLAYER_LAYER | HOSTILE_LAYER | FRIENDLY_LAYER,
+      predicate: (object) => object.name === "arena-floor" || object.name.startsWith("arena-wall-"),
+    });
 
     const playerRef: { value?: Player } = {};
     const getPlayer = (): Player => {
@@ -379,6 +379,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     waveDirector.start(spawnWave);
     rig.snap(player.mesh.position);
+    afterPhysics(ctx, (dt) => rig.follow(player.mesh.position, dt, lookState.yaw));
 
     const resolveHitscanImpact = (
       hit: NonNullable<ReturnType<typeof hitscan.fire>>,
@@ -623,7 +624,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       removeDeadTargets();
       updateWaves(frameCtx);
       syncStateAndHud(frameCtx);
-      rig.follow(player.mesh.position, dt, lookState.yaw);
       for (const billboard of billboards) billboard.update();
       syncNameplateFacingCamera(frameCtx);
     };
