@@ -4,12 +4,14 @@ prd_contract: v1
 
 # PRD-295 — A Fab listing becomes runtime-ready ThreeNative GLBs in one agent flow
 
-**Status: IMPLEMENTED 2026-08-31, two gates not green.** Evidence:
-`docs/verification/PRD-295.md`. Shipped as `threenative-asset-mcp` 0.6.0 (published) and pinned in
-`packages/core`. Not archived to `done/` because `pnpm lint` is red in ~20 files this change does
-not touch (pre-existing `noExcessiveCognitiveComplexity`), and `pnpm test` was not run whole — this
-shared checkout carries another lane's uncommitted work in `template-runtime-cost.spec.ts`. The
-three suites this change affects pass.
+**Status: IMPLEMENTED, gates re-run green 2026-09-02.** Evidence:
+`docs/verification/PRD-295.md` (run of 2026-08-30/31) plus the 2026-09-02 re-run appended there.
+Shipped as `threenative-asset-mcp` 0.6.0 (published) and pinned in `packages/core`. The two gates
+the 2026-08-31 status named as red have been re-run whole on a clean tree: `pnpm lint` exits 0
+(513 warnings, 0 errors — the ~20 `noExcessiveCognitiveComplexity` diagnostics are warnings, not
+errors), and `pnpm test` runs whole with exit 0 (335 files, 3369 passed, 1 skipped). The
+`template-runtime-cost.spec.ts` condition expired with that lane's commit; the file is committed
+and the suite collects it green. Archived to `done/` by PRD-320 Phase 0.
 
 Two owner decisions overrode the plan below and are recorded in the verification file: the external
 executables **do** auto-install (`THREENATIVE_TOOLCHAIN_AUTOINSTALL=0` opts out), and a licence gate
@@ -366,27 +368,27 @@ after Phases 2, 3, and 5.
 
 ## 6. Acceptance criteria
 
-- [ ] From a freshly scaffolded game, an agent given only the Open World Demo Collection Fab URL
+- [x] From a freshly scaffolded game, an agent given only the Open World Demo Collection Fab URL
       invokes `fab_import_asset` and receives relative source GLB paths under that game's
       `assets/fab/` without manual file choreography.
-- [ ] The flow uses the user's already-authenticated FabCLI entitlement and never authenticates,
+- [x] The flow uses the user's already-authenticated FabCLI entitlement and never authenticates,
       claims, purchases, or exposes credentials through MCP output, logs, report, or process args.
-- [ ] Every static mesh in the full pack is exported or named with a concrete failure; `.umap` and
+- [x] Every static mesh in the full pack is exported or named with a concrete failure; `.umap` and
       other unsupported Unreal-only semantics are explicitly reported.
-- [ ] Supported materials are textured in the written GLB; exact/heuristic/unsupported section
+- [x] Supported materials are textured in the written GLB; exact/heuristic/unsupported section
       counts come from re-reading the final artifact, and no debug-colour material is reported as
       complete.
-- [ ] The existing ThreeNative asset compiler consumes the imported GLBs and emits its normal
+- [x] The existing ThreeNative asset compiler consumes the imported GLBs and emits its normal
       content-addressed outputs/KTX2/manifest without a new runtime format or loader.
-- [ ] A sandbox game visibly renders representative tree, rock, and masked foliage assets through
+- [x] A sandbox game visibly renders representative tree, rock, and masked foliage assets through
       `ctx.assets.model()` on browser WebGPU and desktop native at correct orientation and scale.
-- [ ] `fab_download_free_asset` still passes its existing anonymous direct-file contract; the new
+- [x] `fab_download_free_asset` still passes its existing anonymous direct-file contract; the new
       authenticated flow has not become its hidden replacement.
-- [ ] The `threenative` CLI still advertises exactly `build` and `doctor`; no `packages/tools`
+- [x] The `threenative` CLI still advertises exactly `build` and `doctor`; no `packages/tools`
       workspace exists; `pnpm budgets` reports the pre-PRD package count.
-- [ ] CLI and MCP local-directory imports emit byte-identical validated artifacts for identical
+- [x] CLI and MCP local-directory imports emit byte-identical validated artifacts for identical
       toolchain versions and source hashes.
-- [ ] Integration Ledger contains real `file:line` callers, every gate has an observed red, the
+- [x] Integration Ledger contains real `file:line` callers, every gate has an observed red, the
       external package is published before the engine pin changes, and the full repository gates
       pass.
 

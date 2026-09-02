@@ -63,7 +63,9 @@ async function structureOf(glbBytes: Uint8Array): Promise<IStructure> {
     .flatMap((mesh) => mesh.listPrimitives())
     .map((primitive) => primitive.getAttribute("POSITION"));
   const position = positions[0];
-  if (position === undefined) throw new Error("the GLB has no POSITION accessor");
+  if (position === undefined || position === null) {
+    throw new Error("the GLB has no POSITION accessor");
+  }
   const indices = document
     .getRoot()
     .listMeshes()
@@ -81,7 +83,7 @@ async function structureOf(glbBytes: Uint8Array): Promise<IStructure> {
   return {
     meshes: document.getRoot().listMeshes().length,
     primitives: positions.length,
-    positionComponentType: componentTypeNames[position.getComponentType()],
+    positionComponentType: componentTypeNames[position.getComponentType()] ?? "UNKNOWN",
     positionMin: position.getMin([]).map((value) => Math.round(value)),
     positionMax: position.getMax([]).map((value) => Math.round(value)),
     triangleCount: index === undefined ? 0 : index.getArray().length / 3,
