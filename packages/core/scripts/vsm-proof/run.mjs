@@ -72,6 +72,8 @@ try {
       adapter: proof.adapter,
       under: Math.round(under),
       beside: Math.round(beside),
+      visibleShadow: under + 10 < beside,
+      history: proof.history,
       stats: proof.stats,
       counts: proof.counts,
       marker: logs.filter((l) => l.startsWith("TN_VIRTUAL_SHADOW")).slice(-1)[0],

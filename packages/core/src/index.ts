@@ -381,6 +381,7 @@ export type { IVelocityRenderPass } from "./render/velocity.js";
  */
 export {
   VIRTUAL_SHADOW_MARKER,
+  VIRTUAL_SHADOW_MOVER_LAYER,
   VirtualShadowNode,
   readVirtualShadowMarker,
 } from "./render/virtual-shadow.js";

@@ -1,5 +1,17 @@
 import { type Camera, type DirectionalLight, Object3D, Vector3 } from "three";
-import { Fn, If, abs, float, max, positionWorld, shadow, uniform, vec3, vec4 } from "three/tsl";
+import {
+  Fn,
+  If,
+  abs,
+  float,
+  max,
+  min,
+  positionWorld,
+  shadow,
+  uniform,
+  vec3,
+  vec4,
+} from "three/tsl";
 import {
   type Node,
   type NodeBuilder,
@@ -50,7 +62,7 @@ export interface IVirtualShadowStats {
   readonly invalidated: number;
   /** Tracked casters, as of this frame. */
   readonly movers: number;
-  /** Mover maps rendered this frame: one per level, every frame, so a mover's shadow is never stale. */
+  /** Mover maps rendered this frame: one per level when at least one caster is tracked. */
   readonly moverRenders: number;
   /** Levels served from their cached map this frame. */
   readonly cached: number;
@@ -156,6 +168,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #moverLayerStates = new Map<Object3D, { originallyEnabled: boolean; references: number }>();
   #centerU: UniformNode<"float", number> = uniform(0);
   #centerV: UniformNode<"float", number> = uniform(0);
+  #moversActive: UniformNode<"float", number> = uniform(0);
   #basisU: UniformNode<"vec3", Vector3> = uniform(new Vector3(1, 0, 0));
   #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1));
   #frame = 0;
@@ -358,6 +371,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const guard = this.options.selectionGuard;
     const centerU = this.#centerU;
     const centerV = this.#centerV;
+    const moversActive = this.#moversActive;
     const basisU = this.#basisU;
     const basisV = this.#basisV;
     return Fn(() => {
@@ -367,9 +381,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const distance = max(abs(u), abs(v)).toVar("virtualShadowDistance");
       const coarsest = levels[levels.length - 1];
       if (coarsest === undefined) return vec4(1, 1, 1, 1);
-      const result = vec4(coarsest.node as never)
-        .mul(vec4(coarsest.moverNode as never))
-        .toVar("virtualShadowValue");
+      const moverResult = (level: ILevel) =>
+        moversActive.greaterThan(0).select(vec4(level.moverNode as never), vec4(1, 1, 1, 1));
+      const result = min(vec4(coarsest.node as never), moverResult(coarsest)).toVar(
+        "virtualShadowValue",
+      );
       // Coarse to fine, so the finest containing level assigns last and wins.
       for (let index = levels.length - 2; index >= 0; index -= 1) {
         const level = levels[index];
@@ -379,7 +395,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
             (level.extentUniform as never as ReturnType<typeof float>).mul(float(guard)),
           ),
           () => {
-            result.assign(vec4(level.node as never).mul(vec4(level.moverNode as never)));
+            result.assign(min(vec4(level.node as never), moverResult(level)));
           },
         );
       }
@@ -392,6 +408,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const camera = frame.camera as Camera | null;
     if (camera === null) return undefined;
     const source = this.light as DirectionalLight;
+    this.#moversActive.value = this.#casters.size > 0 ? 1 : 0;
     const parent = source.parent;
     for (const level of this.#levels) {
       if (level.light.parent === null && parent !== null) {
@@ -426,14 +443,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // Movers leave the cached maps and are drawn into the mover maps below. A child attached
     // after `trackCaster` — a loaded mesh under a placeholder group — picks up the layer here.
     const excluded: Array<{ object: Object3D; castShadow: boolean }> = [];
-    for (const object of this.#casters.values()) {
-      this.#rememberMoverChildren(object);
-      object.traverse((child) => {
-        if (child.castShadow) {
-          excluded.push({ castShadow: child.castShadow, object: child });
-          child.castShadow = false;
-        }
-      });
+    if (this.#casters.size > 0) {
+      for (const object of this.#casters.values()) {
+        this.#rememberMoverChildren(object);
+        object.traverse((child) => {
+          if (child.castShadow) {
+            excluded.push({ castShadow: child.castShadow, object: child });
+            child.castShadow = false;
+          }
+        });
+      }
     }
     const invalidateAll = this.#invalidateAll;
     const invalidatedKeys = this.tracker.consumeInvalidatedKeys();
@@ -486,12 +505,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     } finally {
       for (const { castShadow, object } of excluded) object.castShadow = castShadow;
     }
-    // The mover maps every frame, with nothing tracked as well: an unrendered map is not empty,
-    // it is undefined, and a level must never read one.
+    // An untracked node keeps a neutral mover contribution in the shader and does no mover work.
     let moverRenders = 0;
-    for (const level of this.#levels) {
-      if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame);
-      moverRenders += 1;
+    if (this.#casters.size > 0) {
+      for (const level of this.#levels) {
+        if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame);
+        moverRenders += 1;
+      }
     }
     this.#frame += 1;
     this.#rendered += rendered;
