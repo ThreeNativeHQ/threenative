@@ -6,23 +6,30 @@
     "width": 1280,
     "height": 720
   },
-  "warmupFrames": 10,
+  "warmupFrames": 1,
   "subject": "player",
   "artifacts": {
     "screenshots": "before-after"
   },
   "steps": [
     {
-      "kind": "wait",
-      "label": "play-scene-loads",
-      "waitTicks": 600,
+      "kind": "input",
+      "label": "preview-pending",
+      "press": "ArrowRight",
+      "holdTicks": 1,
       "release": true
     },
     {
       "kind": "input",
-      "label": "move-camera",
+      "label": "move-before-refinement",
       "press": "ArrowRight",
-      "holdTicks": 220,
+      "holdTicks": 140,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "refinement-settles",
+      "waitTicks": 600,
       "release": true
     }
   ],
@@ -32,6 +39,72 @@
       "noNetworkErrors": true,
       "runtimeReady": true
     },
+    "components": [
+      {
+        "entity": "scenery.ridge",
+        "component": "state",
+        "equals": "refined",
+        "atSteps": [
+          {
+            "label": "preview-pending",
+            "equals": "preview"
+          }
+        ]
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "generation",
+        "gte": 1,
+        "atSteps": [
+          {
+            "label": "preview-pending",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "boundaryEdges",
+        "equals": 0,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "degenerateTriangles",
+        "equals": 0,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "windingConflicts",
+        "equals": 0,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "signedVolume",
+        "gte": 1,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "odometer",
+        "gte": 4,
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "move-before-refinement",
+            "textIncludes": "."
+          }
+        ]
+      }
+    ],
     "camera": {
       "entity": "camera.main",
       "follows": "player",
@@ -61,6 +134,17 @@
           "y": 0,
           "width": 1280,
           "height": 720,
+          "minNonblankPixelRatio": 0.95,
+          "minDarkPixelRatio": 0.2,
+          "maxLuminance": 0.25
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 360,
           "minNonblankPixelRatio": 0.95,
           "minDarkPixelRatio": 0.2,
           "maxLuminance": 0.25

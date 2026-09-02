@@ -4,7 +4,7 @@
 > 2026-08-30. It stays in the mining table below because that is where it was found.
 
 
-**Status:** IN FLIGHT — twenty-two PRDs filed across six rounds. **Fifteen are archived in
+**Status:** IN FLIGHT — twenty-three PRDs filed across six rounds. **Fifteen are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),
@@ -41,7 +41,8 @@ package**, and a demo cannot be written against them.
 
 Every upstream repository named here was **cloned at depth 1 on 2026-08-28 and read**. Claims about
 what a source contains are cited by file and line against that clone. Claims about this repository
-are cited against `HEAD` at filing. No claim here has been measured.
+are cited against `HEAD` at filing. Rows marked done link their measured verification records; no
+unbuilt row here claims a measurement.
 
 ## Correction: several refusals in the first draft of this file were wrong, and why
 
@@ -103,6 +104,7 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 | [258](../BLOCKED/requires-runnable-many-soldier-consumer/PRD-258-many-actors-share-one-animation-texture.md) **BLOCKED** | Consumer-gated GPU-instanced skeletal animation. The committed Bayview subject requests a missing asset manifest, so Phase 0 cannot reach its playtest bridge or measure the five required arms. No product code shipped. | upstream Three WebGPU instanced-skinning examples, MIT; `mbarbier/threejs-gpu-skinning`, ISC, as historical technique only | 8 → HIGH |
 | [259](../done/PRD-259-fewer-pixels-must-still-look-like-the-same-game.md) **DECLINED** | Current-main browser proof and the provenance-locked Android emulator comparison both rejected temporal reconstruction: TAAU softened Bayview and exceeded the 2.35 ms saved-pixel budget; the challenger ghosted moving geometry and then failed on `createView`. No product API or render source shipped. | upstream Three 0.185.1 `TAAUNode`, MIT; `pmndrs/upscaler`, MIT + AMD FSR notice | 8 → HIGH |
 | [260](../done/PRD-260-standard-navigation-reaches-native-without-webassembly.md) **DECLINED** | The opening consumer gate found no native navmesh caller; PRD-052's 31-line portable steering remains the measured Android answer. No navcat dependency, second backend/API, or synthetic benchmark was added. | [`isaac-mason/navcat`](https://github.com/isaac-mason/navcat) `bc9d3c3f372a`, MIT | 8 → HIGH |
+| [317](../../verification/prd-317-rock-ridge-admission-2026-09-01.md) **PARTIAL (web + Linux desktop; fixed-camera single-run evidence; blinded A/B/silhouette floor and Android/iOS unverified)** | The starter's nine ridge blocks and four spire blocks now come from one deterministic, game-owned implicit granite field: a watertight generated mesh with Preview and classic Worker refinement. Final-array topology, deterministic hashes, stale-result rejection and disposal are observed; no geology API or package export was added. | [`threejs-procedural-rocks-cliffs`](https://github.com/maxliebscher/threejs-procedural-rocks-cliffs) at `647839c884456a4d1b6a1a7d520cbce331794538`, MIT | 9 → HIGH |
 
 ## Later mechanism extraction
 

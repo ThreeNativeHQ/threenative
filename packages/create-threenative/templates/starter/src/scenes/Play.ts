@@ -33,6 +33,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Mesh | undefined;
   #materials: ReturnType<typeof createMaterials> | undefined;
   #player: Player | undefined;
+  #scenery: ReturnType<typeof createScenery> | undefined;
 
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
@@ -137,7 +138,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Offset, lead and damping all live in render/camera.ts — framing is a look decision.
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
 
-    ctx.add(createScenery(materials.rock, materials.ridge, createRandom(20_260_821)));
+    const scenery = createScenery(materials.rock, materials.ridge, createRandom(20_260_821));
+    let refinementStarted = false;
+    this.#scenery = scenery;
+    ctx.add(scenery.object);
+    ctx.entities.add("scenery.ridge", scenery);
     // Two sentinels, both read by seed.playtest as an out-of-range value rather than as a
     // transition: state.levelX starts at -99, so a level that never builds stays out of range,
     // and seededLevelX becomes 2 if this draw did not advance ctx.random — which is what happens
@@ -241,6 +246,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // at tick 6 on a workstation and tick 47 in CI, and only the slow sample missed the change.
     ctx.state.set({ levelX: seededLevelX });
     const frameState: Partial<GameState> = {};
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: starter frame coordinates existing gameplay state transitions.
     return (frameCtx, dt) => {
       loading.update();
       // Restart resets the store before clearing entities and scheduled callbacks.
@@ -257,6 +263,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (frameCtx.input.justPressed("flagGust")) {
         goal.pennant.wind.set(0, 0.4, 4.5);
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
+      }
+      const move = frameCtx.input.vector("move");
+      if (!refinementStarted && (move.x !== 0 || move.y !== 0)) {
+        scenery.rebuild();
+        refinementStarted = true;
       }
       player.update(frameCtx, dt, supportSurfaceY);
       let respawned = false;
@@ -301,5 +312,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (changed) frameCtx.state.set(frameState);
       if (respawned) frameCtx.state.flush();
     };
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#scenery?.dispose();
+    this.#scenery = undefined;
+    super.exit(ctx);
   }
 }
