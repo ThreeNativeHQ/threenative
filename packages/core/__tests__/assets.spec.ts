@@ -190,6 +190,32 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(requests).toEqual(["/assets/rock.a1b2c3.png"]);
   });
 
+  it("should hand a game the served urls of a path its own loader has to fetch", async () => {
+    // An HDR sky, a font, a data file: loaders this surface does not wrap. Without this a game
+    // hard-codes the hashed output name and breaks on the next bake — Wildwood's sky did.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "hdri/sky.hdr": {
+              output: "hdri/sky.da8e1984.hdr",
+              kind: "other",
+              bytes: 5,
+              passes: [],
+            },
+          },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/", manifest: "assets.manifest.json" });
+    await expect(assets.resolve("hdri/sky.hdr")).resolves.toEqual(["/hdri/sky.da8e1984.hdr"]);
+    await expect(assets.resolve("hdri/missing.hdr")).rejects.toThrow(
+      /not listed in the asset manifest/u,
+    );
+  });
+
   it("should load the raw path when no manifest is served", async () => {
     const fetchAsset = vi.fn(async () => manifestResponse("gone", 404));
     vi.stubGlobal("fetch", fetchAsset);

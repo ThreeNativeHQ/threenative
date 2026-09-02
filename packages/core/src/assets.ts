@@ -64,6 +64,13 @@ export interface IAssetLoader {
   texture(path: string): Promise<Texture>;
   audio(path: string): Promise<AudioBuffer>;
   release(kind: "audio" | "model" | "texture", path: string): boolean;
+  /**
+   * Where a logical path is served from, in the order worth trying — the manifest's
+   * content-addressed output when a manifest exists, otherwise the verbatim and source paths.
+   * For loaders this surface does not wrap (an HDR sky, a font, a data file) — a game must never
+   * hard-code a hashed output name, which changes on every rebuild.
+   */
+  resolve(path: string): Promise<readonly string[]>;
   clear(): void;
 }
 
@@ -571,6 +578,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         await attachCompiledLightmaps(path, value);
         return value;
       }),
+    resolve: (path) => resolveCandidates(path),
     release: (kind, path) => {
       const key = `${kind}:${path}`;
       const entry = cache.get(key);
