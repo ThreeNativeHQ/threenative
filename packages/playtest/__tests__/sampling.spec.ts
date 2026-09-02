@@ -792,6 +792,37 @@ describe("browser-backed DOM visibility isolation", () => {
     }
   });
 
+  test("fails closed when an isolation-owned inline update occurs while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          control.style.setProperty("visibility", "visible");
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      const screenshot = observed.screenshots[0];
+      if (screenshot === undefined) throw new Error("visibility regression captured no screenshot");
+      expect(pngPixel(screenshot, 10, 20)).toEqual([240, 40, 40, 255]);
+      await expect(page.evaluate(() => {
+        const control = document.getElementById("control");
+        return {
+          priority: control?.style.getPropertyPriority("visibility"),
+          value: control?.style.getPropertyValue("visibility"),
+        };
+      })).resolves.toEqual({ priority: "", value: "visible" });
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("keeps a flex target's bounds and capture stable while probing isolation", async () => {
     const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
     try {

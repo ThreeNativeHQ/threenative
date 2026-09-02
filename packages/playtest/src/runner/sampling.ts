@@ -49,6 +49,11 @@ interface IVisibilityIsolationState {
   style: HTMLStyleElement;
 }
 
+interface IVisibilityIsolationCleanupResult {
+  cleaned: boolean;
+  isolationIntact: boolean;
+}
+
 let visibilityIsolationSequence = 0;
 
 /** Proves a DOM target contributes visible pixels and is not hidden by another painted node. */
@@ -291,15 +296,28 @@ export async function sampleElementVisibility(
   }
   if (domSample.isolationKey === undefined) return { bounds: domSample.bounds, rendered: false };
   let screenshot: Buffer | undefined;
-  let restored = false;
+  let cleanupResult: IVisibilityIsolationCleanupResult | undefined;
   try {
     screenshot = await page.screenshot({ clip: domSample.clip, omitBackground: true });
   } catch {
     screenshot = undefined;
   } finally {
-    restored = await page.evaluate((key): boolean => {
+    cleanupResult = await page.evaluate((key): IVisibilityIsolationCleanupResult => {
       const state = (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
-      if (state === undefined) return false;
+      if (state === undefined) return { cleaned: false, isolationIntact: false };
+      let isolationIntact = true;
+      for (const { element, properties } of state.hiddenElements) {
+        try {
+          const inlineStyle = (element as HTMLElement).style;
+          for (const property of properties) {
+            if (inlineStyle.getPropertyValue(property.name) === property.temporaryValue
+              && inlineStyle.getPropertyPriority(property.name) === property.temporaryPriority) continue;
+            isolationIntact = false;
+          }
+        } catch {
+          isolationIntact = false;
+        }
+      }
       let cleaned = true;
       try {
         state.style.remove();
@@ -346,10 +364,17 @@ export async function sampleElementVisibility(
       } catch {
         cleaned = false;
       }
-      return cleaned;
-    }, domSample.isolationKey).catch(() => false);
+      return { cleaned, isolationIntact };
+    }, domSample.isolationKey).catch(() => undefined);
   }
-  if (!restored) {
+  if (cleanupResult?.isolationIntact !== true) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      "Temporary DOM visibility isolation changed while sampling; the rendered-pixel observation is unavailable.",
+      "Keep page-owned visibility and root background styles stable while playtest sampling runs, then rerun the playtest.",
+    ));
+  }
+  if (cleanupResult.cleaned !== true) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
       "Could not restore temporary DOM visibility isolation after sampling.",
