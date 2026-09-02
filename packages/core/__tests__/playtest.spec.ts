@@ -636,9 +636,11 @@ describe("playtest holdUntilAttached", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       const installed = bridge();
       if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
-      await expect(installed.applySetup({
-        entities: [{ entity: "missing", transform: { position: [1, 2, 3] } }],
-      })).rejects.toThrow(/missing/u);
+      await expect(
+        installed.applySetup({
+          entities: [{ entity: "missing", transform: { position: [1, 2, 3] } }],
+        }),
+      ).rejects.toThrow(/missing/u);
       await expect(started).rejects.toThrow(/missing/u);
       expect(entered).toBe(false);
     } finally {
