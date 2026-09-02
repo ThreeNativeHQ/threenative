@@ -30,7 +30,10 @@ output look worse than vanilla.
 
 - `minimal` — no React, no UI folder. Core + physics, and a camera-parented geometry HUD in `src/render/hud.ts` (no DOM readout, so it survives on native).
 - `starter` — adds React 19, Tailwind 4, `src/ui/`. The default.
-- `platformer` — adds navigation; its Recast WASM dependency makes it web/desktop only.
+- `platformer` — adds `PathFollow3D` steering with avoidance. Nothing in `templates/` imports
+  `@threenative/physics/navigation`: its Recast WASM is web/desktop only, and every kit is
+  expected to run on all four targets, so each kit's `AGENTS.md` steers an authoring agent to the
+  direct physics queries instead.
 
 Every file is copied verbatim, then `__PROJECT_NAME__` is replaced everywhere. Any new
 placeholder needs the same treatment in `renderTemplate`. `pnpm budgets` reports each

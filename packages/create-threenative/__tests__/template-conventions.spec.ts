@@ -17,7 +17,10 @@ import { createMaterials as createSailingMaterials } from "../templates/sailing/
 import { createShipModel } from "../templates/sailing/src/render/props.js";
 import { preparePlayerConventions as prepareShooterConventions } from "../templates/shooter/src/conventions.js";
 import { createMaterials as createShooterMaterials } from "../templates/shooter/src/render/materials.js";
-import { createPlayerVisual as createShooterVisual } from "../templates/shooter/src/render/shapes.js";
+import {
+  createLegsVisual as createShooterLegs,
+  createViewmodelVisual as createShooterViewmodel,
+} from "../templates/shooter/src/render/shapes.js";
 import { preparePlayerConventions as prepareStarterConventions } from "../templates/starter/src/conventions.js";
 
 const FRAME = 1 / 60;
@@ -100,13 +103,18 @@ describe("generated template conventions", () => {
   });
 
   it("grounds, scales, and attaches the shooter player", () => {
-    const model = createShooterVisual(createShooterMaterials());
-    const conventions = prepareShooterConventions(model);
+    const materials = createShooterMaterials();
+    // First person splits the player across two spaces: the weapon rides the camera and the legs
+    // ride the body, so the size-and-hand conventions and the floor-contact one measure different
+    // objects. Both still run, and both still report.
+    const viewmodel = createShooterViewmodel(materials);
+    const legs = createShooterLegs(materials);
+    const conventions = prepareShooterConventions(viewmodel, legs);
 
     expectFactor(conventions.normaliseFactor);
     expect(conventions.boneNames).toContain("RightHand");
     expect(conventions.attachedBone).toBe("RightHand");
-    expectGrounding(model, conventions);
+    expectGrounding(legs, conventions);
   });
 
   it("grounds and scales the starter player", () => {

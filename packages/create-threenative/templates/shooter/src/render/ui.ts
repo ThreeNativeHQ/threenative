@@ -5,13 +5,20 @@ export const shooterUi = {
   },
   hud: {
     copy: {
+      ammo: (ammo: number, reserve: number) => `${ammo} / ${reserve}`,
       clear: (wavesCleared: number) => `clear ${wavesCleared}`,
-      eyebrow: "arena / shooter",
+      eyebrow: "arena / first person",
       health: "health",
       lives: "lives",
+      reloading: "reloading",
       rules: "clear 5 waves · fail 0 lives",
       targets: (targets: number) => `targets ${targets}`,
       wave: (wave: number) => `wave ${wave} / 5`,
+    },
+    ammo: {
+      count: "shooter-ammo__count",
+      reloading: "shooter-ammo__reloading",
+      root: "shooter-ammo",
     },
     eyebrow: "shooter-hud__eyebrow",
     meter: {
@@ -41,15 +48,22 @@ export const shooterUi = {
     summary: "shooter-hud__summary",
     wave: "shooter-hud__wave",
   },
+  crosshair: {
+    horizontal: "shooter-crosshair__bar shooter-crosshair__bar--horizontal",
+    root: "shooter-crosshair",
+    rootAiming: "shooter-crosshair shooter-crosshair--aiming",
+    vertical: "shooter-crosshair__bar shooter-crosshair__bar--vertical",
+  },
   menu: {
     actions: "shooter-menu__actions",
     button: "shooter-menu__button",
     copy: {
       pause: "pause",
-      primary: "WASD / arrows move · F hitscan · G projectile",
+      primary: "WASD move · mouse look · click or F fires · right-click or Q aims · R reloads",
       restart: "restart",
       resume: "resume",
-      secondary: "E radius test · C wall probe · H damage · X lethal · R restart",
+      secondary:
+        "shift sprints · ctrl/C crouches · G projectile · E radius · V probe · H damage · X lethal · enter restarts",
     },
     help: "shooter-menu__help",
     helpPrimary: "shooter-menu__help-primary",

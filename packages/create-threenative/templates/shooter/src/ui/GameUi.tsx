@@ -1,4 +1,5 @@
 import { UiLayer } from "@threenative/ui";
+import { Crosshair } from "./Crosshair.js";
 import { Hud } from "./Hud.js";
 import { Menu } from "./Menu.js";
 
@@ -13,6 +14,7 @@ import { Menu } from "./Menu.js";
 export function GameUi() {
   return (
     <UiLayer>
+      <Crosshair />
       <Hud />
       <Menu />
     </UiLayer>

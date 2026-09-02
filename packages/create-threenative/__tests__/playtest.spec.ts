@@ -597,8 +597,9 @@ describe("starter playtest proof", () => {
     const shots = resources.find(({ path }) => path === "shotsFired");
     expect(shots?.atSteps).toEqual([{ label: "fire-settle", equals: 1 }]);
     // The heading is zeroed through the template's own restart binding before the measured
-    // looks, so the rotation proof starts from a known baseline on every target.
-    expect(labeled.get("reset-heading")).toMatchObject({ press: "KeyR" });
+    // looks, so the rotation proof starts from a known baseline on every target. Restart is
+    // Enter, not R: a first-person kit owes R to the reload every shooter binds there.
+    expect(labeled.get("reset-heading")).toMatchObject({ press: "Enter" });
     const signalNames = (scenario.assert?.signals ?? []).map(({ name }) => name);
     for (const name of ["aim-engaged", "fired", "hit", "defeated", "aim-released"]) {
       expect(signalNames).toContain(name);
@@ -610,17 +611,27 @@ describe("starter playtest proof", () => {
       path.resolve("packages/create-threenative/templates/shooter/src/game.ts"),
       "utf8",
     );
+    const player = await readFile(
+      path.resolve("packages/create-threenative/templates/shooter/src/entities/Player.ts"),
+      "utf8",
+    );
     const scene = await readFile(
       path.resolve("packages/create-threenative/templates/shooter/src/scenes/Play.ts"),
       "utf8",
     );
 
-    expect(game).toContain("aim: { mouseButtons: [2] }");
-    expect(game).toContain('fire: { buttons: [0], keys: ["KeyF"], mouseButtons: [0] }');
+    expect(game).toContain('aim: { keys: ["KeyQ"], mouseButtons: [2] }');
+    expect(game).toContain('fire: { buttons: [0], keys: ["KeyF", "Space"], mouseButtons: [0] }');
     expect(game).toContain("look: { pointerRelative: true }");
-    // The scene consumes all three through the real input map after the bridge path.
-    expect(scene).toContain('frameCtx.input.vector("look")');
-    expect(scene).toContain('fireHitscan(frameCtx.input.pressed("aim"))');
+    expect(game).toContain('reload: { buttons: [3], keys: ["KeyR"] }');
+    // The player consumes the look axis through the real input map, on the same path a native
+    // build takes; nothing in this kit reads `movementX` or the DOM.
+    expect(player).toContain('ctx.input.vector("look")');
+    expect(player).toContain('ctx.input.pressed("aim")');
+    // Held, not edge-triggered: hold-to-fire and a single tap take one path through the weapon's
+    // cyclic cooldown.
+    expect(scene).toContain('frameCtx.input.pressed("fire")');
+    expect(scene).toContain("fireHitscan(player.aiming)");
     expect(scene).toContain('emitPlaytestEvent({ entity: "player", name: "fired", aimed:');
   });
 });

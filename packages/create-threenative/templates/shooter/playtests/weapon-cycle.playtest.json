@@ -1,0 +1,163 @@
+{
+  "name": "weapon-cycle",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "loaded",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hold-trigger",
+      "press": "KeyF",
+      "holdTicks": 61,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "burst-settled",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": "KeyR",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reloading",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reloaded",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "aim",
+      "press": "KeyQ",
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "aimed",
+      "waitTicks": 12,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "Headless Linux Chromium emits the known WebGPU buffer diagnostic; the weapon-state assertions remain authoritative.",
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "ammo",
+        "atSteps": [
+          {
+            "label": "reloaded",
+            "equals": 30
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "reserve",
+        "lte": 115,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "reloading",
+        "atSteps": [
+          {
+            "label": "reloading",
+            "equals": 1
+          },
+          {
+            "label": "reloaded",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "aiming",
+        "atSteps": [
+          {
+            "label": "aimed",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "player",
+        "component": "aiming",
+        "atSteps": [
+          {
+            "label": "aimed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "fov",
+        "lte": 45,
+        "changed": true
+      },
+      {
+        "entity": "decals",
+        "component": "placed",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "viewmodel",
+        "component": "flashOpacity",
+        "lte": 0.01,
+        "allowTrivial": "The cone is dark before the first round and dark again once it retires; this row exists to catch the flash that never retires, and the fired signals prove rounds were sent."
+      }
+    ],
+    "signals": [
+      {
+        "name": "fired",
+        "entity": "player",
+        "minCount": 5,
+        "atStep": "hold-trigger"
+      },
+      {
+        "name": "reload-started",
+        "entity": "player",
+        "minCount": 1,
+        "atStep": "reload"
+      },
+      {
+        "name": "reloaded",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

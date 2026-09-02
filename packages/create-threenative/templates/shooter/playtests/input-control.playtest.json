@@ -19,7 +19,7 @@
     {
       "kind": "input",
       "label": "reset-heading",
-      "press": "KeyR",
+      "press": "Enter",
       "holdTicks": 2,
       "release": true
     },
@@ -59,7 +59,7 @@
       "label": "fire-while-aiming",
       "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 3 },
       "holdTicks": 2,
-      "release": false
+      "release": true
     },
     { "kind": "wait", "label": "fire-settle", "waitTicks": 8, "release": true },
     {
@@ -122,9 +122,9 @@
     ],
     "visibility": [
       {
-        "allowTrivial": "The shooter scene begins with the player visible and in frame; this held visibility row accompanies the input assertions.",
-        "entity": "player",
-        "minProjectedPixels": 20
+        "allowTrivial": "The player's own capsule is invisible in first person; the viewmodel is what the player sees of themselves, so this row measures the weapon in frame.",
+        "entity": "viewmodel",
+        "minProjectedPixels": 400
       }
     ]
   }

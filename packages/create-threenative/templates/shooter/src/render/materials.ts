@@ -27,6 +27,19 @@ export function createMaterials() {
       roughness: 0.34,
     }),
     shadow: new MeshStandardMaterial({ color: 0x101820, metalness: 0.5, roughness: 0.7 }),
+    // The weapon is the largest thing on screen in first person, so it gets its own three
+    // materials rather than borrowing the arena's. Parkerised steel, moulded polymer, and the
+    // lit dot in the sight.
+    gunmetal: new MeshStandardMaterial({ color: 0x2b3138, metalness: 0.85, roughness: 0.42 }),
+    polymer: new MeshStandardMaterial({ color: 0x1b2129, metalness: 0.08, roughness: 0.72 }),
+    glove: new MeshStandardMaterial({ color: 0x2f3a44, metalness: 0.05, roughness: 0.85 }),
+    sight: new MeshStandardMaterial({
+      color: palette.hostile,
+      emissive: palette.hostile,
+      emissiveIntensity: 2.4,
+      metalness: 0,
+      roughness: 1,
+    }),
     trim: new MeshStandardMaterial({
       color: palette.accent,
       emissive: palette.accent,

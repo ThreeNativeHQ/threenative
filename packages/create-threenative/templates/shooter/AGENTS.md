@@ -1,4 +1,4 @@
-# AGENTS.md — __PROJECT_NAME__ arena shooter
+# AGENTS.md — __PROJECT_NAME__ first-person arena shooter
 
 Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
 
@@ -50,11 +50,29 @@ pnpm test
 pnpm typecheck
 ```
 
-Contract: clear five waves to win; zero lives loses; F fires hitscan, G projectile, E radius blast,
-C wall probe, H damage, X lethal hit, WASD/arrows move, R restarts. Use
+Contract: clear five waves to win; zero lives loses. Mouse looks, WASD moves, click or F fires,
+right-click or Q aims down the sights, R reloads, shift sprints, ctrl/C crouches; G projectile,
+E radius blast, V wall probe, H damage, X lethal hit, enter restarts. Use
 `ctx.physics.directSpaceState` for hitscan/radius/target scans. `src/weapons/` owns combat,
 `src/scenes/Play.ts` wires it, `src/ui/Hud.tsx` is the only HUD, and `state.ts` publishes lives/wave.
 Keep `playtests/survives.playtest.json` as smoke proof; rewrite the other combat/outcome examples.
+
+## The first-person rules this kit follows
+
+The camera is placed in `afterPhysics`, never in the frame function: `moveAndSlide` only queues the
+motion and the solver writes the transform after the frame returns, so an eye placed from `update`
+sits one step behind the body and shots land in the floor on stairs.
+
+Every shot starts at `player.aimRay()` — the camera's own position and forward — because that is
+where the crosshair is drawn. The muzzle is where the flash goes, and `Viewmodel.converge` leans the
+weapon to meet that ray. Firing from the muzzle instead puts rounds a hand's width off centre.
+
+The trigger reads `input.pressed("fire")`, not `justPressed`: `Viewmodel`'s cyclic cooldown turns a
+held button into a cadence, so a tap and a burst take one code path.
+
+`src/render/scale.ts` is the only place a real-world size is written. `preparePlayerConventions`
+sizes the weapon from it with `normaliseToMetres`, so a `.glb` dropped in from an asset site lands
+at the right size without a magic number beside it.
 
 ## Portable authoring contracts
 
@@ -92,5 +110,7 @@ move appearance into core or replace the existing event with a demo-only caller.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
 
-On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick,
-a right aim stick and a fire button. Keyboard input remains the desktop fallback.
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick, a
+right look stick, and fire, aim, reload and crouch pads; pushing the movement stick to its rim
+sprints, so there is no fourth button to find under a thumb. Keyboard input remains the desktop
+fallback.
