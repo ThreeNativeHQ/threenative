@@ -55,6 +55,8 @@ export interface IResolvedThreeNativeConfig {
     readonly renderer: ThreeNativeUiRenderer;
   };
   readonly assets?: {
+    /** The bound on how many workers a bake may use; absent means the driver's default. */
+    readonly concurrency?: number;
     readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;
@@ -1189,7 +1191,14 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
 
 function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   const assets = assertRecord(raw, "assets");
-  assertKeys(assets, "assets", ["concurrency", "models", "source", "output", "targets", "textures"]);
+  assertKeys(assets, "assets", [
+    "concurrency",
+    "models",
+    "source",
+    "output",
+    "targets",
+    "textures",
+  ]);
   const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
   const models = assets.models === undefined ? undefined : validateModels(assets.models);
   const textures = assets.textures === undefined ? undefined : validateTextures(assets.textures);

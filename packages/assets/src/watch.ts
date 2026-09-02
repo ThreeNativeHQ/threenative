@@ -334,7 +334,12 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     // parallelism lives here — a burst of saves recompiles together, not one per drain.
     const queue = [...batch];
     const runners = Math.min(queue.length, Math.max(1, DEFAULT_CONCURRENCY));
-    const record = (logical: string, error: unknown, entry?: ICompiledEntry, costs?: readonly IPassCostRow[]): void => {
+    const record = (
+      logical: string,
+      error: unknown,
+      entry?: ICompiledEntry,
+      costs?: readonly IPassCostRow[],
+    ): void => {
       if (entry !== undefined && costs !== undefined) {
         merged.set(logical, entry);
         passCostRows.push(costs);
@@ -347,21 +352,19 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
       logFailure(`could not recompile '${logical}': ${messageOf(error)}`);
     };
     await Promise.all(
-      Array.from(
-        { length: runners },
-        () =>
-          (async () => {
-            for (;;) {
-              const logical = queue.shift();
-              if (logical === undefined) return;
-              try {
-                const recompiled = await recompileOne(layout, compileOptions, logical);
-                record(logical, undefined, recompiled.entry, recompiled.passCosts);
-              } catch (error) {
-                record(logical, error);
-              }
+      Array.from({ length: runners }, () =>
+        (async () => {
+          for (;;) {
+            const logical = queue.shift();
+            if (logical === undefined) return;
+            try {
+              const recompiled = await recompileOne(layout, compileOptions, logical);
+              record(logical, undefined, recompiled.entry, recompiled.passCosts);
+            } catch (error) {
+              record(logical, error);
             }
-          })(),
+          }
+        })(),
       ),
     );
     await mergeEntries(merged);
