@@ -29,6 +29,7 @@ interface IDomElementVisibilitySample extends IElementVisibilitySample {
 
 interface IVisibilityIsolationPropertyState {
   name: string;
+  pageOwned: boolean;
   originalPriority: string;
   originalValue: string;
   temporaryPriority: string;
@@ -40,7 +41,15 @@ interface IVisibilityIsolationElementState {
   properties: IVisibilityIsolationPropertyState[];
 }
 
+interface IVisibilityIsolationDomElementState {
+  element: Element;
+  nextSibling: Node | null;
+  parent: Element | null;
+  previousSibling: Node | null;
+}
+
 interface IVisibilityIsolationState {
+  domSnapshot: IVisibilityIsolationDomElementState[];
   elements: Element[];
   hiddenElements: IVisibilityIsolationElementState[];
   markerAttribute: string;
@@ -52,6 +61,7 @@ interface IVisibilityIsolationState {
 
 interface IVisibilityIsolationMutationTracker {
   changed: boolean;
+  domChanged: boolean;
   stop: () => void;
 }
 
@@ -139,6 +149,7 @@ export async function sampleElementVisibility(
         try {
           const inlineStyle = (element as HTMLElement).style;
           for (const property of properties) {
+            if (property.pageOwned) continue;
             if (inlineStyle.getPropertyValue(property.name) !== property.temporaryValue
               || inlineStyle.getPropertyPriority(property.name) !== property.temporaryPriority) continue;
             if (property.originalValue === "") inlineStyle.removeProperty(property.name);
@@ -233,6 +244,7 @@ export async function sampleElementVisibility(
             : []),
         ].map(({ name, temporaryValue }) => ({
           name,
+          pageOwned: false,
           originalPriority: inlineStyle.getPropertyPriority(name),
           originalValue: inlineStyle.getPropertyValue(name),
           temporaryPriority: "important",
@@ -270,7 +282,11 @@ export async function sampleElementVisibility(
       if (targetVisibility !== "visible" || probeVisibility !== "hidden" || !rootsAreTransparent || !nonTargetElementsAreHidden) {
         throw new Error("Cannot verify active visibility isolation rules");
       }
-      const mutationTracker: IVisibilityIsolationMutationTracker = { changed: false, stop: () => undefined };
+      const mutationTracker: IVisibilityIsolationMutationTracker = {
+        changed: false,
+        domChanged: false,
+        stop: () => undefined,
+      };
       const restorations: Array<() => void> = [];
       let tracking = true;
       const stop = (): void => {
@@ -288,41 +304,45 @@ export async function sampleElementVisibility(
       };
       stopMutationTracking = stop;
 
-      const propertyState = (style: CSSStyleDeclaration, name: string): { priority: string; value: string } => ({
-        priority: style.getPropertyPriority(name),
-        value: style.getPropertyValue(name),
-      });
-      const propertyStates = (style: CSSStyleDeclaration, names: Set<string>): Map<string, { priority: string; value: string }> => new Map(
-        [...names].map((name) => [name, propertyState(style, name)]),
-      );
-      const propertyStatesDiffer = (
-        first: Map<string, { priority: string; value: string }>,
-        second: Map<string, { priority: string; value: string }>,
-        names: Set<string>,
-      ): boolean => [...names].some((name) => {
-        const firstState = first.get(name);
-        const secondState = second.get(name);
-        return firstState?.value !== secondState?.value || firstState?.priority !== secondState?.priority;
-      });
-      const styleFromText = (text: string | null): CSSStyleDeclaration => {
-        const style = document.createElement("span").style;
-        style.cssText = text ?? "";
-        return style;
+      const liveDomSnapshot = (): IVisibilityIsolationDomElementState[] => {
+        const liveDocumentElement = document.documentElement ?? null;
+        const liveElements = liveDocumentElement === null
+          ? []
+          : [liveDocumentElement, ...liveDocumentElement.querySelectorAll("*")];
+        return liveElements.map((element) => ({
+          element,
+          nextSibling: element.nextSibling,
+          parent: element.parentElement,
+          previousSibling: element.previousSibling,
+        }));
       };
-      const styleContainsTrackedProperty = (text: string | null, names: Set<string>): boolean => {
-        const style = styleFromText(text);
-        return [...names].some((name) => {
-          const state = propertyState(style, name);
-          return state.value !== "" || state.priority !== "";
-        });
+      const domSnapshot = liveDomSnapshot();
+      const markDomChanged = (): void => {
+        if (!tracking) return;
+        mutationTracker.changed = true;
+        mutationTracker.domChanged = true;
       };
-      const trackStyleAttributeMutation = (element: Element, names: Set<string>, before: Map<string, { priority: string; value: string }>): void => {
-        const style = (element as HTMLElement).style;
-        const after = propertyStates(style, names);
-        if (propertyStatesDiffer(before, after, names)
-          || styleContainsTrackedProperty(element.getAttribute("style"), names)) {
-          mutationTracker.changed = true;
+      const styleOwners = new Map<CSSStyleDeclaration, Element>();
+      const propertyOwnership = new Map<Element, Map<string, IVisibilityIsolationPropertyState>>();
+      for (const { element, properties } of hiddenElements) {
+        styleOwners.set((element as HTMLElement).style, element);
+        propertyOwnership.set(element, new Map(properties.map((property) => [property.name, property])));
+      }
+      const markPageOwned = (element: Element, names: Iterable<string>): void => {
+        const properties = propertyOwnership.get(element);
+        if (properties === undefined) return;
+        for (const name of names) {
+          const property = properties.get(name);
+          if (property !== undefined) property.pageOwned = true;
         }
+        mutationTracker.changed = true;
+      };
+      const markStylePropertiesOwned = (style: CSSStyleDeclaration, names: Iterable<string>): void => {
+        const element = styleOwners.get(style);
+        if (element !== undefined) markPageOwned(element, names);
+      };
+      const trackStyleAttributeMutation = (element: Element, names: Set<string>): void => {
+        markPageOwned(element, names);
       };
 
       const descriptorInPrototypeChain = (object: object, name: string): PropertyDescriptor | undefined => {
@@ -357,7 +377,7 @@ export async function sampleElementVisibility(
         const temporaryMethod = function(this: CSSStyleDeclaration, ...args: unknown[]): unknown {
           const result = callOriginal.apply(this, args);
           if (tracking && this === style && typeof args[0] === "string" && names.has(args[0].trim().toLowerCase())) {
-            mutationTracker.changed = true;
+            markStylePropertiesOwned(style, [args[0].trim().toLowerCase()]);
           }
           return result;
         };
@@ -385,7 +405,7 @@ export async function sampleElementVisibility(
         };
         const temporarySetter = function(this: CSSStyleDeclaration, value: unknown): void {
           originalSetProperty.call(this, name, String(value));
-          if (tracking && this === style) mutationTracker.changed = true;
+          if (tracking && this === style) markStylePropertiesOwned(style, [name]);
         };
         Object.defineProperty(style, propertyName, {
           configurable: true,
@@ -414,7 +434,7 @@ export async function sampleElementVisibility(
           Object.defineProperty(style, propertyName, originalOwnDescriptor);
         });
       };
-      const instrumentStyleCssText = (style: CSSStyleDeclaration): void => {
+      const instrumentStyleCssText = (style: CSSStyleDeclaration, names: Set<string>): void => {
         const originalOwnDescriptor = Object.getOwnPropertyDescriptor(style, "cssText");
         const originalDescriptor = descriptorInPrototypeChain(style, "cssText");
         if (originalDescriptor?.get === undefined || originalDescriptor.set === undefined) {
@@ -425,7 +445,7 @@ export async function sampleElementVisibility(
         };
         const temporarySetter = function(this: CSSStyleDeclaration, value: unknown): void {
           originalDescriptor.set?.call(this, String(value));
-          if (tracking && this === style) mutationTracker.changed = true;
+          if (tracking && this === style) markStylePropertiesOwned(style, names);
         };
         Object.defineProperty(style, "cssText", {
           configurable: true,
@@ -449,9 +469,8 @@ export async function sampleElementVisibility(
         const callOriginal = originalMethod as (...args: unknown[]) => unknown;
         const temporaryMethod = function(this: Element, ...args: unknown[]): unknown {
           const shouldCheck = this === element && shouldTrack(args);
-          const before = shouldCheck ? propertyStates((element as HTMLElement).style, names) : undefined;
           const result = callOriginal.apply(this, args);
-          if (shouldCheck && tracking && before !== undefined) trackStyleAttributeMutation(element, names, before);
+          if (shouldCheck && tracking) trackStyleAttributeMutation(element, names);
           return result;
         };
         Object.defineProperty(element, methodName, {
@@ -462,6 +481,57 @@ export async function sampleElementVisibility(
         });
         restorations.push(() => restoreProperty(element, methodName, originalDescriptor, temporaryMethod));
       };
+      const instrumentNodeMethod = (node: object, methodName: string): void => {
+        const nodeRecord = node as Record<string, unknown>;
+        const originalDescriptor = Object.getOwnPropertyDescriptor(node, methodName);
+        const originalMethod = nodeRecord[methodName];
+        if (typeof originalMethod !== "function") return;
+        const callOriginal = originalMethod as (...args: unknown[]) => unknown;
+        const temporaryMethod = function(this: object, ...args: unknown[]): unknown {
+          const result = callOriginal.apply(this, args);
+          if (tracking && this === node) markDomChanged();
+          return result;
+        };
+        Object.defineProperty(node, methodName, {
+          configurable: true,
+          enumerable: originalDescriptor?.enumerable ?? false,
+          value: temporaryMethod,
+          writable: true,
+        });
+        restorations.push(() => restoreProperty(node, methodName, originalDescriptor, temporaryMethod));
+      };
+      const instrumentNodeProperty = (node: object, propertyName: string): void => {
+        const originalOwnDescriptor = Object.getOwnPropertyDescriptor(node, propertyName);
+        const originalDescriptor = descriptorInPrototypeChain(node, propertyName);
+        if (originalDescriptor?.set === undefined) return;
+        const temporaryGetter = originalDescriptor.get === undefined
+          ? undefined
+          : function(this: object): unknown {
+              return originalDescriptor.get?.call(this);
+            };
+        const temporarySetter = function(this: object, value: unknown): void {
+          originalDescriptor.set?.call(this, value);
+          if (tracking && this === node) markDomChanged();
+        };
+        Object.defineProperty(node, propertyName, {
+          configurable: true,
+          enumerable: originalOwnDescriptor?.enumerable ?? originalDescriptor.enumerable ?? true,
+          get: temporaryGetter,
+          set: temporarySetter,
+        });
+        restorations.push(() => {
+          const currentDescriptor = Object.getOwnPropertyDescriptor(node, propertyName);
+          if (currentDescriptor?.get !== temporaryGetter || currentDescriptor?.set !== temporarySetter) {
+            mutationTracker.changed = true;
+            return;
+          }
+          if (originalOwnDescriptor === undefined) {
+            if (!Reflect.deleteProperty(node, propertyName)) throw new Error(`Cannot remove temporary ${propertyName} instrumentation`);
+            return;
+          }
+          Object.defineProperty(node, propertyName, originalOwnDescriptor);
+        });
+      };
       for (const { element, properties } of hiddenElements) {
         const names = new Set(properties.map(({ name }) => name));
         const style = (element as HTMLElement).style;
@@ -469,7 +539,7 @@ export async function sampleElementVisibility(
         const originalGetPropertyValue = style.getPropertyValue as unknown as (...args: unknown[]) => unknown;
         instrumentStyleMethod(style, names, "setProperty");
         instrumentStyleMethod(style, names, "removeProperty");
-        instrumentStyleCssText(style);
+        instrumentStyleCssText(style, names);
         for (const name of names) instrumentStyleProperty(style, name, originalSetProperty, originalGetPropertyValue);
         instrumentElementMethod(element, names, "setAttribute", (args) => isStyleAttribute(args[0]));
         instrumentElementMethod(element, names, "setAttributeNS", (args) => (args[0] === null || args[0] === "") && isStyleAttribute(args[1]));
@@ -488,8 +558,38 @@ export async function sampleElementVisibility(
             && isStyleAttribute(attribute.name);
         });
       }
+      const domNodes: object[] = [document, ...domSnapshot.map(({ element }) => element)];
+      const domMethods = [
+        "after",
+        "append",
+        "appendChild",
+        "before",
+        "close",
+        "insertAdjacentElement",
+        "insertAdjacentHTML",
+        "insertAdjacentText",
+        "insertBefore",
+        "moveBefore",
+        "open",
+        "prepend",
+        "remove",
+        "removeChild",
+        "replaceChild",
+        "replaceChildren",
+        "replaceWith",
+        "setHTML",
+        "setHTMLUnsafe",
+        "write",
+        "writeln",
+      ];
+      const domProperties = ["innerHTML", "innerText", "outerHTML", "textContent"];
+      for (const domNode of domNodes) {
+        for (const methodName of domMethods) instrumentNodeMethod(domNode, methodName);
+        for (const propertyName of domProperties) instrumentNodeProperty(domNode, propertyName);
+      }
       mutationTracker.stop = stop;
       (window as unknown as Record<string, IVisibilityIsolationState>)[isolationKey] = {
+        domSnapshot,
         elements: markedElements,
         hiddenElements,
         markerAttribute,
@@ -544,6 +644,44 @@ export async function sampleElementVisibility(
         isolationIntact = false;
       }
       if (state.mutationTracker.changed) isolationIntact = false;
+      if (state.mutationTracker.domChanged) isolationIntact = false;
+      const liveDocumentElement = document.documentElement ?? null;
+      const liveElements = liveDocumentElement === null
+        ? []
+        : [liveDocumentElement, ...liveDocumentElement.querySelectorAll("*")];
+      const domSnapshotIsIntact = state.domSnapshot.length === liveElements.length
+        && state.domSnapshot.every(({ element, nextSibling, parent, previousSibling }, index) => {
+          const liveElement = liveElements[index];
+          return liveElement === element
+            && element.parentElement === parent
+            && element.previousSibling === previousSibling
+            && element.nextSibling === nextSibling;
+        });
+      if (!domSnapshotIsIntact) isolationIntact = false;
+      const target = state.elements[0] ?? null;
+      const documentElement = document.documentElement ?? null;
+      const body = document.body ?? null;
+      if (target === null) isolationIntact = false;
+      else {
+        const targetContainsDocumentElement = target === documentElement || target.contains(documentElement);
+        const targetContainsBody = target === body || target.contains(body);
+        const transparentBackground = (element: Element | null): boolean => {
+          if (element === null) return true;
+          const style = window.getComputedStyle(element);
+          return (style.backgroundColor === "transparent" || style.backgroundColor === "rgba(0, 0, 0, 0)")
+            && style.backgroundImage === "none";
+        };
+        const isTargetElement = (element: Element): boolean => target === element || target.contains(element);
+        const nonTargetElementsAreHidden = liveElements
+          .filter((element) => !isTargetElement(element))
+          .every((element) => window.getComputedStyle(element).visibility === "hidden");
+        const rootsAreTransparent = (targetContainsDocumentElement || transparentBackground(documentElement))
+          && (targetContainsBody || transparentBackground(body));
+        if (window.getComputedStyle(target).visibility !== "visible"
+          || window.getComputedStyle(state.probe).visibility !== "hidden"
+          || !rootsAreTransparent
+          || !nonTargetElementsAreHidden) isolationIntact = false;
+      }
       for (const { element, properties } of state.hiddenElements) {
         try {
           const inlineStyle = (element as HTMLElement).style;
@@ -573,6 +711,7 @@ export async function sampleElementVisibility(
         try {
           const inlineStyle = (element as HTMLElement).style;
           for (const property of properties) {
+            if (property.pageOwned) continue;
             if (inlineStyle.getPropertyValue(property.name) !== property.temporaryValue
               || inlineStyle.getPropertyPriority(property.name) !== property.temporaryPriority) continue;
             if (property.originalValue === "") inlineStyle.removeProperty(property.name);

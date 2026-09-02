@@ -781,6 +781,75 @@ describe("browser-backed DOM visibility isolation", () => {
     }
   });
 
+  test("fails closed when a visible important non-target is inserted while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installVisibilityFixture(page, { csp: false, paintedTarget: false });
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.createElement("div");
+          control.id = "pending-control";
+          control.style.cssText = [
+            "position: absolute",
+            "left: 0",
+            "top: 0",
+            "width: 20px",
+            "height: 80px",
+            "z-index: 2",
+            "background: rgb(240, 40, 40)",
+            "visibility: visible !important",
+          ].join("; ");
+          document.body.appendChild(control);
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      const screenshot = observed.screenshots[0];
+      if (screenshot === undefined) throw new Error("visibility regression captured no screenshot");
+      expect(pngPixel(screenshot, 10, 20)).toEqual([240, 40, 40, 255]);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when a visible important non-target replaces an element while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          const replacement = document.createElement("div");
+          replacement.style.cssText = [
+            "position: absolute",
+            "left: 0",
+            "top: 0",
+            "width: 20px",
+            "height: 80px",
+            "z-index: 2",
+            "background: rgb(240, 40, 40)",
+            "visibility: visible !important",
+          ].join("; ");
+          control.replaceWith(replacement);
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      const screenshot = observed.screenshots[0];
+      if (screenshot === undefined) throw new Error("visibility regression captured no screenshot");
+      expect(pngPixel(screenshot, 10, 20)).toEqual([240, 40, 40, 255]);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("preserves an unrelated inline update made while screenshot is pending", async () => {
     const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
     try {
@@ -875,7 +944,36 @@ describe("browser-backed DOM visibility isolation", () => {
           priority: control?.style.getPropertyPriority("visibility"),
           value: control?.style.getPropertyValue("visibility"),
         };
-      })).resolves.toEqual({ priority: "", value: "" });
+      })).resolves.toEqual({ priority: "important", value: "hidden" });
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("preserves an isolation-owned value changed away and back while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          control.style.setProperty("visibility", "visible", "important");
+          control.style.setProperty("visibility", "hidden", "important");
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      await expect(page.evaluate(() => {
+        const control = document.getElementById("control");
+        return {
+          priority: control?.style.getPropertyPriority("visibility"),
+          value: control?.style.getPropertyValue("visibility"),
+        };
+      })).resolves.toEqual({ priority: "important", value: "hidden" });
       await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
     } finally {
       await page.close();
