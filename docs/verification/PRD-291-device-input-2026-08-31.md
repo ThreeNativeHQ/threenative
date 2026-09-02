@@ -198,3 +198,12 @@ lines are accepted because the controls decide appearance and the repository's l
 those materials, geometry, palette use, placement, and interaction affordances in each template's
 `src/render/` source. The duplication is recorded rather than hidden; it is not a signal to move
 visual ownership into a package.
+
+## Integration closeout — 2026-09-01
+
+The implementation commits were integrated against the current main tree and this PRD is archived
+in `docs/PRDs/done/`. The touch/playtest/scaffold focused suite passed 9 files and 266 tests; the
+final affected template/scaffold/native-smoke suite passed 3 files and 86 tests. `pnpm sync:agents`
+passed while writing the repaired template mirrors. Shared repository gate outcomes are recorded
+in the PRD-292 integration record. Physical Android/iOS execution remains unverified, as recorded
+above.

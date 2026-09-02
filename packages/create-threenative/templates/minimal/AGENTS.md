@@ -20,10 +20,7 @@ ordinary user code, and nothing in `@threenative/*` reads or chooses their appea
    use portable `ctx`/Three.js for this cross-target template.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
-
-For the situation *"a bullet passes through a wall"*, `RigidBody3D` enables continuous collision
-by default. Its `continuousCollision` option is the named per-body override, and
-`body.continuousCollision` reports the effective setting on web and native.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
 
 ## When the framework blocks you, write plain Three.js
 

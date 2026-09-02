@@ -392,3 +392,12 @@ FAIL, exit 1; TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing sailing; stale none.
 The eight regenerated PNGs were restored to their committed baselines. No platformer frame change
 was attributed to this post-jump measurement-only fix, and no visual baseline was re-baselined.
 `git diff --check` exited 0 after the record update.
+
+## Integration closeout — 2026-09-01
+
+The implementation commits were integrated against the current main tree and this PRD is archived
+in `docs/PRDs/done/`. The convention focused suite passed 2 files and 14 tests; the final affected
+template/scaffold/native-smoke suite passed 3 files and 86 tests. `pnpm sync:agents` passed while
+writing the repaired template mirrors. Shared repository gate outcomes are recorded in the PRD-292
+integration record. The existing source-lane visual and device qualifications remain scoped as
+recorded above.

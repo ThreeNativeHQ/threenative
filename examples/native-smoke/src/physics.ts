@@ -420,6 +420,7 @@ function gatedPlaytest(): IGamePluginHooks<IPhysicsState, IPhysicsContext> {
       }
       bridge.ready = async () => {
         await sceneReady;
+        if (runtime?.startupCompileSettled === undefined) return originalReady();
         const ready = await originalReady();
         return {
           ...ready,
