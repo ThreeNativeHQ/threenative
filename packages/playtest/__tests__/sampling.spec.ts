@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import type { Page } from "playwright";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { chromium, type Browser, type Page } from "playwright";
 import { PNG } from "pngjs";
 
 import type { IPlaytestObservationSnapshot, IPlaytestScenario } from "../src/index.js";
@@ -49,6 +49,46 @@ function installGlobal(name: string, value: unknown): () => void {
   };
 }
 
+function installVisibilitySamplingMock(
+  target: unknown,
+  topmost: (pointerEventsForced: boolean) => unknown,
+): { restore: () => void; restoreWindow: () => void } {
+  let forcedPointerEvents = false;
+  let isolationActive = false;
+  let styleCount = 0;
+  const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+  const isolationStyle = { remove: () => { isolationActive = false; } };
+  const probe = {
+    remove: () => undefined,
+    removeAttribute: () => undefined,
+    setAttribute: () => undefined,
+  };
+  const restore = installGlobal("document", {
+    createElement: (tagName: string) => {
+      if (tagName === "style") return styleCount++ === 0 ? pointerEventsStyle : isolationStyle;
+      return probe;
+    },
+    elementFromPoint: () => topmost(forcedPointerEvents),
+    getElementById: () => target,
+    head: {
+      appendChild: (element: unknown) => {
+        if (element === pointerEventsStyle) forcedPointerEvents = true;
+        if (element === isolationStyle) isolationActive = true;
+      },
+    },
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: (element: unknown) => ({
+      display: "block",
+      opacity: "1",
+      visibility: element === probe && isolationActive ? "hidden" : "visible",
+    }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  return { restore, restoreWindow };
+}
+
 function brightScreenshot(): Buffer {
   const png = new PNG({ height: 4, width: 4 });
   png.data.fill(255);
@@ -81,6 +121,68 @@ function transparentScreenshot(): Buffer {
   const png = new PNG({ height: 4, width: 4 });
   png.data.fill(0);
   return PNG.sync.write(png);
+}
+
+const visibilityFixtureClip = { height: 80, width: 80, x: 0, y: 0 };
+
+async function installVisibilityFixture(page: Page, options: { csp: boolean; paintedTarget: boolean }): Promise<void> {
+  const csp = options.csp
+    ? `<meta http-equiv="Content-Security-Policy" content="style-src 'nonce-allowed'">`
+    : "";
+  const nonce = options.csp ? ` nonce="allowed"` : "";
+  const paintedTarget = options.paintedTarget ? `<span id="target-paint"></span>` : "";
+  await page.setContent(`<!doctype html>${csp}
+    <style${nonce}>
+      html, body { margin: 0; padding: 0; }
+      #background { position: absolute; inset: 0; }
+      #target { position: absolute; left: 0; top: 0; width: 80px; height: 80px; z-index: 1; }
+      #target-paint { display: block; width: 40px; height: 80px; background: rgb(240, 40, 40); }
+    </style>
+    <canvas id="background" width="160" height="120"></canvas>
+    <div id="target">${paintedTarget}</div>`);
+  await page.evaluate(() => {
+    const canvas = document.getElementById("background") as HTMLCanvasElement | null;
+    const context = canvas?.getContext("2d");
+    if (canvas === null || context === null || context === undefined) throw new Error("visibility fixture has no 2D context");
+    context.fillStyle = "rgb(17, 34, 51)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  });
+}
+
+function pngPixel(screenshot: Buffer, x: number, y: number): [number, number, number, number] {
+  const png = PNG.sync.read(screenshot);
+  const offset = (y * png.width + x) * 4;
+  return [png.data[offset] ?? 0, png.data[offset + 1] ?? 0, png.data[offset + 2] ?? 0, png.data[offset + 3] ?? 0];
+}
+
+async function captureVisibilityScreenshots(
+  page: Page,
+): Promise<{ screenshots: Buffer[]; page: Page }> {
+  const screenshots: Buffer[] = [];
+  const observedPage = new Proxy(page, {
+    get(target, property) {
+      if (property === "screenshot") {
+        return async (options: Parameters<Page["screenshot"]>[0]) => {
+          const screenshot = await target.screenshot(options);
+          screenshots.push(screenshot);
+          return screenshot;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as Page;
+  return { page: observedPage, screenshots };
+}
+
+async function temporaryVisibilityArtifacts(page: Page): Promise<{ markers: number; styles: number }> {
+  return page.evaluate(() => {
+    const elements = [...document.querySelectorAll("*")];
+    return {
+      markers: elements.filter((element) => element.getAttributeNames().some((name) => name.startsWith("data-threenative-visibility-"))).length,
+      styles: [...document.querySelectorAll("style")].filter((style) => style.textContent?.includes("threenativePlaytestVisibilityIsolation") === true).length,
+    };
+  });
 }
 
 describe("playtest sampling", () => {
@@ -123,17 +225,7 @@ describe("playtest sampling", () => {
       },
       textContent: " TN_TEST: boot failed ",
     };
-    const restore = installGlobal("document", {
-      createElement: () => ({ remove: () => undefined }),
-      elementFromPoint: () => error,
-      getElementById: () => error,
-      head: { appendChild: () => undefined },
-    });
-    const restoreWindow = installGlobal("window", {
-      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
-      innerHeight: 720,
-      innerWidth: 1280,
-    });
+    const { restore, restoreWindow } = installVisibilitySamplingMock(error, () => error);
     try {
       const page = {
         evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
@@ -167,19 +259,7 @@ describe("playtest sampling", () => {
       },
       textContent: " TN_TEST: visible ",
     };
-    let forcedPointerEvents = false;
-    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
-    const restore = installGlobal("document", {
-      createElement: () => pointerEventsStyle,
-      elementFromPoint: () => forcedPointerEvents ? error : canvas,
-      getElementById: () => error,
-      head: { appendChild: () => { forcedPointerEvents = true; } },
-    });
-    const restoreWindow = installGlobal("window", {
-      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
-      innerHeight: 720,
-      innerWidth: 1280,
-    });
+    const { restore, restoreWindow } = installVisibilitySamplingMock(error, (forcedPointerEvents) => forcedPointerEvents ? error : canvas);
     try {
       const page = {
         evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
@@ -212,19 +292,7 @@ describe("playtest sampling", () => {
         },
       },
     };
-    let forcedPointerEvents = false;
-    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
-    const restore = installGlobal("document", {
-      createElement: () => pointerEventsStyle,
-      elementFromPoint: () => forcedPointerEvents ? target : canvas,
-      getElementById: () => target,
-      head: { appendChild: () => { forcedPointerEvents = true; } },
-    });
-    const restoreWindow = installGlobal("window", {
-      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
-      innerHeight: 720,
-      innerWidth: 1280,
-    });
+    const { restore, restoreWindow } = installVisibilitySamplingMock(target, (forcedPointerEvents) => forcedPointerEvents ? target : canvas);
     const clips: unknown[] = [];
     try {
       const page = {
@@ -267,19 +335,7 @@ describe("playtest sampling", () => {
         },
       },
     };
-    let forcedPointerEvents = false;
-    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
-    const restore = installGlobal("document", {
-      createElement: () => pointerEventsStyle,
-      elementFromPoint: () => forcedPointerEvents ? target : canvas,
-      getElementById: () => target,
-      head: { appendChild: () => { forcedPointerEvents = true; } },
-    });
-    const restoreWindow = installGlobal("window", {
-      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
-      innerHeight: 720,
-      innerWidth: 1280,
-    });
+    const { restore, restoreWindow } = installVisibilitySamplingMock(target, (forcedPointerEvents) => forcedPointerEvents ? target : canvas);
     const clips: unknown[] = [];
     const screenshotOptions: Array<{ clip?: unknown; omitBackground?: boolean }> = [];
     let screenshotCount = 0;
@@ -597,6 +653,74 @@ describe("playtest sampling", () => {
     } finally {
       restoreNavigator();
       restoreDocument();
+    }
+  });
+});
+
+describe("browser-backed DOM visibility isolation", () => {
+  let browser: Browser;
+
+  beforeAll(async () => {
+    browser = await chromium.launch({ headless: true });
+  });
+
+  afterAll(async () => {
+    await browser.close();
+  });
+
+  test("fails closed when CSP blocks isolation over a painted background", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installVisibilityFixture(page, { csp: true, paintedTarget: false });
+      const blockedStyleState = await page.evaluate(() => {
+        const style = document.createElement("style");
+        style.textContent = "#target { visibility: hidden !important; }";
+        document.head.appendChild(style);
+        const visibility = getComputedStyle(document.getElementById("target")!).visibility;
+        style.remove();
+        return visibility;
+      });
+      expect(blockedStyleState).toBe("visible");
+
+      const backgroundScreenshot = await page.screenshot({ clip: visibilityFixtureClip, omitBackground: true });
+      expect(pngPixel(backgroundScreenshot, 20, 20)).toEqual([17, 34, 51, 255]);
+      await page.evaluate(() => {
+        const canvas = document.getElementById("background") as HTMLCanvasElement | null;
+        const context = canvas?.getContext("2d");
+        if (canvas === null || context === null || context === undefined) throw new Error("visibility fixture has no 2D context");
+        context.fillStyle = "rgb(68, 85, 102)";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      });
+      const changedBackgroundScreenshot = await page.screenshot({ clip: visibilityFixtureClip, omitBackground: true });
+      expect(pngPixel(changedBackgroundScreenshot, 20, 20)).toEqual([68, 85, 102, 255]);
+
+      const observed = await captureVisibilityScreenshots(page);
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: false,
+      });
+      expect(observed.screenshots).toHaveLength(0);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("captures a painted target after isolation removes the background", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installVisibilityFixture(page, { csp: false, paintedTarget: true });
+      const observed = await captureVisibilityScreenshots(page);
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: true,
+      });
+      expect(observed.screenshots).toHaveLength(1);
+      expect(pngPixel(observed.screenshots[0]!, 20, 20)).toEqual([240, 40, 40, 255]);
+      expect(pngPixel(observed.screenshots[0]!, 60, 20)).toEqual([0, 0, 0, 0]);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
     }
   });
 });

@@ -29,6 +29,8 @@ interface IDomElementVisibilitySample extends IElementVisibilitySample {
 interface IVisibilityIsolationState {
   elements: Element[];
   markerAttribute: string;
+  probe: Element;
+  probeAttribute: string;
   style: HTMLStyleElement;
 }
 
@@ -89,33 +91,93 @@ export async function sampleElementVisibility(
     } catch {
       rendered = false;
     } finally {
-      pointerEventsStyle.remove();
+      try {
+        pointerEventsStyle.remove();
+      } catch {
+        rendered = false;
+      }
     }
 
     if (!rendered) return { bounds, rendered: false };
 
     const markerAttribute = `data-threenative-visibility-${isolationKey}`;
+    const probeAttribute = `data-threenative-visibility-probe-${isolationKey}`;
     const markedElements = [node];
     let isolationStyle: HTMLStyleElement | undefined;
+    let isolationProbe: Element | undefined;
+    const cleanupIsolation = (): boolean => {
+      let cleaned = true;
+      try {
+        isolationStyle?.remove();
+      } catch {
+        cleaned = false;
+      }
+      for (const element of markedElements) {
+        try {
+          element.removeAttribute(markerAttribute);
+        } catch {
+          cleaned = false;
+        }
+      }
+      try {
+        isolationProbe?.removeAttribute(probeAttribute);
+      } catch {
+        cleaned = false;
+      }
+      try {
+        isolationProbe?.remove();
+      } catch {
+        cleaned = false;
+      }
+      return cleaned;
+    };
     try {
       node.setAttribute(markerAttribute, "");
 
-      const targetContainsDocumentElement = document.documentElement !== null
-        && (node === document.documentElement || node.contains(document.documentElement));
-      const targetContainsBody = document.body !== null
-        && (node === document.body || node.contains(document.body));
+      const documentElement = document.documentElement ?? null;
+      const body = document.body ?? null;
+      const targetContainsDocumentElement = documentElement !== null
+        && (node === documentElement || node.contains(documentElement));
+      const targetContainsBody = body !== null
+        && (node === body || node.contains(body));
+      if (document.head === null) throw new Error("Cannot isolate a visibility target without document.head");
+      isolationProbe = document.createElement("span");
+      isolationProbe.setAttribute(probeAttribute, "");
+      const probeParent = targetContainsDocumentElement || targetContainsBody || body === null ? document.head : body;
+      if (probeParent === null) throw new Error("Cannot isolate a visibility target without a probe parent");
+      probeParent.appendChild(isolationProbe);
+      if (window.getComputedStyle(isolationProbe).visibility !== "visible") {
+        throw new Error("Cannot verify a visible visibility isolation probe");
+      }
       isolationStyle = document.createElement("style");
       isolationStyle.textContent = [
         targetContainsDocumentElement ? "" : "html { background: transparent !important; visibility: hidden !important; }",
         targetContainsBody ? "" : "body { background: transparent !important; visibility: hidden !important; }",
         `body *:not([${markerAttribute}]):not([${markerAttribute}] *) { visibility: hidden !important; }`,
         `[${markerAttribute}] { visibility: visible !important; }`,
+        targetContainsDocumentElement || targetContainsBody || body === null
+          ? `[${probeAttribute}] { visibility: hidden !important; }`
+          : "",
       ].filter(Boolean).join("\n");
-      if (document.head === null) throw new Error("Cannot isolate a visibility target without document.head");
       document.head.appendChild(isolationStyle);
+      const targetVisibility = window.getComputedStyle(node).visibility;
+      const probeVisibility = window.getComputedStyle(isolationProbe).visibility;
+      const transparentBackground = (element: Element | null): boolean => {
+        if (element === null) return true;
+        const style = window.getComputedStyle(element);
+        return (style.backgroundColor === "transparent" || style.backgroundColor === "rgba(0, 0, 0, 0)")
+          && style.backgroundImage === "none";
+      };
+      const rootsAreTransparent = (targetContainsDocumentElement || transparentBackground(documentElement))
+        && (targetContainsBody || transparentBackground(body));
+      if (targetVisibility !== "visible" || probeVisibility !== "hidden" || !rootsAreTransparent) {
+        throw new Error("Cannot verify active visibility isolation rules");
+      }
       (window as unknown as Record<string, IVisibilityIsolationState>)[isolationKey] = {
         elements: markedElements,
         markerAttribute,
+        probe: isolationProbe,
+        probeAttribute,
         style: isolationStyle,
       };
       return {
@@ -125,18 +187,7 @@ export async function sampleElementVisibility(
         rendered: true,
       };
     } catch {
-      try {
-        isolationStyle?.remove();
-      } catch {
-        // The sample fails closed below if the temporary isolation cannot be removed.
-      }
-      for (const element of markedElements) {
-        try {
-          element.removeAttribute(markerAttribute);
-        } catch {
-          // The sample fails closed when target restoration is incomplete.
-        }
-      }
+      cleanupIsolation();
       return { bounds, rendered: false };
     }
   }, { isolationKey, requestedTarget: target }).catch(() => undefined);
@@ -155,14 +206,35 @@ export async function sampleElementVisibility(
     restored = await page.evaluate((key): boolean => {
       const state = (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
       if (state === undefined) return false;
+      let cleaned = true;
       try {
         state.style.remove();
-        for (const element of state.elements) element.removeAttribute(state.markerAttribute);
-        delete (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
-        return true;
       } catch {
-        return false;
+        cleaned = false;
       }
+      for (const element of state.elements) {
+        try {
+          element.removeAttribute(state.markerAttribute);
+        } catch {
+          cleaned = false;
+        }
+      }
+      try {
+        state.probe.removeAttribute(state.probeAttribute);
+      } catch {
+        cleaned = false;
+      }
+      try {
+        state.probe.remove();
+      } catch {
+        cleaned = false;
+      }
+      try {
+        delete (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
+      } catch {
+        cleaned = false;
+      }
+      return cleaned;
     }, domSample.isolationKey).catch(() => false);
   }
   return {

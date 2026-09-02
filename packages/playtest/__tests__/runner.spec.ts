@@ -119,6 +119,8 @@ test("visual observations rasterize an element-bound region captured beside the 
 
 test("browser visual capture records id or selector bounds and renderability", async () => {
   let targetHidden = false;
+  let isolationActive = false;
+  let styleCount = 0;
   const visible = {
     contains: () => false,
     getAttribute: () => null,
@@ -139,11 +141,21 @@ test("browser visual capture records id or selector bounds and renderability", a
     getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
     parentElement: null,
   };
+  const pointerEventsStyle = { remove: () => undefined };
+  const isolationStyle = { remove: () => { isolationActive = false; } };
+  const probe = {
+    remove: () => undefined,
+    removeAttribute: () => undefined,
+    setAttribute: () => undefined,
+  };
   const restoreDocument = installGlobal("document", {
-    createElement: () => ({ remove: () => undefined }),
+    createElement: (tagName: string) => {
+      if (tagName === "style") return styleCount++ === 0 ? pointerEventsStyle : isolationStyle;
+      return probe;
+    },
     elementFromPoint: () => visible,
     getElementById: (id: string) => id === "visible" ? visible : transparent,
-    head: { appendChild: () => undefined },
+    head: { appendChild: (element: unknown) => { if (element === isolationStyle) isolationActive = true; } },
     querySelector: () => visible,
   });
   const restoreWindow = installGlobal("window", {
@@ -151,7 +163,7 @@ test("browser visual capture records id or selector bounds and renderability", a
       display: "block",
       getPropertyValue: () => "",
       opacity: element === transparent ? "0" : "1",
-      visibility: "visible",
+      visibility: element === probe && isolationActive ? "hidden" : "visible",
     }),
     innerHeight: 720,
     innerWidth: 1280,
@@ -194,6 +206,8 @@ test("browser visual capture records id or selector bounds and renderability", a
 test("browser visual element regions accept painted noninteractive nodes", async () => {
   const canvas = {};
   let targetHidden = false;
+  let isolationActive = false;
+  let styleCount = 0;
   const target = {
     contains: () => false,
     getAttribute: () => null,
@@ -211,14 +225,33 @@ test("browser visual element regions accept painted noninteractive nodes", async
   };
   let forcedPointerEvents = false;
   const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+  const isolationStyle = { remove: () => { isolationActive = false; } };
+  const probe = {
+    remove: () => undefined,
+    removeAttribute: () => undefined,
+    setAttribute: () => undefined,
+  };
   const restoreDocument = installGlobal("document", {
-    createElement: () => pointerEventsStyle,
+    createElement: (tagName: string) => {
+      if (tagName === "style") return styleCount++ === 0 ? pointerEventsStyle : isolationStyle;
+      return probe;
+    },
     elementFromPoint: () => forcedPointerEvents ? target : canvas,
     getElementById: () => target,
-    head: { appendChild: () => { forcedPointerEvents = true; } },
+    head: {
+      appendChild: (element: unknown) => {
+        if (element === pointerEventsStyle) forcedPointerEvents = true;
+        if (element === isolationStyle) isolationActive = true;
+      },
+    },
   });
   const restoreWindow = installGlobal("window", {
-    getComputedStyle: () => ({ display: "block", getPropertyValue: () => "", opacity: "1", visibility: "visible" }),
+    getComputedStyle: (element: unknown) => ({
+      display: "block",
+      getPropertyValue: () => "",
+      opacity: "1",
+      visibility: element === probe && isolationActive ? "hidden" : "visible",
+    }),
     innerHeight: 720,
     innerWidth: 1280,
   });
