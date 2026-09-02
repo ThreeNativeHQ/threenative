@@ -68,7 +68,7 @@ rendererKind=webgpu adapter.architecture=turing adapter.vendor=nvidia
 diagnostics consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
 ```
 
-## Final staircase proof — fresh web and historical desktop
+## Final staircase proof — fresh web and desktop
 
 The final scenario is:
 
@@ -93,23 +93,28 @@ rendererKind=webgpu adapter.architecture=turing adapter.vendor=nvidia
 setup requested/applied spawn={x:25,y:1.9,z:-4.4} aim={yaw:pi,pitch:0.82}
 ```
 
-Earlier desktop receipt (it predates the final lifecycle correction and is not a post-correction
-native scenario proof):
+Fresh post-correction desktop receipt:
 
 ```text
-SDL_AUDIO_DRIVER=dummy sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js /home/joao/projects/threenative/sandbox/.worktrees/prd-325-three-seams/prd259-bayview-current-20260830/playtests/camera-tracks-body-vertically.playtest.json --target desktop --executable /home/joao/projects/threenative/prd325-desktop-proof-corrected --no-screenshots --timeout 60000
+SDL_AUDIODRIVER=dummy sh <engine-worktree>/packages/runtime-native/scripts/xvfb.sh \
+  node <engine-worktree>/packages/playtest/dist/runner/cli.js \
+  playtests/camera-tracks-body-vertically.playtest.json --target desktop \
+  --executable dist-native/fps-framework \
+  --artifacts artifacts/prd325-desktop-final-dummy --timeout 60000
 
 pass=true target=desktop runtime=native
-positionY 1.8985751867294312 -> 2.3630950450897217
+positionY 1.8988752365112305 -> 2.3633956909179688
 targetsHit 0 -> 1; score=250; shots=1; cameraLagPeak=0
 diagnostics consoleErrors=0 networkErrors=0 runtimeDiagnostics=0 runtimeReady=true
 setup requested/applied spawn={x:25,y:1.9,z:-4.4} aim={yaw:pi,pitch:0.82}
-climb-shot step tick=25
+rendererKind=webgpu adapter=NVIDIA GeForce RTX 2080 backend=Vulkan
 ```
 
-The fresh web scenario passed with setup applied before the authoritative body transfer. A fresh
-desktop/device scenario remains unverified; native endpoint hold behavior is covered by the focused
-shared lifecycle test below, not by relabeling the older desktop receipt.
+The fresh web and desktop scenarios passed with setup applied before the authoritative body
+transfer. The desktop artifact was rebuilt from the corrected engine bundle. Because this linked
+Bayview lane's `public/assets/*.glb` files are symlinks to a measurement fixture, packaging used a
+dereferenced temporary asset staging copy with all GLBs serialized using
+`gltf-transform copy --vertex-layout separate`; no tracked game asset changed.
 
 ## Setup ordering and manager gates
 
@@ -143,14 +148,18 @@ capabilities, checks immediate fail-closed setup rejection, and checks native en
 The playtest transport suite separately checks setup-before-describe on web and desktop transports
 without treating `describe` itself as scene entry.
 
-The manager ran these gates before the final lifecycle correction; they are historical and were not
-rerun for commit `2e2cff2b`:
+The performance regression was red before the held-loop and renderer-metrics correction: the
+minimal template's first performance sample observed 4737 triangles against its 1223-triangle
+bound. The focused green run now measures a steady-state maximum of 1175 triangles, and all three
+minimal scenarios pass. This preserves the real first-use render cost in diagnostics while making
+per-frame renderer counters deterministic under the engine-owned render loop.
+
+The final manager gate sequence is recorded separately after the lifecycle correction:
 
 ```text
-pnpm typecheck && pnpm lint && pnpm test — exit 0
-typecheck passed; lint exit 0 with existing warnings; 3308 tests passed and 4 skipped
-pnpm budgets — exit 0
-pnpm test:templates — exit 0; all scaffolded template playtests passed
+pnpm typecheck && pnpm lint && pnpm test — pass (330 files / 3311 tests; 1 file / 4 tests skipped)
+pnpm budgets — pass (10 packages; 254-entry capability manifest fresh; 8 templates × 7 hosts current)
+pnpm test:templates — pass (8 templates; 81 audited scenarios)
 ```
 
 The source PRD's legacy parser check remains separately recorded as a parser limitation in
