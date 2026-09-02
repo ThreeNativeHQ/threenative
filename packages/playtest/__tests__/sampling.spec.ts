@@ -15,6 +15,7 @@ import {
   positiveFiniteDelta,
   readCaptureProvenance,
   resourceObservations,
+  sampleElementVisibility,
   sampleHud,
 } from "../src/runner/sampling.js";
 import type { IMovementSampleInterval } from "../src/runner/shared.js";
@@ -54,6 +55,17 @@ function brightScreenshot(): Buffer {
   return PNG.sync.write(png);
 }
 
+function targetPaintScreenshot(hidden: boolean): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  if (!hidden) {
+    png.data[0] = 0;
+    png.data[1] = 0;
+    png.data[2] = 0;
+  }
+  return PNG.sync.write(png);
+}
+
 describe("playtest sampling", () => {
   test("samples HUD values by id and selector without dropping absent nodes", async () => {
     const score = { getAttribute: () => "7", textContent: " Score " };
@@ -77,11 +89,21 @@ describe("playtest sampling", () => {
   });
 
   test("samples a HUD node only when its rendered box is on top of the page", async () => {
+    let targetHidden = false;
     const error = {
       contains: () => false,
       getAttribute: () => null,
       getBoundingClientRect: () => ({ bottom: 720, height: 720, left: 0, right: 1280, top: 0, width: 1280 }),
       parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") targetHidden = false;
+      },
+      setAttribute: () => undefined,
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
       textContent: " TN_TEST: boot failed ",
     };
     const restore = installGlobal("document", {
@@ -98,7 +120,7 @@ describe("playtest sampling", () => {
     try {
       const page = {
         evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
-        screenshot: async () => brightScreenshot(),
+        screenshot: async () => targetPaintScreenshot(targetHidden),
       } as unknown as Page;
       await expect(sampleHud(page, [{ id: "error", textIncludes: "TN_TEST", visible: true }])).resolves.toEqual({
         error: { text: "TN_TEST: boot failed", visible: true },
@@ -111,11 +133,21 @@ describe("playtest sampling", () => {
 
   test("samples painted HUD content when the node is noninteractive", async () => {
     const canvas = {};
+    let targetHidden = false;
     const error = {
       contains: () => false,
       getAttribute: () => null,
       getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
       parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") targetHidden = false;
+      },
+      setAttribute: () => undefined,
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
       textContent: " TN_TEST: visible ",
     };
     let forcedPointerEvents = false;
@@ -134,11 +166,64 @@ describe("playtest sampling", () => {
     try {
       const page = {
         evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
-        screenshot: async () => brightScreenshot(),
+        screenshot: async () => targetPaintScreenshot(targetHidden),
       } as unknown as Page;
       await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
         error: { text: "TN_TEST: visible", visible: true },
       });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects transparent content over a light page background when the target adds no paint", async () => {
+    const canvas = {};
+    let targetHidden = false;
+    const target = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: null,
+      removeAttribute: (name: string) => {
+        if (name === "style") targetHidden = false;
+      },
+      setAttribute: () => undefined,
+      style: {
+        setProperty: (name: string, value: string) => {
+          if (name === "opacity" && value === "0") targetHidden = true;
+        },
+      },
+    };
+    let forcedPointerEvents = false;
+    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+    const restore = installGlobal("document", {
+      createElement: () => pointerEventsStyle,
+      elementFromPoint: () => forcedPointerEvents ? target : canvas,
+      getElementById: () => target,
+      head: { appendChild: () => { forcedPointerEvents = true; } },
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    const clips: unknown[] = [];
+    try {
+      const page = {
+        evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
+        screenshot: async (options?: { clip?: unknown }) => {
+          clips.push(options?.clip);
+          return brightScreenshot();
+        },
+      } as unknown as Page;
+      await expect(sampleElementVisibility(page, { id: "transparent" })).resolves.toEqual({
+        bounds: { height: 80, width: 200, x: 0, y: 0 },
+        rendered: false,
+      });
+      expect(clips).toHaveLength(2);
+      expect(clips[0]).toEqual(clips[1]);
+      expect(targetHidden).toBe(false);
     } finally {
       restoreWindow();
       restore();

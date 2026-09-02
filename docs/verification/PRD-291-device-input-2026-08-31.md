@@ -222,9 +222,10 @@ The historical seven-template result above predates the current integration foll
 template now owns a generated `src/render/touch-controls.ts` movement surface. Its scene registers
 that surface only for `isMobile() && isTouchscreenAvailable()`, passes raw pointers to it every
 frame, and `Ship.update` merges the resulting movement vector with the existing keyboard vector.
-The new `playtests/touch-controls.playtest.json` uses touch pointers only and asserts player
-movement plus the visible `touch-controls` entity. This does not change the native/device
-qualification, which remains explicitly `UNVERIFIED`.
+The new `playtests/touch-controls.playtest.json` uses touch pointers only and asserts signed
+forward propulsion through the published `state.shipZ` resource plus the visible `touch-controls`
+entity. This does not change the native/device qualification, which remains explicitly
+`UNVERIFIED`.
 
 Red-green evidence:
 
@@ -256,3 +257,34 @@ step. This remains an environment-level runner failure; no native or device resu
 Native/device status is `UNVERIFIED`: `adb devices` returned only `List of devices attached` with
 no serial; `xcrun --version` and `emulator -list-avds` were unavailable. No native result is
 inferred from the browser run.
+
+## Review repair — signed sailing touch propulsion — 2026-09-02
+
+The sailing touch scenario now replaces its wave-sensitive generic movement proof with
+`resources: [{ "id": "state", "path": "shipZ", "lte": 6.9, "changed": true }]`. The authored
+initial state publishes `shipZ: 7`, and the touch gesture moves the ship toward decreasing Z;
+vertical wave bobbing cannot satisfy this signed horizontal/forward bound. The existing visible
+`touch-controls` assertion remains.
+
+Red-green mutation evidence, using the final scenario:
+
+```text
+Temporary mutation: replace the four-argument `ship.update(...)` call in
+`templates/sailing/src/scenes/Sailing.ts` with `ship.update(frameCtx, deltaTime, wind)`, so the
+touch vector is ignored.
+
+TN_TEMPLATE_ONLY=sailing pnpm test:templates
+RED, exit 1; the audit found 6 sailing scenarios. `sailing-touch-controls` failed
+`resource.state.shipZ` with `TN_PLAYTEST_RESOURCE_STATE_STAGNATED` because the observed `shipZ`
+remained 7; `visibility.touch-controls` passed. The other five sailing scenarios passed.
+
+After restoring the touch update call:
+
+TN_TEMPLATE_ONLY=sailing pnpm test:templates
+PASS, exit 0; all 6 sailing scenarios passed, including `sailing-touch-controls`, whose
+`state.shipZ` assertion required `shipZ <= 6.9` and `changed: true` alongside visible
+`touch-controls`.
+```
+
+Native/device status remains `UNVERIFIED`: no Android serial or emulator is available, and
+`xcrun` is unavailable. These browser results claim no native execution.

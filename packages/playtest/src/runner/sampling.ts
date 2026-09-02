@@ -93,19 +93,65 @@ export async function sampleElementVisibility(
     return { ...(domSample?.bounds === undefined ? {} : { bounds: domSample.bounds }), rendered: false };
   }
   const screenshot = await page.screenshot({ clip: domSample.clip }).catch(() => undefined);
+  if (screenshot === undefined) return { bounds: domSample.bounds, rendered: false };
+  const originalStyle = await page.evaluate((requestedTarget): string | null | undefined => {
+    const node = requestedTarget.id === undefined
+      ? (() => {
+          try {
+            return requestedTarget.selector === undefined ? null : document.querySelector(requestedTarget.selector);
+          } catch {
+            return null;
+          }
+        })()
+      : document.getElementById(requestedTarget.id);
+    if (node === null) return undefined;
+    const style = node as HTMLElement;
+    const previousStyle = style.getAttribute("style");
+    style.style.setProperty("opacity", "0", "important");
+    return previousStyle;
+  }, target).catch(() => undefined);
+  if (originalStyle === undefined) return { bounds: domSample.bounds, rendered: false };
+
+  let hiddenScreenshot: Buffer | undefined;
+  let restored = false;
+  try {
+    hiddenScreenshot = await page.screenshot({ clip: domSample.clip }).catch(() => undefined);
+  } finally {
+    restored = await page.evaluate(({ requestedTarget, previousStyle }) => {
+      const node = requestedTarget.id === undefined
+        ? (() => {
+            try {
+              return requestedTarget.selector === undefined ? null : document.querySelector(requestedTarget.selector);
+            } catch {
+              return null;
+            }
+          })()
+        : document.getElementById(requestedTarget.id);
+      if (node === null) return false;
+      if (previousStyle === null) node.removeAttribute("style");
+      else node.setAttribute("style", previousStyle);
+      return true;
+    }, { requestedTarget: target, previousStyle: originalStyle }).catch(() => false);
+  }
   return {
     bounds: domSample.bounds,
-    rendered: screenshot !== undefined && containsPaintedPixels(screenshot),
+    rendered: restored && hiddenScreenshot !== undefined && hasTargetPaintDelta(screenshot, hiddenScreenshot),
   };
 }
 
-function containsPaintedPixels(screenshot: Buffer): boolean {
+function hasTargetPaintDelta(visibleScreenshot: Buffer, hiddenScreenshot: Buffer): boolean {
   try {
-    const png = PNG.sync.read(screenshot);
-    for (let offset = 0; offset < png.data.length; offset += 4) {
-      const alpha = png.data[offset + 3] ?? 0;
-      const luminance = Math.max(png.data[offset] ?? 0, png.data[offset + 1] ?? 0, png.data[offset + 2] ?? 0) / 255;
-      if (alpha > 0 && luminance > 0.01) return true;
+    const visible = PNG.sync.read(visibleScreenshot);
+    const hidden = PNG.sync.read(hiddenScreenshot);
+    if (visible.width !== hidden.width || visible.height !== hidden.height || visible.data.length !== hidden.data.length) return false;
+    for (let offset = 0; offset < visible.data.length; offset += 4) {
+      const difference = Math.max(
+        Math.abs((visible.data[offset] ?? 0) - (hidden.data[offset] ?? 0)),
+        Math.abs((visible.data[offset + 1] ?? 0) - (hidden.data[offset + 1] ?? 0)),
+        Math.abs((visible.data[offset + 2] ?? 0) - (hidden.data[offset + 2] ?? 0)),
+        Math.abs((visible.data[offset + 3] ?? 0) - (hidden.data[offset + 3] ?? 0)),
+      );
+      if (difference > 8) return true;
     }
   } catch {
     return false;

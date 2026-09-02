@@ -29,12 +29,12 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
-    "movement": { "entity": "player", "minDistance": 0.1 },
+    "resources": [{ "id": "state", "path": "shipZ", "lte": 6.9, "changed": true }],
     "visibility": [
       {
         "entity": "touch-controls",
         "present": true,
-        "allowTrivial": "Touch-primary sailing keeps the authored movement surface visible while movement proves its binding."
+        "allowTrivial": "Touch-primary sailing keeps the authored movement surface visible while state.shipZ proves signed propulsion."
       }
     ]
   }

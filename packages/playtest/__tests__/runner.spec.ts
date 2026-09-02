@@ -54,6 +54,17 @@ function brightScreenshot(): Buffer {
   return PNG.sync.write(png);
 }
 
+function targetPaintScreenshot(hidden: boolean): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  if (!hidden) {
+    png.data[0] = 0;
+    png.data[1] = 0;
+    png.data[2] = 0;
+  }
+  return PNG.sync.write(png);
+}
+
 test("visual capture reads the largest canvas instead of composited page UI", async () => {
   const smallCanvas = { height: 1, width: 1 } as HTMLCanvasElement;
   const renderCanvas = { height: 2, width: 4 } as HTMLCanvasElement;
@@ -107,10 +118,21 @@ test("visual observations rasterize an element-bound region captured beside the 
 });
 
 test("browser visual capture records id or selector bounds and renderability", async () => {
+  let targetHidden = false;
   const visible = {
     contains: () => false,
+    getAttribute: () => null,
     getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
     parentElement: null,
+    removeAttribute: (name: string) => {
+      if (name === "style") targetHidden = false;
+    },
+    setAttribute: () => undefined,
+    style: {
+      setProperty: (name: string, value: string) => {
+        if (name === "opacity" && value === "0") targetHidden = true;
+      },
+    },
   };
   const transparent = {
     contains: () => false,
@@ -137,7 +159,7 @@ test("browser visual capture records id or selector bounds and renderability", a
   try {
     const page = {
       evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
-      screenshot: async () => brightScreenshot(),
+      screenshot: async () => targetPaintScreenshot(targetHidden),
     } as unknown as Page;
     await expect(sampleVisualElementBounds(page, [
       { region: { element: { id: "visible" } } },
@@ -171,10 +193,21 @@ test("browser visual capture records id or selector bounds and renderability", a
 
 test("browser visual element regions accept painted noninteractive nodes", async () => {
   const canvas = {};
+  let targetHidden = false;
   const target = {
     contains: () => false,
+    getAttribute: () => null,
     getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
     parentElement: null,
+    removeAttribute: (name: string) => {
+      if (name === "style") targetHidden = false;
+    },
+    setAttribute: () => undefined,
+    style: {
+      setProperty: (name: string, value: string) => {
+        if (name === "opacity" && value === "0") targetHidden = true;
+      },
+    },
   };
   let forcedPointerEvents = false;
   const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
@@ -192,7 +225,7 @@ test("browser visual element regions accept painted noninteractive nodes", async
   try {
     const page = {
       evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
-      screenshot: async () => brightScreenshot(),
+      screenshot: async () => targetPaintScreenshot(targetHidden),
     } as unknown as Page;
     await expect(sampleVisualElementBounds(page, [
       { region: { element: { id: "target" } } },

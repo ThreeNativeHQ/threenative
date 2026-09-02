@@ -96,15 +96,17 @@ export async function sampleVisualElementBounds(
       : [];
   });
   if (requested.length === 0) return [];
-  return Promise.all(requested.map(async ({ assertionIndex, element }) => {
+  const observations: IPlaytestVisualElementRegionObservation[] = [];
+  for (const { assertionIndex, element } of requested) {
     const visibility = await sampleElementVisibility(page, element);
-    return {
+    observations.push({
       assertionIndex,
       ...(visibility.bounds === undefined ? {} : { bounds: visibility.bounds }),
       element,
       rendered: visibility.rendered,
-    };
-  }));
+    });
+  }
+  return observations;
 }
 
 export function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
