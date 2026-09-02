@@ -14,11 +14,23 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
+# run; that mechanism is gone (see the note above `jobs:`), and nothing else here calls the
+# Actions API.
 permissions:
-  actions: write
   contents: read
 
 jobs:
+  # A red job no longer stops the rest of the run, and that is deliberate. The fail-fast this
+  # replaces cancelled the whole run through the Actions API from inside the job that failed —
+  # and a run-level cancel re-marks every in-flight job `cancelled`, the caller included. On
+  # 2026-09-02 a flaky `test-browser` therefore reported eleven cancelled checks and zero
+  # failures, so the pull request said "cancelled out of nowhere" and `gh run rerun --failed`
+  # had nothing marked failed to re-run. The runner minutes it saved cost the one thing a red
+  # run exists to produce: the name of the gate that broke. The matrices already carry
+  # `fail-fast: false` for the same reason, and the expensive jobs already `needs:` the gate
+  # they depend on, so a broken `build` still skips them without erasing anything.
+  #
   # Every job below checks out and installs for itself, so nothing gains from a shared `install`
   # job that discards its own node_modules — it only added a serial edge in front of the run.
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
@@ -36,8 +48,6 @@ jobs:
       - name: Build workspace packages consumed through export maps
         run: pnpm tsx scripts/workspace-packages.ts build
       - run: pnpm typecheck
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   lint:
     runs-on: ubuntu-latest
@@ -51,8 +61,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
@@ -164,8 +172,6 @@ jobs:
         shell: bash
         run: ccache --show-stats
       - run: pnpm test
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   test-browser:
     runs-on: ubuntu-latest
@@ -194,8 +200,6 @@ jobs:
           name: starter-look-frame
           path: test-results/starter-look
           if-no-files-found: ignore
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   test-playtest:
     runs-on: ubuntu-latest
@@ -212,8 +216,6 @@ jobs:
         run: pnpm tsx scripts/workspace-packages.ts build
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   golden-path-template:
     needs: build
@@ -366,8 +368,6 @@ jobs:
         with:
           path: .golden-path-proof
           key: golden-path-proof-${{ matrix.template }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**', 'scripts/**', '.github/**') }}
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   template-nonvisual:
     # Ran only on push/schedule until 2026-09-01 (owner call): every template now proves itself
@@ -428,8 +428,6 @@ jobs:
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   # `golden-path` is a required status check in the `main protection` ruleset, and required checks
   # match the reported context by exact string. A matrix job does not report its own name — it
@@ -460,8 +458,6 @@ jobs:
           result='${{ needs.golden-path-template.result }}'
           echo "golden-path templates: $result"
           test "$result" = "success"
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   benchmark:
     needs: build
@@ -485,8 +481,6 @@ jobs:
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on
@@ -521,8 +515,6 @@ jobs:
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
         run: pnpm exec tsx scripts/check-core-boundary.ts
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   budgets:
     needs: build
@@ -539,8 +531,6 @@ jobs:
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   # The native lane guards targets that any package change can break. native-platforms is NOT
   # called from here — its own file triggers on pushes to main, pull requests, and the nightly
@@ -574,7 +564,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      actions: write
       contents: read
     steps:
       - uses: actions/checkout@v7
@@ -616,5 +605,3 @@ jobs:
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure

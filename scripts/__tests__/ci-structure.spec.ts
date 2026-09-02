@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -85,42 +85,33 @@ describe("CI pipeline structure", () => {
     expect(hook).not.toContain("git add .");
   });
 
-  it("a failed job cancels its own run and nothing on another branch", async () => {
-    const action = await readFile(
-      path.join(repo, ".github/actions/cancel-run-on-failure/action.yml"),
-      "utf8",
-    );
-    expect(action).toContain("GH_TOKEN: ${{ github.token }}");
-    expect(action).toContain("repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel");
-
-    // The first version swept every in_progress and queued run in the repository and cancelled
-    // any whose branch looked like a PRD lane. On 2026-09-01 at 03:42:54 one red native job took
-    // out six runs across four branches in twenty seconds, three of them other people's, none of
-    // them failing. Those lanes re-pushed, so the sweep spent more runner time than it saved.
-    // Cancelling anything outside this run is the behaviour under test, and it must stay gone.
-    expect(action).not.toContain("status=in_progress");
-    expect(action).not.toContain("for status in in_progress queued");
-    expect(action).not.toContain("head_branch");
-    expect(action).not.toContain("linchpin/*");
-    expect(action).not.toContain("--paginate");
-    expect(action.match(/actions\/runs\//gu) ?? []).toHaveLength(1);
-
-    for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
+  it("no job cancels its own run, because that erases which gate went red", async () => {
+    // The mechanism this replaces called `POST /actions/runs/$GITHUB_RUN_ID/cancel` from an
+    // `if: failure()` step inside the job that had just failed. A run-level cancel re-marks every
+    // in-flight job `cancelled` — the caller included — so on 2026-09-02 a flaky `test-browser`
+    // produced eleven cancelled checks, zero failures, and a pull request that could not say what
+    // broke; `gh run rerun --failed` then had nothing marked failed to re-run.
+    //
+    // Its predecessor was worse still: it swept every in_progress and queued run in the
+    // repository and cancelled any whose branch looked like a PRD lane, so on 2026-09-01 one red
+    // native job took out six runs across four branches in twenty seconds. Neither form comes
+    // back. The saving was runner minutes; the price was the only thing a red run produces.
+    await expect(stat(path.join(repo, ".github/actions/cancel-run-on-failure"))).rejects.toThrow();
+    for (const relative of workflows) {
       const source = await readFile(path.join(repo, relative), "utf8");
-      expect(triggerSection(source), relative).toContain("actions: write");
-      for (const [job, section] of jobSections(source)) {
-        // The one exemption is android-emulator-parity, asserted explicitly below: an advisory
-        // job must not cancel its own run on its known red — that cancel step killed
-        // desktop-parity twice on 2026-09-01 while desktop-parity was mid-run.
-        if (relative.endsWith("native-platforms.yml") && job === "android-emulator-parity") {
-          continue;
-        }
-        expect(section, `${relative} ${job}`).toContain("if: failure()");
-        expect(section, `${relative} ${job}`).toContain(
-          "uses: ./.github/actions/cancel-run-on-failure",
-        );
-      }
+      expect(source, relative).not.toContain("cancel-run-on-failure");
+      expect(source, `${relative} cancels its own run`).not.toContain(
+        "actions/runs/$GITHUB_RUN_ID/cancel",
+      );
+      // Nothing left here calls the Actions API, so nothing may ask to write to it.
+      expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
     }
+
+    // Fail-fast that keeps its evidence: a matrix reports every leg, and an expensive job is
+    // skipped by its `needs:` edge rather than cancelled out from under itself.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(ci).toContain("fail-fast: false");
+    expect(ci).toContain("needs: build");
   });
 
   it("bounds every runner job with an explicit timeout", async () => {
@@ -395,7 +386,9 @@ describe("CI pipeline structure", () => {
     }
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");
-    expect(android).toContain("uses: ./.github/actions/cancel-run-on-failure");
+    // It reports its own red rather than swallowing it, and — since 2026-09-02 — without taking
+    // the sibling legs down with it: see "no job cancels its own run".
+    expect(android).toContain("Verify captured parity ledger");
   });
 
   it("job-level env never reads the runner context", async () => {
