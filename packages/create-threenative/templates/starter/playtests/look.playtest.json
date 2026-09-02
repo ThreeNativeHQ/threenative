@@ -6,12 +6,19 @@
     "width": 1280,
     "height": 720
   },
-  "warmupFrames": 10,
+  "warmupFrames": 1,
   "subject": "player",
   "artifacts": {
     "screenshots": "before-after"
   },
   "steps": [
+    {
+      "kind": "input",
+      "label": "preview-pending",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
     {
       "kind": "input",
       "label": "move-before-refinement",
@@ -37,13 +44,23 @@
         "entity": "scenery.ridge",
         "component": "state",
         "equals": "refined",
-        "allowTrivial": "A fast Worker may refine before the baseline sample; the final state still proves the attached result is refined."
+        "atSteps": [
+          {
+            "label": "preview-pending",
+            "equals": "preview"
+          }
+        ]
       },
       {
         "entity": "scenery.ridge",
         "component": "generation",
         "gte": 1,
-        "allowTrivial": "A fast Worker may complete before the baseline sample; generation one still proves the refinement dispatch ran."
+        "atSteps": [
+          {
+            "label": "preview-pending",
+            "equals": 0
+          }
+        ]
       },
       {
         "entity": "scenery.ridge",

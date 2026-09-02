@@ -205,6 +205,8 @@ describe("starter visual floor", () => {
     ) as {
       assert?: {
         components?: Array<{
+          allowTrivial?: string;
+          atSteps?: Array<{ equals?: unknown; label: string }>;
           component?: string;
           entity?: string;
           equals?: unknown;
@@ -216,16 +218,59 @@ describe("starter visual floor", () => {
           path?: string;
         }>;
       };
-      steps: Array<{ holdTicks?: number; kind?: string; label?: string; waitTicks?: number }>;
+      steps: Array<{
+        holdTicks?: number;
+        kind?: string;
+        label?: string;
+        press?: string;
+        release?: boolean;
+        waitTicks?: number;
+      }>;
+      warmupFrames?: number;
     };
+    const labels = scenario.steps.map(({ label }) => label);
+    expect(labels).toEqual(["preview-pending", "move-before-refinement", "refinement-settles"]);
+    expect(scenario.warmupFrames).toBe(1);
+    expect(scenario.steps[0]).toMatchObject({
+      holdTicks: 1,
+      kind: "input",
+      label: "preview-pending",
+      press: "ArrowRight",
+      release: true,
+    });
     const movementIndex = scenario.steps.findIndex(
       ({ label }) => label === "move-before-refinement",
     );
     const refinementIndex = scenario.steps.findIndex(({ label }) => label === "refinement-settles");
     expect(movementIndex).toBeGreaterThanOrEqual(0);
     expect(refinementIndex).toBeGreaterThan(movementIndex);
-    expect(scenario.steps[movementIndex]).toMatchObject({ kind: "input", holdTicks: 140 });
+    expect(scenario.steps[movementIndex]).toMatchObject({
+      kind: "input",
+      holdTicks: 140,
+      press: "ArrowRight",
+      release: true,
+    });
     expect(scenario.steps[refinementIndex]).toMatchObject({ kind: "wait", waitTicks: 600 });
+    const pendingState = scenario.assert?.components?.find(
+      ({ component, entity }) => component === "state" && entity === "scenery.ridge",
+    );
+    expect(pendingState).toMatchObject({
+      atSteps: [{ equals: "preview", label: "preview-pending" }],
+      component: "state",
+      entity: "scenery.ridge",
+      equals: "refined",
+    });
+    expect(pendingState).not.toHaveProperty("allowTrivial");
+    const pendingGeneration = scenario.assert?.components?.find(
+      ({ component, entity }) => component === "generation" && entity === "scenery.ridge",
+    );
+    expect(pendingGeneration).toMatchObject({
+      atSteps: [{ equals: 0, label: "preview-pending" }],
+      component: "generation",
+      entity: "scenery.ridge",
+      gte: 1,
+    });
+    expect(pendingGeneration).not.toHaveProperty("allowTrivial");
     expect(scenario.assert?.resources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -292,6 +337,7 @@ describe("starter visual floor", () => {
       readFile(path.join(starter, "CLAUDE.md"), "utf8"),
     ]);
     expect(scenery).toContain("createRockRidge");
+    expect(scenery).toContain("deferRefinement: true");
     expect(scenery).toContain("scenery.object.add");
     expect(scenery).toContain("Play.enter imports and invokes createScenery");
     expect(scenery).toContain("gameplay rules and colliders unchanged");
@@ -314,6 +360,7 @@ describe("starter visual floor", () => {
       ridge.indexOf("object.remove(previous)"),
     );
     expect(play).toContain('ctx.entities.add("scenery.ridge", scenery)');
+    expect(play).toContain("scenery.rebuild()");
     expect(play).toContain("this.#scenery?.dispose()");
     expect(instructions).toContain("rockRidge.ts");
     expect(instructions).toContain("implicitSurface.ts");

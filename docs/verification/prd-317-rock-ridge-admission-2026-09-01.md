@@ -599,3 +599,199 @@ passed. The report observed `state.odometer` at `4.680037493906315` at the
 This is fixed-viewport, authored camera-follow evidence: the scenario uses a 1280×720 viewport
 and declares `camera.main` follows `player`. It is one real WebGPU run, not blinded A/B evidence,
 and no silhouette-floor metric was run or claimed. No new native visual claim is made here.
+
+## Repair continuation — authored pending observation — 2026-09-02
+
+The previous repair left the implementation uncommitted at `930609e77044619843fe61e9ee5521a0190cd62e`.
+This continuation kept the fix in the generated starter/game layer: `look.playtest.json` now has
+the labeled one-tick `preview-pending` input with no `allowTrivial`, while the ridge reports
+`state` and `generation` at that label; `scenery.ts` constructs the controller with
+`deferRefinement: true`; and `Play.ts` invokes `scenery.rebuild()` once on the first non-zero
+movement vector. Native source remains unchanged. The starter README status remains:
+`PARTIAL (web + Linux desktop; fixed-camera single-run evidence; blinded A/B/silhouette floor and Android/iOS unverified)`.
+
+### Focused red/green checks
+
+The existing red controls above remain the mutation evidence for the fused field, topology audit,
+atomic swap, stale-generation guard and disposal. The repair's focused green source/scaffold check
+was:
+
+~~~sh
+git diff --check && pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts
+~~~
+
+~~~text
+✓ packages/create-threenative/__tests__/looks.spec.ts (18 tests) 1284ms
+✓ packages/create-threenative/__tests__/scaffold.spec.ts (49 tests) 2708ms
+Test Files  2 passed (2)
+Tests  67 passed (67)
+exit_code=0
+~~~
+
+The requested starter-only matrix was also green within the five-minute ceiling:
+
+~~~sh
+timeout 300s env TN_TEMPLATE_ONLY=starter pnpm test:templates
+~~~
+
+~~~text
+template audit starter: 23 scenarios; 23 assume start in play; 0 declare an explicit start.
+{"scenarioSummary":{"diagnostics":[],"failed":[],"firstTick":78,"frames":741,"lastTick":850,"pass":true,"scenario":"starter-look"}}
+starter: scaffolded playtests passed.
+exit_code=0
+~~~
+
+### Clean generated starter direct run
+
+A clean starter was generated from freshly packed local packages outside the repository:
+
+~~~sh
+timeout 300s pnpm sandbox --genre exploration --name prd-317-rock-ridge --template starter --out /tmp/threenative-prd-317-repair-20260902
+~~~
+
+~~~text
+Created starter project at /tmp/threenative-prd-317-repair-20260902/prd-317-rock-ridge
+sandbox ready (framework arm): /tmp/threenative-prd-317-repair-20260902
+framework source readable: 0 lines — dist is types plus bundled js
+exit_code=0
+~~~
+
+The feature-owned direct runner command preserved the generated project's `$PORT` by passing the
+server command in single quotes to the outer shell. It saved the complete JSON report and stderr
+separately:
+
+~~~sh
+RUN_ROOT=/tmp/threenative-prd-317-repair-20260902
+PROJECT_ROOT="$RUN_ROOT/prd-317-rock-ridge"
+SCENARIO="$PROJECT_ROOT/playtests/look.playtest.json"
+ARTIFACT_ROOT="$PROJECT_ROOT/artifacts/direct-starter-look"
+STDOUT_LOG="$RUN_ROOT/direct-starter-look.stdout.json"
+STDERR_LOG="$RUN_ROOT/direct-starter-look.stderr.log"
+timeout 300s node packages/playtest/dist/runner/cli.js "$SCENARIO" \
+  --project "$PROJECT_ROOT" \
+  --url http://127.0.0.1:5173 \
+  --port 0 \
+  --server-command 'pnpm dev --host 127.0.0.1 --port $PORT --strictPort' \
+  --browser-recipe webgpu \
+  --headed \
+  --artifacts "$ARTIFACT_ROOT" \
+  >"$STDOUT_LOG" 2>"$STDERR_LOG"
+~~~
+
+Raw runner output:
+
+~~~text
+direct_runner_exit=0
+{"captureLock":{"detail":"no competing runner detected","mode":"none"}}
+{"captureDisplay":{"display":":1","screen":"1600x900x24","strategy":"private-xvfb"}}
+"pass": true
+"scenario": "starter-look"
+"runtime": "web"
+"url": "http://127.0.0.1:46113"
+~~~
+
+The direct report's raw extracted summary was:
+
+~~~text
+{
+  "pass": true,
+  "scenario": "starter-look",
+  "target": "web",
+  "runtime": "web",
+  "frames": 741,
+  "beforeTick": 78,
+  "afterTick": 853,
+  "startup": {"phase":"ready","progress":1,"compileSettled":true,"rule":"sustained-frames"},
+  "url": "http://127.0.0.1:46113",
+  "diagnostics": [],
+  "trivialityOptOutCount": 5,
+  "artifactDirectory": "/tmp/threenative-prd-317-repair-20260902/prd-317-rock-ridge/artifacts/direct-starter-look"
+}
+~~~
+
+The authored labeled component observations were:
+
+~~~text
+{"label":"preview-pending","tick":112,"state":"preview","generation":0,"requestedGeneration":1,"boundaryEdges":0,"degenerateTriangles":0,"windingConflicts":0,"signedVolume":24133.163043744265,"triangles":636,"vertices":320,"cellSize":10}
+{"label":"move-before-refinement","tick":253,"state":"refined","generation":1,"requestedGeneration":1,"boundaryEdges":0,"degenerateTriangles":0,"windingConflicts":0,"signedVolume":25733.46177012051,"triangles":1028,"vertices":516,"cellSize":8}
+{"label":"refinement-settles","tick":853,"state":"refined","generation":1,"requestedGeneration":1,"boundaryEdges":0,"degenerateTriangles":0,"windingConflicts":0,"signedVolume":25733.46177012051,"triangles":1028,"vertices":516,"cellSize":8}
+~~~
+
+The two no-`allowTrivial` transition assertions passed with these raw values:
+
+~~~text
+component.scenery.ridge.state.value.atSteps: pass=true, preview-pending => "preview"
+component.scenery.ridge.generation.value.atSteps: pass=true, preview-pending => 0
+component.scenery.ridge.state.value: pass=true, before="preview", after="refined"
+component.scenery.ridge.generation.value: pass=true, before=0, after=1
+~~~
+
+Capture paths:
+
+~~~text
+/tmp/threenative-prd-317-repair-20260902/prd-317-rock-ridge/artifacts/direct-starter-look/before.png
+/tmp/threenative-prd-317-repair-20260902/prd-317-rock-ridge/artifacts/direct-starter-look/after.png
+/tmp/threenative-prd-317-repair-20260902/prd-317-rock-ridge/artifacts/direct-starter-look/capture.json
+/tmp/threenative-prd-317-repair-20260902/prd-317-rock-ridge/artifacts/direct-starter-look/console.json
+~~~
+
+`capture.json` reports `rendererKind=webgpu`, `target=web`, viewport `1280×720`, NVIDIA/Turing,
+and the Vulkan browser recipe. Both PNGs were inspected; the frames are nonblank and show the
+fused ridge, player, pickup, crate, flag and HUD. This is fixed-camera single-run evidence only:
+no blinded A/B comparison, silhouette-floor metric, Android run, or iOS run exists, and no native
+evidence is claimed for the repaired generated source.
+
+### Continuation final gates
+
+The changed files passed the targeted Biome check:
+
+~~~sh
+pnpm exec biome check packages/create-threenative/__tests__/looks.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/templates/starter/playtests/look.playtest.json packages/create-threenative/templates/starter/src/render/rockRidge.ts packages/create-threenative/templates/starter/src/render/scenery.ts packages/create-threenative/templates/starter/src/scenes/Play.ts
+~~~
+
+~~~text
+Checked 6 files in 23ms. No fixes applied.
+exit_code=0
+~~~
+
+The full workspace typecheck passed:
+
+~~~sh
+pnpm typecheck
+~~~
+
+~~~text
+Scope: 24 of 25 workspace projects
+packages/create-threenative typecheck: Done
+examples/abyss-framework typecheck: Done
+exit_code=0
+~~~
+
+The full lint gate passed with the repository's existing warnings:
+
+~~~sh
+pnpm lint
+~~~
+
+~~~text
+Checked 1649 files in 552ms. No fixes applied. Found 509 warnings.
+exit_code=0
+~~~
+
+The full test suite passed after the repair:
+
+~~~sh
+timeout 300s pnpm test
+~~~
+
+~~~text
+Test Files  327 passed (327)
+Tests  3309 passed | 1 skipped (3310)
+suite temporary directory count unchanged in '/tmp/threenative-suite.UnhP9S': 1
+exit_code=0
+~~~
+
+The smallest valid timing repair is therefore retained: the controller's existing default still
+dispatches refinement for direct callers, while only the starter's scenery path opts into a real
+preview window and the starter's first movement input starts the already-existing Worker rebuild.
+No runner timing or native source was changed.

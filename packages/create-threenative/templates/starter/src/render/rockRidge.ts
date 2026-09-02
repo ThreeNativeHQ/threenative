@@ -72,7 +72,7 @@ function makeMesh(result: ReturnType<typeof buildImplicitSurface>, material: Mat
 // biome-ignore format: compact generated controller contract keeps the render source under budget.
 export interface IRockRidgeController { readonly object: Group; readonly state: "preview" | "refined" | "error" | "disposed"; debug(): Record<string, unknown>; dispose(): void; rebuild(seed?: number): void; }
 // biome-ignore format: the controller is a single generated render source with a fixed budget.
-export function createRockRidge(ridgeMaterial: Material, initialSeed: number): IRockRidgeController {
+export function createRockRidge(ridgeMaterial: Material, initialSeed: number, options: { deferRefinement?: boolean } = {}): IRockRidgeController {
   const object = new Group();
   object.name = "granite-ridge";
   const preview = buildImplicitSurface({
@@ -167,7 +167,7 @@ export function createRockRidge(ridgeMaterial: Material, initialSeed: number): I
       throw error;
     }
   };
-  dispatch(initialSeed, REFINED_SETTINGS);
+  if (options.deferRefinement !== true) dispatch(initialSeed, REFINED_SETTINGS);
   return {
     object,
     get state() {

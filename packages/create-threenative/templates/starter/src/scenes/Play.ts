@@ -139,6 +139,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
 
     const scenery = createScenery(materials.rock, materials.ridge, createRandom(20_260_821));
+    let refinementStarted = false;
     this.#scenery = scenery;
     ctx.add(scenery.object);
     ctx.entities.add("scenery.ridge", scenery);
@@ -262,6 +263,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (frameCtx.input.justPressed("flagGust")) {
         goal.pennant.wind.set(0, 0.4, 4.5);
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
+      }
+      const move = frameCtx.input.vector("move");
+      if (!refinementStarted && (move.x !== 0 || move.y !== 0)) {
+        scenery.rebuild();
+        refinementStarted = true;
       }
       player.update(frameCtx, dt, supportSurfaceY);
       let respawned = false;

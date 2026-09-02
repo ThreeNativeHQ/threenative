@@ -32,7 +32,7 @@ export function createScenery(
   random: () => number,
 ): IRockRidgeController {
   const ridgeSeed = Math.floor(random() * 4_294_967_295) >>> 0;
-  const scenery = createRockRidge(ridgeMaterial, ridgeSeed);
+  const scenery = createRockRidge(ridgeMaterial, ridgeSeed, { deferRefinement: true });
   for (const { depth, top, width, x, z } of COLUMNS) {
     const column = block(width, COLUMN_HEIGHT, depth, rockMaterial, {
       castShadow: false,

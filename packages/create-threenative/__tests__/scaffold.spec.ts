@@ -219,9 +219,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "e434f030496f5b4238d53f258f467da08ccafbb9bf0a2769b2ccd9b511cffd6b",
   racing: "9b7a6d856abfea5074ca17a29b83c105868edf22a039f20de1e46618b13b2db7",
   shooter: "208b9087addcf69fe2e8a4a45b426442922aae4a76aa279e22b9e4b24d3f57a6",
-  // Recomputed 2026-09-02 for PRD-317: starter now ships the fused-ridge render source,
-  // Worker playtest, and authoring instructions.
-  starter: "162e8f7e5f835e357dbcb26aed953793c1144fdf5b2702f79d70b4d771ea9f38",
+  // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
+  // so its labeled look sample can observe the authored preview before the atomic swap.
+  starter: "bf63e92deb36a3efdfbb51e262e997f8a82f7457ec12d5382355462c199eca80",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
