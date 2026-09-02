@@ -1,6 +1,6 @@
-import { CollisionShape3D } from "@threenative/physics";
+import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Object3D, Vector3 } from "three";
-import { type DefensePhysics, GROUND_LAYER, ROUTE_LAYER, createEntityBody } from "../physics.js";
+import { GROUND_LAYER, ROUTE_LAYER } from "../physics.js";
 import { base, board, routeSegment } from "../render/shapes.js";
 
 export const ROUTE_POINTS = [
@@ -23,19 +23,19 @@ export const ROUTE_TEST_SLOT = new Vector3(-8, 0, -6);
 
 interface IRouteContext {
   readonly add: (object: Object3D) => Object3D;
-  readonly physics: DefensePhysics;
+  readonly physics: IPhysicsContext;
 }
 
 export class RouteBoard {
   readonly points = ROUTE_POINTS.map((point) => point.clone());
   readonly surface: Object3D;
-  readonly #bodies = [] as ReturnType<typeof createEntityBody>[];
+  readonly #bodies: RigidBody3D[] = [];
 
   constructor(ctx: IRouteContext) {
     this.surface = board();
     ctx.add(this.surface);
     this.#bodies.push(
-      createEntityBody({
+      new RigidBody3D({
         collisionLayer: GROUND_LAYER,
         collisionMask: 0xffff,
         entity: "ground",
@@ -57,7 +57,7 @@ export class RouteBoard {
       visual.rotation.y = Math.abs(delta.z) > Math.abs(delta.x) ? Math.PI / 2 : 0;
       ctx.add(visual);
       this.#bodies.push(
-        createEntityBody({
+        new RigidBody3D({
           collisionLayer: ROUTE_LAYER,
           collisionMask: 0xffff,
           entity: `route.${index}`,

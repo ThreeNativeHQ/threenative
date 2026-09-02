@@ -1,7 +1,7 @@
 import type { ICtx, ScheduleHandle } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Group, Vector3 } from "three";
-import { directSpaceState } from "../physics.js";
+
 import { createTargetVisual } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 import { HOSTILE_LAYER, PLAYER_LAYER, WORLD_LAYER } from "./Player.js";
@@ -54,7 +54,7 @@ export class Target {
     const scan = (): void => {
       if (!this.alive) return;
       this.scanCount += 1;
-      const hits = directSpaceState(ctx.physics).intersectShape({
+      const hits = ctx.physics.directSpaceState.intersectShape({
         collisionMask: PLAYER_LAYER,
         maxResults: 4,
         position: this.mesh.position,

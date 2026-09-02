@@ -1,6 +1,6 @@
 import type { IGame } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
 import { DebugOverlay, GameCanvas } from "@threenative/ui";
-import type { DefensePhysics } from "../physics.js";
 import type { GameState } from "../state.js";
 import { GameUi } from "./GameUi.js";
 
@@ -11,7 +11,7 @@ import { GameUi } from "./GameUi.js";
  * The UI itself comes from `GameUi`, unchanged — this file exists only because the web build also
  * has to put a canvas on the page.
  */
-export function App({ game }: { game: IGame<GameState, DefensePhysics> }) {
+export function App({ game }: { game: IGame<GameState, IPhysicsContext> }) {
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-ink">
       <GameCanvas className="absolute inset-0" game={game} />

@@ -13,7 +13,6 @@ import { Enemy } from "../entities/Enemy.js";
 import { HOSTILE_LAYER, PLAYER_LAYER, Player, WORLD_LAYER } from "../entities/Player.js";
 import { ITEMS, Inventory, type ItemId, type ItemStack } from "../items/Inventory.js";
 import { describeDrops, rollDrops } from "../loot/drops.js";
-import { directSpaceState } from "../physics.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { loadProgress, saveProgress } from "../progress.js";
 import { createDungeonCamera } from "../render/camera.js";
@@ -339,7 +338,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     const strike = (amount: number): void => {
       burst(attackVfx, player.attackOrigin(), "vfx-attack");
-      const hits = directSpaceState(ctx.physics).intersectShape({
+      const hits = ctx.physics.directSpaceState.intersectShape({
         collisionMask: HOSTILE_LAYER,
         maxResults: 16,
         position: player.attackOrigin(),

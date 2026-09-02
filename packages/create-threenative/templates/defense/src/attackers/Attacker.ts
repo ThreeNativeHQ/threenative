@@ -1,7 +1,7 @@
 import { type IPathFollow3DSample, PathFollow3D } from "@threenative/core";
-import { CollisionShape3D } from "@threenative/physics";
+import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Group, Vector3 } from "three";
-import { ATTACKER_LAYER, type DefensePhysics, createEntityBody } from "../physics.js";
+import { ATTACKER_LAYER } from "../physics.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { attacker as attackerMesh } from "../render/shapes.js";
 
@@ -32,7 +32,7 @@ export class Attacker {
     readonly id: string;
     readonly lateralOffset: number;
     readonly pathPoints: readonly Vector3[];
-    readonly physics: DefensePhysics;
+    readonly physics: IPhysicsContext;
     readonly onDefeated: () => void;
     readonly onLeak: () => void;
   }) {
@@ -43,7 +43,7 @@ export class Attacker {
     this.#onLeak = options.onLeak;
     this.#path = new PathFollow3D({ points: options.pathPoints, speed: ATTACKER_SPEED });
     this.mesh = attackerMesh();
-    this.#body = createEntityBody({
+    this.#body = new RigidBody3D({
       collisionLayer: ATTACKER_LAYER,
       collisionMask: 0,
       entity: this.entityId,

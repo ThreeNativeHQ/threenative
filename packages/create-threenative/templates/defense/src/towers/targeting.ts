@@ -1,6 +1,6 @@
 import type { IRandom } from "@threenative/core";
+import type { IShapeHit } from "@threenative/physics";
 import type { Vector3 } from "three";
-import type { IShapeHit } from "../physics.js";
 
 export interface ITargetable {
   readonly dead: boolean;

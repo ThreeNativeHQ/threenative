@@ -13,6 +13,7 @@ import {
 import {
   CollisionShape3D,
   type IPhysicsContext,
+  type IRayHit,
   RigidBody3D,
   buildStaticColliders,
 } from "@threenative/physics";
@@ -29,7 +30,6 @@ import {
 } from "../entities/Player.js";
 import { Target } from "../entities/Target.js";
 import { SpawnPoints } from "../level/SpawnPoints.js";
-import type { IRayHit } from "../physics.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createArenaCamera, createArenaShakeOptions } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
