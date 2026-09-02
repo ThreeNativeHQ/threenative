@@ -270,85 +270,223 @@ export async function sampleElementVisibility(
       if (targetVisibility !== "visible" || probeVisibility !== "hidden" || !rootsAreTransparent || !nonTargetElementsAreHidden) {
         throw new Error("Cannot verify active visibility isolation rules");
       }
-      const trackedElements = new Map<Element, Set<string>>();
       const mutationTracker: IVisibilityIsolationMutationTracker = { changed: false, stop: () => undefined };
       const restorations: Array<() => void> = [];
-      for (const { element, properties } of hiddenElements) {
-        const names = new Set(properties.map(({ name }) => name));
-        trackedElements.set(element, names);
-        const style = (element as HTMLElement).style;
-        const originalSetProperty = style.setProperty;
-        const temporarySetProperty = function(this: CSSStyleDeclaration, property: string, value: string, priority?: string): void {
-          originalSetProperty.call(this, property, value, priority);
-          const normalizedPriority = priority?.trim().toLowerCase();
-          if (this === style && names.has(property.trim().toLowerCase())
-            && (normalizedPriority === undefined || normalizedPriority === "" || normalizedPriority === "important")) {
-            mutationTracker.changed = true;
+      let tracking = true;
+      const stop = (): void => {
+        if (!tracking) return;
+        tracking = false;
+        let restorationFailed = false;
+        for (let index = restorations.length - 1; index >= 0; index -= 1) {
+          try {
+            restorations[index]?.();
+          } catch {
+            restorationFailed = true;
           }
-        };
-        const originalDescriptor = Object.getOwnPropertyDescriptor(style, "setProperty");
-        Object.defineProperty(style, "setProperty", { configurable: true, value: temporarySetProperty });
-        restorations.push(() => {
-          if (style.setProperty !== temporarySetProperty) return;
-          if (originalDescriptor === undefined) Reflect.deleteProperty(style, "setProperty");
-          else Object.defineProperty(style, "setProperty", originalDescriptor);
-        });
-      }
+        }
+        if (restorationFailed) throw new Error("temporary visibility mutation instrumentation could not be removed");
+      };
+      stopMutationTracking = stop;
+
       const propertyState = (style: CSSStyleDeclaration, name: string): { priority: string; value: string } => ({
         priority: style.getPropertyPriority(name),
         value: style.getPropertyValue(name),
       });
-      const propertyStatesDiffer = (first: CSSStyleDeclaration, second: CSSStyleDeclaration, names: Set<string>): boolean => [...names].some((name) => {
-        const firstState = propertyState(first, name);
-        const secondState = propertyState(second, name);
-        return firstState.value !== secondState.value || firstState.priority !== secondState.priority;
+      const propertyStates = (style: CSSStyleDeclaration, names: Set<string>): Map<string, { priority: string; value: string }> => new Map(
+        [...names].map((name) => [name, propertyState(style, name)]),
+      );
+      const propertyStatesDiffer = (
+        first: Map<string, { priority: string; value: string }>,
+        second: Map<string, { priority: string; value: string }>,
+        names: Set<string>,
+      ): boolean => [...names].some((name) => {
+        const firstState = first.get(name);
+        const secondState = second.get(name);
+        return firstState?.value !== secondState?.value || firstState?.priority !== secondState?.priority;
       });
       const styleFromText = (text: string | null): CSSStyleDeclaration => {
         const style = document.createElement("span").style;
         style.cssText = text ?? "";
         return style;
       };
-      const trackElementMutationRecords = (
-        element: Element,
-        elementRecords: readonly MutationRecord[],
-        names: Set<string>,
-      ): void => {
-        elementRecords.forEach((record, index) => {
-          const nextRecord = elementRecords[index + 1];
-          const before = styleFromText(record.oldValue);
-          const after = styleFromText(nextRecord === undefined ? element.getAttribute("style") : nextRecord.oldValue);
-          if (propertyStatesDiffer(before, after, names)) mutationTracker.changed = true;
+      const styleContainsTrackedProperty = (text: string | null, names: Set<string>): boolean => {
+        const style = styleFromText(text);
+        return [...names].some((name) => {
+          const state = propertyState(style, name);
+          return state.value !== "" || state.priority !== "";
         });
       };
-      const mutationRecords = (records: readonly MutationRecord[]): void => {
-        for (const element of trackedElements.keys()) {
-          const names = trackedElements.get(element);
-          if (names === undefined) continue;
-          const elementRecords = records.filter((record) => record.type === "attributes"
-            && record.attributeName === "style"
-            && record.target === element);
-          if (elementRecords.length === 0) continue;
-          trackElementMutationRecords(element, elementRecords, names);
+      const trackStyleAttributeMutation = (element: Element, names: Set<string>, before: Map<string, { priority: string; value: string }>): void => {
+        const style = (element as HTMLElement).style;
+        const after = propertyStates(style, names);
+        if (propertyStatesDiffer(before, after, names)
+          || styleContainsTrackedProperty(element.getAttribute("style"), names)) {
+          mutationTracker.changed = true;
         }
       };
-      const observer = trackedElements.size === 0 || typeof MutationObserver === "undefined"
-        ? undefined
-        : new MutationObserver(mutationRecords);
-      let tracking = true;
-      const stop = (): void => {
-        if (!tracking) return;
-        tracking = false;
-        if (observer !== undefined) {
-          mutationRecords(observer.takeRecords());
-          observer.disconnect();
+
+      const descriptorInPrototypeChain = (object: object, name: string): PropertyDescriptor | undefined => {
+        let current: object | null = object;
+        while (current !== null) {
+          const descriptor = Object.getOwnPropertyDescriptor(current, name);
+          if (descriptor !== undefined) return descriptor;
+          current = Object.getPrototypeOf(current);
         }
-        for (let index = restorations.length - 1; index >= 0; index -= 1) restorations[index]?.();
+        return undefined;
       };
-      stopMutationTracking = stop;
-      if (observer !== undefined) {
-        for (const element of trackedElements.keys()) {
-          observer.observe(element, { attributeFilter: ["style"], attributeOldValue: true, attributes: true });
+      const restoreProperty = (object: object, name: string, originalDescriptor: PropertyDescriptor | undefined, replacement: unknown): void => {
+        const currentDescriptor = Object.getOwnPropertyDescriptor(object, name);
+        if (currentDescriptor?.value !== replacement && currentDescriptor?.get !== replacement) {
+          mutationTracker.changed = true;
+          return;
         }
+        if (originalDescriptor === undefined) {
+          if (!Reflect.deleteProperty(object, name)) throw new Error(`Cannot remove temporary ${name} instrumentation`);
+        } else Object.defineProperty(object, name, originalDescriptor);
+      };
+      const instrumentStyleMethod = (
+        style: CSSStyleDeclaration,
+        names: Set<string>,
+        methodName: "removeProperty" | "setProperty",
+      ): void => {
+        const styleRecord = style as unknown as Record<string, unknown>;
+        const originalDescriptor = Object.getOwnPropertyDescriptor(style, methodName);
+        const originalMethod = styleRecord[methodName];
+        if (typeof originalMethod !== "function") throw new Error(`Cannot instrument CSSStyleDeclaration.${methodName}`);
+        const callOriginal = originalMethod as (...args: unknown[]) => unknown;
+        const temporaryMethod = function(this: CSSStyleDeclaration, ...args: unknown[]): unknown {
+          const result = callOriginal.apply(this, args);
+          if (tracking && this === style && typeof args[0] === "string" && names.has(args[0].trim().toLowerCase())) {
+            mutationTracker.changed = true;
+          }
+          return result;
+        };
+        Object.defineProperty(style, methodName, {
+          configurable: true,
+          enumerable: originalDescriptor?.enumerable ?? true,
+          value: temporaryMethod,
+          writable: true,
+        });
+        restorations.push(() => restoreProperty(style, methodName, originalDescriptor, temporaryMethod));
+      };
+      const instrumentStyleProperty = (
+        style: CSSStyleDeclaration,
+        name: string,
+        originalSetProperty: (...args: unknown[]) => unknown,
+        originalGetPropertyValue: (...args: unknown[]) => unknown,
+      ): void => {
+        const propertyName = name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+        const originalOwnDescriptor = Object.getOwnPropertyDescriptor(style, propertyName);
+        if (descriptorInPrototypeChain(style, propertyName) === undefined) {
+          throw new Error(`Cannot instrument CSSStyleDeclaration.${propertyName}`);
+        }
+        const temporaryGetter = function(this: CSSStyleDeclaration): unknown {
+          return originalGetPropertyValue.call(this, name);
+        };
+        const temporarySetter = function(this: CSSStyleDeclaration, value: unknown): void {
+          originalSetProperty.call(this, name, String(value));
+          if (tracking && this === style) mutationTracker.changed = true;
+        };
+        Object.defineProperty(style, propertyName, {
+          configurable: true,
+          enumerable: originalOwnDescriptor?.enumerable ?? true,
+          get: temporaryGetter,
+          set: temporarySetter,
+        });
+        restorations.push(() => {
+          const currentDescriptor = Object.getOwnPropertyDescriptor(style, propertyName);
+          if (currentDescriptor?.get !== temporaryGetter) {
+            mutationTracker.changed = true;
+            return;
+          }
+          if (originalOwnDescriptor === undefined) {
+            if (!Reflect.deleteProperty(style, propertyName)) throw new Error(`Cannot remove temporary ${propertyName} instrumentation`);
+            return;
+          }
+          if (Object.hasOwn(originalOwnDescriptor, "value")) {
+            const currentValue = originalGetPropertyValue.call(style, name);
+            if (!Reflect.deleteProperty(style, propertyName)) throw new Error(`Cannot remove temporary ${propertyName} instrumentation`);
+            if (Object.getOwnPropertyDescriptor(style, propertyName) === undefined) {
+              Object.defineProperty(style, propertyName, { ...originalOwnDescriptor, value: currentValue });
+            }
+            return;
+          }
+          Object.defineProperty(style, propertyName, originalOwnDescriptor);
+        });
+      };
+      const instrumentStyleCssText = (style: CSSStyleDeclaration): void => {
+        const originalOwnDescriptor = Object.getOwnPropertyDescriptor(style, "cssText");
+        const originalDescriptor = descriptorInPrototypeChain(style, "cssText");
+        if (originalDescriptor?.get === undefined || originalDescriptor.set === undefined) {
+          throw new Error("Cannot instrument CSSStyleDeclaration.cssText");
+        }
+        const temporaryGetter = function(this: CSSStyleDeclaration): unknown {
+          return originalDescriptor.get?.call(this);
+        };
+        const temporarySetter = function(this: CSSStyleDeclaration, value: unknown): void {
+          originalDescriptor.set?.call(this, String(value));
+          if (tracking && this === style) mutationTracker.changed = true;
+        };
+        Object.defineProperty(style, "cssText", {
+          configurable: true,
+          enumerable: originalOwnDescriptor?.enumerable ?? originalDescriptor.enumerable ?? true,
+          get: temporaryGetter,
+          set: temporarySetter,
+        });
+        restorations.push(() => restoreProperty(style, "cssText", originalOwnDescriptor, temporaryGetter));
+      };
+      const isStyleAttribute = (value: unknown): boolean => typeof value === "string" && value.trim().toLowerCase() === "style";
+      const instrumentElementMethod = (
+        element: Element,
+        names: Set<string>,
+        methodName: string,
+        shouldTrack: (args: unknown[]) => boolean,
+      ): void => {
+        const elementRecord = element as unknown as Record<string, unknown>;
+        const originalDescriptor = Object.getOwnPropertyDescriptor(element, methodName);
+        const originalMethod = elementRecord[methodName];
+        if (typeof originalMethod !== "function") return;
+        const callOriginal = originalMethod as (...args: unknown[]) => unknown;
+        const temporaryMethod = function(this: Element, ...args: unknown[]): unknown {
+          const shouldCheck = this === element && shouldTrack(args);
+          const before = shouldCheck ? propertyStates((element as HTMLElement).style, names) : undefined;
+          const result = callOriginal.apply(this, args);
+          if (shouldCheck && tracking && before !== undefined) trackStyleAttributeMutation(element, names, before);
+          return result;
+        };
+        Object.defineProperty(element, methodName, {
+          configurable: true,
+          enumerable: originalDescriptor?.enumerable ?? false,
+          value: temporaryMethod,
+          writable: true,
+        });
+        restorations.push(() => restoreProperty(element, methodName, originalDescriptor, temporaryMethod));
+      };
+      for (const { element, properties } of hiddenElements) {
+        const names = new Set(properties.map(({ name }) => name));
+        const style = (element as HTMLElement).style;
+        const originalSetProperty = style.setProperty as unknown as (...args: unknown[]) => unknown;
+        const originalGetPropertyValue = style.getPropertyValue as unknown as (...args: unknown[]) => unknown;
+        instrumentStyleMethod(style, names, "setProperty");
+        instrumentStyleMethod(style, names, "removeProperty");
+        instrumentStyleCssText(style);
+        for (const name of names) instrumentStyleProperty(style, name, originalSetProperty, originalGetPropertyValue);
+        instrumentElementMethod(element, names, "setAttribute", (args) => isStyleAttribute(args[0]));
+        instrumentElementMethod(element, names, "setAttributeNS", (args) => (args[0] === null || args[0] === "") && isStyleAttribute(args[1]));
+        instrumentElementMethod(element, names, "removeAttribute", (args) => isStyleAttribute(args[0]));
+        instrumentElementMethod(element, names, "toggleAttribute", (args) => isStyleAttribute(args[0]));
+        instrumentElementMethod(element, names, "setAttributeNode", (args) => {
+          const attribute = args[0] as { name?: unknown; namespaceURI?: unknown } | null | undefined;
+          return attribute !== null && attribute !== undefined
+            && (attribute.namespaceURI === null || attribute.namespaceURI === undefined || attribute.namespaceURI === "")
+            && isStyleAttribute(attribute.name);
+        });
+        instrumentElementMethod(element, names, "removeAttributeNode", (args) => {
+          const attribute = args[0] as { name?: unknown; namespaceURI?: unknown } | null | undefined;
+          return attribute !== null && attribute !== undefined
+            && (attribute.namespaceURI === null || attribute.namespaceURI === undefined || attribute.namespaceURI === "")
+            && isStyleAttribute(attribute.name);
+        });
       }
       mutationTracker.stop = stop;
       (window as unknown as Record<string, IVisibilityIsolationState>)[isolationKey] = {

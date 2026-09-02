@@ -231,6 +231,15 @@ async function temporaryVisibilityArtifacts(page: Page): Promise<{ markers: numb
   });
 }
 
+async function expectPendingVisibilityMutationToReject(page: Page, mutate: () => Promise<void>): Promise<void> {
+  const observed = await captureVisibilityScreenshots(page, mutate);
+  await expect(sampleElementVisibility(observed.page, { id: "target" })).rejects.toMatchObject({
+    diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
+  });
+  expect(observed.screenshots).toHaveLength(1);
+  await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+}
+
 describe("playtest sampling", () => {
   test("samples HUD values by id and selector without dropping absent nodes", async () => {
     const score = { getAttribute: () => "7", textContent: " Score " };
@@ -792,6 +801,28 @@ describe("browser-backed DOM visibility isolation", () => {
     }
   });
 
+  test("preserves an unrelated direct inline update made while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          control.style.color = "rgb(4, 5, 6)";
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: false,
+      });
+      await expect(page.evaluate(() => document.getElementById("control")?.style.color)).resolves.toBe("rgb(4, 5, 6)");
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("fails closed when an isolation-owned inline update occurs while screenshot is pending", async () => {
     const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
     try {
@@ -846,6 +877,64 @@ describe("browser-backed DOM visibility isolation", () => {
         };
       })).resolves.toEqual({ priority: "", value: "" });
       await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test.each([
+    ["visibility", "control"],
+    ["background-color", "documentElement"],
+    ["background-image", "documentElement"],
+  ])("fails closed for an isolation-owned same-value %s direct setter", async (property, targetName) => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      await expectPendingVisibilityMutationToReject(page, async () => {
+        await page.evaluate(({ property, targetName }) => {
+          const target = targetName === "control" ? document.getElementById("control") : document.documentElement;
+          if (target === null) throw new Error("visibility fixture has no direct-setter target");
+          const style = (target as HTMLElement).style as unknown as Record<string, string>;
+          const propertyName = property === "background-color" ? "backgroundColor"
+            : property === "background-image" ? "backgroundImage" : "visibility";
+          style[propertyName] = style[propertyName] ?? "";
+        }, { property, targetName });
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when an isolation-owned cssText write occurs while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      await expectPendingVisibilityMutationToReject(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          const cssText = control.style.cssText;
+          control.style.cssText = cssText;
+        });
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fails closed when an isolation-owned style-attribute write occurs while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      await expectPendingVisibilityMutationToReject(page, async () => {
+        await page.evaluate(() => {
+          const control = document.getElementById("control");
+          if (control === null) throw new Error("visibility fixture has no control");
+          const style = control.getAttribute("style");
+          if (style === null) throw new Error("visibility fixture has no style attribute");
+          control.setAttribute("style", style);
+        });
+      });
     } finally {
       await page.close();
     }
