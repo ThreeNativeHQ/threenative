@@ -94,3 +94,4 @@ When one directional light must shadow a whole valley and a 2048² map smudges, 
 
 The performance skill carries `TN_FRAME_BUDGET`, platform targets, and the `display.maxFps` rule.
 Long recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
+Touch-primary devices use the local `src/render/touch-controls.ts` for movement and jump; keyboard input remains the desktop fallback.

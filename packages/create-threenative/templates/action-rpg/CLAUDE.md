@@ -95,3 +95,6 @@ named override. Unknown tiers throw and `TN_QUALITY_TIER` reports the chosen sou
 with no assertions or missing observations fails; keep the durable smoke proof and open a capture.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
+
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick,
+an attack button and an Arcane Surge button. Keyboard controls remain available on desktop.
