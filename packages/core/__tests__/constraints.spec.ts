@@ -59,6 +59,10 @@ describe("core constraints", () => {
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
           file !== "render/probe-volume.ts" &&
+          // The virtual shadow attaches to a light and renders depth through three's own
+          // ShadowNode; it creates no material, light, colour or filter of its own.
+          file !== "render/virtual-shadow.ts" &&
+          file !== "render/virtual-shadow-pages.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
