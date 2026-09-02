@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-307 — Reflections are prefiltered before the game ships, and the 6.3 ms is attributed before anything is baked
 
-**Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only.
+**Status:** REFUTED, 2026-09-01. Evidence:
+[environment-cost-attribution-2026-09-01](../../verification/environment-cost-attribution-2026-09-01.md).
+The Bayview set-once environment versus no-environment comparison was below the 0.37 ms noise
+floor; forcing a prefilter every frame cost +1.61 ms, but Bayview never dirties its environment.
+Phases 2 and 3 were therefore skipped and the runtime PMREM fallback remains unchanged.
 
 **Outcome:** the environment lighting a game ships with is **prefiltered at build time** by
 `@threenative/assets` and loaded ready to sample, so the launch does not spend a device's GPU
@@ -17,7 +21,7 @@ one rule separating a baking pass from v1's IR is that deleting the baked output
 running, just slower.
 
 **Task 4 of Band 2, and the largest single measured win the direction document lists.** See
-[README](README.md) for the tick-back rule.
+[README](../architecture/README.md) for the tick-back rule.
 
 ---
 

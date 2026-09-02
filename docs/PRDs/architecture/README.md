@@ -28,17 +28,17 @@ verification file is worse — that is a claimed gate nobody ran.
 | 1 — `quality.ts` in all 8 templates | ✅ [PRD-304](../done/PRD-304-every-template-ships-a-quality-switch.md) — **done**; fixing its last criterion fixed a black mobile look on 7 templates ([record](../../verification/mobile-look-was-black-2026-09-01.md)) | 1 |
 | 2 — confirm `gpuMs` reports on Android | ✅ [PRD-305](../done/PRD-305-the-gpu-meter-reports-on-android.md) — **done**, `gpuMs 0.19` from a Pixel 8 ([record](../../verification/gpu-meter-on-android-2026-09-01.md)) | 1 |
 | 3 — CI deletes every baked file and proves the game is identical | ✅ [PRD-306](../done/PRD-306-the-delete-test-is-a-gate.md) — **done**, green in `pnpm test:templates` ([record](../../verification/delete-test-passes-2026-09-01.md)) | 1 |
-| 4 — bake prefiltered reflections into `@threenative/assets` | [PRD-307](PRD-307-reflections-are-prefiltered-before-the-game-ships.md) | 2 |
+| 4 — bake prefiltered reflections into `@threenative/assets` | ✅ [PRD-307](../done/PRD-307-reflections-are-prefiltered-before-the-game-ships.md) — **refuted**, the set-once environment delta was below the 0.37 ms noise floor and forced per-frame prefiltering cost +1.61 ms ([record](../../verification/environment-cost-attribution-2026-09-01.md)) | 2 |
 | 5 — GPU time per pass, on the phone | [PRD-308](PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) | 2 |
 | 6 — Android conformance on every commit | [PRD-309](PRD-309-android-conformance-runs-on-every-commit.md) | 2 |
 | 7 — scene projection that covers objects that move | [PRD-310](PRD-310-the-projection-covers-what-moves.md) | 2 |
 | 8 — per-pass GPU cost in `diagnostics` | [PRD-311](PRD-311-per-pass-gpu-cost-without-owning-a-phone.md) | 2 |
 | 9 — timeboxed `shermes` AOT spike | [PRD-312](PRD-312-the-shermes-spike-is-timeboxed-and-closed.md) | 2 |
 
-**Band 3 (tasks 10–13) is deliberately not filed.** The document stop-gates #11 on #5 and forbids
-shipping #10 without #4; #13 has no schedule. File them when PRD-307 and PRD-308 have landed and
-their numbers reproduce — filing them now would be planning against a model that has been wrong
-twice.
+**Band 3 (tasks 10–13) is deliberately not filed.** The document stop-gates #11 on #5; PRD-307
+refuted the former #4 precondition for #10, so that gate needs a replacement before #10 is filed.
+#13 has no schedule. File them when the remaining gates and numbers reproduce — filing them now
+would be planning against a model that has been wrong twice.
 
 ## Dependency order
 
