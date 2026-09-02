@@ -1466,7 +1466,8 @@
       "constraints": [
         "the light must be a DirectionalLight with `castShadow` and a target in the scene",
         "clipExtents are half-widths in world units, finest first, strictly increasing",
-        "call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves"
+        "call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves",
+        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves"
       ],
       "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
       "importPath": "@threenative/core",

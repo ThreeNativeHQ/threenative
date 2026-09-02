@@ -1277,7 +1277,7 @@ export class VirtualShadowNode extends ShadowBaseNode { … }
 ```
 
 - **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
-- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves
+- **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves · call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves
 - **Overrides:** bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, normalBias, intensity and mapSize stay on `light.shadow`; every option here has a default
 
 ```ts

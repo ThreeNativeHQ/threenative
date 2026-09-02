@@ -10,6 +10,7 @@ import type { NodeBuilder, NodeFrame } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import {
   VIRTUAL_SHADOW_MARKER,
+  VIRTUAL_SHADOW_MOVER_LAYER,
   VirtualShadowNode,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
@@ -107,26 +108,60 @@ describe("VirtualShadowNode", () => {
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
   });
 
-  it("should re-render the level a tracked caster moves inside, and nothing untracked", () => {
+  it("should draw a tracked caster through the mover layer every frame and leave the cached levels alone", () => {
     const { camera, light, scene } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
     const mover = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    const hoof = new Mesh(new BoxGeometry(0.1, 0.1, 0.1), new MeshBasicMaterial());
+    mover.add(hoof);
     scene.add(mover);
     node.trackCaster(mover);
+    expect(hoof.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(true);
     camera.position.set(0, 5, 0);
     node.updateBefore(frameFor(camera));
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ invalidated: 0, rendered: 0 });
+    expect(node.stats).toMatchObject({ movers: 1, moverRenders: 2, rendered: 0 });
+    // A step — and a breathing idle would do the same — is a mover-map render, never a level one.
     mover.position.set(2, 0, 2);
     node.updateBefore(frameFor(camera));
-    expect(node.stats.invalidated).toBeGreaterThanOrEqual(1);
-    expect(node.stats.rendered).toBe(node.stats.invalidated);
-    // Untracking clears the caster's last footprint once (its shadow must go), and from then
-    // on the same move refreshes nothing.
+    expect(node.stats).toMatchObject({ cached: 2, moverRenders: 2, rendered: 0 });
+    // Three frames: the first placed and rendered both levels, the other two served both.
+    expect(node.stats.reuseRatio).toBeCloseTo(4 / 6);
     expect(node.untrackCaster(mover)).toBe(true);
+    expect(hoof.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
     node.updateBefore(frameFor(camera));
-    expect(node.stats.invalidated).toBeGreaterThanOrEqual(1);
-    mover.position.set(4, 0, 4);
+    expect(node.stats).toMatchObject({ movers: 0, rendered: 0 });
+  });
+
+  it("should keep a tracked caster out of the cached level render and put it back afterwards", () => {
+    const { camera, light, scene } = world();
+    const node = setupNode(light, { clipExtents: [8], mapSize: 64 });
+    const mover = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    mover.castShadow = true;
+    scene.add(mover);
+    node.trackCaster(mover);
+    const seen: boolean[] = [];
+    const levelNode = node.levelNodes[0] as unknown as { updateShadow(frame: NodeFrame): void };
+    const moverNode = node.moverNodes[0] as unknown as { updateShadow(frame: NodeFrame): void };
+    vi.spyOn(levelNode, "updateShadow").mockImplementation(() => seen.push(mover.castShadow));
+    const moverSpy = vi.spyOn(moverNode, "updateShadow").mockImplementation(() => undefined);
+    camera.position.set(0, 5, 0);
+    node.updateBefore({ camera, renderer: {} } as unknown as NodeFrame);
+    // The first frame places the level and renders it once, without the mover in it.
+    expect(seen).toEqual([false]);
+    expect(mover.castShadow).toBe(true);
+    expect(moverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("should re-render every level once after invalidateAll and count it as invalidated", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    node.updateBefore(frameFor(camera));
+    node.updateBefore(frameFor(camera));
+    node.invalidateAll();
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 2 });
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ invalidated: 0, rendered: 0 });
   });
