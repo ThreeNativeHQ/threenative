@@ -352,6 +352,44 @@
     },
     {
       "constraints": [
+        "a rigid skeleton preserves every parent→child distance under any pose; a named bone is a defect with an address",
+        "this is a diagnostic — it reports numbers and names; it moves nothing and decides no appearance"
+      ],
+      "example": "import { boneLengths, boneLengthDeviations } from \"@threenative/core\";\nconst report = boneLengthDeviations(character, boneLengths(character));\nif (!report.rigid) console.log(report.worst.bone, report.worst.ratio);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function boneLengthDeviations( root: Object3D, bind: IBoneLengthSnapshot, options: IBoneLengthDeviationsOptions = { … }",
+      "situations": [
+        "find out why a skinned character renders deformed",
+        "check that an animated pose keeps the skeleton rigid",
+        "name the bone that breaks a posed skeleton without taking a screenshot"
+      ],
+      "summary": "Compare a rig's bone distances now against a captured snapshot and name every bone that moved.",
+      "supersedes": [],
+      "symbol": "boneLengthDeviations"
+    },
+    {
+      "constraints": [
+        "the baseline and the later comparison must come from the same rig under the same ancestor transform, so a uniform scale cancels"
+      ],
+      "example": "import { boneLengths } from \"@threenative/core\";\nconst baseline = boneLengths(character);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function boneLengths(root: Object3D): IBoneLengthSnapshot { … }",
+      "situations": [
+        "capture a rig's bind-pose bone lengths before any clip plays",
+        "measure a skeleton for the bone-length invariance check"
+      ],
+      "summary": "Measure a rig's parent→child bone distances, in world space, as it stands right now.",
+      "supersedes": [],
+      "symbol": "boneLengths"
+    },
+    {
+      "constraints": [
         "amplitude, rotationAmplitude, frequency, decay, and curve are required game choices",
         "update returns an offset and never writes to a camera"
       ],

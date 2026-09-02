@@ -745,6 +745,33 @@ export type {
   IClipPoseSubject,
   IClipTrackBinding,
 } from "./clip-audit.js";
+/**
+ * Measure a rig's parent→child bone distances, in world space, as it stands right now.
+ * @situation capture a rig's bind-pose bone lengths before any clip plays
+ * @situation measure a skeleton for the bone-length invariance check
+ * @constraint the baseline and the later comparison must come from the same rig under the same ancestor transform, so a uniform scale cancels
+ * @example import { boneLengths } from "@threenative/core";
+ * const baseline = boneLengths(character);
+ */
+export { boneLengths } from "./bone-lengths.js";
+/**
+ * Compare a rig's bone distances now against a captured snapshot and name every bone that moved.
+ * @situation find out why a skinned character renders deformed
+ * @situation check that an animated pose keeps the skeleton rigid
+ * @situation name the bone that breaks a posed skeleton without taking a screenshot
+ * @constraint a rigid skeleton preserves every parent→child distance under any pose; a named bone is a defect with an address
+ * @constraint this is a diagnostic — it reports numbers and names; it moves nothing and decides no appearance
+ * @example import { boneLengths, boneLengthDeviations } from "@threenative/core";
+ * const report = boneLengthDeviations(character, boneLengths(character));
+ * if (!report.rigid) console.log(report.worst.bone, report.worst.ratio);
+ */
+export { boneLengthDeviations } from "./bone-lengths.js";
+export type {
+  IBoneLengthDeviation,
+  IBoneLengthDeviationReport,
+  IBoneLengthDeviationsOptions,
+  IBoneLengthSnapshot,
+} from "./bone-lengths.js";
 export type {
   ContextMenuPolicy,
   IInputAction,

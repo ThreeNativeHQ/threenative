@@ -303,6 +303,39 @@ import { boneContact } from "@threenative/core";
 const contact = boneContact(worker, "hand_r", keyboard);
 ```
 
+### `boneLengthDeviations`
+
+`function` — Compare a rig's bone distances now against a captured snapshot and name every bone that moved.
+
+```ts
+export function boneLengthDeviations( root: Object3D, bind: IBoneLengthSnapshot, options: IBoneLengthDeviationsOptions = { … }
+```
+
+- **Use when:** find out why a skinned character renders deformed · check that an animated pose keeps the skeleton rigid · name the bone that breaks a posed skeleton without taking a screenshot
+- **Constraints:** a rigid skeleton preserves every parent→child distance under any pose; a named bone is a defect with an address · this is a diagnostic — it reports numbers and names; it moves nothing and decides no appearance
+
+```ts
+import { boneLengths, boneLengthDeviations } from "@threenative/core";
+const report = boneLengthDeviations(character, boneLengths(character));
+if (!report.rigid) console.log(report.worst.bone, report.worst.ratio);
+```
+
+### `boneLengths`
+
+`function` — Measure a rig's parent→child bone distances, in world space, as it stands right now.
+
+```ts
+export function boneLengths(root: Object3D): IBoneLengthSnapshot { … }
+```
+
+- **Use when:** capture a rig's bind-pose bone lengths before any clip plays · measure a skeleton for the bone-length invariance check
+- **Constraints:** the baseline and the later comparison must come from the same rig under the same ancestor transform, so a uniform scale cancels
+
+```ts
+import { boneLengths } from "@threenative/core";
+const baseline = boneLengths(character);
+```
+
 ### `CameraShake`
 
 `class` — Produce a game-authored camera shake offset for a template-owned camera rig.
