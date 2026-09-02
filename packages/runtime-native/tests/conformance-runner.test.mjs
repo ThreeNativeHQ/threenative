@@ -588,6 +588,19 @@ test("Android parity owns the standalone multitouch proof without contaminating 
   );
 });
 
+test("Android runs its standalone multitouch proof before the serial parity rows", () => {
+  const source = readFileSync(runner, "utf8");
+  const supplemental = source.indexOf("androidMultitouch: runAndroidMultitouchProof({");
+  const rows = source.indexOf("if (dryRun || target !== \"web\") await executeRows(0);");
+
+  assert.ok(supplemental >= 0, "the Android supplemental proof must remain wired into the report");
+  assert.ok(rows >= 0, "the serial parity rows must remain wired into the runner");
+  assert.ok(
+    supplemental < rows,
+    "the required device proof must run while the emulator is fresh, before the parity rows",
+  );
+});
+
 test("the exported exit rule owns a failing Android multitouch supplemental result", () => {
   assert.equal(
     reportExitCode({

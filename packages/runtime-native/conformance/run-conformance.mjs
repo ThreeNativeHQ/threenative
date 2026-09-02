@@ -2517,11 +2517,6 @@ async function main(argv = process.argv.slice(2)) {
       report.results.push(result);
     }
   };
-  if (dryRun || target !== "web") await executeRows(0);
-  else
-    await withServer(captureRoot, project?.publicDir, ({ port, broker }) =>
-      executeRows(port, broker),
-    );
   if (shouldRunAndroidMultitouch({ dryRun, project, target })) {
     report.supplemental = {
       ...report.supplemental,
@@ -2531,6 +2526,11 @@ async function main(argv = process.argv.slice(2)) {
       }),
     };
   }
+  if (dryRun || target !== "web") await executeRows(0);
+  else
+    await withServer(captureRoot, project?.publicDir, ({ port, broker }) =>
+      executeRows(port, broker),
+    );
   const reportErrors = validateReport(report, registry);
   if (reportErrors.length > 0) {
     throw new Error(`Generated an invalid conformance report:\n- ${reportErrors.join("\n- ")}`);
