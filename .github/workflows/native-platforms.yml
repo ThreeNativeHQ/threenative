@@ -80,6 +80,45 @@ jobs:
         with:
           python-version: "3.12"
       - uses: android-actions/setup-android@v4
+      # The three re-downloads this lane paid for on every run. Measured on run 33675488456:
+      # ~6 min of SDK/emulator installation and ~5 min of the Gradle build plus the Rust
+      # cross-compile, against a 35 min job. `third_party` was already cached and hit in ~4 s;
+      # these were simply never added. Keys are content-addressed where a lockfile exists and
+      # pinned to the versions this workflow installs where one does not, so a version bump
+      # misses rather than serving a stale toolchain.
+      - name: Restore the Android SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_SDK_ROOT }}/platforms/android-35
+            ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0
+            ${{ env.ANDROID_SDK_ROOT }}/ndk/27.1.12297006
+            ${{ env.ANDROID_SDK_ROOT }}/system-images/android-35
+            ${{ env.ANDROID_SDK_ROOT }}/emulator
+          key: android-sdk-35-ndk27.1.12297006-${{ runner.os }}
+      - name: Restore the Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: >-
+            gradle-${{ runner.os }}-${{ hashFiles(
+              'packages/runtime-native/android/**/*.gradle*',
+              'packages/runtime-native/android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - name: Restore the Rust cross-compile caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            packages/runtime-native/.runtime/physics-target
+          key: >-
+            cargo-android-${{ runner.os }}-${{ hashFiles(
+              'packages/runtime-native/native/physics/Cargo.lock') }}
+          restore-keys: cargo-android-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Build browser reference workspace imports
         run: pnpm tsx scripts/workspace-packages.ts build
