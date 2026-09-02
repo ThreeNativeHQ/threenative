@@ -395,7 +395,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
         minY: Number.NaN,
         moverShadow,
         // One placeholder light serves both maps: the stock node reads only its placement.
-        moverNode: shadow(light as unknown as DirectionalLight, moverShadow), // quality-allow: the stock shadow node reads only position, target and shadow off its light
+        // quality-allow: the stock shadow node reads only position, target and shadow off its light
+        moverNode: shadow(light as unknown as DirectionalLight, moverShadow),
+        // quality-allow: the stock shadow node reads only position, target and shadow off its light
         node: shadow(light as unknown as DirectionalLight, levelShadow),
         shadow: levelShadow,
       });
@@ -438,6 +440,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         );
       }
       return result;
+      // quality-allow: Three's Fn invocation loses the concrete node type.
     })() as unknown as Node;
   }
 
@@ -535,6 +538,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           source.shadow.needsUpdate
         ) {
           // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
+          // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
           if (canRender) (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
           rendered += 1;
         }
@@ -548,6 +552,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     let moverRenders = 0;
     if (this.#casters.size > 0) {
       for (const level of this.#levels) {
+        // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
         if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame);
         moverRenders += 1;
       }
