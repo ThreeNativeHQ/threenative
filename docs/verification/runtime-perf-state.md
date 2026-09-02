@@ -798,7 +798,8 @@ attempts — `TN_NO_IBL` gate ships off by default; the A/B screenshots are
 The `scene.environment` ablation above removes both one-time PMREM work and per-fragment
 environment sampling, so its ≈6.3 ms difference is an upper bound on what a build-time bake could
 recover. A same-session five-arm control measured a set-once environment at 2.18 ms and no
-environment at 2.55 ms; the −0.37 ms inversion establishes the noise floor. Forcing PMREM every
+environment at 2.55 ms; the −0.37 ms inversion is a lower-bound/noise observation, not a complete
+resolution floor, and an independent positive resolution observation is required. Forcing PMREM every
 frame measured 3.79 ms, or **+1.61 ms** over the static arm. Bayview assigns `scene.environment`
 once and has no `ProbeVolume`, `CubeCamera`, or `needsPMREMUpdate` path, so the +1.61 ms control is
 not its workload. The static bakeable benefit is unresolvable and below the standing 2 ms bar.
@@ -1461,7 +1462,7 @@ run's 13 steady-state tail spikes.
 | 14 | Swapchain `desiredMaximumFrameLatency` infrastructure | kept, never an fps lever |
 | 15 | Optimising three.js renderer internals inside the host | refused on the ownership rule |
 | 16 | Cutting Bayview draw counts in `packages/` | reverted; game code is experiment-only |
-| 17 | PRD-307 set-once environment prefilter | **refuted for steady-state**: `dirty/1 − static` = **+1.61 ms**, while `static − none` = **−0.37 ms**, the measured noise floor; Bayview has no per-frame dirty path |
+| 17 | PRD-307 set-once environment prefilter | **refuted for steady-state**: `dirty/1 − static` = **+1.61 ms**, while `static − none` = **−0.37 ms**, a lower-bound/noise observation; an independent positive resolution observation is required. Bayview has no per-frame dirty path |
 
 Also closed by evidence: the node-system megamorphic IC population is a **load-time compile
 burst**, not per-frame churn (0 `Node.build()` calls/frame steady state); the `clock_gettime`

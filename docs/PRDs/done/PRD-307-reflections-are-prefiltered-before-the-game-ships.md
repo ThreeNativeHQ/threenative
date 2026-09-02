@@ -6,8 +6,9 @@ prd_contract: v1
 
 **Status:** REFUTED, 2026-09-01. Evidence:
 [environment-cost-attribution-2026-09-01](../../verification/environment-cost-attribution-2026-09-01.md).
-The Bayview set-once environment versus no-environment comparison was below the 0.37 ms noise
-floor; forcing a prefilter every frame cost +1.61 ms, but Bayview never dirties its environment.
+The Bayview set-once environment versus no-environment comparison was unresolvable: its −0.37 ms
+inversion is only a lower-bound/noise observation, and no independent positive resolution was
+recorded. Forcing a prefilter every frame cost +1.61 ms, but Bayview never dirties its environment.
 Phases 2 and 3 were therefore skipped and the runtime PMREM fallback remains unchanged.
 
 **Outcome:** the environment lighting a game ships with is **prefiltered at build time** by
