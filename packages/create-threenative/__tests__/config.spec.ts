@@ -513,6 +513,28 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.sharedImages/u);
   });
 
+  it("hands assets.concurrency to the pipeline that receives it", async () => {
+    // The bounded-concurrency seam (PRD-319): the config validates the value and the driver
+    // reads it — a key the driver ignored would pass this producer half and ship nothing.
+    const root = await project();
+    await config(root, "export default { assets: { concurrency: 3 } };");
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({ concurrency: 3 });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      written: 0,
+    });
+  });
+
+  it("rejects a non-integer assets.concurrency with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { assets: { concurrency: "lots" } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.concurrency/u);
+  });
+
   it("rejects an unknown key under assets.models.virtual with the named code", async () => {
     const root = await project();
     await config(root, "export default { assets: { models: { virtual: { ratio: 0.5 } } } };");

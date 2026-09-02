@@ -1189,11 +1189,24 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
 
 function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   const assets = assertRecord(raw, "assets");
-  assertKeys(assets, "assets", ["models", "source", "output", "targets", "textures"]);
+  assertKeys(assets, "assets", ["concurrency", "models", "source", "output", "targets", "textures"]);
   const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
   const models = assets.models === undefined ? undefined : validateModels(assets.models);
   const textures = assets.textures === undefined ? undefined : validateTextures(assets.textures);
   return {
+    // The worker bound a bake may use. Validated here so a malformed value fails at config
+    // load with the named code, and handed to the driver unchanged, which re-checks it —
+    // the producer→consumer seam the config spec proves by running the pipeline.
+    ...(assets.concurrency === undefined
+      ? {}
+      : {
+          concurrency: positiveInteger(
+            assets.concurrency,
+            1,
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.concurrency",
+          ),
+        }),
     ...(assets.source === undefined
       ? {}
       : { source: nonEmptyString(assets.source, "TN_CONFIG_ASSETS_INVALID", "assets.source") }),

@@ -1,7 +1,9 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  // apply-worker is the bounded pool's child entry: worker-pool.ts points at the emitted
+  // neighbour file when the compile itself is compiled, so it ships as its own chunk.
+  entry: ["src/index.ts", "src/apply-worker.ts"],
   format: ["esm"],
   target: "node20",
   dts: true,

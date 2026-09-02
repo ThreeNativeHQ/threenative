@@ -103,6 +103,12 @@ export interface IAssetPass {
 
 export interface IAssetSourceConfig {
   /**
+   * The bound on how many workers a bake may use. A direct `concurrency` option overrides it;
+   * absent means the driver's default (`min(4, cores - 1)`). CI boxes and laptops differ, and
+   * a 6.8 GB pack does not get to decide the machine's fate.
+   */
+  readonly concurrency?: number;
+  /**
    * Model optimization: an object of options, or the string `"none"` to ship every model
    * exactly as committed. Absent means optimization runs with defaults.
    */
@@ -242,6 +248,8 @@ interface IAssetManifest {
 }
 
 interface ICompileLayout {
+  /** `assets.concurrency` from the game config, when it declared one. */
+  readonly concurrency: number | undefined;
   readonly outputRoot: string;
   /** The built-in registry's serialisable mirror; empty when the caller supplied passes. */
   readonly passSpecs: readonly PassSpec[];
@@ -732,6 +740,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   }
   for (const key of Object.keys(config)) {
     if (
+      key !== "concurrency" &&
       key !== "source" &&
       key !== "output" &&
       key !== "targets" &&
@@ -795,6 +804,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     }
   }
   return {
+    concurrency: config.concurrency as number | undefined,
     outputRoot,
     passSpecs,
     passes: [...builtinPasses, ...(options.passes ?? [])],
@@ -1399,7 +1409,7 @@ export async function compileAssets(
   // — the merge, the writes, the counters — stays on this thread and is keyed or
   // stable-merged, which the determinism gate proves. A compile with custom passes has no
   // serialisable mirror and runs sequential.
-  const concurrency = resolveConcurrency(options.concurrency);
+  const concurrency = resolveConcurrency(options.concurrency ?? layout.concurrency);
   const pool =
     layout.passSpecs.length > 0 && concurrency > 1
       ? createPassPool(concurrency, layout.passSpecs, layout.outputRoot)

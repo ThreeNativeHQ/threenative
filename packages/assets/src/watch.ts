@@ -9,6 +9,7 @@ import {
   resolveBasisTranscoder,
 } from "./compile.js";
 import type { IPassCostRow } from "./report.js";
+import { DEFAULT_CONCURRENCY } from "./worker-pool.js";
 
 /**
  * Dev-mode compilation: watches the asset source directory and recompiles changed inputs into
@@ -328,19 +329,41 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     const failed: string[] = [];
     const passCostRows: (readonly IPassCostRow[])[] = [];
     const merged = new Map<string, ICompiledEntry>();
-    for (const logical of batch) {
-      try {
-        const recompiled = await recompileOne(layout, compileOptions, logical);
-        merged.set(logical, recompiled.entry);
-        passCostRows.push(recompiled.passCosts);
+    // The burst runs through the same execution model as a build: bounded workers, results
+    // merged on this thread keyed by logical path. A scratch compile is one input, so the
+    // parallelism lives here — a burst of saves recompiles together, not one per drain.
+    const queue = [...batch];
+    const runners = Math.min(queue.length, Math.max(1, DEFAULT_CONCURRENCY));
+    const record = (logical: string, error: unknown, entry?: ICompiledEntry, costs?: readonly IPassCostRow[]): void => {
+      if (entry !== undefined && costs !== undefined) {
+        merged.set(logical, entry);
+        passCostRows.push(costs);
         compiled.push(logical);
-      } catch (error) {
-        // The previous output (content-addressed, never overwritten) and previous manifest
-        // entry stay untouched; the path is reported and the next good save heals it.
-        failed.push(logical);
-        logFailure(`could not recompile '${logical}': ${messageOf(error)}`);
+        return;
       }
-    }
+      // The previous output (content-addressed, never overwritten) and previous manifest
+      // entry stay untouched; the path is reported and the next good save heals it.
+      failed.push(logical);
+      logFailure(`could not recompile '${logical}': ${messageOf(error)}`);
+    };
+    await Promise.all(
+      Array.from(
+        { length: runners },
+        () =>
+          (async () => {
+            for (;;) {
+              const logical = queue.shift();
+              if (logical === undefined) return;
+              try {
+                const recompiled = await recompileOne(layout, compileOptions, logical);
+                record(logical, undefined, recompiled.entry, recompiled.passCosts);
+              } catch (error) {
+                record(logical, error);
+              }
+            }
+          })(),
+      ),
+    );
     await mergeEntries(merged);
     // A dev save reports the same per-pass records a build does; without them the watch loop
     // is blind to which pass a slow save paid for.
