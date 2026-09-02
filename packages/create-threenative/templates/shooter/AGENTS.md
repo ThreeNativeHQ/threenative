@@ -19,10 +19,7 @@ portable and `src/main.ts` is the web-only React mount.
    use the direct physics queries already in this kit instead of a navmesh or distance scan.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
-
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; use
-`continuousCollision` as the named per-body override and read `body.continuousCollision` on web/native.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -97,6 +94,3 @@ object once, adds it with `ctx.add`, and calls `restart()` from the real fire or
 move appearance into core or replace the existing event with a demo-only caller.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
-
-On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick,
-a right aim stick and a fire button. Keyboard input remains the desktop fallback.

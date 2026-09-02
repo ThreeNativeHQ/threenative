@@ -19,10 +19,7 @@ state bridge. This repository owns the route, attackers, towers, economy, waves,
    this kit deliberately uses an authored `PathFollow3D` route instead of a navmesh.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
-
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; use
-`continuousCollision` as the named per-body override and read `body.continuousCollision` on web/native.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
