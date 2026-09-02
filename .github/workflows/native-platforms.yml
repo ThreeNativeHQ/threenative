@@ -50,8 +50,9 @@ concurrency:
   # one is absent.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only: the run-cancel-on-failure step that needed Actions write access is gone — it re-marked
+# the failing job itself `cancelled`, which hid which leg went red. See ci.yml.
 permissions:
-  actions: write
   contents: read
 
 jobs:
@@ -200,8 +201,6 @@ jobs:
           name: native-android-emulator-parity
           path: packages/runtime-native/artifacts/conformance/
           if-no-files-found: error
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   desktop-parity:
     name: Desktop web/native parity
@@ -331,8 +330,6 @@ jobs:
           name: native-desktop-parity
           path: packages/runtime-native/artifacts/conformance/
           if-no-files-found: error
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   desktop:
     name: ${{ matrix.platform }} desktop core
@@ -459,8 +456,6 @@ jobs:
           name: native-desktop-${{ matrix.platform }}
           path: packages/runtime-native/artifacts/
           if-no-files-found: error
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   starter-linux:
     name: Scaffolded starter desktop artifact
@@ -563,8 +558,6 @@ jobs:
           name: native-starter-linux
           path: packages/runtime-native/artifacts/starter-linux/
           if-no-files-found: error
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
@@ -709,5 +702,3 @@ jobs:
             packages/runtime-native/artifacts/ios/
             ${{ runner.temp }}/ios-consumer-*.log
           if-no-files-found: error
-      - if: failure()
-        uses: ./.github/actions/cancel-run-on-failure
