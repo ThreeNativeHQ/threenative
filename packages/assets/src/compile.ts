@@ -29,12 +29,15 @@ import type {
 import { createSharedImageStore } from "./passes/shared-images.js";
 import { texturePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
-import { formatModelSizes, formatTextureSizes } from "./report.js";
+import { formatModelSizes, formatPassCosts, formatTextureSizes } from "./report.js";
 import type {
   IEmbeddedTextureRow,
   IModelSizeRow,
+  IPassCostAssetRow,
+  IPassCostRow,
   ISimplifyRow,
   ITextureSizeRow,
+  PassCostStatus,
 } from "./report.js";
 
 export type AssetKind = "audio" | "model" | "other" | "texture";
@@ -164,6 +167,8 @@ export interface IBasisTranscoder {
 }
 
 export interface IAssetCompileResult {
+  /** One cost row per pass, driver-measured; empty when no bake ran. */
+  readonly passCosts: readonly IPassCostRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
   readonly skipped: number;
@@ -1035,8 +1040,28 @@ interface IAppliedPasses {
   readonly buffer: Buffer;
   readonly entry: Record<string, unknown> | undefined;
   readonly extension: string | undefined;
+  /** One duration per pass, opened and closed by the driver around each `apply`. */
+  readonly timings: readonly IPassTiming[];
 }
 
+/** What the driver measured for one pass on one input. */
+interface IPassTiming {
+  readonly durationMs: number;
+  readonly name: string;
+}
+
+/** The per-pass cost bookkeeping one bake accumulates, keyed in registry order. */
+interface IPassCostRecord {
+  cachedInputs: number;
+  ranInputs: number;
+  timings: IPassCostAssetRow[];
+}
+
+/**
+ * The driver — never the pass — owns the clock: each `apply` is bracketed here, so a pass cannot
+ * opt out of measurement and cannot report a number of its own choosing. A pass that ends without
+ * a closed record is a driver bug and throws rather than emitting a report with a hole in it.
+ */
 async function applyPasses(
   passes: readonly IAssetPass[],
   input: Buffer,
@@ -1044,9 +1069,11 @@ async function applyPasses(
 ): Promise<IAppliedPasses> {
   let buffer = input;
   const auxiliaryOutputs: IAssetAuxiliaryOutput[] = [];
+  const timings: IPassTiming[] = [];
   let entry: Record<string, unknown> | undefined;
   let extension: string | undefined;
   for (const pass of passes) {
+    const started = performance.now();
     let result: Buffer | IAssetPassOutput;
     try {
       result = await pass.apply(buffer, logical);
@@ -1055,6 +1082,7 @@ async function applyPasses(
         `TN_ASSETS_PASS_FAILED: pass '${pass.name}' failed for '${logical}': ${messageOf(error)}`,
       );
     }
+    timings.push({ durationMs: performance.now() - started, name: pass.name });
     if (Buffer.isBuffer(result)) {
       buffer = result;
       continue;
@@ -1064,7 +1092,71 @@ async function applyPasses(
     if (result.entry !== undefined) entry = { ...(entry ?? {}), ...result.entry };
     if (result.outputExtension !== undefined) extension = result.outputExtension;
   }
-  return { auxiliaryOutputs, buffer, entry, extension };
+  if (timings.length !== passes.length) {
+    throw new Error(
+      `TN_ASSETS_PASS_COST_UNCLOSED: ${logical}: ${passes.length - timings.length} of ${passes.length} pass record(s) left open; refusing to report a partial cost.`,
+    );
+  }
+  return { auxiliaryOutputs, buffer, entry, extension, timings };
+}
+
+/** Counts one compile-cache-served input for every pass: the cache decision is the source. */
+function recordCachedInputs(
+  costInputs: Map<string, IPassCostRecord>,
+  passNames: readonly string[],
+): void {
+  for (const name of passNames) {
+    const record = costInputs.get(name);
+    if (record !== undefined) record.cachedInputs += 1;
+  }
+}
+
+function recordRanTimings(
+  costInputs: Map<string, IPassCostRecord>,
+  logical: string,
+  timings: readonly IPassTiming[],
+): void {
+  for (const timing of timings) {
+    const record = costInputs.get(timing.name);
+    if (record === undefined) continue;
+    record.ranInputs += 1;
+    record.timings.push({ durationMs: timing.durationMs, logicalPath: logical });
+  }
+}
+
+/** Fails closed: every pass must account for every input, ran or cached, or nothing is emitted. */
+function assertCompletePassCosts(
+  costInputs: ReadonlyMap<string, IPassCostRecord>,
+  inputCount: number,
+): void {
+  for (const [pass, record] of costInputs) {
+    if (record.ranInputs + record.cachedInputs !== inputCount) {
+      throw new Error(
+        `TN_ASSETS_PASS_COST_INCOMPLETE: pass '${pass}' accounts for ${record.ranInputs} ran + ${record.cachedInputs} cached of ${inputCount} input(s); refusing to emit a cost report with a hole in it.`,
+      );
+    }
+  }
+}
+
+/** Rows in registry order; per-asset rows sorted by logical path so two bakes diff cleanly. */
+function buildPassCostRows(
+  costInputs: ReadonlyMap<string, IPassCostRecord>,
+): readonly IPassCostRow[] {
+  const rows: IPassCostRow[] = [];
+  for (const [pass, record] of costInputs) {
+    const status: PassCostStatus = record.ranInputs > 0 ? "ran" : "cached";
+    rows.push({
+      assets: [...record.timings].sort((left, right) =>
+        left.logicalPath < right.logicalPath ? -1 : 1,
+      ),
+      cachedInputs: record.cachedInputs,
+      durationMs: record.timings.reduce((total, timing) => total + timing.durationMs, 0),
+      pass,
+      ranInputs: record.ranInputs,
+      status,
+    });
+  }
+  return rows;
 }
 
 async function writeOutput(
@@ -1219,7 +1311,7 @@ export async function compileAssets(
     // No bake ran, so no receipt describes this output root. A stale one from a previous build
     // would have the delete-test remove files nothing produces any more.
     await rm(receiptPath, { force: true });
-    return { skipped: 0, written: 0 };
+    return { passCosts: [], skipped: 0, written: 0 };
   }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
@@ -1233,6 +1325,9 @@ export async function compileAssets(
   });
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
+  const costInputs = new Map<string, IPassCostRecord>();
+  for (const name of passNames)
+    costInputs.set(name, { cachedInputs: 0, ranInputs: 0, timings: [] });
   // Read before the first write, so the undeclared-output guard can tell this run's files from
   // the project's own static ones. It never reaches the receipt: that stays deterministic.
   const runStart = Date.now();
@@ -1254,8 +1349,8 @@ export async function compileAssets(
     await rm(receiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
     return options.health === true
-      ? { report, skipped: 0, written: 0 }
-      : { skipped: 0, written: 0 };
+      ? { passCosts: [], report, skipped: 0, written: 0 }
+      : { passCosts: [], skipped: 0, written: 0 };
   }
 
   /** Everything one entry contributes to the receipt, the health report and the size report. */
@@ -1330,10 +1425,12 @@ export async function compileAssets(
     if (previousEntry !== undefined && reusable !== undefined) {
       entries[logical] = previousEntry;
       bookkeep(logical, input, previousEntry, reusable, undefined);
+      recordCachedInputs(costInputs, passNames);
       skipped += 1;
       continue;
     }
     const applied = await applyPasses(layout.passes, input, logical);
+    recordRanTimings(costInputs, logical, applied.timings);
     const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
     const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
     const entry: IAssetManifestEntry = {
@@ -1454,10 +1551,13 @@ export async function compileAssets(
 
   // The report runs unconditionally — it is the one place a user learns why their game is
   // slow. Only declared targets can fail it.
+  assertCompletePassCosts(costInputs, logicals.length);
+  const passCosts = buildPassCostRows(costInputs);
   const report = await runHealthReport(healthInputs, layout.targets);
   for (const line of formatHealthReport(report)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  for (const line of formatPassCosts(passCosts)) console.log(line);
   if (report.failed) {
     const failedAssets = report.findings
       .filter((finding) => finding.grade === "fail")
@@ -1475,6 +1575,6 @@ export async function compileAssets(
   );
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
   return options.health === true
-    ? { receipt, report, skipped, written }
-    : { receipt, skipped, written };
+    ? { passCosts, receipt, report, skipped, written }
+    : { passCosts, receipt, skipped, written };
 }

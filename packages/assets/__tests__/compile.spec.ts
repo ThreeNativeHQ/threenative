@@ -248,7 +248,7 @@ describe("compileAssets", () => {
 
     const result = await compileAssets({ cwd: root });
 
-    expect(result).toEqual({ skipped: 0, written: 0 });
+    expect(result).toEqual({ passCosts: [], skipped: 0, written: 0 });
     await expect(stat(path.join(root, "public"))).rejects.toThrow();
   });
 
@@ -310,7 +310,7 @@ describe("compileAssets", () => {
 
     const result = await compileAssets({ cwd: root });
 
-    expect(result).toEqual({ skipped: 0, written: 0 });
+    expect(result).toEqual({ passCosts: [], skipped: 0, written: 0 });
     await expect(stat(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow();
   });
 

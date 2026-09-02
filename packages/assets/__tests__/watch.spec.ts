@@ -140,7 +140,18 @@ describe("watchAssets", () => {
     );
     await recorder.waitForCount(1);
 
-    expect(recorder.summaries[0]).toEqual({ compiled: ["rock.png"], failed: [] });
+    // The burst carries the same per-pass cost records a build emits (PRD-318).
+    expect(recorder.summaries[0]).toEqual({
+      compiled: ["rock.png"],
+      failed: [],
+      passCosts: expect.any(Array),
+    });
+    expect(recorder.summaries[0]?.passCosts?.map((row) => row.pass)).toEqual(["ktx2", "model"]);
+    expect(
+      recorder.summaries[0]?.passCosts?.every(
+        (row) => row.status === "ran" && row.ranInputs === 1 && row.cachedInputs === 0,
+      ),
+    ).toBe(true);
     const updatedEntries = await readManifestEntries(manifestPath);
     expect(requireEntry(updatedEntries, "rock.png").output).not.toBe(
       requireEntry(initialEntries, "rock.png").output,
@@ -206,7 +217,12 @@ describe("watchAssets", () => {
       // Fixing the input heals the deviation: the next burst recompiles and updates the manifest.
       await writeFile(path.join(root, "assets", "rock.png"), "fixed png");
       await recorder.waitForCount(2);
-      expect(recorder.summaries[1]).toEqual({ compiled: ["rock.png"], failed: [] });
+      expect(recorder.summaries[1]).toEqual({
+        compiled: ["rock.png"],
+        failed: [],
+        passCosts: expect.any(Array),
+      });
+      expect(recorder.summaries[1]?.passCosts?.map((row) => row.pass)).toEqual(["explode"]);
       expect(await readFile(manifestPath, "utf8")).not.toBe(manifestRaw);
     } finally {
       stderrSpy.mockRestore();
@@ -237,7 +253,13 @@ describe("watchAssets", () => {
     await new Promise((resolve) => setTimeout(resolve, 180));
 
     expect(recorder.summaries).toHaveLength(1);
-    expect(recorder.summaries[0]).toEqual({ compiled: ["rock.png"], failed: [] });
+    expect(recorder.summaries[0]).toEqual({
+      compiled: ["rock.png"],
+      failed: [],
+      passCosts: expect.any(Array),
+    });
+    // textures: "none" drops the ktx2 pass; the model pass still ran and reports itself.
+    expect(recorder.summaries[0]?.passCosts?.map((row) => row.pass)).toEqual(["model"]);
     const entries = await readManifestEntries(path.join(root, "public", "assets.manifest.json"));
     const compiled = await readFile(
       path.join(root, "public", requireEntry(entries, "rock.png").output),

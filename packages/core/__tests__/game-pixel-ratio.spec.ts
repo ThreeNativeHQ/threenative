@@ -59,7 +59,7 @@ async function bootGame(
       value: requestFrame,
     });
   }
-  return { stop: () => game.stop(), setSizeCalls };
+  return { stop: async () => game.stop(), setSizeCalls };
 }
 
 describe("the game boots at the device's real density by default", () => {
