@@ -316,12 +316,15 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
                   << std::endl;
     }
 
-    // wgpu's own extension: without it an adapter that advertises a compressed format still
-    // refuses the adapter-specific format capabilities three's KTX2 path relies on. Requested
-    // here, once, so every device-creation path asks for the same set.
+#if defined(MYSTRAL_WEBGPU_WGPU_MODERN) && defined(__ANDROID__)
+    // wgpu's own extension, and only wgpu declares it: without it an adapter that advertises a
+    // compressed format still refuses the adapter-specific format capabilities three's KTX2 path
+    // relies on. It lived in the Android branch alone before this builder existed; asking for it
+    // here means all three device-creation paths ask for the same set on that backend.
     appendIfSupported(
         static_cast<WGPUFeatureName>(WGPUNativeFeature_TextureAdapterSpecificFormatFeatures),
         "texture-adapter-specific-format-features");
+#endif
     appendIfSupported(WGPUFeatureName_TextureCompressionBC, "texture-compression-bc");
     appendIfSupported(WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2");
     appendIfSupported(WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc");
