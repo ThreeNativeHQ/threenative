@@ -26,7 +26,17 @@ Reproduce (headed only — headless Chromium cannot capture WebGPU on this machi
 http://127.0.0.1:5173/dev-animals.html?state=walk&threat=0
 ```
 
-Full investigation record: `sandbox/wildwood/BUGREPORT-animals-deformed-2026-09-02.md`.
+Full investigation record: **`BUGREPORT-animals-deformed-2026-09-02.md`** in the Wildwood game
+repo — which is a **separate git repository** at `../sandbox` relative to this one, not a
+subdirectory. Absolute path on the authoring machine:
+`/home/joao/projects/threenative/sandbox/wildwood/BUGREPORT-animals-deformed-2026-09-02.md`, at
+commit `d64fc78`. It carries the reproduce steps, the disproven theories in full, and the harness
+warning. **Read it before Phase 1.**
+
+Engine-side commits this PRD builds on: `0495d86b` (quantized-POSITION widening in the loader),
+`9063216c` (skin-aware measurement characterisation test). Game-side: `cf15e9e` (sizing via
+`normaliseToMetres`, harness ground), `056e2f3` (clip names, audit wired), `13d1288` (mirror
+diagnosis retracted).
 
 ### Why this is a framework problem, not a Wildwood problem
 
