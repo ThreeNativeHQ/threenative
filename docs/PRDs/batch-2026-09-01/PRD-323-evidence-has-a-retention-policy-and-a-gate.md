@@ -4,7 +4,15 @@ prd_contract: v1
 
 # PRD-323 — evidence has a retention policy, and the policy is a gate
 
-**Status: PROPOSED, 2026-09-01.** Measured against `HEAD` bedbcb80.
+**Status: PARTIAL, 2026-09-02.** Phase 0 landed: the evidence budget gate
+(`scripts/check-evidence-budget.ts`, wired into `pnpm budgets`) with its red observed at a
+tight cap (71.2 MB over 50 MB, `OK: false`), the fixture tests pinning the failure shape, and
+the real-tree assertion holding under the shipped growth-stop caps. Fresh measurement: `docs`
+is **369 MB** (was 289 MB at filing), verification 71.2 MB / 779 files, benchmark 203.3 MB
+tracked / 5,362 files, packed history 194 MB. The citation scanner and the deletion phases
+(1-6) remain **open** and require the owner's manual checkpoint before any tracked bytes move;
+per the PRD's own decline rule, the shipped budget gate alone is a win — the bloat now fails
+the commit that causes it.
 
 **Complexity score:** +3 touches 10+ files, +2 new gate/module from scratch, +2 multi-package
 (scripts, docs tooling, CI), +1 external integration (`git` history rewrite is evaluated and
