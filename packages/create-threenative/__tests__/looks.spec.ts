@@ -138,7 +138,7 @@ describe("starter visual floor", () => {
   });
 
   it("should build deterministic watertight granite from the live field", () => {
-    const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -24, minZ: -74 } as const;
+    const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const;
     const build = (seed: number, cellSize = 2.1) =>
       buildImplicitSurface({
         bounds,
@@ -165,6 +165,87 @@ describe("starter visual floor", () => {
     expect(bytes(first.positions)).toBe(bytes(same.positions));
     expect(bytes(first.indices)).toBe(bytes(same.indices));
     expect(bytes(first.positions)).not.toBe(bytes(different.positions));
+  });
+
+  it("should carry the fused ridge through its authored contact band", async () => {
+    const ridge = await readFile(path.join(starter, "src/render/rockRidge.ts"), "utf8");
+    const contact = /const contactY = (-?\d+(?:\.\d+)?)/u.exec(ridge)?.[1];
+    if (contact === undefined)
+      throw new Error("Rock ridge contact band is not authored in the field.");
+    const contactY = Number(contact);
+    expect(contactY).toBe(-20);
+    expect(ridge).toContain("minY: -32");
+    const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const;
+    const result = buildImplicitSurface({
+      bounds,
+      cellSize: 2.1,
+      latticeCap: 100_000,
+      closed: true,
+      protectBoundary: true,
+      sample: (x, y, z) => sampleGraniteField(x, y, z, 20_260_821, bounds),
+    });
+    const minimumY = Math.min(
+      ...Array.from(
+        { length: result.positions.length / 3 },
+        (_, index) => result.positions[index * 3 + 1] as number,
+      ),
+    );
+    expect(sampleGraniteField(0, contactY, -58, 20_260_821, bounds)).toBeLessThan(0);
+    expect(minimumY).toBeLessThan(contactY);
+    expect(result.report).toMatchObject({
+      boundaryEdges: 0,
+      degenerateTriangles: 0,
+      windingConflicts: 0,
+    });
+  });
+
+  it("should drive look movement before the long refinement wait", async () => {
+    const scenario = JSON.parse(
+      await readFile(path.join(starter, "playtests/look.playtest.json"), "utf8"),
+    ) as {
+      assert?: {
+        components?: Array<{
+          component?: string;
+          entity?: string;
+          equals?: unknown;
+          path?: string;
+        }>;
+        resources?: Array<{
+          atSteps?: Array<{ label: string; textIncludes?: string }>;
+          id?: string;
+          path?: string;
+        }>;
+      };
+      steps: Array<{ holdTicks?: number; kind?: string; label?: string; waitTicks?: number }>;
+    };
+    const movementIndex = scenario.steps.findIndex(
+      ({ label }) => label === "move-before-refinement",
+    );
+    const refinementIndex = scenario.steps.findIndex(({ label }) => label === "refinement-settles");
+    expect(movementIndex).toBeGreaterThanOrEqual(0);
+    expect(refinementIndex).toBeGreaterThan(movementIndex);
+    expect(scenario.steps[movementIndex]).toMatchObject({ kind: "input", holdTicks: 140 });
+    expect(scenario.steps[refinementIndex]).toMatchObject({ kind: "wait", waitTicks: 600 });
+    expect(scenario.assert?.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          atSteps: [{ label: "move-before-refinement", textIncludes: "." }],
+          id: "state",
+          path: "odometer",
+        }),
+      ]),
+    );
+    expect(scenario.assert?.components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ component: "state", entity: "scenery.ridge", equals: "refined" }),
+        expect.objectContaining({
+          component: "topology",
+          entity: "scenery.ridge",
+          equals: 0,
+          path: "boundaryEdges",
+        }),
+      ]),
+    );
   });
 
   it("should protect a boundary-touching surface and reject malformed fields", () => {
@@ -212,6 +293,9 @@ describe("starter visual floor", () => {
     ]);
     expect(scenery).toContain("createRockRidge");
     expect(scenery).toContain("scenery.object.add");
+    expect(scenery).toContain("Play.enter imports and invokes createScenery");
+    expect(scenery).toContain("gameplay rules and colliders unchanged");
+    expect(scenery).not.toContain("Delete this file and the game plays identically");
     expect(scenery).not.toContain("MIDGROUND");
     expect(scenery).not.toContain("index < 9");
     expect(ridge).toContain("sampleGraniteField");
@@ -288,7 +372,7 @@ describe("starter visual floor", () => {
       expect(controller.state).toBe("preview");
       expect(controller.debug().generation).toBe(0);
       expect(controller.object.children).toHaveLength(1);
-      const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -24, minZ: -74 } as const;
+      const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const;
       const build = (seed: number) =>
         buildImplicitSurface({
           bounds,

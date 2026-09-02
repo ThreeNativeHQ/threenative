@@ -7,7 +7,7 @@ import {
   createRockRidgeWorkerSource,
 } from "./rockRidge.worker.js";
 // biome-ignore format: compact generated bounds keep the render source under its smell budget.
-const ROCK_RIDGE_BOUNDS = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -24, minZ: -74 } as const;
+const ROCK_RIDGE_BOUNDS = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const;
 const PREVIEW_SETTINGS = { cellSize: 10, latticeCap: 30_000, protectBoundary: true } as const;
 const REFINED_SETTINGS = { cellSize: 8, latticeCap: 100_000, protectBoundary: true } as const;
 // biome-ignore format: the generated field stays within the render-source smell budget.
@@ -24,7 +24,8 @@ export function sampleGraniteField(x: number, y: number, z: number, seed: number
   };
   const centerZ = -58 + Math.sin(x * 0.08 + phase) * 1.2 + Math.cos(x * 0.17 - phase) * 0.7;
   const top = -5 + Math.sin(x * 0.13 + phase * 2) * 0.8;
-  const bottom = -22 + Math.cos(x * 0.07 - phase) * 0.45;
+  const contactY = -20;
+  const bottom = contactY - 2 + Math.cos(x * 0.07 - phase) * 0.45;
   let field = Math.hypot(x / 50, (y - (top + bottom) * 0.5) / ((top - bottom) * 0.5), (z - centerZ) / 12) - 1;
   for (let index = -4; index <= 4; index += 1) {
     const jitter = noise(index + 31);
@@ -37,8 +38,6 @@ export function sampleGraniteField(x: number, y: number, z: number, seed: number
   const edge = Math.min(x - bounds.minX, bounds.maxX - x, y - bounds.minY, bounds.maxY - y, z - bounds.minZ, bounds.maxZ - z);
   return Math.max(field, 0.06 - edge / 4);
 }
-type Extraction = ReturnType<typeof buildImplicitSurface>;
-type Topology = ReturnType<typeof auditImplicitSurface>;
 function hashArray(array: Float32Array | Uint32Array): string {
   const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
   let hash = 2_166_136_261;
@@ -46,7 +45,7 @@ function hashArray(array: Float32Array | Uint32Array): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 // biome-ignore format: compact generated validation keeps the render source under its smell budget.
-function topologyError(report: Topology): Error | undefined {
+function topologyError(report: ReturnType<typeof auditImplicitSurface>): Error | undefined {
   if (report.boundaryEdges === 0 && report.degenerateTriangles === 0 && report.windingConflicts === 0 && report.signedVolume > 0)
     return undefined;
   const error = new Error(`boundary=${report.boundaryEdges}, degenerate=${report.degenerateTriangles}, winding=${report.windingConflicts}, volume=${report.signedVolume}`);
@@ -54,7 +53,7 @@ function topologyError(report: Topology): Error | undefined {
   return error;
 }
 // biome-ignore format: compact generated mesh attachment keeps the render source under its smell budget.
-function makeMesh(result: Extraction, material: Material, generation: number): { mesh: Mesh; report: Topology } {
+function makeMesh(result: ReturnType<typeof buildImplicitSurface>, material: Material, generation: number): { mesh: Mesh; report: ReturnType<typeof auditImplicitSurface> } {
   const report = auditImplicitSurface(result.indices, result.positions);
   const error = topologyError(report);
   if (error !== undefined) throw error;
@@ -100,7 +99,7 @@ export function createRockRidge(ridgeMaterial: Material, initialSeed: number): I
     state.lastError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     for (const worker of [...workers]) stop(worker);
   };
-  const swap = (result: Extraction, generation: number, buildMs: number, cellSize: number): void => {
+  const swap = (result: ReturnType<typeof buildImplicitSurface>, generation: number, buildMs: number, cellSize: number): void => {
     const next = makeMesh(result, ridgeMaterial, generation);
     const previous = visible.mesh;
     object.add(next.mesh);
@@ -139,7 +138,7 @@ export function createRockRidge(ridgeMaterial: Material, initialSeed: number): I
         return;
       }
       try {
-        const result = { positions: message.positions, indices: message.indices, report: message.report } as Extraction;
+        const result = { positions: message.positions, indices: message.indices, report: message.report } as ReturnType<typeof buildImplicitSurface>;
         const report = auditImplicitSurface(result.indices, result.positions);
         const error = topologyError(report);
         if (error !== undefined) throw error;

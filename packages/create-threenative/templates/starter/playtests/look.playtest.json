@@ -13,16 +13,16 @@
   },
   "steps": [
     {
-      "kind": "wait",
-      "label": "play-scene-loads",
-      "waitTicks": 600,
+      "kind": "input",
+      "label": "move-before-refinement",
+      "press": "ArrowRight",
+      "holdTicks": 140,
       "release": true
     },
     {
-      "kind": "input",
-      "label": "move-camera",
-      "press": "ArrowRight",
-      "holdTicks": 220,
+      "kind": "wait",
+      "label": "refinement-settles",
+      "waitTicks": 600,
       "release": true
     }
   ],
@@ -72,6 +72,20 @@
         "path": "signedVolume",
         "gte": 1,
         "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "odometer",
+        "gte": 4,
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "move-before-refinement",
+            "textIncludes": "."
+          }
+        ]
       }
     ],
     "camera": {

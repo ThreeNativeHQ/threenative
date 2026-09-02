@@ -1,4 +1,4 @@
-// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// Generated for you. This is ordinary Three.js — edit its visual choices freely.
 // ThreeNative does not read this file.
 //
 // The half of the world that has no collider. None of this is reachable and none of it
@@ -7,8 +7,8 @@
 // a below, the ridge gives the sky a behind, and the silhouette of both is what makes a
 // screenshot look composed rather than empty.
 //
-// Delete this file and the game plays identically — which is the point of it living here
-// rather than anywhere a rule could grow around it.
+// Play.enter imports and invokes createScenery, so deleting this live source without updating
+// that caller breaks the build. Editing the backdrop leaves gameplay rules and colliders unchanged.
 import type { Material } from "three";
 import { type IRockRidgeController, createRockRidge } from "./rockRidge.js";
 import { block } from "./shapes.js";

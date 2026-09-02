@@ -312,3 +312,290 @@ pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts -t "rep
 AssertionError: expected AGENTS source to contain 'rockRidge.ts'
 1 failed, 15 skipped
 ~~~
+
+## Repair follow-up — 2026-09-02
+
+This section records the completed repair in the existing lane. The changed layer is the
+game-owned starter template render source and its generated playtest/evidence tests; native
+source was not changed.
+
+### Review defects closed
+
+- `packages/create-threenative/templates/starter/playtests/look.playtest.json` now sends the
+  140-tick `ArrowRight` input at `move-before-refinement`, before the 600-tick
+  `refinement-settles` wait. Its real `assert.resources` entry observes `state.odometer` at
+  that intermediate label, as well as requiring the final distance.
+- `packages/create-threenative/templates/starter/src/render/rockRidge.ts` now authors
+  `contactY = -20`, samples the fused field through that band, and uses `minY: -32`. The
+  deterministic field remains closed/protected-boundary and the final render source is 198
+  lines, below the strict 200-line budget.
+- `packages/create-threenative/templates/starter/src/render/scenery.ts` now says that
+  `Play.enter` imports and invokes `createScenery`; it no longer says that the live file can be
+  deleted. The guidance still identifies the backdrop as game-owned visual source and leaves
+  gameplay rules/colliders unchanged.
+
+### Mutation reds, then restoration
+
+Each temporary mutation below was applied with `apply_patch`, tested, and restored with
+`apply_patch` before the next check.
+
+#### Movement placed after the long refinement wait
+
+Mutation: reversed the two `look.playtest.json` steps so `refinement-settles` preceded
+`move-before-refinement`.
+
+~~~sh
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts -t "should drive look movement before the long refinement wait"
+~~~
+
+~~~text
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/feature-mining-317-rock-ridge-20260901
+
+ ❯ packages/create-threenative/__tests__/looks.spec.ts (18 tests | 1 failed | 17 skipped) 7ms
+ × should drive look movement before the long refinement wait 6ms
+   AssertionError: expected 0 to be greater than 1
+ ❯ packages/create-threenative/__tests__/looks.spec.ts:205:29
+ Test Files 1 failed (1)
+      Tests 1 failed | 17 skipped (18)
+exit_code=1
+~~~
+
+#### Intermediate odometer observation removed
+
+Mutation: removed the entire `assert.resources` array from `look.playtest.json`.
+
+~~~sh
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts -t "should drive look movement before the long refinement wait"
+~~~
+
+~~~text
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/feature-mining-317-rock-ridge-20260901
+
+ ❯ packages/create-threenative/__tests__/looks.spec.ts (18 tests | 1 failed | 17 skipped) 9ms
+ × should drive look movement before the long refinement wait 8ms
+   AssertionError: expected undefined to deeply equal ArrayContaining{…}
+
+- Expected:
+ArrayContaining [
+  ObjectContaining {
+    "atSteps": [
+      {
+        "label": "move-before-refinement",
+        "textIncludes": ".",
+      },
+    ],
+    "id": "state",
+    "path": "odometer",
+  },
+]
+
++ Received:
+undefined
+
+ ❯ packages/create-threenative/__tests__/looks.spec.ts:208:40
+ Test Files 1 failed (1)
+      Tests 1 failed | 17 skipped (18)
+exit_code=1
+~~~
+
+#### Ridge contact field and bounds reverted
+
+Mutation: changed both ridge bounds occurrences from `minY: -32` to `minY: -24`, removed
+`const contactY = -20`, and restored `const bottom = -22 + ...`.
+
+~~~sh
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts -t "should carry the fused ridge through its authored contact band"
+~~~
+
+~~~text
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/feature-mining-317-rock-ridge-20260901
+
+ ❯ packages/create-threenative/__tests__/looks.spec.ts (18 tests | 1 failed | 17 skipped) 5ms
+ × should carry the fused ridge through its authored contact band 4ms
+   Error: Rock ridge contact band is not authored in the field.
+ ❯ packages/create-threenative/__tests__/looks.spec.ts:173:38
+ Test Files 1 failed (1)
+      Tests 1 failed | 17 skipped (18)
+exit_code=1
+~~~
+
+#### Live scenery deletion guidance restored
+
+Mutation: restored `// Generated for you. This is ordinary Three.js — edit or delete it freely.`
+and the old `Delete this file and the game plays identically` paragraph.
+
+~~~sh
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts -t "should replace the block horizon with a game-owned Worker refinement"
+~~~
+
+~~~text
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/feature-mining-317-rock-ridge-20260901
+
+ ❯ packages/create-threenative/__tests__/looks.spec.ts (18 tests | 1 failed | 17 skipped) 12ms
+ × should replace the block horizon with a game-owned Worker refinement 11ms
+   AssertionError: expected '// Generated for you. This is ordinar…' to contain 'Play.enter imports and invokes create…'
+ ❯ packages/create-threenative/__tests__/looks.spec.ts:266:21
+ Test Files 1 failed (1)
+      Tests 1 failed | 17 skipped (18)
+exit_code=1
+~~~
+
+#### Generated starter scaffold hash
+
+The first full-suite run exposed the expected-tree hash as the remaining stale generated-tree
+record. The recorded value was updated to the hash emitted by the repaired scaffold, then the
+full suite was rerun.
+
+~~~sh
+pnpm test
+~~~
+
+~~~text
+ FAIL packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps every no-install scaffold tree byte-stable against the PRD parent
+AssertionError: expected { …(8) } to deeply equal { …(8) }
+-   "starter": "e6ebc0b4dc5d09932fac3308f4c810f757cceebbe7c1a168d427dc73cc9914a8",
++   "starter": "162e8f7e5f835e357dbcb26aed953793c1144fdf5b2702f79d70b4d771ea9f38",
+Test Files  1 failed | 326 passed (327)
+Tests  1 failed | 3308 passed | 1 skipped (3310)
+exit_code=1
+~~~
+
+### Green verification
+
+Focused template tests after restoring all temporary mutations and the type-only budget cleanup:
+
+~~~sh
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts packages/create-threenative/__tests__/template.spec.ts
+~~~
+
+~~~text
+✓ packages/create-threenative/__tests__/looks.spec.ts (18 tests) 1274ms
+  ✓ deterministic ... 733ms
+  ✓ stale ... 401ms
+✓ packages/create-threenative/__tests__/template.spec.ts (35 tests) 21323ms
+  ✓ scaffold flat agent docs ... 304ms
+  ✓ typecheck a pristine scaffold ... 19868ms
+  ✓ optional realism ... 1000ms
+Test Files 2 passed (2)
+Tests 53 passed (53)
+Start ... Duration 21.77s ...
+exit_code=0
+~~~
+
+The deterministic topology/bounds probe used the repaired bounds and three seeds:
+
+~~~sh
+pnpm exec tsx -e 'import { buildImplicitSurface } from "./packages/create-threenative/templates/starter/src/render/implicitSurface.ts"; import { sampleGraniteField } from "./packages/create-threenative/templates/starter/src/render/rockRidge.ts"; const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const; for (const seed of [20_260_821, 11, 99]) { const result = buildImplicitSurface({ bounds, cellSize: 2.1, latticeCap: 100_000, closed: true, protectBoundary: true, sample: (x, y, z) => sampleGraniteField(x, y, z, seed, bounds) }); console.log(JSON.stringify({ seed, ...result.report })); }'
+~~~
+
+~~~text
+{"seed":20260821,"boundaryEdges":0,"degenerateTriangles":0,"signedVolume":32943.68643198542,"windingConflicts":0,"triangles":15612,"vertices":7808,"buildMs":272,"cellSize":2.0833333333333335}
+{"seed":11,"boundaryEdges":0,"degenerateTriangles":0,"signedVolume":33219.27163651359,"windingConflicts":0,"triangles":15644,"vertices":7824,"buildMs":263,"cellSize":2.0833333333333335}
+{"seed":99,"boundaryEdges":0,"degenerateTriangles":0,"signedVolume":34352.54420530801,"windingConflicts":0,"triangles":16048,"vertices":8026,"buildMs":248,"cellSize":2.0833333333333335}
+exit_code=0
+~~~
+
+Render-source formatting and budget check:
+
+~~~sh
+pnpm exec biome format --write packages/create-threenative/__tests__/looks.spec.ts packages/create-threenative/templates/starter/playtests/look.playtest.json packages/create-threenative/templates/starter/src/render/rockRidge.ts packages/create-threenative/templates/starter/src/render/scenery.ts
+pnpm exec biome check packages/create-threenative/__tests__/looks.spec.ts packages/create-threenative/templates/starter/playtests/look.playtest.json packages/create-threenative/templates/starter/src/render/rockRidge.ts packages/create-threenative/templates/starter/src/render/scenery.ts
+wc -l packages/create-threenative/templates/starter/src/render/rockRidge.ts packages/create-threenative/templates/starter/src/render/scenery.ts
+~~~
+
+~~~text
+Formatted 4 files in 4ms. Fixed 1 file.
+Checked 4 files in 12ms. No fixes applied.
+198 packages/create-threenative/templates/starter/src/render/rockRidge.ts
+46 packages/create-threenative/templates/starter/src/render/scenery.ts
+244 total
+exit_code=0
+~~~
+
+The first `TN_TEMPLATE_ONLY=starter pnpm test:templates` invocation hit a browser page-closed
+navigation diagnostic in the generic `seed` scenario. The identical command was rerun; the
+feature-owned scenarios and the complete 23-scenario starter matrix then passed:
+
+~~~sh
+TN_TEMPLATE_ONLY=starter pnpm test:templates
+~~~
+
+~~~text
+template audit starter: 23 scenarios; 23 assume start in play; 0 declare an explicit start.
+starter: scaffolded playtests passed.
+exit_code=0
+~~~
+
+The final required typecheck was:
+
+~~~sh
+pnpm typecheck
+~~~
+
+~~~text
+Scope: 24 of 25 workspace projects
+packages/create-threenative typecheck: Done
+examples/abyss-framework typecheck: Done
+exit_code=0
+~~~
+
+The final full repository test was rerun after refreshing the generated starter scaffold hash
+in `packages/create-threenative/__tests__/scaffold.spec.ts`:
+
+~~~sh
+pnpm test
+~~~
+
+~~~text
+Test Files  327 passed (327)
+Tests  3309 passed | 1 skipped (3310)
+suite temporary directory count unchanged in '/tmp/threenative-suite.ySGmA9': 1
+exit_code=0
+~~~
+
+The final lint run also passed:
+
+~~~sh
+pnpm lint
+~~~
+
+~~~text
+Checked 1649 files in 569ms. No fixes applied. Found 509 warnings.
+exit_code=0
+~~~
+
+### Real web look capture
+
+The generated starter project was built with `pnpm build`, then the real installed project runner
+was invoked from that generated project with the WebGPU recipe:
+
+~~~sh
+sh /home/joao/projects/threenative/threenative-engine/.worktrees/feature-mining-317-rock-ridge-20260901/scripts/xvfb.sh node node_modules/@threenative/playtest/dist/runner/cli.js --scenario playtests/look.playtest.json --url http://127.0.0.1:5187 --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort" --browser-recipe webgpu --headed --project . --artifacts artifacts/prd-317-web-look-repair-generated --timeout 30000 > artifacts/prd-317-web-look-repair-generated/playtest.log 2>&1
+~~~
+
+~~~text
+playtest_exit=0
+"odometer": 4.680037493906315
+"id": "resource.state.odometer.atSteps"
+"pass": true
+"id": "component.scenery.ridge.topology.boundaryEdges"
+"pass": true
+"pass": true,
+"runtime": "web",
+"scenario": "starter-look"
+~~~
+
+The new capture is at:
+
+`/tmp/threenative-prd-317-repair-rqEV36/starter/artifacts/prd-317-web-look-repair-generated/after.png`
+
+Its companion artifacts are in the same directory. `capture.json` records a 1280×720 WebGPU
+capture on the NVIDIA Turing adapter. The inspected `after.png` is nonblank and shows the fused
+ridge, player, pickup/crate/flag, and HUD; the `before.png`/`after.png` frame-diff assertion also
+passed. The report observed `state.odometer` at `4.680037493906315` at the
+`move-before-refinement` label and `4.680988741227935` after settling, with final ridge
+`boundaryEdges: 0`.
+
+This is fixed-viewport, authored camera-follow evidence: the scenario uses a 1280×720 viewport
+and declares `camera.main` follows `player`. It is one real WebGPU run, not blinded A/B evidence,
+and no silhouette-floor metric was run or claimed. No new native visual claim is made here.
