@@ -27,9 +27,17 @@ interface IDomElementVisibilitySample extends IElementVisibilitySample {
   isolationFailure?: string;
 }
 
+interface IVisibilityIsolationPropertyState {
+  name: string;
+  originalPriority: string;
+  originalValue: string;
+  temporaryPriority: string;
+  temporaryValue: string;
+}
+
 interface IVisibilityIsolationElementState {
   element: Element;
-  styleAttribute: string | null;
+  properties: IVisibilityIsolationPropertyState[];
 }
 
 interface IVisibilityIsolationState {
@@ -115,10 +123,15 @@ export async function sampleElementVisibility(
     let isolationProbe: Element | undefined;
     const restoreHiddenElements = (): boolean => {
       let cleaned = true;
-      for (const { element, styleAttribute } of hiddenElements) {
+      for (const { element, properties } of hiddenElements) {
         try {
-          if (styleAttribute === null) element.removeAttribute("style");
-          else element.setAttribute("style", styleAttribute);
+          const inlineStyle = (element as HTMLElement).style;
+          for (const property of properties) {
+            if (inlineStyle.getPropertyValue(property.name) !== property.temporaryValue
+              || inlineStyle.getPropertyPriority(property.name) !== property.temporaryPriority) continue;
+            if (property.originalValue === "") inlineStyle.removeProperty(property.name);
+            else inlineStyle.setProperty(property.name, property.originalValue, property.originalPriority);
+          }
         } catch {
           cleaned = false;
         }
@@ -192,13 +205,27 @@ export async function sampleElementVisibility(
         : [documentElement, ...documentElement.querySelectorAll("*")];
       for (const element of documentElements) {
         if (element === isolationProbe || element === node || node.contains(element)) continue;
-        const styleAttribute = element.getAttribute("style");
-        hiddenElements.push({ element, styleAttribute });
         const inlineStyle = (element as HTMLElement).style;
-        inlineStyle.setProperty("visibility", "hidden", "important");
-        if (element === documentElement || element === body) {
-          inlineStyle.setProperty("background-color", "transparent", "important");
-          inlineStyle.setProperty("background-image", "none", "important");
+        const properties = [
+          { name: "visibility", temporaryValue: "hidden" },
+          ...(element === documentElement || element === body
+            ? [
+                { name: "background-color", temporaryValue: "transparent" },
+                { name: "background-image", temporaryValue: "none" },
+              ]
+            : []),
+        ].map(({ name, temporaryValue }) => ({
+          name,
+          originalPriority: inlineStyle.getPropertyPriority(name),
+          originalValue: inlineStyle.getPropertyValue(name),
+          temporaryPriority: "important",
+          temporaryValue,
+        }));
+        hiddenElements.push({ element, properties });
+        for (const property of properties) {
+          inlineStyle.setProperty(property.name, property.temporaryValue, property.temporaryPriority);
+          property.temporaryValue = inlineStyle.getPropertyValue(property.name);
+          property.temporaryPriority = inlineStyle.getPropertyPriority(property.name);
         }
       }
       isolationStyle = document.createElement("style");
@@ -286,10 +313,15 @@ export async function sampleElementVisibility(
           cleaned = false;
         }
       }
-      for (const { element, styleAttribute } of state.hiddenElements) {
+      for (const { element, properties } of state.hiddenElements) {
         try {
-          if (styleAttribute === null) element.removeAttribute("style");
-          else element.setAttribute("style", styleAttribute);
+          const inlineStyle = (element as HTMLElement).style;
+          for (const property of properties) {
+            if (inlineStyle.getPropertyValue(property.name) !== property.temporaryValue
+              || inlineStyle.getPropertyPriority(property.name) !== property.temporaryPriority) continue;
+            if (property.originalValue === "") inlineStyle.removeProperty(property.name);
+            else inlineStyle.setProperty(property.name, property.originalValue, property.originalPriority);
+          }
         } catch {
           cleaned = false;
         }

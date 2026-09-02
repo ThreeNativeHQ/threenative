@@ -198,6 +198,7 @@ function pngPixel(screenshot: Buffer, x: number, y: number): [number, number, nu
 
 async function captureVisibilityScreenshots(
   page: Page,
+  onScreenshotPending?: () => Promise<void>,
 ): Promise<{ page: Page; screenshotOptions: Array<Parameters<Page["screenshot"]>[0]>; screenshots: Buffer[] }> {
   const screenshots: Buffer[] = [];
   const screenshotOptions: Array<Parameters<Page["screenshot"]>[0]> = [];
@@ -206,7 +207,9 @@ async function captureVisibilityScreenshots(
       if (property === "screenshot") {
         return async (options: Parameters<Page["screenshot"]>[0]) => {
           screenshotOptions.push(options);
-          const screenshot = await target.screenshot(options);
+          const screenshotPromise = target.screenshot(options);
+          await onScreenshotPending?.();
+          const screenshot = await screenshotPromise;
           screenshots.push(screenshot);
           return screenshot;
         };
@@ -754,7 +757,7 @@ describe("browser-backed DOM visibility isolation", () => {
     const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
     try {
       await installImportantNonTargetFixture(page);
-      const originalControlStyle = await page.evaluate(() => document.getElementById("control")?.getAttribute("style"));
+      const originalControlStyle = await page.evaluate(() => document.getElementById("control")?.style.cssText);
       const observed = await captureVisibilityScreenshots(page);
       await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
         bounds: { height: 80, width: 80, x: 0, y: 0 },
@@ -762,7 +765,27 @@ describe("browser-backed DOM visibility isolation", () => {
       });
       expect(observed.screenshots).toHaveLength(1);
       expect(pngPixel(observed.screenshots[0]!, 10, 20)).toEqual([0, 0, 0, 0]);
-      expect(await page.evaluate(() => document.getElementById("control")?.getAttribute("style"))).toBe(originalControlStyle);
+      expect(await page.evaluate(() => document.getElementById("control")?.style.cssText)).toBe(originalControlStyle);
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("preserves an unrelated inline update made while screenshot is pending", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installImportantNonTargetFixture(page);
+      const observed = await captureVisibilityScreenshots(page, async () => {
+        await page.evaluate(() => {
+          document.getElementById("control")?.style.setProperty("color", "rgb(4, 5, 6)");
+        });
+      });
+      await expect(sampleElementVisibility(observed.page, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: false,
+      });
+      await expect(page.evaluate(() => document.getElementById("control")?.style.getPropertyValue("color"))).resolves.toBe("rgb(4, 5, 6)");
       await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
     } finally {
       await page.close();
