@@ -223,7 +223,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "629d2cb00d0cb8a21d2c4eed5fc1caf6c84d37df390e70bd1f0635253d920578",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "b6ba45f7ceabbaca48d01ee4f58cb72978d5df9dd0bf31b24679575d30b23d9a",
+  starter: "e9d56d24510ff8bfe36664109e077cf2e3fda9251014342c4f379b360c8cdae9",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
