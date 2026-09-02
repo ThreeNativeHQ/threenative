@@ -38,6 +38,13 @@ Engine-side commits this PRD builds on: `0495d86b` (quantized-POSITION widening 
 `normaliseToMetres`, harness ground), `056e2f3` (clip names, audit wired), `13d1288` (mirror
 diagnosis retracted).
 
+**Ignore `BUGREPORT-2026-09-01.md`** sitting beside it in the same directory. That is an earlier
+report on the *tree* collapse, written by a weaker model, and several of its findings are wrong or
+self-retracted (its own F12 voids every "clean" verdict it recorded). Its conclusion — that the
+asset bake was the poison — is disproven: the corruption reproduced with pristine source bytes, and
+a numeric source-vs-bake diff across all 57 species found zero differences. The tree bug was the
+quantized-`POSITION` clamp, fixed in `0495d86b`, and is unrelated to this PRD.
+
 ### Why this is a framework problem, not a Wildwood problem
 
 Getting a rigged glTF onto the screen correctly requires knowing six non-obvious things. Wildwood
