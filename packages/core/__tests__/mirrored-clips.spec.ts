@@ -3,12 +3,23 @@ import {
   AnimationMixer,
   Bone,
   Group,
+  type Object3D,
   type Quaternion,
   Vector3,
   VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it } from "vitest";
 import { reconcileMirroredClips } from "../src/assets.js";
+
+/**
+ * The fixture's bone, or a failure that names it. A missing bone means the fixture drifted, and
+ * an absent observation is a failure here as everywhere else.
+ */
+function bone(rig: Group, name: string): Object3D {
+  const found = rig.getObjectByName(name);
+  if (found === undefined) throw new Error(`the fixture rig has no '${name}' bone`);
+  return found;
+}
 
 /**
  * A bind facing +Z: hip at the origin, spine and head chained forward on +Z, left/right bones
@@ -99,7 +110,7 @@ describe("reconcileMirroredClips", () => {
     const spine = clip.tracks.find((track) => track.name === "spine.position");
     expect(spine?.values[2]).toBeCloseTo(0.4, 6);
     const headQuat = clip.tracks.find((track) => track.name === "head.quaternion");
-    const bind = rig.getObjectByName("head")!.quaternion;
+    const bind = bone(rig, "head").quaternion;
     expect(headQuat?.values[0]).toBeCloseTo(bind.x, 6);
     expect(headQuat?.values[1]).toBeCloseTo(bind.y, 6);
   });
@@ -122,12 +133,12 @@ describe("reconcileMirroredClips", () => {
     mixer.clipAction(clip).play();
     mixer.update(0.5);
     rig.updateMatrixWorld(true);
-    const head = rig.getObjectByName("head")!.getWorldPosition(new Vector3());
-    const pelvis = rig.getObjectByName("spine")!.getWorldPosition(new Vector3());
+    const head = bone(rig, "head").getWorldPosition(new Vector3());
+    const pelvis = bone(rig, "spine").getWorldPosition(new Vector3());
     expect(head.z).toBeGreaterThan(pelvis.z);
     // Left stays left: the mirror is undone, not turned into a yaw that swaps sides.
-    const left = rig.getObjectByName("leg-L")!.getWorldPosition(new Vector3());
-    const right = rig.getObjectByName("leg-R")!.getWorldPosition(new Vector3());
+    const left = bone(rig, "leg-L").getWorldPosition(new Vector3());
+    const right = bone(rig, "leg-R").getWorldPosition(new Vector3());
     expect(left.x).toBeGreaterThan(right.x);
     mixer.stopAllAction();
     mixer.uncacheRoot(rig);
@@ -138,7 +149,9 @@ describe("reconcileMirroredClips", () => {
     const clip = healthyClip(rig);
     // Keep only one position track, mirrored: a single vote is not the pack-wide signature.
     clip.tracks = clip.tracks.filter((track) => track.name === "spine.position");
-    const values = clip.tracks[0]!.values;
+    const soleTrack = clip.tracks[0];
+    if (soleTrack === undefined) throw new Error("the filtered clip kept no track to mirror");
+    const values = soleTrack.values;
     for (let index = 2; index < values.length; index += 3) values[index] = -(values[index] ?? 0);
     const before = clip.tracks.map((track) => [...track.values]);
     expect(reconcileMirroredClips(rig, [clip])).toBe(false);
