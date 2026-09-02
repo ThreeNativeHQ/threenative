@@ -243,6 +243,7 @@ describe("CI pipeline structure", () => {
     );
 
     expect(emulator).toContain("set +e");
+    expect(emulator).toMatch(/run-conformance\.mjs \\\n\s+--target android/u);
     expect(emulator).toContain("status=$?");
     expect(emulator).toContain('test "$status" -eq 0 -o "$status" -eq 2');
     expect(android).toContain("check-lane-blocks.mjs");

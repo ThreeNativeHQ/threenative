@@ -151,7 +151,7 @@ jobs:
           emulator-boot-timeout: 900
           script: |
             set +e
-            node packages/runtime-native/conformance/run-conformance.mjs
+            node packages/runtime-native/conformance/run-conformance.mjs \
               --target android --device emulator-5554 \
               --reference artifacts/conformance/web \
               --out artifacts/conformance/android
