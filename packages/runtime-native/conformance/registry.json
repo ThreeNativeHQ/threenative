@@ -716,6 +716,28 @@
       "required": true
     },
     {
+      "id": "vfx-compute",
+      "title": "VFX sprite, ribbon and instanced-mesh compute",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/vfx-compute.js",
+      "baseline": "conformance/baselines/vfx-compute.json",
+      "captureFrames": 12,
+      "temporal": { "settledFrame": 8, "nextFrame": 9, "assertsDifferenceFromFrameZero": true, "capture": "settled" },
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "100-world-field-hash",
       "title": "procedural world field hash parity",
       "category": "world",

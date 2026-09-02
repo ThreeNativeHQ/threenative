@@ -1,4 +1,4 @@
-import { type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
+import { GPUParticles3D, type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Object3D, type PerspectiveCamera, Vector3 } from "three";
 import { Ability } from "../abilities/Ability.js";
@@ -16,6 +16,7 @@ import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createDungeon, createLootVisual } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
+import { createArcaneSurge, createAttackArc, createHitBurst } from "../render/vfx.js";
 import type { GameState } from "../state.js";
 import { StatBlock } from "../stats/StatBlock.js";
 
@@ -151,6 +152,26 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     playerRef.value = player;
     player.equippedItem = inventory.equipped?.itemId ?? "";
     ctx.entities.add("player", player);
+
+    const attackVfx = ctx.add(new GPUParticles3D(createAttackArc()));
+    const hitVfx = ctx.add(new GPUParticles3D(createHitBurst()));
+    const surgeVfx = ctx.add(new GPUParticles3D(createArcaneSurge()));
+    attackVfx.visible = false;
+    hitVfx.visible = false;
+    surgeVfx.visible = false;
+    const burst = (
+      particles: GPUParticles3D,
+      position: { readonly x: number; readonly y: number; readonly z: number },
+      name: string,
+    ): void => {
+      particles.position.copy(position);
+      particles.visible = true;
+      particles.restart();
+      ctx.after(0.45, () => {
+        particles.visible = false;
+      });
+      emitPlaytestEvent({ entity: "player", name });
+    };
 
     const enemies = new Map<number, Enemy>();
     const enemyIds = new Map<number, string>();
@@ -305,6 +326,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const boss = addEnemy("boss", new Vector3(16, 0.78, 0), { boss: true, health: 64 });
 
     const strike = (amount: number): void => {
+      burst(attackVfx, player.attackOrigin(), "vfx-attack");
       const hits = directSpaceState(ctx.physics).intersectShape({
         collisionMask: HOSTILE_LAYER,
         maxResults: 16,
@@ -316,6 +338,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         const enemy = enemies.get(hit.body.id);
         if (enemy === undefined) continue;
         enemy.takeDamage(amount);
+        if (hit.position !== undefined) burst(hitVfx, hit.position, "vfx-hit");
         hitCount += 1;
       }
       const state = ctx.state.getState();
@@ -335,6 +358,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         emitPlaytestEvent({ entity: "player", name: "ability-expired" });
       },
       onStart: () => {
+        burst(surgeVfx, player.mesh.position, "vfx-surge");
         damageStats.apply({ add: 6, duration: 1, source: "arcane-surge" }, elapsed);
         ctx.state.set({ abilityUses: ctx.state.getState().abilityUses + 1, modifierActive: 1 });
         strike(20);

@@ -84,4 +84,9 @@ supposed to be touching.
 
 Open a capture after visual changes. A scenario with no assertions or missing observations fails.
 
+VFX appearance belongs in `src/render/vfx.ts`: keep its TSL material, geometry, colour, blend,
+curves, timing and capacity there. Gameplay creates `GPUParticles3D` or an `IComputeDriven`
+object once, adds it with `ctx.add`, and calls `restart()` from the real fire or hit path; do not
+move appearance into core or replace the existing event with a demo-only caller.
+
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.

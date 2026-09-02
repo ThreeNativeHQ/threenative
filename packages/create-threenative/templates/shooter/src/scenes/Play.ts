@@ -1,6 +1,7 @@
 import {
   Billboard3D,
   CameraShake,
+  GPUParticles3D,
   type ICtx,
   Scene,
   type SceneFrame,
@@ -35,6 +36,7 @@ import {
   createWallVisual,
 } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
+import { createImpactDust, createImpactSparks, createMuzzleFlash } from "../render/vfx.js";
 import type { GameState } from "../state.js";
 import { WaveDirector } from "../waves.js";
 import { Hitscan } from "../weapons/Hitscan.js";
@@ -167,12 +169,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const onEnemyProjectileHit = (hit: IRayHit): void => {
       if (hit.body.id === getPlayer().body.body.id) {
         getPlayer().takeDamage(20);
+        burst(impactDustVfx, hit.position, "vfx-impact");
         emitPlaytestEvent({ entity: "player", name: "projectile-hit" });
       }
     };
     const onPlayerProjectileHit = (hit: IRayHit): void => {
-      if (applyDirectDamage(targets, hit.body.id, 22))
+      if (applyDirectDamage(targets, hit.body.id, 22)) {
+        burst(impactVfx, hit.position, "vfx-impact");
         emitPlaytestEvent({ entity: "player", name: "projectile-defeated" });
+      }
     };
 
     const acquireProjectile = (
@@ -260,6 +265,26 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const player = new Player(ctx, materials, SPAWN.clone(), onDamage, onDeath);
     playerRef.value = player;
     ctx.entities.add("player", player);
+
+    const muzzleVfx = ctx.add(new GPUParticles3D(createMuzzleFlash()));
+    const impactVfx = ctx.add(new GPUParticles3D(createImpactSparks()));
+    const impactDustVfx = ctx.add(new GPUParticles3D(createImpactDust()));
+    muzzleVfx.visible = false;
+    impactVfx.visible = false;
+    impactDustVfx.visible = false;
+    const burst = (
+      particles: GPUParticles3D,
+      position: { readonly x: number; readonly y: number; readonly z: number },
+      name: string,
+    ): void => {
+      particles.position.copy(position);
+      particles.visible = true;
+      particles.restart();
+      ctx.after(0.45, () => {
+        particles.visible = false;
+      });
+      emitPlaytestEvent({ entity: "player", name });
+    };
 
     const demo = registerTarget(
       "demo-target",
@@ -361,6 +386,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ): void => {
       const target = targets.get(hit.body.id);
       if (target !== undefined) applyDirectDamage(targets, hit.body.id, 40);
+      burst(impactVfx, hit.position, "vfx-impact");
+      burst(impactDustVfx, hit.position, "vfx-impact-dust");
       const demoHit = hit.body.id === demo.body.body.id;
       shake.trigger();
       ctx.state.set({
@@ -393,6 +420,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         .applyAxisAngle(UP, -lookState.yaw)
         .add(player.mesh.position);
       const hit = hitscan.fire(ctx.physics, originOffset, aimForward(), HOSTILE_LAYER);
+      burst(muzzleVfx, originOffset, "vfx-muzzle");
       ctx.state.set({
         aimedShots: whileAiming ? state.aimedShots + 1 : state.aimedShots,
         shotsFired: state.shotsFired + 1,
@@ -402,6 +430,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const fireProjectile = (): void => {
+      burst(muzzleVfx, player.aimOrigin(), "vfx-muzzle");
       acquireProjectile(
         player.aimOrigin(),
         AIM,
@@ -411,6 +440,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const fireRadius = (): void => {
+      burst(impactDustVfx, BLAST_CENTRE, "vfx-blast");
       applyRadiusDamage(ctx.physics, BLAST_CENTRE, 3.5, 80, targets);
       let insideDeaths = 0;
       if (!radiusNear.alive) insideDeaths += 1;

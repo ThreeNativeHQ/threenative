@@ -1,0 +1,48 @@
+{
+  "name": "shooter-vfx-combat",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 12,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "warm", "waitTicks": 8, "release": true },
+    { "kind": "input", "label": "fire", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "fire-visible", "waitTicks": 4, "release": true },
+    { "kind": "input", "label": "projectile", "press": "KeyG", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "projectile-visible", "waitTicks": 8, "release": true },
+    { "kind": "input", "label": "blast", "press": "KeyE", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "blast-visible", "waitTicks": 4, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "state", "path": "shotsFired", "atSteps": [{ "label": "fire", "equals": 1 }] },
+      {
+        "id": "state",
+        "path": "radiusInsideDeaths",
+        "atSteps": [{ "label": "blast", "equals": 2 }]
+      }
+    ],
+    "signals": [
+      { "name": "fired", "entity": "player", "minCount": 1, "atStep": "fire" },
+      { "name": "hit", "entity": "player", "minCount": 1, "atStep": "fire" },
+      { "name": "vfx-muzzle", "entity": "player", "minCount": 2 },
+      { "name": "vfx-impact", "entity": "player", "minCount": 1, "atStep": "fire" },
+      { "name": "vfx-blast", "entity": "player", "minCount": 1, "atStep": "blast" }
+    ],
+    "visual": [
+      { "frameDiff": { "minChangedPixelRatio": 0.0001 } },
+      {
+        "region": { "x": 0, "y": 0, "width": 1280, "height": 720, "minNonblankPixelRatio": 0.0001 }
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The shooter scene begins with the player visible and in frame; the gameplay signals and frame diff carry the VFX proof.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
+  }
+}
